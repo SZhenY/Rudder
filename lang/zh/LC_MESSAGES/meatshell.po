@@ -45,7 +45,7 @@ msgstr "关于"
 msgid "About meatshell"
 msgstr "关于 meatshell"
 
-msgid "A lightweight Rust + Slint SSH terminal client by 'a chunk of meat'."
+msgid "A lightweight Rust + Slint SSH terminal client by 'lil meatball'."
 msgstr "一个由「一坨肉」开发的轻量 Rust + Slint SSH 终端客户端。"
 
 msgid "Open source · MIT / Apache-2.0"
@@ -168,7 +168,7 @@ msgstr "清空缓存"
 msgid "Find"
 msgstr "查找"
 
-msgid "meatshell — a lightweight Rust + Slint SSH client by 'a chunk of meat'"
+msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 msgstr "meatshell 一个由「一坨肉」开发的轻量 Rust + Slint SSH 客户端"
 
 msgid "Quick connect"
@@ -182,3 +182,6 @@ msgstr "尚无会话"
 
 msgid "Use 'New session' (top-right) to add your first server"
 msgstr "点击右上角 “新建会话” 添加你的第一台服务器"
+
+msgid "Import ~/.ssh/config"
+msgstr "导入 ~/.ssh/config"

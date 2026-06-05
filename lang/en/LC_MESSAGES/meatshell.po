@@ -45,8 +45,8 @@ msgstr "About"
 msgid "About meatshell"
 msgstr "About meatshell"
 
-msgid "A lightweight Rust + Slint SSH terminal client by 'a chunk of meat'."
-msgstr "A lightweight Rust + Slint SSH terminal client by 'a chunk of meat'."
+msgid "A lightweight Rust + Slint SSH terminal client by 'lil meatball'."
+msgstr "A lightweight Rust + Slint SSH terminal client by 'lil meatball'."
 
 msgid "Open source · MIT / Apache-2.0"
 msgstr "Open source · MIT / Apache-2.0"
@@ -168,8 +168,8 @@ msgstr "Clear buffer"
 msgid "Find"
 msgstr "Find"
 
-msgid "meatshell — a lightweight Rust + Slint SSH client by 'a chunk of meat'"
-msgstr "meatshell — a lightweight Rust + Slint SSH client by 'a chunk of meat'"
+msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
+msgstr "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 
 msgid "Quick connect"
 msgstr "Quick connect"
@@ -182,3 +182,6 @@ msgstr "No sessions yet"
 
 msgid "Use 'New session' (top-right) to add your first server"
 msgstr "Use 'New session' (top-right) to add your first server"
+
+msgid "Import ~/.ssh/config"
+msgstr "Import ~/.ssh/config"

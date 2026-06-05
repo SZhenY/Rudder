@@ -588,6 +588,65 @@ fn wire_session_callbacks(
         }
     });
 
+    // Import hosts from ~/.ssh/config -> add them as sessions (skipping dups).
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_import_ssh_config(move || {
+            let hosts = crate::ssh_config::parse_default();
+            let mut added = 0usize;
+            if hosts.is_empty() {
+                if let Some(w) = weak.upgrade() {
+                    w.set_ssh_import_hint(t("未找到 ~/.ssh/config", "no ~/.ssh/config found").into());
+                }
+                return;
+            }
+            {
+                let mut s = store.borrow_mut();
+                for h in hosts {
+                    // Skip if a session already has this alias, or the same
+                    // host + user pair.
+                    let dup = s.sessions().iter().any(|x| {
+                        x.name == h.alias || (x.host == h.hostname && x.user == h.user)
+                    });
+                    if dup {
+                        continue;
+                    }
+                    let auth = if h.identity_file.is_empty() {
+                        AuthMethod::Password
+                    } else {
+                        AuthMethod::Key
+                    };
+                    s.upsert(Session {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        name: h.alias,
+                        host: h.hostname,
+                        port: h.port,
+                        user: if h.user.is_empty() { "root".into() } else { h.user },
+                        auth,
+                        password: Secret::default(),
+                        private_key_path: h.identity_file,
+                        last_used: None,
+                    });
+                    added += 1;
+                }
+                if added > 0 {
+                    let _ = s.save();
+                }
+            }
+            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            if let Some(w) = weak.upgrade() {
+                let hint = if added > 0 {
+                    format!("{} {}", t("已导入", "imported"), added)
+                } else {
+                    t("没有新主机可导入", "no new hosts to import").to_string()
+                };
+                w.set_ssh_import_hint(hint.into());
+            }
+        });
+    }
+
     // Edit -> open dialog prefilled.
     {
         let weak = window.as_weak();

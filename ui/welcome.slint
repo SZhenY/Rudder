@@ -149,7 +149,9 @@ component SessionRow inherits Rectangle {
 // --- Welcome ---------------------------------------------------------------
 export component Welcome inherits Rectangle {
     in property <[SessionInfo]> sessions;
+    in property <string> import-hint;        // result text after an import
     callback new-session();
+    callback import-ssh-config();
     callback connect-session(string);
     callback edit-session(string);
     callback remove-session(string);
@@ -169,7 +171,7 @@ export component Welcome inherits Rectangle {
                 font-weight: 700;
             }
             Text {
-                text: @tr("meatshell — a lightweight Rust + Slint SSH client by 'a chunk of meat'");
+                text: @tr("meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'");
                 color: Theme.text-secondary;
                 font-size: Theme.fs-md;
             }
@@ -187,6 +189,7 @@ export component Welcome inherits Rectangle {
                 spacing: 12px;
 
                 HorizontalLayout {
+                    spacing: 8px;
                     Text {
                         text: @tr("Quick connect");
                         color: Theme.text-primary;
@@ -194,6 +197,17 @@ export component Welcome inherits Rectangle {
                         font-weight: 600;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
+                    }
+                    // Result of the last import (e.g. "imported 3").
+                    Text {
+                        text: root.import-hint;
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
+                    GhostButton {
+                        text: @tr("Import ~/.ssh/config");
+                        clicked => { root.import-ssh-config(); }
                     }
                     PrimaryButton {
                         text: @tr("+ New session");

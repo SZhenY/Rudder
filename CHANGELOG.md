@@ -3,6 +3,26 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
+## [0.2.3] - 2026-06-05
+
+### Added / 新增
+
+- **Import hosts from `~/.ssh/config` (#1).** A new "Import ~/.ssh/config"
+  button on the welcome page parses the standard SSH config (`Host` / `HostName`
+  / `User` / `Port` / `IdentityFile`, wildcard `Host *` blocks skipped) and adds
+  each host as a session, skipping duplicates. Hosts with an `IdentityFile`
+  default to key auth.
+  **从 `~/.ssh/config` 导入主机 (#1)。** 欢迎页新增「导入 ~/.ssh/config」按钮,
+  解析标准 SSH 配置(`Host` / `HostName` / `User` / `Port` / `IdentityFile`,
+  跳过 `Host *` 通配块),将每个主机加为会话并跳过重复;带 `IdentityFile` 的默认
+  使用密钥认证。
+
+### Fixed / 修复
+
+- The full-width `＋` before "New session" rendered as a tofu box in English;
+  switched to an ASCII `+`.
+  英文下「New session」前的全角 `＋` 显示为豆腐块,改用 ASCII `+`。
+
 ## [0.2.2] - 2026-06-05
 
 ### Security / 安全

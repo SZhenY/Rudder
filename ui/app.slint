@@ -120,6 +120,8 @@ export component AppWindow inherits Window {
 
     // --- Callbacks up to Rust ---------------------------------------------
     callback new-session-clicked();
+    callback import-ssh-config();             // import hosts from ~/.ssh/config
+    in-out property <string> ssh-import-hint;  // result text shown after import
     callback connect-session(string /* session-id */);
     callback edit-session(string /* session-id */);
     callback remove-session(string /* session-id */);
@@ -222,7 +224,9 @@ export component AppWindow inherits Window {
                 // Welcome tab
                 if root.active-tab-id == "welcome" : Welcome {
                     sessions: root.sessions;
+                    import-hint: root.ssh-import-hint;
                     new-session => { root.new-session-clicked(); }
+                    import-ssh-config => { root.import-ssh-config(); }
                     connect-session(id) => { root.connect-session(id); }
                     edit-session(id) => { root.edit-session(id); }
                     remove-session(id) => { root.remove-session(id); }
@@ -624,7 +628,7 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: @tr("A lightweight Rust + Slint SSH terminal client by 'a chunk of meat'.");
+                    text: @tr("A lightweight Rust + Slint SSH terminal client by 'lil meatball'.");
                     color: Theme.text-secondary;
                     font-size: Theme.fs-sm;
                     wrap: word-wrap;
