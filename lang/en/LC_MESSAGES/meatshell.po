@@ -174,8 +174,8 @@ msgstr "meatshell — a lightweight Rust + Slint SSH client by 'a chunk of meat'
 msgid "Quick connect"
 msgstr "Quick connect"
 
-msgid "＋ New session"
-msgstr "＋ New session"
+msgid "+ New session"
+msgstr "+ New session"
 
 msgid "No sessions yet"
 msgstr "No sessions yet"
