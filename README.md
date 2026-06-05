@@ -7,6 +7,18 @@
 （资源监控侧栏、会话管理、多标签页终端）的同时，把内存占用从 400 MB+ 的
 JVM 压到几十 MB 原生级别。
 
+## 截图
+
+<p align="center">
+  <img src="docs/screenshots/01-welcome.png" alt="欢迎页 / 会话管理" width="800"><br>
+  <em>欢迎页：会话管理 + 左侧本机资源监控</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/02-terminal-btop.png" alt="终端 + SFTP" width="800"><br>
+  <em>多标签页终端（btop 全屏渲染）+ 底部 SFTP 文件浏览 + 远端资源监控</em>
+</p>
+
 ## 路线图
 
 ### v0.1（当前）

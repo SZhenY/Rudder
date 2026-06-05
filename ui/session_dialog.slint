@@ -62,28 +62,28 @@ export component SessionDialog inherits Rectangle {
             spacing: 14px;
 
             Text {
-                text: is-editing ? "编辑会话" : "新建会话";
+                text: is-editing ? @tr("Edit session") : @tr("New session");
                 color: Theme.text-primary;
                 font-size: Theme.fs-xl;
                 font-weight: 600;
             }
 
             LabeledInput {
-                label: "名称";
-                placeholder: "例如：生产环境 web-01";
+                label: @tr("Name");
+                placeholder: @tr("e.g. production web-01");
                 value <=> root.draft-name;
             }
 
             HorizontalLayout {
                 spacing: 10px;
                 LabeledInput {
-                    label: "主机 / IP";
+                    label: @tr("Host / IP");
                     placeholder: "192.168.1.10";
                     value <=> root.draft-host;
                     horizontal-stretch: 2;
                 }
                 LabeledInput {
-                    label: "端口";
+                    label: @tr("Port");
                     placeholder: "22";
                     value <=> root.draft-port;
                     horizontal-stretch: 1;
@@ -91,7 +91,7 @@ export component SessionDialog inherits Rectangle {
             }
 
             LabeledInput {
-                label: "用户名";
+                label: @tr("Username");
                 placeholder: "root";
                 value <=> root.draft-user;
             }
@@ -100,7 +100,7 @@ export component SessionDialog inherits Rectangle {
             VerticalLayout {
                 spacing: 4px;
                 Text {
-                    text: "认证方式";
+                    text: @tr("Authentication");
                     color: Theme.text-secondary;
                     font-size: Theme.fs-sm;
                 }
@@ -114,7 +114,7 @@ export component SessionDialog inherits Rectangle {
                         background: root.draft-auth == "password" ? Theme.accent : Theme.bg-root;
                         border-color: root.draft-auth == "password" ? Theme.accent : Theme.border-subtle;
                         Text {
-                            text: "密码";
+                            text: @tr("Password");
                             color: root.draft-auth == "password" ? white : Theme.text-primary;
                             font-size: Theme.fs-md;
                             horizontal-alignment: center;
@@ -133,7 +133,7 @@ export component SessionDialog inherits Rectangle {
                         background: root.draft-auth == "key" ? Theme.accent : Theme.bg-root;
                         border-color: root.draft-auth == "key" ? Theme.accent : Theme.border-subtle;
                         Text {
-                            text: "私钥";
+                            text: @tr("Private key");
                             color: root.draft-auth == "key" ? white : Theme.text-primary;
                             font-size: Theme.fs-md;
                             horizontal-alignment: center;
@@ -148,8 +148,8 @@ export component SessionDialog inherits Rectangle {
             }
 
             if root.draft-auth == "password" : LabeledInput {
-                label: "密码";
-                placeholder: "••••••••";
+                label: @tr("Password");
+                placeholder: root.is-editing ? @tr("Leave blank to keep the current password") : "••••••••";
                 password: true;
                 value <=> root.draft-password;
             }
@@ -157,7 +157,7 @@ export component SessionDialog inherits Rectangle {
             if root.draft-auth == "key" : VerticalLayout {
                 spacing: 4px;
                 Text {
-                    text: "私钥文件";
+                    text: @tr("Private key file");
                     color: Theme.text-secondary;
                     font-size: Theme.fs-sm;
                 }
@@ -196,7 +196,7 @@ export component SessionDialog inherits Rectangle {
                         border-color: Theme.border-subtle;
                         background: browse-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
                         Text {
-                            text: "浏览…";
+                            text: @tr("Browse…");
                             color: Theme.text-primary;
                             font-size: Theme.fs-sm;
                             horizontal-alignment: center;
@@ -209,7 +209,7 @@ export component SessionDialog inherits Rectangle {
                     }
                 }
                 Text {
-                    text: "选择私钥本身（不是 .pub 公钥文件）";
+                    text: @tr("Pick the private key itself (not the .pub public key)");
                     color: Theme.text-muted;
                     font-size: Theme.fs-xs;
                 }
@@ -221,11 +221,11 @@ export component SessionDialog inherits Rectangle {
                 alignment: end;
                 spacing: 8px;
                 GhostButton {
-                    text: "取消";
+                    text: @tr("Cancel");
                     clicked => { root.cancel(); }
                 }
                 PrimaryButton {
-                    text: is-editing ? "保存" : "创建";
+                    text: is-editing ? @tr("Save") : @tr("Create");
                     clicked => {
                         root.submit({
                             id: root.draft-id,

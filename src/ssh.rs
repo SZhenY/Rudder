@@ -18,6 +18,7 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
 use crate::config::{AuthMethod, Session};
+use crate::i18n::t;
 
 // ---------------------------------------------------------------------------
 // SFTP-related shared types
@@ -280,7 +281,8 @@ async fn run_session(
     initial_rows: u32,
 ) -> Result<()> {
     let _ = events.send(SessionEvent::Status(format!(
-        "连接中 {}@{}:{} ...",
+        "{} {}@{}:{} ...",
+        t("连接中", "Connecting"),
         session.user, session.host, session.port
     )));
 
@@ -298,13 +300,13 @@ async fn run_session(
     // --- Auth ----------------------------------------------------------
     let authed = match session.auth {
         AuthMethod::Password => handle
-            .authenticate_password(&session.user, &session.password)
+            .authenticate_password(&session.user, session.password.as_str())
             .await
             .context("password auth failed")?,
         AuthMethod::Key => {
             let raw = session.private_key_path.trim();
             if raw.is_empty() {
-                return Err(anyhow!("私钥路径为空"));
+                return Err(anyhow!(t("私钥路径为空", "private key path is empty")));
             }
             // Normalise separators (we store `/` everywhere) and be forgiving if
             // the user pointed at the `.pub` *public* key — the private key is the
@@ -331,7 +333,7 @@ async fn run_session(
     };
 
     if !authed {
-        let _ = events.send(SessionEvent::Closed("认证失败".into()));
+        let _ = events.send(SessionEvent::Closed(t("认证失败", "authentication failed").into()));
         let _ = handle
             .disconnect(Disconnect::ByApplication, "auth failed", "")
             .await;
@@ -360,7 +362,8 @@ async fn run_session(
 
     let _ = events.send(SessionEvent::Connected);
     let _ = events.send(SessionEvent::Status(format!(
-        "已连接 {}@{}",
+        "{} {}@{}",
+        t("已连接", "Connected"),
         session.user, session.host
     )));
 
@@ -408,7 +411,7 @@ async fn run_session(
                     Some(SessionCommand::RawInput(bytes)) => {
                         tracing::debug!("ssh channel.data bytes={:02x?}", bytes);
                         if let Err(err) = channel.data(&bytes[..]).await {
-                            let _ = events.send(SessionEvent::Closed(format!("写入失败: {err}")));
+                            let _ = events.send(SessionEvent::Closed(format!("{}: {err}", t("写入失败", "write failed"))));
                             break;
                         }
                     }
@@ -446,7 +449,7 @@ async fn run_session(
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         let _ = events.send(SessionEvent::Status(
-                            format!("远程进程退出 (code {exit_status})"),
+                            format!("{} (code {exit_status})", t("远程进程退出", "remote process exited")),
                         ));
                     }
                     Some(ChannelMsg::Close) | None => {
@@ -496,7 +499,7 @@ async fn run_session(
     let _ = handle
         .disconnect(Disconnect::ByApplication, "bye", "")
         .await;
-    let _ = events.send(SessionEvent::Closed("连接已关闭".into()));
+    let _ = events.send(SessionEvent::Closed(t("连接已关闭", "connection closed").into()));
     Ok(())
 }
 

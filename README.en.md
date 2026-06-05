@@ -8,6 +8,18 @@ FinalShell's core experience (resource-monitor sidebar, session management,
 tabbed terminals) while cutting memory use from the 400 MB+ of a JVM app down to
 the tens-of-MB range of a native binary.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/01-welcome-en.png" alt="Welcome / session management" width="800"><br>
+  <em>Welcome page: session management + local resource monitor sidebar</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/02-terminal-btop.png" alt="Terminal + SFTP" width="800"><br>
+  <em>Tabbed terminal (full-screen btop) + SFTP file browser + remote resource monitoring</em>
+</p>
+
 ## Roadmap
 
 ### v0.1 (current)
