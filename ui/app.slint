@@ -515,10 +515,10 @@ export component AppWindow inherits Window {
 
     // --- Settings menu popup (top-right) ----------------------------------
     Rectangle {
-        x: parent.width - 158px;
+        x: parent.width - 196px;
         y: 40px;
-        width: 160px;
-        height: 76px;
+        width: 198px;
+        height: 104px;
         visible: root.settings-open;
         background: Theme.bg-panel;
         border-radius: Theme.radius-md;
@@ -532,6 +532,27 @@ export component AppWindow inherits Window {
         VerticalLayout {
             padding: 4px;
             spacing: 1px;
+            // Import hosts from ~/.ssh/config.
+            Rectangle {
+                height: 28px;
+                border-radius: Theme.radius-sm;
+                background: import-ta.has-hover ? Theme.bg-hover : transparent;
+                import-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.settings-open = false;
+                        root.import-ssh-config();
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 8px; spacing: 8px;
+                    Text { text: "\u{E890}"; font-family: "Material Icons"; // input/import
+                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           vertical-alignment: center; }
+                    Text { text: @tr("Import ~/.ssh/config"); color: Theme.text-primary; font-size: Theme.fs-md;
+                           vertical-alignment: center; horizontal-stretch: 1; }
+                }
+            }
             // Language toggle: shows the language you'll switch TO.
             Rectangle {
                 height: 28px;
