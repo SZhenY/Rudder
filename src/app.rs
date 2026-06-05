@@ -583,6 +583,7 @@ fn wire_session_callbacks(
             w.set_dialog_auth("password".into());
             w.set_dialog_password("".into());
             w.set_dialog_key_path("".into());
+            w.set_dialog_proxy("".into());
             w.set_dialog_editing(false);
             w.set_dialog_open(true);
         }
@@ -627,6 +628,7 @@ fn wire_session_callbacks(
                         auth,
                         password: Secret::default(),
                         private_key_path: h.identity_file,
+                        proxy: String::new(),
                         last_used: None,
                     });
                     added += 1;
@@ -666,6 +668,7 @@ fn wire_session_callbacks(
                 // leave it blank; a blank field on save keeps the existing one.
                 w.set_dialog_password("".into());
                 w.set_dialog_key_path(session.private_key_path.clone().into());
+                w.set_dialog_proxy(session.proxy.clone().into());
                 w.set_dialog_editing(true);
                 w.set_dialog_open(true);
             }
@@ -726,6 +729,7 @@ fn wire_session_callbacks(
                 password,
                 // Store the key path with forward slashes uniformly.
                 private_key_path: draft.private_key_path.to_string().replace('\\', "/"),
+                proxy: draft.proxy.to_string(),
                 last_used: None,
             };
             {

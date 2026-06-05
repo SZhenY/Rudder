@@ -10,6 +10,7 @@ export struct SessionDraft {
     auth: string,      // "password" | "key"
     password: string,
     private-key-path: string,
+    proxy: string,     // "" | "socks5://host:port" | "http://host:port"
 }
 
 // Modal dialog for creating / editing an SSH session.
@@ -26,6 +27,7 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-auth: "password";
     in-out property <string> draft-password;
     in-out property <string> draft-key-path;
+    in-out property <string> draft-proxy;
 
     callback submit(SessionDraft);
     callback cancel();
@@ -42,7 +44,7 @@ export component SessionDialog inherits Rectangle {
 
     Rectangle {
         width: 420px;
-        height: 460px;
+        height: 520px;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         background: Theme.bg-panel;
@@ -215,6 +217,21 @@ export component SessionDialog inherits Rectangle {
                 }
             }
 
+            // Optional outbound proxy (SOCKS5 / HTTP) for restricted networks.
+            VerticalLayout {
+                spacing: 4px;
+                LabeledInput {
+                    label: @tr("Proxy (optional)");
+                    placeholder: "socks5://127.0.0.1:1080";
+                    value <=> root.draft-proxy;
+                }
+                Text {
+                    text: @tr("Leave blank to use $ALL_PROXY or connect directly");
+                    color: Theme.text-muted;
+                    font-size: Theme.fs-xs;
+                }
+            }
+
             Rectangle { vertical-stretch: 1; }
 
             HorizontalLayout {
@@ -236,6 +253,7 @@ export component SessionDialog inherits Rectangle {
                             auth: root.draft-auth,
                             password: root.draft-password,
                             private-key-path: root.draft-key-path,
+                            proxy: root.draft-proxy,
                         });
                     }
                 }

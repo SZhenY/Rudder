@@ -293,9 +293,26 @@ async fn run_session(
 
     let handler = ClientHandler {};
     let addr = format!("{}:{}", session.host, session.port);
-    let mut handle = client::connect(config, addr.as_str(), handler)
-        .await
-        .with_context(|| format!("connect {} failed", addr))?;
+    // Connect directly, or tunnel through a SOCKS5 / HTTP proxy (issue #7).
+    let mut handle = match crate::proxy::resolve(&session.proxy) {
+        Some(p) => {
+            let _ = events.send(SessionEvent::Status(format!(
+                "{} {} → {}",
+                t("经代理连接", "via proxy"),
+                crate::proxy::describe(&p),
+                addr
+            )));
+            let stream = crate::proxy::connect(&p, &session.host, session.port)
+                .await
+                .with_context(|| format!("proxy connect to {} failed", addr))?;
+            client::connect_stream(config, stream, handler)
+                .await
+                .with_context(|| format!("connect {} failed", addr))?
+        }
+        None => client::connect(config, addr.as_str(), handler)
+            .await
+            .with_context(|| format!("connect {} failed", addr))?,
+    };
 
     // --- Auth ----------------------------------------------------------
     let authed = match session.auth {

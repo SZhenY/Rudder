@@ -97,6 +97,10 @@ pub struct Session {
     pub password: Secret,
     #[serde(default)]
     pub private_key_path: String,
+    /// Optional outbound proxy, e.g. "socks5://127.0.0.1:1080" or
+    /// "http://user:pass@host:8080". Empty = use $ALL_PROXY, else direct.
+    #[serde(default)]
+    pub proxy: String,
     #[serde(default)]
     pub last_used: Option<String>,
 }
@@ -112,6 +116,7 @@ impl Session {
             auth: AuthMethod::Password,
             password: Secret::default(),
             private_key_path: String::new(),
+            proxy: String::new(),
             last_used: None,
         }
     }

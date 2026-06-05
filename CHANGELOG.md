@@ -7,6 +7,14 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### Added / 新增
 
+- **Proxy support for SSH / SFTP (#7).** Connections can tunnel through a
+  **SOCKS5** (`socks5://`) or **HTTP CONNECT** (`http://`) proxy, with optional
+  `user:pass@` credentials. Set it per session in the dialog, or leave it blank
+  to use the `$ALL_PROXY` environment variable; empty = direct.
+  **SSH / SFTP 代理支持 (#7)。** 连接可经 **SOCKS5**(`socks5://`)或
+  **HTTP CONNECT**(`http://`)代理(支持 `user:pass@` 认证)。会话对话框里按需
+  填写,留空则用 `$ALL_PROXY` 环境变量,再空则直连。
+
 - **Import hosts from `~/.ssh/config` (#1).** The "Import ~/.ssh/config" action
   (in the settings menu) parses the standard SSH config (`Host` / `HostName` /
   `User` / `Port` / `IdentityFile`, wildcard `Host *` blocks skipped) and adds

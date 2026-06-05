@@ -185,3 +185,9 @@ msgstr "Use 'New session' (top-right) to add your first server"
 
 msgid "Import ~/.ssh/config"
 msgstr "Import ~/.ssh/config"
+
+msgid "Proxy (optional)"
+msgstr "Proxy (optional)"
+
+msgid "Leave blank to use $ALL_PROXY or connect directly"
+msgstr "Leave blank to use $ALL_PROXY or connect directly"

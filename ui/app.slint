@@ -117,6 +117,7 @@ export component AppWindow inherits Window {
     in-out property <string> dialog-auth: "password";
     in-out property <string> dialog-password;
     in-out property <string> dialog-key-path;
+    in-out property <string> dialog-proxy;
 
     // --- Callbacks up to Rust ---------------------------------------------
     callback new-session-clicked();
@@ -702,6 +703,7 @@ export component AppWindow inherits Window {
         draft-auth <=> root.dialog-auth;
         draft-password <=> root.dialog-password;
         draft-key-path <=> root.dialog-key-path;
+        draft-proxy <=> root.dialog-proxy;
         submit(draft) => { root.session-dialog-submit(draft); }
         cancel => { root.session-dialog-cancel(); }
         pick-key-file => { root.session-dialog-pick-key(); }

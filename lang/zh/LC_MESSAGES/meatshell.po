@@ -185,3 +185,9 @@ msgstr "点击右上角 “新建会话” 添加你的第一台服务器"
 
 msgid "Import ~/.ssh/config"
 msgstr "导入 ~/.ssh/config"
+
+msgid "Proxy (optional)"
+msgstr "代理（可选）"
+
+msgid "Leave blank to use $ALL_PROXY or connect directly"
+msgstr "留空则用 $ALL_PROXY 环境变量，或直接连接"
