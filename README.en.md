@@ -20,6 +20,40 @@ the tens-of-MB range of a native binary.
   <em>Tabbed terminal (full-screen btop) + SFTP file browser + remote resource monitoring</em>
 </p>
 
+## Download & install
+
+Every `v*` tag triggers a GitHub Actions build that produces native binaries for
+**Windows / Linux / macOS**, published on the
+[Releases](https://github.com/jeff141/meatshell/releases) page.
+
+### Windows
+
+Download `meatshell-*-windows-x86_64.zip`, unzip, and run `meatshell.exe`.
+
+### Linux
+
+```bash
+tar -xzf meatshell-*-linux-x86_64.tar.gz
+cd meatshell-*-linux-x86_64
+./meatshell                                  # run it directly
+# Optional: install the app icon + launcher entry (shows the icon in the dock /
+# app list — no argument needed, it finds the binary next to the script)
+chmod +x install-linux.sh && ./install-linux.sh
+```
+
+> Requires glibc ≥ 2.35 (Ubuntu 22.04+ / Debian 12+). On Wayland you may need to
+> log out/in once after installing the icon.
+
+### macOS
+
+```bash
+tar -xzf meatshell-*-macos-*.tar.gz          # aarch64 = Apple Silicon, x86_64 = Intel
+xattr -dr com.apple.quarantine meatshell     # clear the "unsigned app" Gatekeeper flag
+./meatshell
+```
+
+> To build from source, see [Running](#running) below.
+
 ## Roadmap
 
 ### v0.1 (current)

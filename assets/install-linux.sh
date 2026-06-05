@@ -12,18 +12,31 @@
 #
 # Usage:
 #   ./install-linux.sh [/path/to/meatshell-binary]
-# If no path is given it defaults to ../target/release/meatshell relative to
-# this script.
+# You normally don't need an argument: when run from inside a release package
+# (the `meatshell` binary sits next to this script) it is picked up automatically.
+# In the source tree it falls back to ./target/release/meatshell.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BIN="${1:-$SCRIPT_DIR/../target/release/meatshell}"
+
+# Resolve the binary: explicit arg > sibling (release package) > source-tree build.
+if [ -n "${1:-}" ]; then
+    BIN="$1"
+elif [ -x "$SCRIPT_DIR/meatshell" ]; then
+    BIN="$SCRIPT_DIR/meatshell"
+else
+    BIN="$SCRIPT_DIR/../target/release/meatshell"
+fi
 BIN="$(readlink -f "$BIN" 2>/dev/null || echo "$BIN")"
 
+# Make sure the binary is executable (a downloaded tarball may have lost +x).
+[ -f "$BIN" ] && chmod +x "$BIN" 2>/dev/null || true
+
 if [ ! -x "$BIN" ]; then
-    echo "error: meatshell binary not found or not executable: $BIN" >&2
-    echo "build it first (cargo build --release) or pass the path as an argument." >&2
+    echo "error: meatshell binary not found: $BIN" >&2
+    echo "Run this script from the extracted release folder (it sits next to the" >&2
+    echo "'meatshell' binary), or pass the binary path as an argument." >&2
     exit 1
 fi
 
@@ -32,7 +45,11 @@ ICON_DIR="$HOME/.local/share/icons/hicolor/512x512/apps"
 APP_DIR="$HOME/.local/share/applications"
 
 mkdir -p "$ICON_DIR" "$APP_DIR"
-install -m644 "$ICON_SRC" "$ICON_DIR/meatshell.png"
+if [ -f "$ICON_SRC" ]; then
+    install -m644 "$ICON_SRC" "$ICON_DIR/meatshell.png"
+else
+    echo "warning: icon not found ($ICON_SRC); the desktop entry will use a generic icon" >&2
+fi
 
 cat > "$APP_DIR/meatshell.desktop" <<EOF
 [Desktop Entry]

@@ -7,21 +7,31 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### Added / 新增
 
-- **Import hosts from `~/.ssh/config` (#1).** A new "Import ~/.ssh/config"
-  button on the welcome page parses the standard SSH config (`Host` / `HostName`
-  / `User` / `Port` / `IdentityFile`, wildcard `Host *` blocks skipped) and adds
+- **Import hosts from `~/.ssh/config` (#1).** The "Import ~/.ssh/config" action
+  (in the settings menu) parses the standard SSH config (`Host` / `HostName` /
+  `User` / `Port` / `IdentityFile`, wildcard `Host *` blocks skipped) and adds
   each host as a session, skipping duplicates. Hosts with an `IdentityFile`
   default to key auth.
-  **从 `~/.ssh/config` 导入主机 (#1)。** 欢迎页新增「导入 ~/.ssh/config」按钮,
-  解析标准 SSH 配置(`Host` / `HostName` / `User` / `Port` / `IdentityFile`,
-  跳过 `Host *` 通配块),将每个主机加为会话并跳过重复;带 `IdentityFile` 的默认
-  使用密钥认证。
+  **从 `~/.ssh/config` 导入主机 (#1)。** 设置菜单里的「导入 ~/.ssh/config」解析
+  标准 SSH 配置(`Host` / `HostName` / `User` / `Port` / `IdentityFile`,跳过
+  `Host *` 通配块),将每个主机加为会话并跳过重复;带 `IdentityFile` 的默认用密钥。
+
+- **GitHub Actions release workflow** building native binaries for Windows /
+  Linux / macOS (arm64 + x86_64) on each `v*` tag.
+  **GitHub Actions 发布工作流**,每个 `v*` 标签自动构建 Windows / Linux /
+  macOS(arm64 + x86_64)三平台二进制。
 
 ### Fixed / 修复
 
 - The full-width `＋` before "New session" rendered as a tofu box in English;
   switched to an ASCII `+`.
   英文下「New session」前的全角 `＋` 显示为豆腐块,改用 ASCII `+`。
+
+- `install-linux.sh` now auto-detects the `meatshell` binary sitting next to it
+  in a release package, so it works with no arguments (it previously defaulted to
+  the source-tree `./target/release` path and failed for end users).
+  `install-linux.sh` 现在自动识别发布包里同目录的 `meatshell`,无需传参即可使用
+  (之前默认指向源码树的 `./target/release`,普通用户直接跑会报错)。
 
 ## [0.2.2] - 2026-06-05
 

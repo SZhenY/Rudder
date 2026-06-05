@@ -19,6 +19,37 @@ JVM 压到几十 MB 原生级别。
   <em>多标签页终端（btop 全屏渲染）+ 底部 SFTP 文件浏览 + 远端资源监控</em>
 </p>
 
+## 下载与安装
+
+每次打 `v*` 标签，GitHub Actions 会自动构建 **Windows / Linux / macOS** 三平台二进制，
+发布到 [Releases](https://github.com/jeff141/meatshell/releases) 页面。
+
+### Windows
+
+下载 `meatshell-*-windows-x86_64.zip`，解压后双击 `meatshell.exe`。
+
+### Linux
+
+```bash
+tar -xzf meatshell-*-linux-x86_64.tar.gz
+cd meatshell-*-linux-x86_64
+./meatshell                                  # 直接运行
+# 可选：装应用图标 + 启动器入口（Dock / 应用列表里显示图标，无需传参）
+chmod +x install-linux.sh && ./install-linux.sh
+```
+
+> 需要 glibc ≥ 2.35（Ubuntu 22.04+ / Debian 12+）。Wayland 下首次装完图标可能要注销重登一次。
+
+### macOS
+
+```bash
+tar -xzf meatshell-*-macos-*.tar.gz          # aarch64 = Apple 芯片，x86_64 = Intel
+xattr -dr com.apple.quarantine meatshell     # 去掉「未签名应用」的 Gatekeeper 拦截
+./meatshell
+```
+
+> 从源码构建见下方 [运行](#运行)。
+
 ## 路线图
 
 ### v0.1（当前）
