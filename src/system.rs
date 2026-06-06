@@ -124,6 +124,25 @@ impl SystemSampler {
     }
 }
 
+/// Human-readable memory size from MiB (e.g. `"1.5G/16G"`).
+pub fn format_mem_mib(used_mib: u64, total_mib: u64) -> String {
+    if total_mib >= 1024 {
+        let used_gib = used_mib as f64 / 1024.0;
+        let total_gib = total_mib as f64 / 1024.0;
+        // Drop decimals for large/round values to keep the string short (sidebar is narrow).
+        let fmt_gib = |g: f64| -> String {
+            if g >= 100.0 || g.fract() == 0.0 {
+                format!("{}", g as u64)
+            } else {
+                format!("{:.1}", g)
+            }
+        };
+        format!("{}G/{}G", fmt_gib(used_gib), fmt_gib(total_gib))
+    } else {
+        format!("{}/{}M", used_mib, total_mib)
+    }
+}
+
 /// Human-readable network throughput (e.g. `"1.2 MB/s"`).
 pub fn format_bytes_per_sec(bytes: u64) -> String {
     const UNITS: [&str; 4] = ["B/s", "KB/s", "MB/s", "GB/s"];
