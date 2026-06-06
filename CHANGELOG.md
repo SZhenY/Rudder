@@ -51,7 +51,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
   bottom (recent) rows stay visible. Two follow-ups: (1) the shrink now only
   scrolls off as many rows as needed to keep the cursor visible, so rapid
   up/down dragging on a not-yet-full screen no longer pushes the prompt into
-  scrollback and strands the cursor at the top; (2) drag-selection is now stored
+  scrollback and strands the cursor at the top (also reported as #24); (2) drag-selection is now stored
   in absolute scrollback coordinates, so selecting from the top of the history
   down through several screens copies every line instead of losing everything
   above the final window when the view auto-scrolls.
@@ -62,6 +62,18 @@ All notable changes are documented here. 本文件记录所有重要变更。
   跨多屏选择时能复制到每一行,而不是在视图自动滚动后丢掉最后一屏以上的内容。
 
 ### Security / 安全
+
+- **Sanitize remote file names before saving downloads (#26).** SFTP downloads
+  built the local path straight from the server-supplied name, so a malicious
+  server could use path separators, shell-special characters or a Windows
+  reserved device name (`CON`, `NUL`, `COM1`…) to write outside the chosen
+  folder or hit a device. Downloads now run the name through `sanitize_filename`
+  (already used by the open/edit flow), which also gained reserved-device-name
+  and leading-whitespace handling.
+  **保存下载前清洗远程文件名 (#26)。** SFTP 下载直接用服务器给的文件名拼本地路径,
+  恶意服务器可借路径分隔符、shell 特殊字符或 Windows 保留设备名(`CON`、`NUL`、
+  `COM1`…)写到目标目录之外或命中设备。现在下载会先经 `sanitize_filename`
+  (查看/编辑流程已在用)清洗,并新增了保留设备名与前导空白的处理。
 
 - **Stop logging raw keystroke bytes (#15).** Debug logs recorded the hex of SSH
   input, which could include passwords; now they record only the byte length.
