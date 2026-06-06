@@ -2130,25 +2130,34 @@ fn wire_key_input(
                 let new_rows = rows as u16;
                 // Shrinking the grid (e.g. dragging the SFTP panel up) makes
                 // vt100's set_size truncate rows from the BOTTOM — silently
-                // dropping the most recent output + prompt (#18).  Before
-                // shrinking, save the top rows that should scroll off into our
-                // scrollback, then scroll the screen up so vt100 keeps the
-                // BOTTOM rows visible (correct terminal semantics).  Skipped on
-                // the alternate screen (vim/btop own their full-screen buffer).
+                // dropping the most recent output + prompt (#18).  To keep the
+                // bottom (recent) rows we scroll the screen up first, but only
+                // by as much as is needed to keep the CURSOR on-screen: the rows
+                // *below* the cursor are unused blank space and can be truncated
+                // for free.  Scrolling by the full delta instead would push real
+                // content off the top into scrollback whenever the screen wasn't
+                // full — e.g. a fresh shell with a few prompt lines — leaving a
+                // blank grid with the cursor stranded at the top, and rapid
+                // up/down dragging would repeat that until the prompt was gone.
+                // Skipped on the alternate screen (vim/btop own their buffer).
                 if new_rows < old_rows && !buf.parser.screen().alternate_screen() {
-                    let delta = old_rows - new_rows;
-                    let saved: Vec<Line> = {
-                        let s = buf.parser.screen();
-                        (0..delta).map(|r| build_row(s, r, old_cols)).collect()
-                    };
-                    for line in saved {
-                        buf.history.push(line);
+                    let (cursor_row, _) = buf.parser.screen().cursor_position();
+                    // Rows that must scroll off the top to keep the cursor in view.
+                    let scroll = (cursor_row + 1).saturating_sub(new_rows);
+                    if scroll > 0 {
+                        let saved: Vec<Line> = {
+                            let s = buf.parser.screen();
+                            (0..scroll).map(|r| build_row(s, r, old_cols)).collect()
+                        };
+                        for line in saved {
+                            buf.history.push(line);
+                        }
+                        if buf.history.len() > MAX_HISTORY {
+                            let drop = buf.history.len() - MAX_HISTORY;
+                            buf.history.drain(0..drop);
+                        }
+                        buf.parser.process(format!("\x1b[{scroll}S").as_bytes());
                     }
-                    if buf.history.len() > MAX_HISTORY {
-                        let drop = buf.history.len() - MAX_HISTORY;
-                        buf.history.drain(0..drop);
-                    }
-                    buf.parser.process(format!("\x1b[{delta}S").as_bytes());
                 }
                 buf.parser.set_size(new_rows, cols as u16);
                 // The pre/post-resize screens differ in size+content; drop the
