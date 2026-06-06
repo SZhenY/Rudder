@@ -218,3 +218,15 @@ msgstr "Hardware"
 
 msgid "Software"
 msgstr "Software"
+
+msgid "Confirm delete"
+msgstr "Confirm delete"
+
+msgid "Delete this item? This cannot be undone."
+msgstr "Delete this item? This cannot be undone."
+
+msgid "Please confirm"
+msgstr "Please confirm"
+
+msgid "Confirm"
+msgstr "Confirm"

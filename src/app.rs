@@ -1770,7 +1770,9 @@ fn wire_sftp_callbacks(
         });
     }
 
-    // Context menu → 删除 a remote file.
+    // Context menu → 删除 a remote file. The irreversible-delete confirmation
+    // (#28) is handled by the in-app ConfirmDialog in the UI layer, so by the
+    // time this fires the user has already confirmed.
     {
         let sftp_handles = sftp_handles.clone();
         window.on_sftp_delete(move |tab_id: SharedString, path: SharedString| {

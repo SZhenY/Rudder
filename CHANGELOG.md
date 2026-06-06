@@ -7,6 +7,13 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### Added / 新增
 
+- **Confirmation prompt before deleting a remote file (#28).** SFTP delete is
+  irreversible (there is no trash), so the context-menu *Delete* now asks for
+  confirmation — showing the full path — before removing anything; a misclick
+  no longer silently destroys a file.
+  **删除远程文件前先确认 (#28)。** SFTP 删除不可撤销(没有回收站),右键菜单的
+  「删除」现在会先弹出确认框(显示完整路径)再执行,误点不会再悄悄删掉文件。
+
 - **Serial port sessions (#14, #17).** New session type for connecting to
   switches, routers and embedded devices over a serial console. Pick
   **Serial** in the session dialog and set the port (`COM3`, `/dev/ttyUSB0`),

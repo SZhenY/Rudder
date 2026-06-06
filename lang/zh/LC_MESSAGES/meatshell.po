@@ -218,3 +218,15 @@ msgstr "硬件"
 
 msgid "Software"
 msgstr "软件"
+
+msgid "Confirm delete"
+msgstr "确认删除"
+
+msgid "Delete this item? This cannot be undone."
+msgstr "确定删除此项？此操作不可撤销。"
+
+msgid "Please confirm"
+msgstr "请确认"
+
+msgid "Confirm"
+msgstr "确认"
