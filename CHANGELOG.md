@@ -28,8 +28,17 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 - **Stop logging raw keystroke bytes (#15).** Debug logs recorded the hex of SSH
   input, which could include passwords; now they record only the byte length.
+  A follow-up found two more leak sites in the key handler: `send_key` logged
+  the raw key string (`key={:?}`) at debug level, and the `[KEY_DIAG]` IME
+  diagnostic logged each Shift-typed key's code point at **info** level (no
+  `RUST_LOG` needed) — both could expose password characters. They now go
+  through a `redact_key` helper that reveals only C0/C1 control codes (what the
+  IME diagnostics actually need) and masks every printable character.
   **不再记录原始按键字节 (#15)。** debug 日志原本记录 SSH 输入的十六进制(可能含
-  密码),现在只记录字节长度。
+  密码),现在只记录字节长度。后续又发现按键处理里还有两处泄露:`send_key` 以
+  debug 级打印按键原文(`key={:?}`),`[KEY_DIAG]` IME 诊断更是以 **info 级**
+  (无需 `RUST_LOG`)打印每个带 Shift 按键的码位——都可能暴露密码字符。现在统一
+  经 `redact_key` 处理,只保留 C0/C1 控制码(IME 诊断真正需要的),可打印字符一律掩码。
 
 ## [0.2.3] - 2026-06-05
 

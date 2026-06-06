@@ -1833,20 +1833,22 @@ fn wire_key_input(
                     None => false,
                 }
             };
+            // Never log the raw key string — it can be a password character
+            // (#15). redact_key keeps control codes but masks printable text.
             tracing::debug!(
-                "send_key tab={} key={:?} ctrl={} alt={} shift={} app_cursor={}",
-                tab_id, key.as_str(), ctrl, alt, shift, app_cursor
+                "send_key tab={} key={} ctrl={} alt={} shift={} app_cursor={}",
+                tab_id, redact_key(key.as_str()), ctrl, alt, shift, app_cursor
             );
 
             // ── Shift / Backspace 诊断日志 (info 级, 无需 RUST_LOG=debug) ─────
             // 每个 Shift 相关事件都打印 key 的 Unicode 码位，方便对比
             // 左Shift / 右Shift 是否产生不同的 key 字符串。
             if shift || key.as_str() == "\u{0008}" {
-                let codepoints: Vec<String> = if key.as_str().is_empty() {
-                    vec!["(empty)".to_string()]
-                } else {
-                    key.as_str().chars().map(|c| format!("U+{:04X}", c as u32)).collect()
-                };
+                // INFO level (no RUST_LOG needed) — must not leak the key text.
+                // redact_key reveals only control code points (the IME markers
+                // this diagnostic cares about), masking any printable char that
+                // could be part of a Shift-typed password symbol (#15).
+                let codepoints = redact_key(key.as_str());
                 let elapsed_ms = last_shift_time
                     .lock()
                     .unwrap()
@@ -1854,7 +1856,7 @@ fn wire_key_input(
                     .unwrap_or_else(|| "never".to_string());
                 tracing::info!(
                     "[KEY_DIAG] key={} shift={} ctrl={} alt={} | last_shift={}",
-                    codepoints.join(","), shift, ctrl, alt, elapsed_ms
+                    codepoints, shift, ctrl, alt, elapsed_ms
                 );
             }
 
@@ -2380,6 +2382,33 @@ fn set_terminal_row(win: &AppWindow, tab_id: &str, mutator: impl Fn(&mut Termina
 /// Slint uses Unicode Private Use Area (`\u{F700}`…) for special keys.
 /// Regular printable characters and C0 control characters are passed as-is.
 ///
+/// Render a key string for diagnostic logs WITHOUT leaking its content (#15).
+///
+/// Any printable character could be a password character, so we never emit it.
+/// Only C0/C1 control code points (Backspace, Esc, the IME-injected 0x10/0x15
+/// markers, …) are revealed — those are exactly what the Shift/Backspace IME
+/// diagnostics need and are never password material. Printable characters are
+/// collapsed to a count, so the logs stay useful without exposing keystrokes.
+fn redact_key(key: &str) -> String {
+    if key.is_empty() {
+        return "(empty)".to_string();
+    }
+    let mut parts: Vec<String> = Vec::new();
+    let mut printable = 0usize;
+    for c in key.chars() {
+        let cp = c as u32;
+        if cp < 0x20 || (0x7f..=0x9f).contains(&cp) {
+            parts.push(format!("U+{cp:04X}"));
+        } else {
+            printable += 1;
+        }
+    }
+    if printable > 0 {
+        parts.push(format!("<{printable} printable redacted>"));
+    }
+    parts.join(",")
+}
+
 /// `app_cursor` mirrors the remote terminal's DECCKM mode (`\x1b[?1h/l`):
 /// when true the four arrow keys must use SS3 sequences (`\x1bOA`…) instead
 /// of the default CSI sequences (`\x1b[A`…).  Full-screen apps like nano and
