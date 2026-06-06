@@ -41,9 +41,18 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Dragging the SFTP panel up no longer clears terminal output (#18).** vt100's
   shrink truncated the grid from the bottom, dropping the most recent output;
   before shrinking we now save the top rows to scrollback and scroll so the
-  bottom (recent) rows stay visible.
+  bottom (recent) rows stay visible. Two follow-ups: (1) the shrink now only
+  scrolls off as many rows as needed to keep the cursor visible, so rapid
+  up/down dragging on a not-yet-full screen no longer pushes the prompt into
+  scrollback and strands the cursor at the top; (2) drag-selection is now stored
+  in absolute scrollback coordinates, so selecting from the top of the history
+  down through several screens copies every line instead of losing everything
+  above the final window when the view auto-scrolls.
   **上拉 SFTP 面板不再清空终端输出 (#18)。** vt100 缩小时从底部截断,丢掉最近输出;
-  现在缩小前把顶部行存入回滚区并滚动,使底部(最近)行保持可见。
+  现在缩小前把顶部行存入回滚区并滚动,使底部(最近)行保持可见。两处后续修复:
+  (1) 缩小时只滚走"保持光标可见所需"的行数,疯狂上下拖动未填满的屏幕时不再把
+  提示符推进回滚区、光标卡在顶部;(2) 拖选改用绝对回滚坐标存储,从历史顶部往下
+  跨多屏选择时能复制到每一行,而不是在视图自动滚动后丢掉最后一屏以上的内容。
 
 ### Security / 安全
 

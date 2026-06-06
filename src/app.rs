@@ -22,8 +22,15 @@ struct TermBuffer {
     parser: vt100::Parser,
     /// Active find query for this tab ("" = no search).
     find_query: String,
-    /// Drag selection (start_row, start_col, end_row, end_col) in grid cells.
-    sel: Option<(u16, u16, u16, u16)>,
+    /// Drag selection in ABSOLUTE scrollback coordinates: each endpoint is a
+    /// `(combined_row, col)` where `combined_row` indexes the virtual buffer of
+    /// `history` lines followed by the live screen rows.  Absolute (rather than
+    /// visible-window) coordinates keep the selection pinned to its content
+    /// while the view auto-scrolls during a drag, so a top-to-bottom selection
+    /// across more than one screen of scrollback copies every line (#18).
+    /// `anchor` = where the drag began, `focus` = the moving end.
+    sel_anchor: Option<(usize, u16)>,
+    sel_focus: Option<(usize, u16)>,
     /// Session scrollback: lines that have scrolled off the top (oldest first).
     history: Vec<Line>,
     /// Previous frame's grid lines, for scroll-off detection.
@@ -903,7 +910,8 @@ fn wire_session_callbacks(
                 TermBuffer {
                     parser: vt100::Parser::new(24, 80, 5000),
                     find_query: String::new(),
-                    sel: None,
+                    sel_anchor: None,
+                    sel_focus: None,
                     history: Vec::new(),
                     prev: Vec::new(),
                     view_offset: 0,
@@ -1138,66 +1146,6 @@ fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
     out
 }
 
-/// Order a selection so start ≤ end (by row, then column).
-fn norm_sel(sr: u16, sc: u16, er: u16, ec: u16) -> (u16, u16, u16, u16) {
-    if (sr, sc) <= (er, ec) {
-        (sr, sc, er, ec)
-    } else {
-        (er, ec, sr, sc)
-    }
-}
-
-/// Highlight rectangles for a linear (line-wrapping) selection.
-fn selection_rects(sr: u16, sc: u16, er: u16, ec: u16, cols: u16) -> Vec<TermMatch> {
-    let (sr, sc, er, ec) = norm_sel(sr, sc, er, ec);
-    let mut out = Vec::new();
-    if sr == er {
-        let lo = sc.min(ec);
-        let hi = sc.max(ec);
-        out.push(TermMatch { row: sr as i32, col: lo as i32, len: (hi - lo + 1) as i32 });
-    } else {
-        out.push(TermMatch { row: sr as i32, col: sc as i32, len: (cols - sc) as i32 });
-        for r in (sr + 1)..er {
-            out.push(TermMatch { row: r as i32, col: 0, len: cols as i32 });
-        }
-        out.push(TermMatch { row: er as i32, col: 0, len: (ec + 1) as i32 });
-    }
-    out
-}
-
-/// Extract the selected text from the displayed rows (trailing spaces trimmed).
-fn extract_selection(rows: &[String], sr: u16, sc: u16, er: u16, ec: u16) -> String {
-    let (sr, sc, er, ec) = norm_sel(sr, sc, er, ec);
-    let mut out = String::new();
-    for r in sr..=er {
-        let chars: Vec<char> = rows
-            .get(r as usize)
-            .map(|l| l.chars().collect())
-            .unwrap_or_default();
-        let (lo, hi) = if sr == er {
-            (sc.min(ec), sc.max(ec))
-        } else if r == sr {
-            (sc, u16::MAX)
-        } else if r == er {
-            (0, ec)
-        } else {
-            (0, u16::MAX)
-        };
-        let lo = (lo as usize).min(chars.len());
-        let hi = ((hi as usize).saturating_add(1)).min(chars.len()); // exclusive
-        let seg: String = if lo < hi {
-            chars[lo..hi].iter().collect()
-        } else {
-            String::new()
-        };
-        out.push_str(seg.trim_end());
-        if r != er {
-            out.push('\n');
-        }
-    }
-    out
-}
-
 /// Recompute spans + cursor + find/selection highlights for one tab from its
 /// current vt100 screen (respecting scrollback) and push them to the model.
 /// Used by scroll + selection callbacks (Output has its own equivalent inline).
@@ -1208,10 +1156,7 @@ fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
         let cols = buf.parser.screen().size().1;
         let b = buf.render(); // also refreshes buf.displayed_text
         let matches = compute_find_matches(&buf.displayed_text, &buf.find_query);
-        let sel = match buf.sel {
-            Some((sr, sc, er, ec)) => selection_rects(sr, sc, er, ec, cols),
-            None => Vec::new(),
-        };
+        let sel = buf.selection_rects_visible(cols);
         (b, matches, sel)
     };
     let (b, matches, sel) = data;
@@ -1416,10 +1361,7 @@ fn apply_session_event_to_window(
                     let cols = buf.parser.screen().size().1;
                     let b = buf.render(); // refreshes buf.displayed_text
                     let matches = compute_find_matches(&buf.displayed_text, &buf.find_query);
-                    let sel = match buf.sel {
-                        Some((sr, sc, er, ec)) => selection_rects(sr, sc, er, ec, cols),
-                        None => Vec::new(),
-                    };
+                    let sel = buf.selection_rects_visible(cols);
                     Some((b, matches, sel))
                 } else {
                     None
@@ -2178,11 +2120,11 @@ fn wire_key_input(
                     Some(buf) => {
                         // Copy the drag-selection when there is one, else the
                         // whole displayed screen.
-                        match buf.sel {
-                            Some((sr, sc, er, ec)) if (sr, sc) != (er, ec) => {
-                                extract_selection(&buf.displayed_text, sr, sc, er, ec)
-                            }
-                            _ => buf.displayed_text.join("\n"),
+                        let sel = buf.extract_selection_text();
+                        if sel.is_empty() {
+                            buf.displayed_text.join("\n")
+                        } else {
+                            sel
                         }
                     }
                     None => String::new(),
@@ -2240,7 +2182,8 @@ fn wire_key_input(
                 buf.history = Vec::new(); // recycle the session scrollback
                 buf.prev = Vec::new();
                 buf.view_offset = 0;
-                buf.sel = None;
+                buf.sel_anchor = None;
+                buf.sel_focus = None;
                 buf.displayed_text = Vec::new();
             }
             if let Some(win) = weak.upgrade() {
@@ -2320,7 +2263,10 @@ fn wire_key_input(
                 let (rows, cols) = buf.parser.screen().size();
                 let r = row.clamp(0, rows.saturating_sub(1) as i32) as u16;
                 let c = col.clamp(0, cols.saturating_sub(1) as i32) as u16;
-                buf.sel = Some((r, c, r, c));
+                // Anchor + focus in absolute scrollback coordinates.
+                let abs = buf.vis_to_abs(r);
+                buf.sel_anchor = Some((abs, c));
+                buf.sel_focus = Some((abs, c));
             }
             if let Some(win) = weak.upgrade() {
                 rebuild_tab_display(&win, &bufs_sel, &tid);
@@ -2338,8 +2284,9 @@ fn wire_key_input(
                 let (rows, cols) = buf.parser.screen().size();
                 let r = row.clamp(0, rows.saturating_sub(1) as i32) as u16;
                 let c = col.clamp(0, cols.saturating_sub(1) as i32) as u16;
-                if let Some((sr, sc, _, _)) = buf.sel {
-                    buf.sel = Some((sr, sc, r, c));
+                if buf.sel_anchor.is_some() {
+                    let abs = buf.vis_to_abs(r);
+                    buf.sel_focus = Some((abs, c));
                 }
             }
             if let Some(win) = weak.upgrade() {
@@ -2357,14 +2304,14 @@ fn wire_key_input(
             let text = {
                 let mut map = bufs_sel.lock().unwrap();
                 let Some(buf) = map.get_mut(&tid) else { return };
-                match buf.sel {
-                    Some((sr, sc, er, ec)) if (sr, sc) != (er, ec) => {
-                        Some(extract_selection(&buf.displayed_text, sr, sc, er, ec))
-                    }
-                    _ => {
-                        buf.sel = None; // treat as click → clear selection
-                        None
-                    }
+                let extracted = buf.extract_selection_text();
+                if extracted.is_empty() {
+                    // Zero-area selection (a plain click) → clear it.
+                    buf.sel_anchor = None;
+                    buf.sel_focus = None;
+                    None
+                } else {
+                    Some(extracted)
                 }
             };
             match text {
@@ -2382,10 +2329,10 @@ fn wire_key_input(
             }
         });
     }
-    // Auto-scroll while drag-selecting past the visible top/bottom edge.  We
-    // move the scrollback view by a couple of lines per tick and shift the
-    // selection anchor by the same amount so it stays pinned to its content
-    // while the end is parked at the edge row.
+    // Auto-scroll while drag-selecting past the visible top/bottom edge.  The
+    // anchor is in absolute coordinates so it stays pinned no matter how far the
+    // view moves; we only advance the scrollback view and re-point the focus at
+    // the absolute row now sitting on the edge the mouse is parked against.
     {
         let bufs_sel = bufs.clone();
         let weak = window.as_weak();
@@ -2398,32 +2345,36 @@ fn wire_key_input(
                 if buf.parser.screen().alternate_screen() {
                     return;
                 }
+                if buf.sel_anchor.is_none() {
+                    return;
+                }
                 let rows = buf.parser.screen().size().0;
                 let last = rows.saturating_sub(1);
                 let max_off = buf.history.len();
                 let step = 2usize;
-                let Some((sr, sc, _er, ec)) = buf.sel else { return };
-                if dir < 0 {
+                // Keep the focus column the user last dragged to.
+                let focus_col = buf.sel_focus.map(|f| f.1).unwrap_or(0);
+                let edge_vis = if dir < 0 {
                     // Mouse above the top → reveal older lines.
                     let new_off = (buf.view_offset + step).min(max_off);
-                    let delta = new_off - buf.view_offset;
-                    if delta == 0 {
+                    if new_off == buf.view_offset {
                         return; // already at the oldest line
                     }
                     buf.view_offset = new_off;
-                    let nsr = ((sr as usize) + delta).min(last as usize) as u16;
-                    buf.sel = Some((nsr, sc, 0, ec));
+                    0u16
                 } else if dir > 0 {
                     // Mouse below the bottom → move toward the live tail.
                     let new_off = buf.view_offset.saturating_sub(step);
-                    let delta = buf.view_offset - new_off;
-                    if delta == 0 {
+                    if new_off == buf.view_offset {
                         return; // already at the live bottom
                     }
                     buf.view_offset = new_off;
-                    let nsr = (sr as i32 - delta as i32).max(0) as u16;
-                    buf.sel = Some((nsr, sc, last, ec));
-                }
+                    last
+                } else {
+                    return;
+                };
+                let abs = buf.vis_to_abs(edge_vis);
+                buf.sel_focus = Some((abs, focus_col));
             }
             if let Some(win) = weak.upgrade() {
                 rebuild_tab_display(&win, &bufs_sel, &tid);
@@ -2753,6 +2704,136 @@ fn detect_scroll(prev: &[Line], curr: &[Line]) -> usize {
 }
 
 impl TermBuffer {
+    // ---- Absolute-coordinate selection helpers (#18 follow-up) -------------
+    //
+    // The "combined" buffer is `history` (oldest first) followed by the live
+    // screen rows.  A visible window of `rows` rows looks at a slice of it whose
+    // top index depends on whether we're at the live bottom or scrolled up.
+
+    /// Live screen rows plus the count of non-blank ones at the top.
+    fn live_rows(&self) -> (Vec<Line>, usize) {
+        let s = self.parser.screen();
+        let (rows, cols) = s.size();
+        let live: Vec<Line> = (0..rows).map(|r| build_row(s, r, cols)).collect();
+        let used = live
+            .iter()
+            .rposition(|(_, runs)| !runs.is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        (live, used)
+    }
+
+    /// Absolute combined-row index of the top visible row for the current view.
+    fn view_top_abs(&self, live_used: usize) -> usize {
+        let rows = self.parser.screen().size().0 as usize;
+        let hist_len = self.history.len();
+        if self.view_offset == 0 {
+            // Live view: visible row 0 is live screen row 0 = combined[hist_len].
+            hist_len
+        } else {
+            let combined_len = hist_len + live_used;
+            combined_len.saturating_sub(rows + self.view_offset)
+        }
+    }
+
+    /// Map a visible row (0..rows) to its absolute combined-row index.
+    fn vis_to_abs(&self, vis_row: u16) -> usize {
+        let (_, live_used) = self.live_rows();
+        self.view_top_abs(live_used) + vis_row as usize
+    }
+
+    /// Highlight rectangles for the current selection, clipped to the visible
+    /// window of the current view.
+    fn selection_rects_visible(&self, cols: u16) -> Vec<TermMatch> {
+        let (Some((ar, ac)), Some((fr, fc))) = (self.sel_anchor, self.sel_focus) else {
+            return Vec::new();
+        };
+        let (lo_r, lo_c, hi_r, hi_c) = if (ar, ac) <= (fr, fc) {
+            (ar, ac, fr, fc)
+        } else {
+            (fr, fc, ar, ac)
+        };
+        if (lo_r, lo_c) == (hi_r, hi_c) {
+            return Vec::new();
+        }
+        let (_, live_used) = self.live_rows();
+        let top = self.view_top_abs(live_used);
+        let rows = self.parser.screen().size().0;
+        let mut out = Vec::new();
+        for vis in 0..rows {
+            let abs = top + vis as usize;
+            if abs < lo_r || abs > hi_r {
+                continue;
+            }
+            let (c0, c1) = if abs == lo_r && abs == hi_r {
+                (lo_c.min(hi_c), lo_c.max(hi_c))
+            } else if abs == lo_r {
+                (lo_c, cols.saturating_sub(1))
+            } else if abs == hi_r {
+                (0, hi_c)
+            } else {
+                (0, cols.saturating_sub(1))
+            };
+            out.push(TermMatch {
+                row: vis as i32,
+                col: c0 as i32,
+                len: (c1.saturating_sub(c0) + 1) as i32,
+            });
+        }
+        out
+    }
+
+    /// Extract the selected text from the combined buffer (whole selection,
+    /// even the parts currently scrolled out of view).
+    fn extract_selection_text(&self) -> String {
+        let (Some((ar, ac)), Some((fr, fc))) = (self.sel_anchor, self.sel_focus) else {
+            return String::new();
+        };
+        let (lo_r, lo_c, hi_r, hi_c) = if (ar, ac) <= (fr, fc) {
+            (ar, ac, fr, fc)
+        } else {
+            (fr, fc, ar, ac)
+        };
+        let (live, live_used) = self.live_rows();
+        let hist_len = self.history.len();
+        let combined_len = hist_len + live_used;
+        // Clamp into real content so a focus parked on a blank row below the
+        // prompt doesn't emit trailing empty lines.
+        let hi_r = hi_r.min(combined_len.saturating_sub(1));
+        let mut out = String::new();
+        for r in lo_r..=hi_r {
+            let line: &str = if r < hist_len {
+                &self.history[r].0
+            } else if r - hist_len < live.len() {
+                &live[r - hist_len].0
+            } else {
+                ""
+            };
+            let chars: Vec<char> = line.chars().collect();
+            let (c0, c1) = if r == lo_r && r == hi_r {
+                (lo_c.min(hi_c), lo_c.max(hi_c))
+            } else if r == lo_r {
+                (lo_c, u16::MAX)
+            } else if r == hi_r {
+                (0, hi_c)
+            } else {
+                (0, u16::MAX)
+            };
+            let c0 = (c0 as usize).min(chars.len());
+            let c1 = ((c1 as usize).saturating_add(1)).min(chars.len());
+            let seg: String = if c0 < c1 {
+                chars[c0..c1].iter().collect()
+            } else {
+                String::new()
+            };
+            out.push_str(seg.trim_end());
+            if r != hi_r {
+                out.push('\n');
+            }
+        }
+        out
+    }
+
     /// Feed bytes to vt100 and capture scrolled-off lines into history.
     ///
     /// We detect scroll by diffing the screen before/after a `process`, which
@@ -3054,5 +3135,96 @@ fn parent_path(path: &str) -> String {
         Some(0) => "/".to_string(),
         Some(i) => trimmed[..i].to_string(),
         None => "/".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+
+    fn hist_line(s: &str) -> Line {
+        (s.to_string(), Vec::new())
+    }
+
+    /// A TermBuffer whose live screen (rows×cols) shows `live_lines`, with the
+    /// given `history` above it, viewed at `view_offset` (0 = live bottom).
+    fn make_buf(
+        rows: u16,
+        cols: u16,
+        history: &[&str],
+        live_lines: &[&str],
+        view_offset: usize,
+    ) -> TermBuffer {
+        let mut parser = vt100::Parser::new(rows, cols, 0);
+        parser.process(live_lines.join("\r\n").as_bytes());
+        TermBuffer {
+            parser,
+            find_query: String::new(),
+            sel_anchor: None,
+            sel_focus: None,
+            history: history.iter().map(|s| hist_line(s)).collect(),
+            prev: Vec::new(),
+            view_offset,
+            displayed_text: Vec::new(),
+            csi_state: CsiState::Normal,
+        }
+    }
+
+    #[test]
+    fn vis_to_abs_maps_live_and_scrolled_consistently() {
+        // history H0..H2 (3 lines), live LIVE0/LIVE1 → combined len 5.
+        let live = make_buf(5, 20, &["H0", "H1", "H2"], &["LIVE0", "LIVE1"], 0);
+        assert_eq!(live.vis_to_abs(0), 3, "live row 0 is first live line");
+        assert_eq!(live.vis_to_abs(1), 4);
+
+        // Scrolled to the very top (offset = history len).
+        let top = make_buf(5, 20, &["H0", "H1", "H2"], &["LIVE0", "LIVE1"], 3);
+        assert_eq!(top.vis_to_abs(0), 0, "top row 0 is oldest history line");
+        assert_eq!(top.vis_to_abs(2), 2);
+        assert_eq!(top.vis_to_abs(3), 3, "row 3 crosses into live content");
+    }
+
+    #[test]
+    fn extract_spans_history_and_live() {
+        let mut buf = make_buf(5, 20, &["HIST0", "HIST1", "HIST2"], &["LIVE0", "LIVE1"], 3);
+        buf.sel_anchor = Some((0, 0)); // top of history
+        buf.sel_focus = Some((4, 19)); // end of last live line
+        assert_eq!(
+            buf.extract_selection_text(),
+            "HIST0\nHIST1\nHIST2\nLIVE0\nLIVE1"
+        );
+    }
+
+    #[test]
+    fn extract_is_view_independent() {
+        // The same absolute selection copies identically whether the view is
+        // scrolled to the top or sitting at the live bottom — this is the whole
+        // point of the fix (a top-to-bottom selection survives auto-scrolling).
+        let sel = |off| {
+            let mut b = make_buf(5, 20, &["HIST0", "HIST1", "HIST2"], &["LIVE0", "LIVE1"], off);
+            b.sel_anchor = Some((0, 0));
+            b.sel_focus = Some((4, 19));
+            b.extract_selection_text()
+        };
+        assert_eq!(sel(3), sel(0));
+        assert_eq!(sel(3), "HIST0\nHIST1\nHIST2\nLIVE0\nLIVE1");
+    }
+
+    #[test]
+    fn highlight_clipped_to_current_view() {
+        // Scrolled to the top: a history selection is on-screen and highlighted.
+        let mut top = make_buf(5, 20, &["HIST0", "HIST1", "HIST2"], &["LIVE0", "LIVE1"], 3);
+        top.sel_anchor = Some((0, 2));
+        top.sel_focus = Some((2, 4));
+        let rects = top.selection_rects_visible(20);
+        assert_eq!(rects.len(), 3, "rows 0,1,2 (the 3 history lines) highlighted");
+        assert_eq!(rects[0].row, 0);
+        assert_eq!(rects[2].row, 2);
+
+        // At the live bottom the same history selection is scrolled off → none.
+        let mut live = make_buf(5, 20, &["HIST0", "HIST1", "HIST2"], &["LIVE0", "LIVE1"], 0);
+        live.sel_anchor = Some((0, 2));
+        live.sel_focus = Some((2, 4));
+        assert!(live.selection_rects_visible(20).is_empty());
     }
 }
