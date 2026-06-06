@@ -58,7 +58,7 @@ use i_slint_backend_winit::WinitWindowAccessor;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tokio::runtime::Runtime;
 
-use crate::config::{AuthMethod, ConfigStore, Secret, Session};
+use crate::config::{AuthMethod, ConfigStore, Secret, Session, SessionKind};
 use crate::i18n::t;
 use crate::sftp::{spawn_sftp, SftpHandle};
 use crate::ssh::{
@@ -584,6 +584,13 @@ fn wire_session_callbacks(
             w.set_dialog_password("".into());
             w.set_dialog_key_path("".into());
             w.set_dialog_proxy("".into());
+            w.set_dialog_kind("ssh".into());
+            w.set_dialog_serial_port("".into());
+            w.set_dialog_baud("115200".into());
+            w.set_dialog_data_bits("8".into());
+            w.set_dialog_stop_bits("1".into());
+            w.set_dialog_parity("none".into());
+            w.set_dialog_flow("none".into());
             w.set_dialog_editing(false);
             w.set_dialog_open(true);
         }
@@ -620,16 +627,13 @@ fn wire_session_callbacks(
                         AuthMethod::Key
                     };
                     s.upsert(Session {
-                        id: uuid::Uuid::new_v4().to_string(),
                         name: h.alias,
                         host: h.hostname,
                         port: h.port,
                         user: if h.user.is_empty() { "root".into() } else { h.user },
                         auth,
-                        password: Secret::default(),
                         private_key_path: h.identity_file,
-                        proxy: String::new(),
-                        last_used: None,
+                        ..Session::new_empty()
                     });
                     added += 1;
                 }
@@ -669,6 +673,13 @@ fn wire_session_callbacks(
                 w.set_dialog_password("".into());
                 w.set_dialog_key_path(session.private_key_path.clone().into());
                 w.set_dialog_proxy(session.proxy.clone().into());
+                w.set_dialog_kind(session.kind.as_str().into());
+                w.set_dialog_serial_port(session.serial_port.clone().into());
+                w.set_dialog_baud(session.baud_rate.to_string().into());
+                w.set_dialog_data_bits(session.data_bits.to_string().into());
+                w.set_dialog_stop_bits(session.stop_bits.to_string().into());
+                w.set_dialog_parity(session.parity.clone().into());
+                w.set_dialog_flow(session.flow_control.clone().into());
                 w.set_dialog_editing(true);
                 w.set_dialog_open(true);
             }
@@ -715,15 +726,33 @@ fn wire_session_callbacks(
             } else {
                 Secret::new(draft.password.to_string())
             };
+            let kind = crate::config::SessionKind::from_str(&draft.kind.to_string());
+            // Auto-name: serial → port label, otherwise user@host.
+            let auto_name = match kind {
+                crate::config::SessionKind::Serial => {
+                    format!("{} @{}", draft.serial_port, draft.baud_rate)
+                }
+                _ => format!("{}@{}", draft.user, draft.host),
+            };
+            // Telnet defaults to port 23, SSH to 22; serial ignores port.
+            let default_port = if kind == crate::config::SessionKind::Telnet {
+                23
+            } else {
+                22
+            };
             let new_session = Session {
                 id,
                 name: if draft.name.is_empty() {
-                    format!("{}@{}", draft.user, draft.host)
+                    auto_name
                 } else {
                     draft.name.to_string()
                 },
                 host: draft.host.to_string(),
-                port: if draft.port <= 0 { 22 } else { draft.port as u16 },
+                port: if draft.port <= 0 {
+                    default_port
+                } else {
+                    draft.port as u16
+                },
                 user: draft.user.to_string(),
                 auth: AuthMethod::from_str(&draft.auth.to_string()),
                 password,
@@ -731,6 +760,17 @@ fn wire_session_callbacks(
                 private_key_path: draft.private_key_path.to_string().replace('\\', "/"),
                 proxy: draft.proxy.to_string(),
                 last_used: None,
+                kind,
+                serial_port: draft.serial_port.to_string(),
+                baud_rate: if draft.baud_rate <= 0 {
+                    115_200
+                } else {
+                    draft.baud_rate as u32
+                },
+                data_bits: draft.data_bits as u8,
+                stop_bits: draft.stop_bits as u8,
+                parity: draft.parity.to_string(),
+                flow_control: draft.flow_control.to_string(),
             };
             {
                 let mut s = store.borrow_mut();
@@ -801,13 +841,24 @@ fn wire_session_callbacks(
             let tab_id = format!("term-{}", uuid::Uuid::new_v4());
             let tab_title = session.name.clone();
 
+            // Connection label shown in the sidebar / status line, per transport.
+            let conn_label = match session.kind {
+                SessionKind::Ssh => format!("{}@{}", session.user, session.host),
+                SessionKind::Serial => {
+                    format!("{} @{}", session.serial_port, session.baud_rate)
+                }
+                SessionKind::Telnet => format!("telnet {}:{}", session.host, session.port),
+            };
+            // Serial / Telnet have no SFTP side-channel.
+            let has_sftp = session.kind == SessionKind::Ssh;
+
             // Seed the per-tab status so the sidebar shows "连接中 host" the
             // moment this tab becomes active (the `changed active-tab-id`
             // handler fires refresh-sidebar right after set_active_tab_id below).
             tab_statuses.lock().unwrap().insert(
                 tab_id.clone(),
                 TabStatus {
-                    host: format!("{}@{}", session.user, session.host),
+                    host: conn_label.clone(),
                     state: 0,
                     ..Default::default()
                 },
@@ -834,8 +885,12 @@ fn wire_session_callbacks(
                 sftp_entries: ModelRc::from(
                     std::rc::Rc::new(VecModel::<SftpEntry>::default()),
                 ),
-                sftp_status: t("SFTP 连接中...", "SFTP connecting...").into(),
-                sftp_loading: true,
+                sftp_status: if has_sftp {
+                    t("SFTP 连接中...", "SFTP connecting...").into()
+                } else {
+                    t("此会话类型不支持 SFTP", "SFTP not available for this session").into()
+                },
+                sftp_loading: has_sftp,
                 sftp_tree_nodes: ModelRc::from(
                     std::rc::Rc::new(VecModel::<SftpTreeNode>::default()),
                 ),
@@ -869,33 +924,43 @@ fn wire_session_callbacks(
             // will fire again shortly and send an accurate window_change if
             // needed.
             let (initial_cols, initial_rows) = *last_term_size.lock().unwrap();
-            let (handle, rx) = spawn_session(
-                runtime.handle(),
-                tab_id.clone(),
-                session.clone(),
-                initial_cols,
-                initial_rows,
-            );
+            let (handle, rx) = match session.kind {
+                SessionKind::Ssh => spawn_session(
+                    runtime.handle(),
+                    tab_id.clone(),
+                    session.clone(),
+                    initial_cols,
+                    initial_rows,
+                ),
+                SessionKind::Serial => crate::serial::spawn_serial_session(
+                    runtime.handle(),
+                    tab_id.clone(),
+                    session.clone(),
+                ),
+                SessionKind::Telnet => crate::telnet::spawn_telnet_session(
+                    runtime.handle(),
+                    tab_id.clone(),
+                    session.clone(),
+                    initial_cols,
+                    initial_rows,
+                ),
+            };
             handles.borrow_mut().insert(tab_id.clone(), handle);
 
             // Spawn separate SFTP connection for the same session.
             // The SFTP worker pushes SessionEvent::SftpEntries / SftpStatus
             // back via the same receiver channel (rx) — no second receiver
             // needed because spawn_sftp accepts an UnboundedSender clone.
-            let sftp_evt_tx = {
-                // We need the sender half of the channel that rx drains from.
-                // spawn_session doesn't expose it, so we rebuild: spawn_sftp
-                // gets its own sender that injects events into the same stream
-                // by accepting a clone of the existing UnboundedSender.
-                // Actually we pass a *new* sender that was set up alongside rx.
-                // Re-examine: spawn_session returns (handle, rx) where rx came
-                // from mpsc::unbounded_channel inside spawn_session; we have no
-                // access to tx.  So create a second channel just for SFTP events
-                // and merge them in the pump thread below.
+            // Only SSH sessions get an SFTP side-channel; Serial / Telnet skip it.
+            let sftp_evt_tx = if has_sftp {
+                // spawn_session doesn't expose its event sender, so SFTP gets its
+                // own channel; the dedicated pump below merges its events in.
                 let (sftp_tx, sftp_rx) = tokio::sync::mpsc::unbounded_channel::<SessionEvent>();
                 let sftp_handle = spawn_sftp(runtime.handle(), session, sftp_tx);
                 sftp_handles.lock().unwrap().insert(tab_id.clone(), sftp_handle);
-                sftp_rx
+                Some(sftp_rx)
+            } else {
+                None
             };
 
             // --- Shell event pump (dedicated thread) ----------------------
@@ -966,8 +1031,8 @@ fn wire_session_callbacks(
             // --- SFTP event pump (separate thread) -------------------------
             // Never blocks on shell; dispatches SFTP events the moment they
             // arrive so tree/file-list updates are immediate even when the
-            // terminal is idle.
-            {
+            // terminal is idle.  Only present for SSH sessions.
+            if let Some(sftp_evt_tx) = sftp_evt_tx {
                 let weak_sftp = weak.clone();
                 let bufs_sftp = bufs.clone();
                 let tab_id_sftp = tab_id.clone();

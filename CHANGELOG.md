@@ -5,6 +5,27 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### Added / 新增
+
+- **Serial port sessions (#14, #17).** New session type for connecting to
+  switches, routers and embedded devices over a serial console. Pick
+  **Serial** in the session dialog and set the port (`COM3`, `/dev/ttyUSB0`),
+  baud rate, data/stop bits, parity and flow control. The serial line reuses
+  the full terminal pipeline (output, input, scrollback, copy/paste); SFTP and
+  the resource monitor are not applicable and are hidden.
+  **串口会话 (#14, #17)。** 新增串口会话类型,用于通过串口控制台连接交换机、
+  路由器和嵌入式设备。在会话对话框选择 **串口**,填写串口号(`COM3`、
+  `/dev/ttyUSB0`)、波特率、数据/停止位、校验位和流控。串口复用完整的终端管线
+  (输出、输入、回滚、复制粘贴);SFTP 和资源监控不适用,已隐藏。
+
+- **Telnet sessions (#17).** New session type for legacy gear that only speaks
+  Telnet. Handles RFC 854 option negotiation (suppress-go-ahead / echo /
+  window-size), strips IAC sequences from the stream, and tunnels through the
+  same SOCKS5 / HTTP proxy as SSH when configured.
+  **Telnet 会话 (#17)。** 新增 Telnet 会话类型,用于只支持 Telnet 的老旧设备。
+  处理 RFC 854 选项协商(抑制 Go-Ahead / 回显 / 窗口大小),从数据流中剥离 IAC
+  序列,并可经与 SSH 相同的 SOCKS5 / HTTP 代理隧道连接。
+
 ### Performance / 性能
 
 - **Pipelined SFTP upload (#16).** Uploads now keep ~32 WRITE requests in flight

@@ -41,6 +41,10 @@ zeroize = "1"
 # (HTTP CONNECT proxies are handled in src/proxy.rs without an extra crate.)
 tokio-socks = "0.5"
 base64 = "0.22"
+# Cross-platform serial port access for the Serial session type (#14, #17).
+# Opens COM3 / /dev/ttyUSB0 etc.; on Linux the default `libudev` feature is
+# used for port enumeration (CI installs libudev-dev).
+serialport = "4"
 
 [build-dependencies]
 slint-build = "1.8"

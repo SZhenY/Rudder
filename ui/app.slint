@@ -118,6 +118,13 @@ export component AppWindow inherits Window {
     in-out property <string> dialog-password;
     in-out property <string> dialog-key-path;
     in-out property <string> dialog-proxy;
+    in-out property <string> dialog-kind: "ssh";
+    in-out property <string> dialog-serial-port;
+    in-out property <string> dialog-baud: "115200";
+    in-out property <string> dialog-data-bits: "8";
+    in-out property <string> dialog-stop-bits: "1";
+    in-out property <string> dialog-parity: "none";
+    in-out property <string> dialog-flow: "none";
 
     // --- Callbacks up to Rust ---------------------------------------------
     callback new-session-clicked();
@@ -704,6 +711,13 @@ export component AppWindow inherits Window {
         draft-password <=> root.dialog-password;
         draft-key-path <=> root.dialog-key-path;
         draft-proxy <=> root.dialog-proxy;
+        draft-kind <=> root.dialog-kind;
+        draft-serial-port <=> root.dialog-serial-port;
+        draft-baud <=> root.dialog-baud;
+        draft-data-bits <=> root.dialog-data-bits;
+        draft-stop-bits <=> root.dialog-stop-bits;
+        draft-parity <=> root.dialog-parity;
+        draft-flow <=> root.dialog-flow;
         submit(draft) => { root.session-dialog-submit(draft); }
         cancel => { root.session-dialog-cancel(); }
         pick-key-file => { root.session-dialog-pick-key(); }
