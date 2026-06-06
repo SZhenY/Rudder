@@ -3,6 +3,34 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
+## [Unreleased]
+
+### Performance / 性能
+
+- **Pipelined SFTP upload (#16).** Uploads now keep ~32 WRITE requests in flight
+  on a dedicated SFTP channel instead of writing one chunk and waiting for each
+  ack, hiding the round-trip latency that made transfers ~15x slower than `scp`.
+  Out-of-order completion is safe (every chunk carries its absolute offset).
+  **SFTP 上传流水线化 (#16)。** 上传改为在专用 SFTP 通道上保持约 32 个 WRITE 请求
+  并发在途,而不是写一块等一块的 ack,消除了让传输比 `scp` 慢约 15 倍的往返延迟。
+  乱序完成也安全(每块都带绝对偏移)。
+
+### Fixed / 修复
+
+- **Dragging the SFTP panel up no longer clears terminal output (#18).** vt100's
+  shrink truncated the grid from the bottom, dropping the most recent output;
+  before shrinking we now save the top rows to scrollback and scroll so the
+  bottom (recent) rows stay visible.
+  **上拉 SFTP 面板不再清空终端输出 (#18)。** vt100 缩小时从底部截断,丢掉最近输出;
+  现在缩小前把顶部行存入回滚区并滚动,使底部(最近)行保持可见。
+
+### Security / 安全
+
+- **Stop logging raw keystroke bytes (#15).** Debug logs recorded the hex of SSH
+  input, which could include passwords; now they record only the byte length.
+  **不再记录原始按键字节 (#15)。** debug 日志原本记录 SSH 输入的十六进制(可能含
+  密码),现在只记录字节长度。
+
 ## [0.2.3] - 2026-06-05
 
 ### Added / 新增

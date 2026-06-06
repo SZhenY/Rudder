@@ -426,7 +426,9 @@ async fn run_session(
             cmd = commands.recv() => {
                 match cmd {
                     Some(SessionCommand::RawInput(bytes)) => {
-                        tracing::debug!("ssh channel.data bytes={:02x?}", bytes);
+                        // Only log the byte count — never the bytes themselves,
+                        // which are raw keystrokes and may contain passwords (#15).
+                        tracing::debug!("ssh channel.data len={} bytes", bytes.len());
                         if let Err(err) = channel.data(&bytes[..]).await {
                             let _ = events.send(SessionEvent::Closed(format!("{}: {err}", t("写入失败", "write failed"))));
                             break;

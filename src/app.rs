@@ -2011,9 +2011,11 @@ fn wire_key_input(
             }
 
             let bytes = key_to_pty_bytes(key.as_str(), ctrl, alt, app_cursor);
+            // Log only the length — never the keystroke bytes, which can be
+            // password characters (#15).
             tracing::debug!(
-                "send_key bytes={:02x?} handle_exists={}",
-                bytes,
+                "send_key len={} handle_exists={}",
+                bytes.len(),
                 handles.borrow().contains_key(tab_id.as_str()),
             );
             if !bytes.is_empty() {
@@ -2057,7 +2059,35 @@ fn wire_key_input(
                 handle.resize(cols, rows);
             }
             if let Some(buf) = bufs_resize.lock().unwrap().get_mut(tab_id.as_str()) {
-                buf.parser.set_size(rows as u16, cols as u16);
+                let (old_rows, old_cols) = buf.parser.screen().size();
+                let new_rows = rows as u16;
+                // Shrinking the grid (e.g. dragging the SFTP panel up) makes
+                // vt100's set_size truncate rows from the BOTTOM — silently
+                // dropping the most recent output + prompt (#18).  Before
+                // shrinking, save the top rows that should scroll off into our
+                // scrollback, then scroll the screen up so vt100 keeps the
+                // BOTTOM rows visible (correct terminal semantics).  Skipped on
+                // the alternate screen (vim/btop own their full-screen buffer).
+                if new_rows < old_rows && !buf.parser.screen().alternate_screen() {
+                    let delta = old_rows - new_rows;
+                    let saved: Vec<Line> = {
+                        let s = buf.parser.screen();
+                        (0..delta).map(|r| build_row(s, r, old_cols)).collect()
+                    };
+                    for line in saved {
+                        buf.history.push(line);
+                    }
+                    if buf.history.len() > MAX_HISTORY {
+                        let drop = buf.history.len() - MAX_HISTORY;
+                        buf.history.drain(0..drop);
+                    }
+                    buf.parser.process(format!("\x1b[{delta}S").as_bytes());
+                }
+                buf.parser.set_size(new_rows, cols as u16);
+                // The pre/post-resize screens differ in size+content; drop the
+                // scroll-detection snapshot so the next output isn't mis-read as
+                // a scroll (which would double-capture lines).
+                buf.prev.clear();
             }
         });
     }

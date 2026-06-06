@@ -21,7 +21,9 @@ use russh::client::{self, Handler};
 use russh::keys::key::PrivateKeyWithHashAlg;
 use russh::keys::load_secret_key;
 use russh::Disconnect;
-use russh_sftp::client::SftpSession;
+use russh_sftp::client::{RawSftpSession, SftpSession};
+use russh_sftp::protocol::{FileAttributes, OpenFlags};
+use futures::stream::{FuturesUnordered, StreamExt};
 use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
@@ -361,7 +363,7 @@ async fn run_sftp(
                 let remote_path = format!("{}/{}", remote_dir.trim_end_matches('/'), filename);
                 let id = Uuid::new_v4().to_string();
                 let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("上传", "Uploading"), filename)));
-                match upload_impl(&sftp, &local, &remote_path, &filename, &id, &events).await {
+                match upload_pipelined(&handle, &local, &remote_path, &filename, &id, &events).await {
                     Ok(_) => {
                         if let Ok(entries) = list_dir_impl(&sftp, &remote_dir).await {
                             let _ = events.send(SessionEvent::SftpEntries {
@@ -705,15 +707,28 @@ async fn download_impl(
     Ok(())
 }
 
-async fn upload_impl(
-    sftp: &SftpSession,
+/// Pipelined SFTP upload (#16).
+///
+/// The high-level `SftpSession`/`File` writes one chunk and waits for the
+/// server's ack before sending the next, so throughput is capped by the
+/// round-trip time (~15x slower than scp on a latent link).  Here we open a
+/// dedicated raw SFTP channel and keep many WRITE requests in flight at once
+/// (each tagged with its absolute offset, so out-of-order completion is fine),
+/// which hides the latency and brings us within a single order of magnitude of
+/// native scp.
+async fn upload_pipelined(
+    handle: &client::Handle<SftpClientHandler>,
     local: &str,
     remote: &str,
     name: &str,
     id: &str,
     events: &UnboundedSender<SessionEvent>,
 ) -> Result<()> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncReadExt;
+
+    const CHUNK: usize = 32 * 1024; // safe SFTP write size
+    const MAX_INFLIGHT: usize = 32; // ~1 MB of outstanding writes hides the RTT
+
     let total = tokio::fs::metadata(local)
         .await
         .map(|m| m.len())
@@ -721,31 +736,84 @@ async fn upload_impl(
     let mut local_file = tokio::fs::File::open(local)
         .await
         .with_context(|| format!("open local {local}"))?;
-    let mut remote_file = sftp
-        .create(remote)
+
+    // Dedicated raw SFTP channel for the transfer (keeps the browse session
+    // responsive and lets us issue concurrent WRITE requests).
+    let channel = handle
+        .channel_open_session()
         .await
-        .with_context(|| format!("create remote {remote}"))?;
+        .context("open sftp upload channel")?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .context("request sftp subsystem")?;
+    let raw = Arc::new(RawSftpSession::new(channel.into_stream()));
+    raw.init().await.context("sftp upload handshake")?;
+
+    let fhandle = raw
+        .open(
+            remote,
+            OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::TRUNCATE,
+            FileAttributes::default(),
+        )
+        .await
+        .with_context(|| format!("create remote {remote}"))?
+        .handle;
 
     emit_transfer(events, id, name, true, 0, total, 0, "");
-    let mut buf = vec![0u8; XFER_CHUNK];
+
+    let mut offset: u64 = 0;
     let mut done: u64 = 0;
     let mut last = Instant::now();
-    loop {
-        let n = local_file.read(&mut buf).await.context("read local file")?;
-        if n == 0 {
+    let mut eof = false;
+    let mut err: Option<anyhow::Error> = None;
+    let mut inflight = FuturesUnordered::new();
+
+    while !eof || !inflight.is_empty() {
+        // Top up the pipeline with fresh WRITE requests.
+        while !eof && inflight.len() < MAX_INFLIGHT {
+            let mut buf = vec![0u8; CHUNK];
+            match local_file.read(&mut buf).await {
+                Ok(0) => eof = true,
+                Ok(n) => {
+                    buf.truncate(n);
+                    let off = offset;
+                    offset += n as u64;
+                    let raw2 = raw.clone();
+                    let h = fhandle.clone();
+                    inflight.push(async move {
+                        raw2.write(h, off, buf).await.map(|_| n as u64)
+                    });
+                }
+                Err(e) => {
+                    err = Some(anyhow!("read local file: {e}"));
+                    eof = true;
+                }
+            }
+        }
+        match inflight.next().await {
+            Some(Ok(n)) => {
+                done += n;
+                if last.elapsed() >= Duration::from_millis(150) {
+                    last = Instant::now();
+                    emit_transfer(events, id, name, true, done, total, 0, "");
+                }
+            }
+            Some(Err(e)) => {
+                err = Some(anyhow!("write remote file: {e}"));
+                eof = true; // stop reading more
+            }
+            None => {}
+        }
+        if err.is_some() {
             break;
         }
-        remote_file
-            .write_all(&buf[..n])
-            .await
-            .context("write remote file")?;
-        done += n as u64;
-        if last.elapsed() >= Duration::from_millis(150) {
-            last = Instant::now();
-            emit_transfer(events, id, name, true, done, total, 0, "");
-        }
     }
-    remote_file.flush().await.context("flush remote file")?;
+
+    let _ = raw.close(fhandle).await;
+    if let Some(e) = err {
+        return Err(e);
+    }
     emit_transfer(events, id, name, true, done, total.max(done), 1, "");
     Ok(())
 }
