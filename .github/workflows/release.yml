@@ -128,8 +128,20 @@ jobs:
             VERSION_NUM="${VERSION#v}"
             sed "s/__VERSION__/${VERSION_NUM}/g" assets/Info.plist > "$CONTENTS/Info.plist"
 
-            # Standard macOS distribution: zip containing just the .app
-            zip -r "${STAGE}.zip" "$APP"
+            # Ad-hoc code-sign the assembled bundle.
+            # The release profile strips the binary (Cargo.toml: strip = "symbols"),
+            # which invalidates the linker's automatic ad-hoc signature — on Apple
+            # Silicon that makes the OS refuse to launch it ("app is damaged").
+            # Re-signing the whole bundle here restores a valid (ad-hoc) signature,
+            # turning the fatal "damaged" error into the normal "unidentified
+            # developer" prompt that users can bypass via Open Anyway / xattr.
+            codesign --force --deep --sign - "$APP"
+            codesign --verify --verbose "$APP"
+
+            # Package with ditto (Apple's tool) — it preserves the bundle's
+            # signature and metadata. Plain `zip` mangles them and re-breaks the
+            # signature, which would reintroduce the "damaged" error.
+            ditto -c -k --keepParent "$APP" "${STAGE}.zip"
             echo "ASSET=${STAGE}.zip" >> "$GITHUB_ENV"
 
           elif [ "${{ runner.os }}" = "Windows" ]; then
