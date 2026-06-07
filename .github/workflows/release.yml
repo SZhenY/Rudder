@@ -71,6 +71,7 @@ jobs:
 
       - name: Build AppImage
         if: matrix.name == 'linux-x86_64'
+        continue-on-error: true           # don't block the .tar.gz if AppImage fails
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"   # no FUSE needed in CI
         run: |
@@ -86,7 +87,8 @@ jobs:
           install -Dm644 assets/meatshell.desktop          AppDir/usr/share/applications/meatshell.desktop
           install -Dm644 assets/icon@512.png               AppDir/usr/share/icons/hicolor/512x512/apps/meatshell.png
 
-          ./linuxdeploy --appdir AppDir --plugin appimage --output appimage
+          # --output appimage already invokes the plugin; --plugin appimage is redundant and causes an error
+          ./linuxdeploy --appdir AppDir --output appimage
 
           mv meatshell*.AppImage "meatshell-${VERSION}-linux-x86_64.AppImage"
           echo "APPIMAGE=meatshell-${VERSION}-linux-x86_64.AppImage" >> "$GITHUB_ENV"
