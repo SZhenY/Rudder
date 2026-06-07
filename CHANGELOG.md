@@ -63,6 +63,20 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### Security / 安全
 
+- **Harden the remote resource monitor against a hostile server (#27).** The
+  monitor runs a small loop over an SSH exec channel. It now (1) resets `PATH`
+  to the standard system dirs so a server with a hijacked `PATH`/`BASH_ENV`
+  can't shadow `awk`/`cat`/`df`/`sleep`; (2) caps the reassembly buffer at 1 MiB
+  so a server that streams data without the sync marker can't exhaust memory;
+  and (3) parses `/proc` and `df` output with saturating arithmetic and a
+  64-row cap per sample, so crafted huge values or a flood of fake interfaces
+  can't overflow-panic or swamp the sidebar.
+  **加固远程资源监控以防恶意服务器 (#27)。** 监控通过 SSH exec 通道跑一个小循环。
+  现在:(1) 重置 `PATH` 为标准系统目录,使被劫持 `PATH`/`BASH_ENV` 的服务器无法
+  替换 `awk`/`cat`/`df`/`sleep`;(2) 重组缓冲上限 1 MiB,防止只发数据不发同步标记
+  的服务器耗尽内存;(3) 解析 `/proc` 与 `df` 输出改用饱和运算并对每次采样限 64 行,
+  使构造的超大数值或伪造网卡洪流无法触发溢出 panic 或拖垮侧栏。
+
 - **Sanitize remote file names before saving downloads (#26).** SFTP downloads
   built the local path straight from the server-supplied name, so a malicious
   server could use path separators, shell-special characters or a Windows
