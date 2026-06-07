@@ -21,7 +21,9 @@ use russh::client::{self, Handler};
 use russh::keys::key::PrivateKeyWithHashAlg;
 use russh::keys::load_secret_key;
 use russh::Disconnect;
-use russh_sftp::client::SftpSession;
+use russh_sftp::client::{RawSftpSession, SftpSession};
+use russh_sftp::protocol::{FileAttributes, OpenFlags};
+use futures::stream::{FuturesUnordered, StreamExt};
 use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
@@ -340,7 +342,11 @@ async fn run_sftp(
             }
 
             SftpCommand::Download { remote, local_dir } => {
-                let filename = base_name(&remote);
+                // Sanitize the server-supplied name before it touches the local
+                // filesystem (#26): a malicious server could otherwise craft a
+                // name with traversal, shell-special chars or a Windows reserved
+                // device name to write outside the chosen dir or hit a device.
+                let filename = sanitize_filename(&base_name(&remote));
                 let local_path = format!("{}/{}", local_dir.trim_end_matches('/'), filename);
                 let id = Uuid::new_v4().to_string();
                 let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("下载", "Downloading"), filename)));
@@ -361,7 +367,7 @@ async fn run_sftp(
                 let remote_path = format!("{}/{}", remote_dir.trim_end_matches('/'), filename);
                 let id = Uuid::new_v4().to_string();
                 let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("上传", "Uploading"), filename)));
-                match upload_impl(&sftp, &local, &remote_path, &filename, &id, &events).await {
+                match upload_pipelined(&handle, &local, &remote_path, &filename, &id, &events).await {
                     Ok(_) => {
                         if let Ok(entries) = list_dir_impl(&sftp, &remote_dir).await {
                             let _ = events.send(SessionEvent::SftpEntries {
@@ -514,11 +520,13 @@ fn open_with_os(path: &str) {
     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
 }
 
-/// Make a remote-supplied file name safe to use as a *local* temp file name:
-/// drops path separators (defence-in-depth against traversal) and replaces
-/// characters that are invalid on Windows or special to shells with `_`.
-/// Normal names (letters, digits, `.`, `-`, `_`, spaces, Unicode) pass through
-/// unchanged.  Falls back to `file` when nothing usable remains.
+/// Make a remote-supplied file name safe to use as a *local* file name (for
+/// both downloads and temp files): drops path separators (defence-in-depth
+/// against traversal), replaces characters invalid on Windows or special to
+/// shells with `_`, trims surrounding whitespace and Windows' trailing dots,
+/// and neutralises reserved device names (CON, NUL, COM1…).  Normal names
+/// (letters, digits, `.`, `-`, `_`, Unicode) pass through; Unix dotfiles keep
+/// their leading dot.  Falls back to `file` when nothing usable remains.
 fn sanitize_filename(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -529,10 +537,24 @@ fn sanitize_filename(name: &str) -> String {
             c => c,
         })
         .collect();
-    // Windows strips trailing dots/spaces; do it ourselves to avoid surprises.
-    let trimmed = cleaned.trim_end_matches([' ', '.']);
+    // Drop leading whitespace and trailing dots/spaces (Windows strips the
+    // latter silently). A leading dot is preserved so `.bashrc` survives.
+    let trimmed = cleaned.trim_start_matches(' ').trim_end_matches([' ', '.']);
     if trimmed.is_empty() {
-        "file".to_string()
+        return "file".to_string();
+    }
+    // Windows reserved device names are reserved case-insensitively and even
+    // with an extension ("CON.txt" still opens the console). A download named
+    // after one could read/write a device instead of a file, so prefix `_`.
+    let stem = trimmed.split('.').next().unwrap_or(trimmed);
+    let reserved = matches!(
+        stem.to_ascii_uppercase().as_str(),
+        "CON" | "PRN" | "AUX" | "NUL"
+            | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9"
+            | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9"
+    );
+    if reserved {
+        format!("_{trimmed}")
     } else {
         trimmed.to_string()
     }
@@ -705,15 +727,28 @@ async fn download_impl(
     Ok(())
 }
 
-async fn upload_impl(
-    sftp: &SftpSession,
+/// Pipelined SFTP upload (#16).
+///
+/// The high-level `SftpSession`/`File` writes one chunk and waits for the
+/// server's ack before sending the next, so throughput is capped by the
+/// round-trip time (~15x slower than scp on a latent link).  Here we open a
+/// dedicated raw SFTP channel and keep many WRITE requests in flight at once
+/// (each tagged with its absolute offset, so out-of-order completion is fine),
+/// which hides the latency and brings us within a single order of magnitude of
+/// native scp.
+async fn upload_pipelined(
+    handle: &client::Handle<SftpClientHandler>,
     local: &str,
     remote: &str,
     name: &str,
     id: &str,
     events: &UnboundedSender<SessionEvent>,
 ) -> Result<()> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncReadExt;
+
+    const CHUNK: usize = 32 * 1024; // safe SFTP write size
+    const MAX_INFLIGHT: usize = 32; // ~1 MB of outstanding writes hides the RTT
+
     let total = tokio::fs::metadata(local)
         .await
         .map(|m| m.len())
@@ -721,31 +756,84 @@ async fn upload_impl(
     let mut local_file = tokio::fs::File::open(local)
         .await
         .with_context(|| format!("open local {local}"))?;
-    let mut remote_file = sftp
-        .create(remote)
+
+    // Dedicated raw SFTP channel for the transfer (keeps the browse session
+    // responsive and lets us issue concurrent WRITE requests).
+    let channel = handle
+        .channel_open_session()
         .await
-        .with_context(|| format!("create remote {remote}"))?;
+        .context("open sftp upload channel")?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .context("request sftp subsystem")?;
+    let raw = Arc::new(RawSftpSession::new(channel.into_stream()));
+    raw.init().await.context("sftp upload handshake")?;
+
+    let fhandle = raw
+        .open(
+            remote,
+            OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::TRUNCATE,
+            FileAttributes::default(),
+        )
+        .await
+        .with_context(|| format!("create remote {remote}"))?
+        .handle;
 
     emit_transfer(events, id, name, true, 0, total, 0, "");
-    let mut buf = vec![0u8; XFER_CHUNK];
+
+    let mut offset: u64 = 0;
     let mut done: u64 = 0;
     let mut last = Instant::now();
-    loop {
-        let n = local_file.read(&mut buf).await.context("read local file")?;
-        if n == 0 {
+    let mut eof = false;
+    let mut err: Option<anyhow::Error> = None;
+    let mut inflight = FuturesUnordered::new();
+
+    while !eof || !inflight.is_empty() {
+        // Top up the pipeline with fresh WRITE requests.
+        while !eof && inflight.len() < MAX_INFLIGHT {
+            let mut buf = vec![0u8; CHUNK];
+            match local_file.read(&mut buf).await {
+                Ok(0) => eof = true,
+                Ok(n) => {
+                    buf.truncate(n);
+                    let off = offset;
+                    offset += n as u64;
+                    let raw2 = raw.clone();
+                    let h = fhandle.clone();
+                    inflight.push(async move {
+                        raw2.write(h, off, buf).await.map(|_| n as u64)
+                    });
+                }
+                Err(e) => {
+                    err = Some(anyhow!("read local file: {e}"));
+                    eof = true;
+                }
+            }
+        }
+        match inflight.next().await {
+            Some(Ok(n)) => {
+                done += n;
+                if last.elapsed() >= Duration::from_millis(150) {
+                    last = Instant::now();
+                    emit_transfer(events, id, name, true, done, total, 0, "");
+                }
+            }
+            Some(Err(e)) => {
+                err = Some(anyhow!("write remote file: {e}"));
+                eof = true; // stop reading more
+            }
+            None => {}
+        }
+        if err.is_some() {
             break;
         }
-        remote_file
-            .write_all(&buf[..n])
-            .await
-            .context("write remote file")?;
-        done += n as u64;
-        if last.elapsed() >= Duration::from_millis(150) {
-            last = Instant::now();
-            emit_transfer(events, id, name, true, done, total, 0, "");
-        }
     }
-    remote_file.flush().await.context("flush remote file")?;
+
+    let _ = raw.close(fhandle).await;
+    if let Some(e) = err {
+        return Err(e);
+    }
     emit_transfer(events, id, name, true, done, total.max(done), 1, "");
     Ok(())
 }
@@ -783,3 +871,63 @@ const _: fn() = || {
     let _ = format_mtime(0);
     let _: RemoteTreeNode;
 };
+
+#[cfg(test)]
+mod sanitize_tests {
+    use super::sanitize_filename;
+
+    #[test]
+    fn plain_names_pass_through() {
+        assert_eq!(sanitize_filename("report.txt"), "report.txt");
+        assert_eq!(sanitize_filename("my-file_v2.tar.gz"), "my-file_v2.tar.gz");
+        assert_eq!(sanitize_filename("数据.csv"), "数据.csv");
+        // Unix dotfiles keep their leading dot.
+        assert_eq!(sanitize_filename(".bashrc"), ".bashrc");
+    }
+
+    #[test]
+    fn strips_path_separators_and_traversal() {
+        // base_name already strips dirs, but sanitize is defence-in-depth: the
+        // result must never keep a separator that could escape the target dir.
+        assert_eq!(sanitize_filename("a/b\\c"), "a_b_c");
+        let traversal = sanitize_filename("../../etc/passwd");
+        assert!(!traversal.contains('/') && !traversal.contains('\\'));
+        let win = sanitize_filename("..\\..\\Windows\\System32");
+        assert!(!win.contains('/') && !win.contains('\\'));
+    }
+
+    #[test]
+    fn replaces_shell_and_windows_special_chars() {
+        assert_eq!(sanitize_filename("foo&calc.exe"), "foo_calc.exe");
+        assert_eq!(sanitize_filename("a|b>c<d:e?f*g"), "a_b_c_d_e_f_g");
+        assert_eq!(sanitize_filename("$(whoami)"), "_(whoami)");
+        assert_eq!(sanitize_filename("a`b'c"), "a_b_c");
+    }
+
+    #[test]
+    fn trims_whitespace_and_trailing_dots() {
+        assert_eq!(sanitize_filename("   spaced.txt  "), "spaced.txt");
+        assert_eq!(sanitize_filename("name..."), "name");
+        // control chars become underscores, not trimmed
+        assert_eq!(sanitize_filename("a\tb"), "a_b");
+    }
+
+    #[test]
+    fn neutralises_windows_reserved_device_names() {
+        assert_eq!(sanitize_filename("CON"), "_CON");
+        assert_eq!(sanitize_filename("nul"), "_nul");
+        assert_eq!(sanitize_filename("COM1"), "_COM1");
+        assert_eq!(sanitize_filename("LPT9.txt"), "_LPT9.txt"); // reserved even with ext
+        assert_eq!(sanitize_filename("Aux.log"), "_Aux.log");
+        // Not reserved: a name that merely starts with the same letters.
+        assert_eq!(sanitize_filename("console.txt"), "console.txt");
+        assert_eq!(sanitize_filename("COM10"), "COM10");
+    }
+
+    #[test]
+    fn empty_or_all_bad_falls_back() {
+        assert_eq!(sanitize_filename(""), "file");
+        assert_eq!(sanitize_filename("   "), "file");
+        assert_eq!(sanitize_filename("..."), "file");
+    }
+}
