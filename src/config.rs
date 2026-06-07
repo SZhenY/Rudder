@@ -227,6 +227,9 @@ pub struct ConfigFile {
     /// UI language code: "zh" (default) or "en".
     #[serde(default)]
     pub language: String,
+    /// Theme preference: "system" (default) | "dark" | "light".
+    #[serde(default)]
+    pub theme_pref: String,
 }
 
 pub struct ConfigStore {
@@ -415,6 +418,19 @@ impl ConfigStore {
 
     pub fn set_language(&mut self, lang: String) {
         self.cache.language = lang;
+    }
+
+    /// Theme preference: "system" (default) | "dark" | "light".
+    pub fn theme_pref(&self) -> &str {
+        if self.cache.theme_pref.is_empty() {
+            "system"
+        } else {
+            &self.cache.theme_pref
+        }
+    }
+
+    pub fn set_theme_pref(&mut self, pref: String) {
+        self.cache.theme_pref = pref;
     }
 
     pub fn save(&self) -> Result<()> {

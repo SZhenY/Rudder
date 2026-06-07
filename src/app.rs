@@ -22,6 +22,10 @@ struct TermBuffer {
     parser: vt100::Parser,
     /// Active find query for this tab ("" = no search).
     find_query: String,
+    /// Current theme mode — propagated from the global dark-mode toggle.
+    /// Stored here so the event-pump threads can render new output with the
+    /// correct palette without needing a window reference.
+    is_dark: bool,
     /// Drag selection in ABSOLUTE scrollback coordinates: each endpoint is a
     /// `(combined_row, col)` where `combined_row` indexes the virtual buffer of
     /// `history` lines followed by the live screen rows.  Absolute (rather than
@@ -186,6 +190,22 @@ pub fn run() -> Result<()> {
     crate::i18n::apply_to_slint();
     window.set_lang_en(crate::i18n::is_en());
 
+    // Apply the saved (or system-detected) theme.
+    // "dark" / "light" → use that directly; "system" or unset → ask the OS;
+    // OS unknown → fall back to dark.
+    {
+        let is_dark = match store.borrow().theme_pref() {
+            "light" => false,
+            "dark"  => true,
+            _       => match dark_light::detect() {
+                dark_light::Mode::Light   => false,
+                dark_light::Mode::Dark    => true,
+                dark_light::Mode::Default => true, // undetectable → dark
+            },
+        };
+        window.set_dark_mode(is_dark);
+    }
+
     let sessions_model: Rc<VecModel<SessionInfo>> = Rc::new(VecModel::default());
     window.set_sessions(ModelRc::from(sessions_model.clone()));
     sync_sessions_to_model(&store.borrow(), &sessions_model);
@@ -268,6 +288,39 @@ pub fn run() -> Result<()> {
                 w.set_lang_en(crate::i18n::is_en());
                 w.invoke_refresh_sidebar();
             }
+        });
+    }
+
+    // Theme toggle: flip dark ↔ light, persist the preference, and re-render
+    // every open terminal with the new ANSI palette so historical output is
+    // also recoloured (not just new output).
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let bufs_theme = bufs.clone();
+        window.on_toggle_theme(move || {
+            let Some(w) = weak.upgrade() else { return };
+            let next_dark = !w.get_dark_mode();
+            w.set_dark_mode(next_dark);
+            // Propagate new palette to all open terminal buffers.
+            {
+                let mut map = bufs_theme.lock().unwrap();
+                for buf in map.values_mut() {
+                    buf.is_dark = next_dark;
+                }
+            }
+            // Re-render every visible terminal so colours update immediately.
+            let tab_ids: Vec<String> = {
+                let map = bufs_theme.lock().unwrap();
+                map.keys().cloned().collect()
+            };
+            for tid in tab_ids {
+                rebuild_tab_display(&w, &bufs_theme, &tid);
+            }
+            let pref = if next_dark { "dark" } else { "light" };
+            let mut s = store.borrow_mut();
+            s.set_theme_pref(pref.to_string());
+            let _ = s.save();
         });
     }
 
@@ -938,11 +991,13 @@ fn wire_session_callbacks(
             // Create vt100 parser for this tab (default 24×80; resized on first
             // terminal-resize callback). 5000-line scrollback is stored for
             // future scroll-navigation support.
+            let is_dark_now = weak.upgrade().map(|w| w.get_dark_mode()).unwrap_or(true);
             bufs.lock().unwrap().insert(
                 tab_id.clone(),
                 TermBuffer {
                     parser: vt100::Parser::new(24, 80, 5000),
                     find_query: String::new(),
+                    is_dark: is_dark_now,
                     sel_anchor: None,
                     sel_focus: None,
                     history: Vec::new(),
@@ -2634,11 +2689,14 @@ struct BuiltScreen {
 }
 
 /// One coloured run within a line (its grid row is assigned at render time).
+/// Colours are stored as raw vt100::Color so the palette (dark vs. light)
+/// can be applied at render time rather than at history-capture time.
+/// This lets a theme switch retroactively recolour the entire scrollback.
 #[derive(Clone)]
 struct HistSpan {
     text: String,
-    fg: slint::Color,
-    bg: slint::Color,
+    fg: vt100::Color,
+    bg: vt100::Color,
     bold: bool,
     col: i32,
     cells: i32,
@@ -2709,8 +2767,8 @@ fn build_row(screen: &vt100::Screen, r: u16, cols: u16) -> Line {
         }
         runs.push(HistSpan {
             text,
-            fg: vt_color_to_slint(fg, bold),
-            bg: vt_bg_to_slint(bg),
+            fg, // raw vt100::Color — converted at render time with the live palette
+            bg,
             bold,
             col: start_col as i32,
             cells,
@@ -3016,8 +3074,8 @@ impl TermBuffer {
                 for hs in runs {
                     spans.push(TermSpan {
                         text: hs.text.into(),
-                        fg: hs.fg,
-                        bg: hs.bg,
+                        fg: vt_color_to_slint(hs.fg, hs.bold, self.is_dark),
+                        bg: vt_bg_to_slint(hs.bg, self.is_dark),
                         bold: hs.bold,
                         row: r as i32,
                         col: hs.col,
@@ -3064,8 +3122,8 @@ impl TermBuffer {
             for hs in &line.1 {
                 spans.push(TermSpan {
                     text: hs.text.clone().into(),
-                    fg: hs.fg,
-                    bg: hs.bg,
+                    fg: vt_color_to_slint(hs.fg, hs.bold, self.is_dark),
+                    bg: vt_bg_to_slint(hs.bg, self.is_dark),
                     bold: hs.bold,
                     row: d as i32,
                     col: hs.col,
@@ -3088,19 +3146,18 @@ impl TermBuffer {
     }
 }
 
-/// Standard 16-colour ANSI palette (VS Code "Dark+" values — reads well on the
-/// dark terminal background).
-const ANSI16: [(u8, u8, u8); 16] = [
-    (0x00, 0x00, 0x00), // 0 black
-    (0xcd, 0x31, 0x31), // 1 red
-    (0x0d, 0xbc, 0x79), // 2 green
-    (0xe5, 0xe5, 0x10), // 3 yellow
-    (0x24, 0x72, 0xc8), // 4 blue
-    (0xbc, 0x3f, 0xbc), // 5 magenta
-    (0x11, 0xa8, 0xcd), // 6 cyan
-    (0xe5, 0xe5, 0xe5), // 7 white
-    (0x66, 0x66, 0x66), // 8 bright black
-    (0xf1, 0x4c, 0x4c), // 9 bright red
+/// 16-colour ANSI palette for **dark** terminals (VS Code "Dark+" values).
+const ANSI16_DARK: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0  black
+    (0xcd, 0x31, 0x31), // 1  red
+    (0x0d, 0xbc, 0x79), // 2  green
+    (0xe5, 0xe5, 0x10), // 3  yellow
+    (0x24, 0x72, 0xc8), // 4  blue
+    (0xbc, 0x3f, 0xbc), // 5  magenta
+    (0x11, 0xa8, 0xcd), // 6  cyan
+    (0xe5, 0xe5, 0xe5), // 7  white        (light grey on dark bg)
+    (0x66, 0x66, 0x66), // 8  bright black
+    (0xf1, 0x4c, 0x4c), // 9  bright red
     (0x23, 0xd1, 0x8b), // 10 bright green
     (0xf5, 0xf5, 0x43), // 11 bright yellow
     (0x3b, 0x8e, 0xea), // 12 bright blue
@@ -3109,46 +3166,184 @@ const ANSI16: [(u8, u8, u8); 16] = [
     (0xff, 0xff, 0xff), // 15 bright white
 ];
 
-/// Convert a vt100 colour (+ bold) to a Slint colour.  Bold + a base colour
-/// (0–7) maps to the bright variant (8–15), matching how terminals render
-/// `ls --color` (e.g. bold-green executables, bold-blue directories).
-fn vt_color_to_slint(color: vt100::Color, bold: bool) -> slint::Color {
+/// 16-colour ANSI palette for **light** terminal **foreground** (text) use.
+///
+/// On a near-white (#fafafa) background, the standard "white" (slot 7) and
+/// "bright white" (slot 15) are nearly invisible.  We remap them to dark greys
+/// so `ls`, `git` and other tools that use colour 7 for regular text stay
+/// perfectly readable.  Saturated hues are darkened for contrast.
+const ANSI16_LIGHT: [(u8, u8, u8); 16] = [
+    (0x1c, 0x1c, 0x1e), // 0  black        → Apple near-black
+    (0xc0, 0x39, 0x2b), // 1  red
+    (0x1a, 0x7f, 0x37), // 2  green        → darker for white bg
+    (0x85, 0x64, 0x04), // 3  yellow       → dark amber, readable
+    (0x04, 0x51, 0xa5), // 4  blue         → VS Code light blue
+    (0x80, 0x00, 0x80), // 5  magenta
+    (0x0e, 0x72, 0x5c), // 6  cyan         → darker teal
+    (0x3a, 0x3a, 0x3c), // 7  white        → dark grey (was 0xe5e5e5, near-invisible)
+    (0x55, 0x55, 0x55), // 8  bright black
+    (0xe7, 0x4c, 0x3c), // 9  bright red
+    (0x27, 0xae, 0x60), // 10 bright green
+    (0xd4, 0xac, 0x0d), // 11 bright yellow
+    (0x2e, 0x86, 0xc1), // 12 bright blue
+    (0x9b, 0x59, 0xb6), // 13 bright magenta
+    (0x1a, 0xbc, 0x9c), // 14 bright cyan
+    (0x2c, 0x2c, 0x2e), // 15 bright white → dark (was 0xffffff, near-invisible)
+];
+
+/// 16-colour ANSI palette for **light** terminal **background** (fill) use.
+///
+/// When TUI programs (btop, htop, vim) paint cell backgrounds in light mode,
+/// each colour maps to a light-tinted variant so the overall UI feels light.
+/// "Black" (slot 0) becomes a very light grey rather than near-black, so
+/// dark-background TUI apps naturally inherit a light appearance.  Foreground
+/// text always uses `ANSI16_LIGHT` so readability is unaffected.
+const ANSI16_LIGHT_BG: [(u8, u8, u8); 16] = [
+    (0xe8, 0xe8, 0xed), // 0  black        → Apple system-grey-6 (very light)
+    (0xff, 0xd5, 0xd5), // 1  red          → light rose
+    (0xd5, 0xf5, 0xd5), // 2  green        → light mint
+    (0xff, 0xf8, 0xd5), // 3  yellow       → light cream
+    (0xd5, 0xe8, 0xf8), // 4  blue         → light sky
+    (0xf5, 0xd5, 0xf5), // 5  magenta      → light lilac
+    (0xd5, 0xf5, 0xf8), // 6  cyan         → light aqua
+    (0xf5, 0xf5, 0xf7), // 7  white        → Apple bg (near-white)
+    (0xd1, 0xd1, 0xd6), // 8  bright black → Apple system-grey-4
+    (0xff, 0xbe, 0xbe), // 9  bright red   → light salmon
+    (0xbe, 0xf5, 0xbe), // 10 bright green
+    (0xf5, 0xf5, 0xbe), // 11 bright yellow
+    (0xbe, 0xdd, 0xff), // 12 bright blue  → light periwinkle
+    (0xf0, 0xbe, 0xff), // 13 bright magenta → light violet
+    (0xbe, 0xf5, 0xff), // 14 bright cyan
+    (0xff, 0xff, 0xff), // 15 bright white → white
+];
+
+/// Convert a vt100 foreground colour (+ bold) to a Slint colour.
+/// Bold + a base colour (0–7) maps to the bright variant (8–15), matching
+/// how terminals render `ls --color` (bold-green executables, bold-blue dirs).
+///
+/// In light mode, true-colour RGB foregrounds that are light (HSL lightness
+/// ≥ 0.55) are darkened so they remain readable on a near-white background.
+fn vt_color_to_slint(color: vt100::Color, bold: bool, is_dark: bool) -> slint::Color {
     let (r, g, b) = match color {
-        vt100::Color::Default => (0xd4, 0xd4, 0xd4), // Theme.term-fg
-        vt100::Color::Idx(i) => idx_to_rgb(i, bold),
-        vt100::Color::Rgb(r, g, b) => (r, g, b),
+        vt100::Color::Default => {
+            if is_dark { (0xd4, 0xd4, 0xd4) } else { (0x2d, 0x2d, 0x2f) }
+        }
+        vt100::Color::Idx(i) => idx_to_rgb(i, bold, is_dark),
+        vt100::Color::Rgb(r, g, b) => {
+            if is_dark { (r, g, b) } else { darken_light_fg(r, g, b) }
+        }
     };
     slint::Color::from_rgb_u8(r, g, b)
 }
 
-/// Convert a vt100 *background* colour to Slint.  The default background maps to
-/// fully transparent so we don't paint a fill over the terminal's own bg (and
-/// can cheaply skip drawing it).  Non-default backgrounds (btop/htop bars,
-/// selected rows, meter fills) become opaque colours.
-fn vt_bg_to_slint(color: vt100::Color) -> slint::Color {
+/// In light mode, remap light true-colour foregrounds to dark so they are
+/// readable on a near-white background.  Colours already dark (L < 0.55)
+/// pass through unchanged.
+fn darken_light_fg(r: u8, g: u8, b: u8) -> (u8, u8, u8) {
+    let (h, s, l) = rgb_to_hsl(r, g, b);
+    if l < 0.55 {
+        return (r, g, b);
+    }
+    // L=0.55 → 0.40 (readable dark grey), L=1.0 (white) → ~0.15 (near-black).
+    let new_l = (0.40 - (l - 0.55) * 0.56).max(0.10);
+    hsl_to_rgb(h, s, new_l)
+}
+
+/// Convert a vt100 *background* colour to Slint.  The default background maps
+/// to fully transparent so we don't paint a fill over the terminal's own bg.
+/// Non-default backgrounds (btop/htop bars, selected rows) become opaque.
+///
+/// In light mode:
+/// - ANSI 16 colours use `ANSI16_LIGHT_BG` (light pastels).
+/// - True-colour RGB backgrounds that are dark (HSL lightness < 0.45) are
+///   remapped to light pastels so programs like btop feel light-themed.
+fn vt_bg_to_slint(color: vt100::Color, is_dark: bool) -> slint::Color {
     match color {
         vt100::Color::Default => slint::Color::from_argb_u8(0, 0, 0, 0), // transparent
         vt100::Color::Idx(i) => {
-            let (r, g, b) = idx_to_rgb(i, false);
+            let (r, g, b) = idx_to_rgb_bg(i, is_dark);
             slint::Color::from_rgb_u8(r, g, b)
         }
-        vt100::Color::Rgb(r, g, b) => slint::Color::from_rgb_u8(r, g, b),
+        vt100::Color::Rgb(r, g, b) => {
+            if is_dark {
+                slint::Color::from_rgb_u8(r, g, b)
+            } else {
+                let (nr, ng, nb) = lighten_dark_bg(r, g, b);
+                slint::Color::from_rgb_u8(nr, ng, nb)
+            }
+        }
     }
 }
 
+/// In light mode, remap dark true-colour backgrounds to light pastels.
+/// Colours whose HSL lightness is already ≥ 0.45 pass through unchanged
+/// (the program chose a light colour deliberately).
+fn lighten_dark_bg(r: u8, g: u8, b: u8) -> (u8, u8, u8) {
+    let (h, s, l) = rgb_to_hsl(r, g, b);
+    if l >= 0.45 {
+        return (r, g, b);
+    }
+    // Remap: darkest (l≈0) → very light (l≈0.92); l=0.45 → l≈0.84.
+    // Reduce saturation to pastel so colours don't look garish on white.
+    let new_l = 0.92 - l * 0.18;
+    let new_s = (s * 0.35).min(0.25);
+    hsl_to_rgb(h, new_s, new_l)
+}
+
+fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
+    let r = r as f32 / 255.0;
+    let g = g as f32 / 255.0;
+    let b = b as f32 / 255.0;
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+    if (max - min).abs() < 1e-6 {
+        return (0.0, 0.0, l);
+    }
+    let d = max - min;
+    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let h = if (max - r).abs() < 1e-6 {
+        (g - b) / d + if g < b { 6.0 } else { 0.0 }
+    } else if (max - g).abs() < 1e-6 {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    } / 6.0;
+    (h, s, l)
+}
+
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
+    if s < 1e-6 {
+        let v = (l * 255.0).round() as u8;
+        return (v, v, v);
+    }
+    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let p = 2.0 * l - q;
+    let hue = |mut t: f32| -> f32 {
+        if t < 0.0 { t += 1.0; }
+        if t > 1.0 { t -= 1.0; }
+        if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
+        if t < 0.5 { return q; }
+        if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+        p
+    };
+    (
+        (hue(h + 1.0 / 3.0) * 255.0).round() as u8,
+        (hue(h) * 255.0).round() as u8,
+        (hue(h - 1.0 / 3.0) * 255.0).round() as u8,
+    )
+}
+
 /// Map an xterm-256 palette index to RGB (16 ANSI + 6×6×6 cube + grayscale).
-fn idx_to_rgb(i: u8, bold: bool) -> (u8, u8, u8) {
+fn idx_to_rgb(i: u8, bold: bool, is_dark: bool) -> (u8, u8, u8) {
     let i = if bold && i < 8 { i + 8 } else { i };
+    let palette = if is_dark { &ANSI16_DARK } else { &ANSI16_LIGHT };
     match i {
-        0..=15 => ANSI16[i as usize],
+        0..=15 => palette[i as usize],
         16..=231 => {
             let n = i - 16;
             let to = |v: u8| -> u8 {
-                if v == 0 {
-                    0
-                } else {
-                    55 + v * 40
-                }
+                if v == 0 { 0 } else { 55 + v * 40 }
             };
             (to(n / 36), to((n % 36) / 6), to(n % 6))
         }
@@ -3157,6 +3352,16 @@ fn idx_to_rgb(i: u8, bold: bool) -> (u8, u8, u8) {
             (v, v, v)
         }
     }
+}
+
+/// Same as [`idx_to_rgb`] but for **background** fills in light mode: the 16
+/// ANSI base colours use `ANSI16_LIGHT_BG` (light pastels) so TUI program
+/// backgrounds feel light.  256-colour cube / grayscale are used as-is.
+fn idx_to_rgb_bg(i: u8, is_dark: bool) -> (u8, u8, u8) {
+    if !is_dark && i < 16 {
+        return ANSI16_LIGHT_BG[i as usize];
+    }
+    idx_to_rgb(i, false, is_dark)
 }
 
 /// Return the parent directory of `path`.
@@ -3195,6 +3400,7 @@ mod selection_tests {
         TermBuffer {
             parser,
             find_query: String::new(),
+            is_dark: false,
             sel_anchor: None,
             sel_focus: None,
             history: history.iter().map(|s| hist_line(s)).collect(),

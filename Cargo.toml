@@ -1,6 +1,6 @@
 [package]
 name = "meatshell"
-version = "0.2.3"
+version = "0.2.5"
 edition = "2021"
 authors = ["meatshell contributors"]
 description = "A lightweight FinalShell-style SSH/terminal client written in Rust + Slint"
@@ -48,6 +48,9 @@ serialport = "4"
 # ChaCha20-Poly1305 AEAD for encrypting passwords at rest in sessions.json.
 # rand (OsRng) and base64 are already pulled in by other deps above.
 chacha20poly1305 = "0.10"
+# Detect whether the OS is running in dark or light mode.
+# Used on startup to honour the system preference before the user overrides it.
+dark-light = "1"
 
 # Decode the embedded PNG icon to set the window icon at runtime (Linux only).
 # On Windows the icon comes from the .ico embedded by winresource at link time;
