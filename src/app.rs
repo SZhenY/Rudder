@@ -109,6 +109,32 @@ slint::include_modules!();
 /// Number of samples kept for the sparkline.
 const NET_HISTORY_LEN: usize = 60;
 
+/// Embed the app icon PNG into the binary and hand it to the Slint window.
+///
+/// On Linux the dock/taskbar icon comes from the XDG icon theme, which only
+/// works when a `.desktop` file + icon are installed system-wide.  When the
+/// app runs as a bare AppImage (or from a plain directory without running
+/// install-linux.sh) there is no installed icon, so the dock falls back to
+/// a generic gear.  Setting the icon programmatically here covers that case
+/// for both X11 and Wayland without any external installation step.
+///
+/// Windows gets its icon from the `.ico` embedded by winresource at link
+/// time; macOS from the app bundle — neither path needs runtime decoding.
+#[cfg(target_os = "linux")]
+fn set_window_icon(window: &AppWindow) {
+    const ICON_PNG: &[u8] = include_bytes!("../assets/icon@512.png");
+    if let Ok(img) = image::load_from_memory(ICON_PNG) {
+        let rgba = img.into_rgba8();
+        let (w, h) = rgba.dimensions();
+        let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+            rgba.as_raw(),
+            w,
+            h,
+        );
+        window.window().set_window_icon(Some(slint::Image::from_rgba8(buf)));
+    }
+}
+
 pub fn run() -> Result<()> {
     // --- Runtime + store -------------------------------------------------
     let runtime = Arc::new(
@@ -145,6 +171,12 @@ pub fn run() -> Result<()> {
     // Windows the icon comes from the embedded .ico, so this is a no-op there.)
     let _ = slint::set_xdg_app_id("meatshell");
     let window = AppWindow::new().context("failed to build Slint window")?;
+
+    // Set the window icon from the PNG embedded in the binary so the dock
+    // shows the correct icon even without a system-installed .desktop entry
+    // (e.g. AppImage without AppImageLauncher, or plain binary in ~/bin).
+    #[cfg(target_os = "linux")]
+    set_window_icon(&window);
 
     // Apply the saved UI language.  The Rust-side flag drives `i18n::t(...)`;
     // `apply_to_slint` selects the bundled `.po` for the static `@tr(...)` text

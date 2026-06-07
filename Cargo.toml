@@ -46,6 +46,12 @@ base64 = "0.22"
 # used for port enumeration (CI installs libudev-dev).
 serialport = "4"
 
+# Decode the embedded PNG icon to set the window icon at runtime (Linux only).
+# On Windows the icon comes from the .ico embedded by winresource at link time;
+# on macOS it comes from the app bundle — neither needs runtime decoding.
+[target.'cfg(target_os = "linux")'.dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+
 [build-dependencies]
 slint-build = "1.8"
 
