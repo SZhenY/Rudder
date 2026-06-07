@@ -17,18 +17,35 @@ use base64::Engine as _;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+use crate::config::Secret;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum ProxyKind {
     Socks5,
     Http,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ProxyConfig {
     kind: ProxyKind,
     host: String,
     port: u16,
-    auth: Option<(String, String)>, // (user, password)
+    // (user, password). The password is wrapped in `Secret` so it is zeroed on
+    // drop and never printed; see the manual `Debug` below for the user part.
+    auth: Option<(String, Secret)>,
+}
+
+// Manual `Debug` so proxy credentials can never leak via `{:?}` / tracing
+// (issue #32). Host/port/kind stay visible for diagnostics; auth is redacted.
+impl std::fmt::Debug for ProxyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProxyConfig")
+            .field("kind", &self.kind)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("auth", &self.auth.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
 }
 
 /// Resolve the proxy for a session: the explicit `session_proxy` string if set,
@@ -61,7 +78,7 @@ fn parse(url: &str) -> Option<ProxyConfig> {
     let (auth, hostport) = match rest.rsplit_once('@') {
         Some((userinfo, hp)) => {
             let (u, p) = userinfo.split_once(':').unwrap_or((userinfo, ""));
-            (Some((u.to_string(), p.to_string())), hp)
+            (Some((u.to_string(), Secret::new(p))), hp)
         }
         None => (None, rest),
     };
@@ -101,7 +118,7 @@ async fn connect_socks5(cfg: &ProxyConfig, host: &str, port: u16) -> Result<TcpS
     let proxy = (cfg.host.as_str(), cfg.port);
     let target = (host, port);
     let stream = match &cfg.auth {
-        Some((u, p)) => Socks5Stream::connect_with_password(proxy, target, u, p)
+        Some((u, p)) => Socks5Stream::connect_with_password(proxy, target, u, p.as_str())
             .await
             .context("SOCKS5 proxy connect failed")?,
         None => Socks5Stream::connect(proxy, target)
@@ -119,7 +136,8 @@ async fn connect_http(cfg: &ProxyConfig, host: &str, port: u16) -> Result<TcpStr
 
     let mut req = format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n");
     if let Some((u, p)) = &cfg.auth {
-        let token = base64::engine::general_purpose::STANDARD.encode(format!("{u}:{p}"));
+        let token =
+            base64::engine::general_purpose::STANDARD.encode(format!("{u}:{}", p.as_str()));
         req.push_str(&format!("Proxy-Authorization: Basic {token}\r\n"));
     }
     req.push_str("Proxy-Connection: keep-alive\r\n\r\n");

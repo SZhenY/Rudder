@@ -70,6 +70,34 @@ fn is_concrete(pattern: &str) -> bool {
     !pattern.is_empty() && !pattern.contains(['*', '?', '!'])
 }
 
+/// Validate a `HostName` before importing it (issue #33).
+///
+/// Accepts IPv4 / IPv6 literals and DNS-style hostnames; rejects anything with
+/// shell metacharacters, whitespace, control characters, scheme prefixes
+/// (`http://…`), etc.  This stops a malformed or hostile `~/.ssh/config` entry
+/// from flowing unchecked into a saved session.  Internal IPs are intentionally
+/// allowed — they are a legitimate SSH target and can't be told apart by format.
+fn is_valid_hostname(s: &str) -> bool {
+    // IP literals (including private/loopback addresses) are always fine.
+    if s.parse::<std::net::IpAddr>().is_ok() {
+        return true;
+    }
+    if s.is_empty() || s.len() > 253 {
+        return false;
+    }
+    // DNS-style: dot-separated labels of [A-Za-z0-9_-], no empty or
+    // hyphen-edged labels.
+    s.split('.').all(|label| {
+        let b = label.as_bytes();
+        !b.is_empty()
+            && b.len() <= 63
+            && b.iter()
+                .all(|&c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+            && b[0] != b'-'
+            && b[b.len() - 1] != b'-'
+    })
+}
+
 pub fn parse_str(text: &str, home: &Path) -> Vec<ImportedHost> {
     let mut hosts: Vec<ImportedHost> = Vec::new();
     let mut cur: Option<ImportedHost> = None;
@@ -79,7 +107,15 @@ pub fn parse_str(text: &str, home: &Path) -> Vec<ImportedHost> {
             if h.hostname.is_empty() {
                 h.hostname = h.alias.clone();
             }
-            out.push(h);
+            // Skip entries whose HostName isn't a valid IP / hostname (issue #33).
+            if is_valid_hostname(&h.hostname) {
+                out.push(h);
+            } else {
+                tracing::warn!(
+                    alias = %h.alias,
+                    "skipping ~/.ssh/config host with invalid HostName"
+                );
+            }
         }
     };
 
@@ -167,5 +203,42 @@ Host alias-only
         // alias-only: hostname falls back to the alias
         assert_eq!(hosts[1].alias, "alias-only");
         assert_eq!(hosts[1].hostname, "alias-only");
+    }
+
+    #[test]
+    fn rejects_invalid_hostnames() {
+        let cfg = "\
+Host good
+    HostName 10.0.0.5
+Host ipv6
+    HostName ::1
+Host evil
+    HostName a;rm -rf /
+Host spaced
+    HostName foo bar
+Host scheme
+    HostName http://x.com
+";
+        let home = Path::new("/home/me");
+        let aliases: Vec<String> =
+            parse_str(cfg, home).into_iter().map(|h| h.alias).collect();
+        assert!(aliases.contains(&"good".to_string()));
+        assert!(aliases.contains(&"ipv6".to_string()));
+        assert!(!aliases.contains(&"evil".to_string()));
+        assert!(!aliases.contains(&"spaced".to_string()));
+        assert!(!aliases.contains(&"scheme".to_string()));
+    }
+
+    #[test]
+    fn validates_hostname_formats() {
+        assert!(is_valid_hostname("192.168.1.1"));
+        assert!(is_valid_hostname("::1"));
+        assert!(is_valid_hostname("example.com"));
+        assert!(is_valid_hostname("my-server_01.internal"));
+        assert!(!is_valid_hostname("a;rm -rf /"));
+        assert!(!is_valid_hostname("foo bar"));
+        assert!(!is_valid_hostname("http://x.com"));
+        assert!(!is_valid_hostname("-bad.com"));
+        assert!(!is_valid_hostname(""));
     }
 }
