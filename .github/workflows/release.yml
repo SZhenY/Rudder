@@ -99,17 +99,53 @@ jobs:
           set -eu
           VERSION="${GITHUB_REF_NAME:-dev}"
           STAGE="meatshell-${VERSION}-${{ matrix.name }}"
-          mkdir "$STAGE"
-          cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$STAGE/"
-          cp README.md README.en.md CHANGELOG.md "$STAGE/" 2>/dev/null || true
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            # Ship the desktop entry + installer + icon so the dock shows the icon.
-            cp assets/meatshell.desktop assets/install-linux.sh assets/icon@512.png "$STAGE/" 2>/dev/null || true
-          fi
-          if [ "${{ runner.os }}" = "Windows" ]; then
+
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # ── Build a proper .app bundle ────────────────────────────────────
+            # Without a bundle macOS opens raw binaries in Terminal.app, which
+            # stays alive after the app exits and never shows a Dock icon.
+            APP="meatshell.app"
+            CONTENTS="$APP/Contents"
+            mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
+
+            cp "target/${{ matrix.target }}/release/meatshell" "$CONTENTS/MacOS/"
+
+            # Generate .icns from the 512×512 PNG using sips + iconutil (both
+            # ship with every macOS, no extra tooling needed in CI).
+            mkdir -p meatshell.iconset
+            sips -z 16  16  "assets/icon@512.png" --out meatshell.iconset/icon_16x16.png       >/dev/null
+            sips -z 32  32  "assets/icon@512.png" --out meatshell.iconset/icon_16x16@2x.png    >/dev/null
+            sips -z 32  32  "assets/icon@512.png" --out meatshell.iconset/icon_32x32.png        >/dev/null
+            sips -z 64  64  "assets/icon@512.png" --out meatshell.iconset/icon_32x32@2x.png    >/dev/null
+            sips -z 128 128 "assets/icon@512.png" --out meatshell.iconset/icon_128x128.png     >/dev/null
+            sips -z 256 256 "assets/icon@512.png" --out meatshell.iconset/icon_128x128@2x.png  >/dev/null
+            sips -z 256 256 "assets/icon@512.png" --out meatshell.iconset/icon_256x256.png     >/dev/null
+            sips -z 512 512 "assets/icon@512.png" --out meatshell.iconset/icon_256x256@2x.png  >/dev/null
+            sips -z 512 512 "assets/icon@512.png" --out meatshell.iconset/icon_512x512.png     >/dev/null
+            iconutil -c icns meatshell.iconset -o "$CONTENTS/Resources/meatshell.icns"
+
+            # Substitute __VERSION__ placeholder (strip leading 'v' from tag)
+            VERSION_NUM="${VERSION#v}"
+            sed "s/__VERSION__/${VERSION_NUM}/g" assets/Info.plist > "$CONTENTS/Info.plist"
+
+            # Standard macOS distribution: zip containing just the .app
+            zip -r "${STAGE}.zip" "$APP"
+            echo "ASSET=${STAGE}.zip" >> "$GITHUB_ENV"
+
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            mkdir "$STAGE"
+            cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$STAGE/"
+            cp README.md README.en.md CHANGELOG.md "$STAGE/" 2>/dev/null || true
             7z a "${STAGE}.zip" "$STAGE" >/dev/null
             echo "ASSET=${STAGE}.zip" >> "$GITHUB_ENV"
+
           else
+            # Linux
+            mkdir "$STAGE"
+            cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$STAGE/"
+            cp README.md README.en.md CHANGELOG.md "$STAGE/" 2>/dev/null || true
+            # Ship the desktop entry + installer + icon so the dock shows the icon.
+            cp assets/meatshell.desktop assets/install-linux.sh "assets/icon@512.png" "$STAGE/" 2>/dev/null || true
             tar -czf "${STAGE}.tar.gz" "$STAGE"
             echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
           fi
