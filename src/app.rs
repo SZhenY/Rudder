@@ -109,30 +109,31 @@ slint::include_modules!();
 /// Number of samples kept for the sparkline.
 const NET_HISTORY_LEN: usize = 60;
 
-/// Embed the app icon PNG into the binary and hand it to the Slint window.
+/// Embed the app icon PNG into the binary and set it as the X11 window icon.
 ///
-/// On Linux the dock/taskbar icon comes from the XDG icon theme, which only
-/// works when a `.desktop` file + icon are installed system-wide.  When the
-/// app runs as a bare AppImage (or from a plain directory without running
-/// install-linux.sh) there is no installed icon, so the dock falls back to
-/// a generic gear.  Setting the icon programmatically here covers that case
-/// for both X11 and Wayland without any external installation step.
+/// On X11, the taskbar/dock icon for a running window comes from the
+/// `_NET_WM_ICON` property, which winit sets via `Window::set_window_icon`.
+/// When the app runs as a bare AppImage (or from a plain directory without
+/// running install-linux.sh) there is no installed .desktop + icon, so the
+/// dock falls back to a generic gear.  This call fixes that for X11 sessions.
+///
+/// On Wayland the dock icon is resolved by the compositor from the XDG
+/// app-id → .desktop file mapping; `set_window_icon` is a no-op there, so
+/// Wayland users still need AppImageLauncher or install-linux.sh for the
+/// dock icon.  The `icon:` property in app.slint handles the in-title-bar
+/// icon on both backends without any runtime work.
 ///
 /// Windows gets its icon from the `.ico` embedded by winresource at link
 /// time; macOS from the app bundle — neither path needs runtime decoding.
 #[cfg(target_os = "linux")]
 fn set_window_icon(window: &AppWindow) {
+    use i_slint_backend_winit::winit::window::Icon;
     const ICON_PNG: &[u8] = include_bytes!("../assets/icon@512.png");
-    if let Ok(img) = image::load_from_memory(ICON_PNG) {
-        let rgba = img.into_rgba8();
-        let (w, h) = rgba.dimensions();
-        let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            rgba.as_raw(),
-            w,
-            h,
-        );
-        window.window().set_window_icon(Some(slint::Image::from_rgba8(buf)));
-    }
+    let Ok(img) = image::load_from_memory(ICON_PNG) else { return };
+    let rgba = img.into_rgba8();
+    let (w, h) = rgba.dimensions();
+    let Ok(icon) = Icon::from_rgba(rgba.into_raw(), w, h) else { return };
+    window.window().with_winit_window(|ww| ww.set_window_icon(Some(icon)));
 }
 
 pub fn run() -> Result<()> {
