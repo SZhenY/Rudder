@@ -2303,7 +2303,11 @@ fn wire_key_input(
             std::thread::spawn(move || {
                 match arboard::Clipboard::new().and_then(|mut cb| cb.get_text()) {
                     Ok(text) => {
-                        let _ = sender.send(SessionCommand::RawInput(text.into_bytes()));
+                        // Normalise line endings to a single CR so multi-line and
+                        // backslash-continued commands paste correctly (see the
+                        // function doc for the failure mode this prevents).
+                        let bytes = normalize_pasted_newlines(&text).into_bytes();
+                        let _ = sender.send(SessionCommand::RawInput(bytes));
                     }
                     Err(e) => tracing::warn!("paste_from_clipboard: clipboard error: {}", e),
                 }
@@ -2582,6 +2586,18 @@ fn redact_key(key: &str) -> String {
 /// when true the four arrow keys must use SS3 sequences (`\x1bOA`…) instead
 /// of the default CSI sequences (`\x1b[A`…).  Full-screen apps like nano and
 /// vim set this mode on startup.
+/// Normalise pasted text's line endings to a single CR (0x0d) — what a terminal
+/// expects for Enter.
+///
+/// The clipboard may hold CRLF (Windows) or LF line breaks. Sending those to the
+/// PTY verbatim makes the remote shell see *two* line breaks per line (CR then
+/// LF), which prematurely ends a `\`-continued line: pasting
+/// `sudo apt install \<newline>  docker-ce` would run `sudo apt install` with no
+/// package and drop the rest. Collapsing every CRLF/LF to one CR fixes it.
+fn normalize_pasted_newlines(text: &str) -> String {
+    text.replace("\r\n", "\r").replace('\n', "\r")
+}
+
 fn key_to_pty_bytes(key: &str, ctrl: bool, alt: bool, app_cursor: bool) -> Vec<u8> {
     // --- Special keys (Slint PUA code points) ------------------------------
     // Arrow keys: respect DECCKM application-cursor mode.
@@ -3494,6 +3510,21 @@ mod key_tests {
     fn alt_letter_still_sends_esc_prefix() {
         // Alt+a (a real Meta combo) must still send ESC + 'a'.
         assert_eq!(key_to_pty_bytes("a", false, true, false), vec![0x1b, b'a']);
+    }
+
+    #[test]
+    fn paste_normalizes_newlines_to_cr() {
+        // CRLF (Windows clipboard) and LF both collapse to a single CR so a
+        // backslash-continued multi-line command pastes intact.
+        assert_eq!(
+            normalize_pasted_newlines("sudo apt install \\\r\n  docker-ce"),
+            "sudo apt install \\\r  docker-ce"
+        );
+        assert_eq!(normalize_pasted_newlines("a\nb\nc"), "a\rb\rc");
+        // A lone CR is left as-is; no doubling.
+        assert_eq!(normalize_pasted_newlines("a\rb"), "a\rb");
+        // No newlines → unchanged.
+        assert_eq!(normalize_pasted_newlines("echo hi"), "echo hi");
     }
 }
 
