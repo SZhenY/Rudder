@@ -5,7 +5,27 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-06-09
+
 ### Added / 新增
+
+- **Export / import connections (#46).** New "Export connections" / "Import
+  connections" in the settings menu to migrate sessions between machines. The
+  exported JSON keeps host/user/port in plaintext and obfuscates only the
+  password with a built-in key, so it opens on any machine; key-auth sessions
+  export the key path. Imports skip duplicates (host+user+port+kind).
+  **导出 / 导入连接 (#46)。** 设置菜单新增「导出连接」「导入连接」,用于在多台
+  机器间迁移会话。导出的 JSON 中 host/user/port 为明文,仅密码用内置 key 混淆,
+  因此在任意机器都能打开;密钥认证的会话导出私钥路径。导入会跳过重复
+  (host+user+port+kind)。
+
+- **Pick SOCKS5 or HTTP proxy type in the session dialog (#46).** The proxy
+  field is now a None / SOCKS5 / HTTP selector plus a `host:port` input. HTTP
+  CONNECT was already supported by the backend but wasn't selectable in the UI.
+  The stored proxy URL format is unchanged.
+  **会话对话框选择 SOCKS5 或 HTTP 代理类型 (#46)。** 代理项改为 不使用 / SOCKS5 /
+  HTTP 选择器加 `host:port` 输入框。HTTP CONNECT 后端早已支持,只是 UI 无法选择。
+  存储的代理 URL 格式不变。
 
 - **Confirmation prompt before deleting a remote file (#28).** SFTP delete is
   irreversible (there is no trash), so the context-menu *Delete* now asks for
@@ -45,6 +65,38 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### Fixed / 修复
 
+- **Alt no longer clears the typed command (#43).** Slint encodes a lone
+  modifier key as a C0 code point (Alt=0x12); pressing Alt (e.g. to Alt+Tab
+  away) sent ESC+0x12 to the PTY, which bash/readline treated as Meta and
+  discarded the input line. Bare modifier codes are now dropped, with a guard
+  that preserves a real Ctrl+P..Ctrl+X.
+  **按 Alt 不再清空已输入命令 (#43)。** Slint 把单独的修饰键编码成 C0 码位
+  (Alt=0x12);按 Alt(如 Alt+Tab 切换)会向 PTY 发送 ESC+0x12,被 bash/readline
+  当作 Meta 而丢弃输入行。现在丢弃单独的修饰键码位,并保留真实的 Ctrl+P..Ctrl+X。
+
+- **Multi-line / backslash-continued commands now paste intact.** Pasted text
+  kept its CRLF/LF line breaks, but the terminal expects CR for Enter, so CRLF
+  made the shell see two breaks per line and end a `\`-continued command early.
+  Pasted line endings are normalised to a single CR.
+  **多行 / 反斜杠续行命令现在能完整粘贴。** 粘贴文本保留了 CRLF/LF 换行,而终端
+  回车应为 CR,CRLF 会让 shell 每行看到两个换行、提前结束 `\` 续行命令。现在把
+  粘贴的换行统一规范为单个 CR。
+
+- **Session dialog no longer mis-lays-out when switching connection type.** The
+  card had a fixed height, so Telnet/Serial (with fewer fields) left slack space
+  that stretched inputs apart. The card height now follows its content.
+  **切换连接类型时会话对话框不再排版错乱。** 卡片此前固定高度,Telnet/串口
+  (字段更少)会留出空白把输入框撑开。现在卡片高度跟随内容。
+
+- **Copy/paste works on Wayland sessions (#47).** arboard's default Linux
+  backend is X11, which fails on Wayland (Debian sid / KDE) without XWayland.
+  Enabled arboard's native `wayland-data-control` backend, and copy now uses
+  set().wait() so the selection survives after the clipboard handle is dropped.
+  **Wayland 会话下复制粘贴恢复可用 (#47)。** arboard 默认 Linux 后端是 X11,在
+  无 XWayland 的 Wayland(Debian sid / KDE)下失效。启用 arboard 原生
+  `wayland-data-control` 后端,复制改用 set().wait() 使选区在剪贴板句柄 drop 后
+  仍然有效。
+
 - **Dragging the SFTP panel up no longer clears terminal output (#18).** vt100's
   shrink truncated the grid from the bottom, dropping the most recent output;
   before shrinking we now save the top rows to scrollback and scroll so the
@@ -62,6 +114,21 @@ All notable changes are documented here. 本文件记录所有重要变更。
   跨多屏选择时能复制到每一行,而不是在视图自动滚动后丢掉最后一屏以上的内容。
 
 ### Security / 安全
+
+- **Redact proxy credentials and zero them in memory (#32).** The HTTP/SOCKS
+  proxy password is now wrapped in `Secret` (zeroed on drop) and ProxyConfig has
+  a manual Debug that redacts auth, so credentials can't leak via {:?}/tracing
+  or linger in core dumps.
+  **代理凭据脱敏并在内存清零 (#32)。** HTTP/SOCKS 代理密码改用 `Secret` 包装
+  (drop 时清零),ProxyConfig 手写 Debug 对凭据脱敏,使其无法经 {:?}/tracing
+  泄露或残留于 core dump。
+
+- **Validate HostName when importing ~/.ssh/config (#33).** Imported HostName
+  values are now checked — IP literals and DNS hostnames accepted; shell
+  metacharacters, whitespace and scheme prefixes rejected — and invalid entries
+  are skipped with a warning.
+  **导入 ~/.ssh/config 时校验 HostName (#33)。** 现在校验导入的 HostName(接受
+  IP 字面量与 DNS 域名,拒绝 shell 元字符、空白与协议前缀),非法条目跳过并告警。
 
 - **Harden the remote resource monitor against a hostile server (#27).** The
   monitor runs a small loop over an SSH exec channel. It now (1) resets `PATH`
@@ -189,4 +256,5 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Screenshots in the README** (`docs/screenshots/`, sensitive info redacted).
   **README 增加截图**（`docs/screenshots/`，敏感信息已打码）。
 
+[0.2.8]: https://github.com/jeff141/meatshell/releases/tag/v0.2.8
 [0.2.2]: https://github.com/jeff141/meatshell/releases/tag/v0.2.2
