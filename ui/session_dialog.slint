@@ -84,7 +84,10 @@ export component SessionDialog inherits Rectangle {
 
     Rectangle {
         width: 440px;
-        height: 580px;
+        // Height follows the content so switching connection type (which shows
+        // or hides fields) never leaves slack space that the layout would
+        // otherwise distribute by stretching inputs apart.
+        height: body.preferred-height;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         background: Theme.bg-panel;
@@ -99,7 +102,7 @@ export component SessionDialog inherits Rectangle {
             width: 100%; height: 100%;
         }
 
-        VerticalLayout {
+        body := VerticalLayout {
             padding: 20px;
             spacing: 12px;
 
