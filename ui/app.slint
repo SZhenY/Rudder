@@ -140,6 +140,8 @@ export component AppWindow inherits Window {
     callback new-session-clicked();
     callback import-ssh-config();             // import hosts from ~/.ssh/config
     in-out property <string> ssh-import-hint;  // result text shown after import
+    callback export-sessions();               // export all sessions to a file (#46)
+    callback import-sessions();               // import sessions from a file (#46)
     callback connect-session(string /* session-id */);
     callback edit-session(string /* session-id */);
     callback remove-session(string /* session-id */);
@@ -566,7 +568,7 @@ export component AppWindow inherits Window {
         x: parent.width - 196px;
         y: 40px;
         width: 198px;
-        height: 104px;
+        height: 162px;
         visible: root.settings-open;
         background: Theme.bg-panel;
         border-radius: Theme.radius-md;
@@ -580,6 +582,50 @@ export component AppWindow inherits Window {
         VerticalLayout {
             padding: 4px;
             spacing: 1px;
+            // Export all connections to a portable file (#46).
+            Rectangle {
+                height: 28px;
+                border-radius: Theme.radius-sm;
+                background: export-ta.has-hover ? Theme.bg-hover : transparent;
+                export-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.settings-open = false;
+                        root.export-sessions();
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 8px; spacing: 8px;
+                    Text { text: "\u{E5D8}"; font-family: "Material Icons"; // ↑ export
+                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           vertical-alignment: center; }
+                    Text { text: root.lang-en ? "Export connections" : "导出连接";
+                           color: Theme.text-primary; font-size: Theme.fs-md;
+                           vertical-alignment: center; horizontal-stretch: 1; }
+                }
+            }
+            // Import connections from a portable file (#46).
+            Rectangle {
+                height: 28px;
+                border-radius: Theme.radius-sm;
+                background: impconn-ta.has-hover ? Theme.bg-hover : transparent;
+                impconn-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.settings-open = false;
+                        root.import-sessions();
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 8px; spacing: 8px;
+                    Text { text: "\u{E5DB}"; font-family: "Material Icons"; // ↓ import
+                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           vertical-alignment: center; }
+                    Text { text: root.lang-en ? "Import connections" : "导入连接";
+                           color: Theme.text-primary; font-size: Theme.fs-md;
+                           vertical-alignment: center; horizontal-stretch: 1; }
+                }
+            }
             // Import hosts from ~/.ssh/config.
             Rectangle {
                 height: 28px;

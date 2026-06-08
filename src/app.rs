@@ -746,6 +746,60 @@ fn wire_session_callbacks(
         });
     }
 
+    // Export all sessions to a portable JSON file (issue #46). Passwords are
+    // obfuscated with the built-in export key; host/user/port stay plaintext.
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_export_sessions(move || {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_file_name("meatshell-connections.json")
+                .add_filter("JSON", &["json"])
+                .save_file()
+            {
+                let res = store.borrow().export_to(&path);
+                if let Some(w) = weak.upgrade() {
+                    let hint = match res {
+                        Ok(n) => format!("{} {}", t("已导出连接", "exported"), n),
+                        Err(e) => format!("{}: {}", t("导出失败", "export failed"), e),
+                    };
+                    w.set_ssh_import_hint(hint.into());
+                }
+            }
+        });
+    }
+
+    // Import sessions from a portable JSON file (issue #46).
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_import_sessions(move || {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("JSON", &["json"])
+                .pick_file()
+            {
+                let res = store.borrow_mut().import_from(&path);
+                if let Some(w) = weak.upgrade() {
+                    let hint = match res {
+                        Ok((added, skipped)) => {
+                            sync_sessions_to_model(&store.borrow(), &sessions_model);
+                            format!(
+                                "{} {} / {} {}",
+                                t("已导入", "imported"),
+                                added,
+                                t("跳过重复", "skipped"),
+                                skipped
+                            )
+                        }
+                        Err(e) => format!("{}: {}", t("导入失败", "import failed"), e),
+                    };
+                    w.set_ssh_import_hint(hint.into());
+                }
+            }
+        });
+    }
+
     // Edit -> open dialog prefilled.
     {
         let weak = window.as_weak();
