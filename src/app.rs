@@ -2281,12 +2281,7 @@ fn wire_key_input(
             // Windows backend opens the clipboard and pumps Win32 messages;
             // doing that on the Slint/winit event-loop thread re-enters the
             // message loop and dead-locks the whole UI.
-            std::thread::spawn(move || {
-                match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
-                    Ok(()) => tracing::debug!("copy_terminal: clipboard updated"),
-                    Err(e) => tracing::warn!("copy_terminal: clipboard error: {}", e),
-                }
-            });
+            std::thread::spawn(move || clipboard_set_text(text));
         });
     }
 
@@ -2468,10 +2463,7 @@ fn wire_key_input(
             match text {
                 Some(t) if !t.is_empty() => {
                     // Auto-copy on release (select-to-copy, PuTTY style).
-                    std::thread::spawn(move || {
-                        let _ = arboard::Clipboard::new()
-                            .and_then(|mut cb| cb.set_text(t));
-                    });
+                    std::thread::spawn(move || clipboard_set_text(t));
                 }
                 _ => {}
             }
@@ -2589,6 +2581,27 @@ fn redact_key(key: &str) -> String {
 /// when true the four arrow keys must use SS3 sequences (`\x1bOA`…) instead
 /// of the default CSI sequences (`\x1b[A`…).  Full-screen apps like nano and
 /// vim set this mode on startup.
+/// Write `text` to the system clipboard. Call from a dedicated thread, never the
+/// UI thread (arboard pumps the Win32 message loop / blocks).
+///
+/// On Linux the clipboard selection only persists while the owning client stays
+/// alive, so we use arboard's `set().wait()`, which blocks this thread until
+/// another app takes ownership — otherwise the copied text vanishes the moment
+/// the `Clipboard` handle is dropped. Combined with the `wayland-data-control`
+/// feature this is also what makes copy work on Wayland sessions (issue #47).
+fn clipboard_set_text(text: String) {
+    #[cfg(target_os = "linux")]
+    let result = {
+        use arboard::SetExtLinux as _;
+        arboard::Clipboard::new().and_then(|mut cb| cb.set().wait().text(text))
+    };
+    #[cfg(not(target_os = "linux"))]
+    let result = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text));
+    if let Err(e) = result {
+        tracing::warn!("clipboard set_text error: {}", e);
+    }
+}
+
 /// Split a stored proxy URL into `(type, host:port)` for the session dialog.
 ///
 /// `""` → `("none", "")`. Recognises `socks5`/`socks5h`/`socks` and

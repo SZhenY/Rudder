@@ -57,6 +57,10 @@ dark-light = "1"
 # on macOS it comes from the app bundle — neither needs runtime decoding.
 [target.'cfg(target_os = "linux")'.dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
+# Native Wayland clipboard (wlr-data-control protocol) so copy/paste works on
+# Wayland sessions (KDE/wlroots) without relying on XWayland (issue #47).
+# Feature is additive over the base `arboard = "3"` dependency above.
+arboard = { version = "3", features = ["wayland-data-control"] }
 
 [build-dependencies]
 slint-build = "1.8"
