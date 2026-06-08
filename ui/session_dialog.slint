@@ -60,7 +60,8 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-auth: "password";
     in-out property <string> draft-password;
     in-out property <string> draft-key-path;
-    in-out property <string> draft-proxy;
+    in-out property <string> draft-proxy-type: "none";  // "none" | "socks5" | "http"
+    in-out property <string> draft-proxy-hostport;
     in-out property <string> draft-serial-port;
     in-out property <string> draft-baud: "115200";
     in-out property <string> draft-data-bits: "8";
@@ -309,13 +310,26 @@ export component SessionDialog inherits Rectangle {
             // ── Optional outbound proxy (SSH / Telnet only) ─────────────────
             if root.draft-kind != "serial" : VerticalLayout {
                 spacing: 4px;
-                LabeledInput {
-                    label: @tr("Proxy (optional)");
-                    placeholder: "socks5://127.0.0.1:1080";
-                    value <=> root.draft-proxy;
+                Text {
+                    text: @tr("Proxy (optional)");
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    SegOption { label: @tr("None"); active: root.draft-proxy-type == "none"; clicked => { root.draft-proxy-type = "none"; } }
+                    SegOption { label: "SOCKS5"; active: root.draft-proxy-type == "socks5"; clicked => { root.draft-proxy-type = "socks5"; } }
+                    SegOption { label: "HTTP"; active: root.draft-proxy-type == "http"; clicked => { root.draft-proxy-type = "http"; } }
+                }
+                if root.draft-proxy-type != "none" : LabeledInput {
+                    label: @tr("Proxy address");
+                    placeholder: "127.0.0.1:1080";
+                    value <=> root.draft-proxy-hostport;
                 }
                 Text {
-                    text: @tr("Leave blank to use $ALL_PROXY or connect directly");
+                    text: root.draft-proxy-type == "none"
+                        ? @tr("No proxy — use $ALL_PROXY or connect directly")
+                        : @tr("Format: host:port  (with auth: user:pass@host:port)");
                     color: Theme.text-muted;
                     font-size: Theme.fs-xs;
                 }
@@ -343,7 +357,9 @@ export component SessionDialog inherits Rectangle {
                             auth: root.draft-auth,
                             password: root.draft-password,
                             private-key-path: root.draft-key-path,
-                            proxy: root.draft-proxy,
+                            proxy: (root.draft-proxy-type == "none" || root.draft-proxy-hostport == "") ? ""
+                                 : root.draft-proxy-type == "http" ? "http://" + root.draft-proxy-hostport
+                                 : "socks5://" + root.draft-proxy-hostport,
                             serial-port: root.draft-serial-port,
                             baud-rate: root.draft-baud.to-float(),
                             data-bits: root.draft-data-bits.to-float(),

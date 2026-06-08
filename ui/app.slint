@@ -122,7 +122,8 @@ export component AppWindow inherits Window {
     in-out property <string> dialog-auth: "password";
     in-out property <string> dialog-password;
     in-out property <string> dialog-key-path;
-    in-out property <string> dialog-proxy;
+    in-out property <string> dialog-proxy-type: "none";  // "none" | "socks5" | "http"
+    in-out property <string> dialog-proxy-hostport;
     in-out property <string> dialog-kind: "ssh";
     in-out property <string> dialog-serial-port;
     in-out property <string> dialog-baud: "115200";
@@ -796,7 +797,8 @@ export component AppWindow inherits Window {
         draft-auth <=> root.dialog-auth;
         draft-password <=> root.dialog-password;
         draft-key-path <=> root.dialog-key-path;
-        draft-proxy <=> root.dialog-proxy;
+        draft-proxy-type <=> root.dialog-proxy-type;
+        draft-proxy-hostport <=> root.dialog-proxy-hostport;
         draft-kind <=> root.dialog-kind;
         draft-serial-port <=> root.dialog-serial-port;
         draft-baud <=> root.dialog-baud;

@@ -676,7 +676,8 @@ fn wire_session_callbacks(
             w.set_dialog_auth("password".into());
             w.set_dialog_password("".into());
             w.set_dialog_key_path("".into());
-            w.set_dialog_proxy("".into());
+            w.set_dialog_proxy_type("none".into());
+            w.set_dialog_proxy_hostport("".into());
             w.set_dialog_kind("ssh".into());
             w.set_dialog_serial_port("".into());
             w.set_dialog_baud("115200".into());
@@ -819,7 +820,9 @@ fn wire_session_callbacks(
                 // leave it blank; a blank field on save keeps the existing one.
                 w.set_dialog_password("".into());
                 w.set_dialog_key_path(session.private_key_path.clone().into());
-                w.set_dialog_proxy(session.proxy.clone().into());
+                let (proxy_type, proxy_hostport) = split_proxy(&session.proxy);
+                w.set_dialog_proxy_type(proxy_type.into());
+                w.set_dialog_proxy_hostport(proxy_hostport.into());
                 w.set_dialog_kind(session.kind.as_str().into());
                 w.set_dialog_serial_port(session.serial_port.clone().into());
                 w.set_dialog_baud(session.baud_rate.to_string().into());
@@ -2586,6 +2589,31 @@ fn redact_key(key: &str) -> String {
 /// when true the four arrow keys must use SS3 sequences (`\x1bOA`…) instead
 /// of the default CSI sequences (`\x1b[A`…).  Full-screen apps like nano and
 /// vim set this mode on startup.
+/// Split a stored proxy URL into `(type, host:port)` for the session dialog.
+///
+/// `""` → `("none", "")`. Recognises `socks5`/`socks5h`/`socks` and
+/// `http`/`https` scheme prefixes. A value without a (recognised) scheme is
+/// treated as SOCKS5, matching proxy.rs's parse default, so older configs that
+/// stored a bare `host:port` keep working.
+fn split_proxy(url: &str) -> (String, String) {
+    let s = url.trim();
+    if s.is_empty() {
+        return ("none".to_string(), String::new());
+    }
+    let lower = s.to_ascii_lowercase();
+    for p in ["http://", "https://"] {
+        if lower.starts_with(p) {
+            return ("http".to_string(), s[p.len()..].trim_end_matches('/').to_string());
+        }
+    }
+    for p in ["socks5h://", "socks5://", "socks://"] {
+        if lower.starts_with(p) {
+            return ("socks5".to_string(), s[p.len()..].trim_end_matches('/').to_string());
+        }
+    }
+    ("socks5".to_string(), s.trim_end_matches('/').to_string())
+}
+
 /// Normalise pasted text's line endings to a single CR (0x0d) — what a terminal
 /// expects for Enter.
 ///
@@ -3510,6 +3538,29 @@ mod key_tests {
     fn alt_letter_still_sends_esc_prefix() {
         // Alt+a (a real Meta combo) must still send ESC + 'a'.
         assert_eq!(key_to_pty_bytes("a", false, true, false), vec![0x1b, b'a']);
+    }
+
+    #[test]
+    fn split_proxy_recognises_schemes() {
+        assert_eq!(split_proxy(""), ("none".into(), "".into()));
+        assert_eq!(
+            split_proxy("http://10.0.0.1:1022"),
+            ("http".into(), "10.0.0.1:1022".into())
+        );
+        assert_eq!(
+            split_proxy("socks5://127.0.0.1:1080"),
+            ("socks5".into(), "127.0.0.1:1080".into())
+        );
+        // user:pass survive in the host:port part.
+        assert_eq!(
+            split_proxy("http://u:p@host:8080"),
+            ("http".into(), "u:p@host:8080".into())
+        );
+        // bare host:port (legacy) → treated as socks5.
+        assert_eq!(
+            split_proxy("127.0.0.1:1080"),
+            ("socks5".into(), "127.0.0.1:1080".into())
+        );
     }
 
     #[test]
