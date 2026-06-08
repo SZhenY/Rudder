@@ -2634,6 +2634,30 @@ fn key_to_pty_bytes(key: &str, ctrl: bool, alt: bool, app_cursor: bool) -> Vec<u
         return vec![];
     }
 
+    // --- Bare modifier keys: never forward to the PTY (issue #43) -----------
+    // Slint encodes a lone modifier keypress not as "" but as a C0 code point:
+    //   Shift=0x10 Ctrl=0x11 Alt=0x12 AltGr=0x13 CapsLock=0x14
+    //   ShiftR=0x15 CtrlR=0x16 Meta=0x17 MetaR=0x18
+    // Pressing Alt by itself (e.g. to Alt+Tab away) arrives here as key=0x12
+    // with alt=true. Without this guard it would fall through to the Alt branch
+    // below, get an ESC (0x1b) prefix, and bash/readline would treat the ESC as
+    // Meta and discard the line the user was typing — the "Alt clears the
+    // command" bug.
+    //
+    // The `!ctrl` guard is deliberate: a real Ctrl+P..Ctrl+X is encoded by some
+    // Linux/macOS builds directly as the same C0 bytes (0x10..0x18) but with
+    // ctrl=true (handled by the Ctrl branch just below), so we must NOT swallow
+    // those. A lone modifier never carries ctrl=true except bare Ctrl/CtrlR
+    // themselves, which are harmless to pass through as today.
+    if !ctrl {
+        if let Some(c) = key.chars().next() {
+            let cp = c as u32;
+            if key.chars().count() == 1 && (0x10..=0x18).contains(&cp) {
+                return vec![];
+            }
+        }
+    }
+
     // --- Ctrl + letter: synthesise C0 control character --------------------
     // Two cases:
     //   A) Platform already encoded the control char in `key` (e.g. "\x18" for
@@ -3429,6 +3453,47 @@ fn parent_path(path: &str) -> String {
         Some(0) => "/".to_string(),
         Some(i) => trimmed[..i].to_string(),
         None => "/".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::*;
+
+    #[test]
+    fn bare_alt_is_not_forwarded() {
+        // Slint sends Alt-alone as key=0x12 with alt=true. It must produce no
+        // bytes — otherwise it becomes ESC+0x12 and clears the input (issue #43).
+        assert_eq!(key_to_pty_bytes("\u{0012}", false, true, false), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn bare_modifier_codes_are_dropped() {
+        // Shift..MetaR (0x10..=0x18) pressed alone (ctrl=false) → nothing sent.
+        for cp in 0x10u32..=0x18 {
+            let s = char::from_u32(cp).unwrap().to_string();
+            assert_eq!(
+                key_to_pty_bytes(&s, false, false, false),
+                Vec::<u8>::new(),
+                "code point {:#04x} should be dropped",
+                cp
+            );
+        }
+    }
+
+    #[test]
+    fn ctrl_letter_c0_still_passes() {
+        // A real Ctrl+R encoded as the C0 byte 0x12 with ctrl=true must still be
+        // forwarded — the !ctrl guard keeps the #43 fix from breaking it.
+        assert_eq!(key_to_pty_bytes("\u{0012}", true, false, false), vec![0x12]);
+        // Ctrl+X as C0 0x18.
+        assert_eq!(key_to_pty_bytes("\u{0018}", true, false, false), vec![0x18]);
+    }
+
+    #[test]
+    fn alt_letter_still_sends_esc_prefix() {
+        // Alt+a (a real Meta combo) must still send ESC + 'a'.
+        assert_eq!(key_to_pty_bytes("a", false, true, false), vec![0x1b, b'a']);
     }
 }
 
