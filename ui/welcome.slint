@@ -263,10 +263,11 @@ export component Welcome inherits Rectangle {
                     spacing: 2px;
                     for session[i] in sessions : VerticalLayout {
                         spacing: 2px;
-                        // Group header on the first row of each named group (#41).
+                        // Group header on the first row of each group (#41).
                         if session.group-header != "" : HorizontalLayout {
                             padding-top: 6px;
                             padding-left: 4px;
+                            spacing: 4px;
                             Text {
                                 text: "\u{E2C7}";   // folder glyph
                                 font-family: "Material Icons";
@@ -275,11 +276,13 @@ export component Welcome inherits Rectangle {
                                 vertical-alignment: center;
                             }
                             Text {
-                                text: " " + session.group-header;
+                                text: session.group-header;
                                 color: Theme.text-muted;
                                 font-size: Theme.fs-xs;
                                 font-weight: 700;
                                 vertical-alignment: center;
+                                horizontal-stretch: 1;       // fill → text stays left
+                                horizontal-alignment: left;
                             }
                         }
                         SessionRow {

@@ -631,26 +631,25 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
     // last), then by name within each group, and tag the first row of every
     // group with a header so the welcome list can render a folder heading (#41).
     let mut sessions: Vec<&Session> = store.sessions().iter().collect();
-    let group_key = |g: &str| {
-        if g.is_empty() {
-            // Sort ungrouped after every named group.
-            "\u{10ffff}".to_string()
-        } else {
-            g.to_lowercase()
-        }
+    // An unset group is shown as the "default" folder (backward compatibility:
+    // sessions saved before grouping existed all land in one tidy place).
+    let effective = |g: &str| -> String {
+        if g.is_empty() { "default".to_string() } else { g.to_string() }
     };
     sessions.sort_by(|a, b| {
-        group_key(&a.group)
-            .cmp(&group_key(&b.group))
+        effective(&a.group)
+            .to_lowercase()
+            .cmp(&effective(&b.group).to_lowercase())
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
 
     let mut last_group: Option<String> = None;
     let mut rows: Vec<SessionInfo> = Vec::with_capacity(sessions.len());
     for s in sessions {
-        let header = if last_group.as_deref() != Some(s.group.as_str()) {
-            last_group = Some(s.group.clone());
-            s.group.clone() // "" for ungrouped → welcome renders no header
+        let eff = effective(&s.group);
+        let header = if last_group.as_deref() != Some(eff.as_str()) {
+            last_group = Some(eff.clone());
+            eff.clone() // first row of each group carries the folder heading
         } else {
             String::new()
         };
@@ -666,7 +665,7 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
                 .clone()
                 .unwrap_or_else(|| "never".to_string())
                 .into(),
-            group: s.group.clone().into(),
+            group: eff.clone().into(),
             group_header: header.into(),
         });
     }
