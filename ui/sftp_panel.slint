@@ -300,12 +300,13 @@ export component SftpPanel inherits Rectangle {
                                 }
                             }
 
-                            // Right-click context menu (files: full set; dirs: delete only).
+                            // Right-click context menu. Files: Download/View/Edit/
+                            // Delete. Dirs: Download (recursive, #50) + Delete.
                             row-menu := PopupWindow {
                                 x: row.mx;
                                 y: row.my;
                                 width: 108px;
-                                height: (entry.is-dir ? 1 : 4) * 27px + 8px;
+                                height: (entry.is-dir ? 2 : 4) * 27px + 8px;
                                 Rectangle {
                                     background: Theme.bg-panel;
                                     border-radius: Theme.radius-sm;
@@ -316,7 +317,7 @@ export component SftpPanel inherits Rectangle {
                                     VerticalLayout {
                                         padding: 4px;
                                         spacing: 1px;
-                                        if !entry.is-dir : SftpMenuItem {
+                                        SftpMenuItem {
                                             label: @tr("Download");
                                             clicked => { root.download(entry.full-path); }
                                         }

@@ -342,22 +342,48 @@ async fn run_sftp(
             }
 
             SftpCommand::Download { remote, local_dir } => {
-                // Sanitize the server-supplied name before it touches the local
-                // filesystem (#26): a malicious server could otherwise craft a
-                // name with traversal, shell-special chars or a Windows reserved
-                // device name to write outside the chosen dir or hit a device.
-                let filename = sanitize_filename(&base_name(&remote));
-                let local_path = format!("{}/{}", local_dir.trim_end_matches('/'), filename);
-                let id = Uuid::new_v4().to_string();
-                let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("下载", "Downloading"), filename)));
-                match download_impl(&sftp, &remote, &local_path, &filename, &id, &events).await {
-                    Ok(_) => {
-                        let _ = events
-                            .send(SessionEvent::SftpStatus(format!("{}: {}", t("下载完成", "Downloaded"), filename)));
+                // A directory target → recursively mirror the whole tree (#50).
+                let is_dir = sftp
+                    .metadata(&remote)
+                    .await
+                    .ok()
+                    .map(|m| (m.permissions.unwrap_or(0) & 0o170_000) == 0o040_000)
+                    .unwrap_or(false);
+                if is_dir {
+                    let dirname = base_name(&remote);
+                    let _ = events.send(SessionEvent::SftpStatus(format!(
+                        "{} {}/...", t("下载文件夹", "Downloading folder"), dirname
+                    )));
+                    match download_dir(&sftp, &remote, &local_dir, &events).await {
+                        Ok(_) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {}", t("下载完成", "Downloaded"), dirname
+                            )));
+                        }
+                        Err(e) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {e}", t("下载失败", "Download failed")
+                            )));
+                        }
                     }
-                    Err(e) => {
-                        emit_transfer(&events, &id, &filename, false, 0, 0, 2, &e.to_string());
-                        let _ = events.send(SessionEvent::SftpStatus(format!("{}: {e}", t("下载失败", "Download failed"))));
+                } else {
+                    // Sanitize the server-supplied name before it touches the local
+                    // filesystem (#26): a malicious server could otherwise craft a
+                    // name with traversal, shell-special chars or a Windows reserved
+                    // device name to write outside the chosen dir or hit a device.
+                    let filename = sanitize_filename(&base_name(&remote));
+                    let local_path = format!("{}/{}", local_dir.trim_end_matches('/'), filename);
+                    let id = Uuid::new_v4().to_string();
+                    let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("下载", "Downloading"), filename)));
+                    match download_impl(&sftp, &remote, &local_path, &filename, &id, &events).await {
+                        Ok(_) => {
+                            let _ = events
+                                .send(SessionEvent::SftpStatus(format!("{}: {}", t("下载完成", "Downloaded"), filename)));
+                        }
+                        Err(e) => {
+                            emit_transfer(&events, &id, &filename, false, 0, 0, 2, &e.to_string());
+                            let _ = events.send(SessionEvent::SftpStatus(format!("{}: {e}", t("下载失败", "Download failed"))));
+                        }
                     }
                 }
             }
@@ -724,6 +750,41 @@ async fn download_impl(
     }
     local_file.flush().await.context("flush local file")?;
     emit_transfer(events, id, name, false, done, total.max(done), 1, "");
+    Ok(())
+}
+
+/// Recursively download a remote directory tree under `local_parent` (#50).
+///
+/// Iterative (work-stack) rather than a boxed async recursion: each remote dir
+/// is mirrored to a sanitized local name, then its files are downloaded with the
+/// same per-file pipeline used for single downloads. Names are sanitized (#26)
+/// so a hostile server can't escape the chosen folder.
+async fn download_dir(
+    sftp: &SftpSession,
+    remote_root: &str,
+    local_parent: &str,
+    events: &UnboundedSender<SessionEvent>,
+) -> Result<()> {
+    let root_name = sanitize_filename(&base_name(remote_root));
+    let root_local = format!("{}/{}", local_parent.trim_end_matches('/'), root_name);
+    // (remote_dir, local_dir) pairs still to mirror.
+    let mut stack = vec![(remote_root.trim_end_matches('/').to_string(), root_local)];
+    while let Some((rdir, ldir)) = stack.pop() {
+        tokio::fs::create_dir_all(&ldir)
+            .await
+            .with_context(|| format!("create local dir {ldir}"))?;
+        for entry in list_dir_impl(sftp, &rdir).await? {
+            if entry.is_dir {
+                let child_local = format!("{}/{}", ldir, sanitize_filename(&entry.name));
+                stack.push((entry.full_path, child_local));
+            } else {
+                let fname = sanitize_filename(&entry.name);
+                let lpath = format!("{}/{}", ldir, fname);
+                let id = Uuid::new_v4().to_string();
+                download_impl(sftp, &entry.full_path, &lpath, &fname, &id, events).await?;
+            }
+        }
+    }
     Ok(())
 }
 
