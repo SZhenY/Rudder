@@ -627,10 +627,34 @@ fn handle_file_drop(_win: &AppWindow, _sftp_handles: &SftpHandles, _path: String
 // ---------------------------------------------------------------------------
 
 fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
-    let rows: Vec<SessionInfo> = store
-        .sessions()
-        .iter()
-        .map(|s| SessionInfo {
+    // Group sessions by their `group` (named groups alphabetically, ungrouped
+    // last), then by name within each group, and tag the first row of every
+    // group with a header so the welcome list can render a folder heading (#41).
+    let mut sessions: Vec<&Session> = store.sessions().iter().collect();
+    let group_key = |g: &str| {
+        if g.is_empty() {
+            // Sort ungrouped after every named group.
+            "\u{10ffff}".to_string()
+        } else {
+            g.to_lowercase()
+        }
+    };
+    sessions.sort_by(|a, b| {
+        group_key(&a.group)
+            .cmp(&group_key(&b.group))
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    let mut last_group: Option<String> = None;
+    let mut rows: Vec<SessionInfo> = Vec::with_capacity(sessions.len());
+    for s in sessions {
+        let header = if last_group.as_deref() != Some(s.group.as_str()) {
+            last_group = Some(s.group.clone());
+            s.group.clone() // "" for ungrouped → welcome renders no header
+        } else {
+            String::new()
+        };
+        rows.push(SessionInfo {
             id: s.id.clone().into(),
             name: s.name.clone().into(),
             host: s.host.clone().into(),
@@ -642,8 +666,10 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
                 .clone()
                 .unwrap_or_else(|| "never".to_string())
                 .into(),
-        })
-        .collect();
+            group: s.group.clone().into(),
+            group_header: header.into(),
+        });
+    }
     model.set_vec(rows);
 }
 
@@ -682,6 +708,7 @@ fn wire_session_callbacks(
             w.set_dialog_key_path("".into());
             w.set_dialog_proxy_type("none".into());
             w.set_dialog_proxy_hostport("".into());
+            w.set_dialog_group("".into());
             w.set_dialog_kind("ssh".into());
             w.set_dialog_serial_port("".into());
             w.set_dialog_baud("115200".into());
@@ -827,6 +854,7 @@ fn wire_session_callbacks(
                 let (proxy_type, proxy_hostport) = split_proxy(&session.proxy);
                 w.set_dialog_proxy_type(proxy_type.into());
                 w.set_dialog_proxy_hostport(proxy_hostport.into());
+                w.set_dialog_group(session.group.clone().into());
                 w.set_dialog_kind(session.kind.as_str().into());
                 w.set_dialog_serial_port(session.serial_port.clone().into());
                 w.set_dialog_baud(session.baud_rate.to_string().into());
@@ -940,6 +968,7 @@ fn wire_session_callbacks(
                 private_key_path: draft.private_key_path.to_string().replace('\\', "/"),
                 proxy: draft.proxy.to_string(),
                 last_used: None,
+                group: draft.group.to_string(),
                 kind,
                 serial_port: draft.serial_port.to_string(),
                 baud_rate: if draft.baud_rate <= 0 {

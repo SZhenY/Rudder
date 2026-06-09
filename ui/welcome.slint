@@ -9,6 +9,8 @@ export struct SessionInfo {
     user: string,
     auth: string,      // "password" | "key"
     last-used: string, // ISO timestamp or "never"
+    group: string,        // folder/group name ("" = ungrouped)
+    group-header: string, // set on the first row of each group → render a header
 }
 
 // --- SessionRow ------------------------------------------------------------
@@ -259,12 +261,34 @@ export component Welcome inherits Rectangle {
 
                 if sessions.length > 0 : VerticalLayout {
                     spacing: 2px;
-                    for session[i] in sessions : SessionRow {
-                        session: session;
-                        connect => { root.connect-session(session.id); }
-                        edit => { root.edit-session(session.id); }
-                        duplicate => { root.duplicate-session(session.id); }
-                        remove => { root.remove-session(session.id); }
+                    for session[i] in sessions : VerticalLayout {
+                        spacing: 2px;
+                        // Group header on the first row of each named group (#41).
+                        if session.group-header != "" : HorizontalLayout {
+                            padding-top: 6px;
+                            padding-left: 4px;
+                            Text {
+                                text: "\u{E2C7}";   // folder glyph
+                                font-family: "Material Icons";
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: " " + session.group-header;
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-xs;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                        SessionRow {
+                            session: session;
+                            connect => { root.connect-session(session.id); }
+                            edit => { root.edit-session(session.id); }
+                            duplicate => { root.duplicate-session(session.id); }
+                            remove => { root.remove-session(session.id); }
+                        }
                     }
                 }
             }

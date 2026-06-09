@@ -168,6 +168,10 @@ pub struct Session {
     pub proxy: String,
     #[serde(default)]
     pub last_used: Option<String>,
+    /// Optional folder/group name to organize sessions in the list (#41).
+    /// Empty = ungrouped. Sessions are grouped by this in Quick Connect.
+    #[serde(default)]
+    pub group: String,
 
     // --- Transport ----------------------------------------------------------
     /// SSH (default), Serial, or Telnet. Absent in old config files → Ssh.
@@ -205,6 +209,7 @@ impl Session {
             private_key_path: String::new(),
             proxy: String::new(),
             last_used: None,
+            group: String::new(),
             kind: SessionKind::Ssh,
             serial_port: String::new(),
             baud_rate: default_baud(),

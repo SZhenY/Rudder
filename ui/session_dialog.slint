@@ -12,6 +12,7 @@ export struct SessionDraft {
     password: string,
     private-key-path: string,
     proxy: string,     // "" | "socks5://host:port" | "http://host:port"
+    group: string,     // folder/group name ("" = ungrouped)
     // Serial-only (ignored unless kind == "serial")
     serial-port: string,
     baud-rate: int,
@@ -62,6 +63,7 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-key-path;
     in-out property <string> draft-proxy-type: "none";  // "none" | "socks5" | "http"
     in-out property <string> draft-proxy-hostport;
+    in-out property <string> draft-group;
     in-out property <string> draft-serial-port;
     in-out property <string> draft-baud: "115200";
     in-out property <string> draft-data-bits: "8";
@@ -145,6 +147,13 @@ export component SessionDialog inherits Rectangle {
                 label: @tr("Name");
                 placeholder: @tr("e.g. production web-01");
                 value <=> root.draft-name;
+            }
+
+            // Optional group/folder to organize sessions by business (#41).
+            LabeledInput {
+                label: @tr("Group (optional)");
+                placeholder: @tr("e.g. Production / Database");
+                value <=> root.draft-group;
             }
 
             // ── SSH / Telnet share host + port ──────────────────────────────
@@ -363,6 +372,7 @@ export component SessionDialog inherits Rectangle {
                             proxy: (root.draft-proxy-type == "none" || root.draft-proxy-hostport == "") ? ""
                                  : root.draft-proxy-type == "http" ? "http://" + root.draft-proxy-hostport
                                  : "socks5://" + root.draft-proxy-hostport,
+                            group: root.draft-group,
                             serial-port: root.draft-serial-port,
                             baud-rate: root.draft-baud.to-float(),
                             data-bits: root.draft-data-bits.to-float(),
