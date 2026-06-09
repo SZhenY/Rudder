@@ -861,6 +861,32 @@ fn wire_session_callbacks(
         });
     }
 
+    // Duplicate a session: clone it with a fresh id and a " (copy)" name (#41).
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_duplicate_session(move |id: SharedString| {
+            {
+                let mut s = store.borrow_mut();
+                if let Some(orig) = s.get(&id.to_string()).cloned() {
+                    let mut copy = orig;
+                    copy.id = uuid::Uuid::new_v4().to_string();
+                    copy.name = format!("{} (copy)", copy.name);
+                    copy.last_used = None;
+                    s.upsert(copy);
+                    if let Err(err) = s.save() {
+                        tracing::warn!("failed to save config: {err:#}");
+                    }
+                }
+            }
+            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            if let Some(w) = weak.upgrade() {
+                let _ = w.get_sessions();
+            }
+        });
+    }
+
     // Dialog submit -> persist + (optionally) connect.
     {
         let weak = window.as_weak();

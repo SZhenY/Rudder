@@ -146,6 +146,7 @@ export component AppWindow inherits Window {
     callback import-sessions();               // import sessions from a file (#46)
     callback connect-session(string /* session-id */);
     callback edit-session(string /* session-id */);
+    callback duplicate-session(string /* session-id */);
     callback remove-session(string /* session-id */);
     callback session-dialog-submit(SessionDraft);
     callback session-dialog-cancel();
@@ -252,6 +253,7 @@ export component AppWindow inherits Window {
                     import-ssh-config => { root.import-ssh-config(); }
                     connect-session(id) => { root.connect-session(id); }
                     edit-session(id) => { root.edit-session(id); }
+                    duplicate-session(id) => { root.duplicate-session(id); }
                     remove-session(id) => { root.remove-session(id); }
                 }
 

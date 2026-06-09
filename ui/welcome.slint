@@ -16,6 +16,7 @@ component SessionRow inherits Rectangle {
     in property <SessionInfo> session;
     callback connect();
     callback edit();
+    callback duplicate();
     callback remove();
 
     height: 36px;
@@ -44,7 +45,7 @@ component SessionRow inherits Rectangle {
         x: ctx-x;
         y: ctx-y;
         width: 120px;
-        height: 72px;
+        height: 101px;
 
         Rectangle {
             background: Theme.bg-panel;
@@ -73,6 +74,24 @@ component SessionRow inherits Rectangle {
                         alignment: center;
                         Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
+                    }
+                }
+
+                // Duplicate — clone this session as a starting point (#41).
+                Rectangle {
+                    height: 28px;
+                    border-radius: Theme.radius-sm;
+                    background: dup-ta.has-hover ? Theme.bg-hover : transparent;
+                    dup-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.duplicate(); }
+                    }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        spacing: 8px;
+                        alignment: center;
+                        Text { text: "\u{E14D}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                        Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
                 }
 
@@ -154,6 +173,7 @@ export component Welcome inherits Rectangle {
     callback import-ssh-config();
     callback connect-session(string);
     callback edit-session(string);
+    callback duplicate-session(string);
     callback remove-session(string);
 
     background: Theme.bg-root;
@@ -243,6 +263,7 @@ export component Welcome inherits Rectangle {
                         session: session;
                         connect => { root.connect-session(session.id); }
                         edit => { root.edit-session(session.id); }
+                        duplicate => { root.duplicate-session(session.id); }
                         remove => { root.remove-session(session.id); }
                     }
                 }
