@@ -83,6 +83,7 @@ export component AppWindow inherits Window {
     in property <string> net-selected;      // currently selected NIC
     in property <bool> net-show-selector;   // only on a live session tab
     in property <[DiskInfo]> disks;         // active tab's filesystem usage
+    in property <string> app-version;       // from Rust: env!("CARGO_PKG_VERSION")
     callback select-net-iface(string);
 
     // --- Top-right popups --------------------------------------------------
@@ -218,6 +219,7 @@ export component AppWindow inherits Window {
             net-selected: root.net-selected;
             net-show-selector: root.net-show-selector;
             disks: root.disks;
+            app-version: root.app-version;
             select-net-iface(i) => { root.select-net-iface(i); }
         }
 

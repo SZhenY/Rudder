@@ -210,6 +210,9 @@ export component Sidebar inherits Rectangle {
     in property <string> net-selected;
     in property <bool> net-show-selector;
     in property <[DiskInfo]> disks;
+    // App version string, injected from Rust (env!("CARGO_PKG_VERSION")) so it
+    // always matches Cargo.toml without hand-editing this file.
+    in property <string> app-version;
     callback select-net-iface(string);
 
     width: 220px;
@@ -218,11 +221,11 @@ export component Sidebar inherits Rectangle {
 
     // Disk-row hover tooltip state — written by per-row TouchArea pointer-event
     // callbacks, so the index is always the exact data row index with no math.
-    private property <int>    _disk-tip-idx: -1;
-    private property <string> _disk-tip:     "";
+    private property <int>    disk-tip-idx: -1;
+    private property <string> disk-tip-path:     "";
     // Sidebar-absolute Y just below the hovered row, accounting for scroll.
-    private property <length> _tip-y: _disk-tip-idx >= 0 ?
-        clamp(disk-section.y + disk-flick.y + _disk-tip-idx * 21px
+    private property <length> disk-tip-y: disk-tip-idx >= 0 ?
+        clamp(disk-section.y + disk-flick.y + disk-tip-idx * 21px
               + disk-flick.viewport-y + 22px, 4px, root.height - 30px) : 0px;
 
 
@@ -359,11 +362,11 @@ export component Sidebar inherits Rectangle {
                         ta := TouchArea {
                             pointer-event(ev) => {
                                 if self.has-hover {
-                                    root._disk-tip = d.path;
-                                    root._disk-tip-idx = i;
-                                } else if root._disk-tip == d.path {
-                                    root._disk-tip = "";
-                                    root._disk-tip-idx = -1;
+                                    root.disk-tip-path = d.path;
+                                    root.disk-tip-idx = i;
+                                } else if root.disk-tip-path == d.path {
+                                    root.disk-tip-path = "";
+                                    root.disk-tip-idx = -1;
                                 }
                             }
                         }
@@ -404,7 +407,7 @@ export component Sidebar inherits Rectangle {
         }
 
         Text {
-            text: "meatshell v0.2.8";
+            text: "meatshell v" + root.app-version;
             color: Theme.text-muted;
             font-size: Theme.fs-xs;
             horizontal-alignment: center;
@@ -413,9 +416,9 @@ export component Sidebar inherits Rectangle {
 
     // Disk-path tooltip — floats above all sidebar content when a row is hovered.
     // Positioned just below the hovered row, z:100 ensures it paints on top.
-    if _disk-tip != "" : Rectangle {
+    if disk-tip-path != "" : Rectangle {
         x: 4px;
-        y: _tip-y;
+        y: disk-tip-y;
         width: parent.width - 8px;
         height: 24px;
         z: 100;
@@ -431,7 +434,7 @@ export component Sidebar inherits Rectangle {
             x: 8px;
             y: (parent.height - self.height) / 2;
             width: parent.width - 16px;
-            text: _disk-tip;
+            text: disk-tip-path;
             color: Theme.text-primary;
             font-size: Theme.fs-xs;
             overflow: elide;

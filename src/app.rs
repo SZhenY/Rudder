@@ -177,6 +177,10 @@ pub fn run() -> Result<()> {
     let _ = slint::set_xdg_app_id("meatshell");
     let window = AppWindow::new().context("failed to build Slint window")?;
 
+    // Show the crate version (from Cargo.toml at compile time) in the sidebar,
+    // so the footer never drifts out of sync with the actual build.
+    window.set_app_version(env!("CARGO_PKG_VERSION").into());
+
     // Set the window icon from the PNG embedded in the binary so the dock
     // shows the correct icon even without a system-installed .desktop entry
     // (e.g. AppImage without AppImageLauncher, or plain binary in ~/bin).
