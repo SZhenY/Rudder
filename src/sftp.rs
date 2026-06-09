@@ -445,10 +445,22 @@ async fn run_sftp(
             SftpCommand::Delete(path) => {
                 let filename = base_name(&path);
                 let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("删除", "Deleting"), filename)));
-                // Try as a file first, then as an (empty) directory.
-                let res = match sftp.remove_file(&path).await {
-                    Ok(_) => Ok(()),
-                    Err(_) => sftp.remove_dir(&path).await.map(|_| ()),
+                // Directories are removed recursively (a plain remove_dir only
+                // works on an empty dir, so an uploaded folder couldn't be
+                // deleted); files via remove_file.
+                let is_dir = sftp
+                    .metadata(&path)
+                    .await
+                    .ok()
+                    .map(|m| (m.permissions.unwrap_or(0) & 0o170_000) == 0o040_000)
+                    .unwrap_or(false);
+                let res: Result<()> = if is_dir {
+                    remove_dir_recursive(&sftp, &path).await
+                } else {
+                    sftp.remove_file(&path)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| anyhow::anyhow!("{e}"))
                 };
                 match res {
                     Ok(_) => {
@@ -815,6 +827,36 @@ async fn download_dir(
                 download_impl(sftp, &entry.full_path, &lpath, &fname, &id, events).await?;
             }
         }
+    }
+    Ok(())
+}
+
+/// Recursively remove a remote directory tree (#50 follow-up).
+///
+/// A plain `remove_dir` only deletes an *empty* directory, so deleting an
+/// uploaded folder failed. We BFS to discover every sub-directory (deleting
+/// files as we go), then rmdir them deepest-first.
+async fn remove_dir_recursive(sftp: &SftpSession, root: &str) -> Result<()> {
+    let mut all_dirs = vec![root.trim_end_matches('/').to_string()];
+    let mut i = 0;
+    while i < all_dirs.len() {
+        let d = all_dirs[i].clone();
+        i += 1;
+        for entry in list_dir_impl(sftp, &d).await? {
+            if entry.is_dir {
+                all_dirs.push(entry.full_path);
+            } else {
+                sftp.remove_file(&entry.full_path)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("remove file {}: {e}", entry.full_path))?;
+            }
+        }
+    }
+    // BFS discovered parents before children, so reversing gives deepest-first.
+    for d in all_dirs.iter().rev() {
+        sftp.remove_dir(d)
+            .await
+            .map_err(|e| anyhow::anyhow!("remove dir {d}: {e}"))?;
     }
     Ok(())
 }
