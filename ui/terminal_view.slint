@@ -196,7 +196,7 @@ export component TerminalView inherits Rectangle {
         }
     }
     changed visible => {
-        if self.visible {
+        if (self.visible) {
             ime-input.focus();
             // Re-sync the PTY size on return (it was frozen while hidden).
             root.terminal-resize(root.term-cols, root.term-rows);

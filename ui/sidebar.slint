@@ -361,10 +361,10 @@ export component Sidebar inherits Rectangle {
                         // Per-row hover sensor: i is the exact data index.
                         ta := TouchArea {
                             pointer-event(ev) => {
-                                if self.has-hover {
+                                if (self.has-hover) {
                                     root.disk-tip-path = d.path;
                                     root.disk-tip-idx = i;
-                                } else if root.disk-tip-path == d.path {
+                                } else if (root.disk-tip-path == d.path) {
                                     root.disk-tip-path = "";
                                     root.disk-tip-idx = -1;
                                 }
