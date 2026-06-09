@@ -388,12 +388,24 @@ async fn run_session(
     // We wait for the first non-empty data chunk (the initial shell prompt)
     // before sending so the command doesn't interleave with banner text.
     let mut prompt_injected = false;
+    // True from injecting PROMPT_SETUP until the first OSC 7 comes back; during
+    // that window we strip the echoed command text from the output stream.
+    let mut suppress_echo = false;
 
     // PROMPT_COMMAND bash snippet.  Single-quoted body prevents bash from
     // expanding ${HOSTNAME}/${PWD} at definition time; printf interprets
     // \033 / \007 as ESC / BEL.  `eval "$PROMPT_COMMAND"` fires it once
     // immediately so the SFTP panel gets the initial CWD right away.
-    const PROMPT_SETUP: &[u8] = b"export PROMPT_COMMAND='printf \"\\033]7;file://${HOSTNAME}${PWD}\\007\"' && eval \"$PROMPT_COMMAND\"\r";
+    //
+    // The leading space keeps the line out of the user's shell history
+    // (HISTCONTROL=ignorespace / ignoreboth, the default on most distros);
+    // its echo is also stripped locally (ECHO_NEEDLE) so it never shows up.
+    const PROMPT_SETUP: &[u8] = b" export PROMPT_COMMAND='printf \"\\033]7;file://${HOSTNAME}${PWD}\\007\"' && eval \"$PROMPT_COMMAND\"\r";
+
+    // The same command as the interactive shell echoes it back (no leading
+    // space, no trailing CR). While the injection is in flight we delete this
+    // from the output so the user never sees the bookkeeping command.
+    const ECHO_NEEDLE: &str = "export PROMPT_COMMAND='printf \"\\033]7;file://${HOSTNAME}${PWD}\\007\"' && eval \"$PROMPT_COMMAND\"";
 
     // --- Remote resource monitor (separate exec channel) ----------------
     // A tiny remote loop streams /proc/stat + /proc/meminfo every 2s; we parse
@@ -453,17 +465,25 @@ async fn run_session(
             msg = channel.wait() => {
                 match msg {
                     Some(ChannelMsg::Data { data }) => {
-                        let text = String::from_utf8_lossy(&data).into_owned();
+                        let mut text = String::from_utf8_lossy(&data).into_owned();
 
                         // Inject PROMPT_COMMAND after the first real shell output.
                         if !prompt_injected && !text.trim().is_empty() {
                             prompt_injected = true;
+                            suppress_echo = true;
                             let _ = channel.data(PROMPT_SETUP).await;
+                        }
+
+                        // Hide the injected command's echo so it doesn't clutter
+                        // the terminal (the user never typed it).
+                        if suppress_echo && text.contains(ECHO_NEEDLE) {
+                            text = text.replace(ECHO_NEEDLE, "");
                         }
 
                         // Scan for OSC 7 CWD notification injected by PROMPT_COMMAND.
                         if let Some(cwd) = extract_osc7_path(&text) {
                             tracing::debug!("OSC7 cwd={:?}", cwd);
+                            suppress_echo = false; // injection landed; stop filtering
                             let _ = events.send(SessionEvent::CwdChanged(cwd));
                         }
 

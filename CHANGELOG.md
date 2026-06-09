@@ -97,6 +97,15 @@ All notable changes are documented here. 本文件记录所有重要变更。
   `wayland-data-control` 后端,复制改用 set().wait() 使选区在剪贴板句柄 drop 后
   仍然有效。
 
+- **Hide the shell-integration command from the terminal.** meatshell injects a
+  one-line `PROMPT_COMMAND` (OSC 7) on connect so the SFTP panel can follow the
+  terminal's working directory. Its echo used to show up on every connect (and
+  pollute shell history); the line now carries a leading space (kept out of
+  history) and its echo is stripped from the output before display.
+  **隐藏 shell 集成注入命令。** meatshell 连接时会注入一行 `PROMPT_COMMAND`
+  (OSC 7),让 SFTP 面板跟随终端当前目录。此前它的回显每次连接都显示在终端
+  (并污染命令历史);现在该行带前导空格(不进历史),回显也会在显示前被剥离。
+
 - **Dragging the SFTP panel up no longer clears terminal output (#18).** vt100's
   shrink truncated the grid from the bottom, dropping the most recent output;
   before shrinking we now save the top rows to scrollback and scroll so the
