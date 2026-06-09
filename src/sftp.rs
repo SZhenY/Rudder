@@ -389,24 +389,55 @@ async fn run_sftp(
             }
 
             SftpCommand::Upload { local, remote_dir } => {
-                let filename = base_name(&local);
-                let remote_path = format!("{}/{}", remote_dir.trim_end_matches('/'), filename);
-                let id = Uuid::new_v4().to_string();
-                let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("上传", "Uploading"), filename)));
-                match upload_pipelined(&handle, &local, &remote_path, &filename, &id, &events).await {
-                    Ok(_) => {
-                        if let Ok(entries) = list_dir_impl(&sftp, &remote_dir).await {
-                            let _ = events.send(SessionEvent::SftpEntries {
-                                path: remote_dir.clone(),
-                                entries,
-                            });
-                        }
-                        let _ = events
-                            .send(SessionEvent::SftpStatus(format!("{}: {}", t("上传完成", "Uploaded"), filename)));
+                // A directory source → recursively upload the whole tree (#50).
+                let is_dir = tokio::fs::metadata(&local)
+                    .await
+                    .map(|m| m.is_dir())
+                    .unwrap_or(false);
+                if is_dir {
+                    let dirname = base_name(&local);
+                    let _ = events.send(SessionEvent::SftpStatus(format!(
+                        "{} {}/...", t("上传文件夹", "Uploading folder"), dirname
+                    )));
+                    let res = upload_dir(&handle, &sftp, &local, &remote_dir, &events).await;
+                    if let Ok(entries) = list_dir_impl(&sftp, &remote_dir).await {
+                        let _ = events.send(SessionEvent::SftpEntries {
+                            path: remote_dir.clone(),
+                            entries,
+                        });
                     }
-                    Err(e) => {
-                        emit_transfer(&events, &id, &filename, true, 0, 0, 2, &e.to_string());
-                        let _ = events.send(SessionEvent::SftpStatus(format!("{}: {e}", t("上传失败", "Upload failed"))));
+                    match res {
+                        Ok(_) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {}", t("上传完成", "Uploaded"), dirname
+                            )));
+                        }
+                        Err(e) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {e}", t("上传失败", "Upload failed")
+                            )));
+                        }
+                    }
+                } else {
+                    let filename = base_name(&local);
+                    let remote_path = format!("{}/{}", remote_dir.trim_end_matches('/'), filename);
+                    let id = Uuid::new_v4().to_string();
+                    let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("上传", "Uploading"), filename)));
+                    match upload_pipelined(&handle, &local, &remote_path, &filename, &id, &events).await {
+                        Ok(_) => {
+                            if let Ok(entries) = list_dir_impl(&sftp, &remote_dir).await {
+                                let _ = events.send(SessionEvent::SftpEntries {
+                                    path: remote_dir.clone(),
+                                    entries,
+                                });
+                            }
+                            let _ = events
+                                .send(SessionEvent::SftpStatus(format!("{}: {}", t("上传完成", "Uploaded"), filename)));
+                        }
+                        Err(e) => {
+                            emit_transfer(&events, &id, &filename, true, 0, 0, 2, &e.to_string());
+                            let _ = events.send(SessionEvent::SftpStatus(format!("{}: {e}", t("上传失败", "Upload failed"))));
+                        }
                     }
                 }
             }
@@ -782,6 +813,43 @@ async fn download_dir(
                 let lpath = format!("{}/{}", ldir, fname);
                 let id = Uuid::new_v4().to_string();
                 download_impl(sftp, &entry.full_path, &lpath, &fname, &id, events).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Recursively upload a local directory tree into `remote_parent` (#50).
+///
+/// Iterative work-stack: mirror each local dir to the remote (create_dir, whose
+/// "already exists" error is ignored), then upload its files with the pipelined
+/// path. Symlinks and other special files are skipped.
+async fn upload_dir(
+    handle: &client::Handle<SftpClientHandler>,
+    sftp: &SftpSession,
+    local_root: &str,
+    remote_parent: &str,
+    events: &UnboundedSender<SessionEvent>,
+) -> Result<()> {
+    let root_name = base_name(local_root);
+    let remote_root = format!("{}/{}", remote_parent.trim_end_matches('/'), root_name);
+    let mut stack = vec![(local_root.to_string(), remote_root)];
+    while let Some((ldir, rdir)) = stack.pop() {
+        // Best-effort mkdir; an error usually just means the dir already exists.
+        let _ = sftp.create_dir(&rdir).await;
+        let mut rd = tokio::fs::read_dir(&ldir)
+            .await
+            .with_context(|| format!("read local dir {ldir}"))?;
+        while let Some(entry) = rd.next_entry().await.context("read dir entry")? {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let lpath = entry.path().to_string_lossy().to_string();
+            let rchild = format!("{}/{}", rdir, name);
+            let ft = entry.file_type().await.context("file type")?;
+            if ft.is_dir() {
+                stack.push((lpath, rchild));
+            } else if ft.is_file() {
+                let id = Uuid::new_v4().to_string();
+                upload_pipelined(handle, &lpath, &rchild, &name, &id, events).await?;
             }
         }
     }
