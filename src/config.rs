@@ -503,6 +503,16 @@ impl ConfigStore {
         let tmp = self.path.with_extension("json.tmp");
         fs::write(&tmp, &raw)
             .with_context(|| format!("failed to write {}", tmp.display()))?;
+        // Restrict to owner-only before publishing (#34): sessions.json holds
+        // (encrypted) credentials, so it shouldn't be world-readable. Set 0600
+        // on the temp file so the permission is already in place at rename.
+        // Windows %APPDATA% is owner-restricted by default ACLs — no-op there.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))
+                .with_context(|| format!("failed to set permissions on {}", tmp.display()))?;
+        }
         fs::rename(&tmp, &self.path)
             .with_context(|| format!("failed to finalise {}", self.path.display()))?;
         Ok(())

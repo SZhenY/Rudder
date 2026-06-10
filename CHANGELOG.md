@@ -5,6 +5,27 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-10
+
+### Security / 安全
+
+- **Restrict sessions.json to owner-only on Unix (#34).** The config file holds
+  (encrypted) credentials, so it is now written with mode 0600 — like
+  secret.key — and other local accounts can't read it. Windows %APPDATA% is
+  already owner-restricted by default ACLs.
+  **将 sessions.json 限制为仅属主可读(Unix)(#34)。** 配置文件含(加密的)凭据,
+  现在以 0600 权限写入(与 secret.key 一致),其它本地账户无法读取。Windows 的
+  %APPDATA% 默认 ACL 已限制为属主。
+
+### Build / 构建
+
+- **Build macos-x86_64 by cross-compiling on Apple Silicon runners.** The
+  dedicated Intel (macos-13) runners queue for ages and often time out, so the
+  x86_64 Mac binary is now cross-compiled on a plentiful macos-14 runner.
+  **在 Apple Silicon runner 上交叉编译 macos-x86_64。** 专用 Intel(macos-13)
+  runner 排队极久且常超时,x86_64 Mac 二进制改为在充足的 macos-14 runner 上
+  交叉编译。
+
 ## [0.3.0] - 2026-06-10
 
 ### Added / 新增
@@ -298,5 +319,6 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Screenshots in the README** (`docs/screenshots/`, sensitive info redacted).
   **README 增加截图**（`docs/screenshots/`，敏感信息已打码）。
 
+[0.3.1]: https://github.com/jeff141/meatshell/releases/tag/v0.3.1
 [0.3.0]: https://github.com/jeff141/meatshell/releases/tag/v0.3.0
 [0.2.2]: https://github.com/jeff141/meatshell/releases/tag/v0.2.2
