@@ -19,7 +19,11 @@ component SessionRow inherits Rectangle {
     callback connect();
     callback edit();
     callback duplicate();
+    callback move-to-group(string);
     callback remove();
+    // Full session list — group-header is non-empty once per group, so the
+    // "move to group" submenu can iterate it to list each group exactly once.
+    in property <[SessionInfo]> all-sessions;
 
     height: 36px;
     border-radius: Theme.radius-sm;
@@ -46,8 +50,9 @@ component SessionRow inherits Rectangle {
     ctx-menu := PopupWindow {
         x: ctx-x;
         y: ctx-y;
-        width: 120px;
-        height: 101px;
+        width: 140px;
+        // Height follows the content so a variable number of "move to" rows fit.
+        height: menu-vl.preferred-height;
 
         Rectangle {
             background: Theme.bg-panel;
@@ -57,7 +62,7 @@ component SessionRow inherits Rectangle {
             drop-shadow-blur: 10px;
             drop-shadow-color: #00000050;
 
-            VerticalLayout {
+            menu-vl := VerticalLayout {
                 padding: 4px;
                 spacing: 2px;
 
@@ -98,6 +103,27 @@ component SessionRow inherits Rectangle {
                 }
 
                 Rectangle { height: 1px; background: Theme.border-subtle; }
+
+                // Move to another group (#41). group-header is non-empty once
+                // per group, so iterating the full list yields each group once;
+                // the current group is skipped.
+                for s[i] in root.all-sessions : Rectangle {
+                    visible: s.group-header != "" && s.group-header != root.session.group;
+                    height: self.visible ? 28px : 0px;
+                    border-radius: Theme.radius-sm;
+                    background: mv-ta.has-hover ? Theme.bg-hover : transparent;
+                    mv-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.move-to-group(s.group-header); }
+                    }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        spacing: 8px;
+                        alignment: center;
+                        Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                        Text { text: s.group-header; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                    }
+                }
 
                 // Delete (red tint)
                 Rectangle {
@@ -176,6 +202,7 @@ export component Welcome inherits Rectangle {
     callback connect-session(string);
     callback edit-session(string);
     callback duplicate-session(string);
+    callback move-session(string /* id */, string /* group */);
     callback remove-session(string);
 
     background: Theme.bg-root;
@@ -287,9 +314,11 @@ export component Welcome inherits Rectangle {
                         }
                         SessionRow {
                             session: session;
+                            all-sessions: root.sessions;
                             connect => { root.connect-session(session.id); }
                             edit => { root.edit-session(session.id); }
                             duplicate => { root.duplicate-session(session.id); }
+                            move-to-group(g) => { root.move-session(session.id, g); }
                             remove => { root.remove-session(session.id); }
                         }
                     }
