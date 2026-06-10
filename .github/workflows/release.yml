@@ -162,6 +162,23 @@ jobs:
             echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
           fi
 
+      # MSI installer with a "choose install location" wizard (WixUI_InstallDir).
+      # Best-effort: if the WiX/cargo-wix tooling hiccups it must not block the
+      # .zip release, hence continue-on-error.
+      - name: Build MSI installer (Windows)
+        if: matrix.name == 'windows-x86_64'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $VERSION = "$env:GITHUB_REF_NAME"; if (-not $VERSION) { $VERSION = "dev" }
+          # WiX 3 toolset (candle/light) that cargo-wix drives.
+          choco install wixtoolset -y --no-progress
+          $candle = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*\bin\candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($candle) { $env:PATH = "$($candle.DirectoryName);$env:PATH" }
+          cargo install cargo-wix --locked
+          cargo wix --no-build --nocapture --target ${{ matrix.target }} --output "meatshell-$VERSION-windows-x86_64.msi"
+          echo "MSI=meatshell-$VERSION-windows-x86_64.msi" >> $env:GITHUB_ENV
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -174,6 +191,13 @@ jobs:
         with:
           name: linux-x86_64-appimage
           path: ${{ env.APPIMAGE }}
+
+      - name: Upload MSI artifact
+        if: matrix.name == 'windows-x86_64' && env.MSI != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64-msi
+          path: ${{ env.MSI }}
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -188,3 +212,10 @@ jobs:
         with:
           files: ${{ env.APPIMAGE }}
           fail_on_unmatched_files: true
+
+      - name: Attach MSI to GitHub Release
+        if: matrix.name == 'windows-x86_64' && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.MSI }}
+          fail_on_unmatched_files: false
