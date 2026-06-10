@@ -144,6 +144,15 @@ msgstr "Duplicate"
 msgid "New group"
 msgstr "New group"
 
+msgid "Edit group"
+msgstr "Edit group"
+
+msgid "Delete group"
+msgstr "Delete group"
+
+msgid "Group name"
+msgstr "Group name"
+
 msgid "Status"
 msgstr "Status"
 

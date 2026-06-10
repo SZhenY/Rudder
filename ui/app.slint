@@ -17,7 +17,7 @@ import { SessionDialog, SessionDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { TerminalView, TermSpan, TermMatch } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
-import { ComboBox, SpinBox } from "std-widgets.slint";
+import { ComboBox, SpinBox, LineEdit, Button } from "std-widgets.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode }
 
@@ -105,6 +105,12 @@ export component AppWindow inherits Window {
     in-out property <bool> interface-open: false;  // Interface settings dialog
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
+    // Group create / rename dialog (#41).
+    in-out property <bool> group-dialog-open: false;
+    in-out property <string> group-dialog-orig;    // "" = create, else rename
+    in-out property <string> group-dialog-name;
+    callback delete-group(string /* name */);
+    callback submit-group(string /* orig */, string /* name */);
     callback toggle-theme();               // flip dark ↔ light
     in-out property <length> sftp-panel-height: 220px; // shared; lets Rust locate the drop zone
     callback pick-download-dir();            // open a folder picker
@@ -292,6 +298,17 @@ export component AppWindow inherits Window {
                     duplicate-session(id) => { root.duplicate-session(id); }
                     move-session(id, group) => { root.move-session(id, group); }
                     toggle-group(group) => { root.toggle-group(group); }
+                    new-group => {
+                        root.group-dialog-orig = "";
+                        root.group-dialog-name = "";
+                        root.group-dialog-open = true;
+                    }
+                    edit-group(name) => {
+                        root.group-dialog-orig = name;
+                        root.group-dialog-name = name;
+                        root.group-dialog-open = true;
+                    }
+                    delete-group(name) => { root.delete-group(name); }
                     remove-session(id) => { root.remove-session(id); }
                 }
 
@@ -752,6 +769,75 @@ export component AppWindow inherits Window {
                            vertical-alignment: center; }
                     Text { text: @tr("About"); color: Theme.text-primary; font-size: Theme.fs-md;
                            vertical-alignment: center; horizontal-stretch: 1; }
+                }
+            }
+        }
+    }
+
+    // --- Group create / rename dialog (#41) -------------------------------
+    if root.group-dialog-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000080;
+        TouchArea { clicked => { root.group-dialog-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 340px;
+            height: 178px;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #000000a0;
+            TouchArea {}   // swallow inside clicks
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+                Text {
+                    text: root.group-dialog-orig == ""
+                        ? (root.lang-en ? "New group" : "新建分组")
+                        : (root.lang-en ? "Edit group" : "编辑分组");
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-lg;
+                    font-weight: 700;
+                }
+                Text {
+                    text: @tr("Group name");
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                }
+                ge-input := LineEdit {
+                    text <=> root.group-dialog-name;
+                    placeholder-text: @tr("Group name");
+                    // Enter confirms when non-empty.
+                    accepted => {
+                        if (root.group-dialog-name != "") {
+                            root.submit-group(root.group-dialog-orig, root.group-dialog-name);
+                            root.group-dialog-open = false;
+                        }
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Button {
+                        text: root.lang-en ? "Cancel" : "取消";
+                        clicked => { root.group-dialog-open = false; }
+                    }
+                    Button {
+                        text: root.lang-en ? "OK" : "确定";
+                        primary: true;
+                        enabled: root.group-dialog-name != "";
+                        clicked => {
+                            root.submit-group(root.group-dialog-orig, root.group-dialog-name);
+                            root.group-dialog-open = false;
+                        }
+                    }
                 }
             }
         }

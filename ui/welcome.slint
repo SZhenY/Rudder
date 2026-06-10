@@ -201,6 +201,9 @@ export component Welcome inherits Rectangle {
     callback duplicate-session(string);
     callback move-session(string /* id */, string /* group */);
     callback toggle-group(string /* group */);
+    callback new-group();
+    callback edit-group(string /* current-name */);
+    callback delete-group(string /* name */);
     callback remove-session(string);
 
     background: Theme.bg-root;
@@ -299,8 +302,9 @@ export component Welcome inherits Rectangle {
                                 padding-top: 6px;
                                 padding-left: 4px;
                                 spacing: 4px;
-                                Text {
-                                    // chevron_right when collapsed, expand_more when open
+                                // Collapse chevron — only for non-empty groups; an
+                                // empty folder is a placeholder row (id == "").
+                                if session.id != "" : Text {
                                     text: session.collapsed ? "\u{E5CC}" : "\u{E5CF}";
                                     font-family: "Material Icons";
                                     color: Theme.text-muted;
@@ -326,9 +330,9 @@ export component Welcome inherits Rectangle {
                             }
                             TouchArea {
                                 mouse-cursor: pointer;
-                                // Left-click toggles collapse; right-click opens the
-                                // group menu ("new group" → new-session dialog).
-                                clicked => { root.toggle-group(session.group); }
+                                // Left-click toggles collapse (non-empty groups only);
+                                // right-click opens the group menu.
+                                clicked => { if (session.id != "") { root.toggle-group(session.group); } }
                                 pointer-event(e) => {
                                     if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
                                         gmx = self.mouse-x;
@@ -340,8 +344,9 @@ export component Welcome inherits Rectangle {
                             grp-menu := PopupWindow {
                                 x: gmx;
                                 y: gmy;
-                                width: 132px;
-                                height: 36px;
+                                width: 140px;
+                                // edit + new always; delete only for an empty group.
+                                height: (session.id == "" ? 3 : 2) * 28px + 9px;
                                 Rectangle {
                                     background: Theme.bg-panel;
                                     border-radius: Theme.radius-sm;
@@ -351,14 +356,37 @@ export component Welcome inherits Rectangle {
                                     drop-shadow-color: #00000050;
                                     VerticalLayout {
                                         padding: 4px;
+                                        spacing: 1px;
+                                        // Edit (rename) group
+                                        Rectangle {
+                                            height: 28px;
+                                            border-radius: Theme.radius-sm;
+                                            background: eg-ta.has-hover ? Theme.bg-hover : transparent;
+                                            eg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.edit-group(session.group); } }
+                                            HorizontalLayout {
+                                                padding-left: 10px; spacing: 8px;
+                                                Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                Text { text: @tr("Edit group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
+                                            }
+                                        }
+                                        // Delete group — only when it has no sessions (id == "")
+                                        if session.id == "" : Rectangle {
+                                            height: 28px;
+                                            border-radius: Theme.radius-sm;
+                                            background: dg-ta.has-hover ? #cc333320 : transparent;
+                                            dg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-group(session.group); } }
+                                            HorizontalLayout {
+                                                padding-left: 10px; spacing: 8px;
+                                                Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                Text { text: @tr("Delete group"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
+                                            }
+                                        }
+                                        // New group
                                         Rectangle {
                                             height: 28px;
                                             border-radius: Theme.radius-sm;
                                             background: ng-ta.has-hover ? Theme.bg-hover : transparent;
-                                            ng-ta := TouchArea {
-                                                mouse-cursor: pointer;
-                                                clicked => { root.new-session(); }
-                                            }
+                                            ng-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-group(); } }
                                             HorizontalLayout {
                                                 padding-left: 10px; spacing: 8px;
                                                 Text { text: "\u{E2CC}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
@@ -369,7 +397,7 @@ export component Welcome inherits Rectangle {
                                 }
                             }
                         }
-                        if !session.collapsed : SessionRow {
+                        if session.id != "" && !session.collapsed : SessionRow {
                             session: session;
                             all-sessions: root.sessions;
                             connect => { root.connect-session(session.id); }

@@ -144,6 +144,15 @@ msgstr "复制副本"
 msgid "New group"
 msgstr "新建分组"
 
+msgid "Edit group"
+msgstr "编辑分组"
+
+msgid "Delete group"
+msgstr "删除分组"
+
+msgid "Group name"
+msgstr "分组名称"
+
 msgid "Status"
 msgstr "运行状态"
 

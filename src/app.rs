@@ -673,45 +673,83 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
     // Group sessions by their `group` (named groups alphabetically, ungrouped
     // last), then by name within each group, and tag the first row of every
     // group with a header so the welcome list can render a folder heading (#41).
-    let mut sessions: Vec<&Session> = store.sessions().iter().collect();
-    // An unset group is shown as the "default" folder (backward compatibility:
-    // sessions saved before grouping existed all land in one tidy place).
-    let effective = |g: &str| -> String {
-        if g.is_empty() { "default".to_string() } else { g.to_string() }
-    };
-    sessions.sort_by(|a, b| {
-        effective(&a.group)
-            .to_lowercase()
-            .cmp(&effective(&b.group).to_lowercase())
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    let sessions = store.sessions();
 
-    let mut last_group: Option<String> = None;
-    let mut rows: Vec<SessionInfo> = Vec::with_capacity(sessions.len());
-    for s in sessions {
-        let eff = effective(&s.group);
-        let header = if last_group.as_deref() != Some(eff.as_str()) {
-            last_group = Some(eff.clone());
-            eff.clone() // first row of each group carries the folder heading
+    // Ordered list of display groups:
+    //  - "default" only when there are ungrouped sessions (group == "")
+    //  - named groups: explicit folders (incl. empty ones) ∪ sessions' groups,
+    //    de-duplicated, alphabetical.
+    let has_default = sessions.iter().any(|s| s.group.is_empty());
+    let mut named: Vec<String> = store
+        .groups()
+        .iter()
+        .cloned()
+        .chain(
+            sessions
+                .iter()
+                .filter(|s| !s.group.is_empty())
+                .map(|s| s.group.clone()),
+        )
+        .collect();
+    named.sort_by_key(|g| g.to_lowercase());
+    named.dedup();
+
+    let mut display_groups: Vec<String> = Vec::new();
+    if has_default {
+        display_groups.push("default".to_string());
+    }
+    display_groups.extend(named);
+
+    // Placeholder row for an empty folder; id == "" marks it as a group header
+    // with no session (used by the UI to gate the "delete group" action).
+    let blank = |group: &str| SessionInfo {
+        id: "".into(),
+        name: "".into(),
+        host: "".into(),
+        port: 0,
+        user: "".into(),
+        auth: "".into(),
+        last_used: "".into(),
+        group: group.into(),
+        group_header: group.into(),
+        collapsed: false,
+    };
+
+    let mut rows: Vec<SessionInfo> = Vec::new();
+    for group in &display_groups {
+        let mut gs: Vec<&Session> = if group == "default" {
+            sessions.iter().filter(|s| s.group.is_empty()).collect()
         } else {
-            String::new()
+            sessions.iter().filter(|s| &s.group == group).collect()
         };
-        rows.push(SessionInfo {
-            id: s.id.clone().into(),
-            name: s.name.clone().into(),
-            host: s.host.clone().into(),
-            port: s.port as i32,
-            user: s.user.clone().into(),
-            auth: s.auth.as_str().into(),
-            last_used: s
-                .last_used
-                .clone()
-                .unwrap_or_else(|| "never".to_string())
-                .into(),
-            group: eff.clone().into(),
-            group_header: header.into(),
-            collapsed: false,
-        });
+        gs.sort_by_key(|s| s.name.to_lowercase());
+
+        if gs.is_empty() {
+            rows.push(blank(group));
+        } else {
+            for (i, s) in gs.iter().enumerate() {
+                rows.push(SessionInfo {
+                    id: s.id.clone().into(),
+                    name: s.name.clone().into(),
+                    host: s.host.clone().into(),
+                    port: s.port as i32,
+                    user: s.user.clone().into(),
+                    auth: s.auth.as_str().into(),
+                    last_used: s
+                        .last_used
+                        .clone()
+                        .unwrap_or_else(|| "never".to_string())
+                        .into(),
+                    group: group.clone().into(),
+                    group_header: if i == 0 {
+                        group.clone().into()
+                    } else {
+                        "".into()
+                    },
+                    collapsed: false,
+                });
+            }
+        }
     }
     model.set_vec(rows);
 }
@@ -1015,6 +1053,49 @@ fn wire_session_callbacks(
                     }
                 }
             }
+            if let Some(w) = weak.upgrade() {
+                let _ = w.get_sessions();
+            }
+        });
+    }
+
+    // Group create / rename (#41).
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_submit_group(move |orig: SharedString, name: SharedString| {
+            {
+                let mut s = store.borrow_mut();
+                if orig.is_empty() {
+                    s.add_group(name.to_string());
+                } else {
+                    s.rename_group(&orig.to_string(), name.to_string());
+                }
+                if let Err(err) = s.save() {
+                    tracing::warn!("failed to save config: {err:#}");
+                }
+            }
+            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            if let Some(w) = weak.upgrade() {
+                let _ = w.get_sessions();
+            }
+        });
+    }
+    // Group delete (#41) — UI only offers this on empty groups.
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_delete_group(move |name: SharedString| {
+            {
+                let mut s = store.borrow_mut();
+                s.remove_group(&name.to_string());
+                if let Err(err) = s.save() {
+                    tracing::warn!("failed to save config: {err:#}");
+                }
+            }
+            sync_sessions_to_model(&store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }

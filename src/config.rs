@@ -241,6 +241,11 @@ pub struct ConfigFile {
     /// Terminal font size in px. 0 = the built-in default.
     #[serde(default)]
     pub font_size: u32,
+    /// Explicit session groups/folders (#41), including empty ones so a folder
+    /// can exist before any session is moved into it. "default" is implicit and
+    /// not stored here.
+    #[serde(default)]
+    pub groups: Vec<String>,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -485,6 +490,56 @@ impl ConfigStore {
 
     pub fn set_font_size(&mut self, size: u32) {
         self.cache.font_size = size.clamp(8, 32);
+    }
+
+    // ── Session groups / folders (#41) ────────────────────────────────────
+
+    /// Explicit groups (empty folders included). "default" is implicit.
+    pub fn groups(&self) -> &[String] {
+        &self.cache.groups
+    }
+
+    /// Create an empty group. Ignores blank names, the reserved "default", and
+    /// duplicates.
+    pub fn add_group(&mut self, name: String) {
+        let n = name.trim().to_string();
+        if n.is_empty() || n.eq_ignore_ascii_case("default") {
+            return;
+        }
+        if !self.cache.groups.iter().any(|g| g == &n) {
+            self.cache.groups.push(n);
+        }
+    }
+
+    /// Delete a group. Any session still in it falls back to ungrouped — the UI
+    /// only offers delete on empty groups, but we clear sessions defensively.
+    pub fn remove_group(&mut self, name: &str) {
+        self.cache.groups.retain(|g| g != name);
+        for s in &mut self.cache.sessions {
+            if s.group == name {
+                s.group.clear();
+            }
+        }
+    }
+
+    /// Rename a group, moving its sessions along. No-op for blank / "default".
+    pub fn rename_group(&mut self, old: &str, new: String) {
+        let n = new.trim().to_string();
+        if n.is_empty() || n.eq_ignore_ascii_case("default") || n == old {
+            return;
+        }
+        for g in &mut self.cache.groups {
+            if g == old {
+                *g = n.clone();
+            }
+        }
+        for s in &mut self.cache.sessions {
+            if s.group == old {
+                s.group = n.clone();
+            }
+        }
+        self.cache.groups.sort();
+        self.cache.groups.dedup();
     }
 
     pub fn save(&self) -> Result<()> {
