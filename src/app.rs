@@ -1804,10 +1804,11 @@ fn apply_session_event_to_window(
             transferred,
             total,
             state,
-            msg: _,
+            msg,
         } => {
             let detail = match state {
-                2 => t("失败", "Failed").to_string(),
+                // On error, show the actual message when we have one.
+                2 => if msg.is_empty() { t("失败", "Failed").to_string() } else { msg },
                 1 => t("已完成", "Done").to_string(),
                 _ => {
                     if total > 0 {
