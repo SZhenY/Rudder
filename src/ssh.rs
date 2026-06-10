@@ -474,10 +474,22 @@ async fn run_session(
                             let _ = channel.data(PROMPT_SETUP).await;
                         }
 
-                        // Hide the injected command's echo so it doesn't clutter
-                        // the terminal (the user never typed it).
-                        if suppress_echo && text.contains(ECHO_NEEDLE) {
-                            text = text.replace(ECHO_NEEDLE, "");
+                        // Hide the injected command so it doesn't clutter the
+                        // terminal (the user never typed it). Delete the whole
+                        // line carrying the echo — the prompt that preceded it,
+                        // the command, and its trailing newline — so the
+                        // bookkeeping command leaves no extra blank prompt behind.
+                        if suppress_echo {
+                            if let Some(pos) = text.find(ECHO_NEEDLE) {
+                                let line_start =
+                                    text[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                                let after = pos + ECHO_NEEDLE.len();
+                                let line_end = text[after..]
+                                    .find('\n')
+                                    .map(|i| after + i + 1)
+                                    .unwrap_or(text.len());
+                                text.replace_range(line_start..line_end, "");
+                            }
                         }
 
                         // Scan for OSC 7 CWD notification injected by PROMPT_COMMAND.

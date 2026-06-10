@@ -359,8 +359,11 @@ export component Sidebar inherits Rectangle {
                         clip: true;
 
                         // Per-row hover sensor: i is the exact data index.
+                        // `changed has-hover` fires reliably on enter AND exit
+                        // (incl. leaving the panel entirely), so the tooltip is
+                        // cleared as soon as the pointer leaves the row.
                         ta := TouchArea {
-                            pointer-event(ev) => {
+                            changed has-hover => {
                                 if (self.has-hover) {
                                     root.disk-tip-path = d.path;
                                     root.disk-tip-idx = i;
