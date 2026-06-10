@@ -5,6 +5,51 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-11
+
+### Added / 新增
+
+- **MSI installer for Windows (best-effort).** Built by cargo-wix with a
+  WixUI_InstallDir wizard, so you can change the install location during setup.
+  **Windows MSI 安装包(尽力而为)。** 由 cargo-wix 构建,带 WixUI_InstallDir
+  向导,安装时可更改安装位置。
+
+- **Explicit session folders (#41).** Groups are now first-class: create / rename
+  / delete them, keep empty folders, and right-click a group header to manage it.
+  Right-click a session to "move to" any group (incl. empty ones).
+  **显式会话文件夹 (#41)。** 分组成为一等公民:可新建 / 重命名 / 删除,可保留空
+  文件夹,右键分组标题进行管理;右键会话可"移动到"任意分组(含空文件夹)。
+
+### Changed / 变更
+
+- **Interface settings dialog** is now draggable (by its title bar), truly modal
+  (background click no longer closes it), and its font controls no longer span
+  the full pane.
+  **「界面」设置对话框**现在可拖动(拖标题栏)、真模态(点背景不再关闭),字体控件
+  也不再占满整个面板。
+
+- **Session right-click menu reordered:** Edit / Duplicate / Delete above the
+  divider, the "move to group" list below it with a header hint.
+  **会话右键菜单重排:** 编辑 / 复制副本 / 删除在分割线上方,"移动到分组"列表带
+  提示在下方。
+
+### Fixed / 修复
+
+- **Wide (CJK) characters no longer misalign the cursor (#60).** A wide glyph's
+  blank continuation cell was being filled with a space, pushing the line and
+  cursor one cell right per character; it now emits nothing.
+  **宽(CJK)字符不再导致光标错位 (#60)。** 宽字形的空白延续格此前被补了空格,
+  每个字符把行和光标右推一格;现在延续格不输出任何内容。
+
+- **Download & settings popups close on click-outside.** A full-window backdrop
+  under each popup closes it when you click outside.
+  **下载/设置弹窗点击外部即关闭。** 每个弹窗下方铺一层全窗背景,点击外部即关闭。
+
+- **Disk tooltip clears when the pointer leaves the panel**, and the OSC 7
+  shell-integration command no longer leaves an extra blank prompt on connect.
+  **磁盘 tooltip 在指针离开面板时消失**,OSC 7 shell 集成命令也不再在连接时留下
+  多余的空提示符。
+
 ## [0.3.1] - 2026-06-10
 
 ### Security / 安全
@@ -319,6 +364,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Screenshots in the README** (`docs/screenshots/`, sensitive info redacted).
   **README 增加截图**（`docs/screenshots/`，敏感信息已打码）。
 
+[0.3.2]: https://github.com/jeff141/meatshell/releases/tag/v0.3.2
 [0.3.1]: https://github.com/jeff141/meatshell/releases/tag/v0.3.1
 [0.3.0]: https://github.com/jeff141/meatshell/releases/tag/v0.3.0
 [0.2.2]: https://github.com/jeff141/meatshell/releases/tag/v0.2.2
