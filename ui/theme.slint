@@ -51,6 +51,11 @@ export global Theme {
 
     out property <string> font-mono: "Cascadia Mono";
 
+    // Terminal font — user-configurable via Interface settings, set by Rust
+    // from the config on startup. cell size in terminal_view derives from these.
+    in-out property <string> term-font-family: "Cascadia Mono";
+    in-out property <length> term-font-size: 13px;
+
     // --- Geometry ----------------------------------------------------------
     out property <length> radius-sm: 4px;
     out property <length> radius-md: 6px;

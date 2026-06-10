@@ -235,6 +235,12 @@ pub struct ConfigFile {
     /// Theme preference: "system" (default) | "dark" | "light".
     #[serde(default)]
     pub theme_pref: String,
+    /// Terminal font family. Empty = the built-in default (Cascadia Mono).
+    #[serde(default)]
+    pub font_family: String,
+    /// Terminal font size in px. 0 = the built-in default.
+    #[serde(default)]
+    pub font_size: u32,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -457,6 +463,28 @@ impl ConfigStore {
 
     pub fn set_theme_pref(&mut self, pref: String) {
         self.cache.theme_pref = pref;
+    }
+
+    /// Terminal font family ("" = built-in default).
+    pub fn font_family(&self) -> &str {
+        &self.cache.font_family
+    }
+
+    pub fn set_font_family(&mut self, family: String) {
+        self.cache.font_family = family;
+    }
+
+    /// Terminal font size in px (falls back to 13 when unset).
+    pub fn font_size(&self) -> u32 {
+        if self.cache.font_size == 0 {
+            13
+        } else {
+            self.cache.font_size
+        }
+    }
+
+    pub fn set_font_size(&mut self, size: u32) {
+        self.cache.font_size = size.clamp(8, 32);
     }
 
     pub fn save(&self) -> Result<()> {

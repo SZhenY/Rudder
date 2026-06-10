@@ -97,6 +97,8 @@ export component AppWindow inherits Window {
     // Two-way binding to Theme.dark — Rust reads/writes this property and
     // Slint propagates it to every widget that references Theme colours.
     in-out property <bool> dark-mode <=> Theme.dark;
+    in-out property <string> term-font-family <=> Theme.term-font-family;
+    in-out property <length> term-font-size <=> Theme.term-font-size;
     callback toggle-theme();               // flip dark ↔ light
     in-out property <length> sftp-panel-height: 220px; // shared; lets Rust locate the drop zone
     callback pick-download-dir();            // open a folder picker

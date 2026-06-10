@@ -144,8 +144,8 @@ export component TerminalView inherits Rectangle {
     // cell-w that is too narrow and a term-cols that is too large.
     cell-probe := Text {
         text: "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM"; // exactly 50×M
-        font-family: "Cascadia Mono";
-        font-size: Theme.fs-md;
+        font-family: Theme.term-font-family;
+        font-size: Theme.term-font-size;
         // Keep it in layout but invisible: opacity:0 forces full font loading.
         opacity: 0;
         // Park it at y<0 so it never overlaps terminal content.
@@ -403,8 +403,8 @@ export component TerminalView inherits Rectangle {
                                 y: 0px;
                                 text: span.text;
                                 color: span.fg;
-                                font-family: "Cascadia Mono";
-                                font-size: Theme.fs-md;
+                                font-family: Theme.term-font-family;
+                                font-size: Theme.term-font-size;
                                 font-weight: span.bold ? 700 : 400;
                             }
                         }

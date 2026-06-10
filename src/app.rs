@@ -210,6 +210,17 @@ pub fn run() -> Result<()> {
         window.set_dark_mode(is_dark);
     }
 
+    // Apply the saved terminal font (Interface settings). An empty family keeps
+    // the built-in default; the size always applies (defaults to 13).
+    {
+        let s = store.borrow();
+        let fam = s.font_family().to_string();
+        if !fam.is_empty() {
+            window.set_term_font_family(fam.into());
+        }
+        window.set_term_font_size(s.font_size() as f32);
+    }
+
     let sessions_model: Rc<VecModel<SessionInfo>> = Rc::new(VecModel::default());
     window.set_sessions(ModelRc::from(sessions_model.clone()));
     sync_sessions_to_model(&store.borrow(), &sessions_model);
