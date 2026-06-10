@@ -5,9 +5,36 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
-## [0.2.8] - 2026-06-09
+## [0.3.0] - 2026-06-10
 
 ### Added / 新增
+
+- **Interface settings — terminal font & size.** The gear menu's new "Interface"
+  item opens a modal dialog (27% nav / 73% content) whose Font page lets you pick
+  from the system's installed monospace fonts and set the size (8–32 px) with a
+  live preview. Both apply immediately (cell size / cols / rows re-derive) and
+  persist.
+  **「界面」设置 —— 终端字体与字号。** 齿轮菜单新增「界面」项,打开模态对话框
+  (27% 导航 / 73% 内容),「字体」页可从系统已安装的等宽字体中选择并设置字号
+  (8–32 px),带实时预览。两者即时生效(cell 尺寸 / 列 / 行重新推导)并持久化。
+
+- **Session folders / groups (#41).** Each session can belong to an optional
+  group; Quick Connect shows folder headings (sorted; ungrouped under "default")
+  that collapse when clicked. Right-click a session to move it to another group
+  or duplicate it; right-click a group header to create a new group.
+  **会话文件夹 / 分组 (#41)。** 每个会话可归入可选分组;「快速连接」按分组显示
+  文件夹标题(排序;未分组归入「default」),点击标题可折叠。右键会话可移动到其它
+  分组或复制副本;右键分组标题可新建分组。
+
+- **Recursive SFTP folder transfer (#50).** Upload, download and delete whole
+  directory trees: drag a folder onto the panel to upload, right-click a folder
+  to download, and delete now removes non-empty directories too.
+  **SFTP 文件夹递归传输 (#50)。** 可上传、下载、删除整个目录树:把文件夹拖到面板
+  上传,右键文件夹下载,删除现在也能删非空目录。
+
+- **Collapsible panels (#41).** Both the left sidebar and the SFTP panel can be
+  minimized to reclaim screen space.
+  **可折叠面板 (#41)。** 左侧栏与 SFTP 面板都可最小化以腾出屏幕空间。
 
 - **Export / import connections (#46).** New "Export connections" / "Import
   connections" in the settings menu to migrate sessions between machines. The
@@ -64,6 +91,12 @@ All notable changes are documented here. 本文件记录所有重要变更。
   乱序完成也安全(每块都带绝对偏移)。
 
 ### Fixed / 修复
+
+- **Drag-select no longer auto-scrolls within the visible area (#41).** Selecting
+  text now only scrolls once the drag leaves the viewport edge, so the view no
+  longer jumps and the selection no longer snaps to an edge row.
+  **拖动选择在可见区内不再自动滚动 (#41)。** 现在仅当拖动离开视口边缘才滚动,
+  视图不再乱跳、选区也不再吸附到边缘行。
 
 - **Alt no longer clears the typed command (#43).** Slint encodes a lone
   modifier key as a C0 code point (Alt=0x12); pressing Alt (e.g. to Alt+Tab
@@ -265,5 +298,5 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Screenshots in the README** (`docs/screenshots/`, sensitive info redacted).
   **README 增加截图**（`docs/screenshots/`，敏感信息已打码）。
 
-[0.2.8]: https://github.com/jeff141/meatshell/releases/tag/v0.2.8
+[0.3.0]: https://github.com/jeff141/meatshell/releases/tag/v0.3.0
 [0.2.2]: https://github.com/jeff141/meatshell/releases/tag/v0.2.2
