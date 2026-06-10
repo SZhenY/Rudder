@@ -90,6 +90,7 @@ export component AppWindow inherits Window {
     // --- Top-right popups --------------------------------------------------
     in-out property <bool> download-open: false;  // download manager popup
     in-out property <bool> settings-open: false;  // settings menu popup
+    in-out property <bool> sidebar-collapsed: false; // left panel hidden
     in-out property <bool> about-open: false;     // centered About dialog
     in property <string> download-dir;      // preset SFTP download folder ("" = ask)
     in property <[TransferInfo]> transfers; // download/upload records (newest first)
@@ -210,8 +211,11 @@ export component AppWindow inherits Window {
     HorizontalLayout {
         spacing: 0;
 
-        // Left sidebar
+        // Left sidebar — collapsible (width animates to 0).
         Sidebar {
+            width: root.sidebar-collapsed ? 0px : 220px;
+            clip: true;
+            animate width { duration: 150ms; easing: ease-out; }
             connection-state: root.connection-state;
             conn-state: root.conn-state;
             resource-title: root.resource-title;
@@ -239,15 +243,37 @@ export component AppWindow inherits Window {
             spacing: 0;
             horizontal-stretch: 1;
 
-            TabBar {
-                tabs: root.tabs;
-                active-id: root.active-tab-id;
-                tab-selected(id) => {
-                    root.active-tab-id = id;
-                    root.tab-selected(id);
+            HorizontalLayout {
+                spacing: 0;
+                // Sidebar collapse / expand toggle.
+                Rectangle {
+                    width: 30px;
+                    background: sb-ta.has-hover ? Theme.bg-hover : Theme.bg-panel;
+                    sb-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.sidebar-collapsed = !root.sidebar-collapsed; }
+                    }
+                    Text {
+                        // chevron_right (show panel) when collapsed, else chevron_left
+                        text: root.sidebar-collapsed ? "\u{E5CC}" : "\u{E5CB}";
+                        font-family: "Material Icons";
+                        color: Theme.text-secondary;
+                        font-size: Theme.fs-md;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
                 }
-                tab-closed(id) => { root.tab-closed(id); }
-                new-tab() => { root.new-tab-clicked(); }
+                TabBar {
+                    horizontal-stretch: 1;
+                    tabs: root.tabs;
+                    active-id: root.active-tab-id;
+                    tab-selected(id) => {
+                        root.active-tab-id = id;
+                        root.tab-selected(id);
+                    }
+                    tab-closed(id) => { root.tab-closed(id); }
+                    new-tab() => { root.new-tab-clicked(); }
+                }
             }
 
             // Content area swaps based on active tab kind.
