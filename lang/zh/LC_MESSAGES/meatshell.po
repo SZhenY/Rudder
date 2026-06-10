@@ -138,6 +138,12 @@ msgstr "编辑"
 msgid "Delete"
 msgstr "删除"
 
+msgid "Duplicate"
+msgstr "复制副本"
+
+msgid "New group"
+msgstr "新建分组"
+
 msgid "Status"
 msgstr "运行状态"
 

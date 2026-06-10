@@ -296,6 +296,9 @@ export component Welcome inherits Rectangle {
                         // Click anywhere on it to collapse / expand the group.
                         if session.group-header != "" : Rectangle {
                             height: 26px;
+                            // Right-click popup anchor.
+                            property <length> gmx;
+                            property <length> gmy;
                             HorizontalLayout {
                                 padding-top: 6px;
                                 padding-left: 4px;
@@ -327,7 +330,47 @@ export component Welcome inherits Rectangle {
                             }
                             TouchArea {
                                 mouse-cursor: pointer;
+                                // Left-click toggles collapse; right-click opens the
+                                // group menu ("new group" → new-session dialog).
                                 clicked => { root.toggle-group(session.group); }
+                                pointer-event(e) => {
+                                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                                        gmx = self.mouse-x;
+                                        gmy = self.mouse-y;
+                                        grp-menu.show();
+                                    }
+                                }
+                            }
+                            grp-menu := PopupWindow {
+                                x: gmx;
+                                y: gmy;
+                                width: 132px;
+                                height: 36px;
+                                Rectangle {
+                                    background: Theme.bg-panel;
+                                    border-radius: Theme.radius-sm;
+                                    border-width: 1px;
+                                    border-color: Theme.border-strong;
+                                    drop-shadow-blur: 10px;
+                                    drop-shadow-color: #00000050;
+                                    VerticalLayout {
+                                        padding: 4px;
+                                        Rectangle {
+                                            height: 28px;
+                                            border-radius: Theme.radius-sm;
+                                            background: ng-ta.has-hover ? Theme.bg-hover : transparent;
+                                            ng-ta := TouchArea {
+                                                mouse-cursor: pointer;
+                                                clicked => { root.new-session(); }
+                                            }
+                                            HorizontalLayout {
+                                                padding-left: 10px; spacing: 8px; alignment: center;
+                                                Text { text: "\u{E2CC}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                Text { text: @tr("New group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         if !session.collapsed : SessionRow {

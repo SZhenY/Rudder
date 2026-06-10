@@ -138,6 +138,12 @@ msgstr "Edit"
 msgid "Delete"
 msgstr "Delete"
 
+msgid "Duplicate"
+msgstr "Duplicate"
+
+msgid "New group"
+msgstr "New group"
+
 msgid "Status"
 msgstr "Status"
 
