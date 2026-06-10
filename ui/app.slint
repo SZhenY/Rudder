@@ -149,6 +149,7 @@ export component AppWindow inherits Window {
     callback edit-session(string /* session-id */);
     callback duplicate-session(string /* session-id */);
     callback move-session(string /* session-id */, string /* group */);
+    callback toggle-group(string /* group */);
     callback remove-session(string /* session-id */);
     callback session-dialog-submit(SessionDraft);
     callback session-dialog-cancel();
@@ -257,6 +258,7 @@ export component AppWindow inherits Window {
                     edit-session(id) => { root.edit-session(id); }
                     duplicate-session(id) => { root.duplicate-session(id); }
                     move-session(id, group) => { root.move-session(id, group); }
+                    toggle-group(group) => { root.toggle-group(group); }
                     remove-session(id) => { root.remove-session(id); }
                 }
 

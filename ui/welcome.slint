@@ -11,6 +11,7 @@ export struct SessionInfo {
     last-used: string, // ISO timestamp or "never"
     group: string,        // folder/group name ("" = ungrouped)
     group-header: string, // set on the first row of each group → render a header
+    collapsed: bool,      // group is collapsed → this session row is hidden
 }
 
 // --- SessionRow ------------------------------------------------------------
@@ -203,6 +204,7 @@ export component Welcome inherits Rectangle {
     callback edit-session(string);
     callback duplicate-session(string);
     callback move-session(string /* id */, string /* group */);
+    callback toggle-group(string /* group */);
     callback remove-session(string);
 
     background: Theme.bg-root;
@@ -291,28 +293,44 @@ export component Welcome inherits Rectangle {
                     for session[i] in sessions : VerticalLayout {
                         spacing: 2px;
                         // Group header on the first row of each group (#41).
-                        if session.group-header != "" : HorizontalLayout {
-                            padding-top: 6px;
-                            padding-left: 4px;
-                            spacing: 4px;
-                            Text {
-                                text: "\u{E2C7}";   // folder glyph
-                                font-family: "Material Icons";
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-sm;
-                                vertical-alignment: center;
+                        // Click anywhere on it to collapse / expand the group.
+                        if session.group-header != "" : Rectangle {
+                            height: 26px;
+                            HorizontalLayout {
+                                padding-top: 6px;
+                                padding-left: 4px;
+                                spacing: 4px;
+                                Text {
+                                    // chevron_right when collapsed, expand_more when open
+                                    text: session.collapsed ? "\u{E5CC}" : "\u{E5CF}";
+                                    font-family: "Material Icons";
+                                    color: Theme.text-muted;
+                                    font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: "\u{E2C7}";   // folder glyph
+                                    font-family: "Material Icons";
+                                    color: Theme.text-muted;
+                                    font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: session.group-header;
+                                    color: Theme.text-muted;
+                                    font-size: Theme.fs-xs;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;       // fill → text stays left
+                                    horizontal-alignment: left;
+                                }
                             }
-                            Text {
-                                text: session.group-header;
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-xs;
-                                font-weight: 700;
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;       // fill → text stays left
-                                horizontal-alignment: left;
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.toggle-group(session.group); }
                             }
                         }
-                        SessionRow {
+                        if !session.collapsed : SessionRow {
                             session: session;
                             all-sessions: root.sessions;
                             connect => { root.connect-session(session.id); }

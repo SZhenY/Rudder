@@ -667,6 +667,7 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
                 .into(),
             group: eff.clone().into(),
             group_header: header.into(),
+            collapsed: false,
         });
     }
     model.set_vec(rows);
@@ -937,6 +938,40 @@ fn wire_session_callbacks(
                 }
             }
             sync_sessions_to_model(&store.borrow(), &sessions_model);
+            if let Some(w) = weak.upgrade() {
+                let _ = w.get_sessions();
+            }
+        });
+    }
+
+    // Collapse / expand a group in the welcome list (#41). Toggling flips the
+    // `collapsed` flag on every row of that group in place — no full re-sync —
+    // so the open/closed state stays put until the list is actually rebuilt.
+    {
+        let weak = window.as_weak();
+        let sessions_model = sessions_model.clone();
+        window.on_toggle_group(move |group: SharedString| {
+            use slint::Model as _;
+            let target = group.to_string();
+            let n = sessions_model.row_count();
+            // New state = the opposite of the group's first row.
+            let mut new_state = false;
+            for i in 0..n {
+                if let Some(row) = sessions_model.row_data(i) {
+                    if row.group.as_str() == target {
+                        new_state = !row.collapsed;
+                        break;
+                    }
+                }
+            }
+            for i in 0..n {
+                if let Some(mut row) = sessions_model.row_data(i) {
+                    if row.group.as_str() == target {
+                        row.collapsed = new_state;
+                        sessions_model.set_row_data(i, row);
+                    }
+                }
+            }
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
