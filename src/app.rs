@@ -1377,35 +1377,46 @@ fn wire_session_callbacks(
                 std::thread::spawn(move || {
                     let mut shell_rx = rx;
                     let mut cwd_debounce: Option<tokio::task::JoinHandle<()>> = None;
+                    // Track the last cwd so we only react to a *real* cd, not the
+                    // OSC 7 every prompt re-emits at the same directory (#59).
+                    let mut last_cwd: Option<String> = None;
                     loop {
                         match shell_rx.blocking_recv() {
                             None => break,
                             Some(shell_evt) => {
                                 if let SessionEvent::CwdChanged(ref cwd) = shell_evt {
-                                    let is_manual = sftp_manual_nav_pump
-                                        .lock()
-                                        .ok()
-                                        .and_then(|m| m.get(&tab_id_pump).copied())
-                                        .unwrap_or(false);
-                                    if !is_manual {
-                                        if let Some(prev) = cwd_debounce.take() {
-                                            prev.abort();
-                                        }
-                                        let cwd = cwd.clone();
-                                        let sftp_h = sftp_handles_pump.clone();
-                                        let tid = tab_id_pump.clone();
-                                        cwd_debounce = Some(rt_pump.spawn(async move {
-                                            tokio::time::sleep(
-                                                std::time::Duration::from_millis(500),
-                                            )
-                                            .await;
-                                            if let Ok(handles) = sftp_h.lock() {
-                                                if let Some(h) = handles.get(&tid) {
-                                                    h.list_dir(cwd);
-                                                }
-                                            }
-                                        }));
+                                    // Only react to a *real* directory change. Every
+                                    // prompt re-emits OSC 7 at the same cwd; following
+                                    // those would override manual SFTP navigation and
+                                    // leave the panel stuck "loading" (#59).
+                                    let changed =
+                                        last_cwd.as_deref() != Some(cwd.as_str());
+                                    last_cwd = Some(cwd.clone());
+                                    if !changed {
+                                        continue;
                                     }
+                                    // A real cd: follow it and re-enable auto-follow,
+                                    // overriding any prior manual navigation.
+                                    if let Ok(mut m) = sftp_manual_nav_pump.lock() {
+                                        m.insert(tab_id_pump.clone(), false);
+                                    }
+                                    if let Some(prev) = cwd_debounce.take() {
+                                        prev.abort();
+                                    }
+                                    let cwd = cwd.clone();
+                                    let sftp_h = sftp_handles_pump.clone();
+                                    let tid = tab_id_pump.clone();
+                                    cwd_debounce = Some(rt_pump.spawn(async move {
+                                        tokio::time::sleep(
+                                            std::time::Duration::from_millis(500),
+                                        )
+                                        .await;
+                                        if let Ok(handles) = sftp_h.lock() {
+                                            if let Some(h) = handles.get(&tid) {
+                                                h.list_dir(cwd);
+                                            }
+                                        }
+                                    }));
                                 }
                                 let weak_evt = weak_inner.clone();
                                 let tid = tab_id_pump.clone();
