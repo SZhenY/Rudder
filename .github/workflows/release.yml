@@ -34,9 +34,9 @@ jobs:
             target: aarch64-apple-darwin
             name: macos-aarch64
             bin: meatshell
-          - os: macos-13               # Intel
-            target: x86_64-apple-darwin
-            name: macos-x86_64
+          - os: macos-14               # Apple Silicon runner — cross-compiles the
+            target: x86_64-apple-darwin # x86_64 Mac binary. (Dedicated Intel
+            name: macos-x86_64          # macos-13 runners queue for ages / time out.)
             bin: meatshell
 
     steps:
