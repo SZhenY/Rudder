@@ -153,6 +153,9 @@ msgstr "删除分组"
 msgid "Group name"
 msgstr "分组名称"
 
+msgid "Move to"
+msgstr "移动到"
+
 msgid "Status"
 msgstr "运行状态"
 

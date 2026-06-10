@@ -153,6 +153,9 @@ msgstr "Delete group"
 msgid "Group name"
 msgstr "Group name"
 
+msgid "Move to"
+msgstr "Move to"
+
 msgid "Status"
 msgstr "Status"
 
