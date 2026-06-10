@@ -79,7 +79,6 @@ component SessionRow inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 10px;
                         spacing: 8px;
-                        alignment: center;
                         Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
@@ -97,7 +96,6 @@ component SessionRow inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 10px;
                         spacing: 8px;
-                        alignment: center;
                         Text { text: "\u{E14D}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
@@ -120,7 +118,6 @@ component SessionRow inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 10px;
                         spacing: 8px;
-                        alignment: center;
                         Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: s.group-header; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                     }
@@ -138,7 +135,6 @@ component SessionRow inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 10px;
                         spacing: 8px;
-                        alignment: center;
                         Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Delete"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
@@ -364,7 +360,7 @@ export component Welcome inherits Rectangle {
                                                 clicked => { root.new-session(); }
                                             }
                                             HorizontalLayout {
-                                                padding-left: 10px; spacing: 8px; alignment: center;
+                                                padding-left: 10px; spacing: 8px;
                                                 Text { text: "\u{E2CC}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                 Text { text: @tr("New group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                                             }
