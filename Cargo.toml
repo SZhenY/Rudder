@@ -41,6 +41,8 @@ zeroize = "1"
 # (HTTP CONNECT proxies are handled in src/proxy.rs without an extra crate.)
 tokio-socks = "0.5"
 base64 = "0.22"
+# Enumerate installed system fonts for the Interface (font) settings picker.
+fontdb = "0.16"
 # Cross-platform serial port access for the Serial session type (#14, #17).
 # Opens COM3 / /dev/ttyUSB0 etc.; on Linux the default `libudev` feature is
 # used for port enumeration (CI installs libudev-dev).

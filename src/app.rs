@@ -220,6 +220,38 @@ pub fn run() -> Result<()> {
         }
         window.set_term_font_size(s.font_size() as f32);
     }
+    // Populate the Interface font picker with installed monospace families.
+    window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(system_monospace_fonts()))));
+
+    // Interface settings: apply + persist the terminal font family / size.
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_term_font(move |family: SharedString| {
+            {
+                let mut s = store.borrow_mut();
+                s.set_font_family(family.to_string());
+                let _ = s.save();
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_term_font_family(family);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_term_font_size(move |size: i32| {
+            {
+                let mut s = store.borrow_mut();
+                s.set_font_size(size as u32);
+                let _ = s.save();
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_term_font_size(size as f32);
+            }
+        });
+    }
 
     let sessions_model: Rc<VecModel<SessionInfo>> = Rc::new(VecModel::default());
     window.set_sessions(ModelRc::from(sessions_model.clone()));
@@ -2733,6 +2765,21 @@ fn clipboard_set_text(text: String) {
     if let Err(e) = result {
         tracing::warn!("clipboard set_text error: {}", e);
     }
+}
+
+/// Enumerate installed monospace font families for the Interface font picker.
+/// Terminals want fixed-width fonts, so non-monospace families are filtered out.
+fn system_monospace_fonts() -> Vec<slint::SharedString> {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    let mut names: Vec<String> = db
+        .faces()
+        .filter(|f| f.monospaced)
+        .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
+        .collect();
+    names.sort();
+    names.dedup();
+    names.into_iter().map(slint::SharedString::from).collect()
 }
 
 /// Split a stored proxy URL into `(type, host:port)` for the session dialog.
