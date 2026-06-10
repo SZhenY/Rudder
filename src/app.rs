@@ -3121,7 +3121,18 @@ fn cell_attrs(
                 std::mem::swap(&mut fg, &mut bg);
             }
             let s = cell.contents();
-            let s = if s.is_empty() { " ".to_string() } else { s };
+            // A CJK / wide glyph spans two cells; vt100 reports the 2nd as a
+            // blank continuation. Emit nothing for it — the wide glyph already
+            // covers both cells, so substituting a space would push the rest of
+            // the line (and the cursor) out of alignment (#60). Genuinely empty
+            // cells still become a space.
+            let s = if cell.is_wide_continuation() {
+                String::new()
+            } else if s.is_empty() {
+                " ".to_string()
+            } else {
+                s
+            };
             (s, fg, bg, cell.bold())
         }
         None => (
