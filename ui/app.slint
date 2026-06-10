@@ -448,6 +448,14 @@ export component AppWindow inherits Window {
     }
 
     // --- Download manager popup -------------------------------------------
+    // Click-outside-to-close: a full-window transparent sensor sitting *under*
+    // the popup. Clicking anywhere outside the popup hits this and closes it;
+    // clicks inside the popup are caught by the popup's own TouchArea first.
+    if root.download-open : TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.download-open = false; }
+    }
     // Always present; toggled via `visible` (avoids destroying interactive
     // elements mid-event, which crashes when created/removed at the Window root).
     Rectangle {
@@ -632,6 +640,12 @@ export component AppWindow inherits Window {
         }
 
     // --- Settings menu popup (top-right) ----------------------------------
+    // Click-outside-to-close backdrop (same pattern as the download popup).
+    if root.settings-open : TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.settings-open = false; }
+    }
     Rectangle {
         x: parent.width - 196px;
         y: 40px;
