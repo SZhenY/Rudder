@@ -1995,7 +1995,23 @@ fn apply_session_event_to_window(
                 win.set_editor_dirty(false);
                 win.set_editor_open(true);
             } else {
-                // Couldn't open as text: surface the reason in the SFTP status.
+                // Couldn't open as text. The SFTP status line alone is easy to
+                // miss (looks like "nothing happened"), so also print the reason
+                // into the terminal via a synthetic Output event (#70).
+                apply_session_event_to_window(
+                    win,
+                    tab_id,
+                    SessionEvent::Output(format!(
+                        "\r\n[meatshell] {} {}: {}\r\n",
+                        crate::i18n::t("无法打开", "Cannot open"),
+                        name,
+                        error
+                    )),
+                    bufs,
+                    statuses,
+                    local,
+                    local_net_hist,
+                );
                 update_terminal(&|t| t.sftp_status = error.clone().into());
             }
         }
