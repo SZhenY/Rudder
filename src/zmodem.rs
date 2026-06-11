@@ -70,12 +70,37 @@ pub async fn receive(
         .await
         .with_context(|| format!("create download dir {}", dest.display()))?;
 
+    tracing::debug!(
+        "zmodem: receive start, first[{}]={:02x?}",
+        first.len(),
+        &first[..first.len().min(80)]
+    );
+
     let mut rx = Rx::new(channel, first);
     let mut received = 0u32;
     let mut cur: Option<CurFile> = None;
 
     loop {
-        let (ftype, hdr) = rx.read_header().await?;
+        // Once at least one file has completed (ZEOF), the closing ZFIN
+        // handshake is best-effort: some senders go quiet afterwards, so don't
+        // block the full read timeout — if it stays silent for a few seconds the
+        // data is already on disk and we finish cleanly (#76).
+        let header = if received > 0 {
+            match tokio::time::timeout(Duration::from_secs(3), rx.read_header()).await {
+                Ok(r) => r,
+                Err(_) => break,
+            }
+        } else {
+            rx.read_header().await
+        };
+        let (ftype, hdr) = match header {
+            Ok(h) => h,
+            Err(e) if received > 0 => {
+                tracing::debug!("zmodem: finishing after {received} file(s): {e}");
+                break;
+            }
+            Err(e) => return Err(e),
+        };
         tracing::debug!("zmodem rx header type={ftype} data={hdr:02x?}");
         match ftype {
             ZRQINIT => rx.send_hex(ZRINIT, [0, 0, 0, CANFDX | CANOVIO | CANFC32]).await?,
@@ -346,6 +371,7 @@ impl<'a> Rx<'a> {
         if ftype != ZACK && ftype != ZFIN {
             out.push(0x11);
         }
+        tracing::debug!("zmodem tx type={ftype} bytes={:02x?}", &out);
         self.ch.data(&out[..]).await.context("zmodem send header")?;
         Ok(())
     }
@@ -365,8 +391,12 @@ fn sanitize(name: &str) -> String {
         .chars()
         .filter(|c| !matches!(c, '\0' | '/' | '\\'))
         .collect();
-    let cleaned = cleaned.trim_matches('.').trim();
-    if cleaned.is_empty() {
+    // Trim trailing dots/spaces (illegal on Windows) and leading spaces, but
+    // KEEP leading dots so dotfiles like ".viminfo" keep their name (#76).
+    let cleaned = cleaned
+        .trim_end_matches(|c| c == '.' || c == ' ')
+        .trim_start_matches(' ');
+    if cleaned.is_empty() || cleaned.chars().all(|c| c == '.') {
         "download".to_string()
     } else {
         cleaned.to_string()
@@ -460,5 +490,11 @@ mod tests {
         assert_eq!(sanitize("/etc/passwd"), "passwd");
         assert_eq!(sanitize("..\\..\\x"), "x");
         assert_eq!(sanitize(""), "download");
+        // Dotfiles keep their leading dot.
+        assert_eq!(sanitize(".viminfo"), ".viminfo");
+        assert_eq!(sanitize("/home/jeff/.bashrc"), ".bashrc");
+        // Trailing dots/spaces are trimmed; pure-dot names rejected.
+        assert_eq!(sanitize("name..."), "name");
+        assert_eq!(sanitize(".."), "download");
     }
 }
