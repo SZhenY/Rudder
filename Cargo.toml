@@ -53,6 +53,10 @@ chacha20poly1305 = "0.10"
 # Detect whether the OS is running in dark or light mode.
 # Used on startup to honour the system preference before the user overrides it.
 dark-light = "1"
+# Lightweight synchronous HTTPS client (bundled rustls, no OpenSSL) for the
+# in-app update check against the GitHub releases API (#48). Runs on a
+# background thread so it never blocks startup; failure is silently ignored.
+ureq = { version = "2", features = ["tls"] }
 
 # Decode the embedded PNG icon to set the window icon at runtime (Linux only).
 # On Windows the icon comes from the .ico embedded by winresource at link time;

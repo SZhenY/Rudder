@@ -129,6 +129,9 @@ msgstr "Empty directory"
 msgid "Download"
 msgstr "Download"
 
+msgid "Update available:"
+msgstr "Update available:"
+
 msgid "View"
 msgstr "View"
 

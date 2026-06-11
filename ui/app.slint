@@ -127,6 +127,13 @@ export component AppWindow inherits Window {
     callback clear-transfers();              // wipe the transfer history
     callback set-language(string);           // switch UI language ("zh" / "en")
 
+    // --- Update check (#48) ------------------------------------------------
+    // Set by Rust after a background GitHub-releases query; purely informational
+    // (the app keeps working on the current version).
+    in-out property <bool> update-available: false;
+    in property <string> update-version;     // e.g. "v0.3.3"
+    callback open-update-url();              // open the release page in a browser
+
     // --- Session list ------------------------------------------------------
     in property <[SessionInfo]> sessions;
 
@@ -445,6 +452,58 @@ export component AppWindow inherits Window {
             font-size: Theme.fs-md;
             horizontal-alignment: center;
             vertical-alignment: center;
+        }
+    }
+
+    // --- Update-available banner (#48) ------------------------------------
+    // A dismissible top-centre banner; the app stays usable on the current
+    // version. "Download" opens the GitHub release page in the browser.
+    if root.update-available : Rectangle {
+        x: (parent.width - 384px) / 2;
+        y: 8px;
+        width: 384px;
+        height: 38px;
+        background: Theme.accent;
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 14px;
+        drop-shadow-color: #00000060;
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 6px;
+            spacing: 8px;
+            Text {
+                text: "🎉 " + @tr("Update available:") + " " + root.update-version;
+                color: #ffffff;
+                font-size: Theme.fs-sm;
+                font-family: Theme.ui-font-family;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            Rectangle {
+                width: 68px; height: 26px;
+                border-radius: Theme.radius-sm;
+                background: upd-dl-ta.has-hover ? #ffffff45 : #ffffff28;
+                upd-dl-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.open-update-url(); }
+                }
+                Text { text: @tr("Download"); color: #ffffff; font-size: Theme.fs-sm;
+                       horizontal-alignment: center; vertical-alignment: center; }
+            }
+            Rectangle {
+                width: 26px; height: 26px;
+                border-radius: Theme.radius-sm;
+                background: upd-cl-ta.has-hover ? #ffffff45 : transparent;
+                upd-cl-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.update-available = false; }
+                }
+                Text { text: "\u{E5CD}"; font-family: "Material Icons"; color: #ffffff;
+                       font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
+            }
         }
     }
 
