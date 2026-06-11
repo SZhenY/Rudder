@@ -723,8 +723,18 @@ async fn read_text_guarded(sftp: &SftpSession, remote: &str) -> std::result::Res
     f.read_to_end(&mut bytes)
         .await
         .map_err(|e| format!("{}: {e}", t("读取失败", "Read failed")))?;
-    if bytes.contains(&0) {
-        return Err(t("二进制文件,无法以文本打开", "Binary file; cannot open as text").into());
+    // Control characters (beyond tab/newline/CR) have no glyph — they render as
+    // tofu boxes — and round-tripping them through the editor risks corrupting
+    // the file (e.g. .viminfo). Treat such files as binary (#70).
+    if bytes
+        .iter()
+        .any(|&b| (b < 0x20 && b != b'\t' && b != b'\n' && b != b'\r') || b == 0x7f)
+    {
+        return Err(t(
+            "包含控制字符(疑似二进制),无法以文本打开,请下载查看",
+            "Contains control characters (likely binary); download it instead",
+        )
+        .into());
     }
     String::from_utf8(bytes)
         .map_err(|_| t("非 UTF-8 文本,无法打开", "Not UTF-8 text; cannot open").into())

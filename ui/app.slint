@@ -143,6 +143,21 @@ export component AppWindow inherits Window {
     in-out property <bool> editor-dirty: false; // edited since load
     callback save-file();                     // Ctrl+S / Save button (edit only)
     callback close-editor();                  // X / Esc; uploads if dirty
+    // Editor card geometry: draggable by its title bar, resizable from the
+    // bottom-right grip (same absolute-position pattern as the Interface
+    // dialog). Defaults centre the card; user drags/resizes override them.
+    property <length> ed-w: 760px;
+    property <length> ed-h: 560px;
+    property <length> ed-x: (root.width - root.ed-w) / 2;
+    property <length> ed-y: (root.height - root.ed-h) / 2;
+    property <bool> ed-dragging;
+    property <bool> ed-resizing;
+    property <length> ed-base-x;
+    property <length> ed-base-y;
+    property <length> ed-base-w;
+    property <length> ed-base-h;
+    property <length> ed-grab-x;
+    property <length> ed-grab-y;
 
     // --- Session list ------------------------------------------------------
     in property <[SessionInfo]> sessions;
@@ -582,22 +597,43 @@ export component AppWindow inherits Window {
                 return reject;
             }
             Rectangle {
-                x: (parent.width - 760px) / 2;
-                y: (parent.height - 560px) / 2;
-                width: 760px;
-                height: 560px;
+                x: root.ed-x;
+                y: root.ed-y;
+                width: root.ed-w;
+                height: root.ed-h;
                 background: Theme.bg-panel;
                 border-radius: Theme.radius-md;
                 border-width: 1px;
                 border-color: Theme.border-strong;
                 drop-shadow-blur: 24px;
                 drop-shadow-color: #00000080;
+                clip: true;
 
                 VerticalLayout {
-                    // Title bar
+                    // Title bar — drag to move; the buttons stay on top.
                     Rectangle {
                         height: 40px;
                         background: Theme.bg-panel-alt;
+                        ed-title-drag := TouchArea {
+                            mouse-cursor: move;
+                            pointer-event(e) => {
+                                if (e.kind == PointerEventKind.down) {
+                                    root.ed-dragging = true;
+                                    root.ed-base-x = root.ed-x;
+                                    root.ed-base-y = root.ed-y;
+                                    root.ed-grab-x = self.absolute-position.x + self.mouse-x;
+                                    root.ed-grab-y = self.absolute-position.y + self.mouse-y;
+                                } else if (e.kind == PointerEventKind.up) {
+                                    root.ed-dragging = false;
+                                }
+                            }
+                            moved => {
+                                if (root.ed-dragging) {
+                                    root.ed-x = root.ed-base-x + (self.absolute-position.x + self.mouse-x - root.ed-grab-x);
+                                    root.ed-y = root.ed-base-y + (self.absolute-position.y + self.mouse-y - root.ed-grab-y);
+                                }
+                            }
+                        }
                         HorizontalLayout {
                             padding-left: 14px;
                             padding-right: 8px;
@@ -672,6 +708,41 @@ export component AppWindow inherits Window {
                                 edited => { root.editor-dirty = true; }
                             }
                         }
+                    }
+                }
+
+                // Bottom-right resize grip (#70).
+                Rectangle {
+                    x: parent.width - 18px;
+                    y: parent.height - 18px;
+                    width: 18px;
+                    height: 18px;
+                    ed-resize-ta := TouchArea {
+                        mouse-cursor: nwse-resize;
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down) {
+                                root.ed-resizing = true;
+                                root.ed-base-w = root.ed-w;
+                                root.ed-base-h = root.ed-h;
+                                root.ed-grab-x = self.absolute-position.x + self.mouse-x;
+                                root.ed-grab-y = self.absolute-position.y + self.mouse-y;
+                            } else if (e.kind == PointerEventKind.up) {
+                                root.ed-resizing = false;
+                            }
+                        }
+                        moved => {
+                            if (root.ed-resizing) {
+                                root.ed-w = max(420px, root.ed-base-w + (self.absolute-position.x + self.mouse-x - root.ed-grab-x));
+                                root.ed-h = max(280px, root.ed-base-h + (self.absolute-position.y + self.mouse-y - root.ed-grab-y));
+                            }
+                        }
+                    }
+                    Text {
+                        text: "◢";
+                        color: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
+                        font-size: 10px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
                     }
                 }
             }
