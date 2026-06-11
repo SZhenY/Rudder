@@ -70,6 +70,10 @@ export component SftpPanel inherits Rectangle {
     // -----------------------------------------------------------------------
     background: Theme.bg-panel;
 
+    // Keep the editable path bar in sync when the directory changes elsewhere
+    // (tree click, file double-click, terminal cd) (#54).
+    changed current-path => { path-input.text = root.current-path; }
+
     VerticalLayout {
         spacing: 0;
 
@@ -83,14 +87,62 @@ export component SftpPanel inherits Rectangle {
                 padding-right: 6px;
                 spacing: 4px;
 
-                // Path bar fills the left; action buttons sit on the right.
-                Text {
-                    text: root.current-path;
-                    color: Theme.text-primary;
-                    font-size: Theme.fs-sm;
+                // Editable path bar: type or paste a path and press Enter to
+                // jump there; copy / paste-jump buttons sit right after it (#54).
+                Rectangle {
                     horizontal-stretch: 1;
-                    overflow: elide;
-                    vertical-alignment: center;
+                    height: 22px;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.bg-root;
+                    border-width: 1px;
+                    border-color: path-input.has-focus ? Theme.accent : Theme.border-subtle;
+                    path-input := TextInput {
+                        x: 6px;
+                        width: parent.width - 12px;
+                        height: parent.height;
+                        text: root.current-path;
+                        color: Theme.text-primary;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                        single-line: true;
+                        accepted => { root.navigate(self.text); }
+                    }
+                }
+
+                // Copy the current path to the clipboard.
+                Rectangle {
+                    width: 24px; height: 22px;
+                    border-radius: Theme.radius-sm;
+                    background: copy-ta.has-hover ? Theme.bg-hover : transparent;
+                    copy-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            path-input.select-all();
+                            path-input.copy();
+                            path-input.clear-selection();
+                        }
+                    }
+                    Text { text: "\u{E14D}"; font-family: "Material Icons";
+                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+
+                // Paste a path from the clipboard and jump straight to it.
+                Rectangle {
+                    width: 24px; height: 22px;
+                    border-radius: Theme.radius-sm;
+                    background: pj-ta.has-hover ? Theme.bg-hover : transparent;
+                    pj-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            path-input.select-all();
+                            path-input.paste();
+                            root.navigate(path-input.text);
+                        }
+                    }
+                    Text { text: "\u{E14F}"; font-family: "Material Icons";
+                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
                 }
 
                 up-btn := Rectangle {

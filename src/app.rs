@@ -2056,7 +2056,9 @@ fn wire_sftp_callbacks(
         let weak = window.as_weak();
         window.on_sftp_navigate(move |tab_id: SharedString, path: SharedString| {
             let tab_id = tab_id.to_string();
-            let resolved = if path.as_str() == ".." {
+            // A pasted path may carry trailing whitespace / newline (#54).
+            let path = path.trim();
+            let resolved = if path == ".." {
                 let current = weak.upgrade().and_then(|w| {
                     let terminals_rc = w.get_terminals();
                     let terminals = terminals_rc
