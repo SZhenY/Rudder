@@ -561,9 +561,12 @@ export component AppWindow inherits Window {
     // Save button uploads, and closing uploads any unsaved changes.
     if root.editor-open : Rectangle {
         // Modal backdrop; clicking it does NOT close (avoids losing edits to a
-        // stray click) — use the close button or Esc.
+        // stray click) — use the close button or Esc. Also swallow wheel events
+        // so scrolling can't leak through to the terminal underneath (#70).
         background: #00000088;
-        TouchArea {}
+        TouchArea {
+            scroll-event(event) => { accept }
+        }
         edit-fs := FocusScope {
             // Ctrl+S saves, Esc closes. These bubble up from the focused
             // TextInput because it doesn't consume them.
@@ -598,6 +601,10 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             padding-left: 14px;
                             padding-right: 8px;
+                            // Centre the 28px buttons inside the 40px bar so the
+                            // Save button isn't glued to the top edge (#70).
+                            padding-top: 6px;
+                            padding-bottom: 6px;
                             spacing: 8px;
                             Text {
                                 text: root.editor-name
@@ -639,14 +646,22 @@ export component AppWindow inherits Window {
                     }
                     Rectangle { height: 1px; background: Theme.border-subtle; }
 
-                    // Text area
+                    // Text area. Explicit viewport sizing so the ScrollView knows
+                    // the content height and shows a scrollbar; the wheel then
+                    // scrolls the text instead of doing nothing (#70).
                     Rectangle {
                         vertical-stretch: 1;
                         background: Theme.bg-root;
                         ScrollView {
+                            width: parent.width;
+                            height: parent.height;
+                            viewport-width: self.width - 16px; // room for the bar
+                            viewport-height: edit-input.preferred-height + 16px;
                             edit-input := TextInput {
                                 x: 8px;
-                                width: parent.visible-width - 16px;
+                                y: 8px;
+                                width: parent.width - 16px;
+                                height: self.preferred-height;
                                 text <=> root.editor-content;
                                 read-only: root.editor-readonly;
                                 single-line: false;
