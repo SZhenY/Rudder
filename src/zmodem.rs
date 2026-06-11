@@ -164,9 +164,15 @@ pub async fn receive(
             }
             ZFIN => {
                 rx.send_hex(ZFIN, [0, 0, 0, 0]).await?;
-                // Drain the trailing "OO" (over-and-out); ignore errors.
-                let _ = rx.byte().await;
-                let _ = rx.byte().await;
+                // The sender appends "OO" (over-and-out) then closes — but it may
+                // just close instead. Draining it is optional, so use a short
+                // best-effort read rather than blocking the full 30 s timeout per
+                // byte (which made `sz` take ~1 min to return) (#76).
+                let _ = tokio::time::timeout(Duration::from_millis(300), async {
+                    let _ = rx.byte().await;
+                    let _ = rx.byte().await;
+                })
+                .await;
                 break;
             }
             ZCAN | ZABORT => bail!("{}", t("传输被远端取消", "transfer aborted by sender")),
