@@ -161,20 +161,26 @@ pub async fn receive(
     // or get re-detected as a new transfer. Whatever follows (the shell prompt)
     // stays in the buffer and is returned to the caller (#76).
     if received > 0 {
+        // Send ZRINIT + ZFIN *immediately and unconditionally*. This sender
+        // finishes its session waiting for OUR ZFIN and does not send its own
+        // first; if we wait to read its ZFIN it never comes and the sender hangs
+        // ~100 s on its global timeout. Sending ZFIN proactively makes it exit at
+        // once. Then swallow its lingering close frames (its ZFIN / "OO"),
+        // stopping at the first byte that isn't part of a ZMODEM hex header or
+        // "OO" — that byte begins the shell prompt, returned as leftover (#76).
         let _ = rx
             .send_hex(ZRINIT, [0, 0, 0, CANFDX | CANOVIO | CANFC32])
             .await;
-        let _ = tokio::time::timeout(Duration::from_secs(3), async {
-            loop {
-                match rx.read_header().await {
-                    Ok((ZFIN, _)) => {
-                        let _ = rx.send_hex(ZFIN, [0, 0, 0, 0]).await;
-                        let _ = rx.byte().await; // 'O'
-                        let _ = rx.byte().await; // 'O'
-                        return;
+        let _ = rx.send_hex(ZFIN, [0, 0, 0, 0]).await;
+        let _ = tokio::time::timeout(Duration::from_millis(800), async {
+            for _ in 0..64 {
+                match rx.byte().await {
+                    Ok(b) if is_close_byte(b) => continue,
+                    Ok(b) => {
+                        rx.buf.push_front(b); // start of the shell prompt
+                        break;
                     }
-                    Ok(_) => continue, // ignore any other late frame
-                    Err(_) => return,
+                    Err(_) => break,
                 }
             }
         })
@@ -383,6 +389,16 @@ impl<'a> Rx<'a> {
         self.ch.data(&out[..]).await.context("zmodem send header")?;
         Ok(())
     }
+}
+
+/// True for bytes that make up a ZMODEM hex close frame (ZFIN) or the "OO"
+/// over-and-out, used to drain the sender's lingering close frames without
+/// eating the shell prompt that follows (which starts with ESC/letters) (#76).
+fn is_close_byte(b: u8) -> bool {
+    matches!(b,
+        b'*' | ZDLE | b'A' | b'B' | b'C' | b'O'
+        | b'\r' | b'\n' | 0x8a | 0x11
+        | b'0'..=b'9' | b'a'..=b'f')
 }
 
 /// Where received files go: the user's Downloads dir, else a temp fallback.

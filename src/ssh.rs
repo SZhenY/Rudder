@@ -418,6 +418,9 @@ async fn run_session(
     // True from injecting PROMPT_SETUP until the first OSC 7 comes back; during
     // that window we strip the echoed command text from the output stream.
     let mut suppress_echo = false;
+    // After a ZMODEM transfer finishes we briefly ignore ZMODEM detection so the
+    // sender's lingering close frames can't spawn a spurious second receive (#76).
+    let mut zmodem_done_at: Option<std::time::Instant> = None;
 
     // PROMPT_COMMAND bash snippet.  Single-quoted body prevents bash from
     // expanding ${HOSTNAME}/${PWD} at definition time; printf interprets
@@ -495,8 +498,13 @@ async fn run_session(
                         // A `sz` in the terminal starts a ZMODEM send. Receive it
                         // straight to the Downloads dir (FinalShell style, #76).
                         // On any protocol error, cancel so the session recovers.
-                        if contains_zmodem_init(&data) {
-                            match crate::zmodem::receive(&mut channel, &data, &events).await {
+                        let zmodem_cooldown = zmodem_done_at
+                            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2));
+                        if !zmodem_cooldown && contains_zmodem_init(&data) {
+                            let result =
+                                crate::zmodem::receive(&mut channel, &data, &events).await;
+                            zmodem_done_at = Some(std::time::Instant::now());
+                            match result {
                                 Ok(leftover) => {
                                     // Bytes after the transfer (the shell prompt):
                                     // run them through the normal output path so
