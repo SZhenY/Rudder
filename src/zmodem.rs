@@ -81,26 +81,7 @@ pub async fn receive(
     let mut cur: Option<CurFile> = None;
 
     loop {
-        // Once at least one file has completed (ZEOF), the closing ZFIN
-        // handshake is best-effort: some senders go quiet afterwards, so don't
-        // block the full read timeout — if it stays silent for a few seconds the
-        // data is already on disk and we finish cleanly (#76).
-        let header = if received > 0 {
-            match tokio::time::timeout(Duration::from_secs(3), rx.read_header()).await {
-                Ok(r) => r,
-                Err(_) => break,
-            }
-        } else {
-            rx.read_header().await
-        };
-        let (ftype, hdr) = match header {
-            Ok(h) => h,
-            Err(e) if received > 0 => {
-                tracing::debug!("zmodem: finishing after {received} file(s): {e}");
-                break;
-            }
-            Err(e) => return Err(e),
-        };
+        let (ftype, hdr) = rx.read_header().await?;
         tracing::debug!("zmodem rx header type={ftype} data={hdr:02x?}");
         match ftype {
             ZRQINIT => rx.send_hex(ZRINIT, [0, 0, 0, CANFDX | CANOVIO | CANFC32]).await?,
@@ -160,27 +141,18 @@ pub async fn receive(
                     emit(events, &c.id, &c.name, c.written, c.size.max(c.written), 1, "");
                     received += 1;
                 }
+                // File complete. Send ZRINIT (the sender accepts it and exits)
+                // and stop reading IMMEDIATELY: reading any further swallows the
+                // shell prompt the sender prints when it exits, leaving the
+                // terminal looking stuck until the user presses Enter (#76).
                 rx.send_hex(ZRINIT, [0, 0, 0, CANFDX | CANOVIO | CANFC32]).await?;
+                break;
             }
-            ZFIN => break, // sender is done; we reply with ZFIN in the close below
+            ZFIN => break, // sender signals it's done
             ZCAN | ZABORT => bail!("{}", t("传输被远端取消", "transfer aborted by sender")),
             ZNAK => { /* sender NAK; just keep going */ }
             _ => tracing::debug!("zmodem: ignoring unhandled frame type {ftype}"),
         }
-    }
-
-    // Closing handshake. Once any file completed we unconditionally send our
-    // ZFIN so the sender exits promptly — otherwise `sz` retries ZFIN for ~1 min
-    // waiting for it. Then best-effort drain the trailing "OO" (over-and-out) so
-    // it doesn't leak into the terminal; the sender may just close instead, so
-    // cap it at 300 ms rather than blocking the full read timeout (#76).
-    if received > 0 {
-        let _ = rx.send_hex(ZFIN, [0, 0, 0, 0]).await;
-        let _ = tokio::time::timeout(Duration::from_millis(300), async {
-            let _ = rx.byte().await;
-            let _ = rx.byte().await;
-        })
-        .await;
     }
 
     let _ = events.send(SessionEvent::Output(
