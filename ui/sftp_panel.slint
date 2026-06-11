@@ -102,6 +102,8 @@ export component SftpPanel inherits Rectangle {
                         height: parent.height;
                         text: root.current-path;
                         color: Theme.text-primary;
+                        // CJK-capable font so typed Chinese isn't tofu (#54).
+                        font-family: Theme.ui-font-family;
                         font-size: Theme.fs-sm;
                         vertical-alignment: center;
                         single-line: true;

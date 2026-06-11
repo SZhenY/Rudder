@@ -220,6 +220,14 @@ pub fn run() -> Result<()> {
         }
         window.set_term_font_size(s.font_size() as f32);
     }
+    // Editable inputs (e.g. the SFTP path bar) need a CJK-capable font: the
+    // embedded Cascadia Mono has no Chinese glyphs and native TextInput doesn't
+    // glyph-fallback like Text does, so typed Chinese would render as tofu (#54).
+    #[cfg(target_os = "windows")]
+    window.set_ui_font_family("Microsoft YaHei UI".into());
+    #[cfg(target_os = "macos")]
+    window.set_ui_font_family("PingFang SC".into());
+    // Linux: leave the Slint default (Noto Sans CJK is typically installed).
     // Populate the Interface font picker with installed monospace families.
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(system_monospace_fonts()))));
 

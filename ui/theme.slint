@@ -51,6 +51,12 @@ export global Theme {
 
     out property <string> font-mono: "Cascadia Mono";
 
+    // UI (sans) font for editable inputs. The embedded Cascadia Mono has no CJK
+    // glyphs and native TextInput doesn't glyph-fallback like Text does, so
+    // typing Chinese into a bare TextInput renders tofu. Rust sets this to a
+    // CJK-capable system font on startup (empty = platform default).
+    in-out property <string> ui-font-family: "";
+
     // Terminal font — user-configurable via Interface settings, set by Rust
     // from the config on startup. cell size in terminal_view derives from these.
     in-out property <string> term-font-family: "Cascadia Mono";
