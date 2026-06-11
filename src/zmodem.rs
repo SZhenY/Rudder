@@ -162,23 +162,25 @@ pub async fn receive(
                 }
                 rx.send_hex(ZRINIT, [0, 0, 0, CANFDX | CANOVIO | CANFC32]).await?;
             }
-            ZFIN => {
-                rx.send_hex(ZFIN, [0, 0, 0, 0]).await?;
-                // The sender appends "OO" (over-and-out) then closes — but it may
-                // just close instead. Draining it is optional, so use a short
-                // best-effort read rather than blocking the full 30 s timeout per
-                // byte (which made `sz` take ~1 min to return) (#76).
-                let _ = tokio::time::timeout(Duration::from_millis(300), async {
-                    let _ = rx.byte().await;
-                    let _ = rx.byte().await;
-                })
-                .await;
-                break;
-            }
+            ZFIN => break, // sender is done; we reply with ZFIN in the close below
             ZCAN | ZABORT => bail!("{}", t("传输被远端取消", "transfer aborted by sender")),
             ZNAK => { /* sender NAK; just keep going */ }
             _ => tracing::debug!("zmodem: ignoring unhandled frame type {ftype}"),
         }
+    }
+
+    // Closing handshake. Once any file completed we unconditionally send our
+    // ZFIN so the sender exits promptly — otherwise `sz` retries ZFIN for ~1 min
+    // waiting for it. Then best-effort drain the trailing "OO" (over-and-out) so
+    // it doesn't leak into the terminal; the sender may just close instead, so
+    // cap it at 300 ms rather than blocking the full read timeout (#76).
+    if received > 0 {
+        let _ = rx.send_hex(ZFIN, [0, 0, 0, 0]).await;
+        let _ = tokio::time::timeout(Duration::from_millis(300), async {
+            let _ = rx.byte().await;
+            let _ = rx.byte().await;
+        })
+        .await;
     }
 
     let _ = events.send(SessionEvent::Output(
