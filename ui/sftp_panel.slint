@@ -55,6 +55,7 @@ export component SftpPanel inherits Rectangle {
     in property <bool>    loading: false;
     in property <[SftpTreeNode]> tree-nodes: [];
     in property <bool> collapsed: false;   // when true only the toolbar shows
+    property <int> selected-row: -1;       // clicked/highlighted file-list row (#70)
 
     // --- Callbacks ---------------------------------------------------------
     callback toggle-collapsed();    // minimise / restore the panel
@@ -72,7 +73,7 @@ export component SftpPanel inherits Rectangle {
 
     // Keep the editable path bar in sync when the directory changes elsewhere
     // (tree click, file double-click, terminal cd) (#54).
-    changed current-path => { path-input.text = root.current-path; }
+    changed current-path => { path-input.text = root.current-path; root.selected-row = -1; }
 
     VerticalLayout {
         spacing: 0;
@@ -327,9 +328,13 @@ export component SftpPanel inherits Rectangle {
 
                         for entry[i] in root.entries : row := Rectangle {
                             height: 24px;
-                            background: row-ta.has-hover
-                                ? #4a90e225
-                                : (mod(i, 2) == 0 ? transparent : #ffffff08);
+                            // Selected row stays highlighted; hover is lighter;
+                            // otherwise zebra striping (#70).
+                            background: i == root.selected-row
+                                ? #4a90e240
+                                : (row-ta.has-hover
+                                    ? #4a90e225
+                                    : (mod(i, 2) == 0 ? transparent : #ffffff08));
 
                             // Right-click anchor (relative to this row).
                             property <length> mx;
@@ -337,6 +342,7 @@ export component SftpPanel inherits Rectangle {
 
                             row-ta := TouchArea {
                                 mouse-cursor: pointer;
+                                clicked => { root.selected-row = i; }
                                 double-clicked => {
                                     if (entry.is-dir) {
                                         root.navigate(entry.full-path);
@@ -347,6 +353,7 @@ export component SftpPanel inherits Rectangle {
                                 pointer-event(ev) => {
                                     if (ev.kind == PointerEventKind.down
                                             && ev.button == PointerEventButton.right) {
+                                        root.selected-row = i;
                                         row.mx = self.mouse-x;
                                         row.my = self.mouse-y;
                                         row-menu.show();

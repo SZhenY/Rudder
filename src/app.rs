@@ -1929,6 +1929,26 @@ fn apply_session_event_to_window(
         SessionEvent::SftpStatus(msg) => {
             update_terminal(&|t| t.sftp_status = msg.clone().into());
         }
+        SessionEvent::SftpFileText {
+            path,
+            name,
+            content,
+            edit,
+            error,
+        } => {
+            if error.is_empty() {
+                // Open the built-in viewer/editor (#70).
+                win.set_editor_path(path.into());
+                win.set_editor_name(name.into());
+                win.set_editor_content(content.into());
+                win.set_editor_readonly(!edit);
+                win.set_editor_dirty(false);
+                win.set_editor_open(true);
+            } else {
+                // Couldn't open as text: surface the reason in the SFTP status.
+                update_terminal(&|t| t.sftp_status = error.clone().into());
+            }
+        }
         SessionEvent::SftpTreeUpdate(nodes) => {
             let slint_nodes: Vec<SftpTreeNode> = nodes
                 .iter()
@@ -2243,13 +2263,14 @@ fn wire_sftp_callbacks(
         });
     }
 
-    // Context menu → 查看 (open read-only) / 编辑 (open + auto-reupload).
+    // Context menu → 查看 (read-only) / 编辑 (editable). Both load the file's
+    // text into the built-in editor instead of an external app (#70).
     {
         let sftp_handles = sftp_handles.clone();
         window.on_sftp_view(move |tab_id: SharedString, path: SharedString| {
             if let Ok(handles) = sftp_handles.lock() {
                 if let Some(h) = handles.get(tab_id.as_str()) {
-                    h.open_temp(path.to_string(), false);
+                    h.read_text(path.to_string(), false);
                 }
             }
         });
@@ -2259,9 +2280,51 @@ fn wire_sftp_callbacks(
         window.on_sftp_edit(move |tab_id: SharedString, path: SharedString| {
             if let Ok(handles) = sftp_handles.lock() {
                 if let Some(h) = handles.get(tab_id.as_str()) {
-                    h.open_temp(path.to_string(), true);
+                    h.read_text(path.to_string(), true);
                 }
             }
+        });
+    }
+
+    // Built-in editor: save (Ctrl+S / button) writes the text back to the
+    // remote file (#70). Read-only (view) sessions never save.
+    {
+        let sftp_handles = sftp_handles.clone();
+        let weak = window.as_weak();
+        window.on_save_file(move || {
+            let Some(w) = weak.upgrade() else { return };
+            if w.get_editor_readonly() {
+                return;
+            }
+            let path = w.get_editor_path().to_string();
+            let content = w.get_editor_content().to_string();
+            let tab_id = w.get_active_tab_id().to_string();
+            if let Ok(handles) = sftp_handles.lock() {
+                if let Some(h) = handles.get(&tab_id) {
+                    h.write_text(path, content);
+                }
+            }
+            w.set_editor_dirty(false);
+        });
+    }
+    // Close the editor; in edit mode upload first if there are unsaved edits.
+    {
+        let sftp_handles = sftp_handles.clone();
+        let weak = window.as_weak();
+        window.on_close_editor(move || {
+            let Some(w) = weak.upgrade() else { return };
+            if !w.get_editor_readonly() && w.get_editor_dirty() {
+                let path = w.get_editor_path().to_string();
+                let content = w.get_editor_content().to_string();
+                let tab_id = w.get_active_tab_id().to_string();
+                if let Ok(handles) = sftp_handles.lock() {
+                    if let Some(h) = handles.get(&tab_id) {
+                        h.write_text(path, content);
+                    }
+                }
+            }
+            w.set_editor_open(false);
+            w.set_editor_dirty(false);
         });
     }
 }

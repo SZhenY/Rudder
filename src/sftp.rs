@@ -51,7 +51,14 @@ pub enum SftpCommand {
     Delete(String),
     /// Download a file to a temp dir and open it with the OS default app.
     /// When `edit` is set, watch the temp copy and re-upload on every change.
+    /// Kept as a fallback for files the built-in editor rejects (too large /
+    /// binary); not wired to a menu item right now (#70).
+    #[allow(dead_code)]
     OpenTemp { remote: String, edit: bool },
+    /// Read a remote file's text for the built-in viewer/editor (#70).
+    ReadText { remote: String, edit: bool },
+    /// Overwrite a remote file with text from the built-in editor (#70).
+    WriteText { remote: String, content: String },
     /// Gracefully shut down the SFTP worker.
     Close,
 }
@@ -83,8 +90,15 @@ impl SftpHandle {
     pub fn delete(&self, path: String) {
         let _ = self.commands.send(SftpCommand::Delete(path));
     }
+    #[allow(dead_code)]
     pub fn open_temp(&self, remote: String, edit: bool) {
         let _ = self.commands.send(SftpCommand::OpenTemp { remote, edit });
+    }
+    pub fn read_text(&self, remote: String, edit: bool) {
+        let _ = self.commands.send(SftpCommand::ReadText { remote, edit });
+    }
+    pub fn write_text(&self, remote: String, content: String) {
+        let _ = self.commands.send(SftpCommand::WriteText { remote, content });
     }
     pub fn close(&self) {
         let _ = self.commands.send(SftpCommand::Close);
@@ -513,12 +527,98 @@ async fn run_sftp(
                     }
                 }
             }
+            SftpCommand::ReadText { remote, edit } => {
+                let name = base_name(&remote);
+                let _ = events.send(SessionEvent::SftpStatus(format!(
+                    "{} {}...",
+                    t("打开", "Opening"),
+                    name
+                )));
+                let (content, error) = match read_text_guarded(&sftp, &remote).await {
+                    Ok(text) => (text, String::new()),
+                    Err(msg) => (String::new(), msg),
+                };
+                let _ = events.send(SessionEvent::SftpFileText {
+                    path: remote,
+                    name,
+                    content,
+                    edit,
+                    error,
+                });
+            }
+            SftpCommand::WriteText { remote, content } => {
+                let name = base_name(&remote);
+                match write_text_file(&sftp, &remote, &content).await {
+                    Ok(_) => {
+                        let _ = events.send(SessionEvent::SftpStatus(format!(
+                            "{}: {}",
+                            t("已保存", "Saved"),
+                            name
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = events.send(SessionEvent::SftpStatus(format!(
+                            "{}: {e:#}",
+                            t("保存失败", "Save failed")
+                        )));
+                    }
+                }
+            }
         }
     }
 
     let _ = handle
         .disconnect(Disconnect::ByApplication, "bye", "")
         .await;
+    Ok(())
+}
+
+/// Read a remote file as UTF-8 text for the built-in editor, rejecting files
+/// that are too large, binary, or not valid UTF-8 (#70). Returns the text on
+/// success or a human-readable error message on failure.
+async fn read_text_guarded(sftp: &SftpSession, remote: &str) -> std::result::Result<String, String> {
+    use tokio::io::AsyncReadExt;
+    const MAX_EDIT_BYTES: u64 = 2 * 1024 * 1024; // 2 MiB
+    let size = sftp
+        .metadata(remote)
+        .await
+        .ok()
+        .and_then(|m| m.size)
+        .unwrap_or(0);
+    if size > MAX_EDIT_BYTES {
+        return Err(t(
+            "文件过大,无法在内置编辑器中打开(上限 2 MB),请下载查看",
+            "Too large for the built-in editor (2 MB limit); download it instead",
+        )
+        .into());
+    }
+    let mut f = sftp
+        .open(remote)
+        .await
+        .map_err(|e| format!("{}: {e}", t("打开失败", "Open failed")))?;
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes)
+        .await
+        .map_err(|e| format!("{}: {e}", t("读取失败", "Read failed")))?;
+    if bytes.contains(&0) {
+        return Err(t("二进制文件,无法以文本打开", "Binary file; cannot open as text").into());
+    }
+    String::from_utf8(bytes)
+        .map_err(|_| t("非 UTF-8 文本,无法打开", "Not UTF-8 text; cannot open").into())
+}
+
+/// Overwrite a remote file with the given text (CREATE | WRITE | TRUNCATE).
+async fn write_text_file(sftp: &SftpSession, remote: &str, content: &str) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let mut f = sftp
+        .create(remote)
+        .await
+        .with_context(|| format!("create remote {remote}"))?;
+    f.write_all(content.as_bytes())
+        .await
+        .context("write remote file")?;
+    f.flush().await.context("flush remote file")?;
+    let _ = f.shutdown().await;
     Ok(())
 }
 

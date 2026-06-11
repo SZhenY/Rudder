@@ -17,7 +17,7 @@ import { SessionDialog, SessionDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { TerminalView, TermSpan, TermMatch } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
-import { ComboBox, SpinBox, LineEdit, Button } from "std-widgets.slint";
+import { ComboBox, SpinBox, LineEdit, Button, ScrollView } from "std-widgets.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode }
 
@@ -133,6 +133,16 @@ export component AppWindow inherits Window {
     in-out property <bool> update-available: false;
     in property <string> update-version;     // e.g. "v0.3.3"
     callback open-update-url();              // open the release page in a browser
+
+    // --- Built-in file viewer/editor (#70) --------------------------------
+    in-out property <bool> editor-open: false;
+    in-out property <string> editor-name;     // file name shown in the title
+    in-out property <string> editor-path;     // remote path (used on save)
+    in-out property <string> editor-content;  // text, two-way with the input
+    in-out property <bool> editor-readonly;   // view = true, edit = false
+    in-out property <bool> editor-dirty: false; // edited since load
+    callback save-file();                     // Ctrl+S / Save button (edit only)
+    callback close-editor();                  // X / Esc; uploads if dirty
 
     // --- Session list ------------------------------------------------------
     in property <[SessionInfo]> sessions;
@@ -504,6 +514,115 @@ export component AppWindow inherits Window {
                 Text { text: "\u{E5CD}"; font-family: "Material Icons"; color: #ffffff;
                        font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
             }
+        }
+    }
+
+    // --- Built-in file viewer / editor (#70) ------------------------------
+    // View = read-only (selectable/copyable); Edit = writable, Ctrl+S or the
+    // Save button uploads, and closing uploads any unsaved changes.
+    if root.editor-open : Rectangle {
+        // Modal backdrop; clicking it does NOT close (avoids losing edits to a
+        // stray click) — use the close button or Esc.
+        background: #00000088;
+        TouchArea {}
+        edit-fs := FocusScope {
+            // Ctrl+S saves, Esc closes. These bubble up from the focused
+            // TextInput because it doesn't consume them.
+            key-pressed(e) => {
+                if (e.text == "s" && e.modifiers.control) {
+                    root.save-file();
+                    return accept;
+                }
+                if (e.text == Key.Escape) {
+                    root.close-editor();
+                    return accept;
+                }
+                return reject;
+            }
+            Rectangle {
+                x: (parent.width - 760px) / 2;
+                y: (parent.height - 560px) / 2;
+                width: 760px;
+                height: 560px;
+                background: Theme.bg-panel;
+                border-radius: Theme.radius-md;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                drop-shadow-blur: 24px;
+                drop-shadow-color: #00000080;
+
+                VerticalLayout {
+                    // Title bar
+                    Rectangle {
+                        height: 40px;
+                        background: Theme.bg-panel-alt;
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 8px;
+                            spacing: 8px;
+                            Text {
+                                text: root.editor-name
+                                    + (root.editor-readonly
+                                        ? "  ·  " + @tr("Read-only")
+                                        : (root.editor-dirty ? "  ·  " + @tr("Modified") : ""));
+                                color: Theme.text-primary;
+                                font-size: Theme.fs-md;
+                                font-weight: 600;
+                                font-family: Theme.ui-font-family;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+                            if !root.editor-readonly : Rectangle {
+                                width: 76px; height: 28px;
+                                border-radius: Theme.radius-sm;
+                                background: ed-save-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                                ed-save-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.save-file(); }
+                                }
+                                Text { text: @tr("Save"); color: #ffffff; font-size: Theme.fs-sm;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                            Rectangle {
+                                width: 28px; height: 28px;
+                                border-radius: Theme.radius-sm;
+                                background: ed-close-ta.has-hover ? Theme.bg-hover : transparent;
+                                ed-close-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.close-editor(); }
+                                }
+                                Text { text: "\u{E5CD}"; font-family: "Material Icons";
+                                       color: Theme.text-secondary; font-size: Theme.fs-md;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                    Rectangle { height: 1px; background: Theme.border-subtle; }
+
+                    // Text area
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: Theme.bg-root;
+                        ScrollView {
+                            edit-input := TextInput {
+                                x: 8px;
+                                width: parent.visible-width - 16px;
+                                text <=> root.editor-content;
+                                read-only: root.editor-readonly;
+                                single-line: false;
+                                wrap: word-wrap;
+                                color: Theme.text-primary;
+                                font-family: Theme.ui-font-family;
+                                font-size: Theme.fs-md;
+                                edited => { root.editor-dirty = true; }
+                            }
+                        }
+                    }
+                }
+            }
+            // Focus the text the moment the editor opens.
+            init => { edit-input.focus(); }
         }
     }
 

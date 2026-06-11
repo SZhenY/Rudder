@@ -204,6 +204,16 @@ pub enum SessionEvent {
         state: u8, // 0 = active, 1 = done, 2 = error
         msg: String,
     },
+    /// A remote text file loaded for the built-in viewer/editor (#70). On
+    /// failure (too large, binary, non-UTF-8, I/O error) `error` is non-empty
+    /// and `content` is empty.
+    SftpFileText {
+        path: String,
+        name: String,
+        content: String,
+        edit: bool,
+        error: String,
+    },
 }
 
 /// Handle retained by the UI layer to talk to a running session.

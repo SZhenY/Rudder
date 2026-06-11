@@ -132,6 +132,12 @@ msgstr "Download"
 msgid "Update available:"
 msgstr "Update available:"
 
+msgid "Read-only"
+msgstr "Read-only"
+
+msgid "Modified"
+msgstr "Modified"
+
 msgid "View"
 msgstr "View"
 

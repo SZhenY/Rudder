@@ -132,6 +132,12 @@ msgstr "下载"
 msgid "Update available:"
 msgstr "发现新版本:"
 
+msgid "Read-only"
+msgstr "只读"
+
+msgid "Modified"
+msgstr "已修改"
+
 msgid "View"
 msgstr "查看"
 
