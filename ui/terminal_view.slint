@@ -100,6 +100,12 @@ export component TerminalView inherits Rectangle {
     callback sftp-delete(string);
     callback sftp-view(string);
     callback sftp-edit(string);
+    // Context-menu extensions (#69), forwarded up to the app shell.
+    callback sftp-rename-request(string, string);
+    callback sftp-chmod-request(string);
+    callback sftp-copy-path(string);
+    callback sftp-new-folder(string);
+    callback sftp-new-file(string);
     callback paste-from-clipboard();
     callback copy-terminal-text();
     callback clear-terminal();              // wipe this session's screen buffer
@@ -673,6 +679,11 @@ export component TerminalView inherits Rectangle {
             delete(path)        => { root.sftp-delete(path); }
             view(path)          => { root.sftp-view(path); }
             edit(path)          => { root.sftp-edit(path); }
+            rename-request(path, name) => { root.sftp-rename-request(path, name); }
+            chmod-request(path) => { root.sftp-chmod-request(path); }
+            copy-path(path)     => { root.sftp-copy-path(path); }
+            new-folder(dir)     => { root.sftp-new-folder(dir); }
+            new-file(dir)       => { root.sftp-new-file(dir); }
         }
     }
 }

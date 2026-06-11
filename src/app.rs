@@ -2336,6 +2336,59 @@ fn wire_sftp_callbacks(
         });
     }
 
+    // Context-menu extensions (#69): one prompt dialog covers rename / chmod /
+    // mkdir / touch; copy-path goes straight to the system clipboard.
+    {
+        let sftp_handles = sftp_handles.clone();
+        window.on_sftp_prompt_submit(
+            move |tab_id: SharedString,
+                  kind: SharedString,
+                  target: SharedString,
+                  value: SharedString| {
+                let value = value.to_string();
+                let value = value.trim();
+                if value.is_empty() {
+                    return;
+                }
+                let target = target.to_string();
+                let handles = match sftp_handles.lock() {
+                    Ok(h) => h,
+                    Err(_) => return,
+                };
+                let Some(h) = handles.get(tab_id.as_str()) else {
+                    return;
+                };
+                match kind.as_str() {
+                    "rename" => {
+                        let to = format!(
+                            "{}/{}",
+                            parent_path(&target).trim_end_matches('/'),
+                            value
+                        );
+                        h.rename(target, to);
+                    }
+                    "chmod" => {
+                        if let Ok(mode) = u32::from_str_radix(value, 8) {
+                            h.chmod(target, mode & 0o7777);
+                        }
+                    }
+                    "mkdir" => {
+                        h.mkdir(format!("{}/{}", target.trim_end_matches('/'), value));
+                    }
+                    "touch" => {
+                        h.touch(format!("{}/{}", target.trim_end_matches('/'), value));
+                    }
+                    _ => {}
+                }
+            },
+        );
+    }
+    {
+        window.on_sftp_copy_path(move |path: SharedString| {
+            clipboard_set_text(path.to_string());
+        });
+    }
+
     // Built-in editor: save (Ctrl+S / button) writes the text back to the
     // remote file (#70). Read-only (view) sessions never save.
     {

@@ -132,6 +132,30 @@ msgstr "Download"
 msgid "Update available:"
 msgstr "Update available:"
 
+msgid "Rename"
+msgstr "Rename"
+
+msgid "Permissions"
+msgstr "Permissions"
+
+msgid "Copy path"
+msgstr "Copy path"
+
+msgid "Refresh"
+msgstr "Refresh"
+
+msgid "New folder"
+msgstr "New folder"
+
+msgid "New file"
+msgstr "New file"
+
+msgid "New name"
+msgstr "New name"
+
+msgid "Octal mode, e.g. 755"
+msgstr "Octal mode, e.g. 755"
+
 msgid "Read-only"
 msgstr "Read-only"
 

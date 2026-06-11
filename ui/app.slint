@@ -222,6 +222,15 @@ export component AppWindow inherits Window {
     callback sftp-delete(string /* tab-id */, string /* path */);
     callback sftp-view(string /* tab-id */, string /* path */);
     callback sftp-edit(string /* tab-id */, string /* path */);
+    // SFTP context-menu extensions (#69): rename / chmod / mkdir / touch share
+    // one single-input prompt dialog; copy-path goes straight to the clipboard.
+    in-out property <bool> sftp-prompt-open: false;
+    in-out property <string> sftp-prompt-kind;   // "rename"|"chmod"|"mkdir"|"touch"
+    in-out property <string> sftp-prompt-tab;    // tab the action applies to
+    in-out property <string> sftp-prompt-target; // path acted on (or parent dir)
+    in-out property <string> sftp-prompt-value;  // user input
+    callback sftp-prompt-submit(string /* tab */, string /* kind */, string /* target */, string /* value */);
+    callback sftp-copy-path(string);             // put the path on the clipboard
 
     // --- Clipboard callbacks ----------------------------------------------
     // Paste clipboard text into the active terminal.
@@ -377,6 +386,36 @@ export component AppWindow inherits Window {
                     }
                     sftp-view(path) => { root.sftp-view(term.id, path); }
                     sftp-edit(path) => { root.sftp-edit(term.id, path); }
+                    // #69 context-menu extensions → shared prompt dialog.
+                    sftp-rename-request(path, name) => {
+                        root.sftp-prompt-kind = "rename";
+                        root.sftp-prompt-tab = term.id;
+                        root.sftp-prompt-target = path;
+                        root.sftp-prompt-value = name;
+                        root.sftp-prompt-open = true;
+                    }
+                    sftp-chmod-request(path) => {
+                        root.sftp-prompt-kind = "chmod";
+                        root.sftp-prompt-tab = term.id;
+                        root.sftp-prompt-target = path;
+                        root.sftp-prompt-value = "";
+                        root.sftp-prompt-open = true;
+                    }
+                    sftp-copy-path(path) => { root.sftp-copy-path(path); }
+                    sftp-new-folder(dir) => {
+                        root.sftp-prompt-kind = "mkdir";
+                        root.sftp-prompt-tab = term.id;
+                        root.sftp-prompt-target = dir;
+                        root.sftp-prompt-value = "";
+                        root.sftp-prompt-open = true;
+                    }
+                    sftp-new-file(dir) => {
+                        root.sftp-prompt-kind = "touch";
+                        root.sftp-prompt-tab = term.id;
+                        root.sftp-prompt-target = dir;
+                        root.sftp-prompt-value = "";
+                        root.sftp-prompt-open = true;
+                    }
                     paste-from-clipboard() => { root.paste-from-clipboard(term.id); }
                     copy-terminal-text() => { root.copy-terminal-text(term.id); }
                     clear-terminal() => { root.clear-terminal(term.id); }
@@ -1037,6 +1076,84 @@ export component AppWindow inherits Window {
                         clicked => {
                             root.submit-group(root.group-dialog-orig, root.group-dialog-name);
                             root.group-dialog-open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- SFTP prompt dialog (#69): rename / chmod / mkdir / touch ----------
+    if root.sftp-prompt-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000080;
+        TouchArea { clicked => { root.sftp-prompt-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 340px;
+            height: 178px;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #000000a0;
+            TouchArea {}   // swallow inside clicks
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+                Text {
+                    text: root.sftp-prompt-kind == "rename"
+                        ? @tr("Rename")
+                        : (root.sftp-prompt-kind == "chmod"
+                            ? @tr("Permissions")
+                            : (root.sftp-prompt-kind == "mkdir"
+                                ? @tr("New folder") : @tr("New file")));
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-lg;
+                    font-weight: 700;
+                }
+                Text {
+                    text: root.sftp-prompt-kind == "chmod"
+                        ? @tr("Octal mode, e.g. 755")
+                        : (root.sftp-prompt-kind == "rename"
+                            ? @tr("New name") : @tr("Name"));
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                }
+                sp-input := LineEdit {
+                    text <=> root.sftp-prompt-value;
+                    placeholder-text: root.sftp-prompt-kind == "chmod" ? "755" : "";
+                    accepted => {
+                        if (root.sftp-prompt-value != "") {
+                            root.sftp-prompt-submit(
+                                root.sftp-prompt-tab, root.sftp-prompt-kind,
+                                root.sftp-prompt-target, root.sftp-prompt-value);
+                            root.sftp-prompt-open = false;
+                        }
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Button {
+                        text: root.lang-en ? "Cancel" : "取消";
+                        clicked => { root.sftp-prompt-open = false; }
+                    }
+                    Button {
+                        text: root.lang-en ? "OK" : "确定";
+                        primary: true;
+                        enabled: root.sftp-prompt-value != "";
+                        clicked => {
+                            root.sftp-prompt-submit(
+                                root.sftp-prompt-tab, root.sftp-prompt-kind,
+                                root.sftp-prompt-target, root.sftp-prompt-value);
+                            root.sftp-prompt-open = false;
                         }
                     }
                 }

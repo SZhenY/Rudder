@@ -132,6 +132,30 @@ msgstr "下载"
 msgid "Update available:"
 msgstr "发现新版本:"
 
+msgid "Rename"
+msgstr "重命名"
+
+msgid "Permissions"
+msgstr "权限"
+
+msgid "Copy path"
+msgstr "复制路径"
+
+msgid "Refresh"
+msgstr "刷新"
+
+msgid "New folder"
+msgstr "新建文件夹"
+
+msgid "New file"
+msgstr "新建文件"
+
+msgid "New name"
+msgstr "新名称"
+
+msgid "Octal mode, e.g. 755"
+msgstr "八进制权限,例如 755"
+
 msgid "Read-only"
 msgstr "只读"
 

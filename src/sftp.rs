@@ -55,6 +55,14 @@ pub enum SftpCommand {
     /// binary); not wired to a menu item right now (#70).
     #[allow(dead_code)]
     OpenTemp { remote: String, edit: bool },
+    /// Rename / move a remote file or directory (#69).
+    Rename { from: String, to: String },
+    /// Change a remote path's permission bits (POSIX mode, e.g. 0o755) (#69).
+    Chmod { path: String, mode: u32 },
+    /// Create an empty remote directory (#69).
+    MkDir(String),
+    /// Create an empty remote file (#69).
+    TouchFile(String),
     /// Read a remote file's text for the built-in viewer/editor (#70).
     ReadText { remote: String, edit: bool },
     /// Overwrite a remote file with text from the built-in editor (#70).
@@ -93,6 +101,18 @@ impl SftpHandle {
     #[allow(dead_code)]
     pub fn open_temp(&self, remote: String, edit: bool) {
         let _ = self.commands.send(SftpCommand::OpenTemp { remote, edit });
+    }
+    pub fn rename(&self, from: String, to: String) {
+        let _ = self.commands.send(SftpCommand::Rename { from, to });
+    }
+    pub fn chmod(&self, path: String, mode: u32) {
+        let _ = self.commands.send(SftpCommand::Chmod { path, mode });
+    }
+    pub fn mkdir(&self, path: String) {
+        let _ = self.commands.send(SftpCommand::MkDir(path));
+    }
+    pub fn touch(&self, path: String) {
+        let _ = self.commands.send(SftpCommand::TouchFile(path));
     }
     pub fn read_text(&self, remote: String, edit: bool) {
         let _ = self.commands.send(SftpCommand::ReadText { remote, edit });
@@ -491,6 +511,109 @@ async fn run_sftp(
                     Err(e) => {
                         let _ = events.send(SessionEvent::SftpStatus(format!("{}: {e}", t("删除失败", "Delete failed"))));
                     }
+                }
+            }
+
+            SftpCommand::Rename { from, to } => {
+                let refresh = parent_dir(&from);
+                match sftp.rename(&from, &to).await {
+                    Ok(_) => {
+                        let _ = events.send(SessionEvent::SftpStatus(format!(
+                            "{}: {}",
+                            t("已重命名", "Renamed"),
+                            base_name(&to)
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = events.send(SessionEvent::SftpStatus(format!(
+                            "{}: {e}",
+                            t("重命名失败", "Rename failed")
+                        )));
+                    }
+                }
+                if let Ok(entries) = list_dir_impl(&sftp, &refresh).await {
+                    let _ = events.send(SessionEvent::SftpEntries { path: refresh, entries });
+                }
+            }
+
+            SftpCommand::Chmod { path, mode } => {
+                let refresh = parent_dir(&path);
+                let attrs = FileAttributes {
+                    permissions: Some(mode),
+                    ..Default::default()
+                };
+                match sftp.set_metadata(&path, attrs).await {
+                    Ok(_) => {
+                        let _ = events.send(SessionEvent::SftpStatus(format!(
+                            "{}: {} → {:o}",
+                            t("已修改权限", "Permissions changed"),
+                            base_name(&path),
+                            mode
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = events.send(SessionEvent::SftpStatus(format!(
+                            "{}: {e}",
+                            t("修改权限失败", "chmod failed")
+                        )));
+                    }
+                }
+                if let Ok(entries) = list_dir_impl(&sftp, &refresh).await {
+                    let _ = events.send(SessionEvent::SftpEntries { path: refresh, entries });
+                }
+            }
+
+            SftpCommand::MkDir(path) => {
+                let refresh = parent_dir(&path);
+                match sftp.create_dir(&path).await {
+                    Ok(_) => {
+                        let _ = events.send(SessionEvent::SftpStatus(format!(
+                            "{}: {}",
+                            t("已新建文件夹", "Folder created"),
+                            base_name(&path)
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = events.send(SessionEvent::SftpStatus(format!(
+                            "{}: {e}",
+                            t("新建文件夹失败", "Create folder failed")
+                        )));
+                    }
+                }
+                if let Ok(entries) = list_dir_impl(&sftp, &refresh).await {
+                    let _ = events.send(SessionEvent::SftpEntries { path: refresh, entries });
+                }
+            }
+
+            SftpCommand::TouchFile(path) => {
+                let refresh = parent_dir(&path);
+                // create() truncates if the file exists, so refuse to clobber.
+                let exists = sftp.metadata(&path).await.is_ok();
+                if exists {
+                    let _ = events.send(SessionEvent::SftpStatus(format!(
+                        "{}: {}",
+                        t("文件已存在", "File already exists"),
+                        base_name(&path)
+                    )));
+                } else {
+                    match sftp.create(&path).await {
+                        Ok(_) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {}",
+                                t("已新建文件", "File created"),
+                                base_name(&path)
+                            )));
+                        }
+                        Err(e) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {e}",
+                                t("新建文件失败", "Create file failed")
+                            )));
+                        }
+                    }
+                }
+                if let Ok(entries) = list_dir_impl(&sftp, &refresh).await {
+                    let _ = events.send(SessionEvent::SftpEntries { path: refresh, entries });
                 }
             }
 

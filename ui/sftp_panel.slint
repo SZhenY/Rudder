@@ -65,8 +65,15 @@ export component SftpPanel inherits Rectangle {
     callback refresh(string);
     callback tree-expand(string);   // toggle expand/collapse + navigate
     callback delete(string);        // remove a remote file/dir
-    callback view(string);          // download to temp + open (read)
-    callback edit(string);          // download to temp + open + auto-reupload
+    callback view(string);          // open read-only in the built-in viewer
+    callback edit(string);          // open writable in the built-in editor
+    // Context-menu extensions (#69). The *-request callbacks open dialogs in
+    // the app shell; copy-path goes straight to the system clipboard.
+    callback rename-request(string /* path */, string /* current name */);
+    callback chmod-request(string /* path */);
+    callback copy-path(string);
+    callback new-folder(string /* parent dir */);
+    callback new-file(string /* parent dir */);
 
     // -----------------------------------------------------------------------
     background: Theme.bg-panel;
@@ -320,10 +327,53 @@ export component SftpPanel inherits Rectangle {
                                    horizontal-alignment: center; vertical-alignment: center; }
                         }
 
-                        if !root.loading && root.entries.length == 0 : Rectangle {
+                        if !root.loading && root.entries.length == 0 : empty-row := Rectangle {
                             height: 40px;
+                            property <length> mx;
+                            property <length> my;
                             Text { text: @tr("Empty directory"); color: Theme.text-muted; font-size: Theme.fs-sm;
                                    horizontal-alignment: center; vertical-alignment: center; }
+                            // Right-click in an empty directory → create/refresh (#69).
+                            TouchArea {
+                                pointer-event(ev) => {
+                                    if (ev.kind == PointerEventKind.down
+                                            && ev.button == PointerEventButton.right) {
+                                        empty-row.mx = self.mouse-x;
+                                        empty-row.my = self.mouse-y;
+                                        empty-menu.show();
+                                    }
+                                }
+                            }
+                            empty-menu := PopupWindow {
+                                x: empty-row.mx;
+                                y: empty-row.my;
+                                width: 124px;
+                                height: 3 * 27px + 8px;
+                                Rectangle {
+                                    background: Theme.bg-panel;
+                                    border-radius: Theme.radius-sm;
+                                    border-width: 1px;
+                                    border-color: Theme.border-strong;
+                                    drop-shadow-blur: 12px;
+                                    drop-shadow-color: #00000060;
+                                    VerticalLayout {
+                                        padding: 4px;
+                                        spacing: 1px;
+                                        SftpMenuItem {
+                                            label: @tr("New folder");
+                                            clicked => { root.new-folder(root.current-path); }
+                                        }
+                                        SftpMenuItem {
+                                            label: @tr("New file");
+                                            clicked => { root.new-file(root.current-path); }
+                                        }
+                                        SftpMenuItem {
+                                            label: @tr("Refresh");
+                                            clicked => { root.refresh(root.current-path); }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         for entry[i] in root.entries : row := Rectangle {
@@ -361,13 +411,13 @@ export component SftpPanel inherits Rectangle {
                                 }
                             }
 
-                            // Right-click context menu. Files: Download/View/Edit/
-                            // Delete. Dirs: Download (recursive, #50) + Delete.
+                            // Right-click context menu (#69). Files get the full
+                            // set; dirs skip View/Edit.
                             row-menu := PopupWindow {
                                 x: row.mx;
                                 y: row.my;
-                                width: 108px;
-                                height: (entry.is-dir ? 2 : 4) * 27px + 8px;
+                                width: 124px;
+                                height: (entry.is-dir ? 8 : 10) * 27px + 8px;
                                 Rectangle {
                                     background: Theme.bg-panel;
                                     border-radius: Theme.radius-sm;
@@ -391,9 +441,33 @@ export component SftpPanel inherits Rectangle {
                                             clicked => { root.edit(entry.full-path); }
                                         }
                                         SftpMenuItem {
+                                            label: @tr("Rename");
+                                            clicked => { root.rename-request(entry.full-path, entry.name); }
+                                        }
+                                        SftpMenuItem {
+                                            label: @tr("Permissions");
+                                            clicked => { root.chmod-request(entry.full-path); }
+                                        }
+                                        SftpMenuItem {
+                                            label: @tr("Copy path");
+                                            clicked => { root.copy-path(entry.full-path); }
+                                        }
+                                        SftpMenuItem {
                                             label: @tr("Delete");
                                             tint: #d86c6c;
                                             clicked => { root.delete(entry.full-path); }
+                                        }
+                                        SftpMenuItem {
+                                            label: @tr("New folder");
+                                            clicked => { root.new-folder(root.current-path); }
+                                        }
+                                        SftpMenuItem {
+                                            label: @tr("New file");
+                                            clicked => { root.new-file(root.current-path); }
+                                        }
+                                        SftpMenuItem {
+                                            label: @tr("Refresh");
+                                            clicked => { root.refresh(root.current-path); }
                                         }
                                     }
                                 }
