@@ -105,8 +105,8 @@ export component AppWindow inherits Window {
     in property <[string]> term-fonts;             // installed monospace families
     in-out property <bool> interface-open: false;  // Interface settings dialog
     // Interface dialog position (draggable by its title bar); init centered.
-    property <length> ifd-x: (root.width - 560px) / 2;
-    property <length> ifd-y: (root.height - 360px) / 2;
+    property <length> ifd-x: (root.width - 644px) / 2;
+    property <length> ifd-y: (root.height - 414px) / 2;
     property <bool> ifd-dragging;
     property <length> ifd-base-x;
     property <length> ifd-base-y;
@@ -1263,8 +1263,8 @@ export component AppWindow inherits Window {
         Rectangle {
             x: root.ifd-x;
             y: root.ifd-y;
-            width: 560px;
-            height: 360px;
+            width: 644px;   // +15%
+            height: 414px;  // +15%
             background: Theme.bg-panel;
             border-radius: Theme.radius-md;
             border-width: 1px;
