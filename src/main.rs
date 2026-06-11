@@ -13,6 +13,7 @@ mod ssh;
 mod ssh_config;
 mod system;
 mod telnet;
+mod zmodem;
 
 fn main() -> anyhow::Result<()> {
     // Initialise tracing — honour RUST_LOG but default to info.

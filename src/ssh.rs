@@ -418,10 +418,6 @@ async fn run_session(
     // True from injecting PROMPT_SETUP until the first OSC 7 comes back; during
     // that window we strip the echoed command text from the output stream.
     let mut suppress_echo = false;
-    // Set when we auto-cancel an unsupported ZMODEM (sz/rz) transfer: until this
-    // deadline we swallow the residual binary frames so they don't garble the
-    // terminal (#76).
-    let mut zmodem_suppress_until: Option<std::time::Instant> = None;
 
     // PROMPT_COMMAND bash snippet.  Single-quoted body prevents bash from
     // expanding ${HOSTNAME}/${PWD} at definition time; printf interprets
@@ -496,28 +492,22 @@ async fn run_session(
             msg = channel.wait() => {
                 match msg {
                     Some(ChannelMsg::Data { data }) => {
-                        // ZMODEM (sz/rz) is not supported. The remote would hang
-                        // the session waiting for ZMODEM responses, so detect the
-                        // handshake, send the cancel sequence, and tell the user
-                        // to use the SFTP panel instead (#76).
+                        // A `sz` in the terminal starts a ZMODEM send. Receive it
+                        // straight to the Downloads dir (FinalShell style, #76).
+                        // On any protocol error, cancel so the session recovers.
                         if contains_zmodem_init(&data) {
-                            let _ = channel.data(&ZMODEM_CANCEL[..]).await;
-                            zmodem_suppress_until = Some(
-                                std::time::Instant::now()
-                                    + std::time::Duration::from_millis(1500),
-                            );
-                            let _ = events.send(SessionEvent::Output(t(
-                                "\r\n[meatshell] 暂不支持 sz/rz(ZMODEM),已自动取消。请用右下角的 SFTP 面板传输文件。\r\n",
-                                "\r\n[meatshell] sz/rz (ZMODEM) is not supported yet; auto-cancelled. Use the SFTP panel (bottom-right) to transfer files.\r\n",
-                            ).into()));
-                            continue;
-                        }
-                        // Swallow the residual ZMODEM binary frames after a cancel.
-                        if let Some(deadline) = zmodem_suppress_until {
-                            if std::time::Instant::now() < deadline {
-                                continue;
+                            match crate::zmodem::receive(&mut channel, &data, &events).await {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    tracing::warn!("zmodem receive failed: {e:#}");
+                                    let _ = channel.data(&ZMODEM_CANCEL[..]).await;
+                                    let _ = events.send(SessionEvent::Output(format!(
+                                        "\r\n[meatshell] {}: {e}\r\n",
+                                        t("ZMODEM 接收失败,已取消", "ZMODEM receive failed; cancelled")
+                                    ).into()));
+                                }
                             }
-                            zmodem_suppress_until = None;
+                            continue;
                         }
 
                         let mut text = String::from_utf8_lossy(&data).into_owned();
