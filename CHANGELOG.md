@@ -5,6 +5,40 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-11
+
+### Added / 新增
+
+- **In-app new-version notification (#48).** On startup a background thread
+  checks the GitHub releases API; if a newer version exists, a dismissible
+  top-centre banner offers a Download button (opens the release page). Purely
+  informational — the app keeps working on the current version, never forced.
+  **应用内新版本通知 (#48)。** 启动时后台线程查询 GitHub releases API,若有更
+  新版本则在顶部居中显示一个可关闭的横幅,带"下载"按钮(打开 release 页)。纯
+  提示性质——应用照常在当前版本运行,绝不强制更新。
+
+- **Editable SFTP path bar with copy & paste-to-jump (#54).** The path bar is
+  now an input: type or paste a path and press Enter to jump there, plus a copy
+  button and a paste-and-jump button.
+  **可编辑的 SFTP 路径栏,支持复制和粘贴跳转 (#54)。** 路径栏现在是输入框:输入
+  或粘贴路径后回车即跳转,另有复制按钮和粘贴跳转按钮。
+
+### Fixed / 修复
+
+- **SFTP panel no longer gets stuck "loading" after manual navigation (#59).**
+  The panel only follows a real cd now (cwd actually changed), not the OSC 7 that
+  every prompt re-emits — so manual browsing isn't overridden and a later cd
+  reloads correctly instead of hanging.
+  **SFTP 面板手动导航后不再卡"加载中" (#59)。** 面板现在只跟随真正的 cd(cwd 确
+  实变化),而非每个命令提示符都重发的 OSC 7——手动浏览不被覆盖,之后的 cd 也能
+  正确重新加载而非卡住。
+
+- **SFTP path bar renders Chinese instead of tofu (#54).** The embedded Cascadia
+  Mono has no CJK glyphs and native TextInput doesn't glyph-fallback; editable
+  inputs now use a CJK-capable system font.
+  **SFTP 路径栏正常显示中文,不再是豆腐块 (#54)。** 嵌入的 Cascadia Mono 没有
+  CJK 字形,而原生 TextInput 不做字形回退;可编辑输入现改用含 CJK 的系统字体。
+
 ## [0.3.2] - 2026-06-11
 
 ### Added / 新增
@@ -364,6 +398,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Screenshots in the README** (`docs/screenshots/`, sensitive info redacted).
   **README 增加截图**（`docs/screenshots/`，敏感信息已打码）。
 
+[0.3.3]: https://github.com/jeff141/meatshell/releases/tag/v0.3.3
 [0.3.2]: https://github.com/jeff141/meatshell/releases/tag/v0.3.2
 [0.3.1]: https://github.com/jeff141/meatshell/releases/tag/v0.3.1
 [0.3.0]: https://github.com/jeff141/meatshell/releases/tag/v0.3.0
