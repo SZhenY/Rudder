@@ -112,6 +112,7 @@ export component AppWindow inherits Window {
     property <length> ifd-base-y;
     property <length> ifd-grab-x;
     property <length> ifd-grab-y;
+    property <string> ifd-page: "font";   // active Interface page: "font" | "sftp"
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
     // SFTP follows the terminal's cd; opt out in Interface settings.
@@ -1336,7 +1337,13 @@ export component AppWindow inherits Window {
                             Rectangle {
                                 height: 30px;
                                 border-radius: Theme.radius-sm;
-                                background: Theme.bg-active;   // "Font" page is active
+                                background: root.ifd-page == "font"
+                                    ? Theme.bg-active
+                                    : (nav-font-ta.has-hover ? Theme.bg-hover : transparent);
+                                nav-font-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.ifd-page = "font"; }
+                                }
                                 HorizontalLayout {
                                     padding-left: 10px; spacing: 8px;
                                     Text { text: "\u{E167}"; font-family: "Material Icons";
@@ -1346,12 +1353,32 @@ export component AppWindow inherits Window {
                                            vertical-alignment: center; horizontal-stretch: 1; }
                                 }
                             }
+                            Rectangle {
+                                height: 30px;
+                                border-radius: Theme.radius-sm;
+                                background: root.ifd-page == "sftp"
+                                    ? Theme.bg-active
+                                    : (nav-sftp-ta.has-hover ? Theme.bg-hover : transparent);
+                                nav-sftp-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.ifd-page = "sftp"; }
+                                }
+                                HorizontalLayout {
+                                    padding-left: 10px; spacing: 8px;
+                                    // folder icon (matches the SFTP file panel)
+                                    Text { text: "\u{E2C7}"; font-family: "Material Icons";
+                                           color: Theme.text-primary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                    Text { text: "SFTP";
+                                           color: Theme.text-primary; font-size: Theme.fs-md;
+                                           vertical-alignment: center; horizontal-stretch: 1; }
+                                }
+                            }
                         }
                     }
                     Rectangle {
                         horizontal-stretch: 73;
                         background: Theme.bg-panel;
-                        VerticalLayout {
+                        if root.ifd-page == "font" : VerticalLayout {
                             padding: 18px;
                             spacing: 14px;
                             alignment: start;
@@ -1411,19 +1438,28 @@ export component AppWindow inherits Window {
                                     height: parent.height;
                                 }
                             }
+                        }
 
-                            // --- SFTP --------------------------------------
-                            VerticalLayout {
-                                spacing: 6px;
-                                Text { text: "SFTP";
-                                       color: Theme.text-secondary; font-size: Theme.fs-sm; }
-                                CheckBox {
-                                    text: root.lang-en
-                                        ? "SFTP follows terminal cd"
-                                        : "SFTP 跟随 cd 更新";
-                                    checked: root.sftp-follow-cd;
-                                    toggled => { root.set-sftp-follow-cd(self.checked); }
-                                }
+                        // --- SFTP page -------------------------------------
+                        if root.ifd-page == "sftp" : VerticalLayout {
+                            padding: 18px;
+                            spacing: 14px;
+                            alignment: start;
+
+                            CheckBox {
+                                text: root.lang-en
+                                    ? "SFTP follows terminal cd"
+                                    : "SFTP 跟随 cd 更新";
+                                checked: root.sftp-follow-cd;
+                                toggled => { root.set-sftp-follow-cd(self.checked); }
+                            }
+                            Text {
+                                text: root.lang-en
+                                    ? "When enabled, a cd in the terminal switches the SFTP panel to the same directory."
+                                    : "勾选后,终端里执行 cd 时,SFTP 面板会自动切换到相同目录。";
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
                             }
                         }
                     }
