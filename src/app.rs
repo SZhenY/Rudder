@@ -80,7 +80,11 @@ use crate::system::{format_bytes_per_sec, format_mem_mib, SystemSampler, SystemS
 type SftpHandles = Arc<Mutex<HashMap<String, SftpHandle>>>;
 /// Per-tab flag: once the user explicitly navigates via the SFTP tree or
 /// toolbar, stop auto-syncing to the terminal's `cd` path.
-type SftpManualNav = Arc<Mutex<HashMap<String, bool>>>;
+/// Per-tab last cwd the SFTP panel followed (from OSC 7). Used to ignore the
+/// OSC 7 every prompt re-emits at an unchanged directory; manual SFTP
+/// navigation REMOVES the entry so the very next OSC 7 — same directory or
+/// not — snaps the panel back to the shell's cwd (cd-follow never goes stale).
+type SftpLastCwd = Arc<Mutex<HashMap<String, String>>>;
 
 /// Per-tab connection status + latest remote resource sample, used to drive the
 /// sidebar for whichever tab is active.  `Arc<Mutex>` because the SSH event-pump
@@ -157,8 +161,8 @@ pub fn run() -> Result<()> {
     // Per-tab SFTP handles — Arc<Mutex> so the event-pump OS thread and the
     // Slint UI thread can both post SftpCommands.
     let sftp_handles: SftpHandles = Arc::new(Mutex::new(HashMap::new()));
-    // Once the user navigates manually in the SFTP panel, stop auto-following cd.
-    let sftp_manual_nav: SftpManualNav = Arc::new(Mutex::new(HashMap::new()));
+    // Per-tab cwd the SFTP panel last followed (see SftpLastCwd).
+    let sftp_last_cwd: SftpLastCwd = Arc::new(Mutex::new(HashMap::new()));
 
     // Per-tab vt100 parsers + history logs (Arc<Mutex> so they can be cloned
     // into the thread that pumps session events into invoke_from_event_loop).
@@ -315,7 +319,7 @@ pub fn run() -> Result<()> {
         runtime.clone(),
         last_term_size.clone(),
         sftp_handles.clone(),
-        sftp_manual_nav.clone(),
+        sftp_last_cwd.clone(),
         tab_statuses.clone(),
         local_snap.clone(),
         local_net_hist.clone(),
@@ -543,9 +547,9 @@ pub fn run() -> Result<()> {
         handles.clone(),
         bufs.clone(),
         sftp_handles.clone(),
-        sftp_manual_nav.clone(),
+        sftp_last_cwd.clone(),
     );
-    wire_sftp_callbacks(&window, sftp_handles.clone(), sftp_manual_nav.clone());
+    wire_sftp_callbacks(&window, sftp_handles.clone(), sftp_last_cwd.clone());
     wire_key_input(
         &window,
         handles.clone(),
@@ -557,7 +561,7 @@ pub fn run() -> Result<()> {
             runtime: runtime.clone(),
             handles: handles.clone(),
             sftp_handles: sftp_handles.clone(),
-            sftp_manual_nav: sftp_manual_nav.clone(),
+            sftp_last_cwd: sftp_last_cwd.clone(),
             bufs: bufs.clone(),
             tab_statuses: tab_statuses.clone(),
             local_snap: local_snap.clone(),
@@ -862,7 +866,7 @@ fn wire_session_callbacks(
     runtime: Arc<Runtime>,
     last_term_size: Arc<Mutex<(u32, u32)>>,
     sftp_handles: SftpHandles,
-    sftp_manual_nav: SftpManualNav,
+    sftp_last_cwd: SftpLastCwd,
     tab_statuses: TabStatuses,
     local_snap: LocalSnap,
     local_net_hist: NetHist,
@@ -1318,7 +1322,7 @@ fn wire_session_callbacks(
         let runtime = runtime.clone();
         let last_term_size = last_term_size.clone();
         let sftp_handles = sftp_handles.clone();
-        let sftp_manual_nav = sftp_manual_nav.clone();
+        let sftp_last_cwd = sftp_last_cwd.clone();
         let tab_statuses = tab_statuses.clone();
         let local_snap = local_snap.clone();
         let local_net_hist = local_net_hist.clone();
@@ -1406,8 +1410,8 @@ fn wire_session_callbacks(
                     csi_state: CsiState::Normal,
                 },
             );
-            // Start in cd-auto-follow mode (flag = false → follow cd).
-            sftp_manual_nav.lock().unwrap().insert(tab_id.clone(), false);
+            // No followed-cwd yet: the first OSC 7 always triggers a follow.
+            sftp_last_cwd.lock().unwrap().remove(&tab_id);
             if let Some(w) = weak.upgrade() {
                 w.set_active_tab_id(tab_id.clone().into());
             }
@@ -1419,7 +1423,7 @@ fn wire_session_callbacks(
                 runtime: runtime.clone(),
                 handles: handles.clone(),
                 sftp_handles: sftp_handles.clone(),
-                sftp_manual_nav: sftp_manual_nav.clone(),
+                sftp_last_cwd: sftp_last_cwd.clone(),
                 bufs: bufs.clone(),
                 tab_statuses: tab_statuses.clone(),
                 local_snap: local_snap.clone(),
@@ -1442,7 +1446,7 @@ struct ConnectCtx {
     runtime: Arc<Runtime>,
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
     sftp_handles: SftpHandles,
-    sftp_manual_nav: SftpManualNav,
+    sftp_last_cwd: SftpLastCwd,
     bufs: TermBuffers,
     tab_statuses: TabStatuses,
     local_snap: LocalSnap,
@@ -1499,7 +1503,7 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
         let weak_inner = ctx.weak.clone();
         let bufs_thread = ctx.bufs.clone();
         let sftp_handles_pump = ctx.sftp_handles.clone();
-        let sftp_manual_nav_pump = ctx.sftp_manual_nav.clone();
+        let sftp_last_cwd_pump = ctx.sftp_last_cwd.clone();
         let rt_pump = ctx.runtime.clone();
         let tab_id_pump = tab_id.to_string();
         let statuses_pump = ctx.tab_statuses.clone();
@@ -1509,16 +1513,24 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
         std::thread::spawn(move || {
             let mut shell_rx = rx;
             let mut cwd_debounce: Option<tokio::task::JoinHandle<()>> = None;
-            // Track the last cwd so we only react to a *real* cd, not the OSC 7
-            // every prompt re-emits at the same directory (#59).
-            let mut last_cwd: Option<String> = None;
             loop {
                 match shell_rx.blocking_recv() {
                     None => break,
                     Some(shell_evt) => {
                         if let SessionEvent::CwdChanged(ref cwd) = shell_evt {
-                            let changed = last_cwd.as_deref() != Some(cwd.as_str());
-                            last_cwd = Some(cwd.clone());
+                            // Shared map (not a thread-local) so manual SFTP
+                            // navigation can clear the entry — then the very
+                            // next OSC 7, same directory or not, snaps the
+                            // panel back to the shell's cwd. Unchanged repeats
+                            // (every prompt re-emits OSC 7) are ignored (#59).
+                            let changed = match sftp_last_cwd_pump.lock() {
+                                Ok(mut m) => {
+                                    m.insert(tab_id_pump.clone(), cwd.clone())
+                                        .as_deref()
+                                        != Some(cwd.as_str())
+                                }
+                                Err(_) => false,
+                            };
                             // Swallow the event entirely when follow-cd is off:
                             // forwarding it would set sftp_loading without any
                             // ListDir to clear it (the #59 stuck-"loading" trap).
@@ -1527,9 +1539,6 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
                                     .load(std::sync::atomic::Ordering::Relaxed)
                             {
                                 continue;
-                            }
-                            if let Ok(mut m) = sftp_manual_nav_pump.lock() {
-                                m.insert(tab_id_pump.clone(), false);
                             }
                             if let Some(prev) = cwd_debounce.take() {
                                 prev.abort();
@@ -2131,7 +2140,7 @@ fn wire_tab_callbacks(
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
     bufs: TermBuffers,
     sftp_handles: SftpHandles,
-    sftp_manual_nav: SftpManualNav,
+    sftp_last_cwd: SftpLastCwd,
 ) {
     // Selecting a tab is already applied inside the Slint callback; we just
     // need to keep the C++/Rust state in sync if needed.
@@ -2148,7 +2157,7 @@ fn wire_tab_callbacks(
         let handles = handles.clone();
         let bufs = bufs.clone();
         let sftp_handles = sftp_handles.clone();
-        let sftp_manual_nav = sftp_manual_nav.clone();
+        let sftp_last_cwd = sftp_last_cwd.clone();
         window.on_tab_closed(move |id: SharedString| {
             let id = id.to_string();
             if id == "welcome" {
@@ -2160,7 +2169,7 @@ fn wire_tab_callbacks(
             if let Some(sftp) = sftp_handles.lock().unwrap().remove(&id) {
                 sftp.close();
             }
-            sftp_manual_nav.lock().unwrap().remove(&id);
+            sftp_last_cwd.lock().unwrap().remove(&id);
             bufs.lock().unwrap().remove(&id);
 
             // Remove from tabs + terminals models.
@@ -2219,12 +2228,12 @@ fn wire_tab_callbacks(
 fn wire_sftp_callbacks(
     window: &AppWindow,
     sftp_handles: SftpHandles,
-    sftp_manual_nav: SftpManualNav,
+    sftp_last_cwd: SftpLastCwd,
 ) {
     // Navigate to a remote path (or ".." to go up one level).
     {
         let sftp_handles = sftp_handles.clone();
-        let sftp_manual_nav = sftp_manual_nav.clone();
+        let sftp_last_cwd = sftp_last_cwd.clone();
         let weak = window.as_weak();
         window.on_sftp_navigate(move |tab_id: SharedString, path: SharedString| {
             let tab_id = tab_id.to_string();
@@ -2249,8 +2258,10 @@ fn wire_sftp_callbacks(
             } else {
                 path.to_string()
             };
-            // Any manual navigation stops cd auto-follow.
-            sftp_manual_nav.lock().unwrap().insert(tab_id.clone(), true);
+            // Forget the followed cwd so the next OSC 7 — even at an unchanged
+            // directory — snaps the panel back to the shell's cwd; manual
+            // navigation never permanently disables cd-follow.
+            sftp_last_cwd.lock().unwrap().remove(&tab_id);
             if let Ok(handles) = sftp_handles.lock() {
                 if let Some(h) = handles.get(&tab_id) {
                     h.list_dir(resolved);
@@ -2332,12 +2343,13 @@ fn wire_sftp_callbacks(
     // Toggle tree node expand/collapse and navigate to that directory.
     {
         let sftp_handles = sftp_handles.clone();
-        let sftp_manual_nav = sftp_manual_nav.clone();
+        let sftp_last_cwd = sftp_last_cwd.clone();
         window.on_sftp_tree_expand(move |tab_id: SharedString, path: SharedString| {
             let tab_id = tab_id.to_string();
             let path = path.to_string();
-            // Manual tree navigation stops cd auto-follow.
-            sftp_manual_nav.lock().unwrap().insert(tab_id.clone(), true);
+            // Forget the followed cwd (see on_sftp_navigate): tree navigation
+            // must never permanently disable cd-follow.
+            sftp_last_cwd.lock().unwrap().remove(&tab_id);
             if let Ok(handles) = sftp_handles.lock() {
                 if let Some(h) = handles.get(&tab_id) {
                     h.toggle_tree_node(path.clone());
@@ -2544,10 +2556,8 @@ fn wire_key_input(
                     {
                         st.state = 0;
                     }
-                    ctx.sftp_manual_nav
-                        .lock()
-                        .unwrap()
-                        .insert(tab_id.to_string(), false);
+                    // Fresh session: the first OSC 7 after reconnect follows.
+                    ctx.sftp_last_cwd.lock().unwrap().remove(tab_id.as_str());
                     if let Some(w) = ctx.weak.upgrade() {
                         set_terminal_row(&w, tab_id.as_str(), |t| {
                             t.status =
