@@ -17,7 +17,7 @@ import { SessionDialog, SessionDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { TerminalView, TermSpan, TermMatch } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
-import { ComboBox, SpinBox, LineEdit, Button, ScrollView } from "std-widgets.slint";
+import { ComboBox, SpinBox, LineEdit, Button, ScrollView, CheckBox } from "std-widgets.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode }
 
@@ -114,6 +114,9 @@ export component AppWindow inherits Window {
     property <length> ifd-grab-y;
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
+    // SFTP follows the terminal's cd; opt out in Interface settings.
+    in-out property <bool> sftp-follow-cd: true;
+    callback set-sftp-follow-cd(bool);             // apply + persist
     // Group create / rename dialog (#41).
     in-out property <bool> group-dialog-open: false;
     in-out property <string> group-dialog-orig;    // "" = create, else rename
@@ -1406,6 +1409,20 @@ export component AppWindow inherits Window {
                                     color: Theme.term-fg;
                                     vertical-alignment: center;
                                     height: parent.height;
+                                }
+                            }
+
+                            // --- SFTP --------------------------------------
+                            VerticalLayout {
+                                spacing: 6px;
+                                Text { text: "SFTP";
+                                       color: Theme.text-secondary; font-size: Theme.fs-sm; }
+                                CheckBox {
+                                    text: root.lang-en
+                                        ? "SFTP follows terminal cd"
+                                        : "SFTP 跟随 cd 更新";
+                                    checked: root.sftp-follow-cd;
+                                    toggled => { root.set-sftp-follow-cd(self.checked); }
                                 }
                             }
                         }

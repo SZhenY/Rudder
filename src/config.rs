@@ -246,6 +246,11 @@ pub struct ConfigFile {
     /// not stored here.
     #[serde(default)]
     pub groups: Vec<String>,
+    /// Stored inverted ("don't follow") so both serde and the Default derive
+    /// yield `false` = the feature defaults to ON: the SFTP panel follows the
+    /// terminal's cd (OSC 7) unless the user opts out in Interface settings.
+    #[serde(default)]
+    pub sftp_no_follow_cd: bool,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -490,6 +495,15 @@ impl ConfigStore {
 
     pub fn set_font_size(&mut self, size: u32) {
         self.cache.font_size = size.clamp(8, 32);
+    }
+
+    /// Whether the SFTP panel follows the terminal's cd (default true).
+    pub fn sftp_follow_cd(&self) -> bool {
+        !self.cache.sftp_no_follow_cd
+    }
+
+    pub fn set_sftp_follow_cd(&mut self, follow: bool) {
+        self.cache.sftp_no_follow_cd = !follow;
     }
 
     // ── Session groups / folders (#41) ────────────────────────────────────

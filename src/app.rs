@@ -232,6 +232,24 @@ pub fn run() -> Result<()> {
     // Populate the Interface font picker with installed monospace families.
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(system_monospace_fonts()))));
 
+    // Interface setting: SFTP follows the terminal's cd. The shell event pumps
+    // read this AtomicBool on every CwdChanged, so toggling applies live to
+    // already-open sessions too.
+    let sftp_follow_cd = Arc::new(std::sync::atomic::AtomicBool::new(
+        store.borrow().sftp_follow_cd(),
+    ));
+    window.set_sftp_follow_cd(store.borrow().sftp_follow_cd());
+    {
+        let store = store.clone();
+        let flag = sftp_follow_cd.clone();
+        window.on_set_sftp_follow_cd(move |follow| {
+            flag.store(follow, std::sync::atomic::Ordering::Relaxed);
+            let mut s = store.borrow_mut();
+            s.set_sftp_follow_cd(follow);
+            let _ = s.save();
+        });
+    }
+
     // Interface settings: apply + persist the terminal font family / size.
     {
         let weak = window.as_weak();
@@ -301,6 +319,7 @@ pub fn run() -> Result<()> {
         tab_statuses.clone(),
         local_snap.clone(),
         local_net_hist.clone(),
+        sftp_follow_cd.clone(),
     );
 
     // Recompute the sidebar whenever the active tab changes (fired from Slint's
@@ -544,6 +563,7 @@ pub fn run() -> Result<()> {
             local_snap: local_snap.clone(),
             local_net_hist: local_net_hist.clone(),
             last_term_size: last_term_size.clone(),
+            sftp_follow_cd: sftp_follow_cd.clone(),
         },
     );
 
@@ -846,6 +866,7 @@ fn wire_session_callbacks(
     tab_statuses: TabStatuses,
     local_snap: LocalSnap,
     local_net_hist: NetHist,
+    sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
 ) {
     // New session -> open dialog with blank draft.
     let weak = window.as_weak();
@@ -1301,6 +1322,7 @@ fn wire_session_callbacks(
         let tab_statuses = tab_statuses.clone();
         let local_snap = local_snap.clone();
         let local_net_hist = local_net_hist.clone();
+        let sftp_follow_cd = sftp_follow_cd.clone();
         window.on_connect_session(move |id: SharedString| {
             let id = id.to_string();
             let session = match store.borrow().get(&id).cloned() {
@@ -1403,6 +1425,7 @@ fn wire_session_callbacks(
                 local_snap: local_snap.clone(),
                 local_net_hist: local_net_hist.clone(),
                 last_term_size: last_term_size.clone(),
+                sftp_follow_cd: sftp_follow_cd.clone(),
             };
             start_session_in_tab(&tab_id, session, &ctx);
         });
@@ -1425,6 +1448,8 @@ struct ConnectCtx {
     local_snap: LocalSnap,
     local_net_hist: NetHist,
     last_term_size: Arc<Mutex<(u32, u32)>>,
+    /// Interface setting: SFTP panel follows the terminal's cd (OSC 7).
+    sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Spawn the shell (+ SFTP) workers and their event-pump threads for an
@@ -1480,6 +1505,7 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
         let statuses_pump = ctx.tab_statuses.clone();
         let local_pump = ctx.local_snap.clone();
         let net_pump = ctx.local_net_hist.clone();
+        let follow_cd_pump = ctx.sftp_follow_cd.clone();
         std::thread::spawn(move || {
             let mut shell_rx = rx;
             let mut cwd_debounce: Option<tokio::task::JoinHandle<()>> = None;
@@ -1493,7 +1519,13 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
                         if let SessionEvent::CwdChanged(ref cwd) = shell_evt {
                             let changed = last_cwd.as_deref() != Some(cwd.as_str());
                             last_cwd = Some(cwd.clone());
-                            if !changed {
+                            // Swallow the event entirely when follow-cd is off:
+                            // forwarding it would set sftp_loading without any
+                            // ListDir to clear it (the #59 stuck-"loading" trap).
+                            if !changed
+                                || !follow_cd_pump
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            {
                                 continue;
                             }
                             if let Ok(mut m) = sftp_manual_nav_pump.lock() {
