@@ -58,13 +58,17 @@ const CANOVIO: u8 = 0x02;
 const CANFC32: u8 = 0x20;
 
 /// Receive one or more files via ZMODEM. `first` is the channel chunk that
-/// triggered detection (it contains the leading ZRQINIT). Returns the number of
-/// files written, or an error if the transfer failed (caller then cancels).
+/// triggered detection (it contains the leading ZRQINIT).
+///
+/// Returns any bytes read past the end of the ZMODEM session (typically the
+/// shell prompt the sender's exit produces) so the caller can feed them back to
+/// the terminal — otherwise the prompt would be swallowed. On a protocol failure
+/// it returns an error and the caller cancels.
 pub async fn receive(
     channel: &mut Channel<Msg>,
     first: &[u8],
     events: &UnboundedSender<SessionEvent>,
-) -> Result<u32> {
+) -> Result<Vec<u8>> {
     let dest = download_dir();
     tokio::fs::create_dir_all(&dest)
         .await
@@ -141,18 +145,40 @@ pub async fn receive(
                     emit(events, &c.id, &c.name, c.written, c.size.max(c.written), 1, "");
                     received += 1;
                 }
-                // File complete. Send ZRINIT (the sender accepts it and exits)
-                // and stop reading IMMEDIATELY: reading any further swallows the
-                // shell prompt the sender prints when it exits, leaving the
-                // terminal looking stuck until the user presses Enter (#76).
-                rx.send_hex(ZRINIT, [0, 0, 0, CANFDX | CANOVIO | CANFC32]).await?;
-                break;
+                break; // file complete; run the close handshake after the loop
             }
             ZFIN => break, // sender signals it's done
             ZCAN | ZABORT => bail!("{}", t("传输被远端取消", "transfer aborted by sender")),
             ZNAK => { /* sender NAK; just keep going */ }
             _ => tracing::debug!("zmodem: ignoring unhandled frame type {ftype}"),
         }
+    }
+
+    // Close handshake. The sender (lrzsz `sz`) just sent ZEOF and is finishing
+    // its session: it expects a ZRINIT, then sends ZFIN and waits for OUR ZFIN
+    // before emitting "OO" (over-and-out) and exiting. We reply so it exits
+    // promptly, and consume its ZFIN + OO here so they don't leak to the terminal
+    // or get re-detected as a new transfer. Whatever follows (the shell prompt)
+    // stays in the buffer and is returned to the caller (#76).
+    if received > 0 {
+        let _ = rx
+            .send_hex(ZRINIT, [0, 0, 0, CANFDX | CANOVIO | CANFC32])
+            .await;
+        let _ = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                match rx.read_header().await {
+                    Ok((ZFIN, _)) => {
+                        let _ = rx.send_hex(ZFIN, [0, 0, 0, 0]).await;
+                        let _ = rx.byte().await; // 'O'
+                        let _ = rx.byte().await; // 'O'
+                        return;
+                    }
+                    Ok(_) => continue, // ignore any other late frame
+                    Err(_) => return,
+                }
+            }
+        })
+        .await;
     }
 
     let _ = events.send(SessionEvent::Output(
@@ -164,7 +190,9 @@ pub async fn receive(
         )
         .into(),
     ));
-    Ok(received)
+    // Hand back any trailing bytes (the shell prompt) so the caller can display
+    // them instead of the receiver swallowing them.
+    Ok(rx.buf.drain(..).collect())
 }
 
 struct CurFile {

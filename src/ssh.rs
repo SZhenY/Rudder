@@ -497,7 +497,20 @@ async fn run_session(
                         // On any protocol error, cancel so the session recovers.
                         if contains_zmodem_init(&data) {
                             match crate::zmodem::receive(&mut channel, &data, &events).await {
-                                Ok(_) => {}
+                                Ok(leftover) => {
+                                    // Bytes after the transfer (the shell prompt):
+                                    // run them through the normal output path so
+                                    // the prompt shows and the cwd updates.
+                                    if !leftover.is_empty() {
+                                        let text =
+                                            String::from_utf8_lossy(&leftover).into_owned();
+                                        if let Some(cwd) = extract_osc7_path(&text) {
+                                            let _ =
+                                                events.send(SessionEvent::CwdChanged(cwd));
+                                        }
+                                        let _ = events.send(SessionEvent::Output(text));
+                                    }
+                                }
                                 Err(e) => {
                                     tracing::warn!("zmodem receive failed: {e:#}");
                                     let _ = channel.data(&ZMODEM_CANCEL[..]).await;
