@@ -290,6 +290,7 @@ pub fn spawn_session(
         )
         .await
         {
+            tracing::warn!("ssh session ended with error: {err:#}");
             let _ = evt_tx_for_task.send(SessionEvent::Closed(format!("{err:#}")));
         }
     });
@@ -381,6 +382,7 @@ async fn run_session(
     };
 
     if !authed {
+        tracing::warn!("ssh authentication failed for {}@{}", session.user, session.host);
         let _ = events.send(SessionEvent::Closed(t("认证失败", "authentication failed").into()));
         let _ = handle
             .disconnect(Disconnect::ByApplication, "auth failed", "")
@@ -643,6 +645,9 @@ async fn run_session(
     let _ = handle
         .disconnect(Disconnect::ByApplication, "bye", "")
         .await;
+    // The shell pump loop only exits when the channel closes / EOFs (incl. a
+    // peer/bastion-initiated disconnect), so record it for #86 diagnostics.
+    tracing::warn!("ssh connection closed ({}@{})", session.user, session.host);
     let _ = events.send(SessionEvent::Closed(t("连接已关闭", "connection closed").into()));
     Ok(())
 }
