@@ -1650,7 +1650,9 @@ export component AppWindow inherits Window {
                                 text: root.lang-en
                                     ? "SFTP follows terminal cd"
                                     : "SFTP 跟随 cd 更新";
-                                checked: root.sftp-follow-cd;
+                                // Two-way so the property stays in sync — reopening
+                                // the dialog then shows the right state (#87).
+                                checked <=> root.sftp-follow-cd;
                                 toggled => { root.set-sftp-follow-cd(self.checked); }
                             }
                             Text {
@@ -1673,7 +1675,7 @@ export component AppWindow inherits Window {
                                 text: root.lang-en
                                     ? "Always ask where to save"
                                     : "总是询问保存去何处";
-                                checked: root.download-always-ask;
+                                checked <=> root.download-always-ask;
                                 toggled => { root.set-download-always-ask(self.checked); }
                             }
                             Text {
