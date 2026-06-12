@@ -434,12 +434,20 @@ async fn run_session(
     // The leading space keeps the line out of the user's shell history
     // (HISTCONTROL=ignorespace / ignoreboth, the default on most distros);
     // its echo is also stripped locally (ECHO_NEEDLE) so it never shows up.
-    const PROMPT_SETUP: &[u8] = b" export PROMPT_COMMAND='printf \"\\033]7;file://${HOSTNAME}${PWD}\\007\"' && eval \"$PROMPT_COMMAND\"\r";
+    //
+    // The `test -z "$FISH_VERSION" &&` guard makes the line a no-op under fish
+    // (#71): fish has no PROMPT_COMMAND, and `eval`-ing the bash printf makes it
+    // choke on the bracketed ${HOSTNAME}. fish sets $FISH_VERSION, so the guard
+    // is false and `&&` short-circuits the rest before fish ever runs it — and
+    // since the ${HOSTNAME} sits inside single quotes, fish parses the line
+    // without error too. fish 3.1+ emits OSC 7 itself, so cd-follow still works.
+    // bash/zsh/sh have no $FISH_VERSION, so the guard is true and they inject.
+    const PROMPT_SETUP: &[u8] = b" test -z \"$FISH_VERSION\" && export PROMPT_COMMAND='printf \"\\033]7;file://${HOSTNAME}${PWD}\\007\"' && eval \"$PROMPT_COMMAND\"\r";
 
     // The same command as the interactive shell echoes it back (no leading
     // space, no trailing CR). While the injection is in flight we delete this
     // from the output so the user never sees the bookkeeping command.
-    const ECHO_NEEDLE: &str = "export PROMPT_COMMAND='printf \"\\033]7;file://${HOSTNAME}${PWD}\\007\"' && eval \"$PROMPT_COMMAND\"";
+    const ECHO_NEEDLE: &str = "test -z \"$FISH_VERSION\" && export PROMPT_COMMAND='printf \"\\033]7;file://${HOSTNAME}${PWD}\\007\"' && eval \"$PROMPT_COMMAND\"";
 
     // --- Remote resource monitor (separate exec channel) ----------------
     // A tiny remote loop streams /proc/stat + /proc/meminfo every 2s; we parse
