@@ -1,0 +1,53 @@
+name: Publish to AUR
+
+# Pushes the meatshell-bin package to the AUR after a GitHub Release is
+# published. Requires three repository secrets (see packaging/aur/README.md):
+#   AUR_USERNAME, AUR_EMAIL, AUR_SSH_PRIVATE_KEY
+# Without them the job is skipped, so this is harmless until you set AUR up.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 0.3.6); blank = latest release"
+        required: false
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    # Only run once the AUR SSH key is configured.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.release != null }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version + set pkgver
+        run: |
+          set -eu
+          VER="${{ github.event.inputs.version }}"
+          if [ -z "$VER" ] && [ -n "${{ github.event.release.tag_name }}" ]; then
+            VER="${{ github.event.release.tag_name }}"
+          fi
+          if [ -z "$VER" ]; then
+            VER=$(curl -fsSL https://api.github.com/repos/${{ github.repository }}/releases/latest \
+                  | grep -oP '"tag_name":\s*"\K[^"]+')
+          fi
+          VER="${VER#v}"   # strip leading v
+          echo "Publishing meatshell-bin $VER"
+          sed -i "s/^pkgver=.*/pkgver=${VER}/" packaging/aur/PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
+          echo "VER=$VER" >> "$GITHUB_ENV"
+
+      - name: Publish meatshell-bin to the AUR
+        # Skips cleanly until the AUR SSH key secret is configured.
+        if: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        with:
+          pkgname: meatshell-bin
+          pkgbuild: packaging/aur/PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ env.VER }}"
+          updpkgsums: true
+          ssh_keyscan_types: rsa,ed25519
