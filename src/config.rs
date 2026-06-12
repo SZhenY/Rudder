@@ -251,6 +251,10 @@ pub struct ConfigFile {
     /// terminal's cd (OSC 7) unless the user opts out in Interface settings.
     #[serde(default)]
     pub sftp_no_follow_cd: bool,
+    /// Always prompt for the save location on each download instead of using the
+    /// preset download dir. Defaults to false (#87).
+    #[serde(default)]
+    pub download_always_ask: bool,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -504,6 +508,15 @@ impl ConfigStore {
 
     pub fn set_sftp_follow_cd(&mut self, follow: bool) {
         self.cache.sftp_no_follow_cd = !follow;
+    }
+
+    /// Whether each download prompts for a save location (default false) (#87).
+    pub fn download_always_ask(&self) -> bool {
+        self.cache.download_always_ask
+    }
+
+    pub fn set_download_always_ask(&mut self, ask: bool) {
+        self.cache.download_always_ask = ask;
     }
 
     // ── Session groups / folders (#41) ────────────────────────────────────

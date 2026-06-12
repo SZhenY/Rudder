@@ -118,6 +118,9 @@ export component AppWindow inherits Window {
     // SFTP follows the terminal's cd; opt out in Interface settings.
     in-out property <bool> sftp-follow-cd: true;
     callback set-sftp-follow-cd(bool);             // apply + persist
+    // Always ask where to save on each download (#87); default off.
+    in-out property <bool> download-always-ask: false;
+    callback set-download-always-ask(bool);        // apply + persist
     // Group create / rename dialog (#41).
     in-out property <bool> group-dialog-open: false;
     in-out property <string> group-dialog-orig;    // "" = create, else rename
@@ -1496,6 +1499,25 @@ export component AppWindow inherits Window {
                                            vertical-alignment: center; horizontal-stretch: 1; }
                                 }
                             }
+                            Rectangle {
+                                height: 30px;
+                                border-radius: Theme.radius-sm;
+                                background: root.ifd-page == "download"
+                                    ? Theme.bg-active
+                                    : (nav-dl-ta.has-hover ? Theme.bg-hover : transparent);
+                                nav-dl-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.ifd-page = "download"; }
+                                }
+                                HorizontalLayout {
+                                    padding-left: 10px; spacing: 8px;
+                                    Text { text: "\u{E2C4}"; font-family: "Material Icons"; // download
+                                           color: Theme.text-primary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                    Text { text: root.lang-en ? "Download" : "下载";
+                                           color: Theme.text-primary; font-size: Theme.fs-md;
+                                           vertical-alignment: center; horizontal-stretch: 1; }
+                                }
+                            }
                         }
                     }
                     Rectangle {
@@ -1580,6 +1602,29 @@ export component AppWindow inherits Window {
                                 text: root.lang-en
                                     ? "When enabled, a cd in the terminal switches the SFTP panel to the same directory."
                                     : "勾选后,终端里执行 cd 时,SFTP 面板会自动切换到相同目录。";
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        // --- Download page (#87) -----------------------
+                        if root.ifd-page == "download" : VerticalLayout {
+                            padding: 18px;
+                            spacing: 14px;
+                            alignment: start;
+
+                            CheckBox {
+                                text: root.lang-en
+                                    ? "Always ask where to save"
+                                    : "总是询问保存去何处";
+                                checked: root.download-always-ask;
+                                toggled => { root.set-download-always-ask(self.checked); }
+                            }
+                            Text {
+                                text: root.lang-en
+                                    ? "When enabled, every download prompts for a save location instead of using the preset download folder."
+                                    : "勾选后,每次下载都会询问保存位置,而不是直接保存到预设的下载目录。";
                                 color: Theme.text-muted;
                                 font-size: Theme.fs-sm;
                                 wrap: word-wrap;

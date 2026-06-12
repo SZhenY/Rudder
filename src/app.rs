@@ -254,6 +254,18 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // Interface setting: always ask where to save on download (#87). Read live
+    // by the download handler from the window property, so just set + persist.
+    window.set_download_always_ask(store.borrow().download_always_ask());
+    {
+        let store = store.clone();
+        window.on_set_download_always_ask(move |ask| {
+            let mut s = store.borrow_mut();
+            s.set_download_always_ask(ask);
+            let _ = s.save();
+        });
+    }
+
     // Interface settings: apply + persist the terminal font family / size.
     {
         let weak = window.as_weak();
@@ -2292,11 +2304,17 @@ fn wire_sftp_callbacks(
         window.on_sftp_download(move |tab_id: SharedString, remote_path: SharedString| {
             let tab_id = tab_id.to_string();
             let remote_path = remote_path.to_string();
-            let preset = weak
+            // "Always ask" (#87) forces the folder picker, ignoring the preset.
+            let (preset, always_ask) = weak
                 .upgrade()
-                .map(|w| w.get_download_dir().to_string())
+                .map(|w| {
+                    (
+                        w.get_download_dir().to_string(),
+                        w.get_download_always_ask(),
+                    )
+                })
                 .unwrap_or_default();
-            if !preset.is_empty() {
+            if !always_ask && !preset.is_empty() {
                 if let Ok(handles) = sftp_handles.lock() {
                     if let Some(h) = handles.get(&tab_id) {
                         h.download(remote_path, preset);
