@@ -2030,6 +2030,7 @@ fn apply_session_event_to_window(
         } => {
             if error.is_empty() {
                 // Open the built-in viewer/editor (#70).
+                win.set_editor_line_numbers(line_numbers_for(&content).into());
                 win.set_editor_path(path.into());
                 win.set_editor_name(name.into());
                 win.set_editor_content(content.into());
@@ -2396,6 +2397,29 @@ fn wire_sftp_callbacks(
             }
         });
     }
+    // Open / edit with an external program (#81): download to a temp file and
+    // hand it to the OS default app. Edit mode watches the temp copy and
+    // re-uploads on every change.
+    {
+        let sftp_handles = sftp_handles.clone();
+        window.on_sftp_open_external(move |tab_id: SharedString, path: SharedString| {
+            if let Ok(handles) = sftp_handles.lock() {
+                if let Some(h) = handles.get(tab_id.as_str()) {
+                    h.open_temp(path.to_string(), false);
+                }
+            }
+        });
+    }
+    {
+        let sftp_handles = sftp_handles.clone();
+        window.on_sftp_edit_external(move |tab_id: SharedString, path: SharedString| {
+            if let Ok(handles) = sftp_handles.lock() {
+                if let Some(h) = handles.get(tab_id.as_str()) {
+                    h.open_temp(path.to_string(), true);
+                }
+            }
+        });
+    }
 
     // Context-menu extensions (#69): one prompt dialog covers rename / chmod /
     // mkdir / touch; copy-path goes straight to the system clipboard.
@@ -2489,6 +2513,17 @@ fn wire_sftp_callbacks(
                 if let Some(h) = handles.get(&tab) {
                     h.chmod(path, mode);
                 }
+            }
+        });
+    }
+
+    // Rebuild the editor's line-number gutter after each edit (#81). The text
+    // comes straight from the TextInput so we don't re-read the property.
+    {
+        let weak = window.as_weak();
+        window.on_editor_recount(move |text: SharedString| {
+            if let Some(w) = weak.upgrade() {
+                w.set_editor_line_numbers(line_numbers_for(text.as_str()).into());
             }
         });
     }
@@ -3221,6 +3256,21 @@ fn redact_key(key: &str) -> String {
 /// when true the four arrow keys must use SS3 sequences (`\x1bOA`…) instead
 /// of the default CSI sequences (`\x1b[A`…).  Full-screen apps like nano and
 /// vim set this mode on startup.
+/// Build the editor's line-number gutter text: "1\n2\n…\nN", one number per line
+/// of `content`, matching its (newline-separated) line count (#81).
+fn line_numbers_for(content: &str) -> String {
+    use std::fmt::Write;
+    let lines = content.split('\n').count().max(1);
+    let mut s = String::with_capacity(lines * 4);
+    for i in 1..=lines {
+        if i > 1 {
+            s.push('\n');
+        }
+        let _ = write!(s, "{i}");
+    }
+    s
+}
+
 /// Write `text` to the system clipboard. Call from a dedicated thread, never the
 /// UI thread (arboard pumps the Win32 message loop / blocks).
 ///

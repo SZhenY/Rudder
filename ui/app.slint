@@ -145,8 +145,10 @@ export component AppWindow inherits Window {
     in-out property <string> editor-content;  // text, two-way with the input
     in-out property <bool> editor-readonly;   // view = true, edit = false
     in-out property <bool> editor-dirty: false; // edited since load
+    in-out property <string> editor-line-numbers; // newline-joined "1..N" from Rust (#81)
     callback save-file();                     // Ctrl+S / Save button (edit only)
     callback close-editor();                  // X / Esc; uploads if dirty
+    callback editor-recount(string);          // rebuild line numbers after an edit
     // Editor card geometry: draggable by its title bar, resizable from the
     // bottom-right grip (same absolute-position pattern as the Interface
     // dialog). Defaults centre the card; user drags/resizes override them.
@@ -241,6 +243,8 @@ export component AppWindow inherits Window {
     callback sftp-delete(string /* tab-id */, string /* path */);
     callback sftp-view(string /* tab-id */, string /* path */);
     callback sftp-edit(string /* tab-id */, string /* path */);
+    callback sftp-open-external(string /* tab-id */, string /* path */);
+    callback sftp-edit-external(string /* tab-id */, string /* path */);
     // SFTP context-menu extensions (#69): rename / chmod / mkdir / touch share
     // one single-input prompt dialog; copy-path goes straight to the clipboard.
     in-out property <bool> sftp-prompt-open: false;
@@ -417,6 +421,8 @@ export component AppWindow inherits Window {
                     }
                     sftp-view(path) => { root.sftp-view(term.id, path); }
                     sftp-edit(path) => { root.sftp-edit(term.id, path); }
+                    sftp-open-external(path) => { root.sftp-open-external(term.id, path); }
+                    sftp-edit-external(path) => { root.sftp-edit-external(term.id, path); }
                     // #69 context-menu extensions → shared prompt dialog.
                     sftp-rename-request(path, name) => {
                         root.sftp-prompt-kind = "rename";
@@ -694,30 +700,49 @@ export component AppWindow inherits Window {
                     }
                     Rectangle { height: 1px; background: Theme.border-subtle; }
 
-                    // Text area. Explicit viewport sizing so the ScrollView knows
-                    // the content height and shows a scrollbar; the wheel then
-                    // scrolls the text instead of doing nothing (#70).
+                    // Text area: a line-number gutter on the left + the editor.
+                    // word-wrap is OFF so one logical line == one display line and
+                    // the numbers line up (long lines scroll horizontally); the
+                    // gutter is pinned horizontally but tracks the editor's
+                    // vertical scroll via ed-scroll.viewport-y (#81).
                     Rectangle {
                         vertical-stretch: 1;
                         background: Theme.bg-root;
-                        ScrollView {
-                            width: parent.width;
-                            height: parent.height;
-                            viewport-width: self.width - 16px; // room for the bar
-                            viewport-height: edit-input.preferred-height + 16px;
-                            edit-input := TextInput {
-                                x: 8px;
-                                y: 8px;
-                                width: parent.width - 16px;
-                                height: self.preferred-height;
-                                text <=> root.editor-content;
-                                read-only: root.editor-readonly;
-                                single-line: false;
-                                wrap: word-wrap;
-                                color: Theme.text-primary;
-                                font-family: Theme.ui-font-family;
-                                font-size: Theme.fs-md;
-                                edited => { root.editor-dirty = true; }
+                        HorizontalLayout {
+                            spacing: 0;
+                            Rectangle {
+                                width: 48px;
+                                background: Theme.bg-panel-alt;
+                                clip: true;
+                                Text {
+                                    x: 0;
+                                    y: ed-scroll.viewport-y + 8px;
+                                    width: parent.width - 6px;
+                                    text: root.editor-line-numbers;
+                                    horizontal-alignment: right;
+                                    font-family: Theme.ui-font-family;
+                                    font-size: Theme.fs-md;
+                                    color: Theme.text-muted;
+                                }
+                            }
+                            Rectangle { width: 1px; background: Theme.border-subtle; }
+                            ed-scroll := ScrollView {
+                                viewport-width: max(self.visible-width, edit-input.preferred-width + 16px);
+                                viewport-height: max(self.visible-height, edit-input.preferred-height + 16px);
+                                edit-input := TextInput {
+                                    x: 8px;
+                                    y: 8px;
+                                    width: max(parent.visible-width - 16px, self.preferred-width);
+                                    height: self.preferred-height;
+                                    text <=> root.editor-content;
+                                    read-only: root.editor-readonly;
+                                    single-line: false;
+                                    wrap: no-wrap;
+                                    color: Theme.text-primary;
+                                    font-family: Theme.ui-font-family;
+                                    font-size: Theme.fs-md;
+                                    edited => { root.editor-dirty = true; root.editor-recount(root.editor-content); }
+                                }
                             }
                         }
                     }

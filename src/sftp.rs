@@ -49,11 +49,9 @@ pub enum SftpCommand {
     Upload { local: String, remote_dir: String },
     /// Delete a remote file (falls back to removing an empty directory).
     Delete(String),
-    /// Download a file to a temp dir and open it with the OS default app.
-    /// When `edit` is set, watch the temp copy and re-upload on every change.
-    /// Kept as a fallback for files the built-in editor rejects (too large /
-    /// binary); not wired to a menu item right now (#70).
-    #[allow(dead_code)]
+    /// Download a file to a temp dir and open it with the OS default app
+    /// ("Open/Edit externally", #81). When `edit` is set, watch the temp copy
+    /// and re-upload on every change.
     OpenTemp { remote: String, edit: bool },
     /// Rename / move a remote file or directory (#69).
     Rename { from: String, to: String },
@@ -98,7 +96,6 @@ impl SftpHandle {
     pub fn delete(&self, path: String) {
         let _ = self.commands.send(SftpCommand::Delete(path));
     }
-    #[allow(dead_code)]
     pub fn open_temp(&self, remote: String, edit: bool) {
         let _ = self.commands.send(SftpCommand::OpenTemp { remote, edit });
     }

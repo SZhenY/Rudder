@@ -78,6 +78,8 @@ export component SftpPanel inherits Rectangle {
     callback delete(string);        // remove a remote file/dir
     callback view(string);          // open read-only in the built-in viewer
     callback edit(string);          // open writable in the built-in editor
+    callback open-external(string);     // open with the OS default app (#81)
+    callback edit-external(string);     // open externally + watch/re-upload (#81)
     // Context-menu extensions (#69). The *-request callbacks open dialogs in
     // the app shell; copy-path goes straight to the system clipboard.
     callback rename-request(string /* path */, string /* current name */);
@@ -435,8 +437,8 @@ export component SftpPanel inherits Rectangle {
                     file-menu := PopupWindow {
                         x: root.menu-x;
                         y: root.menu-y;
-                        width: 132px;
-                        height: 10 * 27px + 8px;
+                        width: 148px;
+                        height: 12 * 27px + 8px;
                         Rectangle {
                             background: Theme.bg-panel;
                             border-radius: Theme.radius-sm;
@@ -461,6 +463,16 @@ export component SftpPanel inherits Rectangle {
                                     label: @tr("Edit");
                                     enabled: root.menu-target != "" && !root.menu-target-is-dir;
                                     clicked => { root.edit(root.menu-target); }
+                                }
+                                SftpMenuItem {
+                                    label: @tr("Open externally");
+                                    enabled: root.menu-target != "" && !root.menu-target-is-dir;
+                                    clicked => { root.open-external(root.menu-target); }
+                                }
+                                SftpMenuItem {
+                                    label: @tr("Edit externally");
+                                    enabled: root.menu-target != "" && !root.menu-target-is-dir;
+                                    clicked => { root.edit-external(root.menu-target); }
                                 }
                                 SftpMenuItem {
                                     label: @tr("Rename");

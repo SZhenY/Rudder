@@ -132,6 +132,12 @@ msgstr "Download"
 msgid "Update available:"
 msgstr "Update available:"
 
+msgid "Open externally"
+msgstr "Open externally"
+
+msgid "Edit externally"
+msgstr "Edit externally"
+
 msgid "Rename"
 msgstr "Rename"
 
