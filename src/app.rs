@@ -640,15 +640,35 @@ pub fn run() -> Result<()> {
         use i_slint_backend_winit::EventResult;
         let weak = window.as_weak();
         let sh = sftp_handles.clone();
+        let close_handles = handles.clone();
         window.window().on_winit_window_event(move |_w, event| {
-            if let WEvent::DroppedFile(path) = event {
-                if let Some(win) = weak.upgrade() {
-                    handle_file_drop(&win, &sh, path.to_string_lossy().to_string());
+            match event {
+                WEvent::DroppedFile(path) => {
+                    if let Some(win) = weak.upgrade() {
+                        handle_file_drop(&win, &sh, path.to_string_lossy().to_string());
+                    }
                 }
+                WEvent::CloseRequested => {
+                    // Confirm before closing if there are open session tabs (#88),
+                    // so a stray double-click on the title-bar icon / X / Alt+F4
+                    // doesn't silently drop live sessions. The confirm dialog's
+                    // "Close" calls quit_event_loop to actually exit.
+                    if !close_handles.borrow().is_empty() {
+                        if let Some(win) = weak.upgrade() {
+                            win.set_confirm_close_open(true);
+                        }
+                        return EventResult::PreventDefault;
+                    }
+                }
+                _ => {}
             }
             EventResult::Propagate
         });
     }
+    // Confirm-close dialog "Close" → actually quit the event loop (#88).
+    window.on_confirm_close_yes(|| {
+        let _ = slint::quit_event_loop();
+    });
 
     // Center the window on the primary monitor once it's shown (size is only
     // known after the first frame, so defer via a single-shot timer).

@@ -121,6 +121,10 @@ export component AppWindow inherits Window {
     // Always ask where to save on each download (#87); default off.
     in-out property <bool> download-always-ask: false;
     callback set-download-always-ask(bool);        // apply + persist
+    // Confirm-before-close when there are live session tabs (#88): a stray
+    // double-click on the title-bar icon / X shouldn't drop active sessions.
+    in-out property <bool> confirm-close-open: false;
+    callback confirm-close-yes();                  // quit the app for real
     // Group create / rename dialog (#41).
     in-out property <bool> group-dialog-open: false;
     in-out property <string> group-dialog-orig;    // "" = create, else rename
@@ -1281,6 +1285,57 @@ export component AppWindow inherits Window {
                                 root.sftp-prompt-target, root.sftp-prompt-value);
                             root.sftp-prompt-open = false;
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Confirm-before-close dialog (#88) --------------------------------
+    if root.confirm-close-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000088;
+        TouchArea { clicked => { root.confirm-close-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 340px;
+            height: 168px;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #000000a0;
+            TouchArea {}
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+                Text {
+                    text: root.lang-en ? "Close meatshell?" : "确定关闭 meatshell?";
+                    color: Theme.text-primary; font-size: Theme.fs-lg; font-weight: 700;
+                }
+                Text {
+                    text: root.lang-en
+                        ? "There are active sessions. Closing will disconnect them."
+                        : "当前有活动会话,关闭将断开它们。";
+                    color: Theme.text-secondary; font-size: Theme.fs-sm; wrap: word-wrap;
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Button {
+                        text: root.lang-en ? "Cancel" : "取消";
+                        clicked => { root.confirm-close-open = false; }
+                    }
+                    Button {
+                        text: root.lang-en ? "Close" : "关闭";
+                        primary: true;
+                        clicked => { root.confirm-close-yes(); }
                     }
                 }
             }
