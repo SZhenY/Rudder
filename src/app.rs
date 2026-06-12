@@ -2006,6 +2006,7 @@ fn apply_session_event_to_window(
                         format_size(e.size).into()
                     },
                     modified: format_mtime(e.modified).into(),
+                    mode: (e.mode & 0o7777) as i32,
                 })
                 .collect();
             let model = ModelRc::from(
@@ -2427,11 +2428,6 @@ fn wire_sftp_callbacks(
                         );
                         h.rename(target, to);
                     }
-                    "chmod" => {
-                        if let Ok(mode) = u32::from_str_radix(value, 8) {
-                            h.chmod(target, mode & 0o7777);
-                        }
-                    }
                     "mkdir" => {
                         h.mkdir(format!("{}/{}", target.trim_end_matches('/'), value));
                     }
@@ -2446,6 +2442,54 @@ fn wire_sftp_callbacks(
     {
         window.on_sftp_copy_path(move |path: SharedString| {
             clipboard_set_text(path.to_string());
+        });
+    }
+
+    // Visual chmod dialog (#84): decompose the current mode into nine bools on
+    // open, recompose on apply (Slint has no bitwise ops).
+    {
+        let weak = window.as_weak();
+        window.on_sftp_chmod_open(
+            move |tab: SharedString, path: SharedString, name: SharedString, mode: i32| {
+                let Some(w) = weak.upgrade() else { return };
+                let m = mode as u32;
+                w.set_chmod_tab(tab);
+                w.set_chmod_path(path);
+                w.set_chmod_name(name);
+                w.set_chmod_or(m & 0o400 != 0);
+                w.set_chmod_ow(m & 0o200 != 0);
+                w.set_chmod_ox(m & 0o100 != 0);
+                w.set_chmod_gr(m & 0o040 != 0);
+                w.set_chmod_gw(m & 0o020 != 0);
+                w.set_chmod_gx(m & 0o010 != 0);
+                w.set_chmod_tr(m & 0o004 != 0);
+                w.set_chmod_tw(m & 0o002 != 0);
+                w.set_chmod_tx(m & 0o001 != 0);
+                w.set_chmod_open(true);
+            },
+        );
+    }
+    {
+        let sftp_handles = sftp_handles.clone();
+        let weak = window.as_weak();
+        window.on_sftp_chmod_apply(move || {
+            let Some(w) = weak.upgrade() else { return };
+            let mode = (w.get_chmod_or() as u32) << 8
+                | (w.get_chmod_ow() as u32) << 7
+                | (w.get_chmod_ox() as u32) << 6
+                | (w.get_chmod_gr() as u32) << 5
+                | (w.get_chmod_gw() as u32) << 4
+                | (w.get_chmod_gx() as u32) << 3
+                | (w.get_chmod_tr() as u32) << 2
+                | (w.get_chmod_tw() as u32) << 1
+                | (w.get_chmod_tx() as u32);
+            let path = w.get_chmod_path().to_string();
+            let tab = w.get_chmod_tab().to_string();
+            if let Ok(handles) = sftp_handles.lock() {
+                if let Some(h) = handles.get(&tab) {
+                    h.chmod(path, mode);
+                }
+            }
         });
     }
 

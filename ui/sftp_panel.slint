@@ -11,6 +11,7 @@ export struct SftpEntry {
     is-dir: bool,
     size: string,
     modified: string,
+    mode: int,        // POSIX permission bits, for the chmod dialog (#84)
 }
 
 export struct SftpTreeNode {
@@ -25,18 +26,19 @@ export struct SftpTreeNode {
 component SftpMenuItem inherits Rectangle {
     in property <string> label;
     in property <brush> tint: Theme.text-primary;
+    in property <bool> enabled: true;   // disabled items grey out + ignore clicks
     callback clicked();
     height: 26px;
     border-radius: Theme.radius-sm;
-    background: ta.has-hover ? Theme.bg-hover : transparent;
+    background: (root.enabled && ta.has-hover) ? Theme.bg-hover : transparent;
     ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { if (root.enabled) { root.clicked(); } }
     }
     Text {
         x: 10px;
         text: root.label;
-        color: root.tint;
+        color: root.enabled ? root.tint : Theme.text-muted;
         font-size: Theme.fs-sm;
         vertical-alignment: center;
         height: parent.height;
@@ -56,6 +58,15 @@ export component SftpPanel inherits Rectangle {
     in property <[SftpTreeNode]> tree-nodes: [];
     in property <bool> collapsed: false;   // when true only the toolbar shows
     property <int> selected-row: -1;       // clicked/highlighted file-list row (#70)
+    // Panel-level right-click context menu (#84). One menu for the whole list:
+    // an empty `menu-target` means the click landed on whitespace, which greys
+    // out the item-specific actions (download/rename/…) but keeps new/refresh.
+    property <length> menu-x;
+    property <length> menu-y;
+    property <string> menu-target;          // "" = whitespace
+    property <string> menu-target-name;
+    property <bool>   menu-target-is-dir;
+    property <int>    menu-target-mode;     // permission bits for the chmod dialog
 
     // --- Callbacks ---------------------------------------------------------
     callback toggle-collapsed();    // minimise / restore the panel
@@ -70,7 +81,7 @@ export component SftpPanel inherits Rectangle {
     // Context-menu extensions (#69). The *-request callbacks open dialogs in
     // the app shell; copy-path goes straight to the system clipboard.
     callback rename-request(string /* path */, string /* current name */);
-    callback chmod-request(string /* path */);
+    callback chmod-request(string /* path */, string /* name */, int /* mode */);
     callback copy-path(string);
     callback new-folder(string /* parent dir */);
     callback new-file(string /* parent dir */);
@@ -314,185 +325,176 @@ export component SftpPanel inherits Rectangle {
                 }
                 Rectangle { height: 1px; background: Theme.border-subtle; }
 
-                // File list with scrollbar
-                ScrollView {
+                // File list. The area fills the panel height so right-click works
+                // on the whitespace below the rows too (#84); the single menu
+                // below greys out item actions when nothing was hit.
+                file-area := Rectangle {
                     vertical-stretch: 1;
+                    clip: true;
+                    ScrollView {
+                        width: parent.width;
+                        height: parent.height;
+                        viewport-width: self.visible-width;
+                        viewport-height: max(self.visible-height, file-list.preferred-height);
 
-                    file-list := VerticalLayout {
-                        spacing: 0;
+                        file-list := VerticalLayout {
+                            spacing: 0;
 
-                        if root.loading : Rectangle {
-                            height: 40px;
-                            Text { text: @tr("Loading..."); color: Theme.text-muted; font-size: Theme.fs-sm;
-                                   horizontal-alignment: center; vertical-alignment: center; }
+                            if root.loading : Rectangle {
+                                height: 40px;
+                                Text { text: @tr("Loading..."); color: Theme.text-muted; font-size: Theme.fs-sm;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+
+                            if !root.loading && root.entries.length == 0 : Rectangle {
+                                height: 40px;
+                                Text { text: @tr("Empty directory"); color: Theme.text-muted; font-size: Theme.fs-sm;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+
+                            for entry[i] in root.entries : row := Rectangle {
+                                height: 24px;
+                                background: i == root.selected-row
+                                    ? #4a90e240
+                                    : (row-ta.has-hover
+                                        ? #4a90e225
+                                        : (mod(i, 2) == 0 ? transparent : #ffffff08));
+
+                                row-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.selected-row = i; }
+                                    double-clicked => {
+                                        if (entry.is-dir) {
+                                            root.navigate(entry.full-path);
+                                        } else {
+                                            root.download(entry.full-path);
+                                        }
+                                    }
+                                    pointer-event(ev) => {
+                                        if (ev.kind == PointerEventKind.down
+                                                && ev.button == PointerEventButton.right) {
+                                            root.selected-row = i;
+                                            root.menu-target = entry.full-path;
+                                            root.menu-target-name = entry.name;
+                                            root.menu-target-is-dir = entry.is-dir;
+                                            root.menu-target-mode = entry.mode;
+                                            root.menu-x = self.absolute-position.x + self.mouse-x - file-area.absolute-position.x;
+                                            root.menu-y = self.absolute-position.y + self.mouse-y - file-area.absolute-position.y;
+                                            file-menu.show();
+                                        }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: 8px; padding-right: 8px; spacing: 4px;
+                                    Text {
+                                        text: entry.is-dir ? "📁 " + entry.name : "📄 " + entry.name;
+                                        color: entry.is-dir ? Theme.accent : Theme.text-primary;
+                                        font-size: Theme.fs-sm;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: entry.is-dir ? "" : entry.size;
+                                        color: Theme.text-secondary; font-size: Theme.fs-xs;
+                                        width: 72px; horizontal-alignment: right; vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: entry.modified;
+                                        color: Theme.text-muted; font-size: Theme.fs-xs;
+                                        width: 116px; horizontal-alignment: right; vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            // Whitespace below the rows: right-click here opens the
+                            // menu with no target (item actions greyed out) (#84).
+                            ws := Rectangle {
+                                vertical-stretch: 1;
+                                min-height: 24px;
+                                ws-ta := TouchArea {
+                                    pointer-event(ev) => {
+                                        if (ev.kind == PointerEventKind.down
+                                                && ev.button == PointerEventButton.right) {
+                                            root.selected-row = -1;
+                                            root.menu-target = "";
+                                            root.menu-x = self.absolute-position.x + self.mouse-x - file-area.absolute-position.x;
+                                            root.menu-y = self.absolute-position.y + self.mouse-y - file-area.absolute-position.y;
+                                            file-menu.show();
+                                        }
+                                    }
+                                }
+                            }
                         }
+                    }
 
-                        if !root.loading && root.entries.length == 0 : empty-row := Rectangle {
-                            height: 40px;
-                            property <length> mx;
-                            property <length> my;
-                            Text { text: @tr("Empty directory"); color: Theme.text-muted; font-size: Theme.fs-sm;
-                                   horizontal-alignment: center; vertical-alignment: center; }
-                            // Right-click in an empty directory → create/refresh (#69).
-                            TouchArea {
-                                pointer-event(ev) => {
-                                    if (ev.kind == PointerEventKind.down
-                                            && ev.button == PointerEventButton.right) {
-                                        empty-row.mx = self.mouse-x;
-                                        empty-row.my = self.mouse-y;
-                                        empty-menu.show();
-                                    }
+                    // One context menu for the whole list (#84). Item actions are
+                    // enabled only when an item was right-clicked (menu-target set);
+                    // new/refresh are always available.
+                    file-menu := PopupWindow {
+                        x: root.menu-x;
+                        y: root.menu-y;
+                        width: 132px;
+                        height: 10 * 27px + 8px;
+                        Rectangle {
+                            background: Theme.bg-panel;
+                            border-radius: Theme.radius-sm;
+                            border-width: 1px;
+                            border-color: Theme.border-strong;
+                            drop-shadow-blur: 12px;
+                            drop-shadow-color: #00000060;
+                            VerticalLayout {
+                                padding: 4px;
+                                spacing: 1px;
+                                SftpMenuItem {
+                                    label: @tr("Download");
+                                    enabled: root.menu-target != "";
+                                    clicked => { root.download(root.menu-target); }
                                 }
-                            }
-                            empty-menu := PopupWindow {
-                                x: empty-row.mx;
-                                y: empty-row.my;
-                                width: 124px;
-                                height: 3 * 27px + 8px;
-                                Rectangle {
-                                    background: Theme.bg-panel;
-                                    border-radius: Theme.radius-sm;
-                                    border-width: 1px;
-                                    border-color: Theme.border-strong;
-                                    drop-shadow-blur: 12px;
-                                    drop-shadow-color: #00000060;
-                                    VerticalLayout {
-                                        padding: 4px;
-                                        spacing: 1px;
-                                        SftpMenuItem {
-                                            label: @tr("New folder");
-                                            clicked => { root.new-folder(root.current-path); }
-                                        }
-                                        SftpMenuItem {
-                                            label: @tr("New file");
-                                            clicked => { root.new-file(root.current-path); }
-                                        }
-                                        SftpMenuItem {
-                                            label: @tr("Refresh");
-                                            clicked => { root.refresh(root.current-path); }
-                                        }
-                                    }
+                                SftpMenuItem {
+                                    label: @tr("View");
+                                    enabled: root.menu-target != "" && !root.menu-target-is-dir;
+                                    clicked => { root.view(root.menu-target); }
                                 }
-                            }
-                        }
-
-                        for entry[i] in root.entries : row := Rectangle {
-                            height: 24px;
-                            // Selected row stays highlighted; hover is lighter;
-                            // otherwise zebra striping (#70).
-                            background: i == root.selected-row
-                                ? #4a90e240
-                                : (row-ta.has-hover
-                                    ? #4a90e225
-                                    : (mod(i, 2) == 0 ? transparent : #ffffff08));
-
-                            // Right-click anchor (relative to this row).
-                            property <length> mx;
-                            property <length> my;
-
-                            row-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { root.selected-row = i; }
-                                double-clicked => {
-                                    if (entry.is-dir) {
-                                        root.navigate(entry.full-path);
-                                    } else {
-                                        root.download(entry.full-path);
-                                    }
+                                SftpMenuItem {
+                                    label: @tr("Edit");
+                                    enabled: root.menu-target != "" && !root.menu-target-is-dir;
+                                    clicked => { root.edit(root.menu-target); }
                                 }
-                                pointer-event(ev) => {
-                                    if (ev.kind == PointerEventKind.down
-                                            && ev.button == PointerEventButton.right) {
-                                        root.selected-row = i;
-                                        row.mx = self.mouse-x;
-                                        row.my = self.mouse-y;
-                                        row-menu.show();
-                                    }
+                                SftpMenuItem {
+                                    label: @tr("Rename");
+                                    enabled: root.menu-target != "";
+                                    clicked => { root.rename-request(root.menu-target, root.menu-target-name); }
                                 }
-                            }
-
-                            // Right-click context menu (#69). Files get the full
-                            // set; dirs skip View/Edit.
-                            row-menu := PopupWindow {
-                                x: row.mx;
-                                y: row.my;
-                                width: 124px;
-                                height: (entry.is-dir ? 8 : 10) * 27px + 8px;
-                                Rectangle {
-                                    background: Theme.bg-panel;
-                                    border-radius: Theme.radius-sm;
-                                    border-width: 1px;
-                                    border-color: Theme.border-strong;
-                                    drop-shadow-blur: 12px;
-                                    drop-shadow-color: #00000060;
-                                    VerticalLayout {
-                                        padding: 4px;
-                                        spacing: 1px;
-                                        SftpMenuItem {
-                                            label: @tr("Download");
-                                            clicked => { root.download(entry.full-path); }
-                                        }
-                                        if !entry.is-dir : SftpMenuItem {
-                                            label: @tr("View");
-                                            clicked => { root.view(entry.full-path); }
-                                        }
-                                        if !entry.is-dir : SftpMenuItem {
-                                            label: @tr("Edit");
-                                            clicked => { root.edit(entry.full-path); }
-                                        }
-                                        SftpMenuItem {
-                                            label: @tr("Rename");
-                                            clicked => { root.rename-request(entry.full-path, entry.name); }
-                                        }
-                                        SftpMenuItem {
-                                            label: @tr("Permissions");
-                                            clicked => { root.chmod-request(entry.full-path); }
-                                        }
-                                        SftpMenuItem {
-                                            label: @tr("Copy path");
-                                            clicked => { root.copy-path(entry.full-path); }
-                                        }
-                                        SftpMenuItem {
-                                            label: @tr("Delete");
-                                            tint: #d86c6c;
-                                            clicked => { root.delete(entry.full-path); }
-                                        }
-                                        SftpMenuItem {
-                                            label: @tr("New folder");
-                                            clicked => { root.new-folder(root.current-path); }
-                                        }
-                                        SftpMenuItem {
-                                            label: @tr("New file");
-                                            clicked => { root.new-file(root.current-path); }
-                                        }
-                                        SftpMenuItem {
-                                            label: @tr("Refresh");
-                                            clicked => { root.refresh(root.current-path); }
-                                        }
-                                    }
+                                SftpMenuItem {
+                                    label: @tr("Permissions");
+                                    enabled: root.menu-target != "";
+                                    clicked => { root.chmod-request(root.menu-target, root.menu-target-name, root.menu-target-mode); }
                                 }
-                            }
-
-                            HorizontalLayout {
-                                padding-left: 8px; padding-right: 8px; spacing: 4px;
-
-                                Text {
-                                    text: entry.is-dir ? "📁 " + entry.name : "📄 " + entry.name;
-                                    color: entry.is-dir ? Theme.accent : Theme.text-primary;
-                                    font-size: Theme.fs-sm;
-                                    horizontal-stretch: 1;
-                                    overflow: elide;
-                                    vertical-alignment: center;
+                                SftpMenuItem {
+                                    label: @tr("Copy path");
+                                    enabled: root.menu-target != "";
+                                    clicked => { root.copy-path(root.menu-target); }
                                 }
-                                Text {
-                                    text: entry.is-dir ? "" : entry.size;
-                                    color: Theme.text-secondary; font-size: Theme.fs-xs;
-                                    width: 72px; horizontal-alignment: right; vertical-alignment: center;
+                                SftpMenuItem {
+                                    label: @tr("Delete");
+                                    tint: #d86c6c;
+                                    enabled: root.menu-target != "";
+                                    clicked => { root.delete(root.menu-target); }
                                 }
-                                Text {
-                                    text: entry.modified;
-                                    color: Theme.text-muted; font-size: Theme.fs-xs;
-                                    width: 116px; horizontal-alignment: right; vertical-alignment: center;
+                                Rectangle { height: 1px; background: Theme.border-subtle; }
+                                SftpMenuItem {
+                                    label: @tr("New folder");
+                                    clicked => { root.new-folder(root.current-path); }
+                                }
+                                SftpMenuItem {
+                                    label: @tr("New file");
+                                    clicked => { root.new-file(root.current-path); }
+                                }
+                                SftpMenuItem {
+                                    label: @tr("Refresh");
+                                    clicked => { root.refresh(root.current-path); }
                                 }
                             }
                         }

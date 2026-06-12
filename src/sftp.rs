@@ -931,6 +931,7 @@ async fn list_dir_impl(sftp: &SftpSession, path: &str) -> Result<Vec<RemoteEntry
                 is_dir,
                 size,
                 modified,
+                mode: permissions & 0o7777,
             }
         })
         .collect();

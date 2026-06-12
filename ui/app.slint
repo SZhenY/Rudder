@@ -251,6 +251,18 @@ export component AppWindow inherits Window {
     callback sftp-prompt-submit(string /* tab */, string /* kind */, string /* target */, string /* value */);
     callback sftp-copy-path(string);             // put the path on the clipboard
 
+    // Visual chmod dialog (#84). Rust decomposes the current mode into nine
+    // bools when opening and recomposes on apply (Slint has no bitwise ops).
+    in-out property <bool> chmod-open: false;
+    in-out property <string> chmod-tab;
+    in-out property <string> chmod-path;
+    in-out property <string> chmod-name;
+    in-out property <bool> chmod-or; in-out property <bool> chmod-ow; in-out property <bool> chmod-ox;
+    in-out property <bool> chmod-gr; in-out property <bool> chmod-gw; in-out property <bool> chmod-gx;
+    in-out property <bool> chmod-tr; in-out property <bool> chmod-tw; in-out property <bool> chmod-tx;
+    callback sftp-chmod-open(string /* tab */, string /* path */, string /* name */, int /* mode */);
+    callback sftp-chmod-apply();                  // reads the bools, chmods, closes
+
     // --- Clipboard callbacks ----------------------------------------------
     // Paste clipboard text into the active terminal.
     callback paste-from-clipboard(string /* tab-id */);
@@ -413,12 +425,8 @@ export component AppWindow inherits Window {
                         root.sftp-prompt-value = name;
                         root.sftp-prompt-open = true;
                     }
-                    sftp-chmod-request(path) => {
-                        root.sftp-prompt-kind = "chmod";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = path;
-                        root.sftp-prompt-value = "";
-                        root.sftp-prompt-open = true;
+                    sftp-chmod-request(path, name, mode) => {
+                        root.sftp-chmod-open(term.id, path, name, mode);
                     }
                     sftp-copy-path(path) => { root.sftp-copy-path(path); }
                     sftp-new-folder(dir) => {
@@ -1245,6 +1253,96 @@ export component AppWindow inherits Window {
                                 root.sftp-prompt-target, root.sftp-prompt-value);
                             root.sftp-prompt-open = false;
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Visual chmod dialog (#84): Owner/Group/Other × Read/Write/Execute --
+    if root.chmod-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000080;
+        TouchArea { clicked => { root.chmod-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 320px;
+            height: 270px;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #000000a0;
+            TouchArea {}
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 10px;
+                Text {
+                    text: root.lang-en ? "Permissions" : "修改文件权限";
+                    color: Theme.text-primary; font-size: Theme.fs-lg; font-weight: 700;
+                }
+                Text {
+                    text: root.chmod-name;
+                    color: Theme.text-secondary; font-size: Theme.fs-sm;
+                    font-family: Theme.ui-font-family; overflow: elide;
+                }
+
+                for grp in [
+                    { lbl: root.lang-en ? "Owner" : "所有者", g: 0 },
+                    { lbl: root.lang-en ? "Group" : "组",     g: 1 },
+                    { lbl: root.lang-en ? "Other" : "其他",   g: 2 },
+                ] : VerticalLayout {
+                    spacing: 2px;
+                    Text { text: grp.lbl; color: Theme.text-secondary; font-size: Theme.fs-xs; }
+                    HorizontalLayout {
+                        spacing: 14px;
+                        CheckBox {
+                            text: root.lang-en ? "Read" : "读取";
+                            checked: grp.g == 0 ? root.chmod-or : (grp.g == 1 ? root.chmod-gr : root.chmod-tr);
+                            toggled => {
+                                if (grp.g == 0) { root.chmod-or = self.checked; }
+                                else if (grp.g == 1) { root.chmod-gr = self.checked; }
+                                else { root.chmod-tr = self.checked; }
+                            }
+                        }
+                        CheckBox {
+                            text: root.lang-en ? "Write" : "写入";
+                            checked: grp.g == 0 ? root.chmod-ow : (grp.g == 1 ? root.chmod-gw : root.chmod-tw);
+                            toggled => {
+                                if (grp.g == 0) { root.chmod-ow = self.checked; }
+                                else if (grp.g == 1) { root.chmod-gw = self.checked; }
+                                else { root.chmod-tw = self.checked; }
+                            }
+                        }
+                        CheckBox {
+                            text: root.lang-en ? "Execute" : "执行";
+                            checked: grp.g == 0 ? root.chmod-ox : (grp.g == 1 ? root.chmod-gx : root.chmod-tx);
+                            toggled => {
+                                if (grp.g == 0) { root.chmod-ox = self.checked; }
+                                else if (grp.g == 1) { root.chmod-gx = self.checked; }
+                                else { root.chmod-tx = self.checked; }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Button {
+                        text: root.lang-en ? "Cancel" : "取消";
+                        clicked => { root.chmod-open = false; }
+                    }
+                    Button {
+                        text: root.lang-en ? "OK" : "确定";
+                        primary: true;
+                        clicked => { root.sftp-chmod-apply(); root.chmod-open = false; }
                     }
                 }
             }
