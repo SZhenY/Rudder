@@ -5,6 +5,44 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-06-12
+
+### Added / 新增
+
+- **Confirm before closing when there are active sessions (#88).** Double-clicking
+  the title-bar icon (or X / Alt+F4) no longer silently drops live sessions — a
+  confirm dialog appears; with no sessions the window closes as before.
+  **有活动会话时关闭前先确认 (#88)。** 双击标题栏图标(或点 X / Alt+F4)不再静默
+  断开正在进行的会话——会弹出确认框;没有会话时则照旧直接关闭。
+
+- **"Always ask where to save" download option (#87).** Settings → Interface →
+  Download adds a checkbox (default off); when on, every download prompts for the
+  folder instead of using the preset.
+  **「总是询问保存去何处」下载选项 (#87)。** 设置 → 界面 → 下载 新增复选框
+  (默认关闭);勾选后每次下载都询问保存位置,而非直接用预设目录。
+
+- **The transfers popup opens automatically when a download starts**, so progress
+  is visible without opening it by hand.
+  **下载开始时自动弹出传输面板**,无需手动打开即可看到进度。
+
+- **Capped diagnostic log file (groundwork for #86).** Writes to
+  `<config_dir>/error.log` at WARN and above — a single file capped at 5 MiB that
+  auto-overwrites when full — so users can share what went wrong (e.g. a bastion
+  disconnect reason) without setting RUST_LOG.
+  **容量受限的诊断日志文件(为 #86 铺路)。** 写入 `<配置目录>/error.log`
+  (WARN 及以上)——单文件、上限 5 MiB、满了自动覆盖——用户无需设置 RUST_LOG 即可
+  把出错信息(如堡垒机断开原因)发来。
+
+### Fixed / 修复
+
+- **Settings checkboxes now persist visually after reopening the dialog (#87).**
+  "Always ask where to save" and "SFTP follows cd" used a one-way binding, so
+  reopening the settings dialog (without restarting) showed the stale state even
+  though the value was saved; switched to a two-way binding.
+  **设置里的复选框重新打开对话框后状态保持 (#87)。** 「总是询问保存去何处」和
+  「SFTP 跟随 cd」原用单向绑定,不重启 app 时重开设置对话框会显示旧状态(尽管值
+  已保存);改为双向绑定。
+
 ## [0.3.7] - 2026-06-12
 
 ### Added / 新增
@@ -448,6 +486,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Screenshots in the README** (`docs/screenshots/`, sensitive info redacted).
   **README 增加截图**（`docs/screenshots/`，敏感信息已打码）。
 
+[0.3.8]: https://github.com/jeff141/meatshell/releases/tag/v0.3.8
 [0.3.7]: https://github.com/jeff141/meatshell/releases/tag/v0.3.7
 [0.3.3]: https://github.com/jeff141/meatshell/releases/tag/v0.3.3
 [0.3.2]: https://github.com/jeff141/meatshell/releases/tag/v0.3.2
