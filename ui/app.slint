@@ -235,7 +235,7 @@ export component AppWindow inherits Window {
     // Trigger a download: Rust opens a save-folder dialog then transfers.
     callback sftp-download(string /* tab-id */, string /* remote-path */);
     // Trigger an upload: Rust opens a file-picker dialog then transfers.
-    callback sftp-upload-clicked(string /* tab-id */, string /* remote-dir */);
+    callback sftp-upload-clicked(string /* tab-id */, string /* remote-dir */, bool /* folder */);
     // Refresh the current directory listing.
     callback sftp-refresh(string /* tab-id */, string /* path */);
     // Toggle expand/collapse of a tree node (also navigates to that directory).
@@ -409,7 +409,7 @@ export component AppWindow inherits Window {
                     terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
                     sftp-navigate(path) => { root.sftp-navigate(term.id, path); }
                     sftp-download(path) => { root.sftp-download(term.id, path); }
-                    sftp-upload-clicked(dir) => { root.sftp-upload-clicked(term.id, dir); }
+                    sftp-upload-clicked(dir, folder) => { root.sftp-upload-clicked(term.id, dir, folder); }
                     sftp-refresh(path) => { root.sftp-refresh(term.id, path); }
                     sftp-tree-expand(path) => { root.sftp-tree-expand(term.id, path); }
                     // Gate delete behind an in-app confirmation (#28): stash the
@@ -871,14 +871,14 @@ export component AppWindow inherits Window {
                     alignment: end;
 
                     Rectangle {
-                        width: 96px; height: 28px;
+                        width: 110px; height: 28px;
                         border-radius: Theme.radius-sm;
                         background: pick-ta.has-hover ? Theme.accent-hover : Theme.accent;
                         pick-ta := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.pick-download-dir(); }
                         }
-                        Text { text: @tr("Choose folder"); color: #ffffff; font-size: Theme.fs-sm;
+                        Text { text: @tr("Choose save path"); color: #ffffff; font-size: Theme.fs-sm;
                                horizontal-alignment: center; vertical-alignment: center; }
                     }
                     Rectangle {

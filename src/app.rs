@@ -421,6 +421,18 @@ pub fn run() -> Result<()> {
     }
 
     // Settings: preset download directory (load + pick + open).
+    // Default to the user's Downloads folder so files land somewhere sensible
+    // without a prompt; only fall back to "ask every time" if we can't locate it
+    // (#85). Persist it on first run so the setting reflects the real path.
+    if store.borrow().download_dir().is_empty() {
+        if let Some(dl) = directories::UserDirs::new()
+            .and_then(|u| u.download_dir().map(|p| p.to_string_lossy().to_string()))
+        {
+            let mut s = store.borrow_mut();
+            s.set_download_dir(dl);
+            let _ = s.save();
+        }
+    }
     window.set_download_dir(store.borrow().download_dir().to_string().into());
     {
         let weak = window.as_weak();
@@ -2310,16 +2322,36 @@ fn wire_sftp_callbacks(
     {
         let sftp_handles = sftp_handles.clone();
         window.on_sftp_upload_clicked(
-            move |tab_id: SharedString, remote_dir: SharedString| {
+            move |tab_id: SharedString, remote_dir: SharedString, folder: bool| {
                 let tab_id = tab_id.to_string();
                 let remote_dir = remote_dir.to_string();
                 let sftp_handles = sftp_handles.clone();
                 std::thread::spawn(move || {
-                    if let Some(file) = rfd::FileDialog::new().pick_file() {
-                        let local = file.to_string_lossy().to_string();
-                        if let Ok(handles) = sftp_handles.lock() {
-                            if let Some(h) = handles.get(&tab_id) {
-                                h.upload(local, remote_dir);
+                    // The remote SFTP upload handles a file or a whole directory;
+                    // only the local picker differs (#85). Folder uploads one dir;
+                    // file mode allows selecting several at once.
+                    let locals: Vec<String> = if folder {
+                        rfd::FileDialog::new()
+                            .pick_folder()
+                            .map(|p| vec![p.to_string_lossy().to_string()])
+                            .unwrap_or_default()
+                    } else {
+                        rfd::FileDialog::new()
+                            .pick_files()
+                            .map(|v| {
+                                v.into_iter()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    };
+                    if locals.is_empty() {
+                        return;
+                    }
+                    if let Ok(handles) = sftp_handles.lock() {
+                        if let Some(h) = handles.get(&tab_id) {
+                            for local in locals {
+                                h.upload(local, remote_dir.clone());
                             }
                         }
                     }

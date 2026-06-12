@@ -72,7 +72,7 @@ export component SftpPanel inherits Rectangle {
     callback toggle-collapsed();    // minimise / restore the panel
     callback navigate(string);
     callback download(string);
-    callback upload-clicked(string);
+    callback upload-clicked(string /* remote dir */, bool /* folder */);
     callback refresh(string);
     callback tree-expand(string);   // toggle expand/collapse + navigate
     callback delete(string);        // remove a remote file/dir
@@ -180,16 +180,43 @@ export component SftpPanel inherits Rectangle {
                            horizontal-alignment: center; vertical-alignment: center; }
                 }
 
-                Rectangle {
+                // Upload: a small menu offers file vs folder (#85). The remote
+                // SFTP upload handles both — only the local picker differs.
+                ul-btn := Rectangle {
                     width: 52px; height: 22px;
                     border-radius: Theme.radius-sm;
                     background: ul-ta.has-hover ? Theme.accent-hover : Theme.accent;
                     ul-ta := TouchArea {
                         mouse-cursor: pointer;
-                        clicked => { root.upload-clicked(root.current-path); }
+                        clicked => { ul-menu.show(); }
                     }
                     Text { text: @tr("Upload"); color: #ffffff; font-size: Theme.fs-sm;
                            horizontal-alignment: center; vertical-alignment: center; }
+                    ul-menu := PopupWindow {
+                        x: 0; y: parent.height + 2px;
+                        width: 124px;
+                        height: 2 * 27px + 8px;
+                        Rectangle {
+                            background: Theme.bg-panel;
+                            border-radius: Theme.radius-sm;
+                            border-width: 1px;
+                            border-color: Theme.border-strong;
+                            drop-shadow-blur: 12px;
+                            drop-shadow-color: #00000060;
+                            VerticalLayout {
+                                padding: 4px;
+                                spacing: 1px;
+                                SftpMenuItem {
+                                    label: @tr("Upload file");
+                                    clicked => { root.upload-clicked(root.current-path, false); }
+                                }
+                                SftpMenuItem {
+                                    label: @tr("Upload folder");
+                                    clicked => { root.upload-clicked(root.current-path, true); }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Rectangle {

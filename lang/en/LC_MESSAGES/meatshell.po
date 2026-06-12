@@ -27,6 +27,15 @@ msgstr "(ask every time)"
 msgid "Choose folder"
 msgstr "Choose folder"
 
+msgid "Choose save path"
+msgstr "Choose save path"
+
+msgid "Upload file"
+msgstr "Upload file"
+
+msgid "Upload folder"
+msgstr "Upload folder"
+
 msgid "Open folder"
 msgstr "Open folder"
 

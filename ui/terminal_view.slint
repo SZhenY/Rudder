@@ -94,7 +94,7 @@ export component TerminalView inherits Rectangle {
     callback terminal-resize(float, float);
     callback sftp-navigate(string);
     callback sftp-download(string);
-    callback sftp-upload-clicked(string);
+    callback sftp-upload-clicked(string, bool);
     callback sftp-refresh(string);
     callback sftp-tree-expand(string);
     callback sftp-delete(string);
@@ -675,7 +675,7 @@ export component TerminalView inherits Rectangle {
             }
             navigate(path)      => { root.sftp-navigate(path); }
             download(path)      => { root.sftp-download(path); }
-            upload-clicked(dir) => { root.sftp-upload-clicked(dir); }
+            upload-clicked(dir, folder) => { root.sftp-upload-clicked(dir, folder); }
             refresh(path)       => { root.sftp-refresh(path); }
             tree-expand(path)   => { root.sftp-tree-expand(path); }
             delete(path)        => { root.sftp-delete(path); }

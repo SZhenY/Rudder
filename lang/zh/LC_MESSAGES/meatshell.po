@@ -27,6 +27,15 @@ msgstr "（每次下载时询问）"
 msgid "Choose folder"
 msgstr "选择文件夹"
 
+msgid "Choose save path"
+msgstr "选择保存路径"
+
+msgid "Upload file"
+msgstr "上传文件"
+
+msgid "Upload folder"
+msgstr "上传文件夹"
+
 msgid "Open folder"
 msgstr "打开目录"
 
