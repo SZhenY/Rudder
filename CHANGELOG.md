@@ -5,6 +5,53 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-06-12
+
+### Added / 新增
+
+- **Right-click anywhere in the SFTP file list (#84).** The list fills the panel
+  height, so right-clicking the whitespace below the items works too; item
+  actions grey out when nothing was hit, leaving new folder / new file / refresh.
+  **SFTP 文件列表任意处可右键 (#84)。** 列表填满面板高度,条目下方空白也能右键;
+  未点中条目时,条目相关操作置灰,仅保留 新建文件夹 / 新建文件 / 刷新。
+
+- **Visual permissions dialog (#84).** Permissions opens a checkbox matrix
+  (Owner/Group/Other × Read/Write/Execute) prefilled from the file's current
+  mode, instead of typing an octal string.
+  **可视化权限对话框 (#84)。** 「权限」打开勾选矩阵(所有者/组/其他 × 读取/写入/
+  执行),按文件当前权限预填,不再手输八进制。
+
+- **Open / Edit externally (#81).** New SFTP context-menu items hand the file to
+  the OS default app (e.g. VS Code) for syntax highlighting / large files; edit
+  mode watches the temp copy and re-uploads on change.
+  **外部程序查看 / 编辑 (#81)。** SFTP 右键新增菜单项,把文件交给系统默认程序
+  (如 VS Code)打开以获得语法高亮 / 处理大文件;编辑模式监听临时副本并自动重传。
+
+- **Line numbers in the built-in editor (#81).**
+  **内置编辑器加行号 (#81)。**
+
+- **Upload a whole folder from the Upload button (#85).** The button now offers
+  "Upload file" (multi-select) / "Upload folder".
+  **上传按钮支持整个文件夹 (#85)。** 现在提供「上传文件」(可多选) /「上传文件夹」。
+
+- **Linux ARM64 release build (#82)** and **AUR packaging scaffolding (#61).**
+  **Linux ARM64 发布构建 (#82)** 与 **AUR 打包脚手架 (#61)。**
+
+### Changed / 变更
+
+- **Downloads default to the user's Downloads folder (#85)** instead of prompting
+  every time; the settings button reads "Choose save path".
+  **下载目录默认设为用户的「下载」文件夹 (#85)**,不再每次询问;设置按钮文案改为
+  「选择保存路径」。
+
+### Fixed / 修复
+
+- **No more error under fish (#71).** The OSC 7 prompt injection is guarded with
+  `test -z "$FISH_VERSION"`, so it's a no-op under fish (which emits OSC 7 on its
+  own, keeping cd-follow working) and unchanged under bash/zsh/sh.
+  **fish 下不再报错 (#71)。** OSC 7 提示符注入加了 `test -z "$FISH_VERSION"` 守卫,
+  在 fish 下为空操作(fish 自带 OSC 7,cd 跟随照常),bash/zsh/sh 行为不变。
+
 ## [0.3.5] - 2026-06-12
 - 我和claude都快冒烟了，不想写，让我摆烂一会吧。Claude and I are both about to explode with frustration. We don't want to write anymore. Let me just laze around for a while.
 
@@ -401,6 +448,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Screenshots in the README** (`docs/screenshots/`, sensitive info redacted).
   **README 增加截图**（`docs/screenshots/`，敏感信息已打码）。
 
+[0.3.7]: https://github.com/jeff141/meatshell/releases/tag/v0.3.7
 [0.3.3]: https://github.com/jeff141/meatshell/releases/tag/v0.3.3
 [0.3.2]: https://github.com/jeff141/meatshell/releases/tag/v0.3.2
 [0.3.1]: https://github.com/jeff141/meatshell/releases/tag/v0.3.1
