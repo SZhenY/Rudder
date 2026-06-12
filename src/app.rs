@@ -2338,11 +2338,17 @@ fn wire_sftp_callbacks(
                 if let Ok(handles) = sftp_handles.lock() {
                     if let Some(h) = handles.get(&tab_id) {
                         h.download(remote_path, preset);
+                        // Pop the transfers panel so progress is visible (user
+                        // request: any download opens the download popup).
+                        if let Some(w) = weak.upgrade() {
+                            w.set_download_open(true);
+                        }
                     }
                 }
                 return;
             }
             let sftp_handles = sftp_handles.clone();
+            let weak = weak.clone();
             std::thread::spawn(move || {
                 if let Some(dir) = rfd::FileDialog::new().pick_folder() {
                     let local_dir = dir.to_string_lossy().to_string();
@@ -2351,6 +2357,7 @@ fn wire_sftp_callbacks(
                             h.download(remote_path, local_dir);
                         }
                     }
+                    let _ = weak.upgrade_in_event_loop(|w| w.set_download_open(true));
                 }
             });
         });
