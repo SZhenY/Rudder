@@ -96,6 +96,15 @@ msgstr "Private key"
 msgid "Leave blank to keep the current password"
 msgstr "Leave blank to keep the current password"
 
+msgid "Key passphrase"
+msgstr "Key passphrase"
+
+msgid "Leave blank if the key isn't encrypted"
+msgstr "Leave blank if the key isn't encrypted"
+
+msgid "Leave blank to keep the current passphrase"
+msgstr "Leave blank to keep the current passphrase"
+
 msgid "Private key file"
 msgstr "Private key file"
 

@@ -96,6 +96,15 @@ msgstr "私钥"
 msgid "Leave blank to keep the current password"
 msgstr "留空则不修改密码"
 
+msgid "Key passphrase"
+msgstr "私钥密码"
+
+msgid "Leave blank if the key isn't encrypted"
+msgstr "若私钥未加密则留空"
+
+msgid "Leave blank to keep the current passphrase"
+msgstr "留空则不修改私钥密码"
+
 msgid "Private key file"
 msgstr "私钥文件"
 

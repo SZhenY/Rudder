@@ -365,8 +365,14 @@ async fn run_session(
                 .strip_suffix(".pub")
                 .map(str::to_string)
                 .unwrap_or(normalised);
-            let keypair = load_secret_key(Path::new(&key_path), None)
-                .with_context(|| format!("failed to load key {key_path}"))?;
+            // An encrypted private key needs its passphrase; we reuse the
+            // session's password field for it (empty = unencrypted key) (#90).
+            let pass = session.password.as_str();
+            let keypair = load_secret_key(
+                Path::new(&key_path),
+                if pass.is_empty() { None } else { Some(pass) },
+            )
+            .with_context(|| format!("failed to load key {key_path}"))?;
             let hash = if keypair.algorithm().is_rsa() {
                 Some(HashAlg::Sha256)
             } else {

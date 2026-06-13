@@ -270,6 +270,18 @@ export component SessionDialog inherits Rectangle {
                 }
             }
 
+            // Passphrase for an *encrypted* private key (#90). Reuses the
+            // password field; blank means the key isn't encrypted (or, when
+            // editing, keep the saved passphrase).
+            if root.draft-kind == "ssh" && root.draft-auth == "key" : LabeledInput {
+                label: @tr("Key passphrase");
+                placeholder: root.is-editing
+                    ? @tr("Leave blank to keep the current passphrase")
+                    : @tr("Leave blank if the key isn't encrypted");
+                password: true;
+                value <=> root.draft-password;
+            }
+
             // ── Serial-only fields ──────────────────────────────────────────
             if root.draft-kind == "serial" : LabeledInput {
                 label: @tr("Serial port");
