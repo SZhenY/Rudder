@@ -35,6 +35,16 @@ export struct TransferInfo {
     is-upload: bool,
 }
 
+// One row in the process-monitor popup (#23).
+export struct ProcRow {
+    pid: string,
+    user: string,
+    cpu: string,       // "12.3" (percent, one decimal)
+    mem: string,       // "4.5"
+    command: string,   // truncated args
+    cpu-frac: float,   // 0.0..1.0, drives the row load bar
+}
+
 export struct TerminalState {
     id: string,
     status: string,
@@ -93,6 +103,9 @@ export component AppWindow inherits Window {
     in-out property <bool> sidebar-collapsed: false; // left panel hidden
     in-out property <bool> about-open: false;     // centered About dialog
     in property <string> download-dir;      // preset SFTP download folder ("" = ask)
+    in-out property <bool> proc-open: false; // process monitor popup (#23)
+    in property <bool> proc-available;       // a live remote session is active
+    in property <[ProcRow]> proc-list;       // top remote processes by CPU
     in property <[TransferInfo]> transfers; // download/upload records (newest first)
     in property <[string]> about-libs;      // open-source libraries used
     in-out property <bool> lang-en: false;  // current UI language (false = 中文)
@@ -317,8 +330,10 @@ export component AppWindow inherits Window {
             net-selected: root.net-selected;
             net-show-selector: root.net-show-selector;
             disks: root.disks;
+            proc-available: root.proc-available;
             app-version: root.app-version;
             select-net-iface(i) => { root.select-net-iface(i); }
+            show-processes() => { root.proc-open = true; }
         }
 
         // Right side: tabs + content
@@ -986,6 +1001,120 @@ export component AppWindow inherits Window {
                 }
             }
         }
+
+    // --- Process monitor popup (#23) --------------------------------------
+    // Read-only table of the remote machine's top processes by CPU. The data
+    // refreshes live every ~2s via the monitor channel while the popup is open.
+    if root.proc-open : TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.proc-open = false; }
+    }
+    if root.proc-open : Rectangle {
+        x: (parent.width - 580px) / 2;
+        y: 56px;
+        width: 580px;
+        height: 440px;
+        background: Theme.bg-panel;
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 16px;
+        drop-shadow-color: #00000070;
+
+        // Swallow clicks so they don't reach the backdrop / terminal beneath.
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 14px;
+            spacing: 10px;
+
+            HorizontalLayout {
+                Text {
+                    text: @tr("Processes");
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-md;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    width: 20px; height: 20px;
+                    border-radius: Theme.radius-sm;
+                    background: proc-close-ta.has-hover ? Theme.bg-hover : transparent;
+                    proc-close-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.proc-open = false; }
+                    }
+                    Text { text: "\u{E5CD}"; font-family: "Material Icons";
+                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+
+            // Column header.
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 6px;
+                Text { text: "PID"; width: 52px; color: Theme.text-muted; font-size: Theme.fs-xs; }
+                Text { text: @tr("User"); width: 80px; color: Theme.text-muted; font-size: Theme.fs-xs; }
+                Text { text: "CPU%"; width: 48px; color: Theme.text-muted; font-size: Theme.fs-xs;
+                       horizontal-alignment: right; }
+                Text { text: "MEM%"; width: 48px; color: Theme.text-muted; font-size: Theme.fs-xs;
+                       horizontal-alignment: right; }
+                Text { text: @tr("Command"); horizontal-stretch: 1; color: Theme.text-muted; font-size: Theme.fs-xs; }
+            }
+
+            Flickable {
+                vertical-stretch: 1;
+                viewport-width: self.width;
+                viewport-height: max(self.height, proc-col.preferred-height);
+                proc-col := VerticalLayout {
+                    alignment: start;
+                    spacing: 1px;
+
+                    if root.proc-list.length == 0 : Text {
+                        text: @tr("No processes");
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-xs;
+                    }
+
+                    for p in root.proc-list : Rectangle {
+                        height: 20px;
+                        border-radius: 2px;
+                        clip: true;
+
+                        // CPU load bar behind the row.
+                        Rectangle {
+                            x: 0; y: 0;
+                            height: parent.height;
+                            width: parent.width * clamp(p.cpu-frac, 0.0, 1.0);
+                            background: p.cpu-frac > 0.5 ? Theme.warning.with-alpha(0.28)
+                                      : Theme.accent.with-alpha(0.20);
+                        }
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            spacing: 6px;
+                            Text { text: p.pid; width: 52px; color: Theme.text-secondary;
+                                   font-size: Theme.fs-xs; vertical-alignment: center; }
+                            Text { text: p.user; width: 80px; color: Theme.text-secondary;
+                                   font-size: Theme.fs-xs; vertical-alignment: center; overflow: elide; }
+                            Text { text: p.cpu; width: 48px; color: Theme.text-primary;
+                                   font-size: Theme.fs-xs; vertical-alignment: center;
+                                   horizontal-alignment: right; }
+                            Text { text: p.mem; width: 48px; color: Theme.text-secondary;
+                                   font-size: Theme.fs-xs; vertical-alignment: center;
+                                   horizontal-alignment: right; }
+                            Text { text: p.command; horizontal-stretch: 1; color: Theme.text-muted;
+                                   font-size: Theme.fs-xs; vertical-alignment: center; overflow: elide; }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // --- Settings menu popup (top-right) ----------------------------------
     // Click-outside-to-close backdrop (same pattern as the download popup).

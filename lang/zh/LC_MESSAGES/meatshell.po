@@ -243,6 +243,18 @@ msgstr "清空缓存"
 msgid "Find"
 msgstr "查找"
 
+msgid "Processes"
+msgstr "进程"
+
+msgid "User"
+msgstr "用户"
+
+msgid "Command"
+msgstr "命令"
+
+msgid "No processes"
+msgstr "无进程"
+
 msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 msgstr "meatshell 一个由「一坨肉」开发的轻量 Rust + Slint SSH 客户端"
 

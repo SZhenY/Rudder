@@ -73,7 +73,8 @@ use crate::config::{AuthMethod, ConfigStore, Secret, Session, SessionKind};
 use crate::i18n::t;
 use crate::sftp::{spawn_sftp, SftpHandle};
 use crate::ssh::{
-    format_mtime, format_size, spawn_session, SessionCommand, SessionEvent, SessionHandle,
+    format_mtime, format_size, spawn_session, ProcInfo, SessionCommand, SessionEvent,
+    SessionHandle,
 };
 use crate::system::{format_bytes_per_sec, format_mem_mib, SystemSampler, SystemSnapshot};
 
@@ -107,6 +108,8 @@ struct TabStatus {
     net_hist: Vec<f32>,
     /// Per-filesystem (mount, available_bytes, total_bytes).
     disks: Vec<(String, u64, u64)>,
+    /// Top remote processes by CPU, for the process monitor popup (#23).
+    procs: Vec<ProcInfo>,
 }
 type TabStatuses = Arc<Mutex<HashMap<String, TabStatus>>>;
 /// Last local-machine sample (shown on the welcome tab).
@@ -1690,6 +1693,23 @@ fn disk_model(disks: &[(String, u64, u64)]) -> ModelRc<DiskInfo> {
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
+/// Build the process-monitor model for the popup (#23). `cpu`/`mem` are
+/// pre-formatted to one decimal; `cpu_frac` (0..1) drives the row's load bar.
+fn proc_model(procs: &[ProcInfo]) -> ModelRc<ProcRow> {
+    let rows: Vec<ProcRow> = procs
+        .iter()
+        .map(|p| ProcRow {
+            pid: p.pid.to_string().into(),
+            user: p.user.clone().into(),
+            cpu: format!("{:.1}", p.cpu).into(),
+            mem: format!("{:.1}", p.mem).into(),
+            command: p.command.clone().into(),
+            cpu_frac: (p.cpu / 100.0).clamp(0.0, 1.0),
+        })
+        .collect();
+    ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
 /// Find every (case-insensitive) occurrence of `query` across the currently
 /// displayed rows and return highlight rectangles (char index == grid column).
 fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
@@ -1811,6 +1831,11 @@ fn refresh_sidebar(
         win.set_swap_detail("".into());
     };
 
+    // Process monitor (#23) only applies to a live remote session; default to
+    // hidden/empty and let the connected branch below fill it in.
+    win.set_proc_available(false);
+    win.set_proc_list(ModelRc::from(Rc::new(VecModel::<ProcRow>::default())));
+
     let active = win.get_active_tab_id().to_string();
     let status = if active == "welcome" {
         None
@@ -1843,6 +1868,8 @@ fn refresh_sidebar(
                 st.net.iter().map(|e| e.0.clone().into()).collect();
             win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::from(ifaces))));
             win.set_disks(disk_model(&st.disks));
+            win.set_proc_available(true);
+            win.set_proc_list(proc_model(&st.procs));
         }
         // Disconnected / timed-out session.
         Some(st) if st.state == 2 => {
@@ -2006,6 +2033,7 @@ fn apply_session_event_to_window(
             swap_total_kib,
             net,
             disks,
+            procs,
         } => {
             if let Some(st) = statuses.lock().unwrap().get_mut(tab_id) {
                 st.cpu = cpu_percent;
@@ -2015,6 +2043,7 @@ fn apply_session_event_to_window(
                 st.swap_total_kib = swap_total_kib;
                 st.net = net;
                 st.disks = disks;
+                st.procs = procs;
                 // A sample means the channel is alive → treat as connected.
                 if st.state != 1 {
                     st.state = 1;

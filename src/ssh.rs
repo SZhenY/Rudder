@@ -178,6 +178,17 @@ pub enum SessionCommand {
     Close,
 }
 
+/// One process row sampled from the remote `ps` (#23). CPU/mem are percentages
+/// as reported by `ps` (pcpu/pmem); `command` is the (width-truncated) args.
+#[derive(Debug, Clone)]
+pub struct ProcInfo {
+    pub pid: u32,
+    pub user: String,
+    pub cpu: f32,
+    pub mem: f32,
+    pub command: String,
+}
+
 /// Events emitted back to the UI thread.
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
@@ -201,6 +212,8 @@ pub enum SessionEvent {
         net: Vec<(String, u64, u64)>,
         /// Per-filesystem (mount_point, available_bytes, total_bytes).
         disks: Vec<(String, u64, u64)>,
+        /// Top processes by CPU (#23). Empty if the host's `ps` is unusable.
+        procs: Vec<ProcInfo>,
     },
 
     // --- SFTP events -------------------------------------------------------
@@ -469,7 +482,11 @@ async fn run_session(
     // more portable than hardcoding one absolute path per tool (their location
     // differs across distros). Monitoring is best-effort, so even if this shell
     // is unusual and the reset finds nothing, only the sidebar stats are lost.
-    const MON_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; while :; do awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __MSTICK__; sleep 2; done\n";
+    // The `ps` section feeds the process monitor (#23): top-40 by CPU, columns
+    // pid/user/pcpu/pmem/args, each line clipped to 200 chars so a giant command
+    // line can't bloat the stream. A host whose `ps` lacks `--sort`/`-o` simply
+    // yields nothing (2>/dev/null), degrading to an empty process list.
+    const MON_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; while :; do awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __PS__; ps -eo pid,user,pcpu,pmem,args --sort=-pcpu 2>/dev/null | head -n 41 | cut -c -200; echo __MSTICK__; sleep 2; done\n";
     let mut mon_channel = match handle.channel_open_session().await {
         Ok(ch) => match ch.exec(true, MON_CMD).await {
             Ok(()) => Some(ch),
@@ -681,25 +698,49 @@ fn parse_monitor_block(
     let mut net_now: Vec<(String, u64, u64)> = Vec::new();
     // Filesystems from `df -kP`: (mount, available_bytes, total_bytes).
     let mut disks: Vec<(String, u64, u64)> = Vec::new();
-    let mut in_df = false;
+    // Processes from `ps` (#23): top-by-CPU rows.
+    let mut procs: Vec<ProcInfo> = Vec::new();
+    // The sample is split into sections by `echo` markers; everything before the
+    // first marker is the cpu/mem/net block.
+    enum Section {
+        Top,
+        Df,
+        Ps,
+    }
+    let mut section = Section::Top;
 
-    // Cap how many interfaces / filesystems we accept from one sample so a
-    // hostile server can't flood the parser and sidebar with fabricated rows
+    // Cap how many interfaces / filesystems / processes we accept from one sample
+    // so a hostile server can't flood the parser and sidebar with fabricated rows
     // (#27). No real machine has anywhere near this many.
     const MAX_MON_ENTRIES: usize = 64;
 
     for line in block.lines() {
         if line == "__DF__" {
-            in_df = true;
+            section = Section::Df;
             continue;
         }
-        if in_df {
-            if disks.len() < MAX_MON_ENTRIES {
-                if let Some(d) = parse_df_line(line) {
-                    disks.push(d);
-                }
-            }
+        if line == "__PS__" {
+            section = Section::Ps;
             continue;
+        }
+        match section {
+            Section::Df => {
+                if disks.len() < MAX_MON_ENTRIES {
+                    if let Some(d) = parse_df_line(line) {
+                        disks.push(d);
+                    }
+                }
+                continue;
+            }
+            Section::Ps => {
+                if procs.len() < MAX_MON_ENTRIES {
+                    if let Some(p) = parse_ps_line(line) {
+                        procs.push(p);
+                    }
+                }
+                continue;
+            }
+            Section::Top => {}
         }
         if let Some(rest) = line.strip_prefix("cpu ") {
             let nums: Vec<u64> = rest
@@ -782,6 +823,30 @@ fn parse_monitor_block(
         swap_total_kib: swap_total,
         net,
         disks,
+        procs,
+    })
+}
+
+/// Parse one `ps -eo pid,user,pcpu,pmem,args` line into a [`ProcInfo`]. The
+/// header row (`PID` is not numeric) and any malformed line yield `None`.
+/// `args` (everything past the four fixed columns) keeps internal spacing
+/// collapsed — fine for a display-only command column.
+fn parse_ps_line(line: &str) -> Option<ProcInfo> {
+    let mut it = line.split_whitespace();
+    let pid: u32 = it.next()?.parse().ok()?;
+    let user = it.next()?.to_string();
+    let cpu: f32 = it.next()?.parse().ok()?;
+    let mem: f32 = it.next()?.parse().ok()?;
+    let command = it.collect::<Vec<_>>().join(" ");
+    if command.is_empty() {
+        return None;
+    }
+    Some(ProcInfo {
+        pid,
+        user,
+        cpu,
+        mem,
+        command,
     })
 }
 

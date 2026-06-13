@@ -210,10 +210,12 @@ export component Sidebar inherits Rectangle {
     in property <string> net-selected;
     in property <bool> net-show-selector;
     in property <[DiskInfo]> disks;
+    in property <bool> proc-available;   // a live remote session → show the process button (#23)
     // App version string, injected from Rust (env!("CARGO_PKG_VERSION")) so it
     // always matches Cargo.toml without hand-editing this file.
     in property <string> app-version;
     callback select-net-iface(string);
+    callback show-processes();           // open the process monitor popup (#23)
 
     width: 220px;
     background: Theme.bg-panel;
@@ -264,10 +266,33 @@ export component Sidebar inherits Rectangle {
 
         // System stats — local machine on the welcome tab, the remote server
         // when a connected session tab is active.
-        Text {
-            text: root.resource-title;
-            color: Theme.text-secondary;
-            font-size: Theme.fs-sm;
+        HorizontalLayout {
+            spacing: 6px;
+            Text {
+                text: root.resource-title;
+                color: Theme.text-secondary;
+                font-size: Theme.fs-sm;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            // Process monitor trigger — only on a live remote session (#23).
+            if root.proc-available : Rectangle {
+                width: 52px;
+                height: 20px;
+                border-radius: Theme.radius-sm;
+                background: proc-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                proc-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.show-processes(); }
+                }
+                Text {
+                    text: @tr("Processes");
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-xs;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
         }
 
         VerticalLayout {

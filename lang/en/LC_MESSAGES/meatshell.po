@@ -243,6 +243,18 @@ msgstr "Clear buffer"
 msgid "Find"
 msgstr "Find"
 
+msgid "Processes"
+msgstr "Processes"
+
+msgid "User"
+msgstr "User"
+
+msgid "Command"
+msgstr "Command"
+
+msgid "No processes"
+msgstr "No processes"
+
 msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 msgstr "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 
