@@ -282,6 +282,39 @@ msgstr "No history yet"
 msgid "e.g. tail log"
 msgstr "e.g. tail log"
 
+msgid "Port forwarding"
+msgstr "Port forwarding"
+
+msgid "Local (-L)"
+msgstr "Local (-L)"
+
+msgid "Remote (-R)"
+msgstr "Remote (-R)"
+
+msgid "Dynamic (-D)"
+msgstr "Dynamic (-D)"
+
+msgid "Listen port"
+msgstr "Listen port"
+
+msgid "Target host"
+msgstr "Target host"
+
+msgid "Target port"
+msgstr "Target port"
+
+msgid "Add"
+msgstr "Add"
+
+msgid "-L: local port → target reached from the server"
+msgstr "-L: local port → target reached from the server"
+
+msgid "-R: server port → target reached from here"
+msgstr "-R: server port → target reached from here"
+
+msgid "-D: local SOCKS5 proxy"
+msgstr "-D: local SOCKS5 proxy"
+
 msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 msgstr "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 

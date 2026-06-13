@@ -923,10 +923,19 @@ fn wire_session_callbacks(
     local_net_hist: NetHist,
     sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
 ) {
+    // Working set of port forwards (#56) for the session being created/edited.
+    // The forward add/delete callbacks mutate it; saving reads it into
+    // Session.forwards; opening the dialog (new/edit) resets it.
+    let edit_forwards: Rc<RefCell<Vec<crate::config::PortForward>>> =
+        Rc::new(RefCell::new(Vec::new()));
+
     // New session -> open dialog with blank draft.
     let weak = window.as_weak();
+    let ef_new = edit_forwards.clone();
     window.on_new_session_clicked(move || {
         if let Some(w) = weak.upgrade() {
+            ef_new.borrow_mut().clear();
+            w.set_dialog_forwards(forward_model(&[]));
             let empty = Session::new_empty();
             w.set_dialog_id(empty.id.into());
             w.set_dialog_name("".into());
@@ -1066,11 +1075,14 @@ fn wire_session_callbacks(
     {
         let weak = window.as_weak();
         let store = store.clone();
+        let ef_edit = edit_forwards.clone();
         window.on_edit_session(move |id: SharedString| {
             let id = id.to_string();
             let store = store.borrow();
             let Some(session) = store.get(&id) else { return; };
+            *ef_edit.borrow_mut() = session.forwards.clone();
             if let Some(w) = weak.upgrade() {
+                w.set_dialog_forwards(forward_model(&session.forwards));
                 w.set_dialog_id(session.id.clone().into());
                 w.set_dialog_name(session.name.clone().into());
                 w.set_dialog_host(session.host.clone().into());
@@ -1256,6 +1268,7 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let edit_forwards = edit_forwards.clone();
         window.on_session_dialog_submit(move |draft: SessionDraft| {
             let id = draft.id.to_string();
             // The edit dialog never echoes the real password (issue #10): a blank
@@ -1316,6 +1329,7 @@ fn wire_session_callbacks(
                 stop_bits: draft.stop_bits as u8,
                 parity: draft.parity.to_string(),
                 flow_control: draft.flow_control.to_string(),
+                forwards: edit_forwards.borrow().clone(),
             };
             {
                 let mut s = store.borrow_mut();
@@ -1358,6 +1372,55 @@ fn wire_session_callbacks(
                 if let Some(w) = weak.upgrade() {
                     w.set_dialog_key_path(path.into());
                 }
+            }
+        });
+    }
+
+    // Add a port forward to the session being edited (#56).
+    {
+        let weak = window.as_weak();
+        let ef = edit_forwards.clone();
+        window.on_add_forward(
+            move |kind: SharedString,
+                  bind_addr: SharedString,
+                  bind_port: i32,
+                  host: SharedString,
+                  host_port: i32| {
+                let kind = kind.to_string();
+                // Local/remote need a target host; dynamic doesn't.
+                if bind_port <= 0 || bind_port > 65535 {
+                    return;
+                }
+                if kind != "dynamic" && (host.trim().is_empty() || host_port <= 0) {
+                    return;
+                }
+                ef.borrow_mut().push(crate::config::PortForward {
+                    kind,
+                    bind_addr: bind_addr.trim().to_string(),
+                    bind_port: bind_port as u16,
+                    host: host.trim().to_string(),
+                    host_port: host_port.max(0) as u16,
+                });
+                if let Some(w) = weak.upgrade() {
+                    w.set_dialog_forwards(forward_model(&ef.borrow()));
+                }
+            },
+        );
+    }
+    // Delete a port forward by index (#56).
+    {
+        let weak = window.as_weak();
+        let ef = edit_forwards.clone();
+        window.on_delete_forward(move |index: i32| {
+            let i = index as usize;
+            {
+                let mut v = ef.borrow_mut();
+                if i < v.len() {
+                    v.remove(i);
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_dialog_forwards(forward_model(&ef.borrow()));
             }
         });
     }
@@ -1722,6 +1785,32 @@ fn quick_cmd_model(store: &ConfigStore) -> ModelRc<QuickCmd> {
         .map(|q| QuickCmd {
             name: q.name.clone().into(),
             command: q.command.clone().into(),
+        })
+        .collect();
+    ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
+/// Build the port-forward list model for the session dialog (#56). Each row is
+/// a one-line human summary (`-L 127.0.0.1:8080 → host:80`).
+fn forward_model(forwards: &[crate::config::PortForward]) -> ModelRc<PortFwd> {
+    let rows: Vec<PortFwd> = forwards
+        .iter()
+        .map(|f| {
+            let bind = if f.bind_addr.trim().is_empty() {
+                "127.0.0.1"
+            } else {
+                f.bind_addr.trim()
+            };
+            let summary = match f.kind.as_str() {
+                "local" => format!("-L {}:{} → {}:{}", bind, f.bind_port, f.host, f.host_port),
+                "remote" => format!("-R {}:{} → {}:{}", bind, f.bind_port, f.host, f.host_port),
+                "dynamic" => format!("-D {}:{} (SOCKS5)", bind, f.bind_port),
+                _ => String::new(),
+            };
+            PortFwd {
+                kind: f.kind.clone().into(),
+                summary: summary.into(),
+            }
         })
         .collect();
     ModelRc::from(Rc::new(VecModel::from(rows)))

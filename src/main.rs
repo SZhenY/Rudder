@@ -6,6 +6,7 @@
 mod app;
 mod config;
 mod errlog;
+mod forward;
 mod i18n;
 mod proxy;
 mod serial;

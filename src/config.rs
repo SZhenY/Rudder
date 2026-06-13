@@ -194,6 +194,28 @@ pub struct Session {
     /// "none" | "hardware" | "software".
     #[serde(default = "default_flow")]
     pub flow_control: String,
+
+    // --- SSH port forwarding / tunnels (#56) --------------------------------
+    /// Tunnels established automatically when this SSH session connects.
+    #[serde(default)]
+    pub forwards: Vec<PortForward>,
+}
+
+/// One SSH tunnel (#56). `kind` is "local" (-L), "remote" (-R) or
+/// "dynamic" (-D / SOCKS5). For local/remote, `host:host_port` is the target;
+/// for dynamic it is ignored (the SOCKS client picks the destination).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PortForward {
+    pub kind: String,
+    /// Listener bind address (local side for L/D, remote side for R).
+    /// Empty → 127.0.0.1.
+    #[serde(default)]
+    pub bind_addr: String,
+    pub bind_port: u16,
+    #[serde(default)]
+    pub host: String,
+    #[serde(default)]
+    pub host_port: u16,
 }
 
 impl Session {
@@ -217,6 +239,7 @@ impl Session {
             stop_bits: default_stop_bits(),
             parity: default_parity(),
             flow_control: default_flow(),
+            forwards: Vec::new(),
         }
     }
 }

@@ -9,10 +9,10 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use russh::client::{self, Handle, Handler};
+use russh::client::{self, Handle, Handler, Msg};
 use russh::keys::key::PrivateKeyWithHashAlg;
 use russh::keys::load_secret_key;
-use russh::{ChannelId, ChannelMsg, Disconnect};
+use russh::{Channel, ChannelId, ChannelMsg, Disconnect};
 use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
@@ -336,7 +336,19 @@ async fn run_session(
         ..<_>::default()
     });
 
-    let handler = ClientHandler {};
+    // Remote (-R) forwards are serviced inside the handler when the server
+    // opens channels back, so it needs the bind-port → local-target map up
+    // front (the handler is moved into `connect`) (#56).
+    let remote_forwards: std::collections::HashMap<u32, (String, u16)> = session
+        .forwards
+        .iter()
+        .filter(|f| f.kind == "remote")
+        .map(|f| (f.bind_port as u32, (f.host.clone(), f.host_port)))
+        .collect();
+    let handler = ClientHandler {
+        remote_forwards,
+        events: events.clone(),
+    };
     let addr = format!("{}:{}", session.host, session.port);
     // Connect directly, or tunnel through a SOCKS5 / HTTP proxy (issue #7).
     let mut handle = match crate::proxy::resolve(&session.proxy) {
@@ -509,6 +521,56 @@ async fn run_session(
         std::collections::HashMap::new(); // iface -> (rx_bytes, tx_bytes)
     let mut prev_net_at = std::time::Instant::now();
 
+    // --- Port forwarding / tunnels (#56) --------------------------------
+    // Remote (-R) first, while we still hold `handle` mutably (tcpip_forward
+    // takes &mut self); the server then opens channels back, serviced in the
+    // handler. Then wrap the handle in an Arc so the local/dynamic listener
+    // tasks can share it (russh's Handle isn't Clone, but its methods are &self).
+    for f in session.forwards.iter().filter(|f| f.kind == "remote") {
+        let bind = if f.bind_addr.trim().is_empty() {
+            "127.0.0.1".to_string()
+        } else {
+            f.bind_addr.trim().to_string()
+        };
+        match handle.tcpip_forward(bind.clone(), f.bind_port as u32).await {
+            Ok(_) => {
+                let _ = events.send(SessionEvent::Output(format!(
+                    "\r\n[meatshell] -R {bind}:{} → {}:{}\r\n",
+                    f.bind_port, f.host, f.host_port
+                )));
+            }
+            Err(e) => {
+                let _ = events.send(SessionEvent::Output(format!(
+                    "\r\n[meatshell] -R {bind}:{} 请求失败 / request failed: {e}\r\n",
+                    f.bind_port
+                )));
+            }
+        }
+    }
+    let handle = Arc::new(handle);
+    // Local (-L) and dynamic (-D) listen client-side; their tasks are aborted
+    // on session exit.
+    let mut forward_tasks: Vec<JoinHandle<()>> = Vec::new();
+    for f in &session.forwards {
+        match f.kind.as_str() {
+            "local" => forward_tasks.push(crate::forward::spawn_local(
+                handle.clone(),
+                f.bind_addr.clone(),
+                f.bind_port,
+                f.host.clone(),
+                f.host_port,
+                events.clone(),
+            )),
+            "dynamic" => forward_tasks.push(crate::forward::spawn_dynamic(
+                handle.clone(),
+                f.bind_addr.clone(),
+                f.bind_port,
+                events.clone(),
+            )),
+            _ => {}
+        }
+    }
+
     // --- Main pump ------------------------------------------------------
     loop {
         tokio::select! {
@@ -666,6 +728,12 @@ async fn run_session(
                 }
             }
         }
+    }
+
+    // Tear down any port-forward listeners (#56); -R forwards die with the
+    // session's disconnect below.
+    for task in forward_tasks {
+        task.abort();
     }
 
     let _ = handle
@@ -904,7 +972,13 @@ fn parse_net_dev_line(line: &str) -> Option<(String, (u64, u64))> {
 /// Dead-simple client handler.  For v0.1 we accept any server key (similar to
 /// `ssh -o StrictHostKeyChecking=no`). A real host-key verification flow
 /// with on-disk known_hosts is on the roadmap.
-struct ClientHandler;
+///
+/// Carries the remote-forward (-R) map so we can service channels the server
+/// opens back to us: server bind-port → local `(host, port)` target (#56).
+pub(crate) struct ClientHandler {
+    pub(crate) remote_forwards: std::collections::HashMap<u32, (String, u16)>,
+    pub(crate) events: UnboundedSender<SessionEvent>,
+}
 
 #[async_trait]
 impl Handler for ClientHandler {
@@ -923,6 +997,41 @@ impl Handler for ClientHandler {
         _data: &[u8],
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    /// Remote forward (-R): the server opened a channel for a connection that
+    /// arrived on a port we asked it to listen on. Connect to the configured
+    /// local target and splice the two together (#56).
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: Channel<Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        let target = self.remote_forwards.get(&connected_port).cloned();
+        let events = self.events.clone();
+        let bind = connected_address.to_string();
+        tokio::spawn(async move {
+            let Some((host, port)) = target else {
+                tracing::warn!("forwarded-tcpip on {bind}:{connected_port} with no mapping");
+                return;
+            };
+            match tokio::net::TcpStream::connect((host.as_str(), port)).await {
+                Ok(mut tcp) => {
+                    let mut stream = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
+                }
+                Err(e) => {
+                    let _ = events.send(SessionEvent::Output(format!(
+                        "\r\n[meatshell] -R {host}:{port} 连接失败 / connect failed: {e}\r\n"
+                    )));
+                }
+            }
+        });
         Ok(())
     }
 }

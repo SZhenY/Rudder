@@ -1,6 +1,13 @@
 import { Theme } from "theme.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 
+// One SSH port-forward row shown in the session dialog (#56). `summary` is a
+// ready-to-display line like "-L 127.0.0.1:8080 → host:80".
+export struct PortFwd {
+    kind: string,
+    summary: string,
+}
+
 export struct SessionDraft {
     id: string,
     name: string,
@@ -46,6 +53,37 @@ component SegOption inherits Rectangle {
     }
 }
 
+// Compact single-line input (no label) used in the port-forward add form (#56).
+component MiniInput inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> value;
+    height: 30px;
+    horizontal-stretch: 1;
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    border-color: mi.has-focus ? Theme.accent : Theme.border-subtle;
+    background: Theme.bg-root;
+    mi := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        color: Theme.text-primary;
+        font-family: Theme.ui-font-family;
+        font-size: Theme.fs-md;
+        vertical-alignment: center;
+        single-line: true;
+        text <=> root.value;
+    }
+    if root.value == "" : Text {
+        x: 8px;
+        height: parent.height;
+        text: root.placeholder;
+        color: Theme.text-muted;
+        font-size: Theme.fs-md;
+        vertical-alignment: center;
+    }
+}
+
 // Modal dialog for creating / editing a session (SSH / Serial / Telnet).
 // The dialog is purely presentational — it stores values in mutable
 // properties and emits `submit` / `cancel` callbacks up to the main window.
@@ -71,8 +109,20 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-parity: "none";
     in-out property <string> draft-flow: "none";
 
+    // Port forwards / tunnels (#56). `forwards` is the current list (fed from
+    // Rust); the nf-* properties hold the add-form fields.
+    in property <[PortFwd]> forwards;
+    property <string> nf-kind: "local";   // "local" | "remote" | "dynamic"
+    property <string> nf-bind: "127.0.0.1";
+    property <string> nf-port;
+    property <string> nf-host;
+    property <string> nf-host-port;
+
     callback submit(SessionDraft);
     callback cancel();
+    callback add-forward(string /* kind */, string /* bind */, int /* port */,
+                         string /* host */, int /* host-port */);
+    callback delete-forward(int /* index */);
     callback pick-key-file();   // open a native file picker for the private key
 
     visible: is-open;
@@ -355,6 +405,89 @@ export component SessionDialog inherits Rectangle {
                     text: root.draft-proxy-type == "none"
                         ? @tr("No proxy — use $ALL_PROXY or connect directly")
                         : @tr("Format: host:port  (with auth: user:pass@host:port)");
+                    color: Theme.text-muted;
+                    font-size: Theme.fs-xs;
+                }
+            }
+
+            // ── Port forwarding / tunnels (SSH only) (#56) ──────────────────
+            if root.draft-kind == "ssh" : VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: @tr("Port forwarding");
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                }
+
+                // Existing forwards, each with a delete button.
+                for f[i] in root.forwards : Rectangle {
+                    height: 30px;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.bg-root;
+                    HorizontalLayout {
+                        padding-left: 8px; padding-right: 4px; spacing: 4px;
+                        Text {
+                            text: f.summary;
+                            color: Theme.text-primary;
+                            font-size: Theme.fs-sm;
+                            font-family: Theme.ui-font-family;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        Rectangle {
+                            width: 24px;
+                            y: (parent.height - self.height) / 2;
+                            height: 24px;
+                            border-radius: Theme.radius-sm;
+                            background: fdel.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
+                            fdel := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.delete-forward(i); }
+                            }
+                            Text { text: "\u{E5CD}"; font-family: "Material Icons";
+                                   color: Theme.danger; font-size: Theme.fs-sm;
+                                   horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                }
+
+                // Add form: kind selector, then bind/port (+ target for L/R).
+                HorizontalLayout {
+                    spacing: 6px;
+                    SegOption { label: @tr("Local (-L)"); active: root.nf-kind == "local"; clicked => { root.nf-kind = "local"; } }
+                    SegOption { label: @tr("Remote (-R)"); active: root.nf-kind == "remote"; clicked => { root.nf-kind = "remote"; } }
+                    SegOption { label: @tr("Dynamic (-D)"); active: root.nf-kind == "dynamic"; clicked => { root.nf-kind = "dynamic"; } }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    MiniInput { placeholder: "127.0.0.1"; value <=> root.nf-bind; }
+                    MiniInput { placeholder: @tr("Listen port"); value <=> root.nf-port; }
+                }
+                if root.nf-kind != "dynamic" : HorizontalLayout {
+                    spacing: 6px;
+                    MiniInput { placeholder: @tr("Target host"); value <=> root.nf-host; }
+                    MiniInput { placeholder: @tr("Target port"); value <=> root.nf-host-port; }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    PrimaryButton {
+                        text: @tr("Add");
+                        clicked => {
+                            root.add-forward(root.nf-kind, root.nf-bind, root.nf-port.to-float(),
+                                             root.nf-host, root.nf-host-port.to-float());
+                            root.nf-port = "";
+                            root.nf-host = "";
+                            root.nf-host-port = "";
+                        }
+                    }
+                }
+                Text {
+                    text: root.nf-kind == "local"
+                        ? @tr("-L: local port → target reached from the server")
+                        : (root.nf-kind == "remote"
+                            ? @tr("-R: server port → target reached from here")
+                            : @tr("-D: local SOCKS5 proxy"));
                     color: Theme.text-muted;
                     font-size: Theme.fs-xs;
                 }

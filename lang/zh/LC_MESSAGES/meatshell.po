@@ -282,6 +282,39 @@ msgstr "暂无历史"
 msgid "e.g. tail log"
 msgstr "例如：查看日志"
 
+msgid "Port forwarding"
+msgstr "端口转发"
+
+msgid "Local (-L)"
+msgstr "本地 -L"
+
+msgid "Remote (-R)"
+msgstr "远程 -R"
+
+msgid "Dynamic (-D)"
+msgstr "动态 -D"
+
+msgid "Listen port"
+msgstr "监听端口"
+
+msgid "Target host"
+msgstr "目标主机"
+
+msgid "Target port"
+msgstr "目标端口"
+
+msgid "Add"
+msgstr "添加"
+
+msgid "-L: local port → target reached from the server"
+msgstr "-L：本地端口 → 由服务器侧访问的目标"
+
+msgid "-R: server port → target reached from here"
+msgstr "-R：服务器端口 → 由本机访问的目标"
+
+msgid "-D: local SOCKS5 proxy"
+msgstr "-D：本地 SOCKS5 代理"
+
 msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 msgstr "meatshell 一个由「一坨肉」开发的轻量 Rust + Slint SSH 客户端"
 
