@@ -221,6 +221,14 @@ impl Session {
     }
 }
 
+/// A saved quick command (#55): a named snippet the user clicks to send to the
+/// active terminal.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct QuickCommand {
+    pub name: String,
+    pub command: String,
+}
+
 /// On-disk layout. Keep additive to ease forward-compat.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConfigFile {
@@ -255,6 +263,12 @@ pub struct ConfigFile {
     /// preset download dir. Defaults to false (#87).
     #[serde(default)]
     pub download_always_ask: bool,
+    /// Saved quick commands (#55).
+    #[serde(default)]
+    pub quick_commands: Vec<QuickCommand>,
+    /// Recent commands sent from the command box, oldest first, capped (#55).
+    #[serde(default)]
+    pub command_history: Vec<String>,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -508,6 +522,37 @@ impl ConfigStore {
 
     pub fn set_sftp_follow_cd(&mut self, follow: bool) {
         self.cache.sftp_no_follow_cd = !follow;
+    }
+
+    /// Saved quick commands (#55).
+    pub fn quick_commands(&self) -> &[QuickCommand] {
+        &self.cache.quick_commands
+    }
+
+    pub fn set_quick_commands(&mut self, cmds: Vec<QuickCommand>) {
+        self.cache.quick_commands = cmds;
+    }
+
+    /// Recent command-box history, oldest first (#55).
+    pub fn command_history(&self) -> &[String] {
+        &self.cache.command_history
+    }
+
+    /// Append a command to the history: skips blanks and consecutive repeats,
+    /// and caps the list so it can't grow without bound.
+    pub fn push_command_history(&mut self, cmd: String) {
+        if cmd.trim().is_empty() {
+            return;
+        }
+        if self.cache.command_history.last().map(String::as_str) == Some(cmd.as_str()) {
+            return;
+        }
+        const CAP: usize = 200;
+        self.cache.command_history.push(cmd);
+        let len = self.cache.command_history.len();
+        if len > CAP {
+            self.cache.command_history.drain(0..len - CAP);
+        }
     }
 
     /// Whether each download prompts for a save location (default false) (#87).

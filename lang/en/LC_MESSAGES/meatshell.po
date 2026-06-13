@@ -255,6 +255,33 @@ msgstr "Command"
 msgid "No processes"
 msgstr "No processes"
 
+msgid "Quick"
+msgstr "Quick"
+
+msgid "Quick commands"
+msgstr "Quick commands"
+
+msgid "Type a command, Enter to send"
+msgstr "Type a command, Enter to send"
+
+msgid "All sessions"
+msgstr "All sessions"
+
+msgid "Send"
+msgstr "Send"
+
+msgid "No quick commands yet"
+msgstr "No quick commands yet"
+
+msgid "Manage…"
+msgstr "Manage…"
+
+msgid "No history yet"
+msgstr "No history yet"
+
+msgid "e.g. tail log"
+msgstr "e.g. tail log"
+
 msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 msgstr "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 

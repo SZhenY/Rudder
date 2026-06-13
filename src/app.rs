@@ -239,6 +239,10 @@ pub fn run() -> Result<()> {
     // Populate the Interface font picker with installed monospace families.
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(system_monospace_fonts()))));
 
+    // Command bar (#55): seed quick commands + history from the config.
+    window.set_quick_commands(quick_cmd_model(&store.borrow()));
+    window.set_command_history(history_model(&store.borrow()));
+
     // Interface setting: SFTP follows the terminal's cd. The shell event pumps
     // read this AtomicBool on every CwdChanged, so toggling applies live to
     // already-open sessions too.
@@ -1710,6 +1714,31 @@ fn proc_model(procs: &[ProcInfo]) -> ModelRc<ProcRow> {
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
+/// Build the quick-command model for the command bar + manage dialog (#55).
+fn quick_cmd_model(store: &ConfigStore) -> ModelRc<QuickCmd> {
+    let rows: Vec<QuickCmd> = store
+        .quick_commands()
+        .iter()
+        .map(|q| QuickCmd {
+            name: q.name.clone().into(),
+            command: q.command.clone().into(),
+        })
+        .collect();
+    ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
+/// Build the command-history model, newest first, for the ↑/↓ recall + the
+/// history dropdown (#55).
+fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
+    let rows: Vec<SharedString> = store
+        .command_history()
+        .iter()
+        .rev()
+        .map(|s| s.clone().into())
+        .collect();
+    ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
 /// Find every (case-insensitive) occurrence of `query` across the currently
 /// displayed rows and return highlight rectangles (char index == grid column).
 fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
@@ -2689,6 +2718,79 @@ fn wire_key_input(
     store: Rc<RefCell<ConfigStore>>,
     ctx: ConnectCtx,
 ) {
+    // --- Command bar (#55): run command + quick-command management ---------
+    {
+        let handles_rc = handles.clone();
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        window.on_run_command(move |tab_id: SharedString, cmd: SharedString, to_all: bool| {
+            let line = cmd.trim_end().to_string();
+            if line.is_empty() {
+                return;
+            }
+            let mut bytes = line.clone().into_bytes();
+            bytes.push(b'\n');
+            {
+                let h = handles_rc.borrow();
+                if to_all {
+                    for handle in h.values() {
+                        handle.send_raw(bytes.clone());
+                    }
+                } else if let Some(handle) = h.get(tab_id.as_str()) {
+                    handle.send_raw(bytes);
+                }
+            }
+            {
+                let mut s = store_rc.borrow_mut();
+                s.push_command_history(line);
+                let _ = s.save();
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_command_history(history_model(&store_rc.borrow()));
+            }
+        });
+    }
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        window.on_add_quick_command(move |name: SharedString, command: SharedString| {
+            let name = name.trim().to_string();
+            let command = command.to_string();
+            if name.is_empty() || command.trim().is_empty() {
+                return;
+            }
+            {
+                let mut s = store_rc.borrow_mut();
+                let mut v = s.quick_commands().to_vec();
+                v.push(crate::config::QuickCommand { name, command });
+                s.set_quick_commands(v);
+                let _ = s.save();
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_quick_commands(quick_cmd_model(&store_rc.borrow()));
+            }
+        });
+    }
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        window.on_delete_quick_command(move |index: i32| {
+            {
+                let mut s = store_rc.borrow_mut();
+                let mut v = s.quick_commands().to_vec();
+                let i = index as usize;
+                if i < v.len() {
+                    v.remove(i);
+                }
+                s.set_quick_commands(v);
+                let _ = s.save();
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_quick_commands(quick_cmd_model(&store_rc.borrow()));
+            }
+        });
+    }
+
     // Forward each keystroke as raw bytes to the SSH PTY. The server's bash /
     // readline handles echo, history (↑↓), Tab completion, Ctrl+C, etc.
     {

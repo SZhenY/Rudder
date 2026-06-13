@@ -255,6 +255,33 @@ msgstr "命令"
 msgid "No processes"
 msgstr "无进程"
 
+msgid "Quick"
+msgstr "快捷"
+
+msgid "Quick commands"
+msgstr "快捷命令"
+
+msgid "Type a command, Enter to send"
+msgstr "输入命令，回车发送"
+
+msgid "All sessions"
+msgstr "所有会话"
+
+msgid "Send"
+msgstr "发送"
+
+msgid "No quick commands yet"
+msgstr "暂无快捷命令"
+
+msgid "Manage…"
+msgstr "管理…"
+
+msgid "No history yet"
+msgstr "暂无历史"
+
+msgid "e.g. tail log"
+msgstr "例如：查看日志"
+
 msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 msgstr "meatshell 一个由「一坨肉」开发的轻量 Rust + Slint SSH 客户端"
 
