@@ -231,6 +231,7 @@ export component SessionDialog inherits Rectangle {
                             height: parent.height;
                             text <=> root.draft-key-path;
                             color: Theme.text-primary;
+                            font-family: Theme.ui-font-family; // CJK-capable (#54)
                             font-size: Theme.fs-md;
                             vertical-alignment: center;
                             single-line: true;

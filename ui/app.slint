@@ -1311,6 +1311,7 @@ export component AppWindow inherits Window {
                 }
                 ge-input := LineEdit {
                     text <=> root.group-dialog-name;
+                    font-family: Theme.ui-font-family; // CJK-capable (#54)
                     placeholder-text: @tr("Group name");
                     // Enter confirms when non-empty.
                     accepted => {
@@ -1386,6 +1387,7 @@ export component AppWindow inherits Window {
                 }
                 sp-input := LineEdit {
                     text <=> root.sftp-prompt-value;
+                    font-family: Theme.ui-font-family; // CJK-capable (#54)
                     placeholder-text: root.sftp-prompt-kind == "chmod" ? "755" : "";
                     accepted => {
                         if (root.sftp-prompt-value != "") {

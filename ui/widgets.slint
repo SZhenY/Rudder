@@ -126,6 +126,10 @@ export component LabeledInput inherits VerticalLayout {
             height: parent.height;
             text <=> root.value;
             color: Theme.text-primary;
+            // A CJK-capable family — TextInput doesn't glyph-fallback reliably
+            // across machines, so typed Chinese (incl. punctuation like 、) can
+            // render as tofu without an explicit font (#54).
+            font-family: Theme.ui-font-family;
             font-size: Theme.fs-md;
             vertical-alignment: center;
             single-line: true;

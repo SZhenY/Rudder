@@ -577,6 +577,7 @@ export component TerminalView inherits Rectangle {
                             width: parent.width - 12px;
                             height: parent.height;
                             color: Theme.text-primary;
+                            font-family: Theme.ui-font-family; // CJK-capable (#54)
                             font-size: Theme.fs-md;
                             vertical-alignment: center;
                             single-line: true;
