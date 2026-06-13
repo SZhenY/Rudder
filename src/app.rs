@@ -4047,6 +4047,7 @@ impl TermBuffer {
                 }
                 for hs in runs {
                     spans.push(TermSpan {
+                        cjk: contains_cjk(&hs.text),
                         text: hs.text.into(),
                         fg: vt_color_to_slint(hs.fg, hs.bold, self.is_dark),
                         bg: vt_bg_to_slint(hs.bg, self.is_dark),
@@ -4102,6 +4103,7 @@ impl TermBuffer {
                     row: d as i32,
                     col: hs.col,
                     cells: hs.cells,
+                    cjk: contains_cjk(&hs.text),
                 });
             }
             displayed.push(line.0.trim_end().to_string());
@@ -4118,6 +4120,27 @@ impl TermBuffer {
             is_alt: false,
         }
     }
+}
+
+/// True if a terminal span contains any CJK character — ideograph, kana, or
+/// (crucially) CJK punctuation like 、。，. The mono terminal font has no CJK
+/// glyphs and Slint's per-script fallback tofu's *isolated* CJK punctuation
+/// (it renders fine only when adjacent to a Han char), so these spans are drawn
+/// with the CJK-capable UI font instead (#54). Box-drawing / powerline glyphs
+/// are deliberately excluded so they keep the aligned monospace font.
+fn contains_cjk(s: &str) -> bool {
+    s.chars().any(|c| {
+        matches!(c as u32,
+            0x2E80..=0x2EFF       // CJK radicals
+            | 0x3000..=0x303F     // CJK symbols & punctuation (、。「」…)
+            | 0x3040..=0x30FF     // hiragana + katakana
+            | 0x3100..=0x312F     // bopomofo
+            | 0x3400..=0x4DBF     // CJK ext A
+            | 0x4E00..=0x9FFF     // CJK unified ideographs
+            | 0xF900..=0xFAFF     // CJK compatibility ideographs
+            | 0xFF00..=0xFFEF     // fullwidth / halfwidth forms (，！？：；)
+            | 0x20000..=0x2FA1F)  // CJK ext B–F + compat supplement
+    })
 }
 
 /// 16-colour ANSI palette for **dark** terminals (VS Code "Dark+" values).

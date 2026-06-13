@@ -22,6 +22,7 @@ export struct TermSpan {
     row: int,
     col: int,
     cells: int,
+    cjk: bool,   // contains CJK chars → render with the CJK-capable font (#54)
 }
 
 // A find-match highlight rectangle on the terminal grid.
@@ -410,7 +411,10 @@ export component TerminalView inherits Rectangle {
                                 y: 0px;
                                 text: span.text;
                                 color: span.fg;
-                                font-family: Theme.term-font-family;
+                                // CJK spans use the CJK-capable UI font: the mono
+                                // terminal font lacks CJK glyphs and Slint tofu's
+                                // *isolated* CJK punctuation (、。,) on fallback (#54).
+                                font-family: span.cjk ? Theme.ui-font-family : Theme.term-font-family;
                                 font-size: Theme.term-font-size;
                                 font-weight: span.bold ? 700 : 400;
                             }
