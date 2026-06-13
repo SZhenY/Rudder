@@ -5,6 +5,53 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-14
+
+### Added / 新增
+
+- **SSH port forwarding / tunnels (#56).** Per-session tunnels configured in the
+  session dialog's Advanced section: local (-L), remote (-R) and dynamic
+  (-D / SOCKS5). They auto-establish on connect and tear down on disconnect.
+  **SSH 端口转发 / 隧道 (#56)。** 在会话对话框「高级」里按会话配置:本地 -L、
+  远程 -R、动态 -D（SOCKS5）。连接时自动建立,断开时拆除。
+
+- **Quick commands, command box & history (#55).** A command bar below the
+  terminal: save named commands and click to run them, type into a command box
+  (with an "all sessions" broadcast toggle), and recall history with ↑/↓.
+  **快捷命令、命令输入框与历史 (#55)。** 终端下方的命令栏:保存命名命令点击即发、
+  命令输入框（含「所有会话」群发开关）、↑/↓ 回溯历史。
+
+- **Remote process monitor (#23).** The server-resource panel gains a "Processes"
+  button that opens a read-only table (PID / user / CPU% / MEM% / command), sorted
+  by CPU and refreshed live.
+  **远端进程监控 (#23)。** 服务器资源面板新增「进程」按钮,打开只读进程表
+  （PID / 用户 / CPU% / 内存% / 命令）,按 CPU 排序、实时刷新。
+
+- **Encrypted private keys (#90).** Key auth now accepts a passphrase for
+  encrypted private keys.
+  **加密私钥 (#90)。** 私钥认证支持为加密私钥输入密码短语。
+
+### Fixed / 修复
+
+- **CJK rendering (#54).** Chinese (especially isolated punctuation like 、：（）)
+  no longer renders as tofu in editable inputs or the terminal — editable fields
+  and the window now use a CJK-capable font, and CJK terminal spans fall back
+  correctly.
+  **中文渲染 (#54)。** 输入框和终端里的中文（尤其「、：（）」这类孤立标点）不再
+  显示为方块——可编辑控件与窗口改用支持 CJK 的字体,终端的 CJK 片段也正确回退。
+
+- **SFTP cd-follow under zsh (#91).** The SFTP panel now follows `cd` under zsh
+  (and other shells), not just bash — the cwd notification is registered via the
+  shell's proper hook instead of bash's `PROMPT_COMMAND` only.
+  **zsh 下 SFTP 跟随 cd (#91)。** SFTP 面板现在在 zsh（及其它 shell）下也能跟随
+  `cd`,不再只支持 bash——按各 shell 正确的钩子注册 cwd 通知。
+
+- **Compact, scrollable session dialog.** Proxy and port-forwarding settings are
+  collapsed under an "Advanced" toggle, and the dialog scrolls instead of being
+  clipped when it would exceed the window.
+  **会话对话框更紧凑、可滚动。** 代理与端口转发收进「高级」折叠;对话框超出窗口
+  时内部滚动而非被截断。
+
 ## [0.3.8] - 2026-06-12
 
 ### Added / 新增

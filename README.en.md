@@ -54,34 +54,33 @@ xattr -dr com.apple.quarantine meatshell     # clear the "unsigned app" Gatekeep
 
 > To build from source, see [Running](#running) below.
 
-## Roadmap
+## Features
 
-### v0.1 (current)
+### Done
 
-- [x] FinalShell-style dark theme UI
-- [x] Local system monitor sidebar (CPU / memory / swap / network throughput, 1 Hz)
-- [x] Tabs (welcome page + multiple terminal sessions)
-- [x] Session management: create / edit / delete, persisted to local JSON
+- [x] FinalShell-style UI with dark / light / follow-system themes
+- [x] Local + remote resource monitoring (CPU / memory / swap / network / disk)
+- [x] Remote process monitor (read-only table sorted by CPU)
+- [x] Full VT/ANSI terminal emulation (btop / htop / vim render correctly)
+- [x] Tabs (welcome page + multiple sessions)
+- [x] Session management: create / edit / delete / groups, local JSON, export / import
   - Config location: `%APPDATA%/meatshell/sessions.json` (Windows)
     / `~/.config/meatshell/sessions.json` (Linux)
     / `~/Library/Application Support/meatshell/sessions.json` (macOS)
-- [x] SSH connection scaffold (`russh`, pure Rust, password + private key)
-- [x] Line-buffered terminal view (type a line → Enter to send)
+- [x] SSH (`russh`, pure Rust): password / private key / encrypted key (passphrase)
+- [x] SFTP browser + upload / download (drag-and-drop) + in-terminal ZMODEM (`sz`) receive
+- [x] SSH port forwarding / tunnels: local -L / remote -R / dynamic -D (SOCKS5)
+- [x] Quick commands + command box (broadcast to all sessions) + command history
+- [x] Serial / Telnet sessions
+- [x] Outbound proxy (SOCKS5 / HTTP)
+- [x] Import `~/.ssh/config`
+- [x] Session passwords encrypted at rest (ChaCha20-Poly1305)
 
-### v0.2
+### Planned
 
-- [ ] Full VT/ANSI terminal emulation (integrate [`alacritty_terminal`](https://crates.io/crates/alacritty_terminal))
-- [ ] Remote host resource monitoring (run a remote collector script, like FinalShell)
-- [x] SFTP file browser + drag-and-drop upload/download
 - [ ] Known-hosts (`known_hosts`) verification
 - [ ] Store session passwords in the OS keychain
-
-### v0.3+
-
 - [ ] Split panes for tabbed terminals
-- [ ] Session groups / folders
-- [ ] Theme switching (light / follow system)
-- [ ] Command history & snippet management
 
 ## Tech stack
 

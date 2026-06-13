@@ -50,34 +50,33 @@ xattr -dr com.apple.quarantine meatshell     # 去掉「未签名应用」的 Ga
 
 > 从源码构建见下方 [运行](#运行)。
 
-## 路线图
+## 功能
 
-### v0.1（当前）
+### 已实现
 
-- [x] FinalShell 风格深色主题 UI
-- [x] 左侧本机系统监控（CPU / 内存 / 交换 / 网络吞吐，1 Hz）
-- [x] 多标签页（欢迎页 + 多个终端会话）
-- [x] 会话管理：新建 / 编辑 / 删除，本地 JSON 持久化
+- [x] FinalShell 风格 UI，深色 / 浅色 / 跟随系统主题
+- [x] 本机 + 远端资源监控（CPU / 内存 / 交换 / 网络 / 磁盘）
+- [x] 远端进程监控（按 CPU 排序的只读进程表）
+- [x] 完整 VT/ANSI 终端模拟（btop / htop / vim 全屏正常渲染）
+- [x] 多标签页（欢迎页 + 多个会话）
+- [x] 会话管理：新建 / 编辑 / 删除 / 分组，本地 JSON 持久化，导出 / 导入
   - 配置位置：`%APPDATA%/meatshell/sessions.json`（Windows）
     / `~/.config/meatshell/sessions.json`（Linux）
     / `~/Library/Application Support/meatshell/sessions.json`（macOS）
-- [x] SSH 连接骨架（`russh`，纯 Rust 实现，支持密码 + 私钥）
-- [x] 行缓冲终端视图（输入一行 → 回车发送）
+- [x] SSH（`russh`，纯 Rust）：密码 / 私钥 / 加密私钥（密码短语）
+- [x] SFTP 文件浏览 + 上传 / 下载（拖拽）+ 终端内 ZMODEM（`sz`）接收
+- [x] SSH 端口转发 / 隧道：本地 -L / 远程 -R / 动态 -D（SOCKS5）
+- [x] 快捷命令 + 命令输入框（可群发到所有会话）+ 命令历史
+- [x] 串口 / Telnet 会话
+- [x] 出站代理（SOCKS5 / HTTP）
+- [x] 导入 `~/.ssh/config`
+- [x] 会话密码加密存储（ChaCha20-Poly1305）
 
-### v0.2
+### 计划中
 
-- [ ] 完整 VT/ANSI 终端模拟（接入 [`alacritty_terminal`](https://crates.io/crates/alacritty_terminal)）
-- [ ] 远端主机资源监控（与 FinalShell 一样执行远端脚本收集）
-- [x] SFTP 文件浏览 + 拖拽上传/下载
 - [ ] 已知主机 (known_hosts) 校验
-- [ ] 会话密码使用 OS 钥匙串存储
-
-### v0.3+
-
+- [ ] 会话密码改用 OS 钥匙串存储
 - [ ] 多标签页终端分屏
-- [ ] 会话分组 / 文件夹
-- [ ] 主题切换（浅色 / 跟随系统）
-- [ ] 命令历史与片段管理
 
 ## 技术栈
 
