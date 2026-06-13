@@ -447,28 +447,31 @@ async fn run_session(
     // sender's lingering close frames can't spawn a spurious second receive (#76).
     let mut zmodem_done_at: Option<std::time::Instant> = None;
 
-    // PROMPT_COMMAND bash snippet.  Single-quoted body prevents bash from
-    // expanding ${HOSTNAME}/${PWD} at definition time; printf interprets
-    // \033 / \007 as ESC / BEL.  `eval "$PROMPT_COMMAND"` fires it once
-    // immediately so the SFTP panel gets the initial CWD right away.
+    // Cwd-notification (OSC 7) setup, injected once after the first prompt so
+    // the SFTP panel can follow `cd` (#91). It must work across shells:
+    //   • bash/sh  → PROMPT_COMMAND runs `__ms7` before every prompt.
+    //   • zsh      → bash's PROMPT_COMMAND is IGNORED by zsh, so we register a
+    //                `precmd` hook via `add-zsh-hook` instead (non-destructive —
+    //                it preserves oh-my-zsh / p10k hooks, unlike `precmd(){…}`).
+    //   • fish     → guarded out (fish 3.1+ emits OSC 7 itself).
+    // `__ms7` is called once at the end so the initial cwd arrives immediately.
     //
-    // The leading space keeps the line out of the user's shell history
-    // (HISTCONTROL=ignorespace / ignoreboth, the default on most distros);
-    // its echo is also stripped locally (ECHO_NEEDLE) so it never shows up.
+    // The whole shell-specific body lives inside `eval '…'`: fish can't parse
+    // bash/zsh function & `if` syntax, but it CAN parse `eval '<opaque string>'`,
+    // and the `test -z "$FISH_VERSION" &&` guard short-circuits before the eval
+    // ever runs under fish (#71). The body uses only double quotes inside so the
+    // outer single-quoted string needs no escaping; printf turns \033/\007 into
+    // ESC/BEL at prompt time. No array syntax → safe to *parse* in dash/ash too.
     //
-    // The `test -z "$FISH_VERSION" &&` guard makes the line a no-op under fish
-    // (#71): fish has no PROMPT_COMMAND, and `eval`-ing the bash printf makes it
-    // choke on the bracketed ${HOSTNAME}. fish sets $FISH_VERSION, so the guard
-    // is false and `&&` short-circuits the rest before fish ever runs it — and
-    // since the ${HOSTNAME} sits inside single quotes, fish parses the line
-    // without error too. fish 3.1+ emits OSC 7 itself, so cd-follow still works.
-    // bash/zsh/sh have no $FISH_VERSION, so the guard is true and they inject.
-    const PROMPT_SETUP: &[u8] = b" test -z \"$FISH_VERSION\" && export PROMPT_COMMAND='printf \"\\033]7;file://${HOSTNAME}${PWD}\\007\"' && eval \"$PROMPT_COMMAND\"\r";
+    // The leading space keeps the line out of shell history (HISTCONTROL=
+    // ignorespace, the default on most distros); its echo is stripped locally
+    // (ECHO_NEEDLE) so the bookkeeping command never shows up.
+    const PROMPT_SETUP: &[u8] = b" test -z \"$FISH_VERSION\" && eval '__ms7(){ printf \"\\033]7;file://%s%s\\007\" \"$HOSTNAME\" \"$PWD\"; }; if [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null; add-zsh-hook precmd __ms7; else PROMPT_COMMAND=\"__ms7${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi; __ms7'\r";
 
     // The same command as the interactive shell echoes it back (no leading
     // space, no trailing CR). While the injection is in flight we delete this
     // from the output so the user never sees the bookkeeping command.
-    const ECHO_NEEDLE: &str = "test -z \"$FISH_VERSION\" && export PROMPT_COMMAND='printf \"\\033]7;file://${HOSTNAME}${PWD}\\007\"' && eval \"$PROMPT_COMMAND\"";
+    const ECHO_NEEDLE: &str = "test -z \"$FISH_VERSION\" && eval '__ms7(){ printf \"\\033]7;file://%s%s\\007\" \"$HOSTNAME\" \"$PWD\"; }; if [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null; add-zsh-hook precmd __ms7; else PROMPT_COMMAND=\"__ms7${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi; __ms7";
 
     // --- Remote resource monitor (separate exec channel) ----------------
     // A tiny remote loop streams /proc/stat + /proc/meminfo every 2s; we parse
