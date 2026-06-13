@@ -670,6 +670,8 @@ export component TerminalView inherits Rectangle {
                         clicked => { root.history-open = false; root.quick-open = !root.quick-open; }
                     }
                     qc-row := HorizontalLayout {
+                        width: parent.width; height: parent.height;
+                        alignment: center;
                         spacing: 3px;
                         Text { text: @tr("Quick"); color: Theme.text-secondary; font-size: Theme.fs-sm;
                                vertical-alignment: center; }
@@ -756,6 +758,8 @@ export component TerminalView inherits Rectangle {
                         clicked => { root.send-to-all = !root.send-to-all; }
                     }
                     all-row := HorizontalLayout {
+                        width: parent.width; height: parent.height;
+                        alignment: center;
                         Text { text: @tr("All sessions"); font-size: Theme.fs-sm; vertical-alignment: center;
                                color: root.send-to-all ? #ffffff : Theme.text-secondary; }
                     }
@@ -775,6 +779,8 @@ export component TerminalView inherits Rectangle {
                         }
                     }
                     send-row := HorizontalLayout {
+                        width: parent.width; height: parent.height;
+                        alignment: center;
                         Text { text: @tr("Send"); color: #ffffff; font-size: Theme.fs-sm;
                                vertical-alignment: center; }
                     }
