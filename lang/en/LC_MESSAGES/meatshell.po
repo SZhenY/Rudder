@@ -285,6 +285,9 @@ msgstr "e.g. tail log"
 msgid "Port forwarding"
 msgstr "Port forwarding"
 
+msgid "Advanced (proxy, tunnels)"
+msgstr "Advanced (proxy, tunnels)"
+
 msgid "Local (-L)"
 msgstr "Local (-L)"
 

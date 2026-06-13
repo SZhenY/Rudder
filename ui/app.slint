@@ -72,6 +72,10 @@ export component AppWindow inherits Window {
     preferred-width: 1200px;
     preferred-height: 760px;
     background: Theme.bg-root;
+    // A CJK-capable default so UI text (incl. fullwidth punctuation like ：（）)
+    // never tofus on glyph fallback (#54). Rust sets Theme.ui-font-family to a
+    // system CJK font on startup; empty on Linux keeps the Slint default.
+    default-font-family: Theme.ui-font-family;
 
     // --- Sidebar data ------------------------------------------------------
     in property <string> connection-state: @tr("Not connected");

@@ -117,6 +117,7 @@ export component SessionDialog inherits Rectangle {
     property <string> nf-port;
     property <string> nf-host;
     property <string> nf-host-port;
+    property <bool> show-advanced: false;   // collapse proxy + forwarding (#56)
 
     callback submit(SessionDraft);
     callback cancel();
@@ -136,10 +137,10 @@ export component SessionDialog inherits Rectangle {
 
     Rectangle {
         width: 440px;
-        // Height follows the content so switching connection type (which shows
-        // or hides fields) never leaves slack space that the layout would
-        // otherwise distribute by stretching inputs apart.
-        height: body.preferred-height;
+        // Height follows the content, but never exceeds the window — past that
+        // the body scrolls (the dialog grows with the advanced section / many
+        // port forwards) (#56).
+        height: min(body.preferred-height, parent.height - 40px);
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         background: Theme.bg-panel;
@@ -154,9 +155,14 @@ export component SessionDialog inherits Rectangle {
             width: 100%; height: 100%;
         }
 
-        body := VerticalLayout {
-            padding: 20px;
-            spacing: 12px;
+        Flickable {
+            width: 100%;
+            height: 100%;
+            viewport-width: self.width;
+            viewport-height: body.preferred-height;
+            body := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
 
             Text {
                 text: is-editing ? @tr("Edit session") : @tr("New session");
@@ -382,8 +388,34 @@ export component SessionDialog inherits Rectangle {
                 }
             }
 
+            // ── Advanced (collapsed by default): proxy + port forwarding ────
+            if root.draft-kind != "serial" : Rectangle {
+                height: 26px;
+                adv-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.show-advanced = !root.show-advanced; }
+                }
+                HorizontalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: @tr("Advanced (proxy, tunnels)");
+                        color: adv-ta.has-hover ? Theme.text-primary : Theme.text-secondary;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.show-advanced ? "\u{E5CE}" : "\u{E5CF}";
+                        font-family: "Material Icons";
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-md;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+            }
+
             // ── Optional outbound proxy (SSH / Telnet only) ─────────────────
-            if root.draft-kind != "serial" : VerticalLayout {
+            if root.show-advanced && root.draft-kind != "serial" : VerticalLayout {
                 spacing: 4px;
                 Text {
                     text: @tr("Proxy (optional)");
@@ -411,7 +443,7 @@ export component SessionDialog inherits Rectangle {
             }
 
             // ── Port forwarding / tunnels (SSH only) (#56) ──────────────────
-            if root.draft-kind == "ssh" : VerticalLayout {
+            if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
                 spacing: 6px;
                 Text {
                     text: @tr("Port forwarding");
@@ -493,8 +525,6 @@ export component SessionDialog inherits Rectangle {
                 }
             }
 
-            Rectangle { vertical-stretch: 1; }
-
             HorizontalLayout {
                 alignment: end;
                 spacing: 8px;
@@ -529,6 +559,7 @@ export component SessionDialog inherits Rectangle {
                     }
                 }
             }
+        }
         }
     }
 }

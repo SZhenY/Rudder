@@ -285,6 +285,9 @@ msgstr "例如：查看日志"
 msgid "Port forwarding"
 msgstr "端口转发"
 
+msgid "Advanced (proxy, tunnels)"
+msgstr "高级（代理、隧道）"
+
 msgid "Local (-L)"
 msgstr "本地 -L"
 
