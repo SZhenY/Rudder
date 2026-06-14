@@ -5,6 +5,19 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-06-14
+
+### Fixed / 修复
+
+- **Session-sync upload now works for drag-and-drop too.** Dropping a file onto
+  the SFTP panel used a separate code path that skipped the session-sync mirror;
+  now both the upload button and drag-and-drop mirror the file to every other
+  online session, each into its own current SFTP directory. (Removed the
+  temporary upload diagnostics added in 0.4.5.)
+  **会话同步上传现在对「拖拽」也生效。** 拖文件到 SFTP 面板走的是另一条代码路径,
+  之前漏掉了会话同步;现在上传按钮和拖拽都会把文件同步到其他在线会话(各进各自
+  当前目录)。(移除了 0.4.5 加的临时上传诊断日志。)
+
 ## [0.4.5] - 2026-06-14
 
 ### Fixed / 修复

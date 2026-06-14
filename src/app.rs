@@ -849,9 +849,24 @@ fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path: String) {
     if dir.is_empty() {
         return;
     }
+    // Session-sync (#sync): when both toggles are on, also mirror the drop to
+    // every other online session — each into *its own* current SFTP dir. This
+    // matches the upload button's behaviour (drag-and-drop is a separate path).
+    let sync = win.get_sync_input() && win.get_sync_upload_enabled();
+    let other_dirs = if sync { terminal_sftp_paths(win) } else { HashMap::new() };
     if let Ok(handles) = sftp_handles.lock() {
         if let Some(h) = handles.get(&active) {
-            h.upload(path, dir);
+            h.upload(path.clone(), dir);
+        }
+        if sync {
+            for (id, h) in handles.iter() {
+                if id == &active {
+                    continue;
+                }
+                if let Some(d) = other_dirs.get(id).filter(|d| !d.is_empty()) {
+                    h.upload(path.clone(), d.clone());
+                }
+            }
         }
     }
 }
@@ -2587,20 +2602,6 @@ fn wire_sftp_callbacks(
                 // directory (paths differ between sessions, e.g. /home/jeff vs
                 // /home/root, so the active session's path can't be reused).
                 // Gather targets on the UI thread (Slint models aren't Send).
-                if let Some(w) = weak.upgrade() {
-                    let keys: Vec<String> = sftp_handles
-                        .lock()
-                        .map(|h| h.keys().cloned().collect())
-                        .unwrap_or_default();
-                    tracing::warn!(
-                        "[sync-upload] sync_input={} sync_upload={} active={} sftp_sessions={:?} paths={:?}",
-                        w.get_sync_input(),
-                        w.get_sync_upload_enabled(),
-                        tab_id,
-                        keys,
-                        terminal_sftp_paths(&w)
-                    );
-                }
                 let sync_targets: Vec<(String, String)> = weak
                     .upgrade()
                     .filter(|w| w.get_sync_input() && w.get_sync_upload_enabled())
@@ -2638,14 +2639,6 @@ fn wire_sftp_callbacks(
                     if locals.is_empty() {
                         return;
                     }
-                    // Diagnostic for the session-sync upload (#sync): records the
-                    // active tab/path and the resolved per-session mirror targets.
-                    tracing::warn!(
-                        "[sync-upload] active={} dir={} mirror_targets={:?}",
-                        tab_id,
-                        remote_dir,
-                        sync_targets
-                    );
                     if let Ok(handles) = sftp_handles.lock() {
                         if let Some(h) = handles.get(&tab_id) {
                             for local in &locals {
@@ -2659,8 +2652,6 @@ fn wire_sftp_callbacks(
                                 for local in &locals {
                                     h.upload(local.clone(), dir.clone());
                                 }
-                            } else {
-                                tracing::warn!("[sync-upload] no SFTP handle for {id}");
                             }
                         }
                     }
