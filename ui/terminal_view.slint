@@ -425,6 +425,10 @@ export component TerminalView inherits Rectangle {
                             width: span.cells * root.cell-w;
                             height: root.cell-h;
                             background: span.bg;
+                            // A wide-CJK span is a single char in a 2-cell box; clip
+                            // it so a glyph whose advance differs from 2×cell-w can't
+                            // bleed over the neighbouring cell / cursor (#60 follow-up).
+                            clip: span.cjk;
                             // Auto-sized Text (no width/height bindings) so its
                             // layout never re-enters parley's FontContext.
                             Text {

@@ -3931,7 +3931,7 @@ fn cell_attrs(
     screen: &vt100::Screen,
     r: u16,
     c: u16,
-) -> (String, vt100::Color, vt100::Color, bool) {
+) -> (String, vt100::Color, vt100::Color, bool, bool) {
     match screen.cell(r, c) {
         Some(cell) => {
             let (mut fg, mut bg) = (cell.fgcolor(), cell.bgcolor());
@@ -3951,12 +3951,13 @@ fn cell_attrs(
             } else {
                 s
             };
-            (s, fg, bg, cell.bold())
+            (s, fg, bg, cell.bold(), cell.is_wide())
         }
         None => (
             " ".to_string(),
             vt100::Color::Default,
             vt100::Color::Default,
+            false,
             false,
         ),
     }
@@ -3967,17 +3968,36 @@ fn build_row(screen: &vt100::Screen, r: u16, cols: u16) -> Line {
     let mut runs: Vec<HistSpan> = Vec::new();
     let mut c = 0u16;
     while c < cols {
-        let (s, fg, bg, bold) = cell_attrs(screen, r, c);
-        // Group consecutive cells that share fg + bg + bold into one run.  Unlike
-        // before we keep blank cells *inside* a run (so a coloured bar made of
-        // spaces still gets a background fill) and break only on attribute change.
+        let (s, fg, bg, bold, wide) = cell_attrs(screen, r, c);
+        // A wide (CJK) glyph gets its OWN span occupying exactly its two grid
+        // cells, so the UI can box + centre + clip it on the monospace grid.
+        // Otherwise a run of CJK rendered with a proportional CJK font drifts off
+        // the grid — the trailing `/`, `$` or cursor overlaps or gaps the glyph
+        // (CJK advance != 2×the Latin cell width).
+        if wide {
+            plain.push_str(&s);
+            runs.push(HistSpan {
+                text: s,
+                fg,
+                bg,
+                bold,
+                col: c as i32,
+                cells: 2,
+            });
+            c += 2; // skip the wide-continuation cell
+            continue;
+        }
+        // Group consecutive *narrow* cells that share fg + bg + bold into one run.
+        // We keep blank cells *inside* a run (so a coloured bar made of spaces
+        // still gets a background fill) and break on attribute change or a wide
+        // cell (which starts its own span above).
         let start_col = c;
         let mut text = s.clone();
         plain.push_str(&s);
         c += 1;
         while c < cols {
-            let (cs, cfg, cbg, cbold) = cell_attrs(screen, r, c);
-            if cfg != fg || cbg != bg || cbold != bold {
+            let (cs, cfg, cbg, cbold, cwide) = cell_attrs(screen, r, c);
+            if cwide || cfg != fg || cbg != bg || cbold != bold {
                 break;
             }
             plain.push_str(&cs);
