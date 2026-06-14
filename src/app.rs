@@ -307,6 +307,18 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // Session-sync upload setting (#sync). Persisted; only has effect while the
+    // session-sync toggle is on. Read live from the window in the upload handler.
+    window.set_sync_upload_enabled(store.borrow().sync_upload());
+    {
+        let store = store.clone();
+        window.on_set_sync_upload_enabled(move |v| {
+            let mut s = store.borrow_mut();
+            s.set_sync_upload(v);
+            let _ = s.save();
+        });
+    }
+
     // Interface settings: apply + persist the terminal font family / size.
     {
         let weak = window.as_weak();
@@ -1756,6 +1768,22 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
     }
 }
 
+/// Map of tab-id → the SFTP panel's current path, read from the terminals
+/// model. Used as the per-session fallback dir for session-sync uploads.
+fn terminal_sftp_paths(w: &AppWindow) -> HashMap<String, String> {
+    use slint::Model as _;
+    let mut out = HashMap::new();
+    let model = w.get_terminals();
+    if let Some(terminals) = model.as_any().downcast_ref::<VecModel<TerminalState>>() {
+        for i in 0..terminals.row_count() {
+            if let Some(row) = terminals.row_data(i) {
+                out.insert(row.id.to_string(), row.sftp_path.to_string());
+            }
+        }
+    }
+    out
+}
+
 /// Push a value into a fixed-length ring buffer (newest at the end).
 fn push_ring(buf: &mut Vec<f32>, val: f32) {
     if buf.len() != NET_HISTORY_LEN {
@@ -2547,11 +2575,36 @@ fn wire_sftp_callbacks(
     // Upload a local file into the current remote directory.
     {
         let sftp_handles = sftp_handles.clone();
+        let weak = window.as_weak();
         window.on_sftp_upload_clicked(
             move |tab_id: SharedString, remote_dir: SharedString, folder: bool| {
                 let tab_id = tab_id.to_string();
                 let remote_dir = remote_dir.to_string();
                 let sftp_handles = sftp_handles.clone();
+                // Session-sync upload (#sync): when both the sync toggle and the
+                // "sync upload" setting are on, mirror the upload to every other
+                // online session — same path, else that panel's current dir.
+                // Gather the targets on the UI thread (Slint models aren't Send).
+                let sync_targets: Vec<(String, String)> = weak
+                    .upgrade()
+                    .filter(|w| w.get_sync_input() && w.get_sync_upload_enabled())
+                    .map(|w| {
+                        let paths = terminal_sftp_paths(&w);
+                        let handles = sftp_handles.lock().ok();
+                        handles
+                            .iter()
+                            .flat_map(|h| h.keys())
+                            .filter(|id| *id != &tab_id)
+                            .map(|id| {
+                                let cur = paths
+                                    .get(id)
+                                    .cloned()
+                                    .unwrap_or_else(|| "/".to_string());
+                                (id.clone(), cur)
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 std::thread::spawn(move || {
                     // The remote SFTP upload handles a file or a whole directory;
                     // only the local picker differs (#85). Folder uploads one dir;
@@ -2576,8 +2629,20 @@ fn wire_sftp_callbacks(
                     }
                     if let Ok(handles) = sftp_handles.lock() {
                         if let Some(h) = handles.get(&tab_id) {
-                            for local in locals {
-                                h.upload(local, remote_dir.clone());
+                            for local in &locals {
+                                h.upload(local.clone(), remote_dir.clone());
+                            }
+                        }
+                        // Mirror to the other online sessions.
+                        for (id, fallback) in &sync_targets {
+                            if let Some(h) = handles.get(id) {
+                                for local in &locals {
+                                    h.upload_resolve(
+                                        local.clone(),
+                                        remote_dir.clone(),
+                                        fallback.clone(),
+                                    );
+                                }
                             }
                         }
                     }

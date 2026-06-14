@@ -193,7 +193,7 @@ export component AppWindow inherits Window {
     property <length> ifd-base-y;
     property <length> ifd-grab-x;
     property <length> ifd-grab-y;
-    property <string> ifd-page: "font";   // active Interface page: "font" | "sftp" | "sidebar" | "download"
+    property <string> ifd-page: "font";   // active Interface page: "font" | "sftp" | "sidebar" | "sync" | "download"
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
     // SFTP follows the terminal's cd; opt out in Interface settings.
@@ -224,6 +224,9 @@ export component AppWindow inherits Window {
     // online session. Default off (it types into ALL sessions at once).
     in-out property <bool> sync-input: false;
     callback set-sync-input(bool);
+    // Mirror SFTP uploads to other sessions while sync-input is on (#sync).
+    in-out property <bool> sync-upload-enabled: false;
+    callback set-sync-upload-enabled(bool);
     in-out property <length> sftp-panel-height: 220px; // shared; lets Rust locate the drop zone
     callback pick-download-dir();            // open a folder picker
     callback open-download-dir();            // reveal the folder in the OS
@@ -1893,6 +1896,26 @@ export component AppWindow inherits Window {
                                            vertical-alignment: center; horizontal-stretch: 1; }
                                 }
                             }
+                            // Session sync page nav (#sync).
+                            Rectangle {
+                                height: 30px;
+                                border-radius: Theme.radius-sm;
+                                background: root.ifd-page == "sync"
+                                    ? Theme.bg-active
+                                    : (nav-sync-ta.has-hover ? Theme.bg-hover : transparent);
+                                nav-sync-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.ifd-page = "sync"; }
+                                }
+                                HorizontalLayout {
+                                    padding-left: 10px; spacing: 8px;
+                                    Text { text: "\u{E627}"; font-family: "Material Icons"; // sync
+                                           color: Theme.text-primary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                    Text { text: root.lang-en ? "Session sync" : "会话同步";
+                                           color: Theme.text-primary; font-size: Theme.fs-md;
+                                           vertical-alignment: center; horizontal-stretch: 1; }
+                                }
+                            }
                             Rectangle {
                                 height: 30px;
                                 border-radius: Theme.radius-sm;
@@ -2028,6 +2051,37 @@ export component AppWindow inherits Window {
                                 text: root.lang-en
                                     ? "Takes effect on the next launch; useful on low-spec jump hosts where the always-on panels add overhead."
                                     : "下次启动生效;在低配跳板机上可减少常驻面板的开销。";
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        // --- Session sync page (#sync) ---------------------
+                        if root.ifd-page == "sync" : VerticalLayout {
+                            padding: 18px;
+                            spacing: 14px;
+                            alignment: start;
+
+                            Text {
+                                text: root.lang-en
+                                    ? "Session sync is toggled from the sync icon in the top-right bar. When on, keystrokes are mirrored to all online sessions."
+                                    : "会话同步从右上角的同步图标开关。开启后,输入会同步到所有在线会话。";
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                            }
+                            CheckBox {
+                                text: root.lang-en
+                                    ? "Sync file uploads during session sync"
+                                    : "会话同步时文件上传同步";
+                                checked <=> root.sync-upload-enabled;
+                                toggled => { root.set-sync-upload-enabled(self.checked); }
+                            }
+                            Text {
+                                text: root.lang-en
+                                    ? "An uploaded file goes to the same path on each session; if that path doesn't exist there, it goes to that session's current SFTP directory."
+                                    : "上传一个文件会默认上传到相应第一个会话的同样路径，若路径不存在则上传到当前sftp停留的路径";
                                 color: Theme.text-muted;
                                 font-size: Theme.fs-sm;
                                 wrap: word-wrap;

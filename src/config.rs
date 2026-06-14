@@ -298,6 +298,10 @@ pub struct ConfigFile {
     /// Collapse the bottom SFTP panel on startup (#78).
     #[serde(default)]
     pub collapse_sftp_default: bool,
+    /// When session-sync is on, also mirror SFTP uploads to the other online
+    /// sessions (same path, falling back to each panel's current dir).
+    #[serde(default)]
+    pub sync_upload: bool,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -607,6 +611,16 @@ impl ConfigStore {
 
     pub fn set_collapse_sftp_default(&mut self, v: bool) {
         self.cache.collapse_sftp_default = v;
+    }
+
+    /// Mirror SFTP uploads to other sessions while session-sync is on (default
+    /// false). Only has effect when the session-sync toggle is on.
+    pub fn sync_upload(&self) -> bool {
+        self.cache.sync_upload
+    }
+
+    pub fn set_sync_upload(&mut self, v: bool) {
+        self.cache.sync_upload = v;
     }
 
     /// Whether each download prompts for a save location (default false) (#87).
