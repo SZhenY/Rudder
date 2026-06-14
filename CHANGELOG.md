@@ -5,6 +5,22 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-14
+
+### Added / 新增
+
+- **Run / copy / delete actions on command history (#96).** Each entry in the
+  command-history dropdown now has run (▶), copy (⧉) and delete (🗑) buttons —
+  run executes it immediately, copy puts it on the clipboard, delete removes it.
+  **命令历史的运行 / 复制 / 删除 (#96)。** 历史下拉里每条记录新增 ▶ 运行、
+  ⧉ 复制、🗑 删除按钮——运行即时执行,复制到剪贴板,删除移除该条。
+
+- **Default-collapse settings for the sidebars (#78).** Settings → Interface →
+  Sidebars adds two checkboxes to collapse the left resource panel and the bottom
+  SFTP panel on startup — handy on low-spec jump hosts.
+  **侧栏默认收起设置 (#78)。** 设置 → 界面 → 侧栏 新增两个复选框,可在启动时
+  收起左侧资源面板和底部 SFTP 面板——适合低配跳板机。
+
 ## [0.4.0] - 2026-06-14
 
 ### Added / 新增
