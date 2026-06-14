@@ -292,6 +292,12 @@ pub struct ConfigFile {
     /// Recent commands sent from the command box, oldest first, capped (#55).
     #[serde(default)]
     pub command_history: Vec<String>,
+    /// Collapse the left resource sidebar on startup (#78).
+    #[serde(default)]
+    pub collapse_sidebar_default: bool,
+    /// Collapse the bottom SFTP panel on startup (#78).
+    #[serde(default)]
+    pub collapse_sftp_default: bool,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -583,6 +589,24 @@ impl ConfigStore {
         if index < self.cache.command_history.len() {
             self.cache.command_history.remove(index);
         }
+    }
+
+    /// Collapse the resource sidebar on startup (default false) (#78).
+    pub fn collapse_sidebar_default(&self) -> bool {
+        self.cache.collapse_sidebar_default
+    }
+
+    pub fn set_collapse_sidebar_default(&mut self, v: bool) {
+        self.cache.collapse_sidebar_default = v;
+    }
+
+    /// Collapse the SFTP panel on startup (default false) (#78).
+    pub fn collapse_sftp_default(&self) -> bool {
+        self.cache.collapse_sftp_default
+    }
+
+    pub fn set_collapse_sftp_default(&mut self, v: bool) {
+        self.cache.collapse_sftp_default = v;
     }
 
     /// Whether each download prompts for a save location (default false) (#87).

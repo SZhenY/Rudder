@@ -94,8 +94,10 @@ export component TerminalView inherits Rectangle {
     in property <[SftpTreeNode]> sftp-tree-nodes: [];
 
     in-out property <length> sftp-panel-height: 220px;
-    property <length> sftp-saved-height: 220px;   // height to restore on un-collapse
-    property <bool>   sftp-collapsed: false;       // SFTP panel minimised (toolbar only)
+    // Shared with the AppWindow (like sftp-panel-height) so a startup default can
+    // collapse the panel and the state stays consistent across tabs (#78).
+    in-out property <length> sftp-saved-height: 220px;   // height to restore on un-collapse
+    in-out property <bool>   sftp-collapsed: false;       // SFTP panel minimised (toolbar only)
 
     // Command bar (#55): quick commands + input box + history (all shared/global,
     // fed from Rust); send-to-all is a per-tab toggle.

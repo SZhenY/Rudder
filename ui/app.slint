@@ -140,7 +140,7 @@ export component AppWindow inherits Window {
     property <length> ifd-base-y;
     property <length> ifd-grab-x;
     property <length> ifd-grab-y;
-    property <string> ifd-page: "font";   // active Interface page: "font" | "sftp"
+    property <string> ifd-page: "font";   // active Interface page: "font" | "sftp" | "sidebar" | "download"
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
     // SFTP follows the terminal's cd; opt out in Interface settings.
@@ -149,6 +149,13 @@ export component AppWindow inherits Window {
     // Always ask where to save on each download (#87); default off.
     in-out property <bool> download-always-ask: false;
     callback set-download-always-ask(bool);        // apply + persist
+    // Collapse-by-default settings + shared SFTP collapse state (#78).
+    in-out property <bool> collapse-sidebar-default: false;
+    callback set-collapse-sidebar-default(bool);   // apply + persist
+    in-out property <bool> collapse-sftp-default: false;
+    callback set-collapse-sftp-default(bool);      // apply + persist
+    in-out property <bool> sftp-collapsed: false;       // shared across tabs
+    in-out property <length> sftp-saved-height: 220px;  // restore height on un-collapse
     // Confirm-before-close when there are live session tabs (#88): a stray
     // double-click on the title-bar icon / X shouldn't drop active sessions.
     in-out property <bool> confirm-close-open: false;
@@ -442,6 +449,8 @@ export component AppWindow inherits Window {
                     find-matches: term.find-matches;
                     selection: term.selection;
                     sftp-panel-height <=> root.sftp-panel-height;
+                    sftp-collapsed <=> root.sftp-collapsed;
+                    sftp-saved-height <=> root.sftp-saved-height;
                     sftp-path: term.sftp-path;
                     sftp-entries: term.sftp-entries;
                     sftp-status: term.sftp-status;
@@ -1843,6 +1852,26 @@ export component AppWindow inherits Window {
                                            vertical-alignment: center; horizontal-stretch: 1; }
                                 }
                             }
+                            // Sidebar page nav (#78).
+                            Rectangle {
+                                height: 30px;
+                                border-radius: Theme.radius-sm;
+                                background: root.ifd-page == "sidebar"
+                                    ? Theme.bg-active
+                                    : (nav-sb-ta.has-hover ? Theme.bg-hover : transparent);
+                                nav-sb-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.ifd-page = "sidebar"; }
+                                }
+                                HorizontalLayout {
+                                    padding-left: 10px; spacing: 8px;
+                                    Text { text: "\u{E5CB}"; font-family: "Material Icons"; // collapse-panel glyph
+                                           color: Theme.text-primary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                    Text { text: root.lang-en ? "Sidebars" : "侧栏";
+                                           color: Theme.text-primary; font-size: Theme.fs-md;
+                                           vertical-alignment: center; horizontal-stretch: 1; }
+                                }
+                            }
                             Rectangle {
                                 height: 30px;
                                 border-radius: Theme.radius-sm;
@@ -1948,6 +1977,36 @@ export component AppWindow inherits Window {
                                 text: root.lang-en
                                     ? "When enabled, a cd in the terminal switches the SFTP panel to the same directory."
                                     : "勾选后,终端里执行 cd 时,SFTP 面板会自动切换到相同目录。";
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        // --- Sidebars page (#78) ---------------------------
+                        if root.ifd-page == "sidebar" : VerticalLayout {
+                            padding: 18px;
+                            spacing: 14px;
+                            alignment: start;
+
+                            CheckBox {
+                                text: root.lang-en
+                                    ? "Collapse the resource panel by default"
+                                    : "默认收起资源视图面板";
+                                checked <=> root.collapse-sidebar-default;
+                                toggled => { root.set-collapse-sidebar-default(self.checked); }
+                            }
+                            CheckBox {
+                                text: root.lang-en
+                                    ? "Collapse the SFTP panel by default"
+                                    : "默认收起 SFTP 侧栏";
+                                checked <=> root.collapse-sftp-default;
+                                toggled => { root.set-collapse-sftp-default(self.checked); }
+                            }
+                            Text {
+                                text: root.lang-en
+                                    ? "Takes effect on the next launch; useful on low-spec jump hosts where the always-on panels add overhead."
+                                    : "下次启动生效;在低配跳板机上可减少常驻面板的开销。";
                                 color: Theme.text-muted;
                                 font-size: Theme.fs-sm;
                                 wrap: word-wrap;

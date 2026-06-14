@@ -273,6 +273,40 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // Interface setting: collapse the sidebars by default (#78). Seed the
+    // checkboxes, apply the collapsed state once at startup, and persist toggles.
+    {
+        let s = store.borrow();
+        let collapse_sidebar = s.collapse_sidebar_default();
+        let collapse_sftp = s.collapse_sftp_default();
+        window.set_collapse_sidebar_default(collapse_sidebar);
+        window.set_collapse_sftp_default(collapse_sftp);
+        if collapse_sidebar {
+            window.set_sidebar_collapsed(true);
+        }
+        if collapse_sftp {
+            window.set_sftp_collapsed(true);
+            window.set_sftp_saved_height(220.0);
+            window.set_sftp_panel_height(30.0);
+        }
+    }
+    {
+        let store = store.clone();
+        window.on_set_collapse_sidebar_default(move |v| {
+            let mut s = store.borrow_mut();
+            s.set_collapse_sidebar_default(v);
+            let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_set_collapse_sftp_default(move |v| {
+            let mut s = store.borrow_mut();
+            s.set_collapse_sftp_default(v);
+            let _ = s.save();
+        });
+    }
+
     // Interface settings: apply + persist the terminal font family / size.
     {
         let weak = window.as_weak();
