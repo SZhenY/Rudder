@@ -578,6 +578,13 @@ impl ConfigStore {
         }
     }
 
+    /// Remove a single command-history entry by storage index (#96).
+    pub fn remove_command_history(&mut self, index: usize) {
+        if index < self.cache.command_history.len() {
+            self.cache.command_history.remove(index);
+        }
+    }
+
     /// Whether each download prompts for a save location (default false) (#87).
     pub fn download_always_ask(&self) -> bool {
         self.cache.download_always_ask

@@ -114,6 +114,8 @@ export component AppWindow inherits Window {
     in property <[QuickCmd]> quick-commands;
     in property <[string]> command-history;          // newest first
     callback run-command(string /* tab-id */, string /* cmd */, bool /* to-all */);
+    callback copy-text(string);                 // copy a history command (#96)
+    callback delete-history(int /* index */);   // remove a history entry (#96)
     in-out property <bool> quick-cmd-manage-open: false;  // manage dialog
     property <string> qcm-name;                       // manage form: name field
     property <string> qcm-command;                    // manage form: command field
@@ -448,6 +450,8 @@ export component AppWindow inherits Window {
                     quick-commands: root.quick-commands;
                     command-history: root.command-history;
                     run-command(cmd, all) => { root.run-command(term.id, cmd, all); }
+                    copy-text(t) => { root.copy-text(t); }
+                    delete-history(i) => { root.delete-history(i); }
                     manage-quick-commands() => {
                         root.qcm-name = "";
                         root.qcm-command = "";

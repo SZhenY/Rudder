@@ -107,6 +107,8 @@ export component TerminalView inherits Rectangle {
     property <int> history-cursor: -1;         // ↑/↓ recall index (-1 = live input)
     callback run-command(string /* cmd */, bool /* to-all */);
     callback manage-quick-commands();          // open the add/edit/delete dialog
+    callback copy-text(string);                // copy a history command to clipboard (#96)
+    callback delete-history(int /* index */);  // remove a history entry (#96)
 
     callback send-key(string, bool, bool, bool);
     callback terminal-resize(float, float);
@@ -872,10 +874,11 @@ export component TerminalView inherits Rectangle {
                             horizontal-alignment: center;
                             height: 32px; vertical-alignment: center;
                         }
-                        for h in root.command-history : Rectangle {
-                            height: 26px;
+                        for h[i] in root.command-history : Rectangle {
+                            height: 28px;
                             border-radius: Theme.radius-sm;
                             background: h-item-ta.has-hover ? Theme.bg-hover : transparent;
+                            // Row body click recalls the command into the input box.
                             h-item-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => {
@@ -884,10 +887,60 @@ export component TerminalView inherits Rectangle {
                                     cmd-input.focus();
                                 }
                             }
-                            Text { x: 8px; width: parent.width - 16px; height: parent.height;
-                                   text: h; color: Theme.text-secondary; font-size: Theme.fs-sm;
-                                   font-family: Theme.ui-font-family; vertical-alignment: center;
-                                   overflow: elide; }
+                            HorizontalLayout {
+                                padding-left: 8px; padding-right: 4px; spacing: 1px;
+                                Text {
+                                    text: h;
+                                    color: Theme.text-secondary;
+                                    font-size: Theme.fs-sm;
+                                    font-family: Theme.ui-font-family;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                // Run (▶) — execute immediately, on this tab.
+                                Rectangle {
+                                    width: 24px; y: (parent.height - self.height) / 2; height: 24px;
+                                    border-radius: Theme.radius-sm;
+                                    background: hrun.has-hover ? Theme.accent.with-alpha(0.25) : transparent;
+                                    hrun := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            root.run-command(h, root.send-to-all);
+                                            root.history-open = false;
+                                        }
+                                    }
+                                    Text { text: "\u{E037}"; font-family: "Material Icons";
+                                           color: Theme.accent; font-size: Theme.fs-md;
+                                           horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                                // Copy (⧉) — to clipboard, keep the popup open.
+                                Rectangle {
+                                    width: 24px; y: (parent.height - self.height) / 2; height: 24px;
+                                    border-radius: Theme.radius-sm;
+                                    background: hcopy.has-hover ? Theme.bg-elevated : transparent;
+                                    hcopy := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.copy-text(h); }
+                                    }
+                                    Text { text: "\u{E14D}"; font-family: "Material Icons";
+                                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                                           horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                                // Delete (×) — remove this entry.
+                                Rectangle {
+                                    width: 24px; y: (parent.height - self.height) / 2; height: 24px;
+                                    border-radius: Theme.radius-sm;
+                                    background: hdel.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
+                                    hdel := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.delete-history(i); }
+                                    }
+                                    Text { text: "\u{E872}"; font-family: "Material Icons";
+                                           color: Theme.danger; font-size: Theme.fs-sm;
+                                           horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                            }
                         }
                     }
                 }

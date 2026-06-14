@@ -2839,6 +2839,33 @@ fn wire_key_input(
             }
         });
     }
+    // Copy a history command to the clipboard (#96).
+    {
+        window.on_copy_text(move |text: SharedString| {
+            let t = text.to_string();
+            std::thread::spawn(move || clipboard_set_text(t));
+        });
+    }
+    // Delete a history entry (#96). The model is newest-first; map the row index
+    // back to the oldest-first storage order.
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        window.on_delete_history(move |i: i32| {
+            {
+                let mut s = store_rc.borrow_mut();
+                let n = s.command_history().len();
+                let idx = i as usize;
+                if idx < n {
+                    s.remove_command_history(n - 1 - idx);
+                    let _ = s.save();
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_command_history(history_model(&store_rc.borrow()));
+            }
+        });
+    }
     {
         let store_rc = store.clone();
         let weak = window.as_weak();
