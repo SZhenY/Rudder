@@ -312,9 +312,10 @@ export component Welcome inherits Rectangle {
                                 padding-top: 6px;
                                 padding-left: 4px;
                                 spacing: 4px;
-                                // Collapse chevron — only for non-empty groups; an
-                                // empty folder is a placeholder row (id == "").
-                                if session.id != "" : Text {
+                                // Collapse chevron — shown for every group, empty
+                                // folders included, so they line up and can be
+                                // toggled (an empty group just expands to nothing).
+                                Text {
                                     text: session.collapsed ? "\u{E5CC}" : "\u{E5CF}";
                                     font-family: "Material Icons";
                                     color: Theme.text-muted;
@@ -340,9 +341,9 @@ export component Welcome inherits Rectangle {
                             }
                             TouchArea {
                                 mouse-cursor: pointer;
-                                // Left-click toggles collapse (non-empty groups only);
-                                // right-click opens the group menu.
-                                clicked => { if (session.id != "") { root.toggle-group(session.group); } }
+                                // Left-click toggles collapse (any group, incl.
+                                // empty); right-click opens the group menu.
+                                clicked => { root.toggle-group(session.group); }
                                 pointer-event(e) => {
                                     if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
                                         gmx = self.mouse-x;
