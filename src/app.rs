@@ -2941,11 +2941,23 @@ fn wire_key_input(
         });
     }
 
+    // Session sync / broadcast input: when on, a keystroke in any terminal is
+    // mirrored to every online session (Xshell-style; #78 pt.4). Read on the hot
+    // keystroke path, so use an AtomicBool rather than a window-property lookup.
+    let sync_input = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let flag = sync_input.clone();
+        window.on_set_sync_input(move |on| {
+            flag.store(on, std::sync::atomic::Ordering::Relaxed);
+        });
+    }
+
     // Forward each keystroke as raw bytes to the SSH PTY. The server's bash /
     // readline handles echo, history (↑↓), Tab completion, Ctrl+C, etc.
     {
         let handles = handles.clone();
         let bufs = bufs.clone();
+        let sync_input = sync_input.clone();
         // Shared timestamp: the last time the Shift key alone was pressed
         // (key="", shift=true).  Used by the time-based Backspace filter below.
         let last_shift_time: Arc<Mutex<Option<std::time::Instant>>> =
@@ -3208,7 +3220,13 @@ fn wire_key_input(
                 handles.borrow().contains_key(tab_id.as_str()),
             );
             if !bytes.is_empty() {
-                if let Some(handle) = handles.borrow().get(tab_id.as_str()) {
+                let h = handles.borrow();
+                if sync_input.load(std::sync::atomic::Ordering::Relaxed) {
+                    // Broadcast the same bytes to every online session (#78 pt.4).
+                    for handle in h.values() {
+                        handle.send_raw(bytes.clone());
+                    }
+                } else if let Some(handle) = h.get(tab_id.as_str()) {
                     handle.send_raw(bytes);
                 }
             }

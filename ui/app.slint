@@ -64,6 +64,54 @@ export struct TerminalState {
     sftp-tree-nodes: [SftpTreeNode],
 }
 
+// A 26×26 top-bar icon button with a hover tooltip (right-aligned so it never
+// runs off the window edge). `active` keeps the hover background lit (e.g. while
+// its popup is open).
+component IconBtn inherits Rectangle {
+    in property <string> icon;
+    in property <brush> icon-color: Theme.text-secondary;
+    in property <string> tooltip;
+    in property <bool> active;
+    callback clicked();
+    width: 26px;
+    height: 26px;
+    border-radius: Theme.radius-sm;
+    background: ta.has-hover || root.active ? Theme.bg-hover : transparent;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: root.icon;
+        font-family: "Material Icons";
+        color: root.icon-color;
+        font-size: Theme.fs-md;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if ta.has-hover && root.tooltip != "" : Rectangle {
+        y: parent.height + 5px;
+        x: parent.width - self.width;   // align right edge with the icon
+        width: tip-txt.preferred-width + 16px;
+        height: 22px;
+        background: Theme.bg-elevated;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #00000070;
+        tip-txt := Text {
+            text: root.tooltip;
+            color: Theme.text-primary;
+            font-size: Theme.fs-xs;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "meatshell";
     icon: @image-url("../assets/icon.png");
@@ -172,6 +220,10 @@ export component AppWindow inherits Window {
     callback delete-group(string /* name */);
     callback submit-group(string /* orig */, string /* name */);
     callback toggle-theme();               // flip dark ↔ light
+    // Session sync / broadcast input (#78 pt.4): mirror keystrokes to every
+    // online session. Default off (it types into ALL sessions at once).
+    in-out property <bool> sync-input: false;
+    callback set-sync-input(bool);
     in-out property <length> sftp-panel-height: 220px; // shared; lets Rust locate the drop zone
     callback pick-download-dir();            // open a folder picker
     callback open-download-dir();            // reveal the folder in the OS
@@ -530,77 +582,41 @@ export component AppWindow inherits Window {
     }
 
     // --- Top-right buttons: [☀/🌙 theme] [↓ download] [⚙ settings] ----------
+    // Top-right icon row (right→left): settings, download, theme, session sync.
     // Settings (gear) — far right.
-    Rectangle {
-        x: root.width - 34px;
-        y: 8px;
-        width: 26px;
-        height: 26px;
-        border-radius: Theme.radius-sm;
-        background: gear-ta.has-hover || root.settings-open ? Theme.bg-hover : transparent;
-        gear-ta := TouchArea {
-            mouse-cursor: pointer;
-            clicked => {
-                root.settings-open = !root.settings-open;
-                root.download-open = false;
-            }
-        }
-        Text {
-            text: "\u{E8B8}";              // Material Icons settings (gear)
-            font-family: "Material Icons";
-            color: Theme.text-secondary;
-            font-size: Theme.fs-md;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
+    IconBtn {
+        x: root.width - 34px; y: 8px;
+        icon: "\u{E8B8}";
+        tooltip: root.lang-en ? "Settings" : "设置";
+        active: root.settings-open;
+        clicked => { root.settings-open = !root.settings-open; root.download-open = false; }
     }
     // Download manager — left of settings.
-    Rectangle {
-        x: root.width - 64px;
-        y: 8px;
-        width: 26px;
-        height: 26px;
-        border-radius: Theme.radius-sm;
-        background: dl-ta.has-hover || root.download-open ? Theme.bg-hover : transparent;
-        dl-ta := TouchArea {
-            mouse-cursor: pointer;
-            clicked => {
-                root.download-open = !root.download-open;
-                root.settings-open = false;
-            }
-        }
-        Text {
-            text: "\u{E2C4}";              // Material Icons file_download
-            font-family: "Material Icons";
-            color: Theme.text-secondary;
-            font-size: Theme.fs-md;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
+    IconBtn {
+        x: root.width - 64px; y: 8px;
+        icon: "\u{E2C4}";              // Material Icons file_download
+        tooltip: root.lang-en ? "Download" : "下载";
+        active: root.download-open;
+        clicked => { root.download-open = !root.download-open; root.settings-open = false; }
     }
-    // Theme toggle (sun = currently dark → click for light;
-    //               moon = currently light → click for dark) — left of download.
-    Rectangle {
-        x: root.width - 94px;
-        y: 8px;
-        width: 26px;
-        height: 26px;
-        border-radius: Theme.radius-sm;
-        background: theme-ta.has-hover ? Theme.bg-hover : transparent;
-        theme-ta := TouchArea {
-            mouse-cursor: pointer;
-            clicked => { root.toggle-theme(); }
-        }
-        Text {
-            // light_mode ☀ when dark (click → go light)
-            // dark_mode  🌙 when light (click → go dark)
-            text: Theme.dark ? "\u{E518}" : "\u{E51C}";
-            font-family: "Material Icons";
-            color: Theme.dark ? #f5c542 : #5856d6;  // amber sun / indigo moon
-            font-size: Theme.fs-md;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
+    // Theme toggle (sun when dark → click for light; moon when light → for dark).
+    IconBtn {
+        x: root.width - 94px; y: 8px;
+        icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
+        icon-color: Theme.dark ? #f5c542 : #5856d6;  // amber sun / indigo moon
+        tooltip: root.lang-en ? "Toggle theme" : "切换主题";
+        clicked => { root.toggle-theme(); }
+    }
+    // Session sync / broadcast input — left of theme (#78 pt.4).
+    IconBtn {
+        x: root.width - 124px; y: 8px;
+        icon: "\u{E627}";             // Material Icons "sync"
+        icon-color: root.sync-input ? Theme.accent : Theme.text-secondary;
+        active: root.sync-input;
+        tooltip: root.lang-en
+            ? (root.sync-input ? "Sync input: ON" : "Sync input")
+            : (root.sync-input ? "会话同步：开" : "会话同步");
+        clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
     }
 
     // --- Update-available banner (#48) ------------------------------------
