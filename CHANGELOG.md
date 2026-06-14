@@ -5,6 +5,36 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-06-14
+
+### Added / 新增
+
+- **Session sync / broadcast input.** A new ⟳ toggle in the top-right bar
+  mirrors keystrokes typed in any terminal to every online session
+  (Xshell-style). Off by default, runtime-only. Settings → Session sync also
+  adds "Sync file uploads during session sync": an upload is mirrored to the
+  same path on each session (or that session's current SFTP dir if the path
+  doesn't exist there).
+  **会话同步 / 广播输入。** 右上角新增 ⟳ 开关,把任意终端里敲的键同步到所有在线
+  会话(Xshell 风格);默认关闭、仅本次运行有效。设置 → 会话同步 还有「会话同步时
+  文件上传同步」:上传会同步到各会话的相同路径(该路径不存在则用该会话当前 SFTP
+  目录)。
+
+- **Tooltips on the top-bar icons** (theme / download / settings / session sync).
+  **右上角图标悬停提示**(切换主题 / 下载 / 设置 / 会话同步)。
+
+### Fixed / 修复
+
+- **Light-mode dialogs.** Inputs and buttons in the group / rename / quick-command
+  dialogs no longer blend into the background under the light theme — Slint's
+  std-widget palette now follows the app theme.
+  **浅色模式对话框。** 分组 / 重命名 / 快捷命令等对话框里的输入框和按钮在浅色主题
+  下不再与背景融为一体——std-widget 调色板现在跟随应用主题。
+
+- **Empty session groups** now show a collapse chevron and can be expanded /
+  collapsed, lining up with non-empty groups.
+  **空会话分组** 现在也显示折叠箭头、可展开 / 收起,与非空分组对齐。
+
 ## [0.4.3] - 2026-06-14
 
 ### Fixed / 修复
