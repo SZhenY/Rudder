@@ -2587,6 +2587,20 @@ fn wire_sftp_callbacks(
                 // directory (paths differ between sessions, e.g. /home/jeff vs
                 // /home/root, so the active session's path can't be reused).
                 // Gather targets on the UI thread (Slint models aren't Send).
+                if let Some(w) = weak.upgrade() {
+                    let keys: Vec<String> = sftp_handles
+                        .lock()
+                        .map(|h| h.keys().cloned().collect())
+                        .unwrap_or_default();
+                    tracing::warn!(
+                        "[sync-upload] sync_input={} sync_upload={} active={} sftp_sessions={:?} paths={:?}",
+                        w.get_sync_input(),
+                        w.get_sync_upload_enabled(),
+                        tab_id,
+                        keys,
+                        terminal_sftp_paths(&w)
+                    );
+                }
                 let sync_targets: Vec<(String, String)> = weak
                     .upgrade()
                     .filter(|w| w.get_sync_input() && w.get_sync_upload_enabled())
@@ -2624,6 +2638,14 @@ fn wire_sftp_callbacks(
                     if locals.is_empty() {
                         return;
                     }
+                    // Diagnostic for the session-sync upload (#sync): records the
+                    // active tab/path and the resolved per-session mirror targets.
+                    tracing::warn!(
+                        "[sync-upload] active={} dir={} mirror_targets={:?}",
+                        tab_id,
+                        remote_dir,
+                        sync_targets
+                    );
                     if let Ok(handles) = sftp_handles.lock() {
                         if let Some(h) = handles.get(&tab_id) {
                             for local in &locals {
@@ -2637,6 +2659,8 @@ fn wire_sftp_callbacks(
                                 for local in &locals {
                                     h.upload(local.clone(), dir.clone());
                                 }
+                            } else {
+                                tracing::warn!("[sync-upload] no SFTP handle for {id}");
                             }
                         }
                     }

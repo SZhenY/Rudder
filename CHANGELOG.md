@@ -5,6 +5,19 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-06-14
+
+### Fixed / 修复
+
+- **Session-sync upload now targets each session's own current directory.**
+  Uploading from one session no longer reuses that session's path for the others
+  (which failed when paths differed, e.g. /home/jeff vs /home/root); each session
+  receives the file in its own current SFTP directory. (Includes temporary
+  diagnostics to nail down a remaining report.)
+  **会话同步上传改为各会话用自己的当前目录。** 从某会话上传不再把它的路径套用到
+  其他会话(路径不同就会失败,如 /home/jeff 与 /home/root);每个会话都收到文件到
+  它自己当前的 SFTP 目录。(含临时诊断日志以定位残留问题。)
+
 ## [0.4.4] - 2026-06-14
 
 ### Added / 新增
