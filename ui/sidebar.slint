@@ -30,12 +30,12 @@ component StatRow inherits HorizontalLayout {
         overflow: elide;
     }
 
-    // Progress bar
+    // Progress bar — stretches to fill the row, with a floor so it stays usable.
     Rectangle {
         background: Theme.bg-root;
         border-radius: 2px;
-        min-width: 60px;
         horizontal-stretch: 2;
+        min-width: 60px;
 
         Rectangle {
             x: 0;
@@ -57,12 +57,13 @@ component StatRow inherits HorizontalLayout {
         }
     }
 
+    // Used/total figure, right-aligned; reserve width so it never gets clipped.
     Text {
         text: detail;
         color: Theme.text-muted;
         font-size: Theme.fs-xs;
-        min-width: 64px;
         horizontal-stretch: 1;
+        min-width: 64px;
         horizontal-alignment: right;
         vertical-alignment: center;
     }

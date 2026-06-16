@@ -124,23 +124,24 @@ impl SystemSampler {
     }
 }
 
-/// Human-readable memory size from MiB (e.g. `"1.5G/16G"`).
-pub fn format_mem_mib(used_mib: u64, total_mib: u64) -> String {
-    if total_mib >= 1024 {
-        let used_gib = used_mib as f64 / 1024.0;
-        let total_gib = total_mib as f64 / 1024.0;
-        // Drop decimals for large/round values to keep the string short (sidebar is narrow).
-        let fmt_gib = |g: f64| -> String {
-            if g >= 100.0 || g.fract() == 0.0 {
-                format!("{}", g as u64)
-            } else {
-                format!("{:.1}", g)
-            }
-        };
-        format!("{}G/{}G", fmt_gib(used_gib), fmt_gib(total_gib))
-    } else {
-        format!("{}/{}M", used_mib, total_mib)
+/// Format a used/total memory pair (both in MiB) for the narrow sidebar.
+/// Below 1 GiB it stays in megabytes (`512/2048M`); at or above, it switches to
+/// gigabytes and drops the decimal for whole or large values to stay compact
+/// (`1.5G/16G`, `120G/256G`).
+pub fn format_mem(used_mib: u64, total_mib: u64) -> String {
+    if total_mib < 1024 {
+        return format!("{used_mib}/{total_mib}M");
     }
+    // MiB → GiB, with a tidy width: integer when round or ≥100, else one decimal.
+    fn gib(mib: u64) -> String {
+        let g = mib as f64 / 1024.0;
+        if g.fract() == 0.0 || g >= 100.0 {
+            (g as u64).to_string()
+        } else {
+            format!("{g:.1}")
+        }
+    }
+    format!("{}G/{}G", gib(used_mib), gib(total_mib))
 }
 
 /// Human-readable network throughput (e.g. `"1.2 MB/s"`).
