@@ -102,7 +102,7 @@ export component TerminalView inherits Rectangle {
     // Command bar (#55): quick commands + input box + history (all shared/global,
     // fed from Rust); send-to-all is a per-tab toggle.
     in property <[QuickCmd]> quick-commands;
-    in property <[string]> command-history;   // newest first
+    in property <[string]> command-history;   // oldest first (newest last, #113)
     property <bool> send-to-all: false;
     property <bool> quick-open: false;         // quick-command popup visibility
     property <bool> history-open: false;       // history dropdown visibility
@@ -712,19 +712,25 @@ export component TerminalView inherits Rectangle {
                         }
                         key-pressed(e) => {
                             if (e.text == Key.UpArrow) {
+                                // Model is oldest→newest (#113): first ↑ jumps to
+                                // the newest (last), further ↑ steps toward older.
                                 if (root.command-history.length > 0) {
-                                    root.history-cursor = min(root.history-cursor + 1,
-                                                              root.command-history.length - 1);
+                                    root.history-cursor = root.history-cursor == -1
+                                        ? root.command-history.length - 1
+                                        : max(root.history-cursor - 1, 0);
                                     self.text = root.command-history[root.history-cursor];
                                 }
                                 accept
                             } else if (e.text == Key.DownArrow) {
-                                if (root.history-cursor > 0) {
-                                    root.history-cursor -= 1;
-                                    self.text = root.command-history[root.history-cursor];
-                                } else {
-                                    root.history-cursor = -1;
-                                    self.text = "";
+                                // ↓ steps toward newer; past the newest → live input.
+                                if (root.history-cursor != -1) {
+                                    if (root.history-cursor < root.command-history.length - 1) {
+                                        root.history-cursor += 1;
+                                        self.text = root.command-history[root.history-cursor];
+                                    } else {
+                                        root.history-cursor = -1;
+                                        self.text = "";
+                                    }
                                 }
                                 accept
                             } else {

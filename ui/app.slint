@@ -160,7 +160,7 @@ export component AppWindow inherits Window {
     in property <[ProcRow]> proc-list;       // top remote processes by CPU
     // Command bar (#55): quick commands + history, fed from Rust.
     in property <[QuickCmd]> quick-commands;
-    in property <[string]> command-history;          // newest first
+    in property <[string]> command-history;          // oldest first (newest last, #113)
     callback run-command(string /* tab-id */, string /* cmd */, bool /* to-all */);
     callback copy-text(string);                 // copy a history command (#96)
     callback delete-history(int /* index */);   // remove a history entry (#96)

@@ -1913,13 +1913,13 @@ fn forward_model(forwards: &[crate::config::PortForward]) -> ModelRc<PortFwd> {
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
-/// Build the command-history model, newest first, for the ↑/↓ recall + the
-/// history dropdown (#55).
+/// Build the command-history model in storage order (oldest first, newest
+/// last). The dropdown shows the most-recently-used command at the bottom
+/// (nearest the input) and ↑ recalls it first (#55, #113).
 fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
     let rows: Vec<SharedString> = store
         .command_history()
         .iter()
-        .rev()
         .map(|s| s.clone().into())
         .collect();
     ModelRc::from(Rc::new(VecModel::from(rows)))
@@ -3124,18 +3124,17 @@ fn wire_key_input(
             std::thread::spawn(move || clipboard_set_text(t));
         });
     }
-    // Delete a history entry (#96). The model is newest-first; map the row index
-    // back to the oldest-first storage order.
+    // Delete a history entry (#96). The model is in storage order now (#113),
+    // so the row index maps straight through.
     {
         let store_rc = store.clone();
         let weak = window.as_weak();
         window.on_delete_history(move |i: i32| {
             {
                 let mut s = store_rc.borrow_mut();
-                let n = s.command_history().len();
                 let idx = i as usize;
-                if idx < n {
-                    s.remove_command_history(n - 1 - idx);
+                if idx < s.command_history().len() {
+                    s.remove_command_history(idx);
                     let _ = s.save();
                 }
             }
