@@ -2312,6 +2312,14 @@ fn apply_session_event_to_window(
         SessionEvent::SftpStatus(msg) => {
             update_terminal(&|t| t.sftp_status = msg.clone().into());
         }
+        SessionEvent::SftpError(msg) => {
+            // Show the reason and stop the spinner; leave the current listing in
+            // place so a failed navigation doesn't blank the panel (#112).
+            update_terminal(&|t| {
+                t.sftp_status = msg.clone().into();
+                t.sftp_loading = false;
+            });
+        }
         SessionEvent::SftpFileText {
             path,
             name,

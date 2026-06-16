@@ -314,6 +314,9 @@ pub enum SessionEvent {
     },
     /// Free-form SFTP status message (progress, errors, etc.).
     SftpStatus(String),
+    /// A directory listing failed (e.g. permission denied): show the message and
+    /// stop the panel's loading spinner without disturbing the current view (#112).
+    SftpError(String),
     /// Directory tree structure changed (full rebuild pushed on every toggle).
     SftpTreeUpdate(Vec<RemoteTreeNode>),
     /// File-transfer progress / completion (download or upload).

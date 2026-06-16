@@ -289,7 +289,7 @@ async fn run_sftp(
             let _ = events.send(SessionEvent::SftpStatus(home.clone()));
         }
         Err(e) => {
-            let _ = events.send(SessionEvent::SftpStatus(format!("{}: {e}", t("SFTP 错误", "SFTP error"))));
+            let _ = events.send(SessionEvent::SftpError(list_error_msg(&home, &e)));
         }
     }
 
@@ -349,7 +349,7 @@ async fn run_sftp(
                         let _ = events.send(SessionEvent::SftpStatus(path));
                     }
                     Err(e) => {
-                        let _ = events.send(SessionEvent::SftpStatus(format!("{}: {e}", t("列目录失败", "list directory failed"))));
+                        let _ = events.send(SessionEvent::SftpError(list_error_msg(&path, &e)));
                     }
                 }
             }
@@ -900,6 +900,18 @@ fn spawn_edit_watcher(
 // ---------------------------------------------------------------------------
 // SFTP helpers
 // ---------------------------------------------------------------------------
+
+/// A friendlier message for a failed directory listing, calling out the common
+/// permission-denied case explicitly rather than dumping the raw error (#112).
+fn list_error_msg(path: &str, e: &impl std::fmt::Display) -> String {
+    let raw = e.to_string();
+    let low = raw.to_lowercase();
+    if low.contains("permission") || low.contains("denied") {
+        format!("{}: {}", t("权限不足,无法访问", "Permission denied"), path)
+    } else {
+        format!("{} {}: {}", t("无法访问", "Cannot open"), path, raw)
+    }
+}
 
 async fn list_dir_impl(sftp: &SftpSession, path: &str) -> Result<Vec<RemoteEntry>> {
     let raw = sftp
