@@ -225,10 +225,17 @@ async fn run_sftp(
             .with_context(|| format!("sftp connect {} failed", addr))?,
     };
 
+    // Resolve missing username/password (shares the shell's prompt; the UI
+    // de-dupes by session id so SFTP doesn't prompt a second time) (#110).
+    let (user, password) = match crate::ssh::resolve_credentials(&session, &events).await {
+        Some(c) => c,
+        None => return Err(anyhow!(t("已取消登录", "login cancelled"))),
+    };
+
     // --- Authenticate (same method as the shell session) -------------------
     let authed = match session.auth {
         AuthMethod::Password => handle
-            .authenticate_password(&session.user, session.password.as_str())
+            .authenticate_password(&user, password.as_str())
             .await
             .context("sftp password auth failed")?,
         AuthMethod::Key => {
@@ -251,7 +258,7 @@ async fn run_sftp(
             let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash)
                 .context("invalid private key")?;
             handle
-                .authenticate_publickey(&session.user, key_with_hash)
+                .authenticate_publickey(&user, key_with_hash)
                 .await
                 .context("sftp publickey auth failed")?
         }

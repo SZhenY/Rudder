@@ -491,6 +491,25 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // Connect-time credential prompt (#110): the user supplies the missing
+    // username/password (or cancels); the answer unblocks the SSH/SFTP auth.
+    {
+        let weak = window.as_weak();
+        window.on_cred_accept(move || {
+            if let Some(w) = weak.upgrade() {
+                resolve_front_cred(&w, true);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_cred_reject(move || {
+            if let Some(w) = weak.upgrade() {
+                resolve_front_cred(&w, false);
+            }
+        });
+    }
+
     // NIC selector: remember the user's choice for the active tab and refresh.
     {
         let weak = window.as_weak();
@@ -1025,7 +1044,9 @@ fn wire_session_callbacks(
             w.set_dialog_name("".into());
             w.set_dialog_host("".into());
             w.set_dialog_port("22".into());
-            w.set_dialog_user("root".into());
+            // No default username (#110): leaving it blank makes the connect-time
+            // prompt ask for it, Xshell-style.
+            w.set_dialog_user("".into());
             w.set_dialog_auth("password".into());
             w.set_dialog_password("".into());
             w.set_dialog_key_path("".into());
@@ -1368,11 +1389,13 @@ fn wire_session_callbacks(
                 Secret::new(draft.password.to_string())
             };
             let kind = crate::config::SessionKind::from_str(&draft.kind.to_string());
-            // Auto-name: serial → port label, otherwise user@host.
+            // Auto-name: serial → port label; otherwise user@host, or just the
+            // host when no username was given (#110).
             let auto_name = match kind {
                 crate::config::SessionKind::Serial => {
                     format!("{} @{}", draft.serial_port, draft.baud_rate)
                 }
+                _ if draft.user.trim().is_empty() => draft.host.to_string(),
                 _ => format!("{}@{}", draft.user, draft.host),
             };
             // Telnet defaults to port 23, SSH to 22; serial ignores port.
@@ -2437,6 +2460,16 @@ fn apply_session_event_to_window(
         } => {
             enqueue_hostkey_prompt(win, host, port, key_type, fingerprint, changed, responder);
         }
+        SessionEvent::CredentialPrompt {
+            session_id,
+            host,
+            user,
+            need_user,
+            need_password,
+            responder,
+        } => {
+            enqueue_cred_prompt(win, session_id, host, user, need_user, need_password, responder);
+        }
         SessionEvent::CommandRan(cmd) => {
             // A command typed directly in the terminal, captured via the shell
             // hook (#113). Record it in the same command-box history, reusing the
@@ -2600,6 +2633,144 @@ fn resolve_front_hostkey(win: &AppWindow, accept: bool) {
     } else {
         win.set_hostkey_prompt_open(false);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Connect-time credential prompt (#110)
+// ---------------------------------------------------------------------------
+
+/// One queued credential prompt. Connections to the same session (shell + its
+/// SFTP channel) collapse into a single dialog whose answer fans out to each
+/// waiting responder.
+struct PendingCred {
+    session_id: String,
+    host: String,
+    user: String,
+    need_user: bool,
+    need_password: bool,
+    responders: Vec<crate::ssh::CredentialResponder>,
+}
+
+thread_local! {
+    static CRED_QUEUE: RefCell<VecDeque<PendingCred>> = RefCell::new(VecDeque::new());
+    /// session id → the answer given this run (`None` = cancelled), so a second
+    /// connection for the same session is answered without re-prompting.
+    static CRED_DECIDED: RefCell<HashMap<String, Option<crate::ssh::CredentialReply>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Queue a credential prompt: answer immediately if already decided this run,
+/// merge into an existing pending entry for the same session, otherwise enqueue
+/// (and show it now if nothing else is up).
+fn enqueue_cred_prompt(
+    win: &AppWindow,
+    session_id: String,
+    host: String,
+    user: String,
+    need_user: bool,
+    need_password: bool,
+    responder: crate::ssh::CredentialResponder,
+) {
+    if let Some(reply) = CRED_DECIDED.with(|d| d.borrow().get(&session_id).cloned()) {
+        responder.respond(reply);
+        return;
+    }
+    let show_now = CRED_QUEUE.with(|q| {
+        let mut q = q.borrow_mut();
+        if let Some(p) = q.iter_mut().find(|p| p.session_id == session_id) {
+            p.responders.push(responder);
+            return false;
+        }
+        let was_empty = q.is_empty();
+        q.push_back(PendingCred {
+            session_id,
+            host,
+            user,
+            need_user,
+            need_password,
+            responders: vec![responder],
+        });
+        was_empty
+    });
+    if show_now {
+        show_front_cred(win);
+    }
+}
+
+/// Populate the credential dialog from the front prompt and open it.
+fn show_front_cred(win: &AppWindow) {
+    CRED_QUEUE.with(|q| {
+        if let Some(p) = q.borrow().front() {
+            win.set_cred_host(p.host.clone().into());
+            win.set_cred_need_user(p.need_user);
+            win.set_cred_need_password(p.need_password);
+            win.set_cred_user(p.user.clone().into());
+            win.set_cred_password("".into());
+            win.set_cred_remember(false);
+            win.set_cred_prompt_open(true);
+        }
+    });
+}
+
+/// Apply the user's answer to the front credential prompt (or cancel), persist
+/// it when "remember" is checked, then show the next prompt or close.
+fn resolve_front_cred(win: &AppWindow, accept: bool) {
+    let reply: Option<crate::ssh::CredentialReply> = if accept {
+        Some((
+            win.get_cred_user().to_string(),
+            win.get_cred_password().to_string(),
+            win.get_cred_remember(),
+        ))
+    } else {
+        None
+    };
+    let has_next = CRED_QUEUE.with(|q| {
+        let mut q = q.borrow_mut();
+        if let Some(p) = q.pop_front() {
+            CRED_DECIDED.with(|d| {
+                d.borrow_mut().insert(p.session_id.clone(), reply.clone());
+            });
+            if let Some((ref u, ref pw, true)) = reply {
+                persist_credentials(&p.session_id, u, pw, p.need_user, p.need_password);
+            }
+            for r in &p.responders {
+                r.respond(reply.clone());
+            }
+        }
+        !q.is_empty()
+    });
+    // Don't leave the typed password lingering in the UI property.
+    win.set_cred_password("".into());
+    if has_next {
+        show_front_cred(win);
+    } else {
+        win.set_cred_prompt_open(false);
+    }
+}
+
+/// Persist newly-entered credentials onto the saved session (#110, "remember").
+fn persist_credentials(
+    session_id: &str,
+    user: &str,
+    password: &str,
+    set_user: bool,
+    set_password: bool,
+) {
+    HISTORY_STORE.with(|s| {
+        if let Some(store) = s.borrow().as_ref() {
+            let mut st = store.borrow_mut();
+            if let Some(mut sess) = st.get(session_id).cloned() {
+                if set_user && !user.trim().is_empty() {
+                    sess.user = user.trim().to_string();
+                }
+                if set_password {
+                    sess.password = crate::config::Secret::new(password.to_string());
+                }
+                st.upsert(sess);
+                let _ = st.save();
+            }
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------

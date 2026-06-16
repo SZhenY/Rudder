@@ -250,6 +250,38 @@ impl std::fmt::Debug for HostKeyResponder {
     }
 }
 
+/// The user's answer to a connect-time credential prompt: `(username, password,
+/// remember)`, or `None` if they cancelled.
+pub type CredentialReply = (String, String, bool);
+
+/// Carries the credential prompt's answer back to the blocked auth flow (#110).
+/// `Arc<Mutex<Option<…>>>` so the enclosing [`SessionEvent`] stays `Clone`.
+#[derive(Clone)]
+pub struct CredentialResponder(
+    Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Option<CredentialReply>>>>>,
+);
+
+impl CredentialResponder {
+    pub fn new(tx: tokio::sync::oneshot::Sender<Option<CredentialReply>>) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(Some(tx))))
+    }
+
+    /// Deliver the user's answer (`None` = cancelled). Idempotent.
+    pub fn respond(&self, reply: Option<CredentialReply>) {
+        if let Ok(mut guard) = self.0.lock() {
+            if let Some(tx) = guard.take() {
+                let _ = tx.send(reply);
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for CredentialResponder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CredentialResponder")
+    }
+}
+
 /// One process row sampled from the remote `ps` (#23). CPU/mem are percentages
 /// as reported by `ps` (pcpu/pmem); `command` is the (width-truncated) args.
 #[derive(Debug, Clone)]
@@ -283,6 +315,16 @@ pub enum SessionEvent {
         /// True when a *different* key was previously stored (possible MITM).
         changed: bool,
         responder: HostKeyResponder,
+    },
+    /// The session is missing a username and/or password; the UI must prompt for
+    /// them and answer via `responder`. The auth flow is blocked meanwhile (#110).
+    CredentialPrompt {
+        session_id: String,
+        host: String,
+        user: String,
+        need_user: bool,
+        need_password: bool,
+        responder: CredentialResponder,
     },
     /// Remote machine resource sample (from the monitor channel).
     /// Memory/swap are in KiB (as reported by /proc/meminfo).
@@ -464,10 +506,22 @@ async fn run_session(
             .with_context(|| format!("connect {} failed", addr))?,
     };
 
+    // Resolve missing username/password by prompting the user (#110).
+    let (user, password) = match resolve_credentials(&session, &events).await {
+        Some(c) => c,
+        None => {
+            let _ = events.send(SessionEvent::Closed(t("已取消登录", "login cancelled").into()));
+            let _ = handle
+                .disconnect(Disconnect::ByApplication, "cancelled", "")
+                .await;
+            return Ok(());
+        }
+    };
+
     // --- Auth ----------------------------------------------------------
     let authed = match session.auth {
         AuthMethod::Password => handle
-            .authenticate_password(&session.user, session.password.as_str())
+            .authenticate_password(&user, password.as_str())
             .await
             .context("password auth failed")?,
         AuthMethod::Key => {
@@ -485,7 +539,7 @@ async fn run_session(
                 .unwrap_or(normalised);
             // An encrypted private key needs its passphrase; we reuse the
             // session's password field for it (empty = unencrypted key) (#90).
-            let pass = session.password.as_str();
+            let pass = password.as_str();
             let keypair = load_secret_key(
                 Path::new(&key_path),
                 if pass.is_empty() { None } else { Some(pass) },
@@ -499,14 +553,14 @@ async fn run_session(
             let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash)
                 .context("invalid private key / hash algorithm combination")?;
             handle
-                .authenticate_publickey(&session.user, key_with_hash)
+                .authenticate_publickey(&user, key_with_hash)
                 .await
                 .context("publickey auth failed")?
         }
     };
 
     if !authed {
-        tracing::warn!("ssh authentication failed for {}@{}", session.user, session.host);
+        tracing::warn!("ssh authentication failed for {}@{}", user, session.host);
         let _ = events.send(SessionEvent::Closed(t("认证失败", "authentication failed").into()));
         let _ = handle
             .disconnect(Disconnect::ByApplication, "auth failed", "")
@@ -1133,6 +1187,49 @@ pub(crate) async fn verify_host_key(
                 _ => false,
             }
         }
+    }
+}
+
+/// Resolve a session's username/password, prompting the UI for whatever is
+/// missing (#110). Returns the effective `(user, password)`, or `None` if the
+/// user cancelled. Both the shell and SFTP connections call this; the UI
+/// de-duplicates by session id so a single dialog serves both. A dropped reply
+/// channel (no UI) falls through with the stored values so auth fails normally.
+pub(crate) async fn resolve_credentials(
+    session: &Session,
+    events: &UnboundedSender<SessionEvent>,
+) -> Option<(String, String)> {
+    let mut user = session.user.trim().to_string();
+    let mut password = session.password.as_str().to_string();
+    let need_user = user.is_empty();
+    let need_password =
+        matches!(session.auth, AuthMethod::Password) && password.is_empty();
+    if !(need_user || need_password) {
+        return Some((user, password));
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let sent = events.send(SessionEvent::CredentialPrompt {
+        session_id: session.id.clone(),
+        host: session.host.clone(),
+        user: user.clone(),
+        need_user,
+        need_password,
+        responder: CredentialResponder::new(tx),
+    });
+    if sent.is_err() {
+        return Some((user, password));
+    }
+    match rx.await {
+        Ok(Some((u, p, _remember))) => {
+            if need_user {
+                user = u.trim().to_string();
+            }
+            if need_password {
+                password = p;
+            }
+            Some((user, password))
+        }
+        _ => None,
     }
 }
 

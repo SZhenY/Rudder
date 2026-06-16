@@ -95,7 +95,9 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-kind: "ssh";
     in-out property <string> draft-host;
     in-out property <string> draft-port: "22";
-    in-out property <string> draft-user: "root";
+    in-out property <string> draft-user;
+    // Set when Create/Save is pressed with an empty host (SSH/Telnet) (#110).
+    in-out property <bool> host-missing: false;
     in-out property <string> draft-auth: "password";
     in-out property <string> draft-password;
     in-out property <string> draft-key-path;
@@ -128,6 +130,9 @@ export component SessionDialog inherits Rectangle {
 
     visible: is-open;
     background: #000000aa;
+
+    // Clear the host-required flag each time the dialog opens (#110).
+    changed is-open => { if (self.is-open) { self.host-missing = false; } }
 
     // Swallow clicks on the backdrop
     TouchArea {
@@ -229,10 +234,17 @@ export component SessionDialog inherits Rectangle {
                 }
             }
 
+            // Inline error when a host-less SSH/Telnet session is submitted (#110).
+            if root.host-missing && root.draft-host == "" && root.draft-kind != "serial" : Text {
+                text: @tr("Please enter a host / IP address.");
+                color: Theme.danger;
+                font-size: Theme.fs-sm;
+            }
+
             // ── SSH-only: user + auth ───────────────────────────────────────
             if root.draft-kind == "ssh" : LabeledInput {
                 label: @tr("Username");
-                placeholder: "root";
+                placeholder: @tr("Prompted on connect if blank");
                 value <=> root.draft-user;
             }
 
@@ -535,6 +547,12 @@ export component SessionDialog inherits Rectangle {
                 PrimaryButton {
                     text: is-editing ? @tr("Save") : @tr("Create");
                     clicked => {
+                        // SSH/Telnet need a host; block submit and flag it (#110).
+                        if (root.draft-kind != "serial" && root.draft-host == "") {
+                            root.host-missing = true;
+                            return;
+                        }
+                        root.host-missing = false;
                         root.submit({
                             id: root.draft-id,
                             name: root.draft-name,

@@ -15,6 +15,7 @@ import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
 import { ComboBox, SpinBox, LineEdit, Button, ScrollView, CheckBox, Palette } from "std-widgets.slint";
@@ -224,6 +225,17 @@ export component AppWindow inherits Window {
     in-out property <string> hostkey-confirm-label; // trust-button text (from Rust, bilingual)
     callback hostkey-accept();                     // trust (and remember) the key
     callback hostkey-reject();                      // abort the connection
+    // Connect-time credential prompt (#110). Rust opens this when a session is
+    // missing its username and/or password; the answer flows back via accept.
+    in-out property <bool> cred-prompt-open: false;
+    in-out property <string> cred-host;            // host shown in the dialog title
+    in-out property <bool> cred-need-user: false;
+    in-out property <bool> cred-need-password: false;
+    in-out property <string> cred-user;            // username field value
+    in-out property <string> cred-password;        // password field value
+    in-out property <bool> cred-remember: false;   // persist to the saved session
+    callback cred-accept();                        // use the entered credentials
+    callback cred-reject();                        // cancel the connection
     // Group create / rename dialog (#41).
     in-out property <bool> group-dialog-open: false;
     in-out property <string> group-dialog-orig;    // "" = create, else rename
@@ -293,7 +305,7 @@ export component AppWindow inherits Window {
     in-out property <string> dialog-name;
     in-out property <string> dialog-host;
     in-out property <string> dialog-port: "22";
-    in-out property <string> dialog-user: "root";
+    in-out property <string> dialog-user;
     in-out property <string> dialog-auth: "password";
     in-out property <string> dialog-password;
     in-out property <string> dialog-key-path;
@@ -2277,5 +2289,69 @@ export component AppWindow inherits Window {
         confirm-label: root.hostkey-confirm-label;
         confirm => { root.hostkey-accept(); }
         cancel => { root.hostkey-reject(); }
+    }
+
+    // Connect-time credential prompt (#110). Backdrop / Cancel abort the connect.
+    if root.cred-prompt-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #000000aa;
+        TouchArea { clicked => { root.cred-reject(); } }
+        Rectangle {
+            width: 360px;
+            height: cred-card.preferred-height;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000080;
+            TouchArea {}   // swallow clicks inside the card
+            cred-card := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+                Text {
+                    text: @tr("Login");
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-xl;
+                    font-weight: 600;
+                }
+                Text {
+                    text: root.cred-host;
+                    color: Theme.text-secondary;
+                    font-family: Theme.font-mono;
+                    font-size: Theme.fs-sm;
+                }
+                if root.cred-need-user : LabeledInput {
+                    label: @tr("Username");
+                    placeholder: "root";
+                    value <=> root.cred-user;
+                }
+                if root.cred-need-password : LabeledInput {
+                    label: @tr("Password");
+                    placeholder: "••••••••";
+                    password: true;
+                    value <=> root.cred-password;
+                }
+                CheckBox {
+                    text: @tr("Remember for this session");
+                    checked <=> root.cred-remember;
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    GhostButton {
+                        text: @tr("Cancel");
+                        clicked => { root.cred-reject(); }
+                    }
+                    PrimaryButton {
+                        text: @tr("Connect");
+                        clicked => { root.cred-accept(); }
+                    }
+                }
+            }
+        }
     }
 }
