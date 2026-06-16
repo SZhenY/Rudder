@@ -5,6 +5,62 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-06-16
+
+### Added / 新增
+
+- **Host-key verification with a first-connect confirmation dialog.** On first
+  contact a dialog shows the host, key type and SHA256 fingerprint; the key is
+  remembered (a known_hosts file beside sessions.json) only after you trust it.
+  A later key that differs is flagged as a possible MITM and needs re-confirming.
+  Replaces the previous "accept any key" behaviour. (#109)
+  **主机密钥校验 + 首次连接确认弹窗。** 首次连接会弹窗显示主机、密钥类型和 SHA256
+  指纹,确认信任后才记住(known_hosts 文件,与 sessions.json 同目录);之后密钥若
+  变化会作为疑似中间人攻击提示并要求重新确认。取代了原先「接受任意密钥」的行为。
+- **Quick-connect login, Xshell-style.** New SSH/Telnet sessions now require a
+  host. The username no longer defaults to `root`; if a session is missing its
+  username and/or (password-auth) password, you're prompted for them on connect,
+  with an optional "remember". Auto-naming uses `user@host`, or just the host
+  when no username is given. (#110)
+  **类 Xshell 的快速连接登录。** 新建 SSH/Telnet 会话需填主机;用户名不再默认
+  `root`;会话缺用户名 和/或(密码认证)密码时,连接时弹窗补充,可勾选「记住」。
+  自动命名用 `user@host`,无用户名时仅用主机名。
+- **Commands typed in the terminal now join the command history.** Captured via
+  the shell integration hook (bash/zsh), so the command box and ↑/↓ recall
+  include what you ran in the terminal — passwords typed at prompts are never
+  captured. (#113)
+  **终端里直接敲的命令现在也进命令历史。** 通过 shell 集成钩子(bash/zsh)捕获,
+  命令栏和 ↑/↓ 回溯都会包含;在提示符处输入的密码不会被捕获。
+
+### Changed / 变更
+
+- **Command history is de-duplicated, most-recent last.** Re-running a command
+  moves it to the end instead of leaving duplicates; existing history is cleaned
+  up on load. (#113)
+  **命令历史全局去重,最近使用排在最后。** 重复执行只会把命令移到末尾而不再留重复
+  项;已有历史在加载时清理一次。
+
+### Fixed / 修复
+
+- **The injected prompt-setup line no longer leaks to the terminal on connect.**
+  When the echoed setup line was split across packets the matcher missed it,
+  showing `test -z "$FISH_VERSION" && eval '…'`; output is now buffered until the
+  line is complete so it's reliably stripped however it's chunked. (#98)
+  **连接后不再出现注入的设置命令。** 该回显行被分包拆开时旧逻辑匹配不到,会显示
+  `test -z "$FISH_VERSION" && eval '…'`;现在缓冲到该行完整再剥离,无论如何分块都能隐藏。
+- **ZMODEM `sz a b c` now receives every file**, not just the first — ZEOF ends a
+  file, not the session. (#109)
+  **ZMODEM `sz a b c` 现在会接收每个文件**,而不只是第一个(ZEOF 表示单个文件结束,
+  而非整个会话结束)。
+- **A denied directory listing is handled gracefully.** Instead of spinning
+  forever on a permission error, the panel stops loading and shows a clear
+  "permission denied" message while keeping the current view. (#112)
+  **目录无权限时优雅处理。** 不再卡在加载转圈,面板会停止加载并明确提示「权限不足」,
+  同时保留当前视图。
+- **IPv6 bind addresses are bracketed** for `-L`/`-D` port forwards
+  (`[::1]:8080`). (#109/#105)
+  **端口转发的 IPv6 绑定地址加方括号**(`[::1]:8080`),`-L`/`-D` 现在可用。
+
 ## [0.4.6] - 2026-06-14
 
 ### Fixed / 修复
