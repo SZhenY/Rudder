@@ -83,9 +83,14 @@ pub async fn receive(
     let mut rx = Rx::new(channel, first);
     let mut received = 0u32;
     let mut cur: Option<CurFile> = None;
+    // A header already read ahead (e.g. the next ZFILE peeked after a ZEOF).
+    let mut pending: Option<(u8, [u8; 4])> = None;
 
     loop {
-        let (ftype, hdr) = rx.read_header().await?;
+        let (ftype, hdr) = match pending.take() {
+            Some(h) => h,
+            None => rx.read_header().await?,
+        };
         tracing::debug!("zmodem rx header type={ftype} data={hdr:02x?}");
         match ftype {
             ZRQINIT => rx.send_hex(ZRINIT, [0, 0, 0, CANFDX | CANOVIO | CANFC32]).await?,
@@ -145,9 +150,20 @@ pub async fn receive(
                     emit(events, &c.id, &c.name, c.written, c.size.max(c.written), 1, "");
                     received += 1;
                 }
-                break; // file complete; run the close handshake after the loop
+                // ZEOF ends one *file*, not the whole session (#109). Tell the
+                // sender we're ready for more (ZRINIT) and peek the next frame:
+                // a multi-file `sz` sends the next ZFILE; otherwise it sends ZFIN
+                // (or just waits for our ZFIN and sends nothing). The peek is
+                // capped by a short timeout so a finished single-file transfer
+                // never blocks on the long per-byte read timeout — anything that
+                // isn't a ZFILE drops to the close handshake below.
+                rx.send_hex(ZRINIT, [0, 0, 0, CANFDX | CANOVIO | CANFC32]).await?;
+                match tokio::time::timeout(Duration::from_secs(2), rx.read_header()).await {
+                    Ok(Ok(h)) if h.0 == ZFILE => pending = Some(h),
+                    _ => break, // ZFIN / unexpected / parse error / timeout → done
+                }
             }
-            ZFIN => break, // sender signals it's done
+            ZFIN => break, // sender signals the whole session is done
             ZCAN | ZABORT => bail!("{}", t("传输被远端取消", "transfer aborted by sender")),
             ZNAK => { /* sender NAK; just keep going */ }
             _ => tracing::debug!("zmodem: ignoring unhandled frame type {ftype}"),
