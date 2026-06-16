@@ -29,7 +29,13 @@ fn bind_target(bind_addr: &str, bind_port: u16) -> String {
     } else {
         bind_addr.trim()
     };
-    format!("{addr}:{bind_port}")
+    // IPv6 literals must be bracketed for TcpListener::bind ("[::1]:8080");
+    // an already-bracketed address is left as-is (#109).
+    if addr.contains(':') && !addr.starts_with('[') {
+        format!("[{addr}]:{bind_port}")
+    } else {
+        format!("{addr}:{bind_port}")
+    }
 }
 
 /// Open a `direct-tcpip` channel to `host:port`, recording the originating peer
