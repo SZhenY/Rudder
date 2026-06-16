@@ -156,6 +156,9 @@ pub fn run() -> Result<()> {
     let store = Rc::new(RefCell::new(
         ConfigStore::load().context("failed to load config")?,
     ));
+    // Reachable from the Slint-thread event handler for recording terminal
+    // commands into history (#113).
+    HISTORY_STORE.with(|s| *s.borrow_mut() = Some(store.clone()));
 
     // Per-tab SSH handles (shell only; lives on Slint thread via Rc).
     let handles: Rc<RefCell<HashMap<String, SessionHandle>>> =
@@ -2426,7 +2429,29 @@ fn apply_session_event_to_window(
         } => {
             enqueue_hostkey_prompt(win, host, port, key_type, fingerprint, changed, responder);
         }
+        SessionEvent::CommandRan(cmd) => {
+            // A command typed directly in the terminal, captured via the shell
+            // hook (#113). Record it in the same command-box history, reusing the
+            // de-dup/move-to-end logic, and refresh the model.
+            HISTORY_STORE.with(|s| {
+                if let Some(store) = s.borrow().as_ref() {
+                    {
+                        let mut st = store.borrow_mut();
+                        st.push_command_history(cmd);
+                        let _ = st.save();
+                    }
+                    win.set_command_history(history_model(&store.borrow()));
+                }
+            });
+        }
     }
+}
+
+thread_local! {
+    /// The config store, made reachable from the Slint-thread event handler so
+    /// terminal-captured commands (#113) can be appended to history. Set once at
+    /// startup; only touched on the Slint event-loop thread.
+    static HISTORY_STORE: RefCell<Option<Rc<RefCell<ConfigStore>>>> = const { RefCell::new(None) };
 }
 
 // ---------------------------------------------------------------------------
