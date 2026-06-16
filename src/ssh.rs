@@ -178,6 +178,36 @@ pub enum SessionCommand {
     Close,
 }
 
+/// Carries the user's answer to a host-key confirmation prompt back to the
+/// blocked `check_server_key` handler. Wrapped in `Arc<Mutex<Option<…>>>` so the
+/// enclosing [`SessionEvent`] stays `Clone` (a bare `oneshot::Sender` is not);
+/// the first `respond` consumes the sender, later calls are no-ops.
+#[derive(Clone)]
+pub struct HostKeyResponder(
+    Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<bool>>>>,
+);
+
+impl HostKeyResponder {
+    pub fn new(tx: tokio::sync::oneshot::Sender<bool>) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(Some(tx))))
+    }
+
+    /// Deliver the user's decision (`true` = trust). Idempotent.
+    pub fn respond(&self, accept: bool) {
+        if let Ok(mut guard) = self.0.lock() {
+            if let Some(tx) = guard.take() {
+                let _ = tx.send(accept);
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for HostKeyResponder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HostKeyResponder")
+    }
+}
+
 /// One process row sampled from the remote `ps` (#23). CPU/mem are percentages
 /// as reported by `ps` (pcpu/pmem); `command` is the (width-truncated) args.
 #[derive(Debug, Clone)]
@@ -200,6 +230,18 @@ pub enum SessionEvent {
     Connected,
     /// Connection closed (either cleanly or after an error).
     Closed(String),
+    /// The server presented a host key that is unknown or has changed; the UI
+    /// must show a confirmation dialog and answer via `responder` (#109-5). The
+    /// handler is blocked awaiting that answer.
+    HostKeyPrompt {
+        host: String,
+        port: u16,
+        key_type: String,
+        fingerprint: String,
+        /// True when a *different* key was previously stored (possible MITM).
+        changed: bool,
+        responder: HostKeyResponder,
+    },
     /// Remote machine resource sample (from the monitor channel).
     /// Memory/swap are in KiB (as reported by /proc/meminfo).
     ResourceStats {
@@ -346,6 +388,8 @@ async fn run_session(
         .map(|f| (f.bind_port as u32, (f.host.clone(), f.host_port)))
         .collect();
     let handler = ClientHandler {
+        host: session.host.clone(),
+        port: session.port,
         remote_forwards,
         events: events.clone(),
     };
@@ -969,15 +1013,56 @@ fn parse_net_dev_line(line: &str) -> Option<(String, (u64, u64))> {
     Some((iface.to_string(), (nums[0], nums[8])))
 }
 
-/// Dead-simple client handler.  For v0.1 we accept any server key (similar to
-/// `ssh -o StrictHostKeyChecking=no`). A real host-key verification flow
-/// with on-disk known_hosts is on the roadmap.
+/// Client handler. Verifies the server host key against the known_hosts store,
+/// prompting the user on first contact / on a changed key (#109-5).
 ///
 /// Carries the remote-forward (-R) map so we can service channels the server
 /// opens back to us: server bind-port → local `(host, port)` target (#56).
 pub(crate) struct ClientHandler {
+    pub(crate) host: String,
+    pub(crate) port: u16,
     pub(crate) remote_forwards: std::collections::HashMap<u32, (String, u16)>,
     pub(crate) events: UnboundedSender<SessionEvent>,
+}
+
+/// Shared host-key check used by both the shell and SFTP connections: trust a
+/// matching stored key silently; otherwise ask the UI (via `events`) and, on
+/// acceptance, remember the key. A dropped/closed reply channel (UI gone)
+/// counts as a rejection so we never connect to an unverified host.
+pub(crate) async fn verify_host_key(
+    host: &str,
+    port: u16,
+    key: &PublicKey,
+    events: &UnboundedSender<SessionEvent>,
+) -> bool {
+    use crate::known_hosts::HostKeyStatus;
+    match crate::known_hosts::verify(host, port, key) {
+        HostKeyStatus::Match => true,
+        status => {
+            let changed = status == HostKeyStatus::Changed;
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let sent = events.send(SessionEvent::HostKeyPrompt {
+                host: host.to_string(),
+                port,
+                key_type: key.algorithm().to_string(),
+                fingerprint: crate::known_hosts::fingerprint(key),
+                changed,
+                responder: HostKeyResponder::new(tx),
+            });
+            if sent.is_err() {
+                return false; // no UI to ask
+            }
+            match rx.await {
+                Ok(true) => {
+                    if let Err(e) = crate::known_hosts::remember(host, port, key) {
+                        tracing::warn!("could not save host key for {host}:{port}: {e:#}");
+                    }
+                    true
+                }
+                _ => false,
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -986,9 +1071,9 @@ impl Handler for ClientHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        Ok(verify_host_key(&self.host, self.port, server_public_key, &self.events).await)
     }
 
     async fn data(

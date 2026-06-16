@@ -7,7 +7,7 @@
 //!   * Route Slint callbacks to the right domain module.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -465,6 +465,26 @@ pub fn run() -> Result<()> {
             let mut s = store.borrow_mut();
             s.set_theme_pref(pref.to_string());
             let _ = s.save();
+        });
+    }
+
+    // Host-key confirmation dialog (#109-5): the user trusts or rejects the
+    // presented server key; the decision fans back out to the blocked SSH/SFTP
+    // handler(s) and the next queued prompt (if any) is shown.
+    {
+        let weak = window.as_weak();
+        window.on_hostkey_accept(move || {
+            if let Some(w) = weak.upgrade() {
+                resolve_front_hostkey(&w, true);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_hostkey_reject(move || {
+            if let Some(w) = weak.upgrade() {
+                resolve_front_hostkey(&w, false);
+            }
         });
     }
 
@@ -2396,6 +2416,156 @@ fn apply_session_event_to_window(
                 }
             }
         }
+        SessionEvent::HostKeyPrompt {
+            host,
+            port,
+            key_type,
+            fingerprint,
+            changed,
+            responder,
+        } => {
+            enqueue_hostkey_prompt(win, host, port, key_type, fingerprint, changed, responder);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Host-key confirmation (#109-5)
+// ---------------------------------------------------------------------------
+
+/// One queued host-key prompt. Multiple connections to the *same* host:port
+/// (e.g. the shell and its SFTP channel racing on first connect) collapse into
+/// a single dialog whose answer fans out to every waiting `responder`.
+struct PendingHostKey {
+    host: String,
+    port: u16,
+    changed: bool,
+    title: String,
+    message: String,
+    detail: String,
+    confirm_label: String,
+    responders: Vec<crate::ssh::HostKeyResponder>,
+}
+
+thread_local! {
+    /// Prompts awaiting a decision; the front one is shown. Lives on the Slint
+    /// event-loop thread (all access is from there).
+    static HOSTKEY_QUEUE: RefCell<VecDeque<PendingHostKey>> = RefCell::new(VecDeque::new());
+    /// host:port → decision, remembered for this run so a duplicate prompt
+    /// (second connection to the same host) is answered without a new dialog.
+    static HOSTKEY_DECIDED: RefCell<HashMap<String, bool>> = RefCell::new(HashMap::new());
+}
+
+/// Localized title / message / detail / confirm-label for the host-key dialog.
+fn hostkey_dialog_text(
+    host: &str,
+    port: u16,
+    key_type: &str,
+    fingerprint: &str,
+    changed: bool,
+) -> (String, String, String, String) {
+    let detail = format!("{host}:{port}  ({key_type})\n{fingerprint}");
+    if changed {
+        (
+            crate::i18n::t("⚠ 主机密钥已改变", "⚠ Host key changed").to_string(),
+            crate::i18n::t(
+                "该主机的密钥与之前记录的不一致,可能存在中间人攻击。仅当你确知服务器密钥已更换时才继续。",
+                "This host's key differs from the one stored earlier — this could be a man-in-the-middle attack. Only continue if you know the server's key really changed.",
+            )
+            .to_string(),
+            detail,
+            crate::i18n::t("仍然信任", "Trust anyway").to_string(),
+        )
+    } else {
+        (
+            crate::i18n::t("未知主机", "Unknown host").to_string(),
+            crate::i18n::t(
+                "首次连接该主机。请核对下面的密钥指纹,确认无误后再信任并连接。",
+                "First time connecting to this host. Verify the key fingerprint below before you trust and connect.",
+            )
+            .to_string(),
+            detail,
+            crate::i18n::t("信任并连接", "Trust & connect").to_string(),
+        )
+    }
+}
+
+/// Queue a host-key prompt: answer immediately if already decided this run,
+/// merge into an existing pending entry for the same host, otherwise enqueue
+/// (and show it now if nothing else is up).
+fn enqueue_hostkey_prompt(
+    win: &AppWindow,
+    host: String,
+    port: u16,
+    key_type: String,
+    fingerprint: String,
+    changed: bool,
+    responder: crate::ssh::HostKeyResponder,
+) {
+    let id = format!("{host}:{port}");
+    if let Some(ans) = HOSTKEY_DECIDED.with(|d| d.borrow().get(&id).copied()) {
+        responder.respond(ans);
+        return;
+    }
+    let show_now = HOSTKEY_QUEUE.with(|q| {
+        let mut q = q.borrow_mut();
+        if let Some(p) = q.iter_mut().find(|p| p.host == host && p.port == port) {
+            p.responders.push(responder);
+            return false;
+        }
+        let was_empty = q.is_empty();
+        let (title, message, detail, confirm_label) =
+            hostkey_dialog_text(&host, port, &key_type, &fingerprint, changed);
+        q.push_back(PendingHostKey {
+            host,
+            port,
+            changed,
+            title,
+            message,
+            detail,
+            confirm_label,
+            responders: vec![responder],
+        });
+        was_empty
+    });
+    if show_now {
+        show_front_hostkey(win);
+    }
+}
+
+/// Push the front pending prompt's details into the window and open the dialog.
+fn show_front_hostkey(win: &AppWindow) {
+    HOSTKEY_QUEUE.with(|q| {
+        if let Some(p) = q.borrow().front() {
+            win.set_hostkey_changed(p.changed);
+            win.set_hostkey_title(p.title.clone().into());
+            win.set_hostkey_message(p.message.clone().into());
+            win.set_hostkey_detail(p.detail.clone().into());
+            win.set_hostkey_confirm_label(p.confirm_label.clone().into());
+            win.set_hostkey_prompt_open(true);
+        }
+    });
+}
+
+/// Apply the user's decision to the front prompt, then show the next one (or
+/// close the dialog if the queue is now empty).
+fn resolve_front_hostkey(win: &AppWindow, accept: bool) {
+    let has_next = HOSTKEY_QUEUE.with(|q| {
+        let mut q = q.borrow_mut();
+        if let Some(p) = q.pop_front() {
+            HOSTKEY_DECIDED.with(|d| {
+                d.borrow_mut().insert(format!("{}:{}", p.host, p.port), accept);
+            });
+            for r in &p.responders {
+                r.respond(accept);
+            }
+        }
+        !q.is_empty()
+    });
+    if has_next {
+        show_front_hostkey(win);
+    } else {
+        win.set_hostkey_prompt_open(false);
     }
 }
 

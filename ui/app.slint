@@ -213,6 +213,17 @@ export component AppWindow inherits Window {
     // double-click on the title-bar icon / X shouldn't drop active sessions.
     in-out property <bool> confirm-close-open: false;
     callback confirm-close-yes();                  // quit the app for real
+    // Host-key confirmation (#109-5). Rust opens this when a server presents an
+    // unknown / changed host key; the user's answer flows back via the callbacks
+    // and Rust closes the dialog.
+    in-out property <bool> hostkey-prompt-open: false;
+    in-out property <bool> hostkey-changed: false; // true = key differs from stored
+    in-out property <string> hostkey-title;
+    in-out property <string> hostkey-message;
+    in-out property <string> hostkey-detail;       // host:port + type + fingerprint
+    in-out property <string> hostkey-confirm-label; // trust-button text (from Rust, bilingual)
+    callback hostkey-accept();                     // trust (and remember) the key
+    callback hostkey-reject();                      // abort the connection
     // Group create / rename dialog (#41).
     in-out property <bool> group-dialog-open: false;
     in-out property <string> group-dialog-orig;    // "" = create, else rename
@@ -2252,5 +2263,19 @@ export component AppWindow inherits Window {
             root.confirm-delete-open = false;
         }
         cancel => { root.confirm-delete-open = false; }
+    }
+
+    // Host-key confirmation (#109-5). Reuses the confirm-dialog card; the
+    // backdrop / Cancel both reject (safe default = don't connect).
+    ConfirmDialog {
+        width: parent.width;
+        height: parent.height;
+        is-open <=> root.hostkey-prompt-open;
+        title: root.hostkey-title;
+        message: root.hostkey-message;
+        detail: root.hostkey-detail;
+        confirm-label: root.hostkey-confirm-label;
+        confirm => { root.hostkey-accept(); }
+        cancel => { root.hostkey-reject(); }
     }
 }

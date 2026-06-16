@@ -216,11 +216,11 @@ async fn run_sftp(
             let stream = crate::proxy::connect(&p, &session.host, session.port)
                 .await
                 .with_context(|| format!("sftp proxy connect {} failed", addr))?;
-            client::connect_stream(config, stream, SftpClientHandler)
+            client::connect_stream(config, stream, sftp_handler(&session, &events))
                 .await
                 .with_context(|| format!("sftp connect {} failed", addr))?
         }
-        None => client::connect(config, addr.as_str(), SftpClientHandler)
+        None => client::connect(config, addr.as_str(), sftp_handler(&session, &events))
             .await
             .with_context(|| format!("sftp connect {} failed", addr))?,
     };
@@ -1241,10 +1241,24 @@ async fn upload_pipelined(
 }
 
 // ---------------------------------------------------------------------------
-// russh client handler (accept any server key, same as the shell handler)
+// russh client handler — verifies the host key against known_hosts, reusing the
+// shell session's prompt path (#109-5). The UI de-duplicates by host:port, so a
+// fresh host confirmed for the shell won't prompt again for SFTP.
 // ---------------------------------------------------------------------------
 
-struct SftpClientHandler;
+struct SftpClientHandler {
+    host: String,
+    port: u16,
+    events: UnboundedSender<SessionEvent>,
+}
+
+fn sftp_handler(session: &Session, events: &UnboundedSender<SessionEvent>) -> SftpClientHandler {
+    SftpClientHandler {
+        host: session.host.clone(),
+        port: session.port,
+        events: events.clone(),
+    }
+}
 
 #[async_trait]
 impl Handler for SftpClientHandler {
@@ -1252,9 +1266,9 @@ impl Handler for SftpClientHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        Ok(crate::ssh::verify_host_key(&self.host, self.port, server_public_key, &self.events).await)
     }
 
     async fn data(
