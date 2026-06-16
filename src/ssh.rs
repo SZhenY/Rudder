@@ -545,11 +545,9 @@ async fn run_session(
                 if pass.is_empty() { None } else { Some(pass) },
             )
             .with_context(|| format!("failed to load key {key_path}"))?;
-            let hash = if keypair.algorithm().is_rsa() {
-                Some(HashAlg::Sha256)
-            } else {
-                None
-            };
+            // RSA keys must be signed with an explicit SHA-2 hash; every other
+            // key type carries its own algorithm, so no override is needed.
+            let hash = keypair.algorithm().is_rsa().then_some(HashAlg::Sha256);
             let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash)
                 .context("invalid private key / hash algorithm combination")?;
             handle

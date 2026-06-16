@@ -250,11 +250,8 @@ async fn run_sftp(
                 .unwrap_or(normalised);
             let keypair = load_secret_key(Path::new(&key_path), None)
                 .with_context(|| format!("failed to load key {key_path}"))?;
-            let hash = if keypair.algorithm().is_rsa() {
-                Some(HashAlg::Sha256)
-            } else {
-                None
-            };
+            // RSA keys need an explicit SHA-2 hash; other key types don't.
+            let hash = keypair.algorithm().is_rsa().then_some(HashAlg::Sha256);
             let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash)
                 .context("invalid private key")?;
             handle
