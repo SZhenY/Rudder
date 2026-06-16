@@ -599,9 +599,12 @@ async fn run_session(
     // We wait for the first non-empty data chunk (the initial shell prompt)
     // before sending so the command doesn't interleave with banner text.
     let mut prompt_injected = false;
-    // True from injecting PROMPT_SETUP until the first OSC 7 comes back; during
-    // that window we strip the echoed command text from the output stream.
+    // True from injecting PROMPT_SETUP until the echoed setup line has been
+    // received and stripped; output is buffered (not shown) during that window.
     let mut suppress_echo = false;
+    // Buffers output while `suppress_echo` so the (long) echoed setup line can be
+    // stripped even when it splits across reads (#98).
+    let mut echo_buf = String::new();
     // After a ZMODEM transfer finishes we briefly ignore ZMODEM detection so the
     // sender's lingering close frames can't spawn a spurious second receive (#76).
     let mut zmodem_done_at: Option<std::time::Instant> = None;
@@ -790,37 +793,60 @@ async fn run_session(
                             continue;
                         }
 
-                        let mut text = String::from_utf8_lossy(&data).into_owned();
+                        let chunk = String::from_utf8_lossy(&data).into_owned();
 
                         // Inject PROMPT_COMMAND after the first real shell output.
-                        if !prompt_injected && !text.trim().is_empty() {
+                        if !prompt_injected && !chunk.trim().is_empty() {
                             prompt_injected = true;
                             suppress_echo = true;
                             let _ = channel.data(prompt_setup.as_bytes()).await;
+                            // Fall through: this chunk is buffered below so the
+                            // echoed setup line is stripped as a single piece.
                         }
 
-                        // Hide the injected command so it doesn't clutter the
-                        // terminal (the user never typed it). Delete the whole
-                        // line carrying the echo — the prompt that preceded it,
-                        // the command, and its trailing newline — so the
-                        // bookkeeping command leaves no extra blank prompt behind.
-                        if suppress_echo {
-                            if let Some(pos) = text.find(echo_needle) {
+                        // While suppressing, buffer output until the echoed setup
+                        // line has fully arrived, then delete it. Matching a single
+                        // chunk misses the long line when it splits across reads,
+                        // leaking it to the terminal (#98). The injected `__ms7`'s
+                        // own OSC 7/697 only prints after the line is echoed and
+                        // run, so its arrival — or the echoed line plus its newline
+                        // — means the buffer is complete. A size cap is the safety
+                        // valve for a shell that never reports back.
+                        let mut text = if suppress_echo {
+                            echo_buf.push_str(&chunk);
+                            const ECHO_BUF_CAP: usize = 1 << 14; // 16 KiB
+                            let needle_done = echo_buf
+                                .find(echo_needle)
+                                .is_some_and(|p| echo_buf[p..].contains('\n'));
+                            let landed = needle_done
+                                || echo_buf.contains("\u{1b}]7;")
+                                || echo_buf.contains("\u{1b}]697;")
+                                || echo_buf.len() >= ECHO_BUF_CAP;
+                            if !landed {
+                                continue; // keep buffering; show nothing yet
+                            }
+                            suppress_echo = false;
+                            let mut buf = std::mem::take(&mut echo_buf);
+                            // Delete the whole echoed line (prompt + command +
+                            // trailing newline) so no stray prompt is left behind.
+                            if let Some(pos) = buf.find(echo_needle) {
                                 let line_start =
-                                    text[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                                    buf[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
                                 let after = pos + echo_needle.len();
-                                let line_end = text[after..]
+                                let line_end = buf[after..]
                                     .find('\n')
                                     .map(|i| after + i + 1)
-                                    .unwrap_or(text.len());
-                                text.replace_range(line_start..line_end, "");
+                                    .unwrap_or(buf.len());
+                                buf.replace_range(line_start..line_end, "");
                             }
-                        }
+                            buf
+                        } else {
+                            chunk
+                        };
 
                         // Scan for OSC 7 CWD notification injected by PROMPT_COMMAND.
                         if let Some(cwd) = extract_osc7_path(&text) {
                             tracing::debug!("OSC7 cwd={:?}", cwd);
-                            suppress_echo = false; // injection landed; stop filtering
                             let _ = events.send(SessionEvent::CwdChanged(cwd));
                         }
 
