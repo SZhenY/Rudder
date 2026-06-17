@@ -232,7 +232,7 @@ pub fn run() -> Result<()> {
         window.set_term_font_size(s.font_size() as f32);
     }
     // Editable inputs (e.g. the SFTP path bar) need a CJK-capable font: the
-    // embedded Cascadia Mono has no Chinese glyphs and native TextInput doesn't
+    // embedded mono font has no Chinese glyphs and native TextInput doesn't
     // glyph-fallback like Text does, so typed Chinese would render as tofu (#54).
     #[cfg(target_os = "windows")]
     window.set_ui_font_family("Microsoft YaHei UI".into());
@@ -4127,7 +4127,13 @@ fn system_monospace_fonts() -> Vec<slint::SharedString> {
         .collect();
     names.sort();
     names.dedup();
-    names.into_iter().map(slint::SharedString::from).collect()
+    // Surface the built-in glyph-complete font first so it's selectable and the
+    // default selection is shown — it isn't a system face so fontdb won't list it
+    // (#114).
+    names.retain(|n| n != "Meatshell Mono");
+    let mut out = vec![slint::SharedString::from("Meatshell Mono")];
+    out.extend(names.into_iter().map(slint::SharedString::from));
+    out
 }
 
 /// Split a stored proxy URL into `(type, host:port)` for the session dialog.

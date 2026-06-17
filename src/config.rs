@@ -266,7 +266,7 @@ pub struct ConfigFile {
     /// Theme preference: "system" (default) | "dark" | "light".
     #[serde(default)]
     pub theme_pref: String,
-    /// Terminal font family. Empty = the built-in default (Cascadia Mono).
+    /// Terminal font family. Empty = the built-in default ("Meatshell Mono").
     #[serde(default)]
     pub font_family: String,
     /// Terminal font size in px. 0 = the built-in default.

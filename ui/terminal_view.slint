@@ -2,12 +2,12 @@ import { Theme } from "theme.slint";
 import { SftpPanel, SftpEntry, SftpTreeNode } from "sftp_panel.slint";
 
 // Embed the terminal fonts here too so the cell-probe Text below measures
-// with the CORRECT font (Cascadia Mono), not a system fallback.  Font imports
-// in app.slint are globally available in theory, but some Slint builds only
-// register them in the entry-point file's component tree; importing them here
-// guarantees the probe uses Cascadia Mono for its preferred-width calculation.
-import "fonts/CascadiaMono-Regular.ttf";
-import "fonts/CascadiaMono-Bold.ttf";
+// with the CORRECT font (the built-in Meatshell Mono), not a system fallback.
+// Font imports in app.slint are globally available in theory, but some Slint
+// builds only register them in the entry-point file's component tree; importing
+// them here guarantees the probe uses Meatshell Mono for its width calc.
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
 
 // One coloured run of text on the terminal grid.  The Rust side groups
 // consecutive vt100 cells that share fg + bg + bold into a single span and
@@ -170,7 +170,7 @@ export component TerminalView inherits Rectangle {
     // Cell-size probe: must be RENDERED (opacity:0, not visible:false) so Slint
     // resolves the correct embedded font before computing preferred-width/height.
     // visible:false can skip font loading and fall back to a system font (e.g.
-    // Consolas ~6.5 px/char instead of Cascadia Mono ~7.6 px/char), giving a
+    // Consolas ~6.5 px/char instead of Meatshell Mono ~7.6 px/char), giving a
     // cell-w that is too narrow and a term-cols that is too large.
     cell-probe := Text {
         text: "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM"; // exactly 50×M
