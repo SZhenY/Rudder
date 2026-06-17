@@ -299,6 +299,13 @@ export component TerminalView inherits Rectangle {
 
                 flickable := Flickable {
                     vertical-stretch: 1;
+                    // Non-interactive: a Flickable steals fast drags from child
+                    // TouchAreas for its own flick gesture, which broke quick
+                    // drag-selection (slow drags worked, fast ones selected
+                    // nothing). We scroll via the wheel (scroll-event below →
+                    // terminal-scroll) and pin programmatically, so we don't need
+                    // the Flickable's own drag-scrolling (#119-followup).
+                    interactive: false;
                     viewport-width: self.width;
                     // Alt-screen: lock the viewport to exactly the visible height
                     // so the full-screen program (nano/vim) renders top-aligned
