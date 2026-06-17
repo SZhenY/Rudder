@@ -95,6 +95,13 @@ fn contains_zmodem_init(data: &[u8]) -> bool {
 /// Format: `ESC ] 7 ; file://hostname/path BEL`
 /// Returns the decoded absolute path component (without hostname).
 pub fn extract_osc7_path(text: &str) -> Option<String> {
+    extract_osc7_end(text).map(|(path, _)| path)
+}
+
+/// Like [`extract_osc7_path`] but also returns the byte index just past the OSC
+/// sequence's terminator, so the caller can cut everything up to and including
+/// it — used to discard the echoed setup line (which may wrap) at connect (#98).
+fn extract_osc7_end(text: &str) -> Option<(String, usize)> {
     let bytes = text.as_bytes();
     let mut i = 0;
     while i + 1 < bytes.len() {
@@ -106,10 +113,13 @@ pub fn extract_osc7_path(text: &str) -> Option<String> {
         i += 2;
         // Scan for BEL (0x07) or ST (ESC \)
         let mut end = i;
+        let mut term_len = 0;
         while end < bytes.len() {
             if bytes[end] == 0x07 {
+                term_len = 1;
                 break;
             } else if bytes[end] == 0x1b && end + 1 < bytes.len() && bytes[end + 1] == b'\\' {
+                term_len = 2;
                 break;
             }
             end += 1;
@@ -127,10 +137,10 @@ pub fn extract_osc7_path(text: &str) -> Option<String> {
                 } else {
                     "/".to_string()
                 };
-                return Some(url_decode(&path));
+                return Some((url_decode(&path), end + term_len));
             }
         }
-        i = end + 1;
+        i = end + term_len.max(1);
     }
     None
 }
@@ -636,12 +646,11 @@ async fn run_session(
     // command so a redrawn prompt (e.g. Enter on an empty line) doesn't re-emit
     // it, and is primed once up front so the pre-session history isn't replayed.
     //
-    // `PROMPT_BODY` is the exact text the interactive shell echoes back; the
-    // bytes we send are just it with a guarding leading space + trailing CR, and
-    // the echo-suppression needle is the same string — so the two can't drift.
+    // The echoed setup line is discarded by anchoring on the OSC 7 it produces
+    // (see the suppress block below), so it doesn't matter that the long line
+    // wraps — we never substring-match it.
     const PROMPT_BODY: &str = "test -z \"$FISH_VERSION\" && eval '__msc(){ __c=\"$(fc -ln -1 2>/dev/null)\"; [ -n \"$__c\" ] && [ \"$__c\" != \"$__cl\" ] && { __cl=\"$__c\"; printf \"\\033]697;%s\\007\" \"$__c\"; }; }; __ms7(){ printf \"\\033]7;file://%s%s\\007\" \"$HOSTNAME\" \"$PWD\"; __msc; }; __cl=\"$(fc -ln -1 2>/dev/null)\"; if [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null; add-zsh-hook precmd __ms7; else PROMPT_COMMAND=\"__ms7${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi; __ms7'";
     let prompt_setup = format!(" {}\r", PROMPT_BODY);
-    let echo_needle: &str = PROMPT_BODY;
 
     // --- Remote resource monitor (separate exec channel) ----------------
     // A tiny remote loop streams /proc/stat + /proc/meminfo every 2s; we parse
@@ -802,51 +811,39 @@ async fn run_session(
                             // echoed setup line is stripped as a single piece.
                         }
 
-                        // While suppressing, buffer output until the echoed setup
-                        // line has fully arrived, then delete it. Matching a single
-                        // chunk misses the long line when it splits across reads,
-                        // leaking it to the terminal (#98). The injected `__ms7`'s
-                        // own OSC 7/697 only prints after the line is echoed and
-                        // run, so its arrival — or the echoed line plus its newline
-                        // — means the buffer is complete. A size cap is the safety
-                        // valve for a shell that never reports back.
+                        // While suppressing, buffer output until the injected
+                        // __ms7 prints its OSC 7 (it runs right after the setup
+                        // line is echoed and executed), then discard everything up
+                        // to and including that OSC 7 — the echoed setup line (which
+                        // may WRAP across the terminal width, so substring-matching
+                        // it is unreliable) plus the pre-injection prompt. Whatever
+                        // follows the OSC 7 is the fresh prompt, which we keep (#98).
+                        // A size cap is the safety valve for a shell that never
+                        // reports back (e.g. dash without PROMPT_COMMAND).
                         let mut text = if suppress_echo {
                             echo_buf.push_str(&chunk);
                             const ECHO_BUF_CAP: usize = 1 << 14; // 16 KiB
-                            let needle_done = echo_buf
-                                .find(echo_needle)
-                                .is_some_and(|p| echo_buf[p..].contains('\n'));
-                            let landed = needle_done
-                                || echo_buf.contains("\u{1b}]7;")
-                                || echo_buf.contains("\u{1b}]697;")
-                                || echo_buf.len() >= ECHO_BUF_CAP;
-                            if !landed {
+                            if let Some((cwd, seq_end)) = extract_osc7_end(&echo_buf) {
+                                suppress_echo = false;
+                                tracing::debug!("OSC7 cwd={:?}", cwd);
+                                let _ = events.send(SessionEvent::CwdChanged(cwd));
+                                let rest = echo_buf[seq_end..].to_string();
+                                echo_buf.clear();
+                                rest
+                            } else if echo_buf.len() >= ECHO_BUF_CAP {
+                                suppress_echo = false;
+                                std::mem::take(&mut echo_buf)
+                            } else {
                                 continue; // keep buffering; show nothing yet
                             }
-                            suppress_echo = false;
-                            let mut buf = std::mem::take(&mut echo_buf);
-                            // Delete the whole echoed line (prompt + command +
-                            // trailing newline) so no stray prompt is left behind.
-                            if let Some(pos) = buf.find(echo_needle) {
-                                let line_start =
-                                    buf[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
-                                let after = pos + echo_needle.len();
-                                let line_end = buf[after..]
-                                    .find('\n')
-                                    .map(|i| after + i + 1)
-                                    .unwrap_or(buf.len());
-                                buf.replace_range(line_start..line_end, "");
-                            }
-                            buf
                         } else {
+                            // Scan for the OSC 7 CWD notification (cd-follow).
+                            if let Some(cwd) = extract_osc7_path(&chunk) {
+                                tracing::debug!("OSC7 cwd={:?}", cwd);
+                                let _ = events.send(SessionEvent::CwdChanged(cwd));
+                            }
                             chunk
                         };
-
-                        // Scan for OSC 7 CWD notification injected by PROMPT_COMMAND.
-                        if let Some(cwd) = extract_osc7_path(&text) {
-                            tracing::debug!("OSC7 cwd={:?}", cwd);
-                            let _ = events.send(SessionEvent::CwdChanged(cwd));
-                        }
 
                         // Capture commands run in the terminal via our OSC 697
                         // hook, and strip the sequence so it never reaches the
