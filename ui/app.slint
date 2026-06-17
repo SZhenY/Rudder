@@ -144,6 +144,9 @@ component IconBtn inherits Rectangle {
 export component AppWindow inherits Window {
     title: "meatshell";
     icon: @image-url("../assets/icon.png");
+    // Frameless when we draw our own title bar (#119); Rust sets custom-titlebar
+    // true on Windows/Linux. Slint maps no-frame → winit set_decorations(false).
+    no-frame: root.custom-titlebar;
     min-width: 960px;
     min-height: 600px;
     preferred-width: 1200px;
@@ -185,7 +188,9 @@ export component AppWindow inherits Window {
     // Immersive custom title bar (#119). Rust sets `custom-titlebar` true on
     // Windows/Linux (frameless); macOS keeps native decorations. The callbacks
     // drive the winit window via Rust.
-    in-out property <bool> custom-titlebar: false;
+    // Default true so the window is frameless from creation (no native-bar flash);
+    // Rust sets it false on macOS, which keeps native decorations.
+    in-out property <bool> custom-titlebar: true;
     in-out property <bool> window-maximized: false;
     callback win-minimize();
     callback win-maximize-toggle();
@@ -473,48 +478,29 @@ export component AppWindow inherits Window {
                 double-clicked => { root.win-maximize-toggle(); }
             }
             HorizontalLayout {
-                padding-left: 10px;
-                spacing: 6px;
-                Image {
-                    source: @image-url("../assets/icon.png");
-                    width: 18px;
-                    height: 18px;
+                padding-left: 12px;
+                spacing: 8px;
+                // Vertical-centering wrappers so the icon and name line up (#119).
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        source: @image-url("../assets/icon.png");
+                        width: 18px;
+                        height: 18px;
+                    }
                 }
-                Text {
-                    text: "meatshell";
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                    vertical-alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "meatshell";
+                        color: Theme.text-secondary;
+                        font-size: Theme.fs-sm;
+                    }
                 }
-                // Draggable spacer (no TouchArea → clicks fall to title-drag).
+                // Draggable spacer (no TouchArea → clicks fall to tb-drag).
                 Rectangle { horizontal-stretch: 1; }
-                IconBtn {
-                    icon: "\u{E627}";
-                    icon-color: root.sync-input ? Theme.accent : Theme.text-secondary;
-                    active: root.sync-input;
-                    tooltip: root.lang-en
-                        ? (root.sync-input ? "Sync input: ON" : "Sync input")
-                        : (root.sync-input ? "会话同步：开" : "会话同步");
-                    clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
-                }
-                IconBtn {
-                    icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
-                    icon-color: Theme.dark ? #f5c542 : #5856d6;
-                    tooltip: root.lang-en ? "Toggle theme" : "切换主题";
-                    clicked => { root.toggle-theme(); }
-                }
-                IconBtn {
-                    icon: "\u{E2C4}";
-                    tooltip: root.lang-en ? "Download" : "下载";
-                    active: root.download-open;
-                    clicked => { root.download-open = !root.download-open; root.settings-open = false; }
-                }
-                IconBtn {
-                    icon: "\u{E8B8}";
-                    tooltip: root.lang-en ? "Settings" : "设置";
-                    active: root.settings-open;
-                    clicked => { root.settings-open = !root.settings-open; root.download-open = false; }
-                }
+                // Window controls only — the app toolbar icons live in the tab
+                // row below, not here (#119).
                 WinBtn { icon: "\u{E15B}"; clicked => { root.win-minimize(); } }
                 WinBtn {
                     icon: root.window-maximized ? "\u{E3E0}" : "\u{E835}";
@@ -718,42 +704,39 @@ export component AppWindow inherits Window {
     }
     }
 
-    // Native-decoration platforms (macOS): no custom title bar, so keep the
-    // toolbar icons in a top-right overlay as before (#119).
-    if !root.custom-titlebar : Rectangle {
-        width: 100%;
-        height: 100%;
-        IconBtn {
-            x: root.width - 34px; y: 8px;
-            icon: "\u{E8B8}";
-            tooltip: root.lang-en ? "Settings" : "设置";
-            active: root.settings-open;
-            clicked => { root.settings-open = !root.settings-open; root.download-open = false; }
-        }
-        IconBtn {
-            x: root.width - 64px; y: 8px;
-            icon: "\u{E2C4}";
-            tooltip: root.lang-en ? "Download" : "下载";
-            active: root.download-open;
-            clicked => { root.download-open = !root.download-open; root.settings-open = false; }
-        }
-        IconBtn {
-            x: root.width - 94px; y: 8px;
-            icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
-            icon-color: Theme.dark ? #f5c542 : #5856d6;
-            tooltip: root.lang-en ? "Toggle theme" : "切换主题";
-            clicked => { root.toggle-theme(); }
-        }
-        IconBtn {
-            x: root.width - 124px; y: 8px;
-            icon: "\u{E627}";
-            icon-color: root.sync-input ? Theme.accent : Theme.text-secondary;
-            active: root.sync-input;
-            tooltip: root.lang-en
-                ? (root.sync-input ? "Sync input: ON" : "Sync input")
-                : (root.sync-input ? "会话同步：开" : "会话同步");
-            clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
-        }
+    // App toolbar icons (settings/download/theme/sync). They sit at the top-right
+    // of the tab row — below the custom title bar when frameless (y offset), or
+    // at the very top on macOS where the native title bar is separate (#119).
+    IconBtn {
+        x: root.width - 34px; y: root.custom-titlebar ? 46px : 8px;
+        icon: "\u{E8B8}";
+        tooltip: root.lang-en ? "Settings" : "设置";
+        active: root.settings-open;
+        clicked => { root.settings-open = !root.settings-open; root.download-open = false; }
+    }
+    IconBtn {
+        x: root.width - 64px; y: root.custom-titlebar ? 46px : 8px;
+        icon: "\u{E2C4}";
+        tooltip: root.lang-en ? "Download" : "下载";
+        active: root.download-open;
+        clicked => { root.download-open = !root.download-open; root.settings-open = false; }
+    }
+    IconBtn {
+        x: root.width - 94px; y: root.custom-titlebar ? 46px : 8px;
+        icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
+        icon-color: Theme.dark ? #f5c542 : #5856d6;
+        tooltip: root.lang-en ? "Toggle theme" : "切换主题";
+        clicked => { root.toggle-theme(); }
+    }
+    IconBtn {
+        x: root.width - 124px; y: root.custom-titlebar ? 46px : 8px;
+        icon: "\u{E627}";
+        icon-color: root.sync-input ? Theme.accent : Theme.text-secondary;
+        active: root.sync-input;
+        tooltip: root.lang-en
+            ? (root.sync-input ? "Sync input: ON" : "Sync input")
+            : (root.sync-input ? "会话同步：开" : "会话同步");
+        clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
     }
 
     // Frameless resize edges (#119): thin hit-zones that start an OS-level
@@ -1067,7 +1050,7 @@ export component AppWindow inherits Window {
     // elements mid-event, which crashes when created/removed at the Window root).
     Rectangle {
         x: parent.width - 364px;
-        y: 40px;
+        y: root.custom-titlebar ? 78px : 40px;
         width: 350px;
         height: 400px;
         visible: root.download-open;
@@ -1369,7 +1352,7 @@ export component AppWindow inherits Window {
     }
     Rectangle {
         x: parent.width - 196px;
-        y: 40px;
+        y: root.custom-titlebar ? 78px : 40px;
         width: 198px;
         height: 191px;
         visible: root.settings-open;

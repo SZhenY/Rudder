@@ -198,23 +198,10 @@ pub fn run() -> Result<()> {
     #[cfg(target_os = "linux")]
     set_window_icon(&window);
 
-    // Immersive custom title bar (#119): go frameless on Windows/Linux and draw
-    // our own themed title bar; macOS keeps its native decorations. Apply the
-    // decoration change now and again on the next tick (the winit window may not
-    // exist until the loop starts).
-    #[cfg(not(target_os = "macos"))]
-    {
-        window.set_custom_titlebar(true);
-        window
-            .window()
-            .with_winit_window(|ww| ww.set_decorations(false));
-        let weak = window.as_weak();
-        slint::Timer::single_shot(std::time::Duration::from_millis(0), move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| ww.set_decorations(false));
-            }
-        });
-    }
+    // The window defaults to frameless + custom title bar (#119). macOS keeps
+    // its native decorations, so turn the custom bar off there.
+    #[cfg(target_os = "macos")]
+    window.set_custom_titlebar(false);
 
     // Apply the saved UI language.  The Rust-side flag drives `i18n::t(...)`;
     // `apply_to_slint` selects the bundled `.po` for the static `@tr(...)` text
