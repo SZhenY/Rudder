@@ -73,6 +73,29 @@ export struct TerminalState {
 // A 26×26 top-bar icon button with a hover tooltip (right-aligned so it never
 // runs off the window edge). `active` keeps the hover background lit (e.g. while
 // its popup is open).
+// A Windows-style window-control button (minimize / maximize / close) for the
+// custom title bar (#119). `danger` gives the close button its red hover.
+component WinBtn inherits Rectangle {
+    in property <string> icon;
+    in property <bool> danger: false;
+    callback clicked();
+    width: 46px;
+    background: ta.has-hover ? (root.danger ? #e81123 : Theme.bg-hover) : transparent;
+    animate background { duration: 90ms; }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: root.icon;
+        font-family: "Material Icons";
+        color: (root.danger && ta.has-hover) ? white : Theme.text-secondary;
+        font-size: 16px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
 component IconBtn inherits Rectangle {
     in property <string> icon;
     in property <brush> icon-color: Theme.text-secondary;
@@ -158,6 +181,17 @@ export component AppWindow inherits Window {
     // --- Top-right popups --------------------------------------------------
     in-out property <bool> download-open: false;  // download manager popup
     in-out property <bool> settings-open: false;  // settings menu popup
+
+    // Immersive custom title bar (#119). Rust sets `custom-titlebar` true on
+    // Windows/Linux (frameless); macOS keeps native decorations. The callbacks
+    // drive the winit window via Rust.
+    in-out property <bool> custom-titlebar: false;
+    in-out property <bool> window-maximized: false;
+    callback win-minimize();
+    callback win-maximize-toggle();
+    callback win-close();
+    callback win-drag();          // start an OS window-move
+    callback win-resize(int);     // start an OS resize; arg = direction code
     in-out property <bool> sidebar-collapsed: false; // left panel hidden
     in-out property <bool> about-open: false;     // centered About dialog
     in property <string> download-dir;      // preset SFTP download folder ("" = ask)
@@ -419,7 +453,78 @@ export component AppWindow inherits Window {
     callback term-select-end(string /* tab-id */);
     callback term-select-autoscroll(string /* tab-id */, int /* dir */);
 
-    HorizontalLayout {
+    VerticalLayout {
+        spacing: 0;
+
+        // Immersive custom title bar (#119) — only on frameless platforms
+        // (Windows/Linux). App icon + name on the left, a draggable middle
+        // (move window / double-click to maximize), then the toolbar icons and
+        // window controls on the right. macOS keeps its native title bar and
+        // shows the toolbar icons via the overlay further below.
+        if root.custom-titlebar : Rectangle {
+            height: 38px;
+            background: Theme.bg-panel;
+            tb-drag := TouchArea {
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                        root.win-drag();
+                    }
+                }
+                double-clicked => { root.win-maximize-toggle(); }
+            }
+            HorizontalLayout {
+                padding-left: 10px;
+                spacing: 6px;
+                Image {
+                    source: @image-url("../assets/icon.png");
+                    width: 18px;
+                    height: 18px;
+                }
+                Text {
+                    text: "meatshell";
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                    vertical-alignment: center;
+                }
+                // Draggable spacer (no TouchArea → clicks fall to title-drag).
+                Rectangle { horizontal-stretch: 1; }
+                IconBtn {
+                    icon: "\u{E627}";
+                    icon-color: root.sync-input ? Theme.accent : Theme.text-secondary;
+                    active: root.sync-input;
+                    tooltip: root.lang-en
+                        ? (root.sync-input ? "Sync input: ON" : "Sync input")
+                        : (root.sync-input ? "会话同步：开" : "会话同步");
+                    clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
+                }
+                IconBtn {
+                    icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
+                    icon-color: Theme.dark ? #f5c542 : #5856d6;
+                    tooltip: root.lang-en ? "Toggle theme" : "切换主题";
+                    clicked => { root.toggle-theme(); }
+                }
+                IconBtn {
+                    icon: "\u{E2C4}";
+                    tooltip: root.lang-en ? "Download" : "下载";
+                    active: root.download-open;
+                    clicked => { root.download-open = !root.download-open; root.settings-open = false; }
+                }
+                IconBtn {
+                    icon: "\u{E8B8}";
+                    tooltip: root.lang-en ? "Settings" : "设置";
+                    active: root.settings-open;
+                    clicked => { root.settings-open = !root.settings-open; root.download-open = false; }
+                }
+                WinBtn { icon: "\u{E15B}"; clicked => { root.win-minimize(); } }
+                WinBtn {
+                    icon: root.window-maximized ? "\u{E3E0}" : "\u{E835}";
+                    clicked => { root.win-maximize-toggle(); }
+                }
+                WinBtn { icon: "\u{E5CD}"; danger: true; clicked => { root.win-close(); } }
+            }
+        }
+
+        HorizontalLayout {
         spacing: 0;
 
         // Left sidebar — collapsible (width animates to 0).
@@ -611,43 +716,91 @@ export component AppWindow inherits Window {
             }
         }
     }
+    }
 
-    // --- Top-right buttons: [☀/🌙 theme] [↓ download] [⚙ settings] ----------
-    // Top-right icon row (right→left): settings, download, theme, session sync.
-    // Settings (gear) — far right.
-    IconBtn {
-        x: root.width - 34px; y: 8px;
-        icon: "\u{E8B8}";
-        tooltip: root.lang-en ? "Settings" : "设置";
-        active: root.settings-open;
-        clicked => { root.settings-open = !root.settings-open; root.download-open = false; }
+    // Native-decoration platforms (macOS): no custom title bar, so keep the
+    // toolbar icons in a top-right overlay as before (#119).
+    if !root.custom-titlebar : Rectangle {
+        width: 100%;
+        height: 100%;
+        IconBtn {
+            x: root.width - 34px; y: 8px;
+            icon: "\u{E8B8}";
+            tooltip: root.lang-en ? "Settings" : "设置";
+            active: root.settings-open;
+            clicked => { root.settings-open = !root.settings-open; root.download-open = false; }
+        }
+        IconBtn {
+            x: root.width - 64px; y: 8px;
+            icon: "\u{E2C4}";
+            tooltip: root.lang-en ? "Download" : "下载";
+            active: root.download-open;
+            clicked => { root.download-open = !root.download-open; root.settings-open = false; }
+        }
+        IconBtn {
+            x: root.width - 94px; y: 8px;
+            icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
+            icon-color: Theme.dark ? #f5c542 : #5856d6;
+            tooltip: root.lang-en ? "Toggle theme" : "切换主题";
+            clicked => { root.toggle-theme(); }
+        }
+        IconBtn {
+            x: root.width - 124px; y: 8px;
+            icon: "\u{E627}";
+            icon-color: root.sync-input ? Theme.accent : Theme.text-secondary;
+            active: root.sync-input;
+            tooltip: root.lang-en
+                ? (root.sync-input ? "Sync input: ON" : "Sync input")
+                : (root.sync-input ? "会话同步：开" : "会话同步");
+            clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
+        }
     }
-    // Download manager — left of settings.
-    IconBtn {
-        x: root.width - 64px; y: 8px;
-        icon: "\u{E2C4}";              // Material Icons file_download
-        tooltip: root.lang-en ? "Download" : "下载";
-        active: root.download-open;
-        clicked => { root.download-open = !root.download-open; root.settings-open = false; }
-    }
-    // Theme toggle (sun when dark → click for light; moon when light → for dark).
-    IconBtn {
-        x: root.width - 94px; y: 8px;
-        icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
-        icon-color: Theme.dark ? #f5c542 : #5856d6;  // amber sun / indigo moon
-        tooltip: root.lang-en ? "Toggle theme" : "切换主题";
-        clicked => { root.toggle-theme(); }
-    }
-    // Session sync / broadcast input — left of theme (#78 pt.4).
-    IconBtn {
-        x: root.width - 124px; y: 8px;
-        icon: "\u{E627}";             // Material Icons "sync"
-        icon-color: root.sync-input ? Theme.accent : Theme.text-secondary;
-        active: root.sync-input;
-        tooltip: root.lang-en
-            ? (root.sync-input ? "Sync input: ON" : "Sync input")
-            : (root.sync-input ? "会话同步：开" : "会话同步");
-        clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
+
+    // Frameless resize edges (#119): thin hit-zones that start an OS-level
+    // resize via winit. Hidden when maximized.
+    if root.custom-titlebar && !root.window-maximized : Rectangle {
+        width: 100%;
+        height: 100%;
+        TouchArea {  // top
+            x: 8px; y: 0; width: parent.width - 16px; height: 5px;
+            mouse-cursor: ns-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(0); } }
+        }
+        TouchArea {  // bottom
+            x: 8px; y: parent.height - 5px; width: parent.width - 16px; height: 5px;
+            mouse-cursor: ns-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(1); } }
+        }
+        TouchArea {  // left
+            x: 0; y: 8px; width: 5px; height: parent.height - 16px;
+            mouse-cursor: ew-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(3); } }
+        }
+        TouchArea {  // right
+            x: parent.width - 5px; y: 8px; width: 5px; height: parent.height - 16px;
+            mouse-cursor: ew-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(2); } }
+        }
+        TouchArea {  // top-left
+            x: 0; y: 0; width: 8px; height: 8px;
+            mouse-cursor: nwse-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(5); } }
+        }
+        TouchArea {  // top-right
+            x: parent.width - 8px; y: 0; width: 8px; height: 8px;
+            mouse-cursor: nesw-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(4); } }
+        }
+        TouchArea {  // bottom-left
+            x: 0; y: parent.height - 8px; width: 8px; height: 8px;
+            mouse-cursor: nesw-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(7); } }
+        }
+        TouchArea {  // bottom-right
+            x: parent.width - 8px; y: parent.height - 8px; width: 8px; height: 8px;
+            mouse-cursor: nwse-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(6); } }
+        }
     }
 
     // --- Update-available banner (#48) ------------------------------------

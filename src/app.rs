@@ -198,6 +198,24 @@ pub fn run() -> Result<()> {
     #[cfg(target_os = "linux")]
     set_window_icon(&window);
 
+    // Immersive custom title bar (#119): go frameless on Windows/Linux and draw
+    // our own themed title bar; macOS keeps its native decorations. Apply the
+    // decoration change now and again on the next tick (the winit window may not
+    // exist until the loop starts).
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_custom_titlebar(true);
+        window
+            .window()
+            .with_winit_window(|ww| ww.set_decorations(false));
+        let weak = window.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(0), move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| ww.set_decorations(false));
+            }
+        });
+    }
+
     // Apply the saved UI language.  The Rust-side flag drives `i18n::t(...)`;
     // `apply_to_slint` selects the bundled `.po` for the static `@tr(...)` text
     // (must run after the first component exists, which it now does).
@@ -743,6 +761,17 @@ pub fn run() -> Result<()> {
                         handle_file_drop(&win, &sh, path.to_string_lossy().to_string());
                     }
                 }
+                WEvent::Resized(_) => {
+                    // Keep the maximize/restore icon (and resize-edge gating) in
+                    // sync when the OS changes the window state (#119).
+                    if let Some(win) = weak.upgrade() {
+                        let maxed = win
+                            .window()
+                            .with_winit_window(|ww| ww.is_maximized())
+                            .unwrap_or(false);
+                        win.set_window_maximized(maxed);
+                    }
+                }
                 WEvent::CloseRequested => {
                     // Confirm before closing if there are open session tabs (#88),
                     // so a stray double-click on the title-bar icon / X / Alt+F4
@@ -764,6 +793,76 @@ pub fn run() -> Result<()> {
     window.on_confirm_close_yes(|| {
         let _ = slint::quit_event_loop();
     });
+
+    // --- Custom title-bar window controls (#119) --------------------------
+    {
+        let weak = window.as_weak();
+        window.on_win_minimize(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| ww.set_minimized(true));
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_win_maximize_toggle(move || {
+            if let Some(w) = weak.upgrade() {
+                let now = w.window().with_winit_window(|ww| {
+                    let m = !ww.is_maximized();
+                    ww.set_maximized(m);
+                    m
+                });
+                if let Some(m) = now {
+                    w.set_window_maximized(m);
+                }
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let close_handles = handles.clone();
+        window.on_win_close(move || {
+            if let Some(w) = weak.upgrade() {
+                // Mirror the native-X behaviour: confirm if sessions are open.
+                if close_handles.borrow().is_empty() {
+                    let _ = slint::quit_event_loop();
+                } else {
+                    w.set_confirm_close_open(true);
+                }
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_win_drag(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_window();
+                });
+            }
+        });
+    }
+    {
+        use i_slint_backend_winit::winit::window::ResizeDirection;
+        let weak = window.as_weak();
+        window.on_win_resize(move |dir: i32| {
+            if let Some(w) = weak.upgrade() {
+                let d = match dir {
+                    0 => ResizeDirection::North,
+                    1 => ResizeDirection::South,
+                    2 => ResizeDirection::East,
+                    3 => ResizeDirection::West,
+                    4 => ResizeDirection::NorthEast,
+                    5 => ResizeDirection::NorthWest,
+                    6 => ResizeDirection::SouthEast,
+                    _ => ResizeDirection::SouthWest,
+                };
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_resize_window(d);
+                });
+            }
+        });
+    }
 
     // Center the window on the primary monitor once it's shown (size is only
     // known after the first frame, so defer via a single-shot timer).
