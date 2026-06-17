@@ -4620,14 +4620,17 @@ impl TermBuffer {
     }
 
     /// Absolute combined-row index of the top visible row for the current view.
-    fn view_top_abs(&self, live_used: usize) -> usize {
+    fn view_top_abs(&self, _live_used: usize) -> usize {
         let rows = self.parser.screen().size().0 as usize;
         let hist_len = self.history.len();
         if self.view_offset == 0 {
             // Live view: visible row 0 is live screen row 0 = combined[hist_len].
             hist_len
         } else {
-            let combined_len = hist_len + live_used;
+            // Include the screen's full row count (trailing blanks too) so this
+            // mapping matches render()'s scroll window — keeping the live and
+            // scrolled views continuous after a shrink/grow (#119-followup).
+            let combined_len = hist_len + rows;
             combined_len.saturating_sub(rows + self.view_offset)
         }
     }
@@ -4904,13 +4907,14 @@ impl TermBuffer {
             let s = self.parser.screen();
             (0..rows).map(|r| build_row(s, r, cols)).collect()
         };
-        let live_used = live
-            .iter()
-            .rposition(|(_, r)| !r.is_empty())
-            .map(|i| i + 1)
-            .unwrap_or(0);
         let hist_len = self.history.len();
-        let combined_len = hist_len + live_used;
+        // Include the screen's trailing blank rows in the scroll range so this
+        // scrolled view stays continuous with the live view (view_offset 0).
+        // Trimming to only the used rows made the two views misalign after a
+        // shrink-then-grow (dragging the SFTP panel over the terminal and back),
+        // so scrolling back jumped at the bottom instead of moving line-by-line
+        // (#119-followup).
+        let combined_len = hist_len + live.len();
         let win = rows as usize;
         let start = combined_len.saturating_sub(win + self.view_offset);
         let end = (start + win).min(combined_len);
