@@ -1960,8 +1960,15 @@ export component AppWindow inherits Window {
                         }
                         moved => {
                             if (root.ifd-dragging) {
-                                root.ifd-x = root.ifd-base-x + (self.absolute-position.x + self.mouse-x - root.ifd-grab-x);
-                                root.ifd-y = root.ifd-base-y + (self.absolute-position.y + self.mouse-y - root.ifd-grab-y);
+                                // Clamp inside the window so the title bar (and its
+                                // ✕) can never be dragged off-screen — otherwise the
+                                // modal dialog becomes unclosable (#119-followup).
+                                root.ifd-x = clamp(
+                                    root.ifd-base-x + (self.absolute-position.x + self.mouse-x - root.ifd-grab-x),
+                                    0px, max(0px, root.width - 644px));
+                                root.ifd-y = clamp(
+                                    root.ifd-base-y + (self.absolute-position.y + self.mouse-y - root.ifd-grab-y),
+                                    0px, max(0px, root.height - 414px));
                             }
                         }
                     }
