@@ -572,6 +572,9 @@ export component AppWindow inherits Window {
                 }
                 TabBar {
                     horizontal-stretch: 1;
+                    // Reserve room for the top-right toolbar icons that sit over
+                    // this row so tabs don't slide underneath them (#122).
+                    reserve-right: 140px;
                     tabs: root.tabs;
                     active-id: root.active-tab-id;
                     tab-selected(id) => {

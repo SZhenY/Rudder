@@ -69,6 +69,9 @@ component SingleTab inherits Rectangle {
 export component TabBar inherits Rectangle {
     in property <[TabInfo]> tabs;
     in property <string> active-id;
+    // Keep this much clear on the right so tabs don't slide under the app's
+    // top-right toolbar icons, which are positioned over the tab row (#122).
+    in property <length> reserve-right: 0px;
     callback tab-selected(string);
     callback tab-closed(string);
     callback new-tab();
@@ -80,21 +83,31 @@ export component TabBar inherits Rectangle {
         padding: 3px;
         spacing: 2px;
 
-        for tab[i] in tabs : SingleTab {
-            info: tab;
-            active: tab.id == root.active-id;
-            selected => { root.tab-selected(tab.id); }
-            closed => { root.tab-closed(tab.id); }
+        // Horizontally-scrollable strip: when the tabs overflow the available
+        // width they stay reachable by dragging / trackpad-scrolling (#122).
+        Flickable {
+            horizontal-stretch: 1;
+            viewport-height: self.height;
+            viewport-width: max(self.width, strip.preferred-width);
+            strip := HorizontalLayout {
+                spacing: 2px;
+                alignment: start;
+                for tab[i] in tabs : SingleTab {
+                    info: tab;
+                    active: tab.id == root.active-id;
+                    selected => { root.tab-selected(tab.id); }
+                    closed => { root.tab-closed(tab.id); }
+                }
+                IconButton {
+                    glyph: "+";
+                    size: 28px;
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.new-tab(); }
+                }
+            }
         }
 
-        IconButton {
-            glyph: "+";
-            size: 28px;
-            y: (parent.height - self.height) / 2;
-            clicked => { root.new-tab(); }
-        }
-
-        // Spacer
-        Rectangle { horizontal-stretch: 1; }
+        // Reserved gap for the external top-right toolbar icons (#122).
+        Rectangle { width: root.reserve-right; }
     }
 }
