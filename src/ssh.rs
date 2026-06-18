@@ -811,25 +811,36 @@ async fn run_session(
                             // echoed setup line is stripped as a single piece.
                         }
 
-                        // While suppressing, buffer output until the injected
-                        // __ms7 prints its OSC 7 (it runs right after the setup
-                        // line is echoed and executed), then discard everything up
-                        // to and including that OSC 7 — the echoed setup line (which
-                        // may WRAP across the terminal width, so substring-matching
-                        // it is unreliable) plus the pre-injection prompt. Whatever
-                        // follows the OSC 7 is the fresh prompt, which we keep (#98).
-                        // A size cap is the safety valve for a shell that never
-                        // reports back (e.g. dash without PROMPT_COMMAND).
+                        // While suppressing, buffer output until our echoed setup
+                        // command AND the OSC 7 that the injected __ms7 prints right
+                        // after it have both arrived. Then delete just that span —
+                        // from the start of the command's line through the OSC 7 —
+                        // which removes the echoed command (even if it WRAPPED across
+                        // the terminal width, since we cut by byte range) and the
+                        // now-redundant first prompt, while PRESERVING any MOTD/banner
+                        // printed before it (#98). The command line is located by a
+                        // short, un-wrappable prefix of the injected command. A size
+                        // cap is the safety valve for a shell that never reports back
+                        // (e.g. dash without PROMPT_COMMAND).
+                        const PROMPT_PREFIX: &str = "test -z \"$FISH_VERSION\"";
                         let mut text = if suppress_echo {
                             echo_buf.push_str(&chunk);
                             const ECHO_BUF_CAP: usize = 1 << 14; // 16 KiB
-                            if let Some((cwd, seq_end)) = extract_osc7_end(&echo_buf) {
+                            // The command echo + its trailing OSC 7 (the one after
+                            // our command, not any earlier prompt OSC 7).
+                            let landed = echo_buf.find(PROMPT_PREFIX).and_then(|p| {
+                                extract_osc7_end(&echo_buf[p..])
+                                    .map(|(cwd, rel)| (p, p + rel, cwd))
+                            });
+                            if let Some((cmd_pos, osc_end, cwd)) = landed {
                                 suppress_echo = false;
                                 tracing::debug!("OSC7 cwd={:?}", cwd);
                                 let _ = events.send(SessionEvent::CwdChanged(cwd));
-                                let rest = echo_buf[seq_end..].to_string();
-                                echo_buf.clear();
-                                rest
+                                let mut buf = std::mem::take(&mut echo_buf);
+                                let line_start =
+                                    buf[..cmd_pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                                buf.replace_range(line_start..osc_end, "");
+                                buf
                             } else if echo_buf.len() >= ECHO_BUF_CAP {
                                 suppress_echo = false;
                                 std::mem::take(&mut echo_buf)
