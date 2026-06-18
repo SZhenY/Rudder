@@ -103,6 +103,7 @@ export component TerminalView inherits Rectangle {
     // fed from Rust); send-to-all is a per-tab toggle.
     in property <[QuickCmd]> quick-commands;
     in property <[string]> command-history;   // oldest first (newest last, #113)
+    in property <[string]> history-view;       // filtered view shown in the dropdown (#101)
     property <bool> send-to-all: false;
     property <bool> quick-open: false;         // quick-command popup visibility
     property <bool> history-open: false;       // history dropdown visibility
@@ -111,6 +112,8 @@ export component TerminalView inherits Rectangle {
     callback manage-quick-commands();          // open the add/edit/delete dialog
     callback copy-text(string);                // copy a history command to clipboard (#96)
     callback delete-history(int /* index */);  // remove a history entry (#96)
+    callback delete-history-cmd(string /* cmd */); // remove a history entry by command (#101)
+    callback search-history(string /* query */);   // filter the history dropdown (#101)
 
     callback send-key(string, bool, bool, bool);
     callback terminal-resize(float, float);
@@ -226,6 +229,11 @@ export component TerminalView inherits Rectangle {
             // Return to normal mode: pin to the most recent output.
             flickable.viewport-y = flickable.height - flickable.viewport-height;
         }
+    }
+    // Reset the history filter whenever the dropdown opens; the search box itself
+    // is recreated empty because the `if` subtree is destroyed on close (#101).
+    changed history-open => {
+        if (root.history-open) { root.search-history(""); }
     }
     changed visible => {
         if (self.visible) {
@@ -872,7 +880,7 @@ export component TerminalView inherits Rectangle {
             if root.history-open : Rectangle {
                 x: parent.width - 308px;
                 width: 300px;
-                height: min(260px, max(40px, h-col.preferred-height + 8px));
+                height: min(296px, 46px + max(28px, min(228px, h-col.preferred-height + 8px)));
                 y: -self.height - 2px;
                 background: Theme.bg-panel;
                 border-radius: Theme.radius-md;
@@ -881,19 +889,54 @@ export component TerminalView inherits Rectangle {
                 drop-shadow-blur: 16px;
                 drop-shadow-color: #00000070;
                 TouchArea {}
-                Flickable {
+                VerticalLayout {
+                    padding: 4px;
+                    spacing: 4px;
+                    // Search box (#101): filters the list below. ↑/↓ recall in the
+                    // input box still uses the full history.
+                    Rectangle {
+                        height: 30px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-root;
+                        border-width: 1px;
+                        border-color: hist-search.has-focus ? Theme.accent : Theme.border-subtle;
+                        HorizontalLayout {
+                            padding-left: 8px; padding-right: 8px; spacing: 4px;
+                            Text { text: "\u{E8B6}"; font-family: "Material Icons";
+                                   color: Theme.text-muted; font-size: Theme.fs-sm;
+                                   vertical-alignment: center; }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                hist-search := TextInput {
+                                    width: 100%; height: 100%;
+                                    vertical-alignment: center;
+                                    color: Theme.text-primary;
+                                    font-family: Theme.ui-font-family;
+                                    font-size: Theme.fs-sm;
+                                    single-line: true;
+                                    edited => { root.search-history(self.text); }
+                                }
+                                if hist-search.text == "" : Text {
+                                    text: @tr("Search history");
+                                    color: Theme.text-muted; font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                    Flickable {
                     viewport-width: self.width;
                     viewport-height: max(self.height, h-col.preferred-height);
                     h-col := VerticalLayout {
                         padding: 4px;
                         alignment: start;
-                        if root.command-history.length == 0 : Text {
-                            text: @tr("No history yet");
+                        if root.history-view.length == 0 : Text {
+                            text: root.command-history.length == 0 ? @tr("No history yet") : @tr("No match");
                             color: Theme.text-muted; font-size: Theme.fs-xs;
                             horizontal-alignment: center;
                             height: 32px; vertical-alignment: center;
                         }
-                        for h[i] in root.command-history : Rectangle {
+                        for h in root.history-view : Rectangle {
                             height: 28px;
                             border-radius: Theme.radius-sm;
                             background: h-item-ta.has-hover ? Theme.bg-hover : transparent;
@@ -953,7 +996,7 @@ export component TerminalView inherits Rectangle {
                                     background: hdel.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
                                     hdel := TouchArea {
                                         mouse-cursor: pointer;
-                                        clicked => { root.delete-history(i); }
+                                        clicked => { root.delete-history-cmd(h); }
                                     }
                                     Text { text: "\u{E872}"; font-family: "Material Icons";
                                            color: Theme.danger; font-size: Theme.fs-sm;
@@ -961,6 +1004,7 @@ export component TerminalView inherits Rectangle {
                                 }
                             }
                         }
+                    }
                     }
                 }
             }

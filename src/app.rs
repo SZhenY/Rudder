@@ -250,6 +250,7 @@ pub fn run() -> Result<()> {
     // Command bar (#55): seed quick commands + history from the config.
     window.set_quick_commands(quick_cmd_model(&store.borrow()));
     window.set_command_history(history_model(&store.borrow()));
+    window.set_history_view(history_view_model(&store.borrow(), "")); // #101
 
     // Interface setting: SFTP follows the terminal's cd. The shell event pumps
     // read this AtomicBool on every CwdChanged, so toggling applies live to
@@ -2037,6 +2038,19 @@ fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
+/// Build the filtered history-view model for the dropdown: case-insensitive
+/// substring matches of `query`, in the same order as the full history (#101).
+fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
+    let q = query.trim().to_lowercase();
+    let rows: Vec<SharedString> = store
+        .command_history()
+        .iter()
+        .filter(|c| q.is_empty() || c.to_lowercase().contains(&q))
+        .map(|s| s.clone().into())
+        .collect();
+    ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
 /// Find every (case-insensitive) occurrence of `query` across the currently
 /// displayed rows and return highlight rectangles (char index == grid column).
 fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
@@ -3430,6 +3444,41 @@ fn wire_key_input(
             }
             if let Some(w) = weak.upgrade() {
                 w.set_command_history(history_model(&store_rc.borrow()));
+            }
+        });
+    }
+    // History search (#101): filter the dropdown by a case-insensitive substring.
+    // The current query is shared so a delete from a filtered view re-filters.
+    let hist_query: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        let hist_query = hist_query.clone();
+        window.on_search_history(move |query: SharedString| {
+            *hist_query.borrow_mut() = query.to_string();
+            if let Some(w) = weak.upgrade() {
+                w.set_history_view(history_view_model(&store_rc.borrow(), &query));
+            }
+        });
+    }
+    // Delete a history entry by its command text (#101) — index-free so it works
+    // from the filtered dropdown view.
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        let hist_query = hist_query.clone();
+        window.on_delete_history_cmd(move |cmd: SharedString| {
+            {
+                let mut s = store_rc.borrow_mut();
+                if let Some(idx) = s.command_history().iter().position(|c| c == cmd.as_str()) {
+                    s.remove_command_history(idx);
+                    let _ = s.save();
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                let s = store_rc.borrow();
+                w.set_command_history(history_model(&s));
+                w.set_history_view(history_view_model(&s, &hist_query.borrow()));
             }
         });
     }
