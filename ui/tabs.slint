@@ -79,13 +79,20 @@ export component TabBar inherits Rectangle {
     height: 36px;
     background: Theme.bg-panel-alt;
 
+    // True only when the tabs are wider than the available strip width (#122).
+    // Computed from the TabBar's own width (set by the parent) — NOT flick.width —
+    // so showing the arrows (which shrink the flickable) can't feed back into this
+    // condition and form a binding loop. The 64px allows for the two arrows.
+    property <bool> tab-overflow:
+        strip.preferred-width > root.width - root.reserve-right - 64px;
+
     HorizontalLayout {
         padding: 3px;
         spacing: 2px;
 
         // Horizontally-scrollable strip: when the tabs overflow the available
-        // width they stay reachable by dragging / trackpad-scrolling (#122).
-        Flickable {
+        // width they stay reachable by the arrows or by dragging / trackpad (#122).
+        flick := Flickable {
             horizontal-stretch: 1;
             viewport-height: self.height;
             viewport-width: max(self.width, strip.preferred-width);
@@ -109,5 +116,31 @@ export component TabBar inherits Rectangle {
 
         // Reserved gap for the external top-right toolbar icons (#122).
         Rectangle { width: root.reserve-right; }
+    }
+
+    // Scroll arrows — absolute overlays (NOT layout items) so toggling them can't
+    // change the layout that `tab-overflow` reads (avoids a binding loop). Shown
+    // only on overflow, masking the edge tab beneath them (#122).
+    if root.tab-overflow : Rectangle {
+        x: 3px;
+        y: (parent.height - self.height) / 2;
+        width: 26px; height: 26px;
+        background: Theme.bg-panel-alt;
+        IconButton {
+            glyph: "‹"; size: 24px;
+            clicked => { flick.viewport-x = min(0px, flick.viewport-x + 120px); }
+        }
+    }
+    if root.tab-overflow : Rectangle {
+        x: root.width - root.reserve-right - 29px;
+        y: (parent.height - self.height) / 2;
+        width: 26px; height: 26px;
+        background: Theme.bg-panel-alt;
+        IconButton {
+            glyph: "›"; size: 24px;
+            clicked => {
+                flick.viewport-x = max(flick.width - flick.viewport-width, flick.viewport-x - 120px);
+            }
+        }
     }
 }
