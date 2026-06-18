@@ -5,6 +5,46 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-06-18
+
+### Added / 新增
+
+- **Immersive frameless title bar.** On Windows/Linux the app draws its own
+  themed title bar (app icon + name, minimize/maximize/close, draggable to move,
+  double-click to maximize, edge/corner resize) instead of the OS chrome — so the
+  top follows the light/dark theme instead of staying a mismatched native bar.
+  macOS keeps its native decorations. (#119)
+  **沉浸式无边框标题栏。** Windows/Linux 下自绘主题色标题栏(应用图标+名称、
+  最小化/最大化/关闭、拖动移动、双击最大化、边角缩放),不再使用系统标题栏,顶部
+  跟随明暗主题;macOS 保留原生标题栏。
+
+### Fixed / 修复
+
+- **htop/btop box-drawing and braille no longer render as tofu** on machines
+  without Cascadia Mono installed (e.g. Win11 Home). The embedded font is now a
+  uniquely-named family ("Meatshell Mono") so the OS can't substitute a
+  glyph-poor fallback for it. (#114)
+  **htop/btop 的线框和盲文字符不再显示为方块**(在未安装 Cascadia Mono 的机器上,
+  如 Win11 家庭版)。内嵌字体改用独一无二的族名「Meatshell Mono」,系统无法再用
+  缺字形的字体顶替它。
+- **The injected setup line no longer leaks to the terminal on connect**, even
+  when it wraps across the terminal width. Output is buffered until the hook's
+  OSC sequence arrives, then everything up to it is discarded. (#98)
+  **连接后不再出现注入的设置命令**,即使它按终端宽度换行也能正确隐藏。
+- **Smooth scrollback across the live/scrolled boundary.** After shrinking then
+  restoring the terminal (e.g. dragging the SFTP panel over it and back),
+  scrolling back through history no longer jumps near the bottom. (#119)
+  **回滚历史在实时/滚动边界处平滑。** 把 SFTP 面板拉上来盖住终端再放下后,往回翻
+  历史时接近底部不再跳。
+- **Fast drag-selection in the terminal works again.** A quick drag is no longer
+  stolen by the Flickable, so selecting text by dragging fast still selects. (#119)
+  **终端里快速拖动选择恢复正常。** 快速拖动不再被滚动容器抢走,快速拖选也能选中。
+- **The Interface dialog's close button can't be dragged off-screen.** Its drag
+  is clamped inside the window, so the modal dialog can no longer become
+  unclosable. (#119)
+  **「界面」设置对话框的关闭按钮不会被拖出屏幕。** 拖动被限制在窗口内,模态对话框
+  不会再变得无法关闭。
+
 ## [0.4.7] - 2026-06-16
 
 ### Added / 新增
