@@ -45,6 +45,13 @@ pub enum SftpCommand {
     ToggleTreeNode(String),
     /// Download a remote file to a local directory.
     Download { remote: String, local_dir: String },
+    /// Multi-select download (#100): tar the named entries under `remote_dir`
+    /// into one archive on the remote, download it, then delete the temp.
+    DownloadArchive {
+        remote_dir: String,
+        names: Vec<String>,
+        local_dir: String,
+    },
     /// Upload a local file into a remote directory.
     Upload { local: String, remote_dir: String },
     /// Delete a remote file (falls back to removing an empty directory).
@@ -84,6 +91,13 @@ impl SftpHandle {
         let _ = self
             .commands
             .send(SftpCommand::Download { remote, local_dir });
+    }
+    pub fn download_archive(&self, remote_dir: String, names: Vec<String>, local_dir: String) {
+        let _ = self.commands.send(SftpCommand::DownloadArchive {
+            remote_dir,
+            names,
+            local_dir,
+        });
     }
     pub fn upload(&self, local: String, remote_dir: String) {
         let _ = self
@@ -395,6 +409,18 @@ async fn run_sftp(
                     .unwrap_or(false);
                 if is_dir {
                     let dirname = base_name(&remote);
+                    // #100.3: an empty folder downloads nothing — just say so
+                    // rather than silently creating an empty local directory.
+                    let empty = list_dir_impl(&sftp, &remote)
+                        .await
+                        .map(|e| e.is_empty())
+                        .unwrap_or(false);
+                    if empty {
+                        let _ = events.send(SessionEvent::SftpStatus(format!(
+                            "{}: {}", t("空文件夹", "Empty folder"), dirname
+                        )));
+                        return;
+                    }
                     let _ = events.send(SessionEvent::SftpStatus(format!(
                         "{} {}/...", t("下载文件夹", "Downloading folder"), dirname
                     )));
@@ -430,6 +456,60 @@ async fn run_sftp(
                         }
                     }
                 }
+                });
+            }
+
+            SftpCommand::DownloadArchive {
+                remote_dir,
+                names,
+                local_dir,
+            } => {
+                // #100: multi-select download. Instead of N concurrent transfers
+                // (which raced and dropped files), tar everything into ONE archive
+                // on the remote, pull that single file, then delete the temp.
+                let sftp = sftp.clone();
+                let handle = handle.clone();
+                let events = events.clone();
+                tokio::spawn(async move {
+                    let n = names.len();
+                    let id = Uuid::new_v4().to_string();
+                    let tmp = format!("/tmp/meatshell-{}.tar.gz", Uuid::new_v4());
+                    let arc_name = format!("meatshell-{}.tar.gz", &id[..8]);
+                    let local_path =
+                        format!("{}/{}", local_dir.trim_end_matches('/'), arc_name);
+                    let _ = events.send(SessionEvent::SftpStatus(format!(
+                        "{} {} {}...", t("打包下载", "Archiving"), n, t("项", "items")
+                    )));
+                    // Server-supplied names are untrusted → quote every argument.
+                    let mut cmd =
+                        format!("tar -czf {} -C {}", sh_quote(&tmp), sh_quote(&remote_dir));
+                    for nm in &names {
+                        cmd.push(' ');
+                        cmd.push_str(&sh_quote(nm));
+                    }
+                    let res: Result<()> = async {
+                        let st = exec_remote(&handle, &cmd).await.context("tar on remote")?;
+                        if st != 0 {
+                            return Err(anyhow!(t("远端 tar 打包失败", "remote tar failed")));
+                        }
+                        download_impl(&sftp, &tmp, &local_path, &arc_name, &id, &events).await
+                    }
+                    .await;
+                    // Best-effort cleanup of the remote temp, success or not.
+                    let _ = exec_remote(&handle, &format!("rm -f {}", sh_quote(&tmp))).await;
+                    match res {
+                        Ok(_) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {}", t("下载完成", "Downloaded"), arc_name
+                            )));
+                        }
+                        Err(e) => {
+                            emit_transfer(&events, &id, &arc_name, false, 0, 0, 2, &e.to_string());
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {e}", t("下载失败", "Download failed")
+                            )));
+                        }
+                    }
                 });
             }
 
@@ -783,6 +863,34 @@ fn base_name(path: &str) -> String {
         .next()
         .unwrap_or(path)
         .to_string()
+}
+
+/// Single-quote a string for safe interpolation into a remote `/bin/sh`
+/// command. Remote names come from the *server's* listing and are therefore
+/// untrusted — without quoting, a crafted name like `; rm -rf ~` would run.
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Run a one-shot command on the remote over its own exec channel and return
+/// the exit status. Stdout/stderr are drained and discarded.
+async fn exec_remote(handle: &client::Handle<SftpClientHandler>, cmd: &str) -> Result<u32> {
+    let mut ch = handle
+        .channel_open_session()
+        .await
+        .context("open exec channel")?;
+    ch.exec(true, cmd.as_bytes())
+        .await
+        .context("exec remote command")?;
+    let mut status = 0u32;
+    while let Some(msg) = ch.wait().await {
+        match msg {
+            russh::ChannelMsg::ExitStatus { exit_status } => status = exit_status,
+            russh::ChannelMsg::Close => break,
+            _ => {}
+        }
+    }
+    Ok(status)
 }
 
 /// Parent directory of a remote path ("/a/b" → "/a", "/a" → "/").

@@ -3305,13 +3305,30 @@ fn wire_sftp_callbacks(
             if paths.is_empty() {
                 return;
             }
+            // Single selection downloads as a plain file (no compression, #100.3);
+            // multiple selections are tar-packed into one archive on the remote
+            // (#100.2) — this also avoids the concurrent-transfer races (#100.1).
+            let single = paths.len() == 1;
+            let remote_dir = active_sftp_path(&w, tab_id.as_str());
+            let names: Vec<String> = paths
+                .iter()
+                .map(|p| {
+                    p.trim_end_matches('/')
+                        .rsplit(['/', '\\'])
+                        .next()
+                        .unwrap_or(p)
+                        .to_string()
+                })
+                .collect();
             let preset = w.get_download_dir().to_string();
             let always_ask = w.get_download_always_ask();
             if !always_ask && !preset.is_empty() {
                 if let Ok(handles) = sftp_handles.lock() {
                     if let Some(h) = handles.get(tab_id.as_str()) {
-                        for p in &paths {
-                            h.download(p.clone(), preset.clone());
+                        if single {
+                            h.download(paths[0].clone(), preset.clone());
+                        } else {
+                            h.download_archive(remote_dir.clone(), names.clone(), preset.clone());
                         }
                     }
                 }
@@ -3325,8 +3342,10 @@ fn wire_sftp_callbacks(
                         let dir = dir.to_string_lossy().to_string();
                         if let Ok(handles) = sftp_handles.lock() {
                             if let Some(h) = handles.get(&tab) {
-                                for p in &paths {
-                                    h.download(p.clone(), dir.clone());
+                                if single {
+                                    h.download(paths[0].clone(), dir.clone());
+                                } else {
+                                    h.download_archive(remote_dir.clone(), names.clone(), dir.clone());
                                 }
                             }
                         }
