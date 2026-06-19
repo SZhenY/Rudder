@@ -68,6 +68,13 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # Feature is additive over the base `arboard = "3"` dependency above.
 arboard = { version = "3", features = ["wayland-data-control"] }
 
+# macOS 26 (Tahoe) broke femtovg's font lookup → all text vanished (#108). Pull
+# in the Skia renderer *only* on macOS (feature is additive over the base slint
+# dependency); main.rs forces SLINT_BACKEND=winit-skia there. Windows/Linux never
+# compile Skia.
+[target.'cfg(target_os = "macos")'.dependencies]
+slint = { version = "1.8", features = ["renderer-skia"] }
+
 [build-dependencies]
 slint-build = "1.8"
 

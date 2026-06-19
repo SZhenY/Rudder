@@ -19,6 +19,16 @@ mod telnet;
 mod zmodem;
 
 fn main() -> anyhow::Result<()> {
+    // macOS 26 (Tahoe) broke femtovg's CoreText font lookup, so *all* text —
+    // including the embedded mono font — vanished from the UI (#108). Skia uses a
+    // more robust font path and is Slint's recommended renderer on macOS, so we
+    // force it there. Windows/Linux keep the default femtovg (skia isn't even
+    // compiled — see the target-specific dependency in Cargo.toml).
+    #[cfg(target_os = "macos")]
+    if std::env::var_os("SLINT_BACKEND").is_none() {
+        std::env::set_var("SLINT_BACKEND", "winit-skia");
+    }
+
     init_tracing();
 
     // ── IME policy ───────────────────────────────────────────────────────────
