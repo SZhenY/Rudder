@@ -5,6 +5,51 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-06-19
+
+### Added / 新增
+
+- **Searchable command-history dropdown (#101).** The command-history list is now
+  filterable — type in the search box to narrow entries instantly, then click or
+  press Enter to run the match.
+  **命令历史下拉支持搜索 (#101)。** 历史列表新增搜索框,输入关键字即可实时过滤,
+  点击或回车直接执行匹配项。
+
+- **Readline keys in the command box + shortcuts reference (#103).** The command
+  box now honours common readline bindings (Ctrl+A/E/K/U/W, Alt+B/F/D/Backspace,
+  etc.) for fast inline editing; a keyboard-shortcuts reference panel is also
+  added so users can discover available bindings at a glance.
+  **命令输入框支持 Readline 快捷键 + 快捷键参考 (#103)。** 命令框现在支持常见
+  readline 绑定(Ctrl+A/E/K/U/W、Alt+B/F/D/Backspace 等)进行快速行内编辑;
+  另加快捷键参考面板,方便用户一览可用组合键。
+
+- **Scroll arrows when tabs overflow (#122).** When open tabs exceed the tab bar
+  width, left/right arrow buttons appear so users can scroll through the hidden
+  tabs instead of losing access to them.
+  **标签溢出时显示滚动箭头 (#122)。** 当打开的标签超出标签栏宽度时,左右箭头
+  按钮出现,可滚动查看被遮挡的标签。
+
+- **Slim scrollbar for the terminal output area (#103).** The terminal's vertical
+  scrollbar is now a thin, auto-hiding overlay that doesn't eat into the column
+  count, giving more screen real estate to the actual output.
+  **终端输出区窄滚动条 (#103)。** 终端纵向滚动条改为细窄的自动隐藏覆盖层,
+  不再占用列数,把更多屏幕空间留给实际输出。
+
+### Fixed / 修复
+
+- **Preserve the MOTD/banner when hiding the injected setup line (#98).** The
+  previous approach stripped too aggressively and could swallow the server's
+  MOTD/banner that arrives before the shell prompt; the matcher now only discards
+  the single injected line, leaving the banner intact.
+  **隐藏注入设置行时保留 MOTD/横幅 (#98)。** 之前的做法剥离过度,会把 shell 提示符
+  之前到达的服务器 MOTD/横幅一并吞掉;现在匹配器仅丢弃注入的那一行,横幅原样保留。
+
+- **Reserve space for toolbar icons + scroll overflowing tabs (#122).** The tab
+  bar now leaves a right margin so the last tab's close button isn't hidden
+  behind the toolbar icons; tabs that still overflow are scrollable.
+  **为工具栏图标预留空间 + 溢出标签可滚动 (#122)。** 标签栏右侧留出余量,
+  最后一个标签的关闭按钮不再被工具栏图标遮挡;仍然溢出的标签可滚动查看。
+
 ## [0.4.8] - 2026-06-18
 
 ### Added / 新增
