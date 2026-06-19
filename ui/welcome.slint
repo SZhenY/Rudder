@@ -1,5 +1,6 @@
 import { Theme } from "theme.slint";
 import { IconButton, PrimaryButton, GhostButton } from "widgets.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export struct SessionInfo {
     id: string,
@@ -237,8 +238,10 @@ export component Welcome inherits Rectangle {
             }
         }
 
-        // Quick Connect card
+        // Quick Connect card — fills the remaining height so its session list
+        // can scroll when there are more connections than fit (#116).
         Rectangle {
+            vertical-stretch: 1;
             background: Theme.bg-panel;
             border-radius: Theme.radius-md;
             border-width: 1px;
@@ -297,7 +300,11 @@ export component Welcome inherits Rectangle {
                     }
                 }
 
-                if sessions.length > 0 : VerticalLayout {
+                if sessions.length > 0 : ScrollView {
+                    vertical-stretch: 1;
+                    viewport-width: self.visible-width;
+                    viewport-height: max(self.visible-height, sess-list.preferred-height);
+                    sess-list := VerticalLayout {
                     spacing: 2px;
                     for session[i] in sessions : VerticalLayout {
                         spacing: 2px;
@@ -418,11 +425,9 @@ export component Welcome inherits Rectangle {
                             remove => { root.remove-session(session.id); }
                         }
                     }
+                    }
                 }
             }
         }
-
-        // Filler
-        Rectangle { vertical-stretch: 1; }
     }
 }
