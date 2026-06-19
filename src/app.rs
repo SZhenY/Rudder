@@ -3098,6 +3098,38 @@ fn wire_sftp_callbacks(
         window.on_sftp_download(move |tab_id: SharedString, remote_path: SharedString| {
             let tab_id = tab_id.to_string();
             let remote_path = remote_path.to_string();
+            // If the user has checked 2+ entries, ANY download (right-click,
+            // row button or the toolbar) packs the whole checked set into one
+            // archive (#100) — this matches "download these together". A single
+            // checked item (or none) downloads the clicked file as-is.
+            let (arc_dir, arc_names) = weak
+                .upgrade()
+                .and_then(|w| {
+                    let terminals = w.get_terminals();
+                    let tm = terminals
+                        .as_any()
+                        .downcast_ref::<VecModel<TerminalState>>()?;
+                    let paths = collect_sftp_selected(tm, &tab_id);
+                    if paths.len() >= 2 {
+                        let dir = active_sftp_path(&w, &tab_id);
+                        let names: Vec<String> = paths
+                            .iter()
+                            .map(|p| {
+                                p.trim_end_matches('/')
+                                    .rsplit(['/', '\\'])
+                                    .next()
+                                    .unwrap_or(p)
+                                    .to_string()
+                            })
+                            .collect();
+                        clear_sftp_selection(tm, &tab_id);
+                        Some((dir, names))
+                    } else {
+                        None
+                    }
+                })
+                .map(|(d, n)| (Some(d), n))
+                .unwrap_or((None, Vec::new()));
             // "Always ask" (#87) forces the folder picker, ignoring the preset.
             let (preset, always_ask) = weak
                 .upgrade()
@@ -3111,7 +3143,11 @@ fn wire_sftp_callbacks(
             if !always_ask && !preset.is_empty() {
                 if let Ok(handles) = sftp_handles.lock() {
                     if let Some(h) = handles.get(&tab_id) {
-                        h.download(remote_path, preset);
+                        if let Some(ref dir) = arc_dir {
+                            h.download_archive(dir.clone(), arc_names.clone(), preset);
+                        } else {
+                            h.download(remote_path, preset);
+                        }
                         // Pop the transfers panel so progress is visible (user
                         // request: any download opens the download popup).
                         if let Some(w) = weak.upgrade() {
@@ -3128,7 +3164,11 @@ fn wire_sftp_callbacks(
                     let local_dir = dir.to_string_lossy().to_string();
                     if let Ok(handles) = sftp_handles.lock() {
                         if let Some(h) = handles.get(&tab_id) {
-                            h.download(remote_path, local_dir);
+                            if let Some(ref rdir) = arc_dir {
+                                h.download_archive(rdir.clone(), arc_names.clone(), local_dir);
+                            } else {
+                                h.download(remote_path, local_dir);
+                            }
                         }
                     }
                     let _ = weak.upgrade_in_event_loop(|w| w.set_download_open(true));

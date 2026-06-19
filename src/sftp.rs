@@ -473,16 +473,26 @@ async fn run_sftp(
                 tokio::spawn(async move {
                     let n = names.len();
                     let id = Uuid::new_v4().to_string();
-                    let tmp = format!("/tmp/meatshell-{}.tar.gz", Uuid::new_v4());
-                    let arc_name = format!("meatshell-{}.tar.gz", &id[..8]);
+                    let tmp = format!("/tmp/meatshell-{}.tar", Uuid::new_v4());
+                    // Name the archive after the first item's stem, per the user:
+                    // 11.txt → "11等文件.tar". Sanitize since names come from the server.
+                    let first = names.first().map(|s| s.as_str()).unwrap_or("download");
+                    let stem = first
+                        .rsplit_once('.')
+                        .map(|(a, _)| a)
+                        .filter(|a| !a.is_empty())
+                        .unwrap_or(first);
+                    let arc_name =
+                        sanitize_filename(&format!("{}{}.tar", stem, t("等文件", "-and-more")));
                     let local_path =
                         format!("{}/{}", local_dir.trim_end_matches('/'), arc_name);
                     let _ = events.send(SessionEvent::SftpStatus(format!(
                         "{} {} {}...", t("打包下载", "Archiving"), n, t("项", "items")
                     )));
+                    // Plain tar (no gzip): the user prefers speed over a smaller file.
                     // Server-supplied names are untrusted → quote every argument.
                     let mut cmd =
-                        format!("tar -czf {} -C {}", sh_quote(&tmp), sh_quote(&remote_dir));
+                        format!("tar -cf {} -C {}", sh_quote(&tmp), sh_quote(&remote_dir));
                     for nm in &names {
                         cmd.push(' ');
                         cmd.push_str(&sh_quote(nm));
