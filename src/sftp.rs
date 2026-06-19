@@ -582,6 +582,12 @@ async fn run_sftp(
                 let sftp = sftp.clone();
                 let handle = handle.clone();
                 let events = events.clone();
+                // Register a cancel flag up-front under the file id so a
+                // CancelTransfer arriving mid-upload can flip it (#100).
+                let up_id = Uuid::new_v4().to_string();
+                let cancel = Arc::new(AtomicBool::new(false));
+                cancels.lock().unwrap().insert(up_id.clone(), cancel.clone());
+                let cancels_done = cancels.clone();
                 tokio::spawn(async move {
                 // A directory source → recursively upload the whole tree (#50).
                 let is_dir = tokio::fs::metadata(&local)
@@ -615,10 +621,10 @@ async fn run_sftp(
                 } else {
                     let filename = base_name(&local);
                     let remote_path = format!("{}/{}", remote_dir.trim_end_matches('/'), filename);
-                    let id = Uuid::new_v4().to_string();
+                    let id = up_id.clone();
                     let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("上传", "Uploading"), filename)));
-                    match upload_pipelined(&handle, &local, &remote_path, &filename, &id, &events).await {
-                        Ok(_) => {
+                    match upload_pipelined(&handle, &local, &remote_path, &filename, &id, &events, &cancel).await {
+                        Ok(true) => {
                             if let Ok(entries) = list_dir_impl(&sftp, &remote_dir).await {
                                 let _ = events.send(SessionEvent::SftpEntries {
                                     path: remote_dir.clone(),
@@ -628,12 +634,23 @@ async fn run_sftp(
                             let _ = events
                                 .send(SessionEvent::SftpStatus(format!("{}: {}", t("上传完成", "Uploaded"), filename)));
                         }
+                        Ok(false) => {
+                            // Refresh the listing so the removed partial file disappears.
+                            if let Ok(entries) = list_dir_impl(&sftp, &remote_dir).await {
+                                let _ = events.send(SessionEvent::SftpEntries {
+                                    path: remote_dir.clone(),
+                                    entries,
+                                });
+                            }
+                            let _ = events.send(SessionEvent::SftpStatus(format!("{}: {}", t("已取消", "Cancelled"), filename)));
+                        }
                         Err(e) => {
                             emit_transfer(&events, &id, &filename, true, 0, 0, 2, &e.to_string());
                             let _ = events.send(SessionEvent::SftpStatus(format!("{}: {e}", t("上传失败", "Upload failed"))));
                         }
                     }
                 }
+                cancels_done.lock().unwrap().remove(&up_id);
                 });
             }
 
@@ -1432,6 +1449,9 @@ async fn upload_dir(
     remote_parent: &str,
     events: &UnboundedSender<SessionEvent>,
 ) -> Result<()> {
+    // Folder uploads aren't individually cancellable from the UI; a throwaway
+    // never-set flag satisfies upload_pipelined's signature.
+    let no_cancel = Arc::new(AtomicBool::new(false));
     let root_name = base_name(local_root);
     let remote_root = format!("{}/{}", remote_parent.trim_end_matches('/'), root_name);
     let mut stack = vec![(local_root.to_string(), remote_root)];
@@ -1450,7 +1470,7 @@ async fn upload_dir(
                 stack.push((lpath, rchild));
             } else if ft.is_file() {
                 let id = Uuid::new_v4().to_string();
-                upload_pipelined(handle, &lpath, &rchild, &name, &id, events).await?;
+                upload_pipelined(handle, &lpath, &rchild, &name, &id, events, &no_cancel).await?;
             }
         }
     }
@@ -1473,7 +1493,8 @@ async fn upload_pipelined(
     name: &str,
     id: &str,
     events: &UnboundedSender<SessionEvent>,
-) -> Result<()> {
+    cancel: &Arc<AtomicBool>,
+) -> Result<bool> {
     use tokio::io::AsyncReadExt;
 
     const CHUNK: usize = 32 * 1024; // safe SFTP write size
@@ -1517,9 +1538,14 @@ async fn upload_pipelined(
     let mut last = Instant::now();
     let mut eof = false;
     let mut err: Option<anyhow::Error> = None;
+    let mut cancelled = false;
     let mut inflight = FuturesUnordered::new();
 
     while !eof || !inflight.is_empty() {
+        if cancel.load(Ordering::Relaxed) {
+            cancelled = true;
+            eof = true; // stop reading more; drain what's in flight
+        }
         // Top up the pipeline with fresh WRITE requests.
         while !eof && inflight.len() < MAX_INFLIGHT {
             let mut buf = vec![0u8; CHUNK];
@@ -1562,10 +1588,18 @@ async fn upload_pipelined(
 
     let _ = raw.close(fhandle).await;
     if let Some(e) = err {
+        // Drop the partial remote file so a failed upload leaves no junk.
+        let _ = raw.remove(remote).await;
         return Err(e);
     }
+    if cancelled {
+        // Remove the half-written remote file on cancel (#100).
+        let _ = raw.remove(remote).await;
+        emit_transfer(events, id, name, true, done, total, 4, t("已取消", "Cancelled"));
+        return Ok(false);
+    }
     emit_transfer(events, id, name, true, done, total.max(done), 1, "");
-    Ok(())
+    Ok(true)
 }
 
 // ---------------------------------------------------------------------------
