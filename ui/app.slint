@@ -432,7 +432,7 @@ export component AppWindow inherits Window {
     callback session-dialog-pick-key();
     // Port forwards for the session being edited (#56).
     in-out property <[PortFwd]> dialog-forwards;
-    callback add-forward(string /* kind */, string /* bind */, int /* port */,
+    callback add-forward(string /* name */, string /* kind */, string /* bind */, int /* port */,
                          string /* host */, int /* host-port */);
     callback delete-forward(int /* index */);
 
@@ -2553,7 +2553,7 @@ export component AppWindow inherits Window {
         submit(draft) => { root.session-dialog-submit(draft); }
         cancel => { root.session-dialog-cancel(); }
         pick-key-file => { root.session-dialog-pick-key(); }
-        add-forward(k, b, p, h, hp) => { root.add-forward(k, b, p, h, hp); }
+        add-forward(n, k, b, p, h, hp) => { root.add-forward(n, k, b, p, h, hp); }
         delete-forward(i) => { root.delete-forward(i); }
     }
 

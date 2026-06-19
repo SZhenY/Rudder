@@ -1575,7 +1575,8 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let ef = edit_forwards.clone();
         window.on_add_forward(
-            move |kind: SharedString,
+            move |name: SharedString,
+                  kind: SharedString,
                   bind_addr: SharedString,
                   bind_port: i32,
                   host: SharedString,
@@ -1590,6 +1591,7 @@ fn wire_session_callbacks(
                 }
                 ef.borrow_mut().push(crate::config::PortForward {
                     kind,
+                    name: name.trim().to_string(),
                     bind_addr: bind_addr.trim().to_string(),
                     bind_port: bind_port as u16,
                     host: host.trim().to_string(),
@@ -2021,6 +2023,7 @@ fn forward_model(forwards: &[crate::config::PortForward]) -> ModelRc<PortFwd> {
             };
             PortFwd {
                 kind: f.kind.clone().into(),
+                name: f.name.clone().into(),
                 summary: summary.into(),
             }
         })

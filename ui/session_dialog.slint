@@ -5,6 +5,7 @@ import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 // ready-to-display line like "-L 127.0.0.1:8080 → host:80".
 export struct PortFwd {
     kind: string,
+    name: string,
     summary: string,
 }
 
@@ -115,6 +116,7 @@ export component SessionDialog inherits Rectangle {
     // Rust); the nf-* properties hold the add-form fields.
     in property <[PortFwd]> forwards;
     property <string> nf-kind: "local";   // "local" | "remote" | "dynamic"
+    property <string> nf-name;            // optional rule label (#100)
     property <string> nf-bind: "127.0.0.1";
     property <string> nf-port;
     property <string> nf-host;
@@ -123,7 +125,7 @@ export component SessionDialog inherits Rectangle {
 
     callback submit(SessionDraft);
     callback cancel();
-    callback add-forward(string /* kind */, string /* bind */, int /* port */,
+    callback add-forward(string /* name */, string /* kind */, string /* bind */, int /* port */,
                          string /* host */, int /* host-port */);
     callback delete-forward(int /* index */);
     callback pick-key-file();   // open a native file picker for the private key
@@ -469,7 +471,16 @@ export component SessionDialog inherits Rectangle {
                     border-radius: Theme.radius-sm;
                     background: Theme.bg-root;
                     HorizontalLayout {
-                        padding-left: 8px; padding-right: 4px; spacing: 4px;
+                        padding-left: 8px; padding-right: 4px; spacing: 6px;
+                        if f.name != "" : Text {
+                            text: f.name;
+                            color: Theme.accent;
+                            font-size: Theme.fs-sm;
+                            font-weight: 600;
+                            font-family: Theme.ui-font-family;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
                         Text {
                             text: f.summary;
                             color: Theme.text-primary;
@@ -503,6 +514,7 @@ export component SessionDialog inherits Rectangle {
                     SegOption { label: @tr("Remote (-R)"); active: root.nf-kind == "remote"; clicked => { root.nf-kind = "remote"; } }
                     SegOption { label: @tr("Dynamic (-D)"); active: root.nf-kind == "dynamic"; clicked => { root.nf-kind = "dynamic"; } }
                 }
+                MiniInput { placeholder: @tr("Name (optional)"); value <=> root.nf-name; }
                 HorizontalLayout {
                     spacing: 6px;
                     MiniInput { placeholder: "127.0.0.1"; value <=> root.nf-bind; }
@@ -518,8 +530,9 @@ export component SessionDialog inherits Rectangle {
                     PrimaryButton {
                         text: @tr("Add");
                         clicked => {
-                            root.add-forward(root.nf-kind, root.nf-bind, root.nf-port.to-float(),
+                            root.add-forward(root.nf-name, root.nf-kind, root.nf-bind, root.nf-port.to-float(),
                                              root.nf-host, root.nf-host-port.to-float());
+                            root.nf-name = "";
                             root.nf-port = "";
                             root.nf-host = "";
                             root.nf-host-port = "";

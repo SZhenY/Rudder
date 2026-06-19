@@ -207,6 +207,9 @@ pub struct Session {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PortForward {
     pub kind: String,
+    /// Optional label to tell rules apart (#100). Empty = unnamed.
+    #[serde(default)]
+    pub name: String,
     /// Listener bind address (local side for L/D, remote side for R).
     /// Empty → 127.0.0.1.
     #[serde(default)]
