@@ -5,6 +5,44 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-06-20
+
+### Fixed / 修复
+
+- **macOS text-invisible regression — renderer no longer force-switched (#129, #108).**
+  0.4.10 force-set the Skia renderer on macOS to work around femtovg failing to
+  render text on macOS 26 (#108). That shipped unverified and broke a *different*
+  set of Macs (Apple Silicon, macOS 26.5): Skia could not resolve the "PingFang SC"
+  UI font, so all text vanished there instead (icons survived because they use an
+  embedded font). The default now stays femtovg (known-good for the majority);
+  Skia is still compiled in on macOS and can be opted into at launch with
+  `SLINT_BACKEND=winit-skia` for machines where femtovg fails.
+  **修复 macOS 文本全部消失的回退问题——不再强制切换渲染器 (#129, #108)。** 0.4.10 为
+  绕过 macOS 26 上 femtovg 取字失败(#108),在 macOS 强制改用 Skia 渲染器;该改动
+  未经真机验证就发布,反而弄坏了另一批 Mac(Apple Silicon / macOS 26.5):Skia 无法
+  解析「PingFang SC」界面字体,导致这些机器上文字全部消失(图标因使用内嵌字体而正常)。
+  现默认改回 femtovg(对绝大多数机器正常);macOS 仍编译 Skia,femtovg 失效的机器可在
+  启动时用 `SLINT_BACKEND=winit-skia` 手动启用。
+
+### Added / 新增
+
+- **Cancel an in-progress upload, with remote cleanup (#100).** Uploads can now be
+  cancelled like downloads; cancelling removes the half-written file on the remote
+  so no partial junk is left behind.
+  **上传也支持取消并清理远端半成品 (#100)。** 上传可像下载一样取消;取消会删除远端已
+  写入的半成品文件,服务端不留垃圾。
+
+- **Sponsor / donation link in the README.** Added a WeChat sponsor QR for anyone
+  who'd like to support development.
+  **README 增加赞助/捐赠入口。** 加入微信赞助二维码,欢迎支持项目开发。
+
+### Changed / 优化
+
+- **Silenced ICU4X segmentation-data log noise.** Suppressed the spurious ICU4X
+  data-error warnings so they no longer clutter the log / error.log.
+  **屏蔽 ICU4X 段落数据噪音日志。** 抑制无意义的 ICU4X data-error 警告,不再污染日志
+  与 error.log。
+
 ## [0.4.10] - 2026-06-19
 
 ### Added / 新增

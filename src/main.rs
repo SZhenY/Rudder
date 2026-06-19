@@ -19,15 +19,21 @@ mod telnet;
 mod zmodem;
 
 fn main() -> anyhow::Result<()> {
-    // macOS 26 (Tahoe) broke femtovg's CoreText font lookup, so *all* text —
-    // including the embedded mono font — vanished from the UI (#108). Skia uses a
-    // more robust font path and is Slint's recommended renderer on macOS, so we
-    // force it there. Windows/Linux keep the default femtovg (skia isn't even
-    // compiled — see the target-specific dependency in Cargo.toml).
-    #[cfg(target_os = "macos")]
-    if std::env::var_os("SLINT_BACKEND").is_none() {
-        std::env::set_var("SLINT_BACKEND", "winit-skia");
-    }
+    // macOS renderer is left at Slint's default (femtovg) and is NOT forced.
+    //
+    // History: 0.4.10 force-set SLINT_BACKEND=winit-skia to work around femtovg's
+    // CoreText font lookup failing on macOS 26 / Tahoe (all text vanished, #108).
+    // That fix shipped without on-device verification and turned out to *break* a
+    // different set of Macs (Apple Silicon M5 / 26.5): Skia couldn't resolve the
+    // "PingFang SC" UI font and all text vanished there instead (#129). Icons
+    // survived in both cases because Material Icons is an embedded font.
+    //
+    // Neither renderer works for every macOS machine, so we no longer pick for the
+    // user: femtovg is the known-good default for the majority. Users for whom
+    // femtovg fails to render text (e.g. #108) can opt into Skia at launch with
+    //     SLINT_BACKEND=winit-skia
+    // The renderer-skia feature is still compiled in on macOS (see Cargo.toml) so
+    // that override is available without a rebuild.
 
     init_tracing();
 
