@@ -58,6 +58,8 @@ export struct TerminalState {
     cursor-row: int,       // cursor cell on the grid
     cursor-col: int,
     rows-used: int,        // content rows, for viewport sizing
+    scroll-max: int,       // scrollback depth (max offset) — terminal scrollbar (#103)
+    scroll-offset: int,    // current scrollback offset (0 = live bottom)
     is-alt-screen: bool,
     find-matches: [TermMatch], // search-highlight rectangles
     selection: [TermMatch],    // drag-selection highlight rectangles
@@ -496,6 +498,7 @@ export component AppWindow inherits Window {
     callback find-query-changed(string /* tab-id */, string /* query */);
     // Scroll a session's scrollback history by N lines (+ = up/older).
     callback terminal-scroll(string /* tab-id */, int /* delta-lines */);
+    callback terminal-scroll-to(string /* tab-id */, int /* offset */); // scrollbar drag (#103)
     // Drag-selection lifecycle (grid row/col coordinates).
     callback term-select-start(string /* tab-id */, int /* row */, int /* col */);
     callback term-select-update(string /* tab-id */, int /* row */, int /* col */);
@@ -671,6 +674,8 @@ export component AppWindow inherits Window {
                     cursor-row: term.cursor-row;
                     cursor-col: term.cursor-col;
                     rows-used: term.rows-used;
+                    scroll-max: term.scroll-max;
+                    scroll-offset: term.scroll-offset;
                     is-alt-screen: term.is-alt-screen;
                     find-matches: term.find-matches;
                     selection: term.selection;
@@ -744,6 +749,7 @@ export component AppWindow inherits Window {
                     clear-terminal() => { root.clear-terminal(term.id); }
                     find-query-changed(q) => { root.find-query-changed(term.id, q); }
                     terminal-scroll(d) => { root.terminal-scroll(term.id, d); }
+                    terminal-scroll-to(o) => { root.terminal-scroll-to(term.id, o); }
                     select-start(r, c) => { root.term-select-start(term.id, r, c); }
                     select-update(r, c) => { root.term-select-update(term.id, r, c); }
                     select-end() => { root.term-select-end(term.id); }

@@ -1682,6 +1682,8 @@ fn wire_session_callbacks(
                 cursor_row: 0,
                 cursor_col: 0,
                 rows_used: 0,
+                scroll_max: 0,
+                scroll_offset: 0,
                 is_alt_screen: false,
                 find_matches: ModelRc::from(std::rc::Rc::new(VecModel::<TermMatch>::default())),
                 selection: ModelRc::from(std::rc::Rc::new(VecModel::<TermMatch>::default())),
@@ -2099,6 +2101,7 @@ fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
     let fm = ModelRc::from(Rc::new(VecModel::from(matches)));
     let sm = ModelRc::from(Rc::new(VecModel::from(sel)));
     let (cr, cc, ru, alt) = (b.cursor_row, b.cursor_col, b.rows_used, b.is_alt);
+    let (smax, soff) = (b.scroll_max, b.scroll_offset);
     set_terminal_row(win, tab_id, move |row| {
         row.spans = spans.clone();
         row.cursor_row = cr;
@@ -2107,6 +2110,8 @@ fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
         row.is_alt_screen = alt;
         row.find_matches = fm.clone();
         row.selection = sm.clone();
+        row.scroll_max = smax;
+        row.scroll_offset = soff;
     });
 }
 
@@ -2318,6 +2323,7 @@ fn apply_session_event_to_window(
                     ModelRc::from(std::rc::Rc::new(VecModel::from(sel)));
                 let (cur_row, cur_col, rows_used, is_alt) =
                     (b.cursor_row, b.cursor_col, b.rows_used, b.is_alt);
+                let (smax, soff) = (b.scroll_max, b.scroll_offset);
                 update_terminal(&|t| {
                     t.spans = spans_model.clone();
                     t.cursor_row = cur_row;
@@ -2326,6 +2332,8 @@ fn apply_session_event_to_window(
                     t.is_alt_screen = is_alt;
                     t.find_matches = matches_model.clone();
                     t.selection = sel_model.clone();
+                    t.scroll_max = smax;
+                    t.scroll_offset = soff;
                 });
             }
         }
@@ -3976,6 +3984,8 @@ fn wire_key_input(
                     row.cursor_row = 0;
                     row.cursor_col = 0;
                     row.rows_used = 0;
+                    row.scroll_max = 0;
+                    row.scroll_offset = 0;
                 });
             }
             if let Some(h) = handles_clear.borrow().get(&tid) {
@@ -4023,6 +4033,24 @@ fn wire_key_input(
                 let max_off = buf.history.len() as i64;
                 let cur = buf.view_offset as i64;
                 buf.view_offset = (cur + delta as i64).clamp(0, max_off) as usize;
+            }
+            if let Some(win) = weak.upgrade() {
+                rebuild_tab_display(&win, &bufs_scroll, &tid);
+            }
+        });
+    }
+
+    // Scrollbar drag → jump to an absolute scrollback offset (#103).
+    {
+        let bufs_scroll = bufs.clone();
+        let weak = window.as_weak();
+        window.on_terminal_scroll_to(move |tab_id: SharedString, offset: i32| {
+            let tid = tab_id.to_string();
+            {
+                let mut map = bufs_scroll.lock().unwrap();
+                let Some(buf) = map.get_mut(&tid) else { return };
+                let max_off = buf.history.len() as i64;
+                buf.view_offset = (offset as i64).clamp(0, max_off) as usize;
             }
             if let Some(win) = weak.upgrade() {
                 rebuild_tab_display(&win, &bufs_scroll, &tid);
@@ -4507,6 +4535,10 @@ struct BuiltScreen {
     cursor_col: i32,
     rows_used: i32,
     is_alt: bool,
+    /// Scrollback depth (max view_offset = history length) and the current
+    /// offset (0 = live bottom), for the terminal scrollbar (#103).
+    scroll_max: i32,
+    scroll_offset: i32,
 }
 
 /// One coloured run within a line (its grid row is assigned at render time).
@@ -4948,6 +4980,8 @@ impl TermBuffer {
                 cursor_col: cur_col as i32,
                 rows_used,
                 is_alt,
+                scroll_max: if is_alt { 0 } else { self.history.len() as i32 },
+                scroll_offset: 0,
             };
         }
 
@@ -5000,6 +5034,8 @@ impl TermBuffer {
             cursor_col: 0,
             rows_used: win as i32,
             is_alt: false,
+            scroll_max: self.history.len() as i32,
+            scroll_offset: self.view_offset as i32,
         }
     }
 }

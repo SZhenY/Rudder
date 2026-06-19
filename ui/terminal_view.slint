@@ -83,6 +83,8 @@ export component TerminalView inherits Rectangle {
     in property <int> cursor-row;       // cursor cell (grid coords)
     in property <int> cursor-col;
     in property <int> rows-used;        // content rows, for viewport sizing
+    in property <int> scroll-max;       // scrollback depth (max offset) (#103)
+    in property <int> scroll-offset;    // current offset (0 = live bottom) (#103)
     in property <bool>   is-alt-screen;
     in property <[TermMatch]> find-matches; // search-highlight rectangles
     in property <[TermMatch]> selection;    // drag-selection highlight rectangles
@@ -138,6 +140,7 @@ export component TerminalView inherits Rectangle {
     callback clear-terminal();              // wipe this session's screen buffer
     callback find-query-changed(string);    // recompute search highlights
     callback terminal-scroll(int);          // scroll history by N lines (+ = up)
+    callback terminal-scroll-to(int);       // jump to an absolute scrollback offset (#103)
     callback select-start(int, int);        // begin drag-selection at (row, col)
     callback select-update(int, int);       // extend drag-selection to (row, col)
     callback select-end();                  // finish selection → copy to clipboard
@@ -592,6 +595,40 @@ export component TerminalView inherits Rectangle {
             }
 
             // --- Find bar (overlay, top) ------------------------------------
+            // Terminal scrollbar (#103) — a slim overlay on the right edge of the
+            // output area, shown only when there's scrollback (and not on the
+            // alternate screen). Driven by scroll-max/scroll-offset; click or drag
+            // the track to jump to an absolute position.
+            if root.scroll-max > 0 && !root.is-alt-screen : Rectangle {
+                x: flickable.x + flickable.width - 10px;
+                y: flickable.y + 4px;
+                width: 8px;
+                height: flickable.height - 8px;
+                track-ta := TouchArea {
+                    moved => {
+                        if (self.pressed) {
+                            root.terminal-scroll-to(clamp(round(root.scroll-max * (1 - self.mouse-y / self.height)), 0, root.scroll-max));
+                        }
+                    }
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                            root.terminal-scroll-to(clamp(round(root.scroll-max * (1 - self.mouse-y / self.height)), 0, root.scroll-max));
+                        }
+                    }
+                }
+                Rectangle {
+                    property <float> total: root.scroll-max + root.term-rows;
+                    x: 1px;
+                    width: 6px;
+                    height: max(28px, parent.height * root.term-rows / total);
+                    y: (parent.height - self.height) * (root.scroll-max - root.scroll-offset) / max(1, root.scroll-max);
+                    background: track-ta.has-hover || track-ta.pressed
+                        ? Theme.text-secondary : Theme.border-strong;
+                    border-radius: 3px;
+                    animate background { duration: 100ms; }
+                }
+            }
+
             if root.find-active : Rectangle {
                 x: 0;
                 y: 0;
