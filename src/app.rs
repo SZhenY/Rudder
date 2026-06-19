@@ -653,6 +653,19 @@ pub fn run() -> Result<()> {
         let tm = transfers_model.clone();
         window.on_clear_transfers(move || tm.set_vec(Vec::<TransferInfo>::new()));
     }
+    {
+        // Cancel a transfer by id. The id is a UUID unique across sessions, so we
+        // broadcast to every SFTP handle — only the owning one has it registered
+        // and will act on it (#100).
+        let sftp_handles = sftp_handles.clone();
+        window.on_cancel_transfer(move |id: SharedString| {
+            if let Ok(handles) = sftp_handles.lock() {
+                for h in handles.values() {
+                    h.cancel_transfer(id.to_string());
+                }
+            }
+        });
+    }
 
     // Open-source libraries shown in the About popup.
     {
@@ -2585,6 +2598,8 @@ fn apply_session_event_to_window(
                 1 => t("已完成", "Done").to_string(),
                 // Remote-side prep (e.g. tar packing) before bytes start flowing (#100).
                 3 => t("文件准备中", "Preparing...").to_string(),
+                // User-cancelled transfer (#100).
+                4 => t("已取消", "Cancelled").to_string(),
                 _ => {
                     if total > 0 {
                         format!("{}/{}", format_size(transferred), format_size(total))

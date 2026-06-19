@@ -9,8 +9,10 @@
 //! via the shared `UnboundedSender<SessionEvent>` that already exists for the
 //! terminal tab.
 
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use uuid::Uuid;
@@ -21,8 +23,9 @@ use russh::client::{self, Handler};
 use russh::keys::key::PrivateKeyWithHashAlg;
 use russh::keys::load_secret_key;
 use russh::Disconnect;
+use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::{RawSftpSession, SftpSession};
-use russh_sftp::protocol::{FileAttributes, OpenFlags};
+use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use futures::stream::{FuturesUnordered, StreamExt};
 use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -52,6 +55,9 @@ pub enum SftpCommand {
         names: Vec<String>,
         local_dir: String,
     },
+    /// Cancel an in-progress transfer by its id (#100). The partial local file
+    /// (and any remote temp archive) are cleaned up.
+    CancelTransfer(String),
     /// Upload a local file into a remote directory.
     Upload { local: String, remote_dir: String },
     /// Delete a remote file (falls back to removing an empty directory).
@@ -98,6 +104,9 @@ impl SftpHandle {
             names,
             local_dir,
         });
+    }
+    pub fn cancel_transfer(&self, id: String) {
+        let _ = self.commands.send(SftpCommand::CancelTransfer(id));
     }
     pub fn upload(&self, local: String, remote_dir: String) {
         let _ = self
@@ -296,6 +305,12 @@ async fn run_sftp(
     let sftp = std::sync::Arc::new(sftp);
     let handle = std::sync::Arc::new(handle);
 
+    // Per-transfer cancel flags, keyed by transfer id. A download task registers
+    // its flag here; a CancelTransfer command flips it; the task removes it on
+    // exit (#100 cancel download).
+    let cancels: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
     // Resolve the home directory and do an initial listing.
     let home = sftp
         .canonicalize(".")
@@ -398,7 +413,17 @@ async fn run_sftp(
                 // Run on its own task so the command loop stays free to list /
                 // switch directories during the transfer (#116-2).
                 let sftp = sftp.clone();
+                let handle = handle.clone();
                 let events = events.clone();
+                // Register a cancel flag up-front under the file id, so a
+                // CancelTransfer arriving mid-download can flip it (#100).
+                let file_id = Uuid::new_v4().to_string();
+                let cancel = Arc::new(AtomicBool::new(false));
+                cancels
+                    .lock()
+                    .unwrap()
+                    .insert(file_id.clone(), cancel.clone());
+                let cancels_done = cancels.clone();
                 tokio::spawn(async move {
                 // A directory target → recursively mirror the whole tree (#50).
                 let is_dir = sftp
@@ -424,7 +449,7 @@ async fn run_sftp(
                     let _ = events.send(SessionEvent::SftpStatus(format!(
                         "{} {}/...", t("下载文件夹", "Downloading folder"), dirname
                     )));
-                    match download_dir(&sftp, &remote, &local_dir, &events).await {
+                    match download_dir(&sftp, &handle, &remote, &local_dir, &events).await {
                         Ok(_) => {
                             let _ = events.send(SessionEvent::SftpStatus(format!(
                                 "{}: {}", t("下载完成", "Downloaded"), dirname
@@ -443,12 +468,15 @@ async fn run_sftp(
                     // device name to write outside the chosen dir or hit a device.
                     let filename = sanitize_filename(&base_name(&remote));
                     let local_path = format!("{}/{}", local_dir.trim_end_matches('/'), filename);
-                    let id = Uuid::new_v4().to_string();
+                    let id = file_id.clone();
                     let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("下载", "Downloading"), filename)));
-                    match download_impl(&sftp, &remote, &local_path, &filename, &id, &events).await {
-                        Ok(_) => {
+                    match download_impl(&handle, &remote, &local_path, &filename, &id, &events, &cancel).await {
+                        Ok(true) => {
                             let _ = events
                                 .send(SessionEvent::SftpStatus(format!("{}: {}", t("下载完成", "Downloaded"), filename)));
+                        }
+                        Ok(false) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!("{}: {}", t("已取消", "Cancelled"), filename)));
                         }
                         Err(e) => {
                             emit_transfer(&events, &id, &filename, false, 0, 0, 2, &e.to_string());
@@ -456,6 +484,7 @@ async fn run_sftp(
                         }
                     }
                 }
+                cancels_done.lock().unwrap().remove(&file_id);
                 });
             }
 
@@ -470,9 +499,13 @@ async fn run_sftp(
                 let sftp = sftp.clone();
                 let handle = handle.clone();
                 let events = events.clone();
+                // Register a cancel flag up-front so CancelTransfer can flip it (#100).
+                let id = Uuid::new_v4().to_string();
+                let cancel = Arc::new(AtomicBool::new(false));
+                cancels.lock().unwrap().insert(id.clone(), cancel.clone());
+                let cancels_done = cancels.clone();
                 tokio::spawn(async move {
                     let n = names.len();
-                    let id = Uuid::new_v4().to_string();
                     let tmp = format!("/tmp/meatshell-{}.tar", Uuid::new_v4());
                     // Name the archive after the first item's stem, per the user:
                     // 11.txt → "11等文件.tar". Sanitize since names come from the server.
@@ -502,20 +535,28 @@ async fn run_sftp(
                         cmd.push(' ');
                         cmd.push_str(&sh_quote(nm));
                     }
-                    let res: Result<()> = async {
+                    let _ = &sftp; // listing session kept alive; transfer uses `handle`
+                    let res: Result<bool> = async {
                         let st = exec_remote(&handle, &cmd).await.context("tar on remote")?;
                         if st != 0 {
                             return Err(anyhow!(t("远端 tar 打包失败", "remote tar failed")));
                         }
-                        download_impl(&sftp, &tmp, &local_path, &arc_name, &id, &events).await
+                        download_impl(&handle, &tmp, &local_path, &arc_name, &id, &events, &cancel)
+                            .await
                     }
                     .await;
-                    // Best-effort cleanup of the remote temp, success or not.
+                    // Best-effort cleanup of the remote temp tar — success, failure
+                    // or cancel all reach here, so no junk is left on the server (#100).
                     let _ = exec_remote(&handle, &format!("rm -f {}", sh_quote(&tmp))).await;
                     match res {
-                        Ok(_) => {
+                        Ok(true) => {
                             let _ = events.send(SessionEvent::SftpStatus(format!(
                                 "{}: {}", t("下载完成", "Downloaded"), arc_name
+                            )));
+                        }
+                        Ok(false) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {}", t("已取消", "Cancelled"), arc_name
                             )));
                         }
                         Err(e) => {
@@ -525,7 +566,14 @@ async fn run_sftp(
                             )));
                         }
                     }
+                    cancels_done.lock().unwrap().remove(&id);
                 });
+            }
+
+            SftpCommand::CancelTransfer(id) => {
+                if let Some(flag) = cancels.lock().unwrap().get(&id) {
+                    flag.store(true, Ordering::Relaxed);
+                }
             }
 
             SftpCommand::Upload { local, remote_dir } => {
@@ -740,7 +788,8 @@ async fn run_sftp(
                 let local_str = local.to_string_lossy().to_string();
                 let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("打开", "Opening"), filename)));
                 let xid = Uuid::new_v4().to_string();
-                match download_impl(&sftp, &remote, &local_str, &filename, &xid, &events).await {
+                let no_cancel = Arc::new(AtomicBool::new(false));
+                match download_impl(&handle, &remote, &local_str, &filename, &xid, &events, &no_cancel).await {
                     Ok(_) => {
                         open_with_os(&local_str);
                         let _ = events.send(SessionEvent::SftpStatus(format!(
@@ -1131,56 +1180,174 @@ fn emit_transfer(
     });
 }
 
-const XFER_CHUNK: usize = 64 * 1024;
-
+/// Download a remote file over a dedicated, *pipelined* raw SFTP channel.
+///
+/// The high-level reader issues one READ and waits for the reply before the
+/// next, so throughput is capped by the round-trip time (slow on any latent
+/// link). Here we keep many READ requests in flight at once, each tagged with
+/// its absolute offset so out-of-order completion is fine — mirroring
+/// `upload_pipelined`.
+///
+/// Returns `Ok(true)` when the whole file was written, or `Ok(false)` if the
+/// transfer was cancelled. In both the cancel and error cases the partial
+/// local file is removed so no half-downloaded junk is left behind.
 async fn download_impl(
-    sftp: &SftpSession,
+    handle: &client::Handle<SftpClientHandler>,
     remote: &str,
     local: &str,
     name: &str,
     id: &str,
     events: &UnboundedSender<SessionEvent>,
-) -> Result<()> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let total = sftp
-        .metadata(remote)
+    cancel: &Arc<AtomicBool>,
+) -> Result<bool> {
+    use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+
+    const CHUNK: usize = 32 * 1024;
+    const MAX_INFLIGHT: usize = 32; // ~1 MB outstanding hides the RTT
+
+    let channel = handle
+        .channel_open_session()
+        .await
+        .context("open sftp download channel")?;
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .context("request sftp subsystem")?;
+    let raw = Arc::new(RawSftpSession::new(channel.into_stream()));
+    raw.init().await.context("sftp download handshake")?;
+
+    let total = raw
+        .stat(remote)
         .await
         .ok()
-        .and_then(|m| m.size)
+        .and_then(|a| a.attrs.size)
         .unwrap_or(0);
-    let mut remote_file = sftp
-        .open(remote)
+    let fhandle = raw
+        .open(remote, OpenFlags::READ, FileAttributes::default())
         .await
-        .with_context(|| format!("open remote {remote}"))?;
+        .with_context(|| format!("open remote {remote}"))?
+        .handle;
     let mut local_file = tokio::fs::File::create(local)
         .await
         .with_context(|| format!("create local {local}"))?;
 
     emit_transfer(events, id, name, false, 0, total, 0, "");
-    let mut buf = vec![0u8; XFER_CHUNK];
+
     let mut done: u64 = 0;
     let mut last = Instant::now();
-    loop {
-        let n = remote_file
-            .read(&mut buf)
-            .await
-            .context("read remote file")?;
-        if n == 0 {
-            break;
+    let mut err: Option<anyhow::Error> = None;
+    let mut cancelled = false;
+
+    if total > 0 {
+        let mut next_off = 0u64;
+        let mut inflight = FuturesUnordered::new();
+        loop {
+            if cancel.load(Ordering::Relaxed) {
+                cancelled = true;
+            }
+            // Top up the pipeline with fresh READ requests.
+            while !cancelled && err.is_none() && next_off < total && inflight.len() < MAX_INFLIGHT {
+                let off = next_off;
+                let want = ((total - off) as usize).min(CHUNK);
+                next_off += want as u64;
+                let raw2 = raw.clone();
+                let h = fhandle.clone();
+                inflight.push(async move {
+                    // Fill the whole chunk, coping with short reads.
+                    let mut data = Vec::with_capacity(want);
+                    let mut o = off;
+                    let end = off + want as u64;
+                    while o < end {
+                        match raw2.read(h.clone(), o, (end - o) as u32).await {
+                            Ok(d) => {
+                                if d.data.is_empty() {
+                                    break;
+                                }
+                                o += d.data.len() as u64;
+                                data.extend_from_slice(&d.data);
+                            }
+                            Err(SftpError::Status(s)) if s.status_code == StatusCode::Eof => break,
+                            Err(e) => return Err(anyhow!("read remote: {e}")),
+                        }
+                    }
+                    Ok::<(u64, Vec<u8>), anyhow::Error>((off, data))
+                });
+            }
+            if inflight.is_empty() {
+                break;
+            }
+            match inflight.next().await {
+                Some(Ok((off, data))) => {
+                    if !data.is_empty() {
+                        if let Err(e) = local_file.seek(std::io::SeekFrom::Start(off)).await {
+                            err = Some(anyhow!("seek local: {e}"));
+                        } else if let Err(e) = local_file.write_all(&data).await {
+                            err = Some(anyhow!("write local: {e}"));
+                        } else {
+                            done += data.len() as u64;
+                        }
+                    }
+                    if last.elapsed() >= Duration::from_millis(150) {
+                        last = Instant::now();
+                        emit_transfer(events, id, name, false, done, total, 0, "");
+                    }
+                }
+                Some(Err(e)) => err = Some(e),
+                None => {}
+            }
+            if (cancelled || err.is_some()) && inflight.is_empty() {
+                break;
+            }
         }
-        local_file
-            .write_all(&buf[..n])
-            .await
-            .context("write local file")?;
-        done += n as u64;
-        if last.elapsed() >= Duration::from_millis(150) {
-            last = Instant::now();
-            emit_transfer(events, id, name, false, done, total, 0, "");
+    } else {
+        // Unknown / zero size: serial drain until EOF (rare; keeps correctness).
+        let mut off = 0u64;
+        loop {
+            if cancel.load(Ordering::Relaxed) {
+                cancelled = true;
+                break;
+            }
+            match raw.read(fhandle.clone(), off, CHUNK as u32).await {
+                Ok(d) => {
+                    if d.data.is_empty() {
+                        break;
+                    }
+                    local_file
+                        .write_all(&d.data)
+                        .await
+                        .context("write local file")?;
+                    off += d.data.len() as u64;
+                    done += d.data.len() as u64;
+                    if last.elapsed() >= Duration::from_millis(150) {
+                        last = Instant::now();
+                        emit_transfer(events, id, name, false, done, done, 0, "");
+                    }
+                }
+                Err(SftpError::Status(s)) if s.status_code == StatusCode::Eof => break,
+                Err(e) => {
+                    err = Some(anyhow!("read remote: {e}"));
+                    break;
+                }
+            }
         }
+    }
+
+    let _ = raw.close(fhandle).await;
+
+    if let Some(e) = err {
+        drop(local_file);
+        let _ = tokio::fs::remove_file(local).await;
+        return Err(e);
+    }
+    if cancelled {
+        drop(local_file);
+        let _ = tokio::fs::remove_file(local).await;
+        emit_transfer(events, id, name, false, done, total, 4, t("已取消", "Cancelled"));
+        return Ok(false);
     }
     local_file.flush().await.context("flush local file")?;
     emit_transfer(events, id, name, false, done, total.max(done), 1, "");
-    Ok(())
+    Ok(true)
 }
 
 /// Recursively download a remote directory tree under `local_parent` (#50).
@@ -1191,10 +1358,14 @@ async fn download_impl(
 /// so a hostile server can't escape the chosen folder.
 async fn download_dir(
     sftp: &SftpSession,
+    handle: &client::Handle<SftpClientHandler>,
     remote_root: &str,
     local_parent: &str,
     events: &UnboundedSender<SessionEvent>,
 ) -> Result<()> {
+    // Folder transfers aren't individually cancellable from the UI; a throwaway
+    // never-set flag satisfies download_impl's signature.
+    let no_cancel = Arc::new(AtomicBool::new(false));
     let root_name = sanitize_filename(&base_name(remote_root));
     let root_local = format!("{}/{}", local_parent.trim_end_matches('/'), root_name);
     // (remote_dir, local_dir) pairs still to mirror.
@@ -1211,7 +1382,8 @@ async fn download_dir(
                 let fname = sanitize_filename(&entry.name);
                 let lpath = format!("{}/{}", ldir, fname);
                 let id = Uuid::new_v4().to_string();
-                download_impl(sftp, &entry.full_path, &lpath, &fname, &id, events).await?;
+                download_impl(handle, &entry.full_path, &lpath, &fname, &id, events, &no_cancel)
+                    .await?;
             }
         }
     }

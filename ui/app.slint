@@ -347,6 +347,7 @@ export component AppWindow inherits Window {
     callback pick-download-dir();            // open a folder picker
     callback open-download-dir();            // reveal the folder in the OS
     callback clear-transfers();              // wipe the transfer history
+    callback cancel-transfer(string);        // cancel an in-progress transfer by id (#100)
     callback set-language(string);           // switch UI language ("zh" / "en")
 
     // --- Update check (#48) ------------------------------------------------
@@ -1280,6 +1281,25 @@ export component AppWindow inherits Window {
                                              : Theme.text-muted;
                                         font-size: Theme.fs-xs;
                                         vertical-alignment: center;
+                                    }
+                                    // Cancel button — only while the transfer is
+                                    // active (0) or preparing (3) (#100).
+                                    if t.state == 0 || t.state == 3 : Rectangle {
+                                        width: 16px; height: 16px;
+                                        border-radius: Theme.radius-sm;
+                                        background: cancel-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
+                                        cancel-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.cancel-transfer(t.id); }
+                                        }
+                                        Text {
+                                            text: "\u{E5CD}"; // close
+                                            font-family: "Material Icons";
+                                            color: cancel-ta.has-hover ? Theme.danger : Theme.text-muted;
+                                            font-size: Theme.fs-sm;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
                                     }
                                 }
                                 // progress bar
