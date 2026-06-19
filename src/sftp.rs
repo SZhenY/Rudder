@@ -489,6 +489,11 @@ async fn run_sftp(
                     let _ = events.send(SessionEvent::SftpStatus(format!(
                         "{} {} {}...", t("打包下载", "Archiving"), n, t("项", "items")
                     )));
+                    // Show a "preparing" row in the transfer panel right away so a
+                    // big selection isn't a silent wait while tar runs (#100). The
+                    // download then reuses this same id, so the row turns into the
+                    // live progress bar once bytes start flowing.
+                    emit_transfer(&events, &id, &arc_name, false, 0, 0, 3, "");
                     // Plain tar (no gzip): the user prefers speed over a smaller file.
                     // Server-supplied names are untrusted → quote every argument.
                     let mut cmd =

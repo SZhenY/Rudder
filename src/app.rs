@@ -2583,6 +2583,8 @@ fn apply_session_event_to_window(
                 // On error, show the actual message when we have one.
                 2 => if msg.is_empty() { t("失败", "Failed").to_string() } else { msg },
                 1 => t("已完成", "Done").to_string(),
+                // Remote-side prep (e.g. tar packing) before bytes start flowing (#100).
+                3 => t("文件准备中", "Preparing...").to_string(),
                 _ => {
                     if total > 0 {
                         format!("{}/{}", format_size(transferred), format_size(total))
