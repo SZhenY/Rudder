@@ -748,6 +748,25 @@ export component TerminalView inherits Rectangle {
                                     }
                                 }
                                 accept
+                            // --- readline line-editing keys (#103) ---
+                            // Ctrl+A → start of line.
+                            } else if (e.modifiers.control && (e.text == "a" || e.text == "A" || e.text == "\u{0001}")) {
+                                self.set-selection-offsets(0, 0);
+                                accept
+                            // Ctrl+E → end of line.
+                            } else if (e.modifiers.control && (e.text == "e" || e.text == "E" || e.text == "\u{0005}")) {
+                                self.set-selection-offsets(1000000, 1000000);
+                                accept
+                            // Ctrl+K → kill from cursor to end (deletes + clipboard).
+                            } else if (e.modifiers.control && (e.text == "k" || e.text == "K" || e.text == "\u{000B}")) {
+                                self.set-selection-offsets(self.cursor-position_byte-offset, 1000000);
+                                self.cut();
+                                accept
+                            // Ctrl+U → kill from start to cursor.
+                            } else if (e.modifiers.control && (e.text == "u" || e.text == "U" || e.text == "\u{0015}")) {
+                                self.set-selection-offsets(0, self.cursor-position_byte-offset);
+                                self.cut();
+                                accept
                             } else {
                                 reject
                             }

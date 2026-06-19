@@ -141,6 +141,46 @@ component IconBtn inherits Rectangle {
     }
 }
 
+// One row in the keyboard-shortcuts dialog: a key chip + a description (#103).
+component ShortcutRow inherits Rectangle {
+    in property <string> keys;
+    in property <string> desc;
+    height: 28px;
+    HorizontalLayout {
+        spacing: 10px;
+        Rectangle {
+            width: 116px;
+            chip := Rectangle {
+                x: 0;
+                y: (parent.height - self.height) / 2;
+                width: min(parent.width, kt.preferred-width + 16px);
+                height: 20px;
+                background: Theme.bg-root;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                kt := Text {
+                    text: root.keys;
+                    color: Theme.text-primary;
+                    font-family: Theme.font-mono;
+                    font-size: Theme.fs-xs;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        Text {
+            text: root.desc;
+            color: Theme.text-secondary;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "meatshell";
     icon: @image-url("../assets/icon.png");
@@ -199,6 +239,7 @@ export component AppWindow inherits Window {
     callback win-resize(int);     // start an OS resize; arg = direction code
     in-out property <bool> sidebar-collapsed: false; // left panel hidden
     in-out property <bool> about-open: false;     // centered About dialog
+    in-out property <bool> shortcuts-open: false; // centered keyboard-shortcuts dialog (#103)
     in property <string> download-dir;      // preset SFTP download folder ("" = ask)
     in-out property <bool> proc-open: false; // process monitor popup (#23)
     in property <bool> proc-available;       // a live remote session is active
@@ -1363,7 +1404,7 @@ export component AppWindow inherits Window {
         x: parent.width - 196px;
         y: root.custom-titlebar ? 78px : 40px;
         width: 198px;
-        height: 191px;
+        height: 220px;
         visible: root.settings-open;
         background: Theme.bg-panel;
         border-radius: Theme.radius-md;
@@ -1482,6 +1523,28 @@ export component AppWindow inherits Window {
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
                     Text { text: root.lang-en ? "切换到中文" : "Switch to English";
+                           color: Theme.text-primary; font-size: Theme.fs-md;
+                           vertical-alignment: center; horizontal-stretch: 1; }
+                }
+            }
+            // Keyboard shortcuts reference (#103).
+            Rectangle {
+                height: 28px;
+                border-radius: Theme.radius-sm;
+                background: keys-ta.has-hover ? Theme.bg-hover : transparent;
+                keys-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.settings-open = false;
+                        root.shortcuts-open = true;
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 8px; spacing: 8px;
+                    Text { text: "\u{E312}"; font-family: "Material Icons"; // keyboard
+                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           vertical-alignment: center; }
+                    Text { text: root.lang-en ? "Shortcuts" : "快捷键";
                            color: Theme.text-primary; font-size: Theme.fs-md;
                            vertical-alignment: center; horizontal-stretch: 1; }
                 }
@@ -2292,6 +2355,76 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // --- Keyboard shortcuts dialog (#103) ---------------------------------
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        visible: root.shortcuts-open;
+        background: #00000080;
+        TouchArea { clicked => { root.shortcuts-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 424px;
+            height: 432px;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #000000a0;
+            TouchArea {}
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 5px;
+
+                HorizontalLayout {
+                    Text {
+                        text: root.lang-en ? "Keyboard shortcuts" : "快捷键";
+                        color: Theme.text-primary;
+                        font-size: Theme.fs-lg;
+                        font-weight: 700;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        width: 22px; height: 22px;
+                        border-radius: Theme.radius-sm;
+                        background: sc-close.has-hover ? Theme.bg-hover : transparent;
+                        sc-close := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.shortcuts-open = false; }
+                        }
+                        Text { text: "\u{E5CD}"; font-family: "Material Icons";
+                               color: Theme.text-secondary; font-size: Theme.fs-sm;
+                               horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                }
+
+                Text { text: root.lang-en ? "Terminal" : "终端";
+                       color: Theme.text-muted; font-size: Theme.fs-xs; }
+                ShortcutRow { keys: "Ctrl+Shift+C"; desc: root.lang-en ? "Copy selection" : "复制选中内容"; }
+                ShortcutRow { keys: "Ctrl+V"; desc: root.lang-en ? "Paste" : "粘贴"; }
+                ShortcutRow { keys: root.lang-en ? "Drag" : "鼠标拖动"; desc: root.lang-en ? "Select text" : "选择文本"; }
+                ShortcutRow { keys: root.lang-en ? "Wheel / Scrollbar" : "滚轮 / 滚动条"; desc: root.lang-en ? "Scroll history" : "滚动历史"; }
+
+                Rectangle { height: 6px; }
+                Text { text: root.lang-en ? "Command box" : "命令输入框";
+                       color: Theme.text-muted; font-size: Theme.fs-xs; }
+                ShortcutRow { keys: "Enter"; desc: root.lang-en ? "Send command" : "发送命令"; }
+                ShortcutRow { keys: "↑ / ↓"; desc: root.lang-en ? "Previous / next in history" : "上一条 / 下一条历史"; }
+                ShortcutRow { keys: "Ctrl+A"; desc: root.lang-en ? "Move to start of line" : "移到行首"; }
+                ShortcutRow { keys: "Ctrl+E"; desc: root.lang-en ? "Move to end of line" : "移到行尾"; }
+                ShortcutRow { keys: "Ctrl+K"; desc: root.lang-en ? "Delete to end of line" : "删除到行尾"; }
+                ShortcutRow { keys: "Ctrl+U"; desc: root.lang-en ? "Delete to start of line" : "删除到行首"; }
+
+                Rectangle { vertical-stretch: 1; }
             }
         }
     }
