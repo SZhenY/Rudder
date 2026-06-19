@@ -11,6 +11,12 @@ rust-version = "1.75"
 
 [dependencies]
 slint = { version = "1.8", features = ["compat-1-2"] }
+# ICU4X (pulled in by Slint's text layout) spams stderr with raw `eprintln!`
+# ("ICU4X data error: No segmentation model for language: ja") because its
+# `log` shim falls back to eprintln when the `logging` feature is off. Turning
+# `logging` on routes those through the real `log` crate → our tracing
+# subscriber, where init_tracing silences the `icu_provider` target.
+icu_provider = { version = "2", features = ["logging"] }
 # Direct access to the winit window/events (OS file-drop for drag-and-drop upload).
 i-slint-backend-winit = "1.16"
 serde = { version = "1", features = ["derive"] }
