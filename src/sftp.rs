@@ -277,6 +277,10 @@ async fn run_sftp(
     let sftp = SftpSession::new(channel.into_stream())
         .await
         .context("sftp handshake")?;
+    // Share the session + connection so transfers can run on their own task,
+    // leaving the command loop free to list/switch directories meanwhile (#116-2).
+    let sftp = std::sync::Arc::new(sftp);
+    let handle = std::sync::Arc::new(handle);
 
     // Resolve the home directory and do an initial listing.
     let home = sftp
@@ -377,6 +381,11 @@ async fn run_sftp(
             }
 
             SftpCommand::Download { remote, local_dir } => {
+                // Run on its own task so the command loop stays free to list /
+                // switch directories during the transfer (#116-2).
+                let sftp = sftp.clone();
+                let events = events.clone();
+                tokio::spawn(async move {
                 // A directory target → recursively mirror the whole tree (#50).
                 let is_dir = sftp
                     .metadata(&remote)
@@ -421,9 +430,16 @@ async fn run_sftp(
                         }
                     }
                 }
+                });
             }
 
             SftpCommand::Upload { local, remote_dir } => {
+                // Run on its own task so the command loop stays free to list /
+                // switch directories during the transfer (#116-2).
+                let sftp = sftp.clone();
+                let handle = handle.clone();
+                let events = events.clone();
+                tokio::spawn(async move {
                 // A directory source → recursively upload the whole tree (#50).
                 let is_dir = tokio::fs::metadata(&local)
                     .await
@@ -475,6 +491,7 @@ async fn run_sftp(
                         }
                     }
                 }
+                });
             }
 
             SftpCommand::Delete(path) => {
