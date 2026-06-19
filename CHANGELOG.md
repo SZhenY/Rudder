@@ -5,6 +5,64 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-06-19
+
+### Added / 新增
+
+- **SFTP multi-select with one-archive download (#100).** Check multiple files in
+  the SFTP panel and download them together: the selection is packed into a single
+  `tar` on the remote (named after the first item, e.g. `11等文件.tar`), pulled in
+  one transfer, then the temp is removed. Any download action (right-click, row,
+  toolbar) packs the whole checked set when 2+ are checked; a single selection
+  downloads as a plain file. Batch delete is also supported, and an empty folder
+  is reported instead of creating an empty local directory.
+  **SFTP 文件多选 + 打包下载 (#100)。** 在 SFTP 面板勾选多个文件即可一起下载:选中
+  项在远端打包成单个 `tar`(以第一个文件命名,如 `11等文件.tar`),一次性下载后删除
+  临时包。勾选 ≥2 项时,任意下载动作(右键/行内/工具栏)都打包整组;单选则按普通
+  文件下载。同时支持批量删除;下载空文件夹会给出提示而非创建空目录。
+
+- **Cancel an in-progress transfer (#100).** Each transfer row shows a cancel
+  button while active or preparing; cancelling removes the partial local file and,
+  for archive downloads, the remote temp archive — no junk left on either side.
+  **可取消进行中的传输 (#100)。** 传输记录每行在下载中/准备中时显示取消按钮;取消会
+  删除本地半成品文件,打包下载还会删除远端临时包,本地与服务端都不留垃圾。
+
+- **Name port-forward rules (#100).** Port-forward rules can be given an optional
+  name so they're easy to tell apart in the list.
+  **端口转发规则可命名 (#100)。** 转发规则可设置可选名称,便于在列表中区分。
+
+- **Global UI scale setting (#100 #117 #118).** A scale control in Interface
+  settings zooms the whole UI (fonts, spacing, radii) from 80% to 200%.
+  **界面整体缩放设置 (#100 #117 #118)。** 界面设置新增缩放控件,可将整个界面(字体、
+  间距、圆角)从 80% 到 200% 缩放。
+
+### Changed / 优化
+
+- **Much faster downloads (#100).** Downloads now use a dedicated, pipelined SFTP
+  channel that keeps many READ requests in flight at once (like uploads already
+  did), hiding round-trip latency — large files and archive bundles download
+  noticeably faster.
+  **下载大幅提速 (#100)。** 下载改用专用、流水线化的 SFTP 通道,多个读请求并发在途
+  (与上传一致),掩盖往返延迟 —— 大文件和打包包下载明显更快。
+
+- **Switch directories during transfers.** SFTP transfers run on their own task,
+  so listing and changing directories stays responsive while files move.
+  **传输时仍可切换目录。** SFTP 传输在独立任务上运行,文件传输期间列目录、切换目录
+  依然流畅。
+
+### Fixed / 修复
+
+- **macOS 26 (Tahoe): all UI text invisible (#108).** The default femtovg renderer
+  failed CoreText font lookup on macOS 26, blanking every glyph including the
+  embedded mono font. macOS now uses the Skia renderer (Windows/Linux unchanged).
+  **macOS 26 (Tahoe) 界面文本全部消失 (#108)。** 默认 femtovg 渲染器在 macOS 26 上
+  取字失败,所有文字(含内嵌等宽字体)消失。macOS 现改用 Skia 渲染器(Windows/Linux
+  不变)。
+
+- **Welcome session list now scrolls (#116).** When there are more sessions than
+  fit, the welcome screen's session list scrolls instead of clipping.
+  **欢迎页会话列表可滚动 (#116)。** 会话过多时,欢迎页的会话列表可滚动,不再被裁切。
+
 ## [0.4.9] - 2026-06-19
 
 ### Added / 新增
