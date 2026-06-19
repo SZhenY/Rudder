@@ -235,6 +235,7 @@ pub fn run() -> Result<()> {
             window.set_term_font_family(fam.into());
         }
         window.set_term_font_size(s.font_size() as f32);
+        window.set_ui_scale(s.ui_scale() as f32 / 100.0); // global UI zoom (#100)
     }
     // Editable inputs (e.g. the SFTP path bar) need a CJK-capable font: the
     // embedded mono font has no Chinese glyphs and native TextInput doesn't
@@ -354,6 +355,22 @@ pub fn run() -> Result<()> {
             }
             if let Some(w) = weak.upgrade() {
                 w.set_term_font_size(size as f32);
+            }
+        });
+    }
+    // Global UI scale (#100): persist the percent and apply it live.
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_ui_scale(move |percent: i32| {
+            let clamped = (percent.max(0) as u32).clamp(80, 200);
+            {
+                let mut s = store.borrow_mut();
+                s.set_ui_scale(clamped);
+                let _ = s.save();
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_ui_scale(clamped as f32 / 100.0);
             }
         });
     }

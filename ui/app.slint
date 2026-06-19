@@ -273,6 +273,7 @@ export component AppWindow inherits Window {
     changed dark-mode => { Palette.color-scheme = root.dark-mode ? ColorScheme.dark : ColorScheme.light; }
     in-out property <string> term-font-family <=> Theme.term-font-family;
     in-out property <length> term-font-size <=> Theme.term-font-size;
+    in-out property <float> ui-scale <=> Theme.ui-scale;   // global UI zoom (#100)
     in-out property <string> ui-font-family <=> Theme.ui-font-family;
     in property <[string]> term-fonts;             // installed monospace families
     in-out property <bool> interface-open: false;  // Interface settings dialog
@@ -287,6 +288,7 @@ export component AppWindow inherits Window {
     property <string> ifd-page: "font";   // active Interface page: "font" | "sftp" | "sidebar" | "sync" | "download"
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
+    callback set-ui-scale(int);                    // apply + persist UI scale (percent) (#100)
     // SFTP follows the terminal's cd; opt out in Interface settings.
     in-out property <bool> sftp-follow-cd: true;
     callback set-sftp-follow-cd(bool);             // apply + persist
@@ -2224,6 +2226,31 @@ export component AppWindow inherits Window {
                                     }
                                     Text {
                                         text: (root.term-font-size / 1px) + " px";
+                                        color: Theme.text-muted;
+                                        font-size: Theme.fs-sm;
+                                        vertical-alignment: center;
+                                    }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                            }
+
+                            // Global UI scale (#100): zooms the whole interface
+                            // (not the terminal font, which has its own size above).
+                            VerticalLayout {
+                                spacing: 6px;
+                                Text { text: root.lang-en ? "UI scale" : "界面缩放";
+                                       color: Theme.text-secondary; font-size: Theme.fs-sm; }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    SpinBox {
+                                        width: 120px;
+                                        value: round(root.ui-scale * 100);
+                                        minimum: 80;
+                                        maximum: 200;
+                                        edited(v) => { root.set-ui-scale(v); }
+                                    }
+                                    Text {
+                                        text: round(root.ui-scale * 100) + "%";
                                         color: Theme.text-muted;
                                         font-size: Theme.fs-sm;
                                         vertical-alignment: center;

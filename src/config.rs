@@ -275,6 +275,9 @@ pub struct ConfigFile {
     /// Terminal font size in px. 0 = the built-in default.
     #[serde(default)]
     pub font_size: u32,
+    /// Global UI scale in percent (#100). 0 = default (100%).
+    #[serde(default)]
+    pub ui_scale: u32,
     /// Explicit session groups/folders (#41), including empty ones so a folder
     /// can exist before any session is moved into it. "default" is implicit and
     /// not stored here.
@@ -566,6 +569,19 @@ impl ConfigStore {
 
     pub fn set_font_size(&mut self, size: u32) {
         self.cache.font_size = size.clamp(8, 32);
+    }
+
+    /// Global UI scale in percent (#100). Defaults to 100.
+    pub fn ui_scale(&self) -> u32 {
+        if self.cache.ui_scale == 0 {
+            100
+        } else {
+            self.cache.ui_scale
+        }
+    }
+
+    pub fn set_ui_scale(&mut self, percent: u32) {
+        self.cache.ui_scale = percent.clamp(80, 200);
     }
 
     /// Whether the SFTP panel follows the terminal's cd (default true).
