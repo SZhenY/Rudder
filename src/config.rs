@@ -298,6 +298,10 @@ pub struct ConfigFile {
     /// Saved quick commands (#55).
     #[serde(default)]
     pub quick_commands: Vec<QuickCommand>,
+    /// Explicit quick-command group names — mirrors `groups` for sessions so that
+    /// empty quick-command groups survive and can be renamed/deleted (#55).
+    #[serde(default)]
+    pub quick_groups: Vec<String>,
     /// Recent commands sent from the command box, oldest first, capped (#55).
     #[serde(default)]
     pub command_history: Vec<String>,
@@ -603,6 +607,61 @@ impl ConfigStore {
 
     pub fn set_quick_commands(&mut self, cmds: Vec<QuickCommand>) {
         self.cache.quick_commands = cmds;
+    }
+
+    /// Explicit quick-command groups (#55) — parallels [`groups`](Self::groups).
+    pub fn quick_groups(&self) -> &[String] {
+        &self.cache.quick_groups
+    }
+
+    /// Create an empty quick-command group. Ignores blank, "default", duplicates.
+    pub fn add_quick_group(&mut self, name: String) {
+        let n = name.trim().to_string();
+        if n.is_empty() || n.eq_ignore_ascii_case("default") {
+            return;
+        }
+        if !self.cache.quick_groups.iter().any(|g| g == &n) {
+            self.cache.quick_groups.push(n);
+        }
+    }
+
+    /// Delete a quick-command group; any command still in it falls back to
+    /// ungrouped (the UI only offers delete on empty groups, but clear defensively).
+    pub fn remove_quick_group(&mut self, name: &str) {
+        self.cache.quick_groups.retain(|g| g != name);
+        for c in &mut self.cache.quick_commands {
+            if c.group == name {
+                c.group.clear();
+            }
+        }
+    }
+
+    /// Rename a quick-command group, moving its commands along. No-op for
+    /// blank / "default".
+    pub fn rename_quick_group(&mut self, old: &str, new: String) {
+        let n = new.trim().to_string();
+        if n.is_empty() || n.eq_ignore_ascii_case("default") || n == old {
+            return;
+        }
+        for g in &mut self.cache.quick_groups {
+            if g == old {
+                *g = n.clone();
+            }
+        }
+        for c in &mut self.cache.quick_commands {
+            if c.group == old {
+                c.group = n.clone();
+            }
+        }
+        self.cache.quick_groups.sort();
+        self.cache.quick_groups.dedup();
+    }
+
+    /// Update one quick command in place by index (#55).
+    pub fn update_quick_command(&mut self, index: usize, cmd: QuickCommand) {
+        if let Some(slot) = self.cache.quick_commands.get_mut(index) {
+            *slot = cmd;
+        }
     }
 
     /// Recent command-box history, oldest first (#55).

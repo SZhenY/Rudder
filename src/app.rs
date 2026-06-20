@@ -2044,10 +2044,16 @@ fn quick_cmd_model(
     let cmds = store.quick_commands();
 
     let has_default = cmds.iter().any(|c| c.group.trim().is_empty());
-    let mut named: Vec<String> = cmds
+    // Named groups = explicit quick-groups ∪ groups referenced by commands.
+    let mut named: Vec<String> = store
+        .quick_groups()
         .iter()
-        .map(|c| c.group.trim().to_string())
-        .filter(|g| !g.is_empty())
+        .cloned()
+        .chain(
+            cmds.iter()
+                .map(|c| c.group.trim().to_string())
+                .filter(|g| !g.is_empty()),
+        )
         .collect();
     named.sort_by_key(|g| g.to_lowercase());
     named.dedup();
@@ -2073,15 +2079,28 @@ fn quick_cmd_model(
                 }
             })
             .collect();
-        for (i, (orig_idx, c)) in members.iter().enumerate() {
+        if members.is_empty() {
+            // Header-only placeholder for an empty group (orig_index -1) so it can
+            // still be renamed / deleted, matching empty session folders.
             rows.push(QuickCmd {
-                name: c.name.clone().into(),
-                command: c.command.clone().into(),
+                name: "".into(),
+                command: "".into(),
                 group: group.clone().into(),
-                group_header: if i == 0 { group.clone().into() } else { "".into() },
+                group_header: group.clone().into(),
                 collapsed: is_collapsed,
-                orig_index: *orig_idx as i32,
+                orig_index: -1,
             });
+        } else {
+            for (i, (orig_idx, c)) in members.iter().enumerate() {
+                rows.push(QuickCmd {
+                    name: c.name.clone().into(),
+                    command: c.command.clone().into(),
+                    group: group.clone().into(),
+                    group_header: if i == 0 { group.clone().into() } else { "".into() },
+                    collapsed: is_collapsed,
+                    orig_index: *orig_idx as i32,
+                });
+            }
         }
     }
     ModelRc::from(Rc::new(VecModel::from(rows)))
@@ -3855,6 +3874,136 @@ fn wire_key_input(
                 if !set.remove(&g) {
                     set.insert(g);
                 }
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
+            }
+        });
+    }
+    // Edit (#55): load the entry into the manage form in edit mode.
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        window.on_edit_quick_command(move |index: i32| {
+            let i = index as usize;
+            let cmd = store_rc.borrow().quick_commands().get(i).cloned();
+            if let (Some(c), Some(w)) = (cmd, weak.upgrade()) {
+                w.set_qcm_name(c.name.into());
+                w.set_qcm_command(c.command.into());
+                w.set_qcm_group(c.group.into());
+                w.set_qcm_edit_index(index);
+                w.set_quick_cmd_manage_open(true);
+            }
+        });
+    }
+    // Save an edited entry (#55).
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        let collapsed = collapsed_quick_groups.clone();
+        window.on_save_quick_command(
+            move |index: i32, name: SharedString, command: SharedString, group: SharedString| {
+                let name = name.trim().to_string();
+                let command = command.to_string();
+                let group = group.trim().to_string();
+                if name.is_empty() || command.trim().is_empty() {
+                    return;
+                }
+                {
+                    let mut s = store_rc.borrow_mut();
+                    s.update_quick_command(
+                        index as usize,
+                        crate::config::QuickCommand {
+                            name,
+                            command,
+                            group,
+                        },
+                    );
+                    let _ = s.save();
+                }
+                if let Some(w) = weak.upgrade() {
+                    w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
+                }
+            },
+        );
+    }
+    // Duplicate (#55): clone the entry as a starting point.
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        let collapsed = collapsed_quick_groups.clone();
+        window.on_duplicate_quick_command(move |index: i32| {
+            {
+                let mut s = store_rc.borrow_mut();
+                let mut v = s.quick_commands().to_vec();
+                if let Some(c) = v.get(index as usize).cloned() {
+                    let dup = crate::config::QuickCommand {
+                        name: format!("{} (copy)", c.name),
+                        command: c.command,
+                        group: c.group,
+                    };
+                    v.insert(index as usize + 1, dup);
+                    s.set_quick_commands(v);
+                    let _ = s.save();
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
+            }
+        });
+    }
+    // Move to a group (#55): "default" maps to the empty (ungrouped) group.
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        let collapsed = collapsed_quick_groups.clone();
+        window.on_move_quick_command(move |index: i32, group: SharedString| {
+            let target = group.to_string();
+            let target = if target == "default" { String::new() } else { target };
+            {
+                let mut s = store_rc.borrow_mut();
+                let mut v = s.quick_commands().to_vec();
+                if let Some(c) = v.get_mut(index as usize) {
+                    c.group = target;
+                }
+                s.set_quick_commands(v);
+                let _ = s.save();
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
+            }
+        });
+    }
+    // Quick-group create / rename (#55).
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        let collapsed = collapsed_quick_groups.clone();
+        window.on_submit_quick_group(move |orig: SharedString, name: SharedString| {
+            {
+                let mut s = store_rc.borrow_mut();
+                if orig.is_empty() {
+                    s.add_quick_group(name.to_string());
+                } else {
+                    s.rename_quick_group(&orig.to_string(), name.to_string());
+                }
+                let _ = s.save();
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
+            }
+        });
+    }
+    // Quick-group delete (#55) — UI only offers this on empty groups.
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        let collapsed = collapsed_quick_groups.clone();
+        window.on_delete_quick_group(move |name: SharedString| {
+            {
+                let mut s = store_rc.borrow_mut();
+                s.remove_quick_group(&name.to_string());
+                let _ = s.save();
             }
             if let Some(w) = weak.upgrade() {
                 w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));

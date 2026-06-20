@@ -257,12 +257,23 @@ export component AppWindow inherits Window {
     callback delete-history-cmd(string /* cmd */);   // remove a history entry by command (#101)
     callback search-history(string /* query */);     // filter the history dropdown (#101)
     in-out property <bool> quick-cmd-manage-open: false;  // manage dialog
-    property <string> qcm-name;                       // manage form: name field
-    property <string> qcm-command;                    // manage form: command field
-    property <string> qcm-group;                      // manage form: group field (#55)
+    in-out property <string> qcm-name;                // manage form: name field
+    in-out property <string> qcm-command;             // manage form: command field
+    in-out property <string> qcm-group;               // manage form: group field (#55)
+    in-out property <int> qcm-edit-index: -1;         // -1 = add, >=0 = edit that entry (#55)
     callback add-quick-command(string /* name */, string /* command */, string /* group */);
+    callback save-quick-command(int /* index */, string /* name */, string /* command */, string /* group */);
     callback delete-quick-command(int /* index */);
+    callback edit-quick-command(int /* index */);
+    callback duplicate-quick-command(int /* index */);
+    callback move-quick-command(int /* index */, string /* group */);
     callback toggle-quick-group(string /* group */);  // collapse/expand a group (#55)
+    // Quick-command group management (mirror session groups) (#55).
+    in-out property <bool> qcg-open: false;           // group name dialog open
+    property <string> qcg-name;                       // group dialog: name field
+    property <string> qcg-orig;                       // group dialog: "" = new, else rename target
+    callback submit-quick-group(string /* orig */, string /* name */);
+    callback delete-quick-group(string /* name */);
     in property <[TransferInfo]> transfers; // download/upload records (newest first)
     in property <[string]> about-libs;      // open-source libraries used
     in-out property <bool> lang-en: false;  // current UI language (false = 中文)
@@ -710,6 +721,7 @@ export component AppWindow inherits Window {
                         root.qcm-name = "";
                         root.qcm-command = "";
                         root.qcm-group = "";
+                        root.qcm-edit-index = -1;
                         root.quick-cmd-manage-open = true;
                     }
                     toggle-quick-group(g) => { root.toggle-quick-group(g); }
@@ -1735,7 +1747,7 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                // Add form: name + group (optional) + command + Add.
+                // Add / edit form: name + group (optional) + command.
                 Text { text: @tr("Name"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
                 qcm-name-in := LineEdit {
                     text <=> root.qcm-name;
@@ -1758,19 +1770,47 @@ export component AppWindow inherits Window {
                         placeholder-text: "tail -f /var/log/syslog";
                         accepted => {
                             if (root.qcm-name != "" && root.qcm-command != "") {
-                                root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group);
+                                if (root.qcm-edit-index >= 0) {
+                                    root.save-quick-command(root.qcm-edit-index, root.qcm-name, root.qcm-command, root.qcm-group);
+                                } else {
+                                    root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group);
+                                }
+                                root.qcm-edit-index = -1;
                                 root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = "";
                             }
                         }
                     }
+                    // Cancel only while editing an existing entry.
+                    if root.qcm-edit-index >= 0 : Button {
+                        text: root.lang-en ? "Cancel" : "取消";
+                        clicked => {
+                            root.qcm-edit-index = -1;
+                            root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = "";
+                        }
+                    }
                     Button {
-                        text: root.lang-en ? "Add" : "添加";
+                        text: root.qcm-edit-index >= 0 ? (root.lang-en ? "Save" : "保存")
+                                                       : (root.lang-en ? "Add" : "添加");
                         primary: true;
                         enabled: root.qcm-name != "" && root.qcm-command != "";
                         clicked => {
-                            root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group);
+                            if (root.qcm-edit-index >= 0) {
+                                root.save-quick-command(root.qcm-edit-index, root.qcm-name, root.qcm-command, root.qcm-group);
+                            } else {
+                                root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group);
+                            }
+                            root.qcm-edit-index = -1;
                             root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = "";
                         }
+                    }
+                }
+
+                // New (empty) group.
+                HorizontalLayout {
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: root.lang-en ? "+ New group" : "+ 新建分组";
+                        clicked => { root.qcg-orig = ""; root.qcg-name = ""; root.qcg-open = true; }
                     }
                 }
 
@@ -1790,17 +1830,79 @@ export component AppWindow inherits Window {
                         }
                         for q in root.quick-commands : VerticalLayout {
                             // Group header on the first row of each group (#55).
-                            if q.group-header != "" : HorizontalLayout {
-                                padding-left: 4px; padding-top: 6px; spacing: 4px;
-                                Text { text: "\u{E2C7}"; font-family: "Material Icons";
-                                       color: Theme.text-muted; font-size: Theme.fs-sm; vertical-alignment: center; }
-                                Text { text: q.group; color: Theme.text-muted; font-size: Theme.fs-xs;
-                                       font-weight: 700; vertical-alignment: center; }
+                            // Right-click to rename / delete (empty) / new group.
+                            if q.group-header != "" : Rectangle {
+                                height: 26px;
+                                property <length> gmx;
+                                property <length> gmy;
+                                HorizontalLayout {
+                                    padding-left: 4px; padding-top: 6px; spacing: 4px;
+                                    Text { text: "\u{E2C7}"; font-family: "Material Icons";
+                                           color: Theme.text-muted; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                    Text { text: q.group; color: Theme.text-muted; font-size: Theme.fs-xs;
+                                           font-weight: 700; vertical-alignment: center;
+                                           horizontal-stretch: 1; horizontal-alignment: left; }
+                                }
+                                TouchArea {
+                                    pointer-event(e) => {
+                                        if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                                            gmx = self.mouse-x; gmy = self.mouse-y; qgrp-menu.show();
+                                        }
+                                    }
+                                }
+                                qgrp-menu := PopupWindow {
+                                    x: gmx; y: gmy; width: 150px;
+                                    height: (q.orig-index == -1 ? 3 : 2) * 30px + 9px;
+                                    Rectangle {
+                                        background: Theme.bg-panel; border-radius: Theme.radius-sm;
+                                        border-width: 1px; border-color: Theme.border-strong;
+                                        drop-shadow-blur: 10px; drop-shadow-color: #00000050;
+                                        VerticalLayout {
+                                            padding: 4px; spacing: 1px;
+                                            Rectangle {
+                                                height: 30px; border-radius: Theme.radius-sm;
+                                                background: qeg-ta.has-hover ? Theme.bg-hover : transparent;
+                                                qeg-ta := TouchArea { mouse-cursor: pointer;
+                                                    clicked => { root.qcg-orig = q.group; root.qcg-name = q.group; root.qcg-open = true; } }
+                                                HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                                    Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    Text { text: root.lang-en ? "Rename group" : "重命名分组"; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } }
+                                            }
+                                            if q.orig-index == -1 : Rectangle {
+                                                height: 30px; border-radius: Theme.radius-sm;
+                                                background: qdg-ta.has-hover ? #cc333320 : transparent;
+                                                qdg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-group(q.group); } }
+                                                HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                                    Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    Text { text: root.lang-en ? "Delete group" : "删除分组"; color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } }
+                                            }
+                                            Rectangle {
+                                                height: 30px; border-radius: Theme.radius-sm;
+                                                background: qng-ta.has-hover ? Theme.bg-hover : transparent;
+                                                qng-ta := TouchArea { mouse-cursor: pointer; clicked => { root.qcg-orig = ""; root.qcg-name = ""; root.qcg-open = true; } }
+                                                HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                                    Text { text: "\u{E2CC}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    Text { text: root.lang-en ? "New group" : "新建分组"; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } }
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            Rectangle {
+
+                            // Command row (skip the empty-group placeholder).
+                            if q.orig-index >= 0 : Rectangle {
                                 height: 38px;
                                 border-radius: Theme.radius-sm;
                                 background: Theme.bg-root;
+                                property <length> ctx-x;
+                                property <length> ctx-y;
+                                item-ta := TouchArea {
+                                    pointer-event(e) => {
+                                        if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                                            ctx-x = self.mouse-x; ctx-y = self.mouse-y; qctx-menu.show();
+                                        }
+                                    }
+                                }
                                 HorizontalLayout {
                                     padding-left: 8px; padding-right: 6px; spacing: 6px;
                                     VerticalLayout {
@@ -1826,7 +1928,121 @@ export component AppWindow inherits Window {
                                                horizontal-alignment: center; vertical-alignment: center; }
                                     }
                                 }
+                                qctx-menu := PopupWindow {
+                                    x: ctx-x; y: ctx-y; width: 160px;
+                                    height: qctx-vl.preferred-height;
+                                    Rectangle {
+                                        background: Theme.bg-panel; border-radius: Theme.radius-sm;
+                                        border-width: 1px; border-color: Theme.border-strong;
+                                        drop-shadow-blur: 10px; drop-shadow-color: #00000050;
+                                        qctx-vl := VerticalLayout {
+                                            padding: 4px; spacing: 1px;
+                                            Rectangle { height: 28px; border-radius: Theme.radius-sm;
+                                                background: qe-ta.has-hover ? Theme.bg-hover : transparent;
+                                                qe-ta := TouchArea { mouse-cursor: pointer; clicked => { root.edit-quick-command(q.orig-index); } }
+                                                HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                                    Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
+                                            Rectangle { height: 28px; border-radius: Theme.radius-sm;
+                                                background: qd-ta.has-hover ? Theme.bg-hover : transparent;
+                                                qd-ta := TouchArea { mouse-cursor: pointer; clicked => { root.duplicate-quick-command(q.orig-index); } }
+                                                HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                                    Text { text: "\u{E14D}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
+                                            Rectangle { height: 28px; border-radius: Theme.radius-sm;
+                                                background: qx-ta.has-hover ? #cc333320 : transparent;
+                                                qx-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-command(q.orig-index); } }
+                                                HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                                    Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    Text { text: @tr("Delete"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
+                                            Rectangle { height: 1px; background: Theme.border-subtle; }
+                                            HorizontalLayout { padding-left: 10px; padding-top: 2px; spacing: 6px;
+                                                Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
+                                                Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; } }
+                                            if q.group != "default" : Rectangle { height: 28px; border-radius: Theme.radius-sm;
+                                                background: qmd-ta.has-hover ? Theme.bg-hover : transparent;
+                                                qmd-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, "default"); } }
+                                                HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                                    Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    Text { text: "default"; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
+                                            for s in root.quick-commands : Rectangle {
+                                                visible: s.group-header != "" && s.group != "default" && s.group != q.group;
+                                                height: self.visible ? 28px : 0px;
+                                                border-radius: Theme.radius-sm;
+                                                background: qm-ta.has-hover ? Theme.bg-hover : transparent;
+                                                qm-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, s.group); } }
+                                                HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                                    Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    Text { text: s.group; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; } } }
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Quick-command group name dialog (#55): new / rename --------------
+    if root.qcg-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000080;
+        TouchArea { clicked => { root.qcg-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 340px;
+            height: 178px;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #000000a0;
+            TouchArea {}   // swallow inside clicks
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+                Text {
+                    text: root.qcg-orig == ""
+                        ? (root.lang-en ? "New group" : "新建分组")
+                        : (root.lang-en ? "Rename group" : "重命名分组");
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-lg;
+                    font-weight: 700;
+                }
+                Text { text: @tr("Group name"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
+                qcg-input := LineEdit {
+                    text <=> root.qcg-name;
+                    font-family: Theme.ui-font-family;
+                    placeholder-text: @tr("Group name");
+                    accepted => {
+                        if (root.qcg-name != "") {
+                            root.submit-quick-group(root.qcg-orig, root.qcg-name);
+                            root.qcg-open = false;
+                        }
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Button {
+                        text: root.lang-en ? "Cancel" : "取消";
+                        clicked => { root.qcg-open = false; }
+                    }
+                    Button {
+                        text: root.lang-en ? "OK" : "确定";
+                        primary: true;
+                        enabled: root.qcg-name != "";
+                        clicked => {
+                            root.submit-quick-group(root.qcg-orig, root.qcg-name);
+                            root.qcg-open = false;
                         }
                     }
                 }

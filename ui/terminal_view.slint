@@ -939,7 +939,7 @@ export component TerminalView inherits Rectangle {
                                     }
                                 }
                             }
-                            if !q.collapsed : Rectangle {
+                            if !q.collapsed && q.orig-index >= 0 : Rectangle {
                                 height: 30px;
                                 border-radius: Theme.radius-sm;
                                 background: q-item-ta.has-hover ? Theme.bg-hover : transparent;
