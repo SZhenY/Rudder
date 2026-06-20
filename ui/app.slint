@@ -725,6 +725,13 @@ export component AppWindow inherits Window {
                         root.quick-cmd-manage-open = true;
                     }
                     toggle-quick-group(g) => { root.toggle-quick-group(g); }
+                    edit-quick-command(i) => { root.edit-quick-command(i); }
+                    duplicate-quick-command(i) => { root.duplicate-quick-command(i); }
+                    delete-quick-command(i) => { root.delete-quick-command(i); }
+                    move-quick-command(i, g) => { root.move-quick-command(i, g); }
+                    new-quick-group() => { root.qcg-orig = ""; root.qcg-name = ""; root.qcg-open = true; }
+                    rename-quick-group(g) => { root.qcg-orig = g; root.qcg-name = g; root.qcg-open = true; }
+                    delete-quick-group(g) => { root.delete-quick-group(g); }
                     send-key(key, ctrl, alt, shift) => { root.send-key(term.id, key, ctrl, alt, shift) }
                     terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
                     sftp-navigate(path) => { root.sftp-navigate(term.id, path); }
@@ -1844,6 +1851,7 @@ export component AppWindow inherits Window {
                                            horizontal-stretch: 1; horizontal-alignment: left; }
                                 }
                                 TouchArea {
+                                    clicked => { }  // grab so right-click pointer-events register inside the Flickable
                                     pointer-event(e) => {
                                         if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
                                             gmx = self.mouse-x; gmy = self.mouse-y; qgrp-menu.show();
@@ -1897,6 +1905,7 @@ export component AppWindow inherits Window {
                                 property <length> ctx-x;
                                 property <length> ctx-y;
                                 item-ta := TouchArea {
+                                    clicked => { }  // grab so right-click pointer-events register inside the Flickable
                                     pointer-event(e) => {
                                         if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
                                             ctx-x = self.mouse-x; ctx-y = self.mouse-y; qctx-menu.show();

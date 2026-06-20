@@ -251,11 +251,11 @@ pub fn run() -> Result<()> {
     // Populate the Interface font picker with installed monospace families.
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(system_monospace_fonts()))));
 
-    // Command bar (#55): seed quick commands + history from the config. Nothing
-    // is collapsed at startup.
+    // Command bar (#55): seed quick commands + history from the config. Groups
+    // start collapsed by default (#55).
     window.set_quick_commands(quick_cmd_model(
         &store.borrow(),
-        &std::collections::HashSet::new(),
+        &all_quick_group_names(&store.borrow()),
     ));
     window.set_command_history(history_model(&store.borrow()));
     window.set_history_view(history_view_model(&store.borrow(), "")); // #101
@@ -2027,6 +2027,27 @@ fn proc_model(procs: &[ProcInfo]) -> ModelRc<ProcRow> {
         })
         .collect();
     ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
+/// Every quick-command group name (used to start with all groups collapsed, #55):
+/// "default" when any ungrouped command exists, plus explicit quick-groups and any
+/// group referenced by a command.
+fn all_quick_group_names(store: &ConfigStore) -> std::collections::HashSet<String> {
+    let cmds = store.quick_commands();
+    let mut set: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if cmds.iter().any(|c| c.group.trim().is_empty()) {
+        set.insert("default".to_string());
+    }
+    for g in store.quick_groups() {
+        set.insert(g.clone());
+    }
+    for c in cmds {
+        let g = c.group.trim();
+        if !g.is_empty() {
+            set.insert(g.to_string());
+        }
+    }
+    set
 }
 
 /// Build the quick-command model for the command bar + manage dialog (#55).
@@ -3811,9 +3832,10 @@ fn wire_key_input(
         });
     }
     // Runtime-only collapse state for quick-command groups (#55) — like the
-    // welcome session groups, this is not persisted across restarts.
+    // welcome session groups, this is not persisted across restarts. Starts with
+    // every group collapsed (default-collapsed view).
     let collapsed_quick_groups: Rc<RefCell<std::collections::HashSet<String>>> =
-        Rc::new(RefCell::new(std::collections::HashSet::new()));
+        Rc::new(RefCell::new(all_quick_group_names(&store.borrow())));
     {
         let store_rc = store.clone();
         let weak = window.as_weak();

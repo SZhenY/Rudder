@@ -17,14 +17,16 @@ All notable changes are documented here. 本文件记录所有重要变更。
   「default」分组。命令栏弹窗里每个分组带标题,点击即可收起/展开——和欢迎页快速连接的
   会话分组体验一致。管理对话框新增「分组（可选）」输入框并按分组展示。
 
-- **Full quick-command management, mirroring the session panel (#55).** The manage
-  dialog now supports right-click on a command (Edit, Duplicate, Delete, Move to
-  group) and right-click on a group header (Rename group, Delete empty group, New
-  group), plus a "+ New group" button — the same right-click model as the welcome
-  page's quick-connect sessions. Empty groups persist so you can pre-create folders.
-  **快捷命令完整管理,对齐会话面板 (#55)。** 管理对话框支持右键命令(编辑、复制、删除、
-  移动到分组)和右键分组标题(重命名分组、删除空分组、新建分组),并新增「+ 新建分组」
-  按钮——与欢迎页快速连接会话的右键体验一致。空分组会被保留,可预先建好文件夹。
+- **Full quick-command management, mirroring the session panel (#55).** Right-click
+  a command — in the command-bar popup or the manage dialog — for Edit / Duplicate /
+  Delete / Move to group, and right-click a group header for Rename / Delete (empty) /
+  New group; the manage dialog also has a "+ New group" button. Same right-click
+  model as the welcome page's quick-connect sessions. Groups start **collapsed** by
+  default, and empty groups persist so you can pre-create folders.
+  **快捷命令完整管理,对齐会话面板 (#55)。** 在命令栏弹窗或管理对话框里右键命令(编辑、
+  复制、删除、移动到分组),右键分组标题(重命名、删除空分组、新建分组),管理对话框另有
+  「+ 新建分组」按钮——与欢迎页快速连接会话的右键体验一致。分组**默认收起**,空分组会被
+  保留以便预先建好文件夹。
 
 ## [0.4.12] - 2026-06-20
 

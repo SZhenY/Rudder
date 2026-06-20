@@ -276,6 +276,9 @@ msgstr "暂无快捷命令"
 msgid "Group (optional)"
 msgstr "分组（可选）"
 
+msgid "Rename group"
+msgstr "重命名分组"
+
 msgid "leave empty → default"
 msgstr "留空 → 默认分组"
 
