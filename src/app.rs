@@ -4802,7 +4802,7 @@ fn resolve_ui_font_family() -> slint::SharedString {
     if let Some(f) = std::env::var_os("MEATSHELL_UI_FONT") {
         let f = f.to_string_lossy().into_owned();
         if !f.trim().is_empty() {
-            tracing::warn!(font = %f, "ui-font: overridden via MEATSHELL_UI_FONT");
+            tracing::debug!(font = %f, "ui-font: overridden via MEATSHELL_UI_FONT");
             return f.into();
         }
     }
@@ -4842,7 +4842,7 @@ fn resolve_ui_font_family() -> slint::SharedString {
             style: Style::Normal,
         };
         if db.query(&q).is_some() {
-            tracing::warn!(faces = face_count, font = name, "ui-font: using system CJK font");
+            tracing::debug!(faces = face_count, font = name, "ui-font: using system CJK font");
             return (*name).into();
         }
     }

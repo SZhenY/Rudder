@@ -5,6 +5,16 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### Changed / 优化
+
+- **Quieter startup logs.** Silenced fontdb's harmless "malformed font" warning for
+  system fonts it can't parse but skips anyway (e.g. Windows' `mstmc.ttf`), and
+  demoted the routine UI-font-selection line to `debug` — only an actual font-load
+  failure still warns. `error.log` stays clean.
+  **更安静的启动日志。** 屏蔽 fontdb 对无法解析(但会自动跳过)的系统字体发出的
+  「malformed font」无害告警(如 Windows 的 `mstmc.ttf`),并把常规的界面字体选择日志
+  降为 `debug`——只有真正的字体加载失败才会告警。`error.log` 保持干净。
+
 ### Added / 新增
 
 - **Group quick commands, collapsible (#55).** Quick commands now take an optional
