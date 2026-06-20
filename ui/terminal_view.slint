@@ -33,9 +33,16 @@ export struct TermMatch {
 }
 
 // One saved quick command (#55): a name shown on the chip + the text to send.
+// Grouped like the welcome session list: group-header is non-empty on the first
+// row of each group; collapsed hides the group's rows in the popup; orig-index
+// points back to the entry's position in the stored list (delete target).
 export struct QuickCmd {
     name: string,
     command: string,
+    group: string,
+    group-header: string,
+    collapsed: bool,
+    orig-index: int,
 }
 
 // --- MenuItem --------------------------------------------------------------
@@ -112,6 +119,7 @@ export component TerminalView inherits Rectangle {
     property <int> history-cursor: -1;         // ↑/↓ recall index (-1 = live input)
     callback run-command(string /* cmd */, bool /* to-all */);
     callback manage-quick-commands();          // open the add/edit/delete dialog
+    callback toggle-quick-group(string /* group */);  // collapse/expand a group (#55)
     callback copy-text(string);                // copy a history command to clipboard (#96)
     callback delete-history(int /* index */);  // remove a history entry (#96)
     callback delete-history-cmd(string /* cmd */); // remove a history entry by command (#101)
@@ -879,8 +887,8 @@ export component TerminalView inherits Rectangle {
             // --- Quick-command popup (opens upward) --------------------------
             if root.quick-open : Rectangle {
                 x: 8px;
-                width: 300px;
-                height: min(260px, qc-col.preferred-height + 8px);
+                width: 420px;
+                height: min(320px, qc-col.preferred-height + 8px);
                 y: -self.height - 2px;
                 background: Theme.bg-panel;
                 border-radius: Theme.radius-md;
@@ -901,23 +909,59 @@ export component TerminalView inherits Rectangle {
                             horizontal-alignment: center;
                             height: 32px; vertical-alignment: center;
                         }
-                        for q in root.quick-commands : Rectangle {
-                            height: 34px;
-                            border-radius: Theme.radius-sm;
-                            background: q-item-ta.has-hover ? Theme.bg-hover : transparent;
-                            q-item-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => {
-                                    root.run-command(q.command, root.send-to-all);
-                                    root.quick-open = false;
+                        for q in root.quick-commands : VerticalLayout {
+                            // Group header on the first row of each group (#55) —
+                            // click to collapse/expand the whole group.
+                            if q.group-header != "" : Rectangle {
+                                height: 24px;
+                                grp-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.toggle-quick-group(q.group); }
+                                }
+                                HorizontalLayout {
+                                    padding-left: 4px; padding-top: 4px; spacing: 4px;
+                                    Text {
+                                        text: q.collapsed ? "\u{E5CC}" : "\u{E5CF}"; // chevron ▶/▼
+                                        font-family: "Material Icons";
+                                        color: Theme.text-muted; font-size: Theme.fs-sm;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: "\u{E2C7}"; // folder
+                                        font-family: "Material Icons";
+                                        color: Theme.text-muted; font-size: Theme.fs-sm;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: q.group; color: Theme.text-muted; font-size: Theme.fs-xs;
+                                        font-weight: 700; vertical-alignment: center;
+                                        horizontal-stretch: 1; horizontal-alignment: left;
+                                    }
                                 }
                             }
-                            VerticalLayout {
-                                padding-left: 8px; padding-right: 8px;
-                                Text { text: q.name; color: Theme.text-primary; font-size: Theme.fs-sm;
-                                       overflow: elide; }
-                                Text { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
-                                       overflow: elide; font-family: Theme.ui-font-family; }
+                            if !q.collapsed : Rectangle {
+                                height: 30px;
+                                border-radius: Theme.radius-sm;
+                                background: q-item-ta.has-hover ? Theme.bg-hover : transparent;
+                                q-item-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.run-command(q.command, root.send-to-all);
+                                        root.quick-open = false;
+                                    }
+                                }
+                                // Name + command on one line; each elides so a long
+                                // entry never overflows the popup (#55).
+                                HorizontalLayout {
+                                    padding-left: 8px; padding-right: 8px; spacing: 10px;
+                                    Text { text: q.name; color: Theme.text-primary; font-size: Theme.fs-sm;
+                                           vertical-alignment: center; overflow: elide;
+                                           horizontal-stretch: 1; }
+                                    Text { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
+                                           vertical-alignment: center; overflow: elide;
+                                           horizontal-alignment: right; horizontal-stretch: 1;
+                                           font-family: Theme.ui-font-family; }
+                                }
                             }
                         }
                         // Manage entry.

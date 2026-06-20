@@ -259,8 +259,10 @@ export component AppWindow inherits Window {
     in-out property <bool> quick-cmd-manage-open: false;  // manage dialog
     property <string> qcm-name;                       // manage form: name field
     property <string> qcm-command;                    // manage form: command field
-    callback add-quick-command(string /* name */, string /* command */);
+    property <string> qcm-group;                      // manage form: group field (#55)
+    callback add-quick-command(string /* name */, string /* command */, string /* group */);
     callback delete-quick-command(int /* index */);
+    callback toggle-quick-group(string /* group */);  // collapse/expand a group (#55)
     in property <[TransferInfo]> transfers; // download/upload records (newest first)
     in property <[string]> about-libs;      // open-source libraries used
     in-out property <bool> lang-en: false;  // current UI language (false = 中文)
@@ -707,8 +709,10 @@ export component AppWindow inherits Window {
                     manage-quick-commands() => {
                         root.qcm-name = "";
                         root.qcm-command = "";
+                        root.qcm-group = "";
                         root.quick-cmd-manage-open = true;
                     }
+                    toggle-quick-group(g) => { root.toggle-quick-group(g); }
                     send-key(key, ctrl, alt, shift) => { root.send-key(term.id, key, ctrl, alt, shift) }
                     terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
                     sftp-navigate(path) => { root.sftp-navigate(term.id, path); }
@@ -1731,12 +1735,18 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                // Add form: name + command + Add.
+                // Add form: name + group (optional) + command + Add.
                 Text { text: @tr("Name"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
                 qcm-name-in := LineEdit {
                     text <=> root.qcm-name;
                     font-family: Theme.ui-font-family;
                     placeholder-text: @tr("e.g. tail log");
+                }
+                Text { text: @tr("Group (optional)"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
+                qcm-group-in := LineEdit {
+                    text <=> root.qcm-group;
+                    font-family: Theme.ui-font-family;
+                    placeholder-text: @tr("leave empty → default");
                 }
                 Text { text: @tr("Command"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
                 HorizontalLayout {
@@ -1748,8 +1758,8 @@ export component AppWindow inherits Window {
                         placeholder-text: "tail -f /var/log/syslog";
                         accepted => {
                             if (root.qcm-name != "" && root.qcm-command != "") {
-                                root.add-quick-command(root.qcm-name, root.qcm-command);
-                                root.qcm-name = ""; root.qcm-command = "";
+                                root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group);
+                                root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = "";
                             }
                         }
                     }
@@ -1758,8 +1768,8 @@ export component AppWindow inherits Window {
                         primary: true;
                         enabled: root.qcm-name != "" && root.qcm-command != "";
                         clicked => {
-                            root.add-quick-command(root.qcm-name, root.qcm-command);
-                            root.qcm-name = ""; root.qcm-command = "";
+                            root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group);
+                            root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = "";
                         }
                     }
                 }
@@ -1778,33 +1788,43 @@ export component AppWindow inherits Window {
                             text: @tr("No quick commands yet");
                             color: Theme.text-muted; font-size: Theme.fs-xs;
                         }
-                        for q[i] in root.quick-commands : Rectangle {
-                            height: 38px;
-                            border-radius: Theme.radius-sm;
-                            background: Theme.bg-root;
-                            HorizontalLayout {
-                                padding-left: 8px; padding-right: 6px; spacing: 6px;
-                                VerticalLayout {
-                                    horizontal-stretch: 1;
-                                    alignment: center;
-                                    Text { text: q.name; color: Theme.text-primary; font-size: Theme.fs-sm;
-                                           overflow: elide; }
-                                    Text { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
-                                           overflow: elide; font-family: Theme.ui-font-family; }
-                                }
-                                Rectangle {
-                                    width: 28px;
-                                    y: (parent.height - self.height) / 2;
-                                    height: 28px;
-                                    border-radius: Theme.radius-sm;
-                                    background: del-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
-                                    del-ta := TouchArea {
-                                        mouse-cursor: pointer;
-                                        clicked => { root.delete-quick-command(i); }
+                        for q in root.quick-commands : VerticalLayout {
+                            // Group header on the first row of each group (#55).
+                            if q.group-header != "" : HorizontalLayout {
+                                padding-left: 4px; padding-top: 6px; spacing: 4px;
+                                Text { text: "\u{E2C7}"; font-family: "Material Icons";
+                                       color: Theme.text-muted; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                Text { text: q.group; color: Theme.text-muted; font-size: Theme.fs-xs;
+                                       font-weight: 700; vertical-alignment: center; }
+                            }
+                            Rectangle {
+                                height: 38px;
+                                border-radius: Theme.radius-sm;
+                                background: Theme.bg-root;
+                                HorizontalLayout {
+                                    padding-left: 8px; padding-right: 6px; spacing: 6px;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        alignment: center;
+                                        Text { text: q.name; color: Theme.text-primary; font-size: Theme.fs-sm;
+                                               overflow: elide; }
+                                        Text { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
+                                               overflow: elide; font-family: Theme.ui-font-family; }
                                     }
-                                    Text { text: "\u{E872}"; font-family: "Material Icons";
-                                           color: Theme.danger; font-size: Theme.fs-md;
-                                           horizontal-alignment: center; vertical-alignment: center; }
+                                    Rectangle {
+                                        width: 28px;
+                                        y: (parent.height - self.height) / 2;
+                                        height: 28px;
+                                        border-radius: Theme.radius-sm;
+                                        background: del-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
+                                        del-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.delete-quick-command(q.orig-index); }
+                                        }
+                                        Text { text: "\u{E872}"; font-family: "Material Icons";
+                                               color: Theme.danger; font-size: Theme.fs-md;
+                                               horizontal-alignment: center; vertical-alignment: center; }
+                                    }
                                 }
                             }
                         }

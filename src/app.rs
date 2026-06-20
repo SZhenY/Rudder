@@ -251,8 +251,12 @@ pub fn run() -> Result<()> {
     // Populate the Interface font picker with installed monospace families.
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(system_monospace_fonts()))));
 
-    // Command bar (#55): seed quick commands + history from the config.
-    window.set_quick_commands(quick_cmd_model(&store.borrow()));
+    // Command bar (#55): seed quick commands + history from the config. Nothing
+    // is collapsed at startup.
+    window.set_quick_commands(quick_cmd_model(
+        &store.borrow(),
+        &std::collections::HashSet::new(),
+    ));
     window.set_command_history(history_model(&store.borrow()));
     window.set_history_view(history_view_model(&store.borrow(), "")); // #101
 
@@ -2026,15 +2030,60 @@ fn proc_model(procs: &[ProcInfo]) -> ModelRc<ProcRow> {
 }
 
 /// Build the quick-command model for the command bar + manage dialog (#55).
-fn quick_cmd_model(store: &ConfigStore) -> ModelRc<QuickCmd> {
-    let rows: Vec<QuickCmd> = store
-        .quick_commands()
+///
+/// Grouped like the welcome session list: the implicit "default" group (entries
+/// with an empty group) comes first, then named groups alphabetically. Within a
+/// group, entries keep their saved order. `group_header` is set on the first row
+/// of each group; `collapsed` reflects `collapsed_groups` (runtime-only state);
+/// `orig_index` points back into the stored vec so deletes target the right entry
+/// even though the display order differs.
+fn quick_cmd_model(
+    store: &ConfigStore,
+    collapsed_groups: &std::collections::HashSet<String>,
+) -> ModelRc<QuickCmd> {
+    let cmds = store.quick_commands();
+
+    let has_default = cmds.iter().any(|c| c.group.trim().is_empty());
+    let mut named: Vec<String> = cmds
         .iter()
-        .map(|q| QuickCmd {
-            name: q.name.clone().into(),
-            command: q.command.clone().into(),
-        })
+        .map(|c| c.group.trim().to_string())
+        .filter(|g| !g.is_empty())
         .collect();
+    named.sort_by_key(|g| g.to_lowercase());
+    named.dedup();
+
+    let mut groups: Vec<String> = Vec::new();
+    if has_default {
+        groups.push("default".to_string());
+    }
+    groups.extend(named);
+
+    let mut rows: Vec<QuickCmd> = Vec::new();
+    for group in &groups {
+        let is_collapsed = collapsed_groups.contains(group);
+        let members: Vec<(usize, &crate::config::QuickCommand)> = cmds
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| {
+                let g = c.group.trim();
+                if group == "default" {
+                    g.is_empty()
+                } else {
+                    g == group
+                }
+            })
+            .collect();
+        for (i, (orig_idx, c)) in members.iter().enumerate() {
+            rows.push(QuickCmd {
+                name: c.name.clone().into(),
+                command: c.command.clone().into(),
+                group: group.clone().into(),
+                group_header: if i == 0 { group.clone().into() } else { "".into() },
+                collapsed: is_collapsed,
+                orig_index: *orig_idx as i32,
+            });
+        }
+    }
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
@@ -3742,30 +3791,43 @@ fn wire_key_input(
             }
         });
     }
+    // Runtime-only collapse state for quick-command groups (#55) — like the
+    // welcome session groups, this is not persisted across restarts.
+    let collapsed_quick_groups: Rc<RefCell<std::collections::HashSet<String>>> =
+        Rc::new(RefCell::new(std::collections::HashSet::new()));
     {
         let store_rc = store.clone();
         let weak = window.as_weak();
-        window.on_add_quick_command(move |name: SharedString, command: SharedString| {
-            let name = name.trim().to_string();
-            let command = command.to_string();
-            if name.is_empty() || command.trim().is_empty() {
-                return;
-            }
-            {
-                let mut s = store_rc.borrow_mut();
-                let mut v = s.quick_commands().to_vec();
-                v.push(crate::config::QuickCommand { name, command });
-                s.set_quick_commands(v);
-                let _ = s.save();
-            }
-            if let Some(w) = weak.upgrade() {
-                w.set_quick_commands(quick_cmd_model(&store_rc.borrow()));
-            }
-        });
+        let collapsed = collapsed_quick_groups.clone();
+        window.on_add_quick_command(
+            move |name: SharedString, command: SharedString, group: SharedString| {
+                let name = name.trim().to_string();
+                let command = command.to_string();
+                let group = group.trim().to_string();
+                if name.is_empty() || command.trim().is_empty() {
+                    return;
+                }
+                {
+                    let mut s = store_rc.borrow_mut();
+                    let mut v = s.quick_commands().to_vec();
+                    v.push(crate::config::QuickCommand {
+                        name,
+                        command,
+                        group,
+                    });
+                    s.set_quick_commands(v);
+                    let _ = s.save();
+                }
+                if let Some(w) = weak.upgrade() {
+                    w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
+                }
+            },
+        );
     }
     {
         let store_rc = store.clone();
         let weak = window.as_weak();
+        let collapsed = collapsed_quick_groups.clone();
         window.on_delete_quick_command(move |index: i32| {
             {
                 let mut s = store_rc.borrow_mut();
@@ -3778,7 +3840,24 @@ fn wire_key_input(
                 let _ = s.save();
             }
             if let Some(w) = weak.upgrade() {
-                w.set_quick_commands(quick_cmd_model(&store_rc.borrow()));
+                w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
+            }
+        });
+    }
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        let collapsed = collapsed_quick_groups.clone();
+        window.on_toggle_quick_group(move |group: SharedString| {
+            let g = group.to_string();
+            {
+                let mut set = collapsed.borrow_mut();
+                if !set.remove(&g) {
+                    set.insert(g);
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
             }
         });
     }

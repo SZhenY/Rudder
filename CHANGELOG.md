@@ -5,6 +5,18 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### Added / 新增
+
+- **Group quick commands, collapsible (#55).** Quick commands now take an optional
+  group/folder name. Leaving it empty drops the command into the implicit
+  "default" group. In the command-bar popup each group shows a header that can be
+  clicked to collapse/expand it — same behaviour as the welcome page's quick-connect
+  session groups. The manage dialog gained a "Group (optional)" field and shows the
+  grouping.
+  **快捷命令支持分组、可收起 (#55)。** 快捷命令新增可选的分组名,留空则归入隐式的
+  「default」分组。命令栏弹窗里每个分组带标题,点击即可收起/展开——和欢迎页快速连接的
+  会话分组体验一致。管理对话框新增「分组（可选）」输入框并按分组展示。
+
 ## [0.4.12] - 2026-06-20
 
 ### Fixed / 修复

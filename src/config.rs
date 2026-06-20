@@ -253,6 +253,9 @@ impl Session {
 pub struct QuickCommand {
     pub name: String,
     pub command: String,
+    /// Optional group/folder name. Empty = the implicit "default" group (#55).
+    #[serde(default)]
+    pub group: String,
 }
 
 /// On-disk layout. Keep additive to ease forward-compat.

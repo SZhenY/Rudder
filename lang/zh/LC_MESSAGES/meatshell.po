@@ -273,6 +273,12 @@ msgstr "发送"
 msgid "No quick commands yet"
 msgstr "暂无快捷命令"
 
+msgid "Group (optional)"
+msgstr "分组（可选）"
+
+msgid "leave empty → default"
+msgstr "留空 → 默认分组"
+
 msgid "Manage…"
 msgstr "管理…"
 
