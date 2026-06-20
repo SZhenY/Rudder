@@ -810,7 +810,7 @@ export component AppWindow inherits Window {
         icon: "\u{E8B8}";
         tooltip: root.lang-en ? "Settings" : "设置";
         active: root.settings-open;
-        clicked => { root.settings-open = !root.settings-open; root.download-open = false; }
+        clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.ssh-import-hint = ""; }
     }
     IconBtn {
         x: root.width - 64px; y: root.custom-titlebar ? 46px : 8px;
@@ -1551,25 +1551,34 @@ export component AppWindow inherits Window {
                            vertical-alignment: center; horizontal-stretch: 1; }
                 }
             }
-            // Import hosts from ~/.ssh/config.
+            // Import hosts from ~/.ssh/config. Keep the menu open so the result
+            // (e.g. "imported 3" / "no new hosts") is visible right here — it used
+            // to only show on the welcome page, so importing while a session was
+            // open looked like nothing happened (#133).
             Rectangle {
-                height: 28px;
+                height: root.ssh-import-hint != "" ? 46px : 28px;
                 border-radius: Theme.radius-sm;
                 background: import-ta.has-hover ? Theme.bg-hover : transparent;
                 import-ta := TouchArea {
                     mouse-cursor: pointer;
-                    clicked => {
-                        root.settings-open = false;
-                        root.import-ssh-config();
-                    }
+                    clicked => { root.import-ssh-config(); }
                 }
                 HorizontalLayout {
-                    padding-left: 8px; spacing: 8px;
+                    padding-left: 8px; padding-right: 8px; spacing: 8px;
                     Text { text: "\u{E890}"; font-family: "Material Icons"; // input/import
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
-                    Text { text: @tr("Import ~/.ssh/config"); color: Theme.text-primary; font-size: Theme.fs-md;
-                           vertical-alignment: center; horizontal-stretch: 1; }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        Text { text: @tr("Import ~/.ssh/config"); color: Theme.text-primary; font-size: Theme.fs-md;
+                               vertical-alignment: center; }
+                        if root.ssh-import-hint != "" : Text {
+                            text: root.ssh-import-hint;
+                            color: Theme.text-muted; font-size: Theme.fs-xs;
+                            overflow: elide;
+                        }
+                    }
                 }
             }
             // Language toggle: shows the language you'll switch TO.

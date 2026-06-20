@@ -271,8 +271,16 @@ async fn run_sftp(
                 .strip_suffix(".pub")
                 .map(str::to_string)
                 .unwrap_or(normalised);
-            let keypair = load_secret_key(Path::new(&key_path), None)
-                .with_context(|| format!("failed to load key {key_path}"))?;
+            // An encrypted private key needs its passphrase; reuse the session's
+            // password field for it (empty = unencrypted), exactly like the shell
+            // session does — otherwise a passphrase-protected key authenticates the
+            // shell but fails SFTP with "the key is encrypted" (#133).
+            let pass = password.as_str();
+            let keypair = load_secret_key(
+                Path::new(&key_path),
+                if pass.is_empty() { None } else { Some(pass) },
+            )
+            .with_context(|| format!("failed to load key {key_path}"))?;
             // RSA keys need an explicit SHA-2 hash; other key types don't.
             let hash = keypair.algorithm().is_rsa().then_some(HashAlg::Sha256);
             let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash)
