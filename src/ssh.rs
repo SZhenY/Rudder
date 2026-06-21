@@ -461,27 +461,19 @@ pub fn spawn_session(
     )
 }
 
-async fn run_session(
-    session: Session,
-    mut commands: UnboundedReceiver<SessionCommand>,
-    events: UnboundedSender<SessionEvent>,
-    initial_cols: u32,
-    initial_rows: u32,
-) -> Result<()> {
-    let _ = events.send(SessionEvent::Status(format!(
-        "{} {}@{}:{} ...",
-        t("连接中", "Connecting"),
-        session.user, session.host, session.port
-    )));
-
-    let config = Arc::new(client::Config {
-        inactivity_timeout: Some(std::time::Duration::from_secs(60 * 10)),
-        ..<_>::default()
-    });
-
-    // Remote (-R) forwards are serviced inside the handler when the server
-    // opens channels back, so it needs the bind-port → local-target map up
-    // front (the handler is moved into `connect`) (#56).
+/// Open an SSH transport to the session's host (directly or via a SOCKS5 / HTTP
+/// proxy) and return the russh handle, ready for authentication. Factored out so
+/// the keyboard-interactive fallback can reconnect on a *fresh* handle — russh
+/// hangs if a second auth method is attempted on a handle whose first attempt
+/// already failed (#86).
+async fn connect_ssh(
+    session: &Session,
+    config: Arc<client::Config>,
+    events: &UnboundedSender<SessionEvent>,
+) -> Result<Handle<ClientHandler>> {
+    // Remote (-R) forwards are serviced inside the handler when the server opens
+    // channels back, so it needs the bind-port → local-target map up front (the
+    // handler is moved into `connect`) (#56).
     let remote_forwards: std::collections::HashMap<u32, (String, u16)> = session
         .forwards
         .iter()
@@ -496,7 +488,7 @@ async fn run_session(
     };
     let addr = format!("{}:{}", session.host, session.port);
     // Connect directly, or tunnel through a SOCKS5 / HTTP proxy (issue #7).
-    let mut handle = match crate::proxy::resolve(&session.proxy) {
+    let handle = match crate::proxy::resolve(&session.proxy) {
         Some(p) => {
             let _ = events.send(SessionEvent::Status(format!(
                 "{} {} → {}",
@@ -515,6 +507,28 @@ async fn run_session(
             .await
             .with_context(|| format!("connect {} failed", addr))?,
     };
+    Ok(handle)
+}
+
+async fn run_session(
+    session: Session,
+    mut commands: UnboundedReceiver<SessionCommand>,
+    events: UnboundedSender<SessionEvent>,
+    initial_cols: u32,
+    initial_rows: u32,
+) -> Result<()> {
+    let _ = events.send(SessionEvent::Status(format!(
+        "{} {}@{}:{} ...",
+        t("连接中", "Connecting"),
+        session.user, session.host, session.port
+    )));
+
+    let config = Arc::new(client::Config {
+        inactivity_timeout: Some(std::time::Duration::from_secs(60 * 10)),
+        ..<_>::default()
+    });
+
+    let mut handle = connect_ssh(&session, config.clone(), &events).await?;
 
     // Resolve missing username/password by prompting the user (#110).
     let (user, password) = match resolve_credentials(&session, &events).await {
@@ -530,10 +544,29 @@ async fn run_session(
 
     // --- Auth ----------------------------------------------------------
     let authed = match session.auth {
-        AuthMethod::Password => handle
-            .authenticate_password(&user, password.as_str())
-            .await
-            .context("password auth failed")?,
+        AuthMethod::Password => {
+            // Try plain `password` auth first; if the server doesn't offer it,
+            // fall back to `keyboard-interactive` and answer each prompt with the
+            // same password. Many bastions (JumpServer especially) disable the
+            // `password` method and only accept keyboard-interactive, which is
+            // why other clients (Xshell / MobaXterm / WindTerm) get in but plain
+            // password auth fails here (#86).
+            let mut ok = handle
+                .authenticate_password(&user, password.as_str())
+                .await
+                .context("password auth failed")?;
+            if !ok {
+                // russh can't switch auth methods on a handle whose first attempt
+                // already failed (it hangs), so reconnect on a fresh handle before
+                // trying keyboard-interactive (#86).
+                let _ = handle.disconnect(Disconnect::ByApplication, "", "").await;
+                handle = connect_ssh(&session, config.clone(), &events).await?;
+                ok = keyboard_interactive_password(&mut handle, &user, password.as_str())
+                    .await
+                    .context("keyboard-interactive auth failed")?;
+            }
+            ok
+        }
         AuthMethod::Key => {
             let raw = session.private_key_path.trim();
             if raw.is_empty() {
@@ -1168,6 +1201,39 @@ fn parse_net_dev_line(line: &str) -> Option<(String, (u64, u64))> {
         return None;
     }
     Some((iface.to_string(), (nums[0], nums[8])))
+}
+
+/// Authenticate via `keyboard-interactive`, answering every prompt with the
+/// given password. This is the fallback for bastions that disable the plain
+/// `password` method (e.g. JumpServer) but still authenticate by password — the
+/// server sends a single "Password:" prompt over keyboard-interactive (#86).
+///
+/// Prompts are answered with the password regardless of their text, which covers
+/// the common single-password case; genuine multi-factor prompts (an OTP code on
+/// top of the password) would need interactive input and are not handled here.
+async fn keyboard_interactive_password(
+    handle: &mut Handle<ClientHandler>,
+    user: &str,
+    password: &str,
+) -> Result<bool> {
+    use russh::client::KeyboardInteractiveAuthResponse as Kb;
+    let mut res = handle
+        .authenticate_keyboard_interactive_start(user.to_string(), None)
+        .await?;
+    // Bound the exchange so a misbehaving server can't loop us forever.
+    for _ in 0..16 {
+        match res {
+            Kb::Success => return Ok(true),
+            Kb::Failure => return Ok(false),
+            Kb::InfoRequest { prompts, .. } => {
+                let responses = prompts.iter().map(|_| password.to_string()).collect();
+                res = handle
+                    .authenticate_keyboard_interactive_respond(responses)
+                    .await?;
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Client handler. Verifies the server host key against the known_hosts store,
