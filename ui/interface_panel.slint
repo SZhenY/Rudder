@@ -1,0 +1,363 @@
+// Interface settings content (#23 follow-up).
+//
+// Embedded panel (not a window): it lives inside AppWindow's modal overlay, so
+// the settings can't be dragged out of the parent and block input while open —
+// while keeping the clean, minimal "label-left · control-right" design.
+// Typography is fixed (literal px in the chrome) so it stays compact regardless
+// of the global UI scale; only the font-preview reflects the real terminal size.
+
+import { Theme } from "theme.slint";
+import { ComboBox } from "std-widgets.slint";
+
+// One left-nav row (icon + label).
+component NavItem inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+    height: 30px;
+    border-radius: 6px;
+    background: root.active ? Theme.bg-active : (ta.has-hover ? Theme.bg-hover : transparent);
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        spacing: 9px;
+        Text { text: root.icon; font-family: "Material Icons";
+               color: root.active ? Theme.text-primary : Theme.text-secondary;
+               font-size: 15px; vertical-alignment: center; }
+        Text { text: root.label;
+               color: root.active ? Theme.text-primary : Theme.text-secondary;
+               font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; }
+    }
+}
+
+// Small muted group heading (字体 / 预览 / SFTP …).
+component SectionHeader inherits Text {
+    font-size: 11px;
+    font-weight: 700;
+    color: Theme.text-muted;
+    vertical-alignment: center;
+}
+
+// A settings row: label (+ optional description) on the left, a control slot on
+// the right via @children. Right-aligned and vertically centered.
+component SettingRow inherits Rectangle {
+    in property <string> label;
+    in property <string> desc;
+    in property <bool> show-divider: true;
+    VerticalLayout {
+        HorizontalLayout {
+            spacing: 14px;
+            padding-top: 9px;
+            padding-bottom: 9px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 3px;
+                Text { text: root.label; font-size: 13px; color: Theme.text-primary; }
+                if root.desc != "" : Text { text: root.desc; font-size: 11px;
+                       color: Theme.text-muted; wrap: word-wrap; }
+            }
+            VerticalLayout {
+                alignment: center;
+                @children
+            }
+        }
+        if root.show-divider : Rectangle { height: 1px; background: Theme.border-subtle; }
+    }
+}
+
+// iOS-style toggle switch. Display-only `on` (driven by the parent); a tap emits
+// the intended new value so the parent owns the state (avoids Slint's
+// binding-break-on-self-assign gotcha).
+component Switch inherits Rectangle {
+    in property <bool> on;
+    callback toggled(bool);
+    width: 38px;
+    height: 22px;
+    border-radius: 11px;
+    background: root.on ? Theme.accent : Theme.bg-active;
+    animate background { duration: 120ms; }
+    Rectangle {
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        y: 3px;
+        x: root.on ? parent.width - self.width - 3px : 3px;
+        background: white;
+        animate x { duration: 120ms; easing: ease-out; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(!root.on); }
+    }
+}
+
+// [- value +] stepper. Display-only `value`; emits the clamped new value.
+component Stepper inherits Rectangle {
+    in property <int> value;
+    in property <int> minimum: 0;
+    in property <int> maximum: 100;
+    in property <int> step: 1;
+    in property <string> unit;
+    callback changed(int);
+    width: 112px;
+    height: 26px;
+    border-radius: 6px;
+    background: Theme.bg-elevated;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    clip: true;
+    HorizontalLayout {
+        Rectangle {
+            width: 30px;
+            background: minus-ta.has-hover ? Theme.bg-hover : transparent;
+            minus-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.changed(max(root.minimum, root.value - root.step)); }
+            }
+            Text { text: "\u{E15B}"; font-family: "Material Icons"; font-size: 14px;
+                   color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+        }
+        Rectangle { width: 1px; background: Theme.border-subtle; }
+        Text { text: root.value + root.unit; horizontal-stretch: 1;
+               font-size: 12px; color: Theme.text-primary;
+               horizontal-alignment: center; vertical-alignment: center; }
+        Rectangle { width: 1px; background: Theme.border-subtle; }
+        Rectangle {
+            width: 30px;
+            background: plus-ta.has-hover ? Theme.bg-hover : transparent;
+            plus-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.changed(min(root.maximum, root.value + root.step)); }
+            }
+            Text { text: "\u{E145}"; font-family: "Material Icons"; font-size: 14px;
+                   color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+        }
+    }
+}
+
+// The settings content (nav + pages). Embedded in AppWindow's modal overlay.
+export component InterfacePanel inherits Rectangle {
+    in property <bool> lang-en;
+    in property <[string]> term-fonts;
+    in property <string> term-font-family;
+    in property <length> term-font-size;
+    in property <float> ui-scale;
+    in-out property <bool> sftp-follow-cd;
+    in-out property <bool> collapse-sidebar-default;
+    in-out property <bool> collapse-sftp-default;
+    in-out property <bool> sync-upload-enabled;
+    in-out property <bool> download-always-ask;
+
+    property <string> ifd-page: "font";
+
+    callback set-term-font(string);
+    callback set-term-font-size(int);
+    callback set-ui-scale(int);
+    callback set-sftp-follow-cd(bool);
+    callback set-collapse-sidebar-default(bool);
+    callback set-collapse-sftp-default(bool);
+    callback set-sync-upload-enabled(bool);
+    callback set-download-always-ask(bool);
+
+    HorizontalLayout {
+        // --- Left nav ------------------------------------------------------
+        Rectangle {
+            width: 168px;
+            background: Theme.bg-panel-alt;
+            VerticalLayout {
+                padding: 10px;
+                spacing: 2px;
+                alignment: start;
+                NavItem {
+                    icon: "\u{E167}"; label: root.lang-en ? "Font" : "字体";
+                    active: root.ifd-page == "font";
+                    clicked => { root.ifd-page = "font"; }
+                }
+                NavItem {
+                    icon: "\u{E2C7}"; label: "SFTP";
+                    active: root.ifd-page == "sftp";
+                    clicked => { root.ifd-page = "sftp"; }
+                }
+                NavItem {
+                    icon: "\u{E5CB}"; label: root.lang-en ? "Sidebars" : "侧栏";
+                    active: root.ifd-page == "sidebar";
+                    clicked => { root.ifd-page = "sidebar"; }
+                }
+                NavItem {
+                    icon: "\u{E627}"; label: root.lang-en ? "Session sync" : "会话同步";
+                    active: root.ifd-page == "sync";
+                    clicked => { root.ifd-page = "sync"; }
+                }
+                NavItem {
+                    icon: "\u{E2C4}"; label: root.lang-en ? "Download" : "下载";
+                    active: root.ifd-page == "download";
+                    clicked => { root.ifd-page = "download"; }
+                }
+            }
+        }
+        // --- Right content -------------------------------------------------
+        Rectangle {
+            horizontal-stretch: 1;
+            background: Theme.bg-panel;
+
+            // --- Font page ---------------------------------------------
+            if root.ifd-page == "font" : VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 14px;
+                spacing: 0;
+                alignment: start;
+
+                SectionHeader { text: root.lang-en ? "FONT" : "字体"; height: 24px; }
+                SettingRow {
+                    label: root.lang-en ? "Terminal font" : "终端字体";
+                    ComboBox {
+                        width: 220px;
+                        model: root.term-fonts;
+                        current-value: root.term-font-family;
+                        selected(v) => { root.set-term-font(v); }
+                    }
+                }
+                SettingRow {
+                    label: root.lang-en ? "Terminal font size" : "终端字体大小";
+                    Stepper {
+                        value: root.term-font-size / 1px; minimum: 8; maximum: 32; step: 1; unit: "px";
+                        changed(v) => { root.set-term-font-size(v); }
+                    }
+                }
+                SettingRow {
+                    label: root.lang-en ? "UI scale" : "界面缩放";
+                    desc: root.lang-en ? "Zooms the whole interface (not this panel)."
+                                       : "缩放整个界面(不影响本面板)。";
+                    show-divider: false;
+                    Stepper {
+                        value: round(root.ui-scale * 100); minimum: 80; maximum: 200; step: 10; unit: "%";
+                        changed(v) => { root.set-ui-scale(v); }
+                    }
+                }
+
+                Rectangle { height: 14px; }
+                SectionHeader { text: root.lang-en ? "PREVIEW" : "预览"; height: 22px; }
+                Rectangle {
+                    height: 52px;
+                    background: Theme.term-bg;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: Theme.border-subtle;
+                    Text {
+                        x: 12px;
+                        text: "meatshell ~$ echo preview 0123";
+                        font-family: Theme.term-font-family;
+                        font-size: Theme.term-font-size;
+                        color: Theme.term-fg;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                }
+            }
+
+            // --- SFTP page ---------------------------------------------
+            if root.ifd-page == "sftp" : VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 14px;
+                spacing: 0;
+                alignment: start;
+                SectionHeader { text: "SFTP"; height: 24px; }
+                SettingRow {
+                    label: root.lang-en ? "SFTP follows terminal cd" : "SFTP 跟随 cd 更新";
+                    desc: root.lang-en
+                        ? "A cd in the terminal switches the SFTP panel to the same directory."
+                        : "终端里执行 cd 时,SFTP 面板自动切到相同目录。";
+                    show-divider: false;
+                    Switch {
+                        on: root.sftp-follow-cd;
+                        toggled(v) => { root.sftp-follow-cd = v; root.set-sftp-follow-cd(v); }
+                    }
+                }
+            }
+
+            // --- Sidebars page -----------------------------------------
+            if root.ifd-page == "sidebar" : VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 14px;
+                spacing: 0;
+                alignment: start;
+                SectionHeader { text: root.lang-en ? "SIDEBARS" : "侧栏"; height: 24px; }
+                SettingRow {
+                    label: root.lang-en ? "Collapse the resource panel by default" : "默认收起资源视图面板";
+                    Switch {
+                        on: root.collapse-sidebar-default;
+                        toggled(v) => { root.collapse-sidebar-default = v; root.set-collapse-sidebar-default(v); }
+                    }
+                }
+                SettingRow {
+                    label: root.lang-en ? "Collapse the SFTP panel by default" : "默认收起 SFTP 侧栏";
+                    desc: root.lang-en
+                        ? "Takes effect on next launch; handy on low-spec jump hosts."
+                        : "下次启动生效;低配跳板机上可减少常驻面板开销。";
+                    show-divider: false;
+                    Switch {
+                        on: root.collapse-sftp-default;
+                        toggled(v) => { root.collapse-sftp-default = v; root.set-collapse-sftp-default(v); }
+                    }
+                }
+            }
+
+            // --- Session sync page -------------------------------------
+            if root.ifd-page == "sync" : VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 14px;
+                spacing: 0;
+                alignment: start;
+                SectionHeader { text: root.lang-en ? "SESSION SYNC" : "会话同步"; height: 24px; }
+                SettingRow {
+                    label: root.lang-en ? "Sync file uploads" : "文件上传同步";
+                    desc: root.lang-en
+                        ? "While session sync is on, an upload goes to the same path on each session; if missing, to that session's current SFTP directory."
+                        : "会话同步开启时,上传会发往各会话的相同路径;路径不存在则发往该会话当前 SFTP 目录。";
+                    show-divider: false;
+                    Switch {
+                        on: root.sync-upload-enabled;
+                        toggled(v) => { root.sync-upload-enabled = v; root.set-sync-upload-enabled(v); }
+                    }
+                }
+                Rectangle { height: 6px; }
+                Text {
+                    text: root.lang-en
+                        ? "Session sync itself is toggled from the sync icon in the top-right bar."
+                        : "会话同步本身从右上角的同步图标开关。";
+                    color: Theme.text-muted; font-size: 11px; wrap: word-wrap;
+                }
+            }
+
+            // --- Download page -----------------------------------------
+            if root.ifd-page == "download" : VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 14px;
+                spacing: 0;
+                alignment: start;
+                SectionHeader { text: root.lang-en ? "DOWNLOAD" : "下载"; height: 24px; }
+                SettingRow {
+                    label: root.lang-en ? "Always ask where to save" : "总是询问保存去何处";
+                    desc: root.lang-en
+                        ? "Every download prompts for a location instead of using the preset folder."
+                        : "每次下载都询问保存位置,而不是直接存到预设下载目录。";
+                    show-divider: false;
+                    Switch {
+                        on: root.download-always-ask;
+                        toggled(v) => { root.download-always-ask = v; root.set-download-always-ask(v); }
+                    }
+                }
+            }
+        }
+    }
+}

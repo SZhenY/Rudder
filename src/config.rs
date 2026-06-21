@@ -121,6 +121,9 @@ fn default_stop_bits() -> u8 {
 fn default_parity() -> String {
     "none".to_string()
 }
+fn default_sidebar_width() -> f32 {
+    220.0
+}
 fn default_flow() -> String {
     "none".to_string()
 }
@@ -308,6 +311,10 @@ pub struct ConfigFile {
     /// Collapse the left resource sidebar on startup (#78).
     #[serde(default)]
     pub collapse_sidebar_default: bool,
+    /// User-adjustable width of the left resource sidebar, in logical pixels.
+    /// Persisted across restarts so the drag-resized width sticks.
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: f32,
     /// Collapse the bottom SFTP panel on startup (#78).
     #[serde(default)]
     pub collapse_sftp_default: bool,
@@ -701,6 +708,21 @@ impl ConfigStore {
 
     pub fn set_collapse_sidebar_default(&mut self, v: bool) {
         self.cache.collapse_sidebar_default = v;
+    }
+
+    /// Persisted sidebar width in logical px. Falls back to the default when the
+    /// stored value is unset/zero (e.g. a config created via `Default`).
+    pub fn sidebar_width(&self) -> f32 {
+        let w = self.cache.sidebar_width;
+        if w <= 0.0 {
+            default_sidebar_width()
+        } else {
+            w
+        }
+    }
+
+    pub fn set_sidebar_width(&mut self, v: f32) {
+        self.cache.sidebar_width = v;
     }
 
     /// Collapse the SFTP panel on startup (default false) (#78).

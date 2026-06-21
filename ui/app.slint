@@ -23,6 +23,10 @@ import { ConfirmDialog } from "confirm_dialog.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+// Re-export so `slint::include_modules!` generates the ProcWindow Rust type.
+export { ProcWindow }
 import { ComboBox, SpinBox, LineEdit, Button, ScrollView, CheckBox, Palette } from "std-widgets.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, QuickCmd, PortFwd }
@@ -41,15 +45,7 @@ export struct TransferInfo {
     is-upload: bool,
 }
 
-// One row in the process-monitor popup (#23).
-export struct ProcRow {
-    pid: string,
-    user: string,
-    cpu: string,       // "12.3" (percent, one decimal)
-    mem: string,       // "4.5"
-    command: string,   // truncated args
-    cpu-frac: float,   // 0.0..1.0, drives the row load bar
-}
+// ProcRow now lives in proc_window.slint (the detachable process window).
 
 export struct TerminalState {
     id: string,
@@ -192,8 +188,8 @@ export component AppWindow inherits Window {
     no-frame: root.custom-titlebar;
     min-width: 960px;
     min-height: 600px;
-    preferred-width: 1200px;
-    preferred-height: 760px;
+    preferred-width: 1440px;
+    preferred-height: 900px;
     background: Theme.bg-root;
     // A CJK-capable default so UI text (incl. fullwidth punctuation like ：（）)
     // never tofus on glyph fallback (#54). Rust sets Theme.ui-font-family to a
@@ -241,10 +237,19 @@ export component AppWindow inherits Window {
     callback win-drag();          // start an OS window-move
     callback win-resize(int);     // start an OS resize; arg = direction code
     in-out property <bool> sidebar-collapsed: false; // left panel hidden
+    // User-draggable width of the left resource sidebar. Seeded from / persisted
+    // to config via persist-sidebar-width (fired on drag end).
+    in-out property <length> sidebar-width: 220px;
+    property <bool> sidebar-dragging;            // splitter being dragged
+    property <length> sidebar-drag-start-x;      // mouse-x at drag start
+    callback persist-sidebar-width(float /* logical px */);
     in-out property <bool> about-open: false;     // centered About dialog
     in-out property <bool> shortcuts-open: false; // centered keyboard-shortcuts dialog (#103)
     in property <string> download-dir;      // preset SFTP download folder ("" = ask)
-    in-out property <bool> proc-open: false; // process monitor popup (#23)
+    // Process monitor is now a detachable top-level window (ProcWindow). Rust
+    // shows/hides it in response to open-processes(); proc-list/proc-available
+    // stay here as the live data source shared with that window (#23).
+    callback open-processes();
     in property <bool> proc-available;       // a live remote session is active
     in property <[ProcRow]> proc-list;       // top remote processes by CPU
     // Command bar (#55): quick commands + history, fed from Rust.
@@ -290,16 +295,16 @@ export component AppWindow inherits Window {
     in-out property <float> ui-scale <=> Theme.ui-scale;   // global UI zoom (#100)
     in-out property <string> ui-font-family <=> Theme.ui-font-family;
     in property <[string]> term-fonts;             // installed monospace families
-    in-out property <bool> interface-open: false;  // Interface settings dialog
-    // Interface dialog position (draggable by its title bar); init centered.
-    property <length> ifd-x: (root.width - 644px) / 2;
-    property <length> ifd-y: (root.height - 414px) / 2;
+    in-out property <bool> interface-open: false;  // Interface settings overlay
+    // Interface card position (draggable by its title bar, clamped inside the
+    // window so it can't leave the parent); init centered.
+    property <length> ifd-x: (root.width - 660px) / 2;
+    property <length> ifd-y: (root.height - 430px) / 2;
     property <bool> ifd-dragging;
     property <length> ifd-base-x;
     property <length> ifd-base-y;
     property <length> ifd-grab-x;
     property <length> ifd-grab-y;
-    property <string> ifd-page: "font";   // active Interface page: "font" | "sftp" | "sidebar" | "sync" | "download"
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
     callback set-ui-scale(int);                    // apply + persist UI scale (percent) (#100)
@@ -581,11 +586,13 @@ export component AppWindow inherits Window {
         HorizontalLayout {
         spacing: 0;
 
-        // Left sidebar — collapsible (width animates to 0).
+        // Left sidebar — collapsible (width animates to 0) and drag-resizable.
+        // The animation is disabled while dragging so the splitter tracks the
+        // cursor 1:1 instead of lagging behind.
         Sidebar {
-            width: root.sidebar-collapsed ? 0px : 220px;
+            width: root.sidebar-collapsed ? 0px : root.sidebar-width;
             clip: true;
-            animate width { duration: 150ms; easing: ease-out; }
+            animate width { duration: root.sidebar-dragging ? 0ms : 150ms; easing: ease-out; }
             connection-state: root.connection-state;
             conn-state: root.conn-state;
             resource-title: root.resource-title;
@@ -607,7 +614,38 @@ export component AppWindow inherits Window {
             proc-available: root.proc-available;
             app-version: root.app-version;
             select-net-iface(i) => { root.select-net-iface(i); }
-            show-processes() => { root.proc-open = true; }
+            show-processes() => { root.open-processes(); }
+        }
+
+        // Splitter — drag left/right to resize the sidebar. Hidden (zero width)
+        // while the sidebar is collapsed so it doesn't float on the edge.
+        Rectangle {
+            width: root.sidebar-collapsed ? 0px : 4px;
+            visible: !root.sidebar-collapsed;
+            background: sb-split-ta.has-hover || root.sidebar-dragging
+                ? Theme.accent
+                : Theme.border-subtle;
+            sb-split-ta := TouchArea {
+                mouse-cursor: ew-resize;
+                pointer-event(ev) => {
+                    if (ev.kind == PointerEventKind.down) {
+                        root.sidebar-dragging = true;
+                        root.sidebar-drag-start-x = self.mouse-x;
+                    } else if (ev.kind == PointerEventKind.up) {
+                        root.sidebar-dragging = false;
+                        root.persist-sidebar-width(root.sidebar-width / 1px);
+                    }
+                }
+                moved => {
+                    if (root.sidebar-dragging) {
+                        root.sidebar-width = clamp(
+                            root.sidebar-width + self.mouse-x - root.sidebar-drag-start-x,
+                            160px,
+                            520px
+                        );
+                    }
+                }
+            }
         }
 
         // Right side: tabs + content
@@ -1346,119 +1384,8 @@ export component AppWindow inherits Window {
             }
         }
 
-    // --- Process monitor popup (#23) --------------------------------------
-    // Read-only table of the remote machine's top processes by CPU. The data
-    // refreshes live every ~2s via the monitor channel while the popup is open.
-    if root.proc-open : TouchArea {
-        width: parent.width;
-        height: parent.height;
-        clicked => { root.proc-open = false; }
-    }
-    if root.proc-open : Rectangle {
-        x: (parent.width - 580px) / 2;
-        y: 56px;
-        width: 580px;
-        height: 440px;
-        background: Theme.bg-panel;
-        border-radius: Theme.radius-md;
-        border-width: 1px;
-        border-color: Theme.border-strong;
-        drop-shadow-blur: 16px;
-        drop-shadow-color: #00000070;
-
-        // Swallow clicks so they don't reach the backdrop / terminal beneath.
-        TouchArea {}
-
-        VerticalLayout {
-            padding: 14px;
-            spacing: 10px;
-
-            HorizontalLayout {
-                Text {
-                    text: @tr("Processes");
-                    color: Theme.text-primary;
-                    font-size: Theme.fs-md;
-                    font-weight: 600;
-                    horizontal-stretch: 1;
-                    vertical-alignment: center;
-                }
-                Rectangle {
-                    width: 20px; height: 20px;
-                    border-radius: Theme.radius-sm;
-                    background: proc-close-ta.has-hover ? Theme.bg-hover : transparent;
-                    proc-close-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.proc-open = false; }
-                    }
-                    Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           horizontal-alignment: center; vertical-alignment: center; }
-                }
-            }
-
-            // Column header.
-            HorizontalLayout {
-                padding-left: 6px;
-                padding-right: 6px;
-                spacing: 6px;
-                Text { text: "PID"; width: 52px; color: Theme.text-muted; font-size: Theme.fs-xs; }
-                Text { text: @tr("User"); width: 80px; color: Theme.text-muted; font-size: Theme.fs-xs; }
-                Text { text: "CPU%"; width: 48px; color: Theme.text-muted; font-size: Theme.fs-xs;
-                       horizontal-alignment: right; }
-                Text { text: "MEM%"; width: 48px; color: Theme.text-muted; font-size: Theme.fs-xs;
-                       horizontal-alignment: right; }
-                Text { text: @tr("Command"); horizontal-stretch: 1; color: Theme.text-muted; font-size: Theme.fs-xs; }
-            }
-
-            Flickable {
-                vertical-stretch: 1;
-                viewport-width: self.width;
-                viewport-height: max(self.height, proc-col.preferred-height);
-                proc-col := VerticalLayout {
-                    alignment: start;
-                    spacing: 1px;
-
-                    if root.proc-list.length == 0 : Text {
-                        text: @tr("No processes");
-                        color: Theme.text-muted;
-                        font-size: Theme.fs-xs;
-                    }
-
-                    for p in root.proc-list : Rectangle {
-                        height: 20px;
-                        border-radius: 2px;
-                        clip: true;
-
-                        // CPU load bar behind the row.
-                        Rectangle {
-                            x: 0; y: 0;
-                            height: parent.height;
-                            width: parent.width * clamp(p.cpu-frac, 0.0, 1.0);
-                            background: p.cpu-frac > 0.5 ? Theme.warning.with-alpha(0.28)
-                                      : Theme.accent.with-alpha(0.20);
-                        }
-                        HorizontalLayout {
-                            padding-left: 6px;
-                            padding-right: 6px;
-                            spacing: 6px;
-                            Text { text: p.pid; width: 52px; color: Theme.text-secondary;
-                                   font-size: Theme.fs-xs; vertical-alignment: center; }
-                            Text { text: p.user; width: 80px; color: Theme.text-secondary;
-                                   font-size: Theme.fs-xs; vertical-alignment: center; overflow: elide; }
-                            Text { text: p.cpu; width: 48px; color: Theme.text-primary;
-                                   font-size: Theme.fs-xs; vertical-alignment: center;
-                                   horizontal-alignment: right; }
-                            Text { text: p.mem; width: 48px; color: Theme.text-secondary;
-                                   font-size: Theme.fs-xs; vertical-alignment: center;
-                                   horizontal-alignment: right; }
-                            Text { text: p.command; horizontal-stretch: 1; color: Theme.text-muted;
-                                   font-size: Theme.fs-xs; vertical-alignment: center; overflow: elide; }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Process monitor is now ProcWindow (a detachable top-level window); the
+    // former in-app overlay was removed in favour of a real OS window (#23).
 
     // --- Settings menu popup (top-right) ----------------------------------
     // Click-outside-to-close backdrop (same pattern as the download popup).
@@ -2288,399 +2215,6 @@ export component AppWindow inherits Window {
         }
     }
 
-    // --- Interface settings dialog (font family + size) -------------------
-    if root.interface-open : Rectangle {
-        width: parent.width;
-        height: parent.height;
-        background: #00000080;            // dim backdrop
-        // Modal: clicking the dim backdrop does nothing (only the title-bar ✕
-        // closes it). The card is draggable by its title bar (root.ifd-*).
-        TouchArea {}
-
-        Rectangle {
-            x: root.ifd-x;
-            y: root.ifd-y;
-            width: 644px;   // +15%
-            height: 414px;  // +15%
-            background: Theme.bg-panel;
-            border-radius: Theme.radius-md;
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
-            clip: true;
-            TouchArea {}   // swallow inside clicks
-
-            VerticalLayout {
-                // Title bar — drag to move the dialog; the ✕ button stays on top.
-                Rectangle {
-                    height: 48px;
-                    title-drag := TouchArea {
-                        mouse-cursor: move;
-                        pointer-event(e) => {
-                            if (e.kind == PointerEventKind.down) {
-                                root.ifd-dragging = true;
-                                root.ifd-base-x = root.ifd-x;
-                                root.ifd-base-y = root.ifd-y;
-                                root.ifd-grab-x = self.absolute-position.x + self.mouse-x;
-                                root.ifd-grab-y = self.absolute-position.y + self.mouse-y;
-                            } else if (e.kind == PointerEventKind.up) {
-                                root.ifd-dragging = false;
-                            }
-                        }
-                        moved => {
-                            if (root.ifd-dragging) {
-                                // Clamp inside the window so the title bar (and its
-                                // ✕) can never be dragged off-screen — otherwise the
-                                // modal dialog becomes unclosable (#119-followup).
-                                root.ifd-x = clamp(
-                                    root.ifd-base-x + (self.absolute-position.x + self.mouse-x - root.ifd-grab-x),
-                                    0px, max(0px, root.width - 644px));
-                                root.ifd-y = clamp(
-                                    root.ifd-base-y + (self.absolute-position.y + self.mouse-y - root.ifd-grab-y),
-                                    0px, max(0px, root.height - 414px));
-                            }
-                        }
-                    }
-                    HorizontalLayout {
-                        padding: 14px;
-                        Text {
-                            text: root.lang-en ? "Interface" : "界面";
-                            color: Theme.text-primary;
-                            font-size: Theme.fs-lg;
-                            font-weight: 700;
-                            horizontal-stretch: 1;
-                            vertical-alignment: center;
-                        }
-                        Rectangle {
-                            width: 22px; height: 22px;
-                            border-radius: Theme.radius-sm;
-                            background: if-close-ta.has-hover ? Theme.bg-hover : transparent;
-                            if-close-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { root.interface-open = false; }
-                            }
-                            Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                                   color: Theme.text-secondary; font-size: Theme.fs-sm;
-                                   horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                    }
-                }
-                Rectangle { height: 1px; background: Theme.border-subtle; }
-
-                // Left nav (27%) + right content (73%)
-                HorizontalLayout {
-                    vertical-stretch: 1;
-                    Rectangle {
-                        horizontal-stretch: 27;
-                        background: Theme.bg-panel-alt;
-                        VerticalLayout {
-                            padding: 8px;
-                            spacing: 2px;
-                            alignment: start;
-                            Rectangle {
-                                height: 30px;
-                                border-radius: Theme.radius-sm;
-                                background: root.ifd-page == "font"
-                                    ? Theme.bg-active
-                                    : (nav-font-ta.has-hover ? Theme.bg-hover : transparent);
-                                nav-font-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.ifd-page = "font"; }
-                                }
-                                HorizontalLayout {
-                                    padding-left: 10px; spacing: 8px;
-                                    Text { text: "\u{E167}"; font-family: "Material Icons";
-                                           color: Theme.text-primary; font-size: Theme.fs-sm; vertical-alignment: center; }
-                                    Text { text: root.lang-en ? "Font" : "字体";
-                                           color: Theme.text-primary; font-size: Theme.fs-md;
-                                           vertical-alignment: center; horizontal-stretch: 1; }
-                                }
-                            }
-                            Rectangle {
-                                height: 30px;
-                                border-radius: Theme.radius-sm;
-                                background: root.ifd-page == "sftp"
-                                    ? Theme.bg-active
-                                    : (nav-sftp-ta.has-hover ? Theme.bg-hover : transparent);
-                                nav-sftp-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.ifd-page = "sftp"; }
-                                }
-                                HorizontalLayout {
-                                    padding-left: 10px; spacing: 8px;
-                                    // folder icon (matches the SFTP file panel)
-                                    Text { text: "\u{E2C7}"; font-family: "Material Icons";
-                                           color: Theme.text-primary; font-size: Theme.fs-sm; vertical-alignment: center; }
-                                    Text { text: "SFTP";
-                                           color: Theme.text-primary; font-size: Theme.fs-md;
-                                           vertical-alignment: center; horizontal-stretch: 1; }
-                                }
-                            }
-                            // Sidebar page nav (#78).
-                            Rectangle {
-                                height: 30px;
-                                border-radius: Theme.radius-sm;
-                                background: root.ifd-page == "sidebar"
-                                    ? Theme.bg-active
-                                    : (nav-sb-ta.has-hover ? Theme.bg-hover : transparent);
-                                nav-sb-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.ifd-page = "sidebar"; }
-                                }
-                                HorizontalLayout {
-                                    padding-left: 10px; spacing: 8px;
-                                    Text { text: "\u{E5CB}"; font-family: "Material Icons"; // collapse-panel glyph
-                                           color: Theme.text-primary; font-size: Theme.fs-sm; vertical-alignment: center; }
-                                    Text { text: root.lang-en ? "Sidebars" : "侧栏";
-                                           color: Theme.text-primary; font-size: Theme.fs-md;
-                                           vertical-alignment: center; horizontal-stretch: 1; }
-                                }
-                            }
-                            // Session sync page nav (#sync).
-                            Rectangle {
-                                height: 30px;
-                                border-radius: Theme.radius-sm;
-                                background: root.ifd-page == "sync"
-                                    ? Theme.bg-active
-                                    : (nav-sync-ta.has-hover ? Theme.bg-hover : transparent);
-                                nav-sync-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.ifd-page = "sync"; }
-                                }
-                                HorizontalLayout {
-                                    padding-left: 10px; spacing: 8px;
-                                    Text { text: "\u{E627}"; font-family: "Material Icons"; // sync
-                                           color: Theme.text-primary; font-size: Theme.fs-sm; vertical-alignment: center; }
-                                    Text { text: root.lang-en ? "Session sync" : "会话同步";
-                                           color: Theme.text-primary; font-size: Theme.fs-md;
-                                           vertical-alignment: center; horizontal-stretch: 1; }
-                                }
-                            }
-                            Rectangle {
-                                height: 30px;
-                                border-radius: Theme.radius-sm;
-                                background: root.ifd-page == "download"
-                                    ? Theme.bg-active
-                                    : (nav-dl-ta.has-hover ? Theme.bg-hover : transparent);
-                                nav-dl-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.ifd-page = "download"; }
-                                }
-                                HorizontalLayout {
-                                    padding-left: 10px; spacing: 8px;
-                                    Text { text: "\u{E2C4}"; font-family: "Material Icons"; // download
-                                           color: Theme.text-primary; font-size: Theme.fs-sm; vertical-alignment: center; }
-                                    Text { text: root.lang-en ? "Download" : "下载";
-                                           color: Theme.text-primary; font-size: Theme.fs-md;
-                                           vertical-alignment: center; horizontal-stretch: 1; }
-                                }
-                            }
-                        }
-                    }
-                    Rectangle {
-                        horizontal-stretch: 73;
-                        background: Theme.bg-panel;
-                        if root.ifd-page == "font" : VerticalLayout {
-                            padding: 18px;
-                            spacing: 14px;
-                            alignment: start;
-
-                            VerticalLayout {
-                                spacing: 6px;
-                                Text { text: root.lang-en ? "Font family" : "字体";
-                                       color: Theme.text-secondary; font-size: Theme.fs-sm; }
-                                HorizontalLayout {
-                                    ComboBox {
-                                        width: 260px;
-                                        model: root.term-fonts;
-                                        current-value: root.term-font-family;
-                                        selected(v) => { root.set-term-font(v); }
-                                    }
-                                    Rectangle { horizontal-stretch: 1; }
-                                }
-                            }
-
-                            VerticalLayout {
-                                spacing: 6px;
-                                Text { text: root.lang-en ? "Font size" : "字体大小";
-                                       color: Theme.text-secondary; font-size: Theme.fs-sm; }
-                                HorizontalLayout {
-                                    spacing: 10px;
-                                    SpinBox {
-                                        width: 120px;
-                                        value: root.term-font-size / 1px;
-                                        minimum: 8;
-                                        maximum: 32;
-                                        edited(v) => { root.set-term-font-size(v); }
-                                    }
-                                    Text {
-                                        text: (root.term-font-size / 1px) + " px";
-                                        color: Theme.text-muted;
-                                        font-size: Theme.fs-sm;
-                                        vertical-alignment: center;
-                                    }
-                                    Rectangle { horizontal-stretch: 1; }
-                                }
-                            }
-
-                            // Global UI scale (#100): zooms the whole interface
-                            // (not the terminal font, which has its own size above).
-                            VerticalLayout {
-                                spacing: 6px;
-                                Text { text: root.lang-en ? "UI scale" : "界面缩放";
-                                       color: Theme.text-secondary; font-size: Theme.fs-sm; }
-                                HorizontalLayout {
-                                    spacing: 10px;
-                                    SpinBox {
-                                        width: 120px;
-                                        value: round(root.ui-scale * 100);
-                                        minimum: 80;
-                                        maximum: 200;
-                                        edited(v) => { root.set-ui-scale(v); }
-                                    }
-                                    Text {
-                                        text: round(root.ui-scale * 100) + "%";
-                                        color: Theme.text-muted;
-                                        font-size: Theme.fs-sm;
-                                        vertical-alignment: center;
-                                    }
-                                    Rectangle { horizontal-stretch: 1; }
-                                }
-                            }
-
-                            // Live preview row.
-                            Rectangle {
-                                height: 56px;
-                                background: Theme.term-bg;
-                                border-radius: Theme.radius-sm;
-                                border-width: 1px;
-                                border-color: Theme.border-subtle;
-                                Text {
-                                    x: 10px;
-                                    text: "meatshell ~$ echo preview 0123";
-                                    font-family: Theme.term-font-family;
-                                    font-size: Theme.term-font-size;
-                                    color: Theme.term-fg;
-                                    vertical-alignment: center;
-                                    height: parent.height;
-                                }
-                            }
-                        }
-
-                        // --- SFTP page -------------------------------------
-                        if root.ifd-page == "sftp" : VerticalLayout {
-                            padding: 18px;
-                            spacing: 14px;
-                            alignment: start;
-
-                            CheckBox {
-                                text: root.lang-en
-                                    ? "SFTP follows terminal cd"
-                                    : "SFTP 跟随 cd 更新";
-                                // Two-way so the property stays in sync — reopening
-                                // the dialog then shows the right state (#87).
-                                checked <=> root.sftp-follow-cd;
-                                toggled => { root.set-sftp-follow-cd(self.checked); }
-                            }
-                            Text {
-                                text: root.lang-en
-                                    ? "When enabled, a cd in the terminal switches the SFTP panel to the same directory."
-                                    : "勾选后,终端里执行 cd 时,SFTP 面板会自动切换到相同目录。";
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-sm;
-                                wrap: word-wrap;
-                            }
-                        }
-
-                        // --- Sidebars page (#78) ---------------------------
-                        if root.ifd-page == "sidebar" : VerticalLayout {
-                            padding: 18px;
-                            spacing: 14px;
-                            alignment: start;
-
-                            CheckBox {
-                                text: root.lang-en
-                                    ? "Collapse the resource panel by default"
-                                    : "默认收起资源视图面板";
-                                checked <=> root.collapse-sidebar-default;
-                                toggled => { root.set-collapse-sidebar-default(self.checked); }
-                            }
-                            CheckBox {
-                                text: root.lang-en
-                                    ? "Collapse the SFTP panel by default"
-                                    : "默认收起 SFTP 侧栏";
-                                checked <=> root.collapse-sftp-default;
-                                toggled => { root.set-collapse-sftp-default(self.checked); }
-                            }
-                            Text {
-                                text: root.lang-en
-                                    ? "Takes effect on the next launch; useful on low-spec jump hosts where the always-on panels add overhead."
-                                    : "下次启动生效;在低配跳板机上可减少常驻面板的开销。";
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-sm;
-                                wrap: word-wrap;
-                            }
-                        }
-
-                        // --- Session sync page (#sync) ---------------------
-                        if root.ifd-page == "sync" : VerticalLayout {
-                            padding: 18px;
-                            spacing: 14px;
-                            alignment: start;
-
-                            Text {
-                                text: root.lang-en
-                                    ? "Session sync is toggled from the sync icon in the top-right bar. When on, keystrokes are mirrored to all online sessions."
-                                    : "会话同步从右上角的同步图标开关。开启后,输入会同步到所有在线会话。";
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-sm;
-                                wrap: word-wrap;
-                            }
-                            CheckBox {
-                                text: root.lang-en
-                                    ? "Sync file uploads during session sync"
-                                    : "会话同步时文件上传同步";
-                                checked <=> root.sync-upload-enabled;
-                                toggled => { root.set-sync-upload-enabled(self.checked); }
-                            }
-                            Text {
-                                text: root.lang-en
-                                    ? "An uploaded file goes to the same path on each session; if that path doesn't exist there, it goes to that session's current SFTP directory."
-                                    : "上传一个文件会默认上传到相应第一个会话的同样路径，若路径不存在则上传到当前sftp停留的路径";
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-sm;
-                                wrap: word-wrap;
-                            }
-                        }
-
-                        // --- Download page (#87) -----------------------
-                        if root.ifd-page == "download" : VerticalLayout {
-                            padding: 18px;
-                            spacing: 14px;
-                            alignment: start;
-
-                            CheckBox {
-                                text: root.lang-en
-                                    ? "Always ask where to save"
-                                    : "总是询问保存去何处";
-                                checked <=> root.download-always-ask;
-                                toggled => { root.set-download-always-ask(self.checked); }
-                            }
-                            Text {
-                                text: root.lang-en
-                                    ? "When enabled, every download prompts for a save location instead of using the preset download folder."
-                                    : "勾选后,每次下载都会询问保存位置,而不是直接保存到预设的下载目录。";
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-sm;
-                                wrap: word-wrap;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // --- Keyboard shortcuts dialog (#103) ---------------------------------
     Rectangle {
@@ -2971,6 +2505,122 @@ export component AppWindow inherits Window {
                         text: @tr("Connect");
                         clicked => { root.cred-accept(); }
                     }
+                }
+            }
+        }
+    }
+
+    // --- Interface settings (modal overlay) -------------------------------
+    // Embedded in the main window (not a detached window), so it can't be
+    // dragged outside the parent. The dim backdrop + a focus-grabbing scope make
+    // it modal: no mouse or keyboard input reaches the app while it's open. The
+    // card itself is draggable by its title bar but clamped inside the window.
+    if root.interface-open : Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000080;            // dim backdrop
+        // Grab focus and swallow keys so nothing leaks to the terminal beneath.
+        FocusScope {
+            init => { self.focus(); }
+            key-pressed(e) => { accept }
+            key-released(e) => { accept }
+        }
+        // Modal: clicking the backdrop does nothing (only the ✕ closes it).
+        TouchArea { scroll-event(e) => { accept } }
+
+        Rectangle {
+            x: root.ifd-x;
+            y: root.ifd-y;
+            width: 660px;
+            height: 430px;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #000000a0;
+            clip: true;
+            TouchArea {}   // swallow inside clicks so they don't hit the backdrop
+
+            VerticalLayout {
+                // Title bar — drag to move (clamped inside the window).
+                Rectangle {
+                    height: 44px;
+                    background: Theme.bg-elevated;
+                    title-drag := TouchArea {
+                        mouse-cursor: move;
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down) {
+                                root.ifd-dragging = true;
+                                root.ifd-base-x = root.ifd-x;
+                                root.ifd-base-y = root.ifd-y;
+                                root.ifd-grab-x = self.absolute-position.x + self.mouse-x;
+                                root.ifd-grab-y = self.absolute-position.y + self.mouse-y;
+                            } else if (e.kind == PointerEventKind.up) {
+                                root.ifd-dragging = false;
+                            }
+                        }
+                        moved => {
+                            if (root.ifd-dragging) {
+                                root.ifd-x = clamp(
+                                    root.ifd-base-x + (self.absolute-position.x + self.mouse-x - root.ifd-grab-x),
+                                    0px, max(0px, root.width - 660px));
+                                root.ifd-y = clamp(
+                                    root.ifd-base-y + (self.absolute-position.y + self.mouse-y - root.ifd-grab-y),
+                                    0px, max(0px, root.height - 430px));
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 10px;
+                        Text {
+                            text: root.lang-en ? "Settings" : "设置";
+                            color: Theme.text-primary;
+                            font-size: 14px;
+                            font-weight: 700;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 24px; height: 24px;
+                                border-radius: Theme.radius-sm;
+                                background: if-close-ta.has-hover ? Theme.bg-hover : transparent;
+                                if-close-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.interface-open = false; }
+                                }
+                                Text { text: "\u{E5CD}"; font-family: "Material Icons";
+                                       color: Theme.text-secondary; font-size: 15px;
+                                       horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                }
+                Rectangle { height: 1px; background: Theme.border-subtle; }
+
+                InterfacePanel {
+                    vertical-stretch: 1;
+                    lang-en: root.lang-en;
+                    term-fonts: root.term-fonts;
+                    term-font-family: root.term-font-family;
+                    term-font-size: root.term-font-size;
+                    ui-scale: root.ui-scale;
+                    sftp-follow-cd <=> root.sftp-follow-cd;
+                    collapse-sidebar-default <=> root.collapse-sidebar-default;
+                    collapse-sftp-default <=> root.collapse-sftp-default;
+                    sync-upload-enabled <=> root.sync-upload-enabled;
+                    download-always-ask <=> root.download-always-ask;
+                    set-term-font(v) => { root.set-term-font(v); }
+                    set-term-font-size(v) => { root.set-term-font-size(v); }
+                    set-ui-scale(v) => { root.set-ui-scale(v); }
+                    set-sftp-follow-cd(v) => { root.set-sftp-follow-cd(v); }
+                    set-collapse-sidebar-default(v) => { root.set-collapse-sidebar-default(v); }
+                    set-collapse-sftp-default(v) => { root.set-collapse-sftp-default(v); }
+                    set-sync-upload-enabled(v) => { root.set-sync-upload-enabled(v); }
+                    set-download-always-ask(v) => { root.set-download-always-ask(v); }
                 }
             }
         }
