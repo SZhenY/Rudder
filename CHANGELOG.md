@@ -5,7 +5,39 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.4.13] - 2026-06-21
+
+### Fixed / 修复
+
+- **堡垒机(JumpServer 等)密码登录“认证失败” (#86)。** 这类堡垒机默认只放行
+  `keyboard-interactive` 认证、关闭 `password` 方法,旧版只尝试 `password`,因此直接
+  “认证失败”——Xshell/MobaXterm/WindTerm 能登正是因为会自动回退。现在密码认证失败后会
+  断开并重连一条全新连接,改用 `keyboard-interactive` 以密码应答服务器提示。注意:russh
+  在一次失败的认证后无法在同一句柄上切换认证方法(会卡死),因此回退必须重连。已在真实的
+  keyboard-interactive-only sshd 上验证登录成功。
+  **Password login through bastions (JumpServer etc.) failed with “authentication
+  failed” (#86).** Such bastions disable the `password` SSH method and only accept
+  `keyboard-interactive`; the old code only tried `password`, so it failed outright —
+  other clients get in because they fall back automatically. Now, on password-auth
+  failure we disconnect and reconnect on a fresh handle, then authenticate via
+  `keyboard-interactive`, answering each prompt with the password. (russh hangs if a
+  second auth method is attempted on a handle whose first attempt already failed, so a
+  reconnect is required.) Verified against a real keyboard-interactive-only sshd.
+
 ### Changed / 优化
+
+- **设置·界面简约重做。** 右侧从竖排改为「分区 + 标签左·控件右」的紧凑布局(iOS 风
+  开关、`[− 值 +]` 步进器、固定字号不随界面缩放放大,解决“字体过大”观感);仍为内嵌
+  模态浮层,打开时遮罩吞鼠标 + 抢焦点吞键盘,禁止对主窗口的一切输入,卡片只能在窗口内拖动。
+  **Redesigned Interface settings.** The right pane moves from stacked fields to a
+  compact “section + label-left · control-right” layout (iOS-style switches,
+  `[− value +]` steppers, fixed typography that ignores UI scale — fixing the
+  “fonts too big” feel). Still an embedded modal overlay that blocks all input while
+  open (veil swallows mouse, focus scope swallows keys); the card only drags within
+  the window.
+
+- **初始窗口放大到 1440×900。** 从 1200×760 提升到更舒适的默认尺寸,对齐同类客户端。
+  **Larger default window, 1440×900.** Up from 1200×760, matching comparable clients.
 
 - **Quieter startup logs.** Silenced fontdb's harmless "malformed font" warning for
   system fonts it can't parse but skips anyway (e.g. Windows' `mstmc.ttf`), and
@@ -16,6 +48,20 @@ All notable changes are documented here. 本文件记录所有重要变更。
   降为 `debug`——只有真正的字体加载失败才会告警。`error.log` 保持干净。
 
 ### Added / 新增
+
+- **侧栏可拖动调宽。** 在资源面板与主区之间加了可拖动分隔条,宽度可在 160–520px 间
+  调节并持久化到配置(重启保留);折叠侧栏时分隔条自动隐藏,拖动期间禁用折叠动画以跟手。
+  **Drag-resize the sidebar.** A draggable splitter sits between the resource panel and
+  the main area; the width is adjustable within 160–520px and persisted to config
+  (survives restart). The splitter hides when the sidebar is collapsed, and the
+  collapse animation is disabled while dragging for 1:1 tracking.
+
+- **进程监视独立窗口。** 进程监视从内嵌浮层提升为真正的独立 OS 窗口,可拖出主窗口、
+  拖到第二块屏幕;无边框自绘标题栏 + 右下角缩放手柄,与主窗口实时共享同一份进程数据。
+  **Detachable process-monitor window.** The process monitor is now a real top-level OS
+  window that can be dragged outside the main window or onto a second monitor, with a
+  frameless custom titlebar and a bottom-right resize grip; it shares one live process
+  model with the main window.
 
 - **Group quick commands, collapsible (#55).** Quick commands now take an optional
   group/folder name. Leaving it empty drops the command into the implicit
