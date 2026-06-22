@@ -4,6 +4,24 @@ All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
 ## [Unreleased]
+### Added / 新增
+
+- **便携模式:配置改存到程序同目录的 `config/`(#141)。** 用户数据(`sessions.json`、
+  加密密钥、`known_hosts`、`error.log`)现在优先存放在**可执行文件旁的 `config/` 文件夹**,
+  整个程序可以随 U 盘携带,也不再往用户目录(`%APPDATA%`)里塞东西。当程序装在只读位置
+  (如 Program Files / `/usr`)时,自动回退到原来的「按用户的系统配置目录」——这也是旧版本
+  的存放位置,所以**老安装原样可用**。首次切到便携目录时,会把旧用户目录里的数据**复制**
+  过去(只复制不删除、不覆盖已存在文件,作为兜底),升级用户不会丢失已保存的会话。
+  **Portable mode: config moves to a `config/` folder next to the app (#141).** User data
+  (`sessions.json`, the encryption key, `known_hosts`, `error.log`) is now stored, by
+  preference, in a **`config/` folder beside the executable**, so the whole app can travel
+  on a USB stick and stops cluttering the user profile (`%APPDATA%`). When the app is
+  installed somewhere read-only (Program Files / `/usr`), it falls back to the per-user OS
+  config dir — the same place older versions used, so **existing installs keep working
+  untouched**. On the first launch that lands on the portable dir, data from the legacy
+  per-user dir is **copied** over (copy-not-move, never overwriting, as a safety net) so
+  upgrading users don't lose saved sessions.
+
 
 ## [0.4.15] - 2026-06-23
 

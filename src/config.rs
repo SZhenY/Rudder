@@ -1,8 +1,13 @@
 //! Session / application configuration.
 //!
-//! Persists a simple JSON file under the platform's standard config dir
-//! (e.g. `%APPDATA%/meatshell/sessions.json` on Windows,
-//!  `~/.config/meatshell/sessions.json` on Linux/macOS).
+//! Persists a simple JSON file in the app's data directory. Resolution is
+//! **portable-first** (#141): a `config/` folder next to the executable is
+//! preferred so the whole app can ride along on a USB stick and never litters
+//! the user profile. When the executable lives somewhere read-only (a
+//! system-wide install under Program Files / `/usr`), it falls back to the
+//! per-user OS config dir (e.g. `%APPDATA%/meatshell`, `~/.config/meatshell`),
+//! which is also where every pre-0.4.15 version stored its data — so existing
+//! installs keep working untouched. See [`data_dir`].
 //!
 //! ## Password encryption
 //!
@@ -20,6 +25,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -32,6 +38,113 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zeroize::Zeroize;
+
+// ── Data directory resolution (portable-first, #141) ──────────────────────────
+//
+// All user data — sessions.json, secret.key, known_hosts, error.log — lives in
+// ONE directory resolved here, and `errlog` / `known_hosts` route through it too.
+
+static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// The single directory holding all user data (sessions, encryption key,
+/// known_hosts, error.log). Resolved once and cached; any one-time migration
+/// from the legacy per-user dir runs exactly once.
+///
+/// Portable-first: prefers a `config/` folder beside the executable, falling
+/// back to the per-user OS config dir when the exe dir is read-only (#141).
+pub fn data_dir() -> PathBuf {
+    DATA_DIR.get_or_init(resolve_data_dir).clone()
+}
+
+/// Pre-0.4.15 location: the per-user OS config dir
+/// (`%APPDATA%/meatshell`, `~/.config/meatshell`, …).
+fn legacy_data_dir() -> Option<PathBuf> {
+    ProjectDirs::from("dev", "meatshell", "meatshell")
+        .map(|d| d.config_dir().to_path_buf())
+}
+
+/// Portable location: a `config/` folder beside the executable.
+fn portable_data_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.join("config"))
+}
+
+/// True only if we can actually create and write a file in `dir` — Program Files
+/// and other system locations can reject writes even when the dir appears to
+/// exist, so a real write probe is the reliable test.
+fn dir_is_writable(dir: &Path) -> bool {
+    let probe = dir.join(format!(".write_probe_{}", std::process::id()));
+    match fs::write(&probe, b"") {
+        Ok(()) => {
+            let _ = fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn resolve_data_dir() -> PathBuf {
+    let legacy = legacy_data_dir();
+
+    if let Some(portable) = portable_data_dir() {
+        // Already a portable install → keep using it (nothing to migrate).
+        if portable.exists() && dir_is_writable(&portable) {
+            return portable;
+        }
+        // Otherwise try to claim the portable dir. This succeeds only where the
+        // exe directory is writable (i.e. not a Program Files / system install),
+        // which is exactly when portable mode makes sense.
+        if fs::create_dir_all(&portable).is_ok() && dir_is_writable(&portable) {
+            if let Some(ref legacy) = legacy {
+                migrate_legacy(legacy, &portable);
+            }
+            return portable;
+        }
+    }
+
+    // Fall back to the legacy per-user dir (also the pre-0.4.15 location). Last
+    // resort: a temp dir, so the app still launches if neither is available.
+    let dir = legacy.unwrap_or_else(|| std::env::temp_dir().join("meatshell"));
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+/// On the first launch that lands on the portable dir, copy user data over from
+/// the legacy per-user dir so upgrading users keep their saved sessions. The
+/// originals are left in place (copy, not move) as a safety net, and existing
+/// destination files are never overwritten (#141).
+fn migrate_legacy(legacy: &Path, portable: &Path) {
+    if legacy == portable {
+        return;
+    }
+    for name in ["sessions.json", "secret.key", "known_hosts"] {
+        let src = legacy.join(name);
+        let dst = portable.join(name);
+        if src.exists() && !dst.exists() {
+            match fs::copy(&src, &dst) {
+                Ok(_) => {
+                    // Keep the key owner-only on Unix (copy preserves bytes, not
+                    // necessarily the mode).
+                    #[cfg(unix)]
+                    if name == "secret.key" {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ =
+                            fs::set_permissions(&dst, fs::Permissions::from_mode(0o600));
+                    }
+                    tracing::info!(
+                        "migrated {name} to portable config dir {}",
+                        portable.display()
+                    );
+                }
+                Err(e) => tracing::warn!(
+                    "data migration: failed to copy {} → {}: {e}",
+                    src.display(),
+                    dst.display()
+                ),
+            }
+        }
+    }
+}
 
 /// A secret string (e.g. a session password) whose heap buffer is zeroed when
 /// it is dropped, so plaintext credentials don't survive in freed memory and
@@ -522,9 +635,7 @@ impl ConfigStore {
     }
 
     fn config_path() -> Result<PathBuf> {
-        let dirs = ProjectDirs::from("dev", "meatshell", "meatshell")
-            .context("could not determine user config directory")?;
-        Ok(dirs.config_dir().join("sessions.json"))
+        Ok(data_dir().join("sessions.json"))
     }
 
     pub fn sessions(&self) -> &[Session] {

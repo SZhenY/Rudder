@@ -15,7 +15,6 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use directories::ProjectDirs;
 use ssh_key::{HashAlg, PublicKey};
 
 /// Result of checking a server key against the store.
@@ -34,11 +33,10 @@ fn id(host: &str, port: u16) -> String {
     format!("{host}:{port}")
 }
 
-/// Path to the known_hosts file (alongside sessions.json). `None` if the user
-/// config directory can't be determined.
+/// Path to the known_hosts file (alongside sessions.json, in the portable-first
+/// data dir — #141).
 fn path() -> Option<PathBuf> {
-    let dirs = ProjectDirs::from("dev", "meatshell", "meatshell")?;
-    Some(dirs.config_dir().join("known_hosts"))
+    Some(crate::config::data_dir().join("known_hosts"))
 }
 
 /// The presented key in its canonical OpenSSH one-line form (`type base64`,
