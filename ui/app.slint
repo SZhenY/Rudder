@@ -20,7 +20,7 @@ import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
-import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
+import { LabeledInput, PrimaryButton, GhostButton, DockExpandButton } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
@@ -267,7 +267,11 @@ export component AppWindow inherits Window {
     // The top-right toolbar icons float over the tab row; when the sidebar docks
     // top/right it covers that corner, so shift the icons to stay over the tabs.
     property <length> toolbar-x-off:
-        (root.sidebar-dock == "right" && !root.sidebar-collapsed) ? root.sidebar-width + 4px : 0px;
+        (root.sidebar-dock == "right" && !root.sidebar-collapsed) ? root.sidebar-width + 4px
+        // Docked right + collapsed: shift left to leave room for the expand
+        // button at the far-right corner (#dock).
+      : (root.sidebar-dock == "right" && root.sidebar-collapsed) ? 30px
+      : 0px;
     property <length> toolbar-y-off:
         (root.sidebar-dock == "top" && !root.sidebar-collapsed) ? root.sidebar-height + 4px : 0px;
     in-out property <bool> about-open: false;     // centered About dialog
@@ -622,6 +626,10 @@ export component AppWindow inherits Window {
         property <length> sb-w: root.sidebar-collapsed ? 0px : root.sidebar-width;
         property <length> sb-h: root.sidebar-collapsed ? 0px : root.sidebar-height;
         property <length> sp: root.sidebar-collapsed ? 0px : 4px;
+        // Docked bottom + collapsed: reserve a thin full-width expand strip at the
+        // very bottom (the bottom edge is full of the command bar / SFTP status, so
+        // a floating corner button would overlap them) (#dock).
+        property <length> bottom-strip-h: (root.sidebar-dock == "bottom" && root.sidebar-collapsed) ? 22px : 0px;
 
         // Left sidebar — collapsible and drag-resizable, dockable to any edge.
         // The animation is disabled while dragging so the splitter tracks the
@@ -736,7 +744,7 @@ export component AppWindow inherits Window {
             x: root.sidebar-dock == "left" ? parent.sb-w + parent.sp : 0px;
             y: root.sidebar-dock == "top"  ? parent.sb-h + parent.sp : 0px;
             width:  root.sidebar-horizontal ? parent.width - parent.sb-w - parent.sp : parent.width;
-            height: root.sidebar-horizontal ? parent.height : parent.height - parent.sb-h - parent.sp;
+            height: root.sidebar-horizontal ? parent.height : parent.height - parent.sb-h - parent.sp - parent.bottom-strip-h;
             clip: true;
             VerticalLayout {
             spacing: 0;
@@ -746,6 +754,9 @@ export component AppWindow inherits Window {
                 // The sidebar collapse toggle now lives inside the panel header
                 // (so it follows the panel to any edge); expand-when-collapsed is
                 // a floating button at the docked edge below (#dock).
+                // When docked left/top + collapsed, leave room on the far left so
+                // the expand button sits just left of the first tab (not over it).
+                if (root.sidebar-dock == "left" || root.sidebar-dock == "top") && root.sidebar-collapsed : Rectangle { width: 30px; }
                 TabBar {
                     horizontal-stretch: 1;
                     // Reserve room for the top-right toolbar icons that sit over
@@ -917,34 +928,13 @@ export component AppWindow inherits Window {
             }
         }
 
-        // Expand button — shown only while the panel is collapsed, anchored to
-        // the edge it's docked on so it's always reachable to bring it back.
-        if root.sidebar-collapsed : Rectangle {
-            width: 24px; height: 24px;
-            x: root.sidebar-dock == "right"  ? parent.width - self.width - 2px
-             : root.sidebar-dock == "top" || root.sidebar-dock == "bottom" ? 6px
-             : 2px;
-            // Left/right docks: centre vertically so it doesn't collide with the
-            // top-right toolbar icons (settings/theme/…); top/bottom: at the edge.
-            y: root.sidebar-dock == "bottom" ? parent.height - self.height - 2px
-             : root.sidebar-dock == "top"    ? 2px
-             : (parent.height - self.height) / 2;
-            border-radius: Theme.radius-sm;
-            background: exp-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
-            border-width: 1px;
-            border-color: Theme.border-subtle;
-            exp-ta := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.sidebar-collapsed = false; }
-            }
-            Text {
-                text: root.sidebar-dock == "right"  ? "\u{E5CB}"   // chevron_left
-                    : root.sidebar-dock == "top"    ? "\u{E5CF}"   // expand_more
-                    : root.sidebar-dock == "bottom" ? "\u{E5CE}"   // expand_less
-                    : "\u{E5CC}";                                  // chevron_right
-                font-family: "Material Icons"; font-size: 16px; color: Theme.text-secondary;
-                horizontal-alignment: center; vertical-alignment: center;
-            }
+        // Collapsed → small per-edge expand button (shared with SFTP). Left/right/
+        // top sit in line with the tab / toolbar row (those shift to make room);
+        // bottom sits in the reserved 22px gap (bottom-strip-h) so it never
+        // overlaps the command bar / SFTP status bar above (#dock).
+        if root.sidebar-collapsed : DockExpandButton {
+            dock-edge: root.sidebar-dock;
+            expand => { root.sidebar-collapsed = false; }
         }
 
         // Drag-to-dock snap overlay — four edge zones; the one under the cursor
@@ -2414,6 +2404,7 @@ export component AppWindow inherits Window {
                        color: Theme.text-muted; font-size: Theme.fs-xs; }
                 ShortcutRow { keys: "Ctrl+Shift+C"; desc: root.lang-en ? "Copy selection" : "复制选中内容"; }
                 ShortcutRow { keys: "Ctrl+V"; desc: root.lang-en ? "Paste" : "粘贴"; }
+                ShortcutRow { keys: "Ctrl+F"; desc: root.lang-en ? "Find in terminal" : "查找"; }
                 ShortcutRow { keys: root.lang-en ? "Drag" : "鼠标拖动"; desc: root.lang-en ? "Select text" : "选择文本"; }
                 ShortcutRow { keys: root.lang-en ? "Wheel / Scrollbar" : "滚轮 / 滚动条"; desc: root.lang-en ? "Scroll history" : "滚动历史"; }
 

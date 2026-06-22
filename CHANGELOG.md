@@ -32,6 +32,17 @@ All notable changes are documented here. 本文件记录所有重要变更。
   saved on exit and restored on the next launch — so your preferred window size and
   panel arrangement stick.
 
+### Changed / 优化
+
+- **历史命令的搜索框移到下拉框底部 (#131)。** 命令历史下拉向上展开,搜索框原先在顶部、
+  位置随历史条数上下浮动、不好找;现在固定在下拉框**底部**(紧挨命令输入框),列表在其上方
+  填充并可滚动——位置稳定、一眼可见,和 FinalShell 一致。
+  **History search box moved to the bottom of the dropdown (#131).** The command-history
+  dropdown opens upward; the search box used to sit at the top, drifting up and down with
+  the number of entries and hard to find. It's now pinned to the **bottom** of the
+  dropdown (right above the command input), with the scrollable list filling the space
+  above it — a fixed, immediately visible spot, matching FinalShell.
+
 ### Fixed / 修复
 
 - **macOS 欢迎页布局错位。** 欢迎页的标题、副标题、快速连接卡片在 macOS 上被拉开(标题与

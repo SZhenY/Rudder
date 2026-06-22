@@ -168,3 +168,51 @@ export component Sparkline inherits Rectangle {
         border-radius: 1px;
     }
 }
+
+// --- DockExpandButton ------------------------------------------------------
+// The little button shown when a dockable panel is collapsed, anchored to the
+// edge it was docked on (chevron points toward where the panel reopens). Shared
+// by the resource panel and the SFTP panel so they collapse/expand identically.
+// The host is responsible for any reserved gap (e.g. the bottom edge) so this
+// button never overlaps neighbouring chrome (#dock).
+export component DockExpandButton inherits Rectangle {
+    in property <string> dock-edge;   // left | right | top | bottom
+    // For top/bottom docks, hug the right corner instead of the left. SFTP uses
+    // this so the expand button stays on the side its controls live on.
+    in property <bool> hug-right: false;
+    callback expand();
+    // Root is a transparent overlay that fills the host area; the actual button
+    // positions itself within it (a component's own root may not reference
+    // `parent`, so the button anchors to this filled overlay instead).
+    background: transparent;
+    btn := Rectangle {
+        width: 24px;
+        height: 22px;
+        x: root.dock-edge == "right" ? parent.width - self.width - 2px
+         : (root.dock-edge == "top" || root.dock-edge == "bottom")
+           ? (root.hug-right ? parent.width - self.width - 6px : 6px)
+         : 2px;
+        y: root.dock-edge == "bottom" ? parent.height - self.height - 1px : 8px;
+        border-radius: Theme.radius-sm;
+        background: ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+        border-width: 1px;
+        border-color: Theme.border-subtle;
+        ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.expand(); }
+        }
+        Text {
+            text: root.dock-edge == "right"  ? "\u{E5CB}"   // chevron_left
+                : root.dock-edge == "top"    ? "\u{E5CF}"   // expand_more
+                : root.dock-edge == "bottom" ? "\u{E5CE}"   // expand_less
+                : "\u{E5CC}";                                // chevron_right (left dock)
+            font-family: "Material Icons";
+            font-size: 16px;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+}

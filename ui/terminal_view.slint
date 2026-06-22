@@ -1,5 +1,6 @@
 import { Theme } from "theme.slint";
 import { SftpPanel, SftpEntry, SftpTreeNode } from "sftp_panel.slint";
+import { DockExpandButton } from "widgets.slint";
 
 // Embed the terminal fonts here too so the cell-probe Text below measures
 // with the CORRECT font (the built-in Meatshell Mono), not a system fallback.
@@ -324,12 +325,15 @@ export component TerminalView inherits Rectangle {
         property <length> sf-w: root.sftp-collapsed ? 0px : root.sftp-panel-width;
         property <length> sf-h: root.sftp-collapsed ? 0px : root.sftp-panel-height;
         property <length> sp:   root.sftp-collapsed ? 0px : 4px;
+        // Bottom dock + collapsed → reserve a blank 22px gap at the bottom so the
+        // corner expand button (DockExpandButton) never overlaps the command bar.
+        property <length> bottom-strip-h: (root.sftp-dock == "bottom" && root.sftp-collapsed) ? 22px : 0px;
 
         central := Rectangle {
             x: root.sftp-dock == "left" ? parent.sf-w + parent.sp : 0px;
             y: root.sftp-dock == "top"  ? parent.sf-h + parent.sp : 0px;
             width:  root.sftp-horizontal ? parent.width - parent.sf-w - parent.sp : parent.width;
-            height: root.sftp-horizontal ? parent.height : parent.height - parent.sf-h - parent.sp;
+            height: root.sftp-horizontal ? parent.height : parent.height - parent.sf-h - parent.sp - parent.bottom-strip-h;
             clip: true;
             VerticalLayout {
             spacing: 0;
@@ -613,8 +617,14 @@ export component TerminalView inherits Rectangle {
                 }
 
                 key-pressed(event) => {
+                    // ── Ctrl+F: open the find bar (mirrors right-click → Find) ──
+                    if (event.modifiers.control && !event.modifiers.shift
+                            && (event.text == "f" || event.text == "F"
+                                || event.text == "\u{0006}")) {
+                        root.find-active = true;
+                        accept
                     // ── Ctrl+Shift+C: copy terminal buffer ───────────────────
-                    if (event.modifiers.control && event.modifiers.shift
+                    } else if (event.modifiers.control && event.modifiers.shift
                             && (event.text == "c" || event.text == "C"
                                 || event.text == "\u{0003}")) {
                         root.copy-terminal-text();
@@ -1135,39 +1145,11 @@ export component TerminalView inherits Rectangle {
                 VerticalLayout {
                     padding: 4px;
                     spacing: 4px;
-                    // Search box (#101): filters the list below. ↑/↓ recall in the
-                    // input box still uses the full history.
-                    Rectangle {
-                        height: 30px;
-                        border-radius: Theme.radius-sm;
-                        background: Theme.bg-root;
-                        border-width: 1px;
-                        border-color: hist-search.has-focus ? Theme.accent : Theme.border-subtle;
-                        HorizontalLayout {
-                            padding-left: 8px; padding-right: 8px; spacing: 4px;
-                            Text { text: "\u{E8B6}"; font-family: "Material Icons";
-                                   color: Theme.text-muted; font-size: Theme.fs-sm;
-                                   vertical-alignment: center; }
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                hist-search := TextInput {
-                                    width: 100%; height: 100%;
-                                    vertical-alignment: center;
-                                    color: Theme.text-primary;
-                                    font-family: Theme.ui-font-family;
-                                    font-size: Theme.fs-sm;
-                                    single-line: true;
-                                    edited => { root.search-history(self.text); }
-                                }
-                                if hist-search.text == "" : Text {
-                                    text: @tr("Search history");
-                                    color: Theme.text-muted; font-size: Theme.fs-sm;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-                    }
+                    // History list fills the popup; the search box is pinned at the
+                    // bottom (next to the command input) so it stays in a fixed,
+                    // easy-to-find spot no matter how tall the list is (#131).
                     Flickable {
+                    vertical-stretch: 1;
                     viewport-width: self.width;
                     viewport-height: max(self.height, h-col.preferred-height);
                     h-col := VerticalLayout {
@@ -1248,6 +1230,39 @@ export component TerminalView inherits Rectangle {
                             }
                         }
                     }
+                    }
+                    // Search box (#101) pinned at the bottom, right above the
+                    // command input, so it stays in a fixed, easy-to-find spot no
+                    // matter how tall the list is — like FinalShell (#131).
+                    Rectangle {
+                        height: 30px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-root;
+                        border-width: 1px;
+                        border-color: hist-search.has-focus ? Theme.accent : Theme.border-subtle;
+                        HorizontalLayout {
+                            padding-left: 8px; padding-right: 8px; spacing: 4px;
+                            Text { text: "\u{E8B6}"; font-family: "Material Icons";
+                                   color: Theme.text-muted; font-size: Theme.fs-sm;
+                                   vertical-alignment: center; }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                hist-search := TextInput {
+                                    width: 100%; height: 100%;
+                                    vertical-alignment: center;
+                                    color: Theme.text-primary;
+                                    font-family: Theme.ui-font-family;
+                                    font-size: Theme.fs-sm;
+                                    single-line: true;
+                                    edited => { root.search-history(self.text); }
+                                }
+                                if hist-search.text == "" : Text {
+                                    text: @tr("Search history");
+                                    color: Theme.text-muted; font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1396,36 +1411,15 @@ export component TerminalView inherits Rectangle {
             }
         }
 
-        // Expand button — the collapsed panel fully disappears, so float a clear
-        // expand button on whichever edge it was docked to (like the resource
-        // panel). Chevron points away from the edge, toward where it reopens.
-        if root.sftp-collapsed : Rectangle {
-            width: 24px; height: 24px;
-            x: root.sftp-dock == "right"  ? parent.width - self.width - 2px
-             : root.sftp-dock == "top" || root.sftp-dock == "bottom" ? 6px
-             : 2px;
-            // Centre vertically on left/right edges (consistent with the resource
-            // panel); at the edge for top/bottom.
-            y: root.sftp-dock == "bottom" ? parent.height - self.height - 2px
-             : root.sftp-dock == "top"    ? 2px
-             : (parent.height - self.height) / 2;
-            border-radius: Theme.radius-sm;
-            background: sftp-exp-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
-            border-width: 1px; border-color: Theme.border-subtle;
-            sftp-exp-ta := TouchArea {
-                mouse-cursor: pointer;
-                clicked => {
-                    root.sftp-panel-height = root.sftp-saved-height;
-                    root.sftp-collapsed = false;
-                }
-            }
-            Text {
-                text: root.sftp-dock == "right"  ? "\u{E5CB}"   // chevron_left
-                    : root.sftp-dock == "top"    ? "\u{E5CF}"   // expand_more
-                    : root.sftp-dock == "bottom" ? "\u{E5CE}"   // expand_less
-                    : "\u{E5CC}";                               // chevron_right (left dock)
-                font-family: "Material Icons"; font-size: 16px; color: Theme.text-secondary;
-                horizontal-alignment: center; vertical-alignment: center;
+        // Collapsed → small per-edge expand button (shared with the resource
+        // panel). Bottom sits in the reserved 22px gap (bottom-strip-h) so it
+        // never overlaps the command bar (#dock).
+        if root.sftp-collapsed : DockExpandButton {
+            dock-edge: root.sftp-dock;
+            hug-right: true;   // SFTP controls live on the right, keep the button there
+            expand => {
+                root.sftp-panel-height = root.sftp-saved-height;
+                root.sftp-collapsed = false;
             }
         }
         }
