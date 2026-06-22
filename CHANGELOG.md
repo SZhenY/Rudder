@@ -5,9 +5,15 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
-## [0.4.14] - 2026-06-22
+## [0.4.15] - 2026-06-23
 
 ### Added / 新增
+
+- **终端内查找:Ctrl+F 唤出查找栏。** 在会话里按 Ctrl+F 即可弹出顶部查找栏(与右键菜单
+  → 查找一致),输入即时高亮所有匹配,Esc 关闭;已在「设置 → 快捷键」中登记。
+  **Find in terminal: Ctrl+F opens the find bar.** Press Ctrl+F in a session to bring up
+  the find bar (same as right-click → Find); matches highlight as you type and Esc closes
+  it. Now listed under Settings → Shortcuts.
 
 - **面板可拖动吸附停靠(资源面板 + SFTP)。** 资源面板和 SFTP 面板现在都能拖到四条边
   (上/下/左/右):拖动面板手柄时,四条边浮现高亮放置区,松手即吸附到那条边。两个面板都
@@ -43,7 +49,26 @@ All notable changes are documented here. 本文件记录所有重要变更。
   dropdown (right above the command input), with the scrollable list filling the space
   above it — a fixed, immediately visible spot, matching FinalShell.
 
+- **SFTP 折叠按钮与资源面板统一,并保持在右侧。** 两个面板现在共用同一个展开按钮组件;
+  SFTP 的控件本就在右侧,折叠后的展开按钮也随之停在右下/右上,不再突兀地跳到左边。
+  **SFTP collapse button unified with the resource panel, kept on the right.** Both panels
+  now share one expand-button component; since SFTP's controls live on the right, its
+  collapsed expand button stays at the bottom-/top-right instead of jumping to the left.
+
 ### Fixed / 修复
+
+- **含中文的行复制/查找列错位 (#132)。** 终端纯文本按「一字一字符」存储,而中文(CJK)字
+  在网格上占两列;复制时把选区列号当作字符下标,导致丢失的字符数恰好等于选区前面的中文
+  字数(如选「1pctl update password」实际只复制到「e password」)。现引入 unicode-width
+  做「字符↔网格列」换算:复制所见即所得,在宽字形第二格起选也会整字纳入;查找高亮框(同源
+  问题)改按网格列绘制,中文行之后也能精确罩住文字。
+  **Copy & find column drift on lines with CJK glyphs (#132).** The terminal's plain text
+  stores one char per glyph, but a wide (CJK) glyph spans two grid cells; copy treated a
+  selection's column as a char index, dropping as many characters as there were wide glyphs
+  before the selection (selecting “1pctl update password” yielded only “e password”). A
+  char-to-column conversion (via unicode-width) makes copy WYSIWYG — anchoring on the
+  second cell of a wide glyph still grabs the whole glyph — and find highlights (same root
+  cause) now sit on grid columns so they line up after CJK.
 
 - **macOS 欢迎页布局错位。** 欢迎页的标题、副标题、快速连接卡片在 macOS 上被拉开(标题与
   副标题间出现大空隙)。现在 Welcome 显式填满内容区、头部固定在顶部按自然高度排列,卡片填满
