@@ -28,6 +28,12 @@ export component ProcWindow inherits Window {
     in-out property <bool> dark-mode <=> Theme.dark;
     in-out property <float> ui-scale <=> Theme.ui-scale;
     in-out property <string> ui-font-family <=> Theme.ui-font-family;
+    // Immersive wallpaper — mirrored from the main window so this detached window
+    // gets the same frosted-glass backdrop (synced in app.rs::sync_proc_theme).
+    in-out property <image> wallpaper-img <=> Theme.wallpaper;
+    in-out property <bool> wallpaper-active <=> Theme.wallpaper-active;
+    in-out property <color> wp-accent <=> Theme.wp-accent;
+    in-out property <color> wp-tint <=> Theme.wp-tint;
     // CJK-capable default font so "进程"/host never render as tofu (the embedded
     // mono has no CJK glyphs); mirrors AppWindow.
     default-font-family: Theme.ui-font-family;
@@ -46,7 +52,26 @@ export component ProcWindow inherits Window {
     min-height: 280px;
     preferred-width: 640px;
     preferred-height: 520px;
-    background: Theme.bg-panel;
+    // Opaque base; the wallpaper Image covers it and the panels frost over the
+    // image (mirrors AppWindow) so this window matches the immersive look.
+    background: Theme.window-base;
+
+    // Immersive wallpaper layer — behind everything, frosted by the panel above.
+    if Theme.wallpaper-active : Image {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: Theme.wallpaper;
+        image-fit: cover;
+    }
+    // Content backdrop: opaque bg-panel without a wallpaper (the original look),
+    // frosted-translucent over the wallpaper when active so the table stays
+    // readable while the image shows through.
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: Theme.bg-panel;
+    }
 
     VerticalLayout {
         spacing: 0;

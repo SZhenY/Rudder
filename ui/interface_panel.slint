@@ -140,6 +140,39 @@ component Stepper inherits Rectangle {
     }
 }
 
+// A macOS-style wallpaper thumbnail: a rounded, clipped preview (passed via
+// @children) with a selection ring + check badge. The label sits below it in
+// the page, not inside.
+component WallpaperSwatch inherits Rectangle {
+    in property <bool> selected;
+    callback clicked();
+    width: 120px;
+    height: 74px;
+    border-radius: 8px;
+    border-width: root.selected ? 3px : 1px;
+    border-color: root.selected ? Theme.accent : Theme.border-strong;
+    clip: true;
+    @children
+    if root.selected : Rectangle {
+        x: parent.width - self.width - 5px;
+        y: 5px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: Theme.accent;
+        Text {
+            text: "\u{E5CA}"; // check
+            font-family: "Material Icons"; color: white; font-size: 13px;
+            width: 100%; height: 100%;
+            horizontal-alignment: center; vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 // The settings content (nav + pages). Embedded in AppWindow's modal overlay.
 export component InterfacePanel inherits Rectangle {
     in property <bool> lang-en;
@@ -152,8 +185,14 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> collapse-sftp-default;
     in-out property <bool> sync-upload-enabled;
     in-out property <bool> download-always-ask;
+    // Active wallpaper id: "" / "builtin:light" / "builtin:dark" / a file path.
+    in property <string> current-wallpaper;
+    in property <string> custom-wallpaper-name;   // basename for the file row
 
     property <string> ifd-page: "font";
+    property <bool> wp-is-custom:
+        root.current-wallpaper != "" && root.current-wallpaper != "builtin:light"
+        && root.current-wallpaper != "builtin:dark";
 
     callback set-term-font(string);
     callback set-term-font-size(int);
@@ -163,6 +202,8 @@ export component InterfacePanel inherits Rectangle {
     callback set-collapse-sftp-default(bool);
     callback set-sync-upload-enabled(bool);
     callback set-download-always-ask(bool);
+    callback set-wallpaper(string);    // none / builtin selection
+    callback pick-wallpaper-file();    // open the OS file dialog (Rust)
 
     HorizontalLayout {
         // --- Left nav ------------------------------------------------------
@@ -177,6 +218,11 @@ export component InterfacePanel inherits Rectangle {
                     icon: "\u{E167}"; label: root.lang-en ? "Font" : "字体";
                     active: root.ifd-page == "font";
                     clicked => { root.ifd-page = "font"; }
+                }
+                NavItem {
+                    icon: "\u{E1BC}"; label: root.lang-en ? "Wallpaper" : "壁纸";
+                    active: root.ifd-page == "wallpaper";
+                    clicked => { root.ifd-page = "wallpaper"; }
                 }
                 NavItem {
                     icon: "\u{E2C7}"; label: "SFTP";
@@ -257,6 +303,168 @@ export component InterfacePanel inherits Rectangle {
                         color: Theme.term-fg;
                         vertical-alignment: center;
                         height: parent.height;
+                    }
+                }
+            }
+
+            // --- Wallpaper page ----------------------------------------
+            if root.ifd-page == "wallpaper" : VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 14px;
+                spacing: 0;
+                alignment: start;
+
+                SectionHeader { text: root.lang-en ? "WALLPAPER" : "壁纸"; height: 24px; }
+                Text {
+                    text: root.lang-en
+                        ? "Pick a wallpaper — the interface tints itself to match (accent, panels, light/dark)."
+                        : "选一张壁纸,界面会沉浸式地适配它的颜色(强调色、面板、深浅)。";
+                    color: Theme.text-muted; font-size: 11px; wrap: word-wrap;
+                }
+                Rectangle { height: 12px; }
+
+                // Built-in choices: None / Light / Dark / Fantasy 3048.
+                HorizontalLayout {
+                    spacing: 11px;
+                    alignment: start;
+                    VerticalLayout {
+                        spacing: 5px;
+                        WallpaperSwatch {
+                            width: 100px;
+                            selected: root.current-wallpaper == "";
+                            clicked => { root.set-wallpaper(""); }
+                            Rectangle {
+                                width: 100%; height: 100%;
+                                background: Theme.window-base;
+                                Text {
+                                    text: "\u{E14C}"; // clear / none
+                                    font-family: "Material Icons"; color: Theme.text-muted;
+                                    font-size: 22px;
+                                    width: 100%; height: 100%;
+                                    horizontal-alignment: center; vertical-alignment: center;
+                                }
+                            }
+                        }
+                        Text { text: root.lang-en ? "None" : "无"; font-size: 11px;
+                               color: Theme.text-secondary; horizontal-alignment: center; }
+                    }
+                    VerticalLayout {
+                        spacing: 5px;
+                        WallpaperSwatch {
+                            width: 100px;
+                            selected: root.current-wallpaper == "builtin:light";
+                            clicked => { root.set-wallpaper("builtin:light"); }
+                            Rectangle {
+                                width: 100%; height: 100%;
+                                background: @linear-gradient(135deg, #eff3fb 0%, #d5e1f2 100%);
+                                Rectangle {
+                                    x: parent.width * 0.66; y: -parent.height * 0.2;
+                                    width: 56px; height: 56px; border-radius: 28px;
+                                    background: #4a90e2; opacity: 0.30;
+                                }
+                            }
+                        }
+                        Text { text: root.lang-en ? "Meat Light" : "简约·浅"; font-size: 11px;
+                               color: Theme.text-secondary; horizontal-alignment: center; }
+                    }
+                    VerticalLayout {
+                        spacing: 5px;
+                        WallpaperSwatch {
+                            width: 100px;
+                            selected: root.current-wallpaper == "builtin:dark";
+                            clicked => { root.set-wallpaper("builtin:dark"); }
+                            Rectangle {
+                                width: 100%; height: 100%;
+                                background: @linear-gradient(135deg, #10131a 0%, #1b2233 100%);
+                                Rectangle {
+                                    x: parent.width * 0.66; y: -parent.height * 0.2;
+                                    width: 56px; height: 56px; border-radius: 28px;
+                                    background: #4a6ce0; opacity: 0.40;
+                                }
+                            }
+                        }
+                        Text { text: root.lang-en ? "Meat Dark" : "简约·暗"; font-size: 11px;
+                               color: Theme.text-secondary; horizontal-alignment: center; }
+                    }
+                    VerticalLayout {
+                        spacing: 5px;
+                        WallpaperSwatch {
+                            width: 100px;
+                            selected: root.current-wallpaper == "builtin:tech";
+                            clicked => { root.set-wallpaper("builtin:tech"); }
+                            Rectangle {
+                                width: 100%; height: 100%;
+                                background: @linear-gradient(180deg, #05060f 0%, #0b1430 55%, #1a0a2e 100%);
+                                clip: true;
+                                // glowing planet
+                                Rectangle {
+                                    x: parent.width * 0.5 - 16px; y: parent.height * 0.22;
+                                    width: 32px; height: 32px; border-radius: 16px;
+                                    background: @radial-gradient(circle, #ff5ea8 0%, #ff5ea800 70%);
+                                }
+                                // neon horizon line
+                                Rectangle {
+                                    y: parent.height * 0.58; width: parent.width; height: 2px;
+                                    background: #19e6ff; opacity: 0.85;
+                                }
+                            }
+                        }
+                        Text { text: root.lang-en ? "Fantasy 3048" : "幻想3048"; font-size: 11px;
+                               color: Theme.text-secondary; horizontal-alignment: center; }
+                    }
+                }
+
+                Rectangle { height: 16px; }
+                SectionHeader { text: root.lang-en ? "CUSTOM" : "自定义"; height: 22px; }
+                HorizontalLayout {
+                    spacing: 14px;
+                    alignment: start;
+                    WallpaperSwatch {
+                        selected: root.wp-is-custom;
+                        clicked => { root.pick-wallpaper-file(); }
+                        // Show the real image when a custom one is active, else a
+                        // "choose a file" placeholder.
+                        if root.wp-is-custom : Image {
+                            width: 100%; height: 100%;
+                            source: Theme.wallpaper;
+                            image-fit: cover;
+                        }
+                        if !root.wp-is-custom : Rectangle {
+                            width: 100%; height: 100%;
+                            background: Theme.bg-elevated;
+                            Text {
+                                text: "\u{E2C6}"; // folder-open
+                                font-family: "Material Icons"; color: Theme.text-secondary;
+                                font-size: 22px;
+                                width: 100%; height: 100%;
+                                horizontal-alignment: center; vertical-alignment: center;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        Rectangle {
+                            width: 130px; height: 30px;
+                            border-radius: 6px;
+                            background: pick-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                            pick-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.pick-wallpaper-file(); }
+                            }
+                            Text {
+                                text: root.lang-en ? "Choose file…" : "选择文件…";
+                                color: white; font-size: 12px;
+                                width: 100%; height: 100%;
+                                horizontal-alignment: center; vertical-alignment: center;
+                            }
+                        }
+                        if root.wp-is-custom : Text {
+                            text: root.custom-wallpaper-name;
+                            color: Theme.text-muted; font-size: 11px;
+                            width: 150px; overflow: elide;
+                        }
                     }
                 }
             }

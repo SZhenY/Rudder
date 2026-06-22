@@ -273,15 +273,7 @@ pub fn run() -> Result<()> {
     // "dark" / "light" → use that directly; "system" or unset → ask the OS;
     // OS unknown → fall back to dark.
     {
-        let is_dark = match store.borrow().theme_pref() {
-            "light" => false,
-            "dark"  => true,
-            _       => match dark_light::detect() {
-                dark_light::Mode::Light   => false,
-                dark_light::Mode::Dark    => true,
-                dark_light::Mode::Default => true, // undetectable → dark
-            },
-        };
+        let is_dark = theme_pref_is_dark(&store.borrow());
         window.set_dark_mode(is_dark);
     }
 
@@ -295,6 +287,13 @@ pub fn run() -> Result<()> {
         }
         window.set_term_font_size(s.font_size() as f32);
         window.set_ui_scale(s.ui_scale() as f32 / 100.0); // global UI zoom (#100)
+    }
+
+    // Apply the saved immersive wallpaper (overrides dark/light when set; a
+    // missing custom file falls back to the plain theme).
+    {
+        let id = store.borrow().wallpaper().to_string();
+        apply_wallpaper(&window, &store.borrow(), &bufs, &id);
     }
     // Editable inputs (e.g. the SFTP path bar) need a CJK-capable font: the
     // embedded mono font has no Chinese glyphs and native TextInput doesn't
@@ -462,6 +461,51 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // Wallpaper: pick a built-in / none, or open the file dialog for a custom one.
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let bufs_wp = bufs.clone();
+        let proc_weak = proc_win.as_weak();
+        window.on_set_wallpaper(move |id: SharedString| {
+            let id = id.to_string();
+            if let Some(w) = weak.upgrade() {
+                apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id);
+                // Keep an already-open process window in sync with the change.
+                if let Some(p) = proc_weak.upgrade() {
+                    sync_proc_theme(&w, &p);
+                }
+            }
+            let mut s = store.borrow_mut();
+            s.set_wallpaper(id);
+            let _ = s.save();
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let bufs_wp = bufs.clone();
+        let proc_weak = proc_win.as_weak();
+        window.on_pick_wallpaper_file(move || {
+            let picked = rfd::FileDialog::new()
+                .set_title("选择壁纸 / Choose wallpaper")
+                .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp"])
+                .pick_file();
+            if let Some(path) = picked {
+                let id = path.to_string_lossy().to_string();
+                if let Some(w) = weak.upgrade() {
+                    apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id);
+                    if let Some(p) = proc_weak.upgrade() {
+                        sync_proc_theme(&w, &p);
+                    }
+                }
+                let mut s = store.borrow_mut();
+                s.set_wallpaper(id);
+                let _ = s.save();
+            }
+        });
+    }
+
     let sessions_model: Rc<VecModel<SessionInfo>> = Rc::new(VecModel::default());
     window.set_sessions(ModelRc::from(sessions_model.clone()));
     sync_sessions_to_model(&store.borrow(), &sessions_model);
@@ -559,26 +603,12 @@ pub fn run() -> Result<()> {
         window.on_toggle_theme(move || {
             let Some(w) = weak.upgrade() else { return };
             let next_dark = !w.get_dark_mode();
-            w.set_dark_mode(next_dark);
+            // Flip theme + every terminal buffer + re-render (shared with wallpaper).
+            apply_dark_mode(&w, &bufs_theme, next_dark);
             // Mirror the flip onto the detached process window (its Theme global
             // is a separate instance) so an open process window follows.
             if let Some(p) = proc_weak.upgrade() {
                 sync_proc_theme(&w, &p);
-            }
-            // Propagate new palette to all open terminal buffers.
-            {
-                let mut map = bufs_theme.lock().unwrap();
-                for buf in map.values_mut() {
-                    buf.is_dark = next_dark;
-                }
-            }
-            // Re-render every visible terminal so colours update immediately.
-            let tab_ids: Vec<String> = {
-                let map = bufs_theme.lock().unwrap();
-                map.keys().cloned().collect()
-            };
-            for tid in tab_ids {
-                rebuild_tab_display(&w, &bufs_theme, &tid);
             }
             let pref = if next_dark { "dark" } else { "light" };
             let mut s = store.borrow_mut();
@@ -2135,6 +2165,12 @@ fn sync_proc_theme(main: &AppWindow, proc: &ProcWindow) {
     proc.set_dark_mode(main.get_dark_mode());
     proc.set_ui_scale(main.get_ui_scale());
     proc.set_ui_font_family(main.get_ui_font_family());
+    // Mirror the immersive wallpaper so the detached window shares the frosted
+    // backdrop instead of a flat panel.
+    proc.set_wallpaper_img(main.get_wallpaper_img());
+    proc.set_wallpaper_active(main.get_wallpaper_active());
+    proc.set_wp_accent(main.get_wp_accent());
+    proc.set_wp_tint(main.get_wp_tint());
 }
 
 /// Persist the current panel docking layout (both panels' edge + size) and the
@@ -2465,6 +2501,80 @@ fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
         row.scroll_max = smax;
         row.scroll_offset = soff;
     });
+}
+
+/// Resolve the user's saved theme preference to a dark/light bool (mirrors the
+/// startup logic): "light"/"dark" win; otherwise ask the OS, defaulting to dark.
+fn theme_pref_is_dark(store: &ConfigStore) -> bool {
+    match store.theme_pref() {
+        "light" => false,
+        "dark" => true,
+        _ => match dark_light::detect() {
+            dark_light::Mode::Light => false,
+            dark_light::Mode::Dark => true,
+            dark_light::Mode::Default => true, // undetectable → dark
+        },
+    }
+}
+
+/// Flip the whole app between light and dark. Setting `Theme.dark` alone only
+/// recolours the Slint chrome — each terminal bakes its ANSI/default colours
+/// from a per-buffer `is_dark` flag at render time, so we must also update every
+/// buffer and re-render it. Both the theme toggle and wallpaper switching route
+/// through here (the proc-window mirror stays with the toggle).
+fn apply_dark_mode(window: &AppWindow, bufs: &TermBuffers, dark: bool) {
+    window.set_dark_mode(dark);
+    {
+        let mut map = bufs.lock().unwrap();
+        for buf in map.values_mut() {
+            buf.is_dark = dark;
+        }
+    }
+    let tab_ids: Vec<String> = bufs.lock().unwrap().keys().cloned().collect();
+    for tid in tab_ids {
+        rebuild_tab_display(window, bufs, &tid);
+    }
+}
+
+/// Apply a wallpaper id to the window: load the image + derived palette, push the
+/// immersive Theme overrides (accent / tint / image) and set `dark` from the
+/// image luminance. An empty or undecodable id turns immersive mode off and
+/// restores the user's saved light/dark theme.
+fn apply_wallpaper(window: &AppWindow, store: &ConfigStore, bufs: &TermBuffers, id: &str) {
+    match crate::wallpaper::load(id) {
+        Some(wp) => {
+            let (ar, ag, ab) = wp.palette.accent;
+            let (tr, tg, tb) = wp.palette.tint;
+            window.set_wallpaper_img(wp.image);
+            window.set_wp_accent(slint::Color::from_rgb_u8(ar, ag, ab));
+            window.set_wp_tint(slint::Color::from_rgb_u8(tr, tg, tb));
+            // Only the built-ins (designed as a light/dark pair) auto-set the
+            // theme. A custom photo keeps the user's light/dark choice so the
+            // theme toggle still governs text contrast — a light/white wallpaper
+            // reads best in light mode (crisp dark text) rather than being forced
+            // dark and greying the text out (#wallpaper).
+            if crate::wallpaper::is_builtin(id) {
+                apply_dark_mode(window, bufs, wp.palette.is_dark);
+            }
+            window.set_wallpaper_active(true);
+            window.set_current_wallpaper(id.into());
+            let name = if crate::wallpaper::is_builtin(id) {
+                String::new()
+            } else {
+                std::path::Path::new(id)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            };
+            window.set_custom_wallpaper_name(name.into());
+        }
+        None => {
+            window.set_wallpaper_active(false);
+            window.set_current_wallpaper("".into());
+            window.set_custom_wallpaper_name("".into());
+            apply_dark_mode(window, bufs, theme_pref_is_dark(store));
+        }
+    }
 }
 
 /// Resolve which interface drives the top sparkline: the user's selection if it

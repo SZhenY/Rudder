@@ -3,8 +3,26 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
-## [Unreleased]
+## [0.4.15] - 2026-06-23
+
 ### Added / 新增
+
+- **沉浸式壁纸主题(可换壁纸 + 全局沉浸配色)。** 新增「设置 → 界面 → 壁纸」,提供
+  macOS 风格的缩略图选择器:内置 **3 张**(简约·浅、简约·暗、**幻想3048**——赛博朋克合成波,
+  星空 + 发光星球 + 霓虹网格,均为程序化绘制、无图片资源),也可「选择文件…」用自己的图片。
+  选定后壁纸铺满整个窗口(含终端、侧栏、SFTP,以及独立的进程窗),各面板**磨砂半透**让壁纸
+  透出,同时从壁纸提取主色**自动重着色强调色并微调背景**,深浅由壁纸亮度决定(内置款),
+  自定义照片则交给主题开关手动控制可读性。**下个版本默认即「幻想3048 + 暗色」。**
+  **Immersive wallpaper theming (custom wallpaper + global tinting).** Adds Settings →
+  Interface → Wallpaper with a macOS-style thumbnail picker: **3 built-ins** (Meat Light,
+  Meat Dark, and **Fantasy 3048** — a cyberpunk synthwave scene with a starfield, a glowing
+  planet and a neon grid, all drawn procedurally with no image assets) plus a "Choose
+  file…" option for your own image. The wallpaper fills the whole window (terminal,
+  sidebars, SFTP and the detached process window), panels **frost translucently** to let it
+  show through, the accent is **recoloured from the image's dominant colour** and surfaces
+  are subtly tinted, with light/dark taken from the wallpaper's brightness (built-ins) while
+  custom photos leave light/dark to the theme toggle for readability. **The next release
+  ships with "Fantasy 3048 + dark" as the default.**
 
 - **便携模式:配置改存到程序同目录的 `config/`(#141)。** 用户数据(`sessions.json`、
   加密密钥、`known_hosts`、`error.log`)现在优先存放在**可执行文件旁的 `config/` 文件夹**,
@@ -21,11 +39,6 @@ All notable changes are documented here. 本文件记录所有重要变更。
   untouched**. On the first launch that lands on the portable dir, data from the legacy
   per-user dir is **copied** over (copy-not-move, never overwriting, as a safety net) so
   upgrading users don't lose saved sessions.
-
-
-## [0.4.15] - 2026-06-23
-
-### Added / 新增
 
 - **终端内查找:Ctrl+F 唤出查找栏。** 在会话里按 Ctrl+F 即可弹出顶部查找栏(与右键菜单
   → 查找一致),输入即时高亮所有匹配,Esc 关闭;已在「设置 → 快捷键」中登记。

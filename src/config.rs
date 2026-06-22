@@ -234,6 +234,22 @@ fn default_stop_bits() -> u8 {
 fn default_parity() -> String {
     "none".to_string()
 }
+/// Ships with the "幻想 3048" sci-fi wallpaper on by default (a dark theme). New
+/// installs and users upgrading from before the wallpaper feature get it; once
+/// the user picks anything (including "无"/none, stored as ""), their choice is
+/// saved and sticks.
+fn default_wallpaper() -> String {
+    "builtin:tech".to_string()
+}
+/// A brand-new config (no file yet, or the old one was corrupt). Identical to
+/// `ConfigFile::default()` except it seeds the default wallpaper, which the
+/// derived `Default` (an empty string = "none") wouldn't.
+fn fresh_config() -> ConfigFile {
+    ConfigFile {
+        wallpaper: default_wallpaper(),
+        ..ConfigFile::default()
+    }
+}
 fn default_sidebar_width() -> f32 {
     220.0
 }
@@ -406,6 +422,11 @@ pub struct ConfigFile {
     /// Global UI scale in percent (#100). 0 = default (100%).
     #[serde(default)]
     pub ui_scale: u32,
+    /// Immersive wallpaper id: "" = none, "builtin:light" / "builtin:dark" /
+    /// "builtin:tech", or a filesystem path to a custom image. Drives the
+    /// wallpaper + tinted theme. Defaults to the "幻想 3048" built-in.
+    #[serde(default = "default_wallpaper")]
+    pub wallpaper: String,
     /// Explicit session groups/folders (#41), including empty ones so a folder
     /// can exist before any session is moved into it. "default" is implicit and
     /// not stored here.
@@ -624,11 +645,11 @@ impl ConfigStore {
                         "config file was corrupt ({err}); backed up to {}",
                         backup.display()
                     );
-                    ConfigFile::default()
+                    fresh_config()
                 }
             }
         } else {
-            ConfigFile::default()
+            fresh_config()
         };
 
         Ok(Self { path, cache, key })
@@ -735,6 +756,15 @@ impl ConfigStore {
 
     pub fn set_ui_scale(&mut self, percent: u32) {
         self.cache.ui_scale = percent.clamp(80, 200);
+    }
+
+    /// Immersive wallpaper id ("" = none).
+    pub fn wallpaper(&self) -> &str {
+        &self.cache.wallpaper
+    }
+
+    pub fn set_wallpaper(&mut self, id: impl Into<String>) {
+        self.cache.wallpaper = id.into();
     }
 
     /// Whether the SFTP panel follows the terminal's cd (default true).
@@ -1118,6 +1148,21 @@ mod tests {
             cache: ConfigFile::default(),
             key: [7u8; 32],
         }
+    }
+
+    #[test]
+    fn wallpaper_defaults_to_tech_but_keeps_explicit_choice() {
+        // Fresh install (no file).
+        assert_eq!(fresh_config().wallpaper, "builtin:tech");
+        // User upgrading from before the feature: JSON without the key.
+        let cfg: ConfigFile = serde_json::from_str("{}").unwrap();
+        assert_eq!(cfg.wallpaper, "builtin:tech");
+        // An explicit "无"/none (stored as "") is preserved, not re-defaulted.
+        let cfg: ConfigFile = serde_json::from_str(r#"{"wallpaper":""}"#).unwrap();
+        assert_eq!(cfg.wallpaper, "");
+        // A custom choice is preserved.
+        let cfg: ConfigFile = serde_json::from_str(r#"{"wallpaper":"builtin:light"}"#).unwrap();
+        assert_eq!(cfg.wallpaper, "builtin:light");
     }
 
     #[test]

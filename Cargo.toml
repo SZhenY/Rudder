@@ -68,11 +68,12 @@ dark-light = "1"
 # background thread so it never blocks startup; failure is silently ignored.
 ureq = { version = "2", features = ["tls"] }
 
-# Decode the embedded PNG icon to set the window icon at runtime (Linux only).
-# On Windows the icon comes from the .ico embedded by winresource at link time;
-# on macOS it comes from the app bundle — neither needs runtime decoding.
+# Image decoding: custom wallpapers (PNG/JPEG/WebP/BMP) for the immersive theme,
+# and the embedded PNG window icon on Linux. On Windows the icon comes from the
+# .ico embedded by winresource at link time; on macOS from the app bundle.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
-image = { version = "0.25", default-features = false, features = ["png"] }
 # Native Wayland clipboard (wlr-data-control protocol) so copy/paste works on
 # Wayland sessions (KDE/wlroots) without relying on XWayland (issue #47).
 # Feature is additive over the base `arboard = "3"` dependency above.

@@ -190,7 +190,10 @@ export component AppWindow inherits Window {
     min-height: 600px;
     preferred-width: 1440px;
     preferred-height: 900px;
-    background: Theme.bg-root;
+    // Always-opaque base; the wallpaper Image (when active) covers it and panels
+    // frost over the image. Using window-base (not bg-root) keeps the window
+    // itself opaque even though bg-root turns translucent in immersive mode.
+    background: Theme.window-base;
     // A CJK-capable default so UI text (incl. fullwidth punctuation like ：（）)
     // never tofus on glyph fallback (#54). Rust sets Theme.ui-font-family to a
     // system CJK font on startup; empty on Linux keeps the Slint default.
@@ -325,6 +328,11 @@ export component AppWindow inherits Window {
     in-out property <length> term-font-size <=> Theme.term-font-size;
     in-out property <float> ui-scale <=> Theme.ui-scale;   // global UI zoom (#100)
     in-out property <string> ui-font-family <=> Theme.ui-font-family;
+    // Wallpaper / immersive theming — Rust drives these from the wallpaper module.
+    in-out property <image> wallpaper-img <=> Theme.wallpaper;
+    in-out property <bool> wallpaper-active <=> Theme.wallpaper-active;
+    in-out property <color> wp-accent <=> Theme.wp-accent;
+    in-out property <color> wp-tint <=> Theme.wp-tint;
     in property <[string]> term-fonts;             // installed monospace families
     in-out property <bool> interface-open: false;  // Interface settings overlay
     // Interface card position (draggable by its title bar, clamped inside the
@@ -339,6 +347,12 @@ export component AppWindow inherits Window {
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
     callback set-ui-scale(int);                    // apply + persist UI scale (percent) (#100)
+    // Immersive wallpaper (set by Rust). The active id + custom file basename
+    // feed the Interface → Wallpaper picker.
+    in-out property <string> current-wallpaper: "";
+    in-out property <string> custom-wallpaper-name: "";
+    callback set-wallpaper(string);                // apply + persist a wallpaper id
+    callback pick-wallpaper-file();                // open the OS file dialog (Rust)
     // SFTP follows the terminal's cd; opt out in Interface settings.
     in-out property <bool> sftp-follow-cd: true;
     callback set-sftp-follow-cd(bool);             // apply + persist
@@ -563,6 +577,16 @@ export component AppWindow inherits Window {
     callback term-select-update(string /* tab-id */, int /* row */, int /* col */);
     callback term-select-end(string /* tab-id */);
     callback term-select-autoscroll(string /* tab-id */, int /* dir */);
+
+    // Immersive wallpaper layer — painted behind everything, filling the window.
+    // Panels/terminal frost over it (see Theme.frost). Only present when active.
+    if Theme.wallpaper-active : Image {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: Theme.wallpaper;
+        image-fit: cover;
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -2750,6 +2774,10 @@ export component AppWindow inherits Window {
                     collapse-sftp-default <=> root.collapse-sftp-default;
                     sync-upload-enabled <=> root.sync-upload-enabled;
                     download-always-ask <=> root.download-always-ask;
+                    current-wallpaper: root.current-wallpaper;
+                    custom-wallpaper-name: root.custom-wallpaper-name;
+                    set-wallpaper(v) => { root.set-wallpaper(v); }
+                    pick-wallpaper-file() => { root.pick-wallpaper-file(); }
                     set-term-font(v) => { root.set-term-font(v); }
                     set-term-font-size(v) => { root.set-term-font-size(v); }
                     set-ui-scale(v) => { root.set-ui-scale(v); }

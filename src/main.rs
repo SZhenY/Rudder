@@ -16,6 +16,7 @@ mod ssh;
 mod ssh_config;
 mod system;
 mod telnet;
+mod wallpaper;
 mod zmodem;
 
 fn main() -> anyhow::Result<()> {
