@@ -3,7 +3,7 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
-## [0.4.15] - 2026-06-23
+## [0.4.16] - 2026-06-23
 
 ### Added / 新增
 
