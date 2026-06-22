@@ -2356,8 +2356,53 @@ fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString>
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
+/// Cumulative grid columns for a rendered line. The plain text we keep stores
+/// ONE char per glyph, but a wide (CJK) glyph occupies TWO grid cells, so a char
+/// index is *not* a grid column. `prefix[i]` is the starting grid column of
+/// char `i`; `prefix[chars.len()]` is the line's total cell width. Zero-width
+/// chars (combining marks) share their base char's column (#132).
+fn cell_prefix(chars: &[char]) -> Vec<usize> {
+    use unicode_width::UnicodeWidthChar;
+    let mut prefix = Vec::with_capacity(chars.len() + 1);
+    let mut acc = 0usize;
+    for &ch in chars {
+        prefix.push(acc);
+        acc += ch.width().unwrap_or(0);
+    }
+    prefix.push(acc);
+    prefix
+}
+
+/// First char index whose cell span contains grid column `target` — i.e. the
+/// char a selection STARTING at that column should begin on. Clamps to the end
+/// of the line when `target` is past the content (#132).
+fn char_at_cell_start(prefix: &[usize], target: usize) -> usize {
+    let n = prefix.len().saturating_sub(1); // chars.len()
+    for i in 0..n {
+        if prefix[i] <= target && target < prefix[i + 1] {
+            return i;
+        }
+    }
+    n
+}
+
+/// Exclusive char index just past grid column `target` — i.e. the slice end for
+/// a selection ENDING (inclusive) at that column. Trailing zero-width marks on
+/// the last glyph are kept because their start column is not strictly greater
+/// than `target` (#132).
+fn char_after_cell_end(prefix: &[usize], target: usize) -> usize {
+    let n = prefix.len().saturating_sub(1); // chars.len()
+    for i in 0..n {
+        if prefix[i] > target {
+            return i;
+        }
+    }
+    n
+}
+
 /// Find every (case-insensitive) occurrence of `query` across the currently
-/// displayed rows and return highlight rectangles (char index == grid column).
+/// displayed rows and return highlight rectangles in GRID-COLUMN space (wide
+/// CJK glyphs count as two columns, so highlights line up over the text #132).
 fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
     let mut out: Vec<TermMatch> = Vec::new();
     if query.is_empty() {
@@ -2368,14 +2413,18 @@ fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
         return out;
     }
     for (r, line) in rows.iter().enumerate() {
-        let lower: Vec<char> = line.chars().map(|c| c.to_ascii_lowercase()).collect();
+        let chars: Vec<char> = line.chars().collect();
+        let lower: Vec<char> = chars.iter().map(|c| c.to_ascii_lowercase()).collect();
+        let prefix = cell_prefix(&chars);
         let mut i = 0usize;
         while i + q.len() <= lower.len() {
             if lower[i..i + q.len()] == q[..] {
+                let col = prefix[i] as i32;
+                let len = (prefix[i + q.len()] - prefix[i]) as i32;
                 out.push(TermMatch {
                     row: r as i32,
-                    col: i as i32,
-                    len: q.len() as i32,
+                    col,
+                    len,
                 });
                 i += q.len();
             } else {
@@ -5518,6 +5567,10 @@ impl TermBuffer {
                 ""
             };
             let chars: Vec<char> = line.chars().collect();
+            // `c0`/`c1` are GRID COLUMNS (inclusive). The plain text keeps one
+            // char per glyph, so wide (CJK) glyphs make char index != column;
+            // map columns → char indices via the cell prefix so the copied text
+            // doesn't drift by the number of wide glyphs before it (#132).
             let (c0, c1) = if r == lo_r && r == hi_r {
                 (lo_c.min(hi_c), lo_c.max(hi_c))
             } else if r == lo_r {
@@ -5527,10 +5580,11 @@ impl TermBuffer {
             } else {
                 (0, u16::MAX)
             };
-            let c0 = (c0 as usize).min(chars.len());
-            let c1 = ((c1 as usize).saturating_add(1)).min(chars.len());
-            let seg: String = if c0 < c1 {
-                chars[c0..c1].iter().collect()
+            let prefix = cell_prefix(&chars);
+            let start = char_at_cell_start(&prefix, c0 as usize);
+            let end = char_after_cell_end(&prefix, c1 as usize);
+            let seg: String = if start < end {
+                chars[start..end].iter().collect()
             } else {
                 String::new()
             };
@@ -6189,5 +6243,47 @@ mod selection_tests {
         live.sel_anchor = Some((0, 2));
         live.sel_focus = Some((2, 4));
         assert!(live.selection_rects_visible(20).is_empty());
+    }
+
+    #[test]
+    fn extract_handles_wide_cjk_columns() {
+        // Regression for #132: copying after CJK glyphs drifted right by the
+        // number of wide chars before the selection (e.g. selecting "1pctl"
+        // yielded "ctl…"). The history line lays out on the grid as:
+        //   提(0-1) 示(2-3) :(4) space(5) 1(6) p(7) c(8) t(9) l(10)
+        let mut buf = make_buf(5, 20, &["提示: 1pctl"], &["x"], 0);
+
+        // The "1pctl" run sits at grid cols 6..=10.
+        buf.sel_anchor = Some((0, 6));
+        buf.sel_focus = Some((0, 10));
+        assert_eq!(buf.extract_selection_text(), "1pctl");
+
+        // Selecting from the second CJK glyph through the end.
+        buf.sel_anchor = Some((0, 2));
+        buf.sel_focus = Some((0, 10));
+        assert_eq!(buf.extract_selection_text(), "示: 1pctl");
+
+        // Anchoring on the *second* cell of a wide glyph still grabs the whole
+        // glyph — you can't half-select a CJK char.
+        buf.sel_anchor = Some((0, 3));
+        buf.sel_focus = Some((0, 10));
+        assert_eq!(buf.extract_selection_text(), "示: 1pctl");
+    }
+
+    #[test]
+    fn find_matches_report_grid_columns_past_cjk() {
+        // Highlight rects must sit at the GRID column, not the char index, so
+        // they line up over the text after CJK glyphs (#132).
+        let rows = vec!["提示: 1pctl".to_string()];
+        let m = compute_find_matches(&rows, "1pctl");
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].col, 6, "grid column 6, not char index 4");
+        assert_eq!(m[0].len, 5);
+
+        // A CJK query spans two grid cells per glyph.
+        let m2 = compute_find_matches(&rows, "提示");
+        assert_eq!(m2.len(), 1);
+        assert_eq!(m2[0].col, 0);
+        assert_eq!(m2[0].len, 4, "two wide glyphs span four grid cells");
     }
 }
