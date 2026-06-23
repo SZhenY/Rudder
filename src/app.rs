@@ -656,6 +656,25 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // MFA / keyboard-interactive prompt (#86-MFA): the user enters the
+    // verification code (or cancels); the answer unblocks the SSH/SFTP auth.
+    {
+        let weak = window.as_weak();
+        window.on_mfa_submit(move || {
+            if let Some(w) = weak.upgrade() {
+                resolve_front_mfa(&w, true);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_mfa_cancel(move || {
+            if let Some(w) = weak.upgrade() {
+                resolve_front_mfa(&w, false);
+            }
+        });
+    }
+
     // NIC selector: remember the user's choice for the active tab and refresh.
     {
         let weak = window.as_weak();
@@ -3057,6 +3076,15 @@ fn apply_session_event_to_window(
         } => {
             enqueue_cred_prompt(win, session_id, host, user, need_user, need_password, responder);
         }
+        SessionEvent::MfaPrompt {
+            session_id,
+            host,
+            prompt,
+            echo,
+            responder,
+        } => {
+            enqueue_mfa_prompt(win, session_id, host, prompt, echo, responder);
+        }
         SessionEvent::CommandRan(cmd) => {
             // A command typed directly in the terminal, captured via the shell
             // hook (#113). Record it in the same command-box history, reusing the
@@ -3358,6 +3386,98 @@ fn persist_credentials(
             }
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+// MFA / keyboard-interactive prompt (#86-MFA)
+// ---------------------------------------------------------------------------
+
+/// One queued MFA challenge. Concurrent connections for the same session (the
+/// shell and its SFTP channel) that hit the same prompt collapse into a single
+/// dialog whose answer fans out to every waiting `responder`.
+struct PendingMfa {
+    session_id: String,
+    host: String,
+    prompt: String,
+    echo: bool,
+    responders: Vec<crate::ssh::MfaResponder>,
+}
+
+thread_local! {
+    static MFA_QUEUE: RefCell<VecDeque<PendingMfa>> = RefCell::new(VecDeque::new());
+}
+
+/// Queue an MFA prompt: a concurrent connection for the same session (the shell
+/// and its SFTP channel both hitting the prompt at once) merges into the open
+/// dialog so the code is only typed once; otherwise enqueue (and show it now if
+/// nothing else is up). We deliberately do NOT cache answers across attempts —
+/// a wrong code must re-prompt on reconnect, not be silently replayed.
+fn enqueue_mfa_prompt(
+    win: &AppWindow,
+    session_id: String,
+    host: String,
+    prompt: String,
+    echo: bool,
+    responder: crate::ssh::MfaResponder,
+) {
+    let show_now = MFA_QUEUE.with(|q| {
+        let mut q = q.borrow_mut();
+        if let Some(p) = q.iter_mut().find(|p| p.session_id == session_id) {
+            p.responders.push(responder);
+            return false;
+        }
+        let was_empty = q.is_empty();
+        q.push_back(PendingMfa {
+            session_id,
+            host,
+            prompt,
+            echo,
+            responders: vec![responder],
+        });
+        was_empty
+    });
+    if show_now {
+        show_front_mfa(win);
+    }
+}
+
+/// Populate the MFA dialog from the front prompt and open it.
+fn show_front_mfa(win: &AppWindow) {
+    MFA_QUEUE.with(|q| {
+        if let Some(p) = q.borrow().front() {
+            win.set_mfa_host(p.host.clone().into());
+            win.set_mfa_prompt(p.prompt.clone().into());
+            win.set_mfa_echo(p.echo);
+            win.set_mfa_answer("".into());
+            win.set_mfa_prompt_open(true);
+        }
+    });
+}
+
+/// Apply the user's answer to the front MFA prompt (or cancel), then show the
+/// next prompt or close.
+fn resolve_front_mfa(win: &AppWindow, accept: bool) {
+    let answer: Option<String> = if accept {
+        Some(win.get_mfa_answer().to_string())
+    } else {
+        None
+    };
+    let has_next = MFA_QUEUE.with(|q| {
+        let mut q = q.borrow_mut();
+        if let Some(p) = q.pop_front() {
+            for r in &p.responders {
+                r.respond(answer.clone());
+            }
+        }
+        !q.is_empty()
+    });
+    // Don't leave the typed code lingering in the UI property.
+    win.set_mfa_answer("".into());
+    if has_next {
+        show_front_mfa(win);
+    } else {
+        win.set_mfa_prompt_open(false);
+    }
 }
 
 // ---------------------------------------------------------------------------

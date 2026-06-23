@@ -292,6 +292,35 @@ impl std::fmt::Debug for CredentialResponder {
     }
 }
 
+/// Carries the answer to a keyboard-interactive (MFA / verification-code) prompt
+/// back to the blocked auth flow (#86-MFA). `None` = the user cancelled.
+/// `Arc<Mutex<Option<…>>>` so the enclosing [`SessionEvent`] stays `Clone`.
+#[derive(Clone)]
+pub struct MfaResponder(
+    Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Option<String>>>>>,
+);
+
+impl MfaResponder {
+    pub fn new(tx: tokio::sync::oneshot::Sender<Option<String>>) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(Some(tx))))
+    }
+
+    /// Deliver the user's answer (`None` = cancelled). Idempotent.
+    pub fn respond(&self, reply: Option<String>) {
+        if let Ok(mut guard) = self.0.lock() {
+            if let Some(tx) = guard.take() {
+                let _ = tx.send(reply);
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for MfaResponder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("MfaResponder")
+    }
+}
+
 /// One process row sampled from the remote `ps` (#23). CPU/mem are percentages
 /// as reported by `ps` (pcpu/pmem); `command` is the (width-truncated) args.
 #[derive(Debug, Clone)]
@@ -335,6 +364,19 @@ pub enum SessionEvent {
         need_user: bool,
         need_password: bool,
         responder: CredentialResponder,
+    },
+    /// A keyboard-interactive challenge that isn't the account password —
+    /// typically an MFA / OTP / verification-code prompt from a bastion such as
+    /// JumpServer. The UI shows `prompt` and answers via `responder`; the auth
+    /// flow is blocked meanwhile (#86-MFA).
+    MfaPrompt {
+        session_id: String,
+        host: String,
+        /// The server's prompt text, e.g. "MFA code: " / "Verification code:".
+        prompt: String,
+        /// Whether typed input should be visible (false = hide, like a password).
+        echo: bool,
+        responder: MfaResponder,
     },
     /// Remote machine resource sample (from the monitor channel).
     /// Memory/swap are in KiB (as reported by /proc/meminfo).
@@ -561,9 +603,16 @@ async fn run_session(
                 // trying keyboard-interactive (#86).
                 let _ = handle.disconnect(Disconnect::ByApplication, "", "").await;
                 handle = connect_ssh(&session, config.clone(), &events).await?;
-                ok = keyboard_interactive_password(&mut handle, &user, password.as_str())
-                    .await
-                    .context("keyboard-interactive auth failed")?;
+                ok = keyboard_interactive_auth(
+                    &mut handle,
+                    &user,
+                    password.as_str(),
+                    &session.id,
+                    &session.host,
+                    &events,
+                )
+                .await
+                .context("keyboard-interactive auth failed")?;
             }
             ok
         }
@@ -1203,30 +1252,70 @@ fn parse_net_dev_line(line: &str) -> Option<(String, (u64, u64))> {
     Some((iface.to_string(), (nums[0], nums[8])))
 }
 
-/// Authenticate via `keyboard-interactive`, answering every prompt with the
-/// given password. This is the fallback for bastions that disable the plain
-/// `password` method (e.g. JumpServer) but still authenticate by password — the
-/// server sends a single "Password:" prompt over keyboard-interactive (#86).
-///
-/// Prompts are answered with the password regardless of their text, which covers
-/// the common single-password case; genuine multi-factor prompts (an OTP code on
-/// top of the password) would need interactive input and are not handled here.
-async fn keyboard_interactive_password(
+/// True if a keyboard-interactive prompt is asking for a second factor (an MFA /
+/// OTP / verification code) rather than the account password. We answer password
+/// challenges automatically with the stored password but must ask the user for
+/// these (#86-MFA). Heuristic over the common English/Chinese wordings used by
+/// JumpServer, Google Authenticator (PAM), Duo, etc.
+fn looks_like_mfa(prompt: &str) -> bool {
+    let t = prompt.to_lowercase();
+    t.contains("code")
+        || t.contains("otp")
+        || t.contains("mfa")
+        || t.contains("2fa")
+        || t.contains("factor") // two-factor / second factor
+        || t.contains("duo")
+        || t.contains("verification")
+        || t.contains("verify")
+        || t.contains("token")
+        || t.contains("authenticator")
+        || t.contains("passcode")
+        || t.contains("one-time")
+        || t.contains("one time")
+        || t.contains("验证码")
+        || t.contains("动态")
+        || t.contains("令牌")
+}
+
+/// Authenticate via `keyboard-interactive`. The stored password answers the
+/// first password challenge automatically (the JumpServer-style bastions that
+/// disable the plain `password` method, #86); any *other* challenge — an MFA /
+/// verification-code prompt — is shown to the user, whose typed answer is sent
+/// back. This is what makes MFA-enabled bastions (JumpServer with MFA forced on)
+/// work (#86-MFA).
+async fn keyboard_interactive_auth(
     handle: &mut Handle<ClientHandler>,
     user: &str,
     password: &str,
+    session_id: &str,
+    host: &str,
+    events: &UnboundedSender<SessionEvent>,
 ) -> Result<bool> {
     use russh::client::KeyboardInteractiveAuthResponse as Kb;
     let mut res = handle
         .authenticate_keyboard_interactive_start(user.to_string(), None)
         .await?;
+    let mut password_used = false;
     // Bound the exchange so a misbehaving server can't loop us forever.
     for _ in 0..16 {
         match res {
             Kb::Success => return Ok(true),
             Kb::Failure => return Ok(false),
             Kb::InfoRequest { prompts, .. } => {
-                let responses = prompts.iter().map(|_| password.to_string()).collect();
+                let mut responses = Vec::with_capacity(prompts.len());
+                for p in &prompts {
+                    // Use the stored password for the first password-like
+                    // challenge; ask the user for everything else (MFA codes).
+                    if !password_used && !password.is_empty() && !looks_like_mfa(&p.prompt) {
+                        responses.push(password.to_string());
+                        password_used = true;
+                    } else {
+                        match ask_mfa_prompt(session_id, host, &p.prompt, p.echo, events).await {
+                            Some(answer) => responses.push(answer),
+                            None => return Ok(false), // user cancelled
+                        }
+                    }
+                }
                 res = handle
                     .authenticate_keyboard_interactive_respond(responses)
                     .await?;
@@ -1234,6 +1323,29 @@ async fn keyboard_interactive_password(
         }
     }
     Ok(false)
+}
+
+/// Ask the UI for a single keyboard-interactive answer (an MFA / verification
+/// code), blocking until the user responds. `None` = cancelled or no UI (#86-MFA).
+async fn ask_mfa_prompt(
+    session_id: &str,
+    host: &str,
+    prompt: &str,
+    echo: bool,
+    events: &UnboundedSender<SessionEvent>,
+) -> Option<String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let sent = events.send(SessionEvent::MfaPrompt {
+        session_id: session_id.to_string(),
+        host: host.to_string(),
+        prompt: prompt.to_string(),
+        echo,
+        responder: MfaResponder::new(tx),
+    });
+    if sent.is_err() {
+        return None; // no UI to ask
+    }
+    rx.await.ok().flatten()
 }
 
 /// Client handler. Verifies the server host key against the known_hosts store,
@@ -1466,5 +1578,43 @@ mod monitor_hardening_tests {
         assert!(parse_monitor_block(&block, &mut prev, &mut prev_net, &mut at).is_some());
         // The remembered interface set is capped, not 500.
         assert!(prev_net.len() <= 64, "prev_net held {}", prev_net.len());
+    }
+}
+
+#[cfg(test)]
+mod mfa_tests {
+    use super::looks_like_mfa;
+
+    #[test]
+    fn password_prompts_are_not_mfa() {
+        // These should be answered automatically with the stored password.
+        for p in [
+            "Password: ",
+            "password:",
+            "jeff@host's password:",
+            "请输入密码:",
+            "Password for jeff:",
+        ] {
+            assert!(!looks_like_mfa(p), "wrongly flagged as MFA: {p:?}");
+        }
+    }
+
+    #[test]
+    fn verification_code_prompts_are_mfa() {
+        // These must prompt the user (JumpServer / Google Authenticator / Duo …).
+        for p in [
+            "MFA code: ",
+            "[MFA] Please enter 6 digit code: ",
+            "Verification code: ",
+            "Verification code (from your authenticator app): ",
+            "One-time password (OATH-TOTP): ",
+            "Enter passcode or select one of the following options:",
+            "Duo two-factor login",
+            "请输入验证码:",
+            "动态口令:",
+            "请输入令牌:",
+        ] {
+            assert!(looks_like_mfa(p), "missed an MFA prompt: {p:?}");
+        }
     }
 }

@@ -392,6 +392,15 @@ export component AppWindow inherits Window {
     in-out property <bool> cred-remember: false;   // persist to the saved session
     callback cred-accept();                        // use the entered credentials
     callback cred-reject();                        // cancel the connection
+    // MFA / keyboard-interactive prompt (#86-MFA). Rust opens this when a bastion
+    // (e.g. JumpServer with MFA) sends a verification-code challenge mid-login.
+    in-out property <bool> mfa-prompt-open: false;
+    in-out property <string> mfa-host;             // host shown in the dialog title
+    in-out property <string> mfa-prompt;           // the server's prompt text
+    in-out property <bool> mfa-echo: false;        // false = hide typed input
+    in-out property <string> mfa-answer;           // the entered code
+    callback mfa-submit();                         // send the entered answer
+    callback mfa-cancel();                         // cancel the connection
     // Group create / rename dialog (#41).
     in-out property <bool> group-dialog-open: false;
     in-out property <string> group-dialog-orig;    // "" = create, else rename
@@ -2665,6 +2674,72 @@ export component AppWindow inherits Window {
                     PrimaryButton {
                         text: @tr("Connect");
                         clicked => { root.cred-accept(); }
+                    }
+                }
+            }
+        }
+    }
+
+    // MFA / keyboard-interactive prompt (#86-MFA). A bastion (JumpServer with MFA
+    // forced on) challenges for a verification code mid-login; backdrop / Cancel
+    // abort the connect.
+    if root.mfa-prompt-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #000000aa;
+        TouchArea { clicked => { root.mfa-cancel(); } }
+        Rectangle {
+            width: 360px;
+            height: mfa-card.preferred-height;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000080;
+            TouchArea {}   // swallow clicks inside the card
+            mfa-card := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+                Text {
+                    text: root.lang-en ? "Two-factor verification" : "双重验证 (MFA)";
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-xl;
+                    font-weight: 600;
+                }
+                Text {
+                    text: root.mfa-host;
+                    color: Theme.text-secondary;
+                    font-family: Theme.font-mono;
+                    font-size: Theme.fs-sm;
+                }
+                // The server's own prompt text (falls back to a generic hint).
+                Text {
+                    text: root.mfa-prompt != "" ? root.mfa-prompt
+                        : (root.lang-en ? "Enter your verification code" : "请输入验证码");
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                    wrap: word-wrap;
+                }
+                code-input := LabeledInput {
+                    label: root.lang-en ? "Code" : "验证码";
+                    placeholder: "123456";
+                    password: !root.mfa-echo;
+                    value <=> root.mfa-answer;
+                    accepted => { root.mfa-submit(); }   // Enter submits
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    GhostButton {
+                        text: @tr("Cancel");
+                        clicked => { root.mfa-cancel(); }
+                    }
+                    PrimaryButton {
+                        text: root.lang-en ? "Verify" : "验证";
+                        clicked => { root.mfa-submit(); }
                     }
                 }
             }
