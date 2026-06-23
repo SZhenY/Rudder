@@ -3,6 +3,75 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
+## [0.4.17] - 2026-06-24
+
+### Added / 新增
+
+- **MFA / 验证码登录(JumpServer 等强制开启 MFA 的堡垒机)(#86)。** 这类堡垒机在
+  keyboard-interactive 里先要密码、再要动态验证码;旧版对每个提示都回填密码,验证码那步
+  必然失败(这正是"不支持 JumpServer"的真实原因)。现在密码挑战自动用已保存密码应答,
+  其余挑战(MFA / 验证码)弹出「双重验证」对话框向你索取,回车即继续;终端与 SFTP 并发
+  连接只问一次,输错码重连会重新弹框,而非静默重放旧码。
+  **MFA / verification-code login on bastions that force MFA (JumpServer etc.) (#86).** Such
+  bastions ask for the password then a one-time code over keyboard-interactive; the old code
+  answered every prompt with the password, so the code step always failed. Now the password
+  challenge is answered automatically and any other challenge pops a "Two-factor (MFA)" dialog
+  showing the server's prompt; the shell and SFTP ask once, and a wrong code re-prompts on
+  reconnect instead of being replayed.
+
+- **纯键盘命令历史检索(#140)。** 命令框按 `Ctrl+R` 唤出历史并聚焦搜索框,`↑↓` 选择、
+  回车执行、`Esc` 关闭并回到终端;终端里 `Ctrl+Shift+R` 跳过去(用 Shift 保留 shell 自身的
+  反向搜索)。整个历史检索可全程不碰鼠标。
+  **Keyboard-only command-history search (#140).** `Ctrl+R` in the command box opens the
+  history with its search box focused; `↑↓` select, Enter runs, `Esc` closes and returns to
+  the terminal. `Ctrl+Shift+R` jumps there from the terminal (Shift keeps the shell's own
+  reverse-search).
+
+- **会话选项:禁用 shell 集成(Windows / pwsh 服务端)(#140)。** 会话编辑「高级」里新增
+  开关,勾上后跳过 cwd 跟随注入与远程资源监控——专为非 POSIX shell(Windows pwsh/cmd)
+  准备,避免注入破坏 shell。
+  **Session option: disable shell integration (Windows / pwsh server) (#140).** A new toggle
+  in the session dialog's advanced section skips the cwd-follow hook and the resource monitor —
+  for non-POSIX shells (Windows pwsh/cmd) where injecting them breaks the shell.
+
+### Changed / 优化
+
+- **空闲降耗:失焦停光标闪烁 + 后台暂停/降频系统采样(#127)。** 几个周期性定时器原先即便
+  窗口在后台、终端空闲也照常触发整窗重绘。现在:光标在窗口失焦时停止闪烁(改为常亮);
+  系统采样在最小化/被遮挡时暂停、仅失焦时降到 ~5s。实测后台空闲 CPU 从约 10% 降到接近 0。
+  **Cut idle CPU: stop the cursor blink when unfocused, pause/throttle the system sampler in
+  the background (#127).** Periodic timers used to repaint the whole window even backgrounded
+  and idle. The cursor now stops blinking (shows solid) when the window is unfocused, and the
+  sampler pauses when minimized/occluded and backs off to ~5 s when merely unfocused.
+
+- **弹窗交互:Esc 关闭 + 关闭确认抢焦点(#140)。** 设置 / 关闭确认 / 凭据 / MFA 现在都能用
+  `Esc` 关闭;关闭确认弹窗会抢走键盘焦点——回车/空格关闭、`Esc` 取消(「点叉 + 空格」一气
+  呵成),终端背后不再被误输入。快捷键弹窗内容过多时可滚动。
+  **Dialog interaction: Esc-to-close + focus the close-confirm dialog (#140).** Settings /
+  close-confirm / credential / MFA dialogs now close with `Esc`; the close-confirm dialog grabs
+  keyboard focus (Enter/Space close, `Esc` cancels) so X-then-Space closes it and the terminal
+  no longer keeps receiving input behind it. The shortcuts dialog scrolls when it's too tall.
+
+### Fixed / 修复
+
+- **Windows / pwsh 服务端 shell 失效(回归,自 0.4.7)(#140)。** cwd 跟随注入的是 POSIX
+  专用 hook,pwsh/cmd 既跑不了、也不回吐它等待的 OSC 7,导致客户端一直屏蔽终端输出、空白
+  卡死(SFTP 是独立通道,所以不受影响)。现给屏蔽窗口加 1.2s 超时兜底:非 POSIX shell 也能
+  正常显示;配合上面的「禁用 shell 集成」开关可做完全干净的处理。
+  **Windows / pwsh server shell stopped working (regression since 0.4.7) (#140).** The
+  cwd-follow setup injects a POSIX-only hook; a Windows pwsh/cmd shell can't run it and never
+  echoes the OSC 7 the client waits for, so output stayed hidden and the terminal went blank.
+  The suppression now has a 1.2 s timeout so a non-POSIX shell is usable again; pair it with the
+  new "disable shell integration" toggle for a fully clean result.
+
+- **修正 macOS 安装说明(#135)。** README 写的是 `tar -xzf …macos-*.tar.gz` + 裸 `meatshell`
+  二进制,但实际发布产物是 `.zip` + `meatshell.app` 应用包,三条命令全对不上。已改为:解压
+  `.zip` →(可选)移入 `/Applications` → 去 `com.apple.quarantine` 隔离属性 → `open`。
+  **Fixed the macOS install instructions (#135).** The README said to `tar -xzf …macos-*.tar.gz`
+  and run a bare `meatshell` binary, but the release artifact is a `.zip` containing
+  `meatshell.app`. Updated to: unzip → optionally move to `/Applications` → clear
+  `com.apple.quarantine` → `open`.
+
 ## [0.4.16] - 2026-06-23
 
 ### Added / 新增
