@@ -28,6 +28,9 @@ export struct SessionDraft {
     stop-bits: int,
     parity: string,        // "none" | "odd" | "even"
     flow-control: string,  // "none" | "hardware" | "software"
+    // Skip the POSIX shell-integration setup (cwd-follow hook + monitor) for
+    // Windows / pwsh servers where it breaks the shell (#140).
+    disable-shell-integration: bool,
 }
 
 // A single segment in a segmented selector (auth toggle, baud presets, …).
@@ -111,6 +114,7 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-stop-bits: "1";
     in-out property <string> draft-parity: "none";
     in-out property <string> draft-flow: "none";
+    in-out property <bool> draft-disable-shell-integration: false;
 
     // Port forwards / tunnels (#56). `forwards` is the current list (fed from
     // Rust); the nf-* properties hold the add-form fields.
@@ -459,6 +463,41 @@ export component SessionDialog inherits Rectangle {
             // ── Port forwarding / tunnels (SSH only) (#56) ──────────────────
             if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
                 spacing: 6px;
+
+                // Shell-integration toggle (#140): the cwd-follow hook + resource
+                // monitor assume a POSIX shell; on a Windows pwsh/cmd server the
+                // injected hook breaks the shell, so let the user turn it off.
+                HorizontalLayout {
+                    spacing: 8px;
+                    Rectangle {
+                        width: 18px; height: 18px; y: 1px;
+                        border-radius: 4px;
+                        border-width: 1px;
+                        border-color: root.draft-disable-shell-integration ? Theme.accent : Theme.border-strong;
+                        background: root.draft-disable-shell-integration ? Theme.accent : transparent;
+                        Text {
+                            text: root.draft-disable-shell-integration ? "\u{E5CA}" : "";
+                            font-family: "Material Icons"; color: white; font-size: 14px;
+                            width: 100%; height: 100%;
+                            horizontal-alignment: center; vertical-alignment: center;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.draft-disable-shell-integration = !root.draft-disable-shell-integration; }
+                        }
+                    }
+                    Text {
+                        text: @tr("Disable shell integration (Windows / pwsh server)");
+                        color: Theme.text-primary; font-size: Theme.fs-sm;
+                        vertical-alignment: center; horizontal-stretch: 1;
+                    }
+                }
+                Text {
+                    text: @tr("Turn on for Windows servers: skips the cwd-follow hook and monitor that assume a POSIX shell and otherwise break the shell.");
+                    color: Theme.text-muted; font-size: Theme.fs-xs; wrap: word-wrap;
+                }
+                Rectangle { height: 6px; }
+
                 Text {
                     text: @tr("Port forwarding");
                     color: Theme.text-secondary;
@@ -586,6 +625,7 @@ export component SessionDialog inherits Rectangle {
                             stop-bits: root.draft-stop-bits.to-float(),
                             parity: root.draft-parity,
                             flow-control: root.draft-flow,
+                            disable-shell-integration: root.draft-disable-shell-integration,
                         });
                     }
                 }

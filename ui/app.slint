@@ -490,6 +490,7 @@ export component AppWindow inherits Window {
     in-out property <string> dialog-stop-bits: "1";
     in-out property <string> dialog-parity: "none";
     in-out property <string> dialog-flow: "none";
+    in-out property <bool> dialog-disable-shell-integration: false;
 
     // Delete-confirmation modal state (#28).
     in-out property <bool> confirm-delete-open: false;
@@ -2252,6 +2253,23 @@ export component AppWindow inherits Window {
         height: parent.height;
         background: #00000088;
         TouchArea { clicked => { root.confirm-close-open = false; } }
+        // Grab the keyboard so the terminal beneath stops receiving input, and
+        // make the dialog operable without the mouse: Enter/Space close, Esc
+        // cancels (so X → Space closes, X → Esc backs out) (#140-3).
+        FocusScope {
+            init => { self.focus(); }
+            key-pressed(e) => {
+                if (e.text == Key.Escape) {
+                    root.confirm-close-open = false;
+                    accept
+                } else if (e.text == Key.Return || e.text == " ") {
+                    root.confirm-close-yes();
+                    accept
+                } else {
+                    accept   // modal: swallow everything else
+                }
+            }
+        }
 
         Rectangle {
             x: (parent.width - self.width) / 2;
@@ -2436,11 +2454,18 @@ export component AppWindow inherits Window {
                     }
                 }
 
+                // Scrollable so the list never overflows the fixed-height card (#140).
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 5px;
+
                 Text { text: root.lang-en ? "Terminal" : "终端";
                        color: Theme.text-muted; font-size: Theme.fs-xs; }
                 ShortcutRow { keys: "Ctrl+Shift+C"; desc: root.lang-en ? "Copy selection" : "复制选中内容"; }
                 ShortcutRow { keys: "Ctrl+V"; desc: root.lang-en ? "Paste" : "粘贴"; }
                 ShortcutRow { keys: "Ctrl+F"; desc: root.lang-en ? "Find in terminal" : "查找"; }
+                ShortcutRow { keys: "Ctrl+Shift+R"; desc: root.lang-en ? "Jump to command history search" : "跳到命令历史搜索"; }
                 ShortcutRow { keys: root.lang-en ? "Drag" : "鼠标拖动"; desc: root.lang-en ? "Select text" : "选择文本"; }
                 ShortcutRow { keys: root.lang-en ? "Wheel / Scrollbar" : "滚轮 / 滚动条"; desc: root.lang-en ? "Scroll history" : "滚动历史"; }
 
@@ -2449,12 +2474,15 @@ export component AppWindow inherits Window {
                        color: Theme.text-muted; font-size: Theme.fs-xs; }
                 ShortcutRow { keys: "Enter"; desc: root.lang-en ? "Send command" : "发送命令"; }
                 ShortcutRow { keys: "↑ / ↓"; desc: root.lang-en ? "Previous / next in history" : "上一条 / 下一条历史"; }
+                ShortcutRow { keys: "Ctrl+R"; desc: root.lang-en ? "Search history (↑↓ select, Enter run, Esc close)" : "搜索命令历史(↑↓ 选择,回车执行,Esc 关闭)"; }
+                ShortcutRow { keys: "Esc"; desc: root.lang-en ? "Close history / focus terminal" : "关闭历史 / 聚焦终端"; }
                 ShortcutRow { keys: "Ctrl+A"; desc: root.lang-en ? "Move to start of line" : "移到行首"; }
                 ShortcutRow { keys: "Ctrl+E"; desc: root.lang-en ? "Move to end of line" : "移到行尾"; }
                 ShortcutRow { keys: "Ctrl+K"; desc: root.lang-en ? "Delete to end of line" : "删除到行尾"; }
                 ShortcutRow { keys: "Ctrl+U"; desc: root.lang-en ? "Delete to start of line" : "删除到行首"; }
-
-                Rectangle { vertical-stretch: 1; }
+                        Rectangle { height: 2px; }
+                    }
+                }
             }
         }
     }
@@ -2573,6 +2601,7 @@ export component AppWindow inherits Window {
         draft-stop-bits <=> root.dialog-stop-bits;
         draft-parity <=> root.dialog-parity;
         draft-flow <=> root.dialog-flow;
+        draft-disable-shell-integration <=> root.dialog-disable-shell-integration;
         forwards: root.dialog-forwards;
         submit(draft) => { root.session-dialog-submit(draft); }
         cancel => { root.session-dialog-cancel(); }
@@ -2656,12 +2685,16 @@ export component AppWindow inherits Window {
                     label: @tr("Username");
                     placeholder: "root";
                     value <=> root.cred-user;
+                    accepted => { root.cred-accept(); }
+                    canceled => { root.cred-reject(); }   // Esc cancels (#140-3)
                 }
                 if root.cred-need-password : LabeledInput {
                     label: @tr("Password");
                     placeholder: "••••••••";
                     password: true;
                     value <=> root.cred-password;
+                    accepted => { root.cred-accept(); }
+                    canceled => { root.cred-reject(); }   // Esc cancels (#140-3)
                 }
                 CheckBox {
                     text: @tr("Remember for this session");
@@ -2731,7 +2764,9 @@ export component AppWindow inherits Window {
                     placeholder: "123456";
                     password: !root.mfa-echo;
                     value <=> root.mfa-answer;
+                    auto-focus: true;
                     accepted => { root.mfa-submit(); }   // Enter submits
+                    canceled => { root.mfa-cancel(); }   // Esc cancels (#140-3)
                 }
                 HorizontalLayout {
                     alignment: end;
@@ -2758,10 +2793,14 @@ export component AppWindow inherits Window {
         width: 100%;
         height: 100%;
         background: #00000080;            // dim backdrop
-        // Grab focus and swallow keys so nothing leaks to the terminal beneath.
+        // Grab focus and swallow keys so nothing leaks to the terminal beneath;
+        // Esc closes the panel (#140-3).
         FocusScope {
             init => { self.focus(); }
-            key-pressed(e) => { accept }
+            key-pressed(e) => {
+                if (e.text == Key.Escape) { root.interface-open = false; }
+                accept
+            }
             key-released(e) => { accept }
         }
         // Modal: clicking the backdrop does nothing (only the ✕ closes it).

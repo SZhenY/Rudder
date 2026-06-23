@@ -692,6 +692,12 @@ async fn run_session(
     // True from injecting PROMPT_SETUP until the echoed setup line has been
     // received and stripped; output is buffered (not shown) during that window.
     let mut suppress_echo = false;
+    // Hard deadline for the suppression window. A non-POSIX shell (Windows
+    // pwsh/cmd) never runs our hook and so never echoes the OSC 7 we wait for —
+    // without this, output stayed hidden until a 16 KiB cap, leaving the terminal
+    // blank/"unusable" on Windows servers (#140-1). When the deadline passes we
+    // stop suppressing and show whatever arrived.
+    let mut suppress_deadline: Option<tokio::time::Instant> = None;
     // Buffers output while `suppress_echo` so the (long) echoed setup line can be
     // stripped even when it splits across reads (#98).
     let mut echo_buf = String::new();
@@ -733,6 +739,10 @@ async fn run_session(
     // wraps — we never substring-match it.
     const PROMPT_BODY: &str = "test -z \"$FISH_VERSION\" && eval '__msc(){ __c=\"$(fc -ln -1 2>/dev/null)\"; [ -n \"$__c\" ] && [ \"$__c\" != \"$__cl\" ] && { __cl=\"$__c\"; printf \"\\033]697;%s\\007\" \"$__c\"; }; }; __ms7(){ printf \"\\033]7;file://%s%s\\007\" \"$HOSTNAME\" \"$PWD\"; __msc; }; __cl=\"$(fc -ln -1 2>/dev/null)\"; if [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null; add-zsh-hook precmd __ms7; else PROMPT_COMMAND=\"__ms7${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi; __ms7'";
     let prompt_setup = format!(" {}\r", PROMPT_BODY);
+    // A short, un-wrappable prefix of the injected line, used to locate (and
+    // strip) its echo. Hoisted so both the data path and the timeout path can
+    // use it (#140-1).
+    const PROMPT_PREFIX: &str = "test -z \"$FISH_VERSION\"";
 
     // --- Remote resource monitor (separate exec channel) ----------------
     // A tiny remote loop streams /proc/stat + /proc/meminfo every 2s; we parse
@@ -751,17 +761,24 @@ async fn run_session(
     // line can't bloat the stream. A host whose `ps` lacks `--sort`/`-o` simply
     // yields nothing (2>/dev/null), degrading to an empty process list.
     const MON_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; while :; do awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __PS__; ps -eo pid,user,pcpu,pmem,args --sort=-pcpu 2>/dev/null | head -n 41 | cut -c -200; echo __MSTICK__; sleep 2; done\n";
-    let mut mon_channel = match handle.channel_open_session().await {
-        Ok(ch) => match ch.exec(true, MON_CMD).await {
-            Ok(()) => Some(ch),
+    // Skip the resource monitor entirely when shell integration is off (a
+    // non-POSIX / Windows server) — the /proc-based loop only spews errors there
+    // (#140).
+    let mut mon_channel = if session.disable_shell_integration {
+        None
+    } else {
+        match handle.channel_open_session().await {
+            Ok(ch) => match ch.exec(true, MON_CMD).await {
+                Ok(()) => Some(ch),
+                Err(e) => {
+                    tracing::warn!("monitor exec failed: {e}");
+                    None
+                }
+            },
             Err(e) => {
-                tracing::warn!("monitor exec failed: {e}");
+                tracing::warn!("monitor channel open failed: {e}");
                 None
             }
-        },
-        Err(e) => {
-            tracing::warn!("monitor channel open failed: {e}");
-            None
         }
     };
     let mut mon_buf = String::new();
@@ -843,6 +860,29 @@ async fn run_session(
                     }
                 }
             }
+            // Suppression safety net: if the injected hook hasn't echoed its OSC 7
+            // by the deadline, the remote shell isn't the POSIX one we injected for
+            // (e.g. Windows pwsh/cmd). Stop hiding output so the terminal is usable
+            // again; best-effort drop just the echoed setup line (#140-1).
+            _ = async {
+                match suppress_deadline {
+                    Some(d) => tokio::time::sleep_until(d).await,
+                    None => std::future::pending::<()>().await,
+                }
+            }, if suppress_echo => {
+                suppress_echo = false;
+                suppress_deadline = None;
+                let mut buf = std::mem::take(&mut echo_buf);
+                if let Some(p) = buf.find(PROMPT_PREFIX) {
+                    let line_start = buf[..p].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                    let line_end =
+                        buf[p..].find('\n').map(|i| p + i + 1).unwrap_or(buf.len());
+                    buf.replace_range(line_start..line_end, "");
+                }
+                if !buf.is_empty() {
+                    let _ = events.send(SessionEvent::Output(buf));
+                }
+            }
             msg = channel.wait() => {
                 match msg {
                     Some(ChannelMsg::Data { data }) => {
@@ -884,10 +924,21 @@ async fn run_session(
 
                         let chunk = String::from_utf8_lossy(&data).into_owned();
 
-                        // Inject PROMPT_COMMAND after the first real shell output.
-                        if !prompt_injected && !chunk.trim().is_empty() {
+                        // Inject PROMPT_COMMAND after the first real shell output,
+                        // unless shell integration is disabled for this session
+                        // (e.g. a Windows pwsh/cmd server) (#140).
+                        if !prompt_injected
+                            && !chunk.trim().is_empty()
+                            && !session.disable_shell_integration
+                        {
                             prompt_injected = true;
                             suppress_echo = true;
+                            // Give the hook ~1.2 s to echo its OSC 7; past that we
+                            // assume a non-POSIX shell and stop hiding output (#140-1).
+                            suppress_deadline = Some(
+                                tokio::time::Instant::now()
+                                    + std::time::Duration::from_millis(1200),
+                            );
                             let _ = channel.data(prompt_setup.as_bytes()).await;
                             // Fall through: this chunk is buffered below so the
                             // echoed setup line is stripped as a single piece.
@@ -904,7 +955,6 @@ async fn run_session(
                         // short, un-wrappable prefix of the injected command. A size
                         // cap is the safety valve for a shell that never reports back
                         // (e.g. dash without PROMPT_COMMAND).
-                        const PROMPT_PREFIX: &str = "test -z \"$FISH_VERSION\"";
                         let mut text = if suppress_echo {
                             echo_buf.push_str(&chunk);
                             const ECHO_BUF_CAP: usize = 1 << 14; // 16 KiB

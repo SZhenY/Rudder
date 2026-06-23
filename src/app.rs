@@ -1393,6 +1393,7 @@ fn wire_session_callbacks(
             w.set_dialog_stop_bits("1".into());
             w.set_dialog_parity("none".into());
             w.set_dialog_flow("none".into());
+            w.set_dialog_disable_shell_integration(false);
             w.set_dialog_editing(false);
             w.set_dialog_open(true);
         }
@@ -1542,6 +1543,7 @@ fn wire_session_callbacks(
                 w.set_dialog_stop_bits(session.stop_bits.to_string().into());
                 w.set_dialog_parity(session.parity.clone().into());
                 w.set_dialog_flow(session.flow_control.clone().into());
+                w.set_dialog_disable_shell_integration(session.disable_shell_integration);
                 w.set_dialog_editing(true);
                 w.set_dialog_open(true);
             }
@@ -1770,6 +1772,7 @@ fn wire_session_callbacks(
                 parity: draft.parity.to_string(),
                 flow_control: draft.flow_control.to_string(),
                 forwards: edit_forwards.borrow().clone(),
+                disable_shell_integration: draft.disable_shell_integration,
             };
             {
                 let mut s = store.borrow_mut();
