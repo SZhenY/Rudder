@@ -353,7 +353,9 @@ export component TerminalView inherits Rectangle {
             init => { ime-input.focus(); }
 
             Timer {
-                running: ime-input.has-focus;
+                // Stop blinking (and thus repainting) when the window isn't
+                // focused — an idle background terminal should cost ~0 CPU (#127).
+                running: ime-input.has-focus && Theme.window-focused;
                 interval: 530ms;
                 triggered => { key-capture.cursor-blink = !key-capture.cursor-blink; }
             }
@@ -532,7 +534,11 @@ export component TerminalView inherits Rectangle {
                             width: root.cell-w;
                             height: root.cell-h;
                             background: Theme.term-fg;
-                            visible: ime-input.has-focus && key-capture.cursor-blink;
+                            // Blink while focused; show solid (no repaint) when the
+                            // window is unfocused so the cursor neither vanishes nor
+                            // keeps the window repainting (#127).
+                            visible: ime-input.has-focus
+                                && (key-capture.cursor-blink || !Theme.window-focused);
                         }
 
                         // --- Right-click context menu ---------------------

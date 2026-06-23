@@ -328,6 +328,9 @@ export component AppWindow inherits Window {
     in-out property <length> term-font-size <=> Theme.term-font-size;
     in-out property <float> ui-scale <=> Theme.ui-scale;   // global UI zoom (#100)
     in-out property <string> ui-font-family <=> Theme.ui-font-family;
+    // Window focused & visible — Rust drives it from winit events; gates the
+    // cursor blink so an idle background window stops repainting (#127).
+    in-out property <bool> window-focused <=> Theme.window-focused;
     // Wallpaper / immersive theming — Rust drives these from the wallpaper module.
     in-out property <image> wallpaper-img <=> Theme.wallpaper;
     in-out property <bool> wallpaper-active <=> Theme.wallpaper-active;

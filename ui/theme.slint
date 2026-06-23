@@ -77,6 +77,11 @@ export global Theme {
     out property <brush> term-bg: root.wallpaper-active ? base-term-bg.with-alpha(0.72) : base-term-bg;
     out property <brush> term-fg: dark ? #d4d4d4 : #2d2d2f;
 
+    // Whether the app window is focused & visible. Rust drives this from winit
+    // focus/minimize/occlusion events; the terminal cursor stops blinking when
+    // it's false, so an idle background window doesn't repaint (#127).
+    in-out property <bool> window-focused: true;
+
     // Global UI scale (#100/#117/#118). Rust sets this from the saved setting;
     // all font sizes and spacing/radii below multiply by it, so the whole UI
     // grows/shrinks live (the terminal font has its own size setting).

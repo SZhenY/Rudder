@@ -868,6 +868,20 @@ pub fn run() -> Result<()> {
         },
     );
 
+    // --- Window activity, for idle-CPU throttling (#127) ----------------
+    // Idle terminals shouldn't burn CPU: pause the sampler when the window is
+    // minimized / occluded, throttle it when it's merely unfocused, and stop the
+    // cursor blink whenever the window isn't focused (mirrors what Tabby / Windows
+    // Terminal do). The winit event handler below updates this; the blink reads
+    // Theme.window-focused.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum WinActivity {
+        Active,     // focused & visible → full rate
+        Background, // visible but unfocused → throttled
+        Hidden,     // minimized / occluded → paused
+    }
+    let activity = Rc::new(std::cell::Cell::new(WinActivity::Active));
+
     // --- System sampler (1 Hz) ------------------------------------------
     let sampler = Rc::new(Mutex::new(SystemSampler::new()));
     let weak = window.as_weak();
@@ -875,11 +889,25 @@ pub fn run() -> Result<()> {
     let tick_statuses = tab_statuses.clone();
     let tick_local = local_snap.clone();
     let tick_net = local_net_hist.clone();
+    let tick_activity = activity.clone();
+    let mut bg_tick = 0u32;
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
         SystemSampler::recommended_interval(),
         move || {
+            // Skip the (non-trivial) sysinfo refresh + sidebar repaint when no one
+            // is looking, and back off to ~5 s when the window is in the background.
+            match tick_activity.get() {
+                WinActivity::Hidden => return,
+                WinActivity::Background => {
+                    bg_tick = bg_tick.wrapping_add(1);
+                    if bg_tick % 5 != 0 {
+                        return;
+                    }
+                }
+                WinActivity::Active => {}
+            }
             let snap = {
                 let mut s = tick_sampler.lock().expect("sampler poisoned");
                 s.sample()
@@ -915,14 +943,46 @@ pub fn run() -> Result<()> {
         let sh = sftp_handles.clone();
         let close_handles = handles.clone();
         let ev_store = store.clone();
+        let ev_activity = activity.clone();
+        // Track the inputs that make up WinActivity; recompute on each change.
+        let mut focused = true;
+        let mut minimized = false;
+        let mut occluded = false;
         window.window().on_winit_window_event(move |_w, event| {
+            // Recompute window activity, push it to the shared cell, and update
+            // Theme.window-focused (gates the cursor blink) (#127).
+            let apply_activity = |focused: bool, minimized: bool, occluded: bool| {
+                let act = if minimized || occluded {
+                    WinActivity::Hidden
+                } else if focused {
+                    WinActivity::Active
+                } else {
+                    WinActivity::Background
+                };
+                ev_activity.set(act);
+                if let Some(win) = weak.upgrade() {
+                    win.set_window_focused(act == WinActivity::Active);
+                }
+            };
             match event {
                 WEvent::DroppedFile(path) => {
                     if let Some(win) = weak.upgrade() {
                         handle_file_drop(&win, &sh, path.to_string_lossy().to_string());
                     }
                 }
-                WEvent::Resized(_) => {
+                WEvent::Focused(f) => {
+                    focused = *f;
+                    apply_activity(focused, minimized, occluded);
+                }
+                WEvent::Occluded(o) => {
+                    occluded = *o;
+                    apply_activity(focused, minimized, occluded);
+                }
+                WEvent::Resized(size) => {
+                    // A 0-sized resize is how Windows reports a minimize; track it
+                    // so we pause the sampler while minimized (#127).
+                    minimized = size.width == 0 || size.height == 0;
+                    apply_activity(focused, minimized, occluded);
                     // Keep the maximize/restore icon (and resize-edge gating) in
                     // sync when the OS changes the window state (#119).
                     if let Some(win) = weak.upgrade() {
