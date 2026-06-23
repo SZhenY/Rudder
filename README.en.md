@@ -46,11 +46,20 @@ chmod +x install-linux.sh && ./install-linux.sh
 
 ### macOS
 
+The download is a `.zip` containing the `meatshell.app` bundle:
+
 ```bash
-tar -xzf meatshell-*-macos-*.tar.gz          # aarch64 = Apple Silicon, x86_64 = Intel
-xattr -dr com.apple.quarantine meatshell     # clear the "unsigned app" Gatekeeper flag
-./meatshell
+# Unzip (aarch64 = Apple Silicon, x86_64 = Intel)
+unzip meatshell-*-macos-*.zip
+# Move it to Applications (optional — it also runs in place)
+mv meatshell.app /Applications/
+# Clear the quarantine flag, otherwise macOS says "meatshell is damaged and can't be opened"
+xattr -dr com.apple.quarantine /Applications/meatshell.app
+# Open it (or double-click in Finder)
+open /Applications/meatshell.app
 ```
+
+> If you didn't move it to `/Applications`, point both paths above at wherever the `.app` actually is (e.g. `~/Downloads/meatshell.app`).
 
 > To build from source, see [Running](#running) below.
 

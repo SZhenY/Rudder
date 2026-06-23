@@ -42,11 +42,20 @@ chmod +x install-linux.sh && ./install-linux.sh
 
 ### macOS
 
+下载得到的是 `.zip`，里面是 `meatshell.app` 应用程序包：
+
 ```bash
-tar -xzf meatshell-*-macos-*.tar.gz          # aarch64 = Apple 芯片，x86_64 = Intel
-xattr -dr com.apple.quarantine meatshell     # 去掉「未签名应用」的 Gatekeeper 拦截
-./meatshell
+# 解压(aarch64 = Apple 芯片，x86_64 = Intel)
+unzip meatshell-*-macos-*.zip
+# 移到「应用程序」(可选，留在原地也行)
+mv meatshell.app /Applications/
+# 去掉「未签名应用」的隔离属性，否则会提示「meatshell 已损坏，无法打开」
+xattr -dr com.apple.quarantine /Applications/meatshell.app
+# 打开(或在「访达」里双击)
+open /Applications/meatshell.app
 ```
+
+> 若未移到 `/Applications`，把上面两条路径换成 `.app` 实际所在位置(如 `~/Downloads/meatshell.app`)即可。
 
 > 从源码构建见下方 [运行](#运行)。
 
