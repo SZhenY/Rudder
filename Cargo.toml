@@ -28,6 +28,11 @@ chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.33"
 uuid = { version = "1", features = ["v4", "serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs"] }
+# Pinned to 0.49: RUSTSEC-2026-0154 (an unbounded-allocation DoS in russh's
+# ssh-AGENT frame parsing) is fixed only in >= 0.60.3, which drags in pre-release
+# crypto crates (ed25519-dalek 3.0.0-pre, aes-gcm 0.11.0-rc, …). meatshell never
+# uses the ssh-agent, so the advisory is not reachable here — see audit.toml.
+# Revisit the upgrade once russh's deps leave the -rc channel (cf. PR #151).
 russh = "0.49"
 russh-keys = "0.49"
 ssh-key = "0.6"
