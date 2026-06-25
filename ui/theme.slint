@@ -59,8 +59,10 @@ export global Theme {
     out property <brush> border-strong: dark ? #4a4e59 : #c7c7cc;
 
     out property <brush> text-primary:   dark ? #e6e8ee : #1d1d1f;
-    out property <brush> text-secondary: dark ? #b4b9c4 : #6e6e73;
-    out property <brush> text-muted:     dark ? #9196a3 : #aeaeb2;
+    // Light-mode secondary/muted darkened (#aeaeb2 → #7c7c82, #6e6e73 → #55555a):
+    // the old greys were too faint on the bright (frosted-wallpaper) background.
+    out property <brush> text-secondary: dark ? #b4b9c4 : #55555a;
+    out property <brush> text-muted:     dark ? #9196a3 : #7c7c82;
 
     out property <brush> accent:         root.wallpaper-active ? root.wp-accent          : (dark ? #4a90e2 : #0071e3);
     out property <brush> accent-hover:   root.wallpaper-active ? root.wp-accent.brighter(0.12) : (dark ? #5aa0f2 : #0077ed);

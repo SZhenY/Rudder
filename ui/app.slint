@@ -795,7 +795,10 @@ export component AppWindow inherits Window {
                 // a floating button at the docked edge below (#dock).
                 // When docked left/top + collapsed, leave room on the far left so
                 // the expand button sits just left of the first tab (not over it).
-                if (root.sidebar-dock == "left" || root.sidebar-dock == "top") && root.sidebar-collapsed : Rectangle { width: 30px; }
+                // Frosted backing (matches the expand button) so the reserved gap
+                // doesn't show the raw wallpaper as a dark block behind the button
+                // in immersive mode (#dock).
+                if (root.sidebar-dock == "left" || root.sidebar-dock == "top") && root.sidebar-collapsed : Rectangle { width: 30px; background: Theme.bg-elevated; }
                 TabBar {
                     horizontal-stretch: 1;
                     // Reserve room for the top-right toolbar icons that sit over
