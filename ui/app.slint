@@ -1360,8 +1360,10 @@ export component AppWindow inherits Window {
     // Always present; toggled via `visible` (avoids destroying interactive
     // elements mid-event, which crashes when created/removed at the Window root).
     Rectangle {
-        x: parent.width - 364px;
-        y: root.custom-titlebar ? 78px : 40px;
+        // Follow the download button (shifts with the toolbar when the resource
+        // panel docks right/top) (#dock).
+        x: parent.width - 364px - root.toolbar-x-off;
+        y: (root.custom-titlebar ? 78px : 40px) + root.toolbar-y-off;
         width: 350px;
         height: 400px;
         visible: root.download-open;
@@ -1570,8 +1572,11 @@ export component AppWindow inherits Window {
         clicked => { root.settings-open = false; }
     }
     Rectangle {
-        x: parent.width - 196px;
-        y: root.custom-titlebar ? 78px : 40px;
+        // Follow the gear button: it shifts by toolbar-x/y-off when the resource
+        // panel docks right/top, so the menu must shift the same amount or it ends
+        // up floating over the resource panel (#dock).
+        x: parent.width - 196px - root.toolbar-x-off;
+        y: (root.custom-titlebar ? 78px : 40px) + root.toolbar-y-off;
         width: 198px;
         height: 220px;
         visible: root.settings-open;
