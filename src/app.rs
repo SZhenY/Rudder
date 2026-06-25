@@ -2553,6 +2553,55 @@ fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
     out
 }
 
+/// Apply a settled terminal size to the PTY + vt100 grid. Factored out of the
+/// resize callback so that callback can debounce — a layout reflow can briefly
+/// report a near-zero width, collapsing term-cols to its 10-col floor; applying
+/// that to the remote PTY reflows vt100 and garbles running output like a
+/// `git clone` progress meter (#163). Debouncing means only the settled size
+/// ever reaches the server.
+fn apply_terminal_resize(
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    bufs: &TermBuffers,
+    last_term_size: &Arc<Mutex<(u32, u32)>>,
+    tab_id: &str,
+    cols: u32,
+    rows: u32,
+) {
+    *last_term_size.lock().unwrap() = (cols, rows);
+    if let Some(handle) = handles.borrow().get(tab_id) {
+        handle.resize(cols, rows);
+    }
+    if let Some(buf) = bufs.lock().unwrap().get_mut(tab_id) {
+        let (old_rows, old_cols) = buf.parser.screen().size();
+        let new_rows = rows as u16;
+        // Shrinking the grid makes vt100 truncate rows from the bottom (dropping
+        // recent output + the prompt, #18). Scroll up just enough to keep the
+        // cursor on-screen first. Skipped on the alternate screen.
+        if new_rows < old_rows && !buf.parser.screen().alternate_screen() {
+            let (cursor_row, _) = buf.parser.screen().cursor_position();
+            let scroll = (cursor_row + 1).saturating_sub(new_rows);
+            if scroll > 0 {
+                let saved: Vec<Line> = {
+                    let s = buf.parser.screen();
+                    (0..scroll).map(|r| build_row(s, r, old_cols)).collect()
+                };
+                for line in saved {
+                    buf.history.push(line);
+                }
+                if buf.history.len() > MAX_HISTORY {
+                    let drop = buf.history.len() - MAX_HISTORY;
+                    buf.history.drain(0..drop);
+                }
+                buf.parser.process(format!("\x1b[{scroll}S").as_bytes());
+            }
+        }
+        buf.parser.set_size(new_rows, cols as u16);
+        // The pre/post-resize screens differ; drop the scroll-detection snapshot
+        // so the next output isn't mis-read as a scroll.
+        buf.prev.clear();
+    }
+}
+
 /// Recompute spans + cursor + find/selection highlights for one tab from its
 /// current vt100 screen (respecting scrollback) and push them to the model.
 /// Used by scroll + selection callbacks (Output has its own equivalent inline).
@@ -4829,59 +4878,41 @@ fn wire_key_input(
         // probe Text) and passes whole column/row counts directly, so there is
         // no pixel→cell guesswork here.  This keeps full-screen programs like
         // nano from over-counting rows and clipping their bottom shortcut bar.
+        // Debounce PTY resizes (#163): a layout reflow (a tab becoming visible,
+        // the SFTP panel docking, a window drag) can momentarily report a
+        // near-zero width, which collapses term-cols to its 10-col floor.
+        // Applying that to the remote PTY immediately resizes the server to 10
+        // columns and reflows vt100 — garbling running output (e.g. a `git clone`
+        // progress meter wraps at 10 chars). Coalesce rapid changes and apply
+        // only the size that's still set after a short quiet period, so a
+        // transient bad value never reaches the server.
+        let pending_size: Rc<RefCell<HashMap<String, (u32, u32)>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+        let resize_debounce = Rc::new(slint::Timer::default());
         window.on_terminal_resize(move |tab_id: SharedString, cols_f: f32, rows_f: f32| {
             let cols = (cols_f as u32).max(10);
             let rows = (rows_f as u32).max(5);
-            tracing::debug!(
-                "terminal_resize tab={} cols={} rows={}",
-                tab_id, cols, rows
-            );
-            // Keep the shared size up-to-date so future connections start
-            // with the correct PTY dimensions.
-            *last_term_size.lock().unwrap() = (cols, rows);
-            if let Some(handle) = handles.borrow().get(tab_id.as_str()) {
-                handle.resize(cols, rows);
-            }
-            if let Some(buf) = bufs_resize.lock().unwrap().get_mut(tab_id.as_str()) {
-                let (old_rows, old_cols) = buf.parser.screen().size();
-                let new_rows = rows as u16;
-                // Shrinking the grid (e.g. dragging the SFTP panel up) makes
-                // vt100's set_size truncate rows from the BOTTOM — silently
-                // dropping the most recent output + prompt (#18).  To keep the
-                // bottom (recent) rows we scroll the screen up first, but only
-                // by as much as is needed to keep the CURSOR on-screen: the rows
-                // *below* the cursor are unused blank space and can be truncated
-                // for free.  Scrolling by the full delta instead would push real
-                // content off the top into scrollback whenever the screen wasn't
-                // full — e.g. a fresh shell with a few prompt lines — leaving a
-                // blank grid with the cursor stranded at the top, and rapid
-                // up/down dragging would repeat that until the prompt was gone.
-                // Skipped on the alternate screen (vim/btop own their buffer).
-                if new_rows < old_rows && !buf.parser.screen().alternate_screen() {
-                    let (cursor_row, _) = buf.parser.screen().cursor_position();
-                    // Rows that must scroll off the top to keep the cursor in view.
-                    let scroll = (cursor_row + 1).saturating_sub(new_rows);
-                    if scroll > 0 {
-                        let saved: Vec<Line> = {
-                            let s = buf.parser.screen();
-                            (0..scroll).map(|r| build_row(s, r, old_cols)).collect()
-                        };
-                        for line in saved {
-                            buf.history.push(line);
-                        }
-                        if buf.history.len() > MAX_HISTORY {
-                            let drop = buf.history.len() - MAX_HISTORY;
-                            buf.history.drain(0..drop);
-                        }
-                        buf.parser.process(format!("\x1b[{scroll}S").as_bytes());
+            pending_size
+                .borrow_mut()
+                .insert(tab_id.to_string(), (cols, rows));
+            let pending = pending_size.clone();
+            let handles = handles.clone();
+            let bufs = bufs_resize.clone();
+            let last = last_term_size.clone();
+            // (Re)arm the single-shot timer; rapid changes keep resetting it so
+            // only the final, settled size is applied.
+            resize_debounce.start(
+                slint::TimerMode::SingleShot,
+                std::time::Duration::from_millis(150),
+                move || {
+                    let settled: Vec<(String, (u32, u32))> =
+                        pending.borrow_mut().drain().collect();
+                    for (tab, (cols, rows)) in settled {
+                        tracing::debug!("terminal_resize tab={} cols={} rows={}", tab, cols, rows);
+                        apply_terminal_resize(&handles, &bufs, &last, &tab, cols, rows);
                     }
-                }
-                buf.parser.set_size(new_rows, cols as u16);
-                // The pre/post-resize screens differ in size+content; drop the
-                // scroll-detection snapshot so the next output isn't mis-read as
-                // a scroll (which would double-capture lines).
-                buf.prev.clear();
-            }
+                },
+            );
         });
     }
 
