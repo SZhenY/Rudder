@@ -3407,6 +3407,7 @@ dependencies = [
  "icu_provider",
  "image",
  "rand 0.8.6",
+ "raw-window-handle",
  "rfd",
  "russh",
  "russh-keys",

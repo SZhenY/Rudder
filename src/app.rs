@@ -148,6 +148,65 @@ fn set_window_icon(window: &AppWindow) {
     window.window().with_winit_window(|ww| ww.set_window_icon(Some(icon)));
 }
 
+/// On Windows 11, give the frameless window the native rounded corners (#166) and
+/// drop shadow (#162) it otherwise loses by drawing its own title bar. Harmless
+/// on Windows 10 (the corner attribute is ignored) and a no-op elsewhere.
+#[cfg(windows)]
+fn apply_window_chrome(window: &slint::Window) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    window.with_winit_window(|ww| {
+        let Ok(handle) = ww.window_handle() else { return };
+        let RawWindowHandle::Win32(h) = handle.as_raw() else { return };
+        let hwnd = h.hwnd.get();
+
+        #[repr(C)]
+        struct Margins {
+            left: i32,
+            right: i32,
+            top: i32,
+            bottom: i32,
+        }
+        #[link(name = "dwmapi")]
+        extern "system" {
+            fn DwmSetWindowAttribute(
+                hwnd: isize,
+                attr: u32,
+                pv: *const core::ffi::c_void,
+                cb: u32,
+            ) -> i32;
+            fn DwmExtendFrameIntoClientArea(hwnd: isize, margins: *const Margins) -> i32;
+        }
+        // DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2 (Windows 11+).
+        const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+        const DWMWCP_ROUND: u32 = 2;
+        unsafe {
+            let pref: u32 = DWMWCP_ROUND;
+            let corner_hr = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                (&pref as *const u32).cast(),
+                4,
+            );
+            // A borderless (WS_POPUP) window has no system shadow; extending the
+            // DWM frame by a hair brings it back. The margin renders as glass, but
+            // our opaque background paints over it — only the shadow shows.
+            let m = Margins {
+                left: 1,
+                right: 1,
+                top: 1,
+                bottom: 1,
+            };
+            let shadow_hr = DwmExtendFrameIntoClientArea(hwnd, &m);
+            tracing::debug!(
+                "window chrome applied: hwnd={hwnd:#x} corner_hr={corner_hr:#x} shadow_hr={shadow_hr:#x}"
+            );
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn apply_window_chrome(_window: &slint::Window) {}
+
 pub fn run() -> Result<()> {
     // --- Runtime + store -------------------------------------------------
     let runtime = Arc::new(
@@ -948,7 +1007,16 @@ pub fn run() -> Result<()> {
         let mut focused = true;
         let mut minimized = false;
         let mut occluded = false;
+        // Apply the Win11 rounded-corner + shadow chrome once, on the first event
+        // (the HWND reliably exists by then, unlike a pre-run timer) (#162/#166).
+        let mut chrome_done = false;
         window.window().on_winit_window_event(move |_w, event| {
+            if !chrome_done {
+                chrome_done = true;
+                if let Some(win) = weak.upgrade() {
+                    apply_window_chrome(win.window());
+                }
+            }
             // Recompute window activity, push it to the shared cell, and update
             // Theme.window-focused (gates the cursor blink) (#127).
             let apply_activity = |focused: bool, minimized: bool, occluded: bool| {
