@@ -335,6 +335,9 @@ pub fn run() -> Result<()> {
         let is_dark = theme_pref_is_dark(&store.borrow());
         window.set_dark_mode(is_dark);
     }
+    // On macOS, app shortcuts use Cmd (⌘) so physical Ctrl stays free for the
+    // shell (#158); on Windows/Linux they stay Ctrl-based.
+    window.set_is_mac(cfg!(target_os = "macos"));
 
     // Apply the saved terminal font (Interface settings). An empty family keeps
     // the built-in default; the size always applies (defaults to 13).
