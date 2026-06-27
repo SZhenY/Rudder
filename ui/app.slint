@@ -1168,8 +1168,10 @@ export component AppWindow inherits Window {
             // TextInput because it doesn't consume them.
             key-pressed(e) => {
                 // ⌘S on macOS, Ctrl+S elsewhere. (Slint maps `control` to Cmd on
-                // macOS — see #158, so no platform branch is needed here.)
-                if (e.text == "s" && e.modifiers.control) {
+                // macOS — see #158, so no platform branch is needed here.) On macOS
+                // Cmd+letter arrives as the C0 control char (Cmd+S = "\u{13}"), not
+                // "s" — confirmed on an M4 — so accept both forms (#158).
+                if (e.modifiers.control && (e.text == "s" || e.text == "S" || e.text == "\u{0013}")) {
                     root.save-file();
                     return accept;
                 }
