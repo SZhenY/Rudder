@@ -3,6 +3,33 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
+## [0.4.19] - 2026-06-28
+
+### Added / 新增
+
+- **macOS 沉浸式标题栏 (#162)。** 此前 Mac 保留原生标题栏,暗模式下顶部是一条突兀的白条。现把
+  原生标题栏设为透明并让窗口内容延伸到其下(fullSizeContentView),标题栏改为显示窗口底色 / 壁纸,
+  跟随暗 / 浅色;顶部预留交通灯按钮的位置并做磨砂,与其它面板统一。Windows/Linux 不受影响。
+  **Immersive title bar on macOS (#162).** macOS kept the native title bar, which showed a jarring
+  white strip at the top in dark mode. The native title bar is now transparent with the window content
+  extending under it (fullSizeContentView), so it shows the window background / wallpaper and follows
+  dark / light; the top reserves room for the traffic-light buttons and is frosted to match the other
+  panels. Windows/Linux unaffected.
+
+### Fixed / 修复
+
+- **修正 macOS 快捷键映射,0.4.18 写反了 (#158)。** Slint 在 macOS 上把 `control` 报成 Cmd(⌘)、
+  `meta` 报成物理 Ctrl,0.4.18 正好用反,导致 ⌘ 快捷键不触发、物理 Ctrl 反而误触发,基本不可用。
+  本版改正并在真机(Mac mini M4)逐一验证:⌘C / ⌘V / ⌘F / ⌘⇧R / ⌘S 正常触发,物理 Ctrl 的
+  ^C / ^X / ^U / ^W 正常直达 shell。另外 macOS 上 Cmd+字母 经 Slint 送来的是控制字符(⌘S = `\u{13}`),
+  编辑器保存据此补上识别,修复 ⌘S 失灵。
+  **Corrected the macOS shortcut mapping that 0.4.18 had backwards (#158).** On macOS Slint reports
+  `control` as Cmd (⌘) and `meta` as the physical Ctrl; 0.4.18 used them the wrong way round, so ⌘
+  shortcuts did nothing and the physical Ctrl triggered them instead — essentially unusable. This
+  release fixes it and verifies every case on real hardware (Mac mini M4): ⌘C / ⌘V / ⌘F / ⌘⇧R / ⌘S
+  fire correctly and the physical Ctrl's ^C / ^X / ^U / ^W reach the shell. Also, on macOS Cmd+letter
+  arrives as a control char (⌘S = `\u{13}`), so the editor's save now recognizes that form too, fixing ⌘S.
+
 ## [0.4.18] - 2026-06-26
 
 ### Added / 新增
