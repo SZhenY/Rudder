@@ -531,6 +531,8 @@ export component AppWindow inherits Window {
 
     // Raw keystroke forwarding: Rust converts key+modifiers to PTY bytes.
     callback send-key(string /* tab-id */, string /* key */, bool /* ctrl */, bool /* alt */, bool /* shift */);
+    // TEMP diagnostic (#158): raw key + modifiers (text, control, meta, alt, shift).
+    callback dbg-key(string, bool, bool, bool, bool);
     // Notifies Rust of a PTY resize (pixel dimensions; Rust converts to cols/rows).
     callback terminal-resize(string /* tab-id */, float /* width-px */, float /* height-px */);
 
@@ -902,6 +904,7 @@ export component AppWindow inherits Window {
                     rename-quick-group(g) => { root.qcg-orig = g; root.qcg-name = g; root.qcg-open = true; }
                     delete-quick-group(g) => { root.delete-quick-group(g); }
                     send-key(key, ctrl, alt, shift) => { root.send-key(term.id, key, ctrl, alt, shift) }
+                    dbg-key(t, c, m, a, s) => { root.dbg-key(t, c, m, a, s) }
                     terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
                     sftp-navigate(path) => { root.sftp-navigate(term.id, path); }
                     sftp-download(path) => { root.sftp-download(term.id, path); }

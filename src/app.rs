@@ -4659,6 +4659,17 @@ fn wire_key_input(
         // (key="", shift=true).  Used by the time-based Backspace filter below.
         let last_shift_time: Arc<Mutex<Option<std::time::Instant>>> =
             Arc::new(Mutex::new(None));
+        // TEMP diagnostic (#158): log the raw key + every modifier flag exactly as
+        // Slint reports them, so we can see how this macOS build maps Cmd vs the
+        // physical Ctrl. WARN level → stderr *and* error.log. Remove once #158 is
+        // confirmed on the Mac.
+        window.on_dbg_key(move |text: SharedString, control: bool, meta: bool, alt: bool, shift: bool| {
+            tracing::warn!(
+                "dbg-key text={:?} control={} meta={} alt={} shift={}",
+                text.as_str(), control, meta, alt, shift
+            );
+        });
+
         window.on_send_key(move |tab_id: SharedString, key: SharedString, ctrl: bool, alt: bool, shift: bool| {
             // ── Enter on a disconnected tab → reconnect in place (#79) ──────
             // FinalShell-style: the tab shows "连接已断开,按 Enter 重新连接";

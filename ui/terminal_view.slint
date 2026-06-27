@@ -156,6 +156,9 @@ export component TerminalView inherits Rectangle {
     callback search-history(string /* query */);   // filter the history dropdown (#101)
 
     callback send-key(string, bool, bool, bool);
+    // TEMP diagnostic (#158): report raw key + modifiers so we can see exactly
+    // how macOS maps Cmd/Ctrl. (text, control, meta, alt, shift)
+    callback dbg-key(string, bool, bool, bool, bool);
     callback terminal-resize(float, float);
     callback sftp-navigate(string);
     callback sftp-download(string);
@@ -626,6 +629,12 @@ export component TerminalView inherits Rectangle {
                 }
 
                 key-pressed(event) => {
+                    // TEMP diagnostic (#158): only for modifier combos, so plain
+                    // typing doesn't spam the log.
+                    if (event.modifiers.control || event.modifiers.meta || event.modifiers.alt) {
+                        root.dbg-key(event.text, event.modifiers.control, event.modifiers.meta,
+                                     event.modifiers.alt, event.modifiers.shift);
+                    }
                     // ⚠ macOS modifier naming is SWAPPED by Slint (see the winit
                     // backend's muda.rs): `event.modifiers.control` is the **Cmd (⌘)**
                     // key and `event.modifiers.meta` is the **physical Ctrl** key.
@@ -856,6 +865,11 @@ export component TerminalView inherits Rectangle {
                             root.history-cursor = -1;
                         }
                         key-pressed(e) => {
+                            // TEMP diagnostic (#158): command-box modifier combos.
+                            if (e.modifiers.control || e.modifiers.meta || e.modifiers.alt) {
+                                root.dbg-key("cmdbox:" + e.text, e.modifiers.control, e.modifiers.meta,
+                                             e.modifiers.alt, e.modifiers.shift);
+                            }
                             // ⌘R / Ctrl+R opens the searchable history dropdown and
                             // focuses its search box — full keyboard history recall
                             // (#140). Esc closes it / returns to terminal. (The
