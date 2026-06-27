@@ -626,35 +626,33 @@ export component TerminalView inherits Rectangle {
                 }
 
                 key-pressed(event) => {
-                    // App shortcuts use the Cmd (⌘) modifier on macOS and Ctrl on
-                    // Windows/Linux, so on macOS the *physical Ctrl* key stays free
-                    // to reach the shell (^C/^X… work in nano/vim) (#158). The app
-                    // accelerator below is `meta` on macOS, `control` elsewhere.
+                    // ⚠ macOS modifier naming is SWAPPED by Slint (see the winit
+                    // backend's muda.rs): `event.modifiers.control` is the **Cmd (⌘)**
+                    // key and `event.modifiers.meta` is the **physical Ctrl** key.
+                    // So `control` already gives ⌘ shortcuts on macOS for free, and
+                    // the physical Ctrl (meta on macOS) is what must reach the shell
+                    // so ^C/^X work in nano/vim (#158).
                     // ── Find: ⌘F / Ctrl+F (mirrors right-click → Find) ──
-                    if ((Theme.is-mac ? event.modifiers.meta : event.modifiers.control)
-                            && !event.modifiers.shift
+                    if (event.modifiers.control && !event.modifiers.shift
                             && (event.text == "f" || event.text == "F"
                                 || event.text == "\u{0006}")) {
                         root.find-active = true;
                         accept
-                    // ── Jump to command-history search: ⌘⇧R / Ctrl+Shift+R (#140).
-                    // Shifted so the shell keeps its own Ctrl+R reverse-search.
-                    } else if ((Theme.is-mac ? event.modifiers.meta : event.modifiers.control)
-                            && event.modifiers.shift
+                    // ── Jump to command-history search: ⌘⇧R / Ctrl+Shift+R (#140) ──
+                    } else if (event.modifiers.control && event.modifiers.shift
                             && (event.text == "r" || event.text == "R"
                                 || event.text == "\u{0012}")) {
                         root.history-open = true;
                         accept
-                    // ── Copy: ⌘C (macOS) / Ctrl+Shift+C ──
-                    } else if ((Theme.is-mac
-                                ? (event.modifiers.meta && !event.modifiers.shift)
-                                : (event.modifiers.control && event.modifiers.shift))
+                    // ── Copy: ⌘C (macOS, no Shift) / Ctrl+Shift+C ──
+                    } else if (event.modifiers.control
+                            && (Theme.is-mac ? !event.modifiers.shift : event.modifiers.shift)
                             && (event.text == "c" || event.text == "C"
                                 || event.text == "\u{0003}")) {
                         root.copy-terminal-text();
                         accept
                     // ── Paste: ⌘V / Ctrl+V (Ctrl+Shift+V also accepted) ──
-                    } else if ((Theme.is-mac ? event.modifiers.meta : event.modifiers.control)
+                    } else if (event.modifiers.control
                             && (event.text == "v" || event.text == "V"
                                 || event.text == "\u{0016}")) {
                         root.paste-from-clipboard();
@@ -662,16 +660,17 @@ export component TerminalView inherits Rectangle {
                         // Restore focus explicitly so the cursor keeps blinking.
                         ime-input.focus();
                         accept
-                    // ── macOS: swallow any other ⌘ combo so it isn't typed into
-                    // the shell as a literal character. ──
-                    } else if (Theme.is-mac && event.modifiers.meta) {
+                    // ── macOS: swallow any other ⌘ combo (control == Cmd here) so it
+                    // isn't typed into the shell as a literal character. ──
+                    } else if (Theme.is-mac && event.modifiers.control) {
                         accept
                     // ── All other keys (printable, Ctrl+X, arrows, …) → the shell.
-                    // `control` here is the *physical* Ctrl key (Cmd is meta), so
-                    // ^X/^C reach the PTY on every platform (#158). Return `accept`
-                    // for everything: `reject` would bubble and drop the char.
+                    // The control flag is the *physical* Ctrl key: `meta` on macOS,
+                    // `control` elsewhere, so ^X/^C reach the PTY everywhere (#158).
+                    // Return `accept` for everything: `reject` would drop the char.
                     } else {
-                        root.send-key(event.text, event.modifiers.control,
+                        root.send-key(event.text,
+                                      Theme.is-mac ? event.modifiers.meta : event.modifiers.control,
                                       event.modifiers.alt, event.modifiers.shift);
                         accept
                     }
@@ -894,20 +893,20 @@ export component TerminalView inherits Rectangle {
                                 accept
                             // --- readline line-editing keys (#103) ---
                             // Ctrl+A → start of line.
-                            } else if (e.modifiers.control && (e.text == "a" || e.text == "A" || e.text == "\u{0001}")) {
+                            } else if ((Theme.is-mac ? e.modifiers.meta : e.modifiers.control) && (e.text =="a" || e.text == "A" || e.text == "\u{0001}")) {
                                 self.set-selection-offsets(0, 0);
                                 accept
                             // Ctrl+E → end of line.
-                            } else if (e.modifiers.control && (e.text == "e" || e.text == "E" || e.text == "\u{0005}")) {
+                            } else if ((Theme.is-mac ? e.modifiers.meta : e.modifiers.control) && (e.text =="e" || e.text == "E" || e.text == "\u{0005}")) {
                                 self.set-selection-offsets(1000000, 1000000);
                                 accept
                             // Ctrl+K → kill from cursor to end (deletes + clipboard).
-                            } else if (e.modifiers.control && (e.text == "k" || e.text == "K" || e.text == "\u{000B}")) {
+                            } else if ((Theme.is-mac ? e.modifiers.meta : e.modifiers.control) && (e.text =="k" || e.text == "K" || e.text == "\u{000B}")) {
                                 self.set-selection-offsets(self.cursor-position_byte-offset, 1000000);
                                 self.cut();
                                 accept
                             // Ctrl+U → kill from start to cursor.
-                            } else if (e.modifiers.control && (e.text == "u" || e.text == "U" || e.text == "\u{0015}")) {
+                            } else if ((Theme.is-mac ? e.modifiers.meta : e.modifiers.control) && (e.text =="u" || e.text == "U" || e.text == "\u{0015}")) {
                                 self.set-selection-offsets(0, self.cursor-position_byte-offset);
                                 self.cut();
                                 accept

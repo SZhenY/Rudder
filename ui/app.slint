@@ -1167,7 +1167,9 @@ export component AppWindow inherits Window {
             // Ctrl+S saves, Esc closes. These bubble up from the focused
             // TextInput because it doesn't consume them.
             key-pressed(e) => {
-                if (e.text == "s" && (Theme.is-mac ? e.modifiers.meta : e.modifiers.control)) {
+                // ⌘S on macOS, Ctrl+S elsewhere. (Slint maps `control` to Cmd on
+                // macOS — see #158, so no platform branch is needed here.)
+                if (e.text == "s" && e.modifiers.control) {
                     root.save-file();
                     return accept;
                 }
@@ -2484,7 +2486,7 @@ export component AppWindow inherits Window {
                        color: Theme.text-muted; font-size: Theme.fs-xs; }
                 ShortcutRow { keys: "Enter"; desc: root.lang-en ? "Send command" : "发送命令"; }
                 ShortcutRow { keys: "↑ / ↓"; desc: root.lang-en ? "Previous / next in history" : "上一条 / 下一条历史"; }
-                ShortcutRow { keys: root.is-mac ? "⌘R" : "Ctrl+R"; desc: root.lang-en ? "Search history (↑↓ select, Enter run, Esc close)" : "搜索命令历史(↑↓ 选择,回车执行,Esc 关闭)"; }
+                ShortcutRow { keys: root.is-mac ? "⌃R" : "Ctrl+R"; desc: root.lang-en ? "Search history (↑↓ select, Enter run, Esc close)" : "搜索命令历史(↑↓ 选择,回车执行,Esc 关闭)"; }
                 ShortcutRow { keys: "Esc"; desc: root.lang-en ? "Close history / focus terminal" : "关闭历史 / 聚焦终端"; }
                 ShortcutRow { keys: root.is-mac ? "⌃A" : "Ctrl+A"; desc: root.lang-en ? "Move to start of line" : "移到行首"; }
                 ShortcutRow { keys: root.is-mac ? "⌃E" : "Ctrl+E"; desc: root.lang-en ? "Move to end of line" : "移到行尾"; }
