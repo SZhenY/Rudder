@@ -610,13 +610,14 @@ export component AppWindow inherits Window {
     VerticalLayout {
         spacing: 0;
 
-        // macOS immersive bar: a transparent strip under the native traffic-light
-        // buttons. The window background (Theme.window-base / wallpaper) shows
-        // through, so the bar follows dark mode instead of staying white. Left as a
-        // plain reserve (no TouchArea) so macOS's own title bar keeps handling the
-        // window drag in this region.
+        // macOS immersive bar: a strip under the native traffic-light buttons.
+        // Frosted like the other panels (bg-panel) so it matches in both themes —
+        // a plain transparent strip would show the raw wallpaper here and look dark
+        // in light mode. Left as a plain reserve (no TouchArea) so macOS's own title
+        // bar keeps handling the window drag in this region.
         if root.titlebar-inset > 0px : Rectangle {
             height: root.titlebar-inset;
+            background: Theme.bg-panel;
         }
 
         // Immersive custom title bar (#119) — only on frameless platforms
