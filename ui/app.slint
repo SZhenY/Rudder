@@ -233,6 +233,10 @@ export component AppWindow inherits Window {
     // Default true so the window is frameless from creation (no native-bar flash);
     // Rust sets it false on macOS, which keeps native decorations.
     in-out property <bool> custom-titlebar: true;
+    // macOS immersive title bar: Rust makes the native bar transparent and lets
+    // content render under it, so we reserve this much space at the top for the
+    // traffic-light buttons + a clean drag strip (0 elsewhere). See setup_macos_platform.
+    property <length> titlebar-inset: root.is-mac ? 28px : 0px;
     in-out property <bool> window-maximized: false;
     callback win-minimize();
     callback win-maximize-toggle();
@@ -605,6 +609,15 @@ export component AppWindow inherits Window {
 
     VerticalLayout {
         spacing: 0;
+
+        // macOS immersive bar: a transparent strip under the native traffic-light
+        // buttons. The window background (Theme.window-base / wallpaper) shows
+        // through, so the bar follows dark mode instead of staying white. Left as a
+        // plain reserve (no TouchArea) so macOS's own title bar keeps handling the
+        // window drag in this region.
+        if root.titlebar-inset > 0px : Rectangle {
+            height: root.titlebar-inset;
+        }
 
         // Immersive custom title bar (#119) — only on frameless platforms
         // (Windows/Linux). App icon + name on the left, a draggable middle
@@ -1022,28 +1035,28 @@ export component AppWindow inherits Window {
     // of the tab row — below the custom title bar when frameless (y offset), or
     // at the very top on macOS where the native title bar is separate (#119).
     IconBtn {
-        x: root.width - 34px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px) + root.toolbar-y-off;
+        x: root.width - 34px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px + root.titlebar-inset) + root.toolbar-y-off;
         icon: "\u{E8B8}";
         tooltip: root.lang-en ? "Settings" : "设置";
         active: root.settings-open;
         clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.ssh-import-hint = ""; }
     }
     IconBtn {
-        x: root.width - 64px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px) + root.toolbar-y-off;
+        x: root.width - 64px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px + root.titlebar-inset) + root.toolbar-y-off;
         icon: "\u{E2C4}";
         tooltip: root.lang-en ? "Download" : "下载";
         active: root.download-open;
         clicked => { root.download-open = !root.download-open; root.settings-open = false; }
     }
     IconBtn {
-        x: root.width - 94px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px) + root.toolbar-y-off;
+        x: root.width - 94px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px + root.titlebar-inset) + root.toolbar-y-off;
         icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
         icon-color: Theme.dark ? #f5c542 : #5856d6;
         tooltip: root.lang-en ? "Toggle theme" : "切换主题";
         clicked => { root.toggle-theme(); }
     }
     IconBtn {
-        x: root.width - 124px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px) + root.toolbar-y-off;
+        x: root.width - 124px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px + root.titlebar-inset) + root.toolbar-y-off;
         icon: "\u{E627}";
         icon-color: root.sync-input ? Theme.accent : Theme.text-secondary;
         active: root.sync-input;
@@ -1370,7 +1383,7 @@ export component AppWindow inherits Window {
         // Follow the download button (shifts with the toolbar when the resource
         // panel docks right/top) (#dock).
         x: parent.width - 364px - root.toolbar-x-off;
-        y: (root.custom-titlebar ? 78px : 40px) + root.toolbar-y-off;
+        y: (root.custom-titlebar ? 78px : 40px + root.titlebar-inset) + root.toolbar-y-off;
         width: 350px;
         height: 400px;
         visible: root.download-open;
@@ -1583,7 +1596,7 @@ export component AppWindow inherits Window {
         // panel docks right/top, so the menu must shift the same amount or it ends
         // up floating over the resource panel (#dock).
         x: parent.width - 196px - root.toolbar-x-off;
-        y: (root.custom-titlebar ? 78px : 40px) + root.toolbar-y-off;
+        y: (root.custom-titlebar ? 78px : 40px + root.titlebar-inset) + root.toolbar-y-off;
         width: 198px;
         height: 220px;
         visible: root.settings-open;

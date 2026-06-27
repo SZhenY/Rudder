@@ -207,7 +207,49 @@ fn apply_window_chrome(window: &slint::Window) {
 #[cfg(not(windows))]
 fn apply_window_chrome(_window: &slint::Window) {}
 
+/// macOS-only: install a custom winit backend that makes the native title bar
+/// transparent and lets the window content render *under* it (fullSizeContentView).
+/// The title bar then picks up the app's dark theme / wallpaper (`Theme.window-base`)
+/// instead of showing a bright native bar in dark mode (#162 follow-up — immersive
+/// title bar). The traffic-light buttons are left in place; the UI insets its top by
+/// `titlebar-inset` so tabs don't hide behind them.
+///
+/// Must run before any window is created. We build the backend explicitly, which
+/// would otherwise bypass the `SLINT_BACKEND` renderer override that exists as the
+/// macOS femtovg/Skia escape hatch (#108/#129) — so we re-honour it by hand.
+#[cfg(target_os = "macos")]
+fn setup_macos_platform() {
+    use i_slint_backend_winit::winit::platform::macos::WindowAttributesExtMacOS;
+
+    let mut builder = i_slint_backend_winit::Backend::builder();
+    // Preserve the SLINT_BACKEND escape hatch: e.g. "winit-skia" → renderer "skia".
+    if let Ok(v) = std::env::var("SLINT_BACKEND") {
+        if let Some(r) = v.strip_prefix("winit-").filter(|r| !r.is_empty()) {
+            builder = builder.with_renderer_name(r.to_string());
+        }
+    }
+    builder = builder.with_window_attributes_hook(|attrs| {
+        attrs
+            .with_titlebar_transparent(true)
+            .with_fullsize_content_view(true)
+            .with_title_hidden(true)
+    });
+    match builder.build() {
+        Ok(backend) => {
+            if slint::platform::set_platform(Box::new(backend)).is_err() {
+                tracing::warn!("winit backend already set; immersive macOS titlebar disabled");
+            }
+        }
+        Err(e) => tracing::warn!("winit backend build failed ({e}); immersive macOS titlebar disabled"),
+    }
+}
+
 pub fn run() -> Result<()> {
+    // Immersive native title bar on macOS (must precede the first window).
+    #[cfg(target_os = "macos")]
+    setup_macos_platform();
+
+
     // --- Runtime + store -------------------------------------------------
     let runtime = Arc::new(
         Runtime::new().context("failed to start tokio runtime")?,
