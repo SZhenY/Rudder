@@ -65,11 +65,14 @@ pub fn format_size(bytes: u64) -> String {
 
 /// Format a Unix timestamp as `YYYY-MM-DD HH:MM`.
 pub fn format_mtime(ts: u32) -> String {
-    use chrono::{DateTime, TimeZone, Utc};
-    let dt: DateTime<Utc> = Utc
+    // SFTP mtime is a Unix timestamp (UTC seconds). Render it in the machine's
+    // *local* timezone so the displayed time matches the user's wall clock
+    // (e.g. UTC+8) instead of showing UTC — which read 8 h early (#168).
+    use chrono::{Local, TimeZone};
+    let dt = Local
         .timestamp_opt(ts as i64, 0)
         .single()
-        .unwrap_or_else(Utc::now);
+        .unwrap_or_else(Local::now);
     dt.format("%Y-%m-%d %H:%M").to_string()
 }
 
