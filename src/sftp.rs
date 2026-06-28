@@ -235,6 +235,13 @@ async fn run_sftp(
         // goes quiet; keepalive_max (default 3) still closes a genuinely dead
         // connection after ~90 s of unanswered keepalives.
         keepalive_interval: Some(std::time::Duration::from_secs(30)),
+        // Match the shell connection's algorithm set so SFTP reaches the same
+        // legacy servers (#172) instead of failing with "No common algorithm".
+        preferred: russh::Preferred {
+            kex: std::borrow::Cow::Borrowed(crate::ssh::COMPAT_KEX),
+            cipher: std::borrow::Cow::Borrowed(crate::ssh::COMPAT_CIPHER),
+            ..russh::Preferred::DEFAULT
+        },
         ..<_>::default()
     });
 

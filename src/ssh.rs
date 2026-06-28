@@ -552,6 +552,44 @@ async fn connect_ssh(
     Ok(handle)
 }
 
+// Key-exchange algorithms offered to the server, strongest first. This is the
+// russh default set PLUS the ecdh-sha2-nistp* curves and the legacy
+// diffie-hellman-group{14,1}-sha1 exchanges appended as last-resort fallbacks, so
+// we can still reach old servers / network gear that only speak SHA-1 KEX and
+// otherwise fail with "No common algorithm" (#172). Modern servers still pick a
+// strong algorithm because the client's order decides and SHA-1 is last.
+pub(crate) const COMPAT_KEX: &[russh::kex::Name] = &[
+    russh::kex::CURVE25519,
+    russh::kex::CURVE25519_PRE_RFC_8731,
+    russh::kex::DH_G16_SHA512,
+    russh::kex::DH_G14_SHA256,
+    russh::kex::ECDH_SHA2_NISTP256,
+    russh::kex::ECDH_SHA2_NISTP384,
+    russh::kex::ECDH_SHA2_NISTP521,
+    russh::kex::DH_G14_SHA1, // legacy fallback
+    russh::kex::DH_G1_SHA1,  // legacy fallback
+    // Keep the OpenSSH ext-info / strict-kex markers so modern servers still
+    // negotiate ext-info and strict kex (mirrors russh's default tail).
+    russh::kex::EXTENSION_SUPPORT_AS_CLIENT,
+    russh::kex::EXTENSION_SUPPORT_AS_SERVER,
+    russh::kex::EXTENSION_OPENSSH_STRICT_KEX_AS_CLIENT,
+    russh::kex::EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER,
+];
+
+// Ciphers offered to the server, strongest first: russh's AEAD/CTR defaults plus
+// the legacy CBC ciphers appended for old servers that only support CBC (#172).
+pub(crate) const COMPAT_CIPHER: &[russh::cipher::Name] = &[
+    russh::cipher::CHACHA20_POLY1305,
+    russh::cipher::AES_256_GCM,
+    russh::cipher::AES_256_CTR,
+    russh::cipher::AES_192_CTR,
+    russh::cipher::AES_128_CTR,
+    russh::cipher::AES_256_CBC, // legacy fallback
+    russh::cipher::AES_192_CBC, // legacy fallback
+    russh::cipher::AES_128_CBC, // legacy fallback
+    russh::cipher::TRIPLE_DES_CBC, // legacy fallback
+];
+
 async fn run_session(
     session: Session,
     mut commands: UnboundedReceiver<SessionCommand>,
@@ -572,6 +610,15 @@ async fn run_session(
         // NAT / firewall / server timeouts. A 30 s keepalive prevents that;
         // keepalive_max (default 3) closes a genuinely dead connection.
         keepalive_interval: Some(std::time::Duration::from_secs(30)),
+        // Offer legacy KEX (group14/group1-sha1) and CBC ciphers as fallbacks so
+        // old servers / network gear negotiate instead of failing with
+        // "No common algorithm" (#172). Modern algorithms stay first, so a capable
+        // server still picks a strong one.
+        preferred: russh::Preferred {
+            kex: std::borrow::Cow::Borrowed(COMPAT_KEX),
+            cipher: std::borrow::Cow::Borrowed(COMPAT_CIPHER),
+            ..russh::Preferred::DEFAULT
+        },
         ..<_>::default()
     });
 
