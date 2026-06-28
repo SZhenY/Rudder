@@ -670,6 +670,11 @@ export component TerminalView inherits Rectangle {
                         // Restore focus explicitly so the cursor keeps blinking.
                         ime-input.focus();
                         accept
+                    // ── Paste: Shift+Insert (the X11 / xterm paste convention) (#144) ──
+                    } else if (event.modifiers.shift && event.text == Key.Insert) {
+                        root.paste-from-clipboard();
+                        ime-input.focus();
+                        accept
                     // ── macOS: swallow any other ⌘ combo (control == Cmd here) so it
                     // isn't typed into the shell as a literal character. ──
                     } else if (Theme.is-mac && event.modifiers.control) {
