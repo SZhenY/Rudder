@@ -1414,6 +1414,53 @@ fn handle_file_drop(_win: &AppWindow, _sftp_handles: &SftpHandles, _path: String
 // Model helpers
 // ---------------------------------------------------------------------------
 
+/// Parse the batch-import textarea (#150). Each non-empty, non-`#` line is
+/// `host|port|user|password|name`; trailing fields are optional (port → 22,
+/// user → root, password → none, name → user@host). A leading header row such as
+/// `host|port|username|password|name` is skipped. Dedup happens at the call site.
+fn parse_batch_import(text: &str) -> Vec<Session> {
+    let mut out = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // splitn(5) so the last field (name) may itself contain '|'.
+        let parts: Vec<&str> = line.splitn(5, '|').map(str::trim).collect();
+        let host = parts.first().copied().unwrap_or("");
+        // Skip blank hosts and a header row like "host|port|username|...".
+        if host.is_empty() || host.eq_ignore_ascii_case("host") {
+            continue;
+        }
+        let port = parts
+            .get(1)
+            .and_then(|p| p.parse::<u16>().ok())
+            .filter(|&p| p > 0)
+            .unwrap_or(22);
+        let user = parts.get(2).copied().filter(|s| !s.is_empty()).unwrap_or("root");
+        let password = parts.get(3).copied().unwrap_or("");
+        let name = parts
+            .get(4)
+            .copied()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{user}@{host}"));
+        let mut sess = Session {
+            name,
+            host: host.to_string(),
+            port,
+            user: user.to_string(),
+            auth: AuthMethod::Password,
+            ..Session::new_empty()
+        };
+        if !password.is_empty() {
+            sess.password = Secret::new(password.to_string());
+        }
+        out.push(sess);
+    }
+    out
+}
+
 /// Distinct named groups (explicit folders ∪ the groups sessions are filed under),
 /// de-duplicated and sorted alphabetically — feeds the new/edit dialog's group
 /// dropdown (#179). Ungrouped ("") is excluded; the dialog leaves the field blank
@@ -1662,6 +1709,47 @@ fn wire_session_callbacks(
                     };
                     w.set_ssh_import_hint(hint.into());
                 }
+            }
+        });
+    }
+
+    // Batch-import connections from pasted text (#150). One per line:
+    // `host|port|user|password|name` (trailing fields optional).
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_batch_import_confirm(move |text: SharedString| {
+            let parsed = parse_batch_import(text.as_str());
+            let total = parsed.len();
+            let mut added = 0usize;
+            {
+                let mut s = store.borrow_mut();
+                for sess in parsed {
+                    // Skip a host/user/port we already have.
+                    let dup = s.sessions().iter().any(|x| {
+                        x.host == sess.host && x.user == sess.user && x.port == sess.port
+                    });
+                    if dup {
+                        continue;
+                    }
+                    s.upsert(sess);
+                    added += 1;
+                }
+                if added > 0 {
+                    let _ = s.save();
+                }
+            }
+            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            if let Some(w) = weak.upgrade() {
+                let hint = if total == 0 {
+                    t("没有可导入的连接", "nothing to import").to_string()
+                } else if added > 0 {
+                    format!("{} {}/{}", t("已导入", "imported"), added, total)
+                } else {
+                    t("没有新连接可导入(已存在)", "no new connections (all exist)").to_string()
+                };
+                w.set_ssh_import_hint(hint.into());
             }
         });
     }

@@ -512,6 +512,9 @@ export component AppWindow inherits Window {
     in-out property <string> ssh-import-hint;  // result text shown after import
     callback export-sessions();               // export all sessions to a file (#46)
     callback import-sessions();               // import sessions from a file (#46)
+    in-out property <bool> batch-import-open: false;  // text batch-import dialog (#150)
+    in-out property <string> batch-import-text;       // the textarea content
+    callback batch-import-confirm(string /* pasted text */);
     callback connect-session(string /* session-id */);
     callback edit-session(string /* session-id */);
     callback duplicate-session(string /* session-id */);
@@ -1684,6 +1687,29 @@ export component AppWindow inherits Window {
                            vertical-alignment: center; horizontal-stretch: 1; }
                 }
             }
+            // Batch-import connections from pasted text (#150).
+            Rectangle {
+                height: 28px;
+                border-radius: Theme.radius-sm;
+                background: batchimp-ta.has-hover ? Theme.bg-hover : transparent;
+                batchimp-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.settings-open = false;
+                        root.batch-import-text = "";
+                        root.batch-import-open = true;
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 8px; spacing: 8px;
+                    Text { text: "\u{E1C3}"; font-family: "Material Icons"; // table/rows
+                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           vertical-alignment: center; }
+                    Text { text: root.lang-en ? "Batch import (text)" : "批量导入(文本)";
+                           color: Theme.text-primary; font-size: Theme.fs-md;
+                           vertical-alignment: center; horizontal-stretch: 1; }
+                }
+            }
             // Import hosts from ~/.ssh/config. Keep the menu open so the result
             // (e.g. "imported 3" / "no new hosts") is visible right here — it used
             // to only show on the welcome page, so importing while a session was
@@ -2683,6 +2709,92 @@ export component AppWindow inherits Window {
         confirm-label: root.hostkey-confirm-label;
         confirm => { root.hostkey-accept(); }
         cancel => { root.hostkey-reject(); }
+    }
+
+    // Batch-import connections from pasted text (#150).
+    if root.batch-import-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #000000aa;
+        TouchArea { clicked => { root.batch-import-open = false; } }   // backdrop closes
+        Rectangle {
+            width: 540px;
+            height: 440px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000080;
+            TouchArea {}   // swallow clicks inside the card
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text {
+                    text: root.lang-en ? "Batch import connections" : "批量导入连接";
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-xl;
+                    font-weight: 600;
+                }
+                Text {
+                    text: root.lang-en
+                        ? "One per line:  host|port|user|password|name   (port/user/password/name optional)"
+                        : "每行一个:  host|port|user|password|name   (端口/用户/密码/名称可省略)";
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                    wrap: word-wrap;
+                }
+                // Paste area — themed multiline input.
+                Rectangle {
+                    vertical-stretch: 1;
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: bi-input.has-focus ? Theme.accent : Theme.border-subtle;
+                    background: Theme.bg-root;
+                    clip: true;
+                    Flickable {
+                        viewport-height: max(self.height, bi-input.preferred-height + 16px);
+                        bi-input := TextInput {
+                            x: 10px;
+                            y: 8px;
+                            width: parent.width - 20px;
+                            text <=> root.batch-import-text;
+                            color: Theme.text-primary;
+                            font-family: Theme.font-mono;
+                            font-size: Theme.fs-md;
+                            single-line: false;
+                            wrap: no-wrap;
+                        }
+                    }
+                    if root.batch-import-text == "" : Text {
+                        x: 10px;
+                        y: 8px;
+                        text: "192.168.1.108|22|root|pass@123|服务器1";
+                        color: Theme.text-muted;
+                        font-family: Theme.font-mono;
+                        font-size: Theme.fs-md;
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    GhostButton {
+                        text: @tr("Cancel");
+                        clicked => { root.batch-import-open = false; }
+                    }
+                    PrimaryButton {
+                        text: root.lang-en ? "Import" : "导入";
+                        clicked => {
+                            root.batch-import-confirm(root.batch-import-text);
+                            root.batch-import-open = false;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Connect-time credential prompt (#110). Backdrop / Cancel abort the connect.
