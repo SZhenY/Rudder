@@ -3,6 +3,89 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
+## [0.4.20] - 2026-06-28
+
+### Added / 新增
+
+- **终端内容随窗口缩放重排 (reflow) (#169)。** 此前拖动窗口宽度时,已打印的内容会被截断(变窄丢右半、
+  变宽接不回)。现保留喂给 vt100 的字节流(限长 2 MiB),窗口宽度变化时用新宽度重放一遍,历史与当前屏
+  按新宽度重新折行——变窄换行、变宽接回,全程不丢字符;对齐 FinalShell。alt-screen(tmux/vim)仍由
+  远端 SIGWINCH 重绘。
+  **Terminal content reflows on window resize (#169).** Dragging the width used to clip already-printed
+  lines. meatshell now retains a capped (2 MiB) copy of the byte stream and replays it at the new width,
+  rewrapping scrollback and the live screen with no lost characters, matching FinalShell. Alt-screen
+  programs (tmux/vim) still rely on the remote's SIGWINCH redraw.
+
+- **alt-screen 里把鼠标滚轮转发给程序 (#170)。** 之前在 tmux / less / vim 等全屏程序里滚轮被吞掉、滚不动。
+  现转发给远端:程序开了鼠标跟踪(如 tmux `mouse on`)就发滚轮鼠标事件(SGR / X10),否则退化为方向键
+  (alternate-scroll),让 less / man / vim 也能滚。对齐 FinalShell / MobaXterm。
+  **Forward the mouse wheel to alt-screen programs (#170).** In tmux / less / vim the wheel did nothing.
+  It is now forwarded — a mouse-wheel event when the app tracks the mouse (e.g. tmux `mouse on`), else
+  arrow keys (alternate-scroll) so less / man / vim scroll. Matches FinalShell / MobaXterm.
+
+- **文本批量导入 SSH 连接 (#150)。** 设置菜单新增「批量导入(文本)」,每行 `host|port|user|password|name`
+  (后面字段可省略),一次粘贴导入多台主机;按 host+user+port 去重,密码加密入库。
+  **Batch-import SSH connections from text (#150).** A new "Batch import (text)" menu item accepts
+  `host|port|user|password|name` per line (trailing fields optional), importing many hosts from one
+  paste; dedupes by host+user+port, passwords encrypted at rest.
+
+- **新建 / 编辑会话的「分组」改为可输入下拉框 (#179)。** 既能手输新分组,也能点 ▼ 从已有分组里选。
+  **The session dialog's "Group" field is now an editable dropdown (#179).** Type a new group, or pick
+  an existing one from the ▼ list.
+
+- **终端支持 Shift+Insert 粘贴 (#144)。** X11 / xterm 的经典粘贴键现在也认。
+  **Paste with Shift+Insert in the terminal (#144).** The classic X11 / xterm paste shortcut now works.
+
+### Fixed / 修复
+
+- **主机密钥被拒后不再卡死新连接 (#152)。** 首次连接弹「未知主机」确认框时,若误点卡片外背景把它关掉,
+  之前会把该主机缓存成「拒绝」,导致这一轮运行里之后每次连它都直接报 "Unknown server key",必须重启。
+  现在:拒绝不再写缓存(下次连接照常再弹),且安全确认框不再响应背景点击关闭。
+  **A rejected host key no longer locks out new connections (#152).** Dismissing the "Unknown host"
+  dialog by clicking the backdrop used to cache a reject for the whole run, so every later connect
+  failed with "Unknown server key" until restart. Rejections are no longer cached (the next connect
+  prompts again), and the security dialog no longer dismisses on a backdrop click.
+
+- **兼容旧服务器算法,修复 "No common algorithm" 连不上 (#172)。** russh 默认只协商现代算法,老服务器 /
+  网络设备只支持旧 KEX(group14 / group1-sha1)或 CBC 加密时握手失败。现把这些作为兜底追加(现代算法
+  仍优先),终端与 SFTP 一致,旧设备也能连。
+  **Reach legacy servers, fixing "No common algorithm" (#172).** russh's defaults negotiate only modern
+  algorithms; old servers / gear that only speak legacy KEX (group14 / group1-sha1) or CBC ciphers failed
+  the handshake. These are now offered as fallbacks (modern still preferred) for both the shell and SFTP.
+
+- **SFTP 文件修改时间按本地时区显示 (#168)。** 之前按 UTC 显示,UTC+8 用户看到的时间差 8 小时。现用本机
+  时区换算(跟随系统,不写死)。
+  **SFTP file mtime shown in local time (#168).** It was rendered as UTC (8 h early for a UTC+8 user);
+  now converted to the machine's local timezone.
+
+- **Linux 缩放窗口后鼠标卡在缩放态 (#159)。** 从边角缩放后,窗口管理器吃掉了结束缩放的松开事件,Slint
+  一直保持着对缩放热区的指针抓取——之后到处点都触发缩放。现在缩放后主动补一个释放事件让 Slint 丢掉抓取
+  (X11 必现、Wayland 偶发都修)。
+  **Mouse stuck in resize mode after a Linux window resize (#159).** The window manager consumed the
+  button-release that ends a resize, so Slint kept its pointer grab on the resize handle and every click
+  re-started a resize. We now dispatch a synthetic release afterwards so Slint drops the grab (fixes both
+  the reliable X11 case and the occasional Wayland one).
+
+- **shell 集成回显抑制窗口 1.2s→2s (#176)。** 慢速 PTY / SSH 上,注入的初始化命令回显 + OSC 7 晚于 1.2s
+  到达,导致回退过早、注入行泄漏到终端。放宽到 2s。
+  **Widen the shell-integration echo-suppression window 1.2s→2s (#176).** On slow PTY / SSH the injected
+  setup line's echo + OSC 7 arrived after 1.2 s, so it fell back early and the line leaked into the
+  terminal.
+
+- **设置菜单加批量导入后溢出 (#150)。** 设置下拉菜单原来写死高度,加第 8 项后末项溢出圆角背景;改为跟随
+  内容高度自适应。
+  **Settings menu overflowed after the batch-import entry (#150).** The dropdown had a hardcoded height;
+  it now sizes to its content.
+
+### Performance / 性能
+
+- **合并 shell 输出事件,修复 tail -f 等高频输出导致界面假死 (#171)。** 事件泵原来逐个把每段输出投递到 UI
+  线程并整屏渲染,`tail -f` / 大文件刷屏时 UI 被淹没成假死。现一次性扫空已排队事件、合并相邻输出,一波
+  突发只解析 + 渲染一次,界面保持响应。
+  **Coalesce shell output events, fixing the tail -f UI freeze (#171).** The pump dispatched every output
+  chunk to the UI thread for a full render; under high-frequency output the UI drowned. It now drains
+  queued events at once and merges adjacent output, parsing + rendering a burst once.
+
 ## [0.4.19] - 2026-06-28
 
 ### Added / 新增
