@@ -49,7 +49,15 @@ struct TermBuffer {
     /// absolute-positioned full-screen output collapses into a scrolling mess.
     /// Kept here so a sequence split across read chunks is still translated.
     csi_state: CsiState,
+    /// Capped copy of the (post-HVP-rewrite) byte stream fed to vt100, so a window
+    /// resize can replay it at the new width and reflow already-printed output to
+    /// match — the way FinalShell rewraps on resize (#169). Only the most recent
+    /// `RAW_CAP` bytes are kept; scrollback older than that won't reflow.
+    raw: std::collections::VecDeque<u8>,
 }
+
+/// How much of the byte stream we retain per tab for resize-reflow (#169).
+const RAW_CAP: usize = 2 * 1024 * 1024;
 
 /// Minimal CSI-final-byte rewriter state (persists across read chunks).
 #[derive(Clone, Copy, PartialEq)]
@@ -2110,6 +2118,7 @@ fn wire_session_callbacks(
                     view_offset: 0,
                     displayed_text: Vec::new(),
                     csi_state: CsiState::Normal,
+                    raw: std::collections::VecDeque::new(),
                 },
             );
             // No followed-cwd yet: the first OSC 7 always triggers a follow.
@@ -2754,32 +2763,21 @@ fn apply_terminal_resize(
     }
     if let Some(buf) = bufs.lock().unwrap().get_mut(tab_id) {
         let (old_rows, old_cols) = buf.parser.screen().size();
-        let new_rows = rows as u16;
-        // Shrinking the grid makes vt100 truncate rows from the bottom (dropping
-        // recent output + the prompt, #18). Scroll up just enough to keep the
-        // cursor on-screen first. Skipped on the alternate screen.
-        if new_rows < old_rows && !buf.parser.screen().alternate_screen() {
-            let (cursor_row, _) = buf.parser.screen().cursor_position();
-            let scroll = (cursor_row + 1).saturating_sub(new_rows);
-            if scroll > 0 {
-                let saved: Vec<Line> = {
-                    let s = buf.parser.screen();
-                    (0..scroll).map(|r| build_row(s, r, old_cols)).collect()
-                };
-                for line in saved {
-                    buf.history.push(line);
-                }
-                if buf.history.len() > MAX_HISTORY {
-                    let drop = buf.history.len() - MAX_HISTORY;
-                    buf.history.drain(0..drop);
-                }
-                buf.parser.process(format!("\x1b[{scroll}S").as_bytes());
+        let (new_rows, new_cols) = (rows as u16, cols as u16);
+        if (new_rows, new_cols) != (old_rows, old_cols) {
+            if buf.parser.screen().alternate_screen() {
+                // Alt-screen (tmux/vim/btop): the remote redraws the whole screen
+                // on SIGWINCH, so just resize the grid and let that redraw fill it.
+                buf.parser.set_size(new_rows, new_cols);
+            } else {
+                // Reflow already-printed output to the new width by replaying the
+                // byte stream — vt100's set_size only truncates/pads (#169).
+                buf.reflow(new_rows, new_cols);
             }
+            // The pre/post-resize screens differ; drop the scroll-detection
+            // snapshot so the next output isn't mis-read as a scroll.
+            buf.prev.clear();
         }
-        buf.parser.set_size(new_rows, cols as u16);
-        // The pre/post-resize screens differ; drop the scroll-detection snapshot
-        // so the next output isn't mis-read as a scroll.
-        buf.prev.clear();
     }
 }
 
@@ -4805,6 +4803,7 @@ fn wire_key_input(
                             b.view_offset = 0;
                             b.sel_anchor = None;
                             b.sel_focus = None;
+                            b.raw.clear();
                         }
                     }
                     if let Some(st) =
@@ -5055,6 +5054,7 @@ fn wire_key_input(
     {
         let handles = handles.clone();
         let bufs_resize = bufs.clone(); // keep bufs alive for the copy handler below
+        let weak_resize = window.as_weak();
         // The Slint side now measures the real Consolas cell size (via a hidden
         // probe Text) and passes whole column/row counts directly, so there is
         // no pixel→cell guesswork here.  This keeps full-screen programs like
@@ -5080,6 +5080,7 @@ fn wire_key_input(
             let handles = handles.clone();
             let bufs = bufs_resize.clone();
             let last = last_term_size.clone();
+            let weak = weak_resize.clone();
             // (Re)arm the single-shot timer; rapid changes keep resetting it so
             // only the final, settled size is applied.
             resize_debounce.start(
@@ -5091,6 +5092,11 @@ fn wire_key_input(
                     for (tab, (cols, rows)) in settled {
                         tracing::debug!("terminal_resize tab={} cols={} rows={}", tab, cols, rows);
                         apply_terminal_resize(&handles, &bufs, &last, &tab, cols, rows);
+                        // Re-render so the reflowed (or resized) grid shows at once
+                        // instead of waiting for the next remote output (#169).
+                        if let Some(win) = weak.upgrade() {
+                            rebuild_tab_display(&win, &bufs, &tab);
+                        }
                     }
                 },
             );
@@ -5171,6 +5177,7 @@ fn wire_key_input(
                 buf.sel_anchor = None;
                 buf.sel_focus = None;
                 buf.displayed_text = Vec::new();
+                buf.raw.clear();
             }
             if let Some(win) = weak.upgrade() {
                 set_terminal_row(&win, &tid, |row| {
@@ -6158,11 +6165,22 @@ impl TermBuffer {
     /// after each — that way no batch ever scrolls more than the diff can see,
     /// and nothing is lost.  (Splitting only on `\n` is safe: VT escape
     /// sequences never contain a newline.)
-    fn ingest(&mut self, raw: &[u8]) {
+    fn ingest(&mut self, input: &[u8]) {
         // Rewrite HVP (`ESC [ … f`) → CUP (`ESC [ … H`) so vt100 (which only
         // implements `H`) honours btop/htop's absolute cursor positioning.
-        let bytes = self.rewrite_hvp(raw);
-        let bytes = &bytes[..];
+        let bytes = self.rewrite_hvp(input);
+        // Retain the (post-rewrite) stream, capped, so a resize can replay it at
+        // the new width and reflow already-printed output (#169).
+        self.raw.extend(bytes.iter().copied());
+        self.cap_raw();
+        self.feed_batched(&bytes);
+    }
+
+    /// Feed a (already HVP-rewritten) byte slice to vt100 in newline-bounded
+    /// batches, capturing scrolled-off lines into history after each (see the
+    /// `ingest` doc comment). Does NOT touch `self.raw`, so it is reused by both
+    /// live ingest and resize-reflow replay.
+    fn feed_batched(&mut self, bytes: &[u8]) {
         let rows = self.parser.screen().size().0 as usize;
         let batch_lines = (rows / 2).max(1);
         let mut start = 0usize;
@@ -6180,6 +6198,41 @@ impl TermBuffer {
         if start < bytes.len() {
             self.ingest_chunk(&bytes[start..]);
         }
+    }
+
+    /// Trim the retained stream to `RAW_CAP`, dropping from the front up to the
+    /// next line boundary so a replay never starts mid-escape / mid-wrapped-line.
+    fn cap_raw(&mut self) {
+        if self.raw.len() <= RAW_CAP {
+            return;
+        }
+        let overflow = self.raw.len() - RAW_CAP;
+        self.raw.drain(0..overflow);
+        while let Some(&b) = self.raw.front() {
+            self.raw.pop_front();
+            if b == b'\n' {
+                break;
+            }
+        }
+    }
+
+    /// Resize-reflow (#169): rebuild the screen + scrollback at a new width by
+    /// replaying the retained byte stream through a fresh parser. vt100 itself
+    /// can't reflow (`set_size` just truncates/pads each row), and we only keep
+    /// rendered grid rows in `history`, so replaying the raw stream is what lets
+    /// long lines rewrap to the new width like FinalShell. Used only on the normal
+    /// screen — alt-screen programs (tmux/vim) get a SIGWINCH redraw from the
+    /// remote instead.
+    fn reflow(&mut self, new_rows: u16, new_cols: u16) {
+        let stream: Vec<u8> = self.raw.iter().copied().collect();
+        self.parser = vt100::Parser::new(new_rows, new_cols, 5000);
+        self.history.clear();
+        self.prev.clear();
+        self.view_offset = 0;
+        // Scrollback line count changes, so absolute selection coords no longer map.
+        self.sel_anchor = None;
+        self.sel_focus = None;
+        self.feed_batched(&stream);
     }
 
     /// Translate every CSI sequence terminated by `f` (HVP) into the identical
@@ -6737,6 +6790,7 @@ mod selection_tests {
             view_offset,
             displayed_text: Vec::new(),
             csi_state: CsiState::Normal,
+            raw: std::collections::VecDeque::new(),
         }
     }
 
