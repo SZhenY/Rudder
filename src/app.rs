@@ -2215,63 +2215,104 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
         std::thread::spawn(move || {
             let mut shell_rx = rx;
             let mut cwd_debounce: Option<tokio::task::JoinHandle<()>> = None;
+            // Reusable scratch so a fast firehose doesn't reallocate every batch.
+            let mut drained: Vec<SessionEvent> = Vec::new();
             loop {
+                // Block for the first event, then sweep up everything else that's
+                // already queued. A burst — e.g. `tail -f` on a busy log (#171) —
+                // then collapses into ONE invoke_from_event_loop and (after merging
+                // adjacent Output below) ONE vt100 ingest + render, instead of one
+                // UI task per chunk flooding the event loop and freezing the app.
                 match shell_rx.blocking_recv() {
                     None => break,
-                    Some(shell_evt) => {
-                        if let SessionEvent::CwdChanged(ref cwd) = shell_evt {
+                    Some(first) => drained.push(first),
+                }
+                // Cap the sweep so an unending stream still yields to the renderer
+                // between batches (keeps the UI live rather than starved).
+                const DRAIN_CAP: usize = 2048;
+                while drained.len() < DRAIN_CAP {
+                    match shell_rx.try_recv() {
+                        Ok(evt) => drained.push(evt),
+                        Err(_) => break,
+                    }
+                }
+
+                // Run CwdChanged side-effects here (off the UI thread), drop the
+                // swallowed ones, and concatenate runs of Output into a single chunk
+                // so the UI parses + renders the whole burst once.
+                let mut ui_batch: Vec<SessionEvent> = Vec::with_capacity(drained.len());
+                for evt in drained.drain(..) {
+                    match evt {
+                        SessionEvent::CwdChanged(cwd) => {
                             // Shared map (not a thread-local) so manual SFTP
-                            // navigation can clear the entry — then the very
-                            // next OSC 7, same directory or not, snaps the
-                            // panel back to the shell's cwd. Unchanged repeats
-                            // (every prompt re-emits OSC 7) are ignored (#59).
+                            // navigation can clear the entry — then the very next
+                            // OSC 7, same directory or not, snaps the panel back to
+                            // the shell's cwd. Unchanged repeats (every prompt
+                            // re-emits OSC 7) are ignored (#59).
                             let changed = match sftp_last_cwd_pump.lock() {
                                 Ok(mut m) => {
-                                    m.insert(tab_id_pump.clone(), cwd.clone())
-                                        .as_deref()
+                                    m.insert(tab_id_pump.clone(), cwd.clone()).as_deref()
                                         != Some(cwd.as_str())
                                 }
                                 Err(_) => false,
                             };
-                            // Swallow the event entirely when follow-cd is off:
-                            // forwarding it would set sftp_loading without any
-                            // ListDir to clear it (the #59 stuck-"loading" trap).
+                            // Swallow when follow-cd is off: forwarding it would set
+                            // sftp_loading without any ListDir to clear it (the #59
+                            // stuck-"loading" trap).
                             if !changed
-                                || !follow_cd_pump
-                                    .load(std::sync::atomic::Ordering::Relaxed)
+                                || !follow_cd_pump.load(std::sync::atomic::Ordering::Relaxed)
                             {
                                 continue;
                             }
                             if let Some(prev) = cwd_debounce.take() {
                                 prev.abort();
                             }
-                            let cwd = cwd.clone();
+                            let cwd_spawn = cwd.clone();
                             let sftp_h = sftp_handles_pump.clone();
                             let tid = tab_id_pump.clone();
                             cwd_debounce = Some(rt_pump.spawn(async move {
                                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                                 if let Ok(handles) = sftp_h.lock() {
                                     if let Some(h) = handles.get(&tid) {
-                                        h.list_dir(cwd);
+                                        h.list_dir(cwd_spawn);
                                     }
                                 }
                             }));
+                            ui_batch.push(SessionEvent::CwdChanged(cwd));
                         }
-                        let weak_evt = weak_inner.clone();
-                        let tid = tab_id_pump.clone();
-                        let bufs_evt = bufs_thread.clone();
-                        let st_evt = statuses_pump.clone();
-                        let lc_evt = local_pump.clone();
-                        let nh_evt = net_pump.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(win) = weak_evt.upgrade() {
-                                apply_session_event_to_window(
-                                    &win, &tid, shell_evt, &bufs_evt, &st_evt, &lc_evt, &nh_evt,
-                                );
+                        SessionEvent::Output(chunk) => {
+                            // Merge with the immediately preceding Output so the
+                            // whole run is one vt100 ingest + one render. Only
+                            // *adjacent* chunks merge, so byte order (and any
+                            // interleaved event) is preserved exactly.
+                            if let Some(SessionEvent::Output(prev)) = ui_batch.last_mut() {
+                                prev.push_str(&chunk);
+                            } else {
+                                ui_batch.push(SessionEvent::Output(chunk));
                             }
-                        });
+                        }
+                        other => ui_batch.push(other),
                     }
                 }
+                if ui_batch.is_empty() {
+                    continue;
+                }
+
+                let weak_evt = weak_inner.clone();
+                let tid = tab_id_pump.clone();
+                let bufs_evt = bufs_thread.clone();
+                let st_evt = statuses_pump.clone();
+                let lc_evt = local_pump.clone();
+                let nh_evt = net_pump.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(win) = weak_evt.upgrade() {
+                        for evt in ui_batch {
+                            apply_session_event_to_window(
+                                &win, &tid, evt, &bufs_evt, &st_evt, &lc_evt, &nh_evt,
+                            );
+                        }
+                    }
+                });
             }
         });
     }
