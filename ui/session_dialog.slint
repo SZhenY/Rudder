@@ -88,6 +88,109 @@ component MiniInput inherits Rectangle {
     }
 }
 
+// Group field with an editable text box + a dropdown of existing groups (#179).
+// Type to create a new group, or click the ▾ to pick one already in use.
+component GroupCombo inherits VerticalLayout {
+    in property <string> label;
+    in property <string> placeholder;
+    in-out property <string> value;
+    in property <[string]> groups;       // existing group names
+    spacing: 4px;
+
+    Text {
+        text: root.label;
+        color: Theme.text-secondary;
+        font-size: Theme.fs-sm;
+    }
+
+    Rectangle {
+        height: 32px;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+        border-color: ginput.has-focus ? Theme.accent : Theme.border-subtle;
+        background: Theme.bg-root;
+
+        ginput := TextInput {
+            x: 10px;
+            width: parent.width - 44px;     // room for the ▾ button
+            height: parent.height;
+            text <=> root.value;
+            color: Theme.text-primary;
+            font-family: Theme.ui-font-family;
+            font-size: Theme.fs-md;
+            vertical-alignment: center;
+            single-line: true;
+        }
+
+        if root.value == "" : Text {
+            x: 10px;
+            height: parent.height;
+            text: root.placeholder;
+            color: Theme.text-muted;
+            font-size: Theme.fs-md;
+            vertical-alignment: center;
+        }
+
+        // ▾ — opens the existing-groups list (no-op when there are none).
+        drop-ta := TouchArea {
+            x: parent.width - 36px;
+            width: 36px;
+            height: parent.height;
+            mouse-cursor: root.groups.length > 0 ? pointer : default;
+            clicked => { if (root.groups.length > 0) { groups-popup.show(); } }
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: Theme.radius-sm;
+                background: (drop-ta.has-hover && root.groups.length > 0) ? Theme.bg-hover : transparent;
+                Text {
+                    // Plain Unicode caret — the dialog's CJK UI font has this but
+                    // not the Material icon range, which would tofu (#179).
+                    text: "▼";
+                    color: root.groups.length > 0 ? Theme.text-secondary : Theme.border-strong;
+                    font-size: Theme.fs-xs;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        groups-popup := PopupWindow {
+            x: 0;
+            y: parent.height + 3px;
+            width: parent.width;
+            Rectangle {
+                background: Theme.bg-elevated;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.border-subtle;
+                VerticalLayout {
+                    padding: 4px;
+                    spacing: 1px;
+                    for g in root.groups : Rectangle {
+                        height: 28px;
+                        border-radius: Theme.radius-sm;
+                        background: g-ta.has-hover ? Theme.bg-hover : transparent;
+                        g-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.value = g; groups-popup.close(); }
+                        }
+                        Text {
+                            x: 10px;
+                            width: parent.width - 20px;
+                            text: g;
+                            color: Theme.text-primary;
+                            font-size: Theme.fs-md;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Modal dialog for creating / editing a session (SSH / Serial / Telnet).
 // The dialog is purely presentational — it stores values in mutable
 // properties and emits `submit` / `cancel` callbacks up to the main window.
@@ -108,6 +211,7 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-proxy-type: "none";  // "none" | "socks5" | "http"
     in-out property <string> draft-proxy-hostport;
     in-out property <string> draft-group;
+    in property <[string]> session-groups;   // existing groups for the dropdown (#179)
     in-out property <string> draft-serial-port;
     in-out property <string> draft-baud: "115200";
     in-out property <string> draft-data-bits: "8";
@@ -217,10 +321,12 @@ export component SessionDialog inherits Rectangle {
             }
 
             // Optional group/folder to organize sessions by business (#41).
-            LabeledInput {
+            // Editable + dropdown of existing groups (#179).
+            GroupCombo {
                 label: @tr("Group (optional)");
                 placeholder: @tr("e.g. Production / Database");
                 value <=> root.draft-group;
+                groups: root.session-groups;
             }
 
             // ── SSH / Telnet share host + port ──────────────────────────────

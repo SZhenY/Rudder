@@ -1366,6 +1366,30 @@ fn handle_file_drop(_win: &AppWindow, _sftp_handles: &SftpHandles, _path: String
 // Model helpers
 // ---------------------------------------------------------------------------
 
+/// Distinct named groups (explicit folders ∪ the groups sessions are filed under),
+/// de-duplicated and sorted alphabetically — feeds the new/edit dialog's group
+/// dropdown (#179). Ungrouped ("") is excluded; the dialog leaves the field blank
+/// for that case.
+fn session_groups_model(store: &ConfigStore) -> ModelRc<SharedString> {
+    let sessions = store.sessions();
+    let mut named: Vec<String> = store
+        .groups()
+        .iter()
+        .cloned()
+        .chain(
+            sessions
+                .iter()
+                .filter(|s| !s.group.is_empty())
+                .map(|s| s.group.clone()),
+        )
+        .collect();
+    named.sort_by_key(|g| g.to_lowercase());
+    named.dedup();
+    ModelRc::from(Rc::new(VecModel::from(
+        named.into_iter().map(SharedString::from).collect::<Vec<_>>(),
+    )))
+}
+
 fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
     // Group sessions by their `group` (named groups alphabetically, ungrouped
     // last), then by name within each group, and tag the first row of every
@@ -1481,9 +1505,11 @@ fn wire_session_callbacks(
     // New session -> open dialog with blank draft.
     let weak = window.as_weak();
     let ef_new = edit_forwards.clone();
+    let store_ng = store.clone();
     window.on_new_session_clicked(move || {
         if let Some(w) = weak.upgrade() {
             ef_new.borrow_mut().clear();
+            w.set_session_groups(session_groups_model(&store_ng.borrow()));
             w.set_dialog_forwards(forward_model(&[]));
             let empty = Session::new_empty();
             w.set_dialog_id(empty.id.into());
@@ -1634,6 +1660,7 @@ fn wire_session_callbacks(
             let Some(session) = store.get(&id) else { return; };
             *ef_edit.borrow_mut() = session.forwards.clone();
             if let Some(w) = weak.upgrade() {
+                w.set_session_groups(session_groups_model(&store));
                 w.set_dialog_forwards(forward_model(&session.forwards));
                 w.set_dialog_id(session.id.clone().into());
                 w.set_dialog_name(session.name.clone().into());
