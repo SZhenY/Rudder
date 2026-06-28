@@ -1162,6 +1162,13 @@ fn parse_monitor_block(
     let mut net_now: Vec<(String, u64, u64)> = Vec::new();
     // Filesystems from `df -kP`: (mount, available_bytes, total_bytes).
     let mut disks: Vec<(String, u64, u64)> = Vec::new();
+    // Dedup duplicate filesystems before they reach the panel (#38): NAS boxes
+    // (FNOS …) report the same underlying volume dozens of times — one Docker
+    // overlay mount per container layer, all with identical size. Like dropping rows
+    // into a Set: skip a (total, available) we've already shown. `df` lists the real
+    // mount first, so that's the one kept.
+    let mut seen_fs: std::collections::HashSet<(u64, u64)> =
+        std::collections::HashSet::new();
     // Processes from `ps` (#23): top-by-CPU rows.
     let mut procs: Vec<ProcInfo> = Vec::new();
     // The sample is split into sections by `echo` markers; everything before the
@@ -1190,8 +1197,13 @@ fn parse_monitor_block(
         match section {
             Section::Df => {
                 if disks.len() < MAX_MON_ENTRIES {
-                    if let Some(d) = parse_df_line(line) {
-                        disks.push(d);
+                    if let Some((mount, avail, total)) = parse_df_line(line) {
+                        // Set-style dedup: skip a filesystem whose (total, available)
+                        // we've already added — collapses the dozens of identical
+                        // Docker overlay mounts a NAS reports down to one row (#38).
+                        if seen_fs.insert((total, avail)) {
+                            disks.push((mount, avail, total));
+                        }
                     }
                 }
                 continue;
