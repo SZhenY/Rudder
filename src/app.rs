@@ -880,6 +880,16 @@ pub fn run() -> Result<()> {
         #[cfg(all(not(windows), not(target_os = "macos")))]
         let _ = std::process::Command::new("xdg-open").arg(url).spawn();
     });
+    // The open-source link in the About dialog opens the project page.
+    window.on_open_repo(move || {
+        let url = "https://github.com/jeff141/meatshell";
+        #[cfg(windows)]
+        let _ = std::process::Command::new("explorer").arg(url).spawn();
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").arg(url).spawn();
+        #[cfg(all(not(windows), not(target_os = "macos")))]
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    });
     // Query the GitHub releases API on a background thread; if a newer version
     // exists, flip the banner on. Best-effort: any network/parse error is
     // silently ignored and the app keeps working on the current version.

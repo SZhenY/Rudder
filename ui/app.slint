@@ -282,6 +282,7 @@ export component AppWindow inherits Window {
     property <length> toolbar-y-off:
         (root.sidebar-dock == "top" && !root.sidebar-collapsed) ? root.sidebar-height + 4px : 0px;
     in-out property <bool> about-open: false;     // centered About dialog
+    callback open-repo();                          // open the project's GitHub page
     in-out property <bool> shortcuts-open: false; // centered keyboard-shortcuts dialog (#103)
     in property <string> download-dir;      // preset SFTP download folder ("" = ask)
     // Process monitor is now a detachable top-level window (ProcWindow). Rust
@@ -2556,13 +2557,14 @@ export component AppWindow inherits Window {
         background: #00000080;            // dim backdrop
         TouchArea { clicked => { root.about-open = false; } }
 
+        // Landscape card: logo on the left, a short intro + repo link on the right.
         Rectangle {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            width: 380px;
-            height: 440px;
+            width: 520px;
+            height: 188px;
             background: Theme.bg-panel;
-            border-radius: Theme.radius-md;
+            border-radius: Theme.radius-lg;
             border-width: 1px;
             border-color: Theme.border-strong;
             drop-shadow-blur: 24px;
@@ -2571,67 +2573,98 @@ export component AppWindow inherits Window {
             // Swallow clicks so the backdrop doesn't close when clicking inside.
             TouchArea {}
 
-            VerticalLayout {
-                padding: 18px;
-                spacing: 8px;
+            // Close (×) in the top-right corner.
+            Rectangle {
+                x: parent.width - 30px;
+                y: 8px;
+                width: 22px; height: 22px;
+                border-radius: Theme.radius-sm;
+                background: ab-close-ta.has-hover ? Theme.bg-hover : transparent;
+                ab-close-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.about-open = false; }
+                }
+                Text { text: "\u{E5CD}"; font-family: "Material Icons";
+                       color: Theme.text-secondary; font-size: Theme.fs-sm;
+                       horizontal-alignment: center; vertical-alignment: center; }
+            }
 
-                HorizontalLayout {
-                    Text {
-                        text: @tr("About meatshell");
-                        color: Theme.text-primary;
-                        font-size: Theme.fs-lg;
-                        font-weight: 700;
-                        horizontal-stretch: 1;
-                        vertical-alignment: center;
+            HorizontalLayout {
+                padding: 24px;
+                spacing: 20px;
+
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        source: @image-url("../assets/icon.png");
+                        width: 76px;
+                        height: 76px;
                     }
-                    Rectangle {
-                        width: 22px; height: 22px;
-                        border-radius: Theme.radius-sm;
-                        background: ab-close-ta.has-hover ? Theme.bg-hover : transparent;
-                        ab-close-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.about-open = false; }
-                        }
-                        Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                               color: Theme.text-secondary; font-size: Theme.fs-sm;
-                               horizontal-alignment: center; vertical-alignment: center; }
-                    }
                 }
 
-                Text {
-                    text: @tr("A lightweight Rust + Slint SSH terminal client by 'lil meatball'.");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                    wrap: word-wrap;
-                }
-                Text {
-                    text: @tr("Open source · MIT / Apache-2.0");
-                    color: Theme.text-muted;
-                    font-size: Theme.fs-xs;
-                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 7px;
+                    horizontal-stretch: 1;
 
-                Rectangle { height: 1px; background: Theme.border-subtle; }
-
-                Text {
-                    text: @tr("Open-source libraries used");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
-
-                Flickable {
-                    vertical-stretch: 1;
-                    viewport-width: self.width;
-                    viewport-height: max(self.height, libs-col.preferred-height);
-                    libs-col := VerticalLayout {
+                    HorizontalLayout {
                         alignment: start;
-                        spacing: 4px;
-                        for lib in root.about-libs : Text {
-                            text: lib;
+                        spacing: 8px;
+                        Text {
+                            text: "meatshell";
                             color: Theme.text-primary;
-                            font-size: Theme.fs-xs;
-                            wrap: no-wrap;
-                            overflow: elide;
+                            font-size: 22px;
+                            font-weight: 700;
+                            vertical-alignment: center;
                         }
+                        Text {
+                            text: "v" + root.app-version;
+                            color: Theme.text-muted;
+                            font-size: Theme.fs-sm;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Text {
+                        text: @tr("meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'");
+                        color: Theme.text-secondary;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+
+                    // Clickable open-source link → opens the GitHub page.
+                    HorizontalLayout {
+                        alignment: start;
+                        spacing: 6px;
+                        Text {
+                            text: @tr("Open source");
+                            color: Theme.text-muted;
+                            font-size: Theme.fs-sm;
+                            vertical-alignment: center;
+                        }
+                        Rectangle {
+                            border-radius: Theme.radius-sm;
+                            background: repo-ta.has-hover ? Theme.bg-hover : transparent;
+                            HorizontalLayout {
+                                padding-left: 4px; padding-right: 4px;
+                                Text {
+                                    text: "github.com/jeff141/meatshell";
+                                    color: Theme.accent;
+                                    font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            repo-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.open-repo(); }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "MIT / Apache-2.0";
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-xs;
                     }
                 }
             }
