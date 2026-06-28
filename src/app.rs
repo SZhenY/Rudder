@@ -351,6 +351,21 @@ pub fn run() -> Result<()> {
                 w.window().with_winit_window(|ww| {
                     let _ = ww.drag_resize_window(ResizeDirection::SouthEast);
                 });
+                // Drop Slint's pointer grab after the WM takes over, deferred to the
+                // next event-loop turn (see #159 in the main window's on_win_resize).
+                if cfg!(target_os = "linux") {
+                    let weak2 = weak.clone();
+                    slint::Timer::single_shot(std::time::Duration::from_millis(0), move || {
+                        if let Some(w) = weak2.upgrade() {
+                            let win = w.window();
+                            win.dispatch_event(slint::platform::WindowEvent::PointerReleased {
+                                position: slint::LogicalPosition::new(0.0, 0.0),
+                                button: slint::platform::PointerEventButton::Left,
+                            });
+                            win.dispatch_event(slint::platform::WindowEvent::PointerExited);
+                        }
+                    });
+                }
             }
         });
     }
@@ -1215,6 +1230,31 @@ pub fn run() -> Result<()> {
                 w.window().with_winit_window(|ww| {
                     let _ = ww.drag_resize_window(d);
                 });
+                // On Linux the window manager / Wayland compositor takes over the
+                // resize and consumes the button-release that ends it (winit ungrabs
+                // + hands off via _NET_WM_MOVERESIZE / xdg_toplevel.resize), so Slint
+                // never sees the release and keeps its pointer grab on the resize
+                // handle — afterwards the cursor stays a resize-arrow and a click
+                // *anywhere* re-starts a resize (#159). Synthesize a release + exit
+                // so Slint drops the grab. It must be DEFERRED: Slint establishes the
+                // press grab while processing this very pointer event, so a release
+                // dispatched synchronously here is too early. A 0 ms single-shot runs
+                // on the next event-loop turn, once the grab is in place. Windows/
+                // macOS deliver the release natively; the runtime cfg! gate keeps
+                // this compiling (and a no-op) there.
+                if cfg!(target_os = "linux") {
+                    let weak2 = weak.clone();
+                    slint::Timer::single_shot(std::time::Duration::from_millis(0), move || {
+                        if let Some(w) = weak2.upgrade() {
+                            let win = w.window();
+                            win.dispatch_event(slint::platform::WindowEvent::PointerReleased {
+                                position: slint::LogicalPosition::new(0.0, 0.0),
+                                button: slint::platform::PointerEventButton::Left,
+                            });
+                            win.dispatch_event(slint::platform::WindowEvent::PointerExited);
+                        }
+                    });
+                }
             }
         });
     }
