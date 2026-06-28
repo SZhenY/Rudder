@@ -3565,9 +3565,18 @@ fn resolve_front_hostkey(win: &AppWindow, accept: bool) {
     let has_next = HOSTKEY_QUEUE.with(|q| {
         let mut q = q.borrow_mut();
         if let Some(p) = q.pop_front() {
-            HOSTKEY_DECIDED.with(|d| {
-                d.borrow_mut().insert(format!("{}:{}", p.host, p.port), accept);
-            });
+            // Only remember an *accept* for this run (so a slightly-later SFTP
+            // prompt for the same host is answered without a second dialog). We
+            // must NOT cache a reject: a single dismissal — e.g. an accidental
+            // backdrop click instead of "Trust & connect" — used to poison the
+            // host for the whole session, auto-rejecting every later connect with
+            // "Unknown server key" until the app was restarted (#152). A reject now
+            // only fails the current attempt; the next connect prompts again.
+            if accept {
+                HOSTKEY_DECIDED.with(|d| {
+                    d.borrow_mut().insert(format!("{}:{}", p.host, p.port), true);
+                });
+            }
             for r in &p.responders {
                 r.respond(accept);
             }
