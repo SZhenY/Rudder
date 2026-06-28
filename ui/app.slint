@@ -534,6 +534,7 @@ export component AppWindow inherits Window {
     callback tab-selected(string);
     callback tab-closed(string);
     callback new-tab-clicked();
+    callback tab-reorder(int /* from-index */, int /* dir: -1 left / +1 right */);
     // Asks Rust to recompute the sidebar (status + resources) for whatever tab
     // is now active.  Fired on every active-tab change, UI- or code-driven.
     callback refresh-sidebar();
@@ -834,6 +835,7 @@ export component AppWindow inherits Window {
                     }
                     tab-closed(id) => { root.tab-closed(id); }
                     new-tab() => { root.new-tab-clicked(); }
+                    tab-reorder(from, dir) => { root.tab-reorder(from, dir); }
                 }
             }
 

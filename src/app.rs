@@ -3939,6 +3939,28 @@ fn wire_tab_callbacks(
         });
     }
 
+    // Drag-to-reorder tabs (v0.5): move the tab at `from` one slot in `dir`. Only
+    // the tab-bar order changes — terminal content is shown by active id, so nothing
+    // else needs reordering, and the welcome tab moves like any other.
+    {
+        let tabs_model = tabs_model.clone();
+        window.on_tab_reorder(move |from: i32, dir: i32| {
+            let n = tabs_model.row_count() as i32;
+            if n <= 1 {
+                return;
+            }
+            let from = from.clamp(0, n - 1);
+            let to = (from + dir).clamp(0, n - 1);
+            if from == to {
+                return;
+            }
+            if let Some(item) = tabs_model.row_data(from as usize) {
+                tabs_model.remove(from as usize);
+                tabs_model.insert(to as usize, item);
+            }
+        });
+    }
+
     {
         let weak = window.as_weak();
         let tabs_model = tabs_model.clone();

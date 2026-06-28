@@ -14,21 +14,59 @@ component SingleTab inherits Rectangle {
     in property <bool> active;
     callback selected();
     callback closed();
+    // Drag-to-reorder (v0.5): emitted while dragging when the tab should hop one
+    // slot left (-1) or right (+1). The model reorders and the tab follows.
+    callback reorder(int /* dir */);
+
+    // Where inside the tab the drag began, and whether a drag (vs a click) is in
+    // progress. `dragging` suppresses the select-on-release.
+    property <length> grab-offset;
+    property <bool> pressing;
+    out property <bool> dragging;
 
     height: 30px;
     min-width: 100px;          // 缩短：原 120px，短名称（如 "pve"）时更紧凑
     max-width: 160px;          // 新增：防止长名称把 tab 撑得过宽
     horizontal-stretch: 0;    // 新增：不参与 TabBar 的等分拉伸，保持自然宽度
     border-radius: Theme.radius-sm;
-    background: active ? Theme.bg-panel
-        : (touch.has-hover ? Theme.bg-hover : transparent);
+    background: dragging ? Theme.bg-active
+        : (active ? Theme.bg-panel
+        : (touch.has-hover ? Theme.bg-hover : transparent));
     animate background { duration: 120ms; }
 
     // Declared FIRST so the HorizontalLayout's children (close button) are at
     // a higher z-order and receive their own click events.
     touch := TouchArea {
         mouse-cursor: pointer;
-        clicked => { root.selected(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.grab-offset = self.mouse-x;
+                root.pressing = true;
+                root.dragging = false;
+            } else if (e.kind == PointerEventKind.up) {
+                if (root.pressing && !root.dragging) {
+                    root.selected();
+                }
+                root.pressing = false;
+                root.dragging = false;
+            }
+        }
+        moved => {
+            if (root.pressing) {
+                // One slot = the tab's own width + the 2px strip spacing. When the
+                // grab point drifts more than half a slot, hop the tab that way and
+                // re-anchor grab-offset to the slot the tab just moved into — so the
+                // drift resets to ~0 (no oscillation, and a long drag keeps hopping).
+                if (abs(self.mouse-x - root.grab-offset) > 5px) { root.dragging = true; }
+                if (self.mouse-x - root.grab-offset > (root.width + 2px) / 2) {
+                    root.reorder(1);
+                    root.grab-offset = self.mouse-x - (root.width + 2px);
+                } else if (self.mouse-x - root.grab-offset < -(root.width + 2px) / 2) {
+                    root.reorder(-1);
+                    root.grab-offset = self.mouse-x + (root.width + 2px);
+                }
+            }
+        }
     }
 
     HorizontalLayout {
@@ -75,6 +113,8 @@ export component TabBar inherits Rectangle {
     callback tab-selected(string);
     callback tab-closed(string);
     callback new-tab();
+    // Drag-to-reorder: move the tab at `from` one slot in `dir` (#v0.5).
+    callback tab-reorder(int /* from */, int /* dir */);
 
     height: 36px;
     background: Theme.bg-panel-alt;
@@ -104,6 +144,7 @@ export component TabBar inherits Rectangle {
                     active: tab.id == root.active-id;
                     selected => { root.tab-selected(tab.id); }
                     closed => { root.tab-closed(tab.id); }
+                    reorder(dir) => { root.tab-reorder(i, dir); }
                 }
                 IconButton {
                     glyph: "+";
