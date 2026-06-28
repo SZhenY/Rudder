@@ -182,6 +182,11 @@ export component TerminalView inherits Rectangle {
     callback clear-terminal();              // wipe this session's screen buffer
     callback find-query-changed(string);    // recompute search highlights
     callback terminal-scroll(int);          // scroll history by N lines (+ = up)
+    // Wheel inside an alt-screen app (tmux/less/vim): forward to the program so it
+    // scrolls, instead of doing nothing (#170). dir = +1 up / -1 down; col/row =
+    // mouse cell. Rust sends a mouse-wheel event if the app tracks the mouse, else
+    // arrow keys (alternate-scroll).
+    callback terminal-wheel(int /* dir */, int /* col */, int /* row */);
     callback terminal-scroll-to(int);       // jump to an absolute scrollback offset (#103)
     callback select-start(int, int);        // begin drag-selection at (row, col)
     callback select-update(int, int);       // extend drag-selection to (row, col)
@@ -469,12 +474,17 @@ export component TerminalView inherits Rectangle {
                                 }
                             }
                             scroll-event(ev) => {
-                                // Wheel scrolls the scrollback history (~3 lines
-                                // per notch).  Positive delta-y = scroll up = older.
-                                // In alt-screen mode (vim/nano/btop) the program
-                                // handles scroll itself — suppress our history scroll
-                                // so the full-screen UI isn't pushed out of view.
-                                if (!root.is-alt-screen) {
+                                // Positive delta-y = wheel up.
+                                if (root.is-alt-screen) {
+                                    // Alt-screen app (tmux/less/vim): forward the wheel
+                                    // so the program scrolls instead of nothing (#170).
+                                    root.terminal-wheel(
+                                        ev.delta-y > 0 ? 1 : -1,
+                                        floor(self.mouse-x / root.cell-w),
+                                        floor(self.mouse-y / root.cell-h));
+                                } else {
+                                    // Normal screen: scroll our own scrollback history
+                                    // (~3 lines per notch).
                                     root.terminal-scroll(ev.delta-y > 0 ? 3 : -3);
                                 }
                                 accept

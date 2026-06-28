@@ -5239,6 +5239,54 @@ fn wire_key_input(
         });
     }
 
+    // Wheel inside an alt-screen program (tmux / less / vim): forward it to the PTY
+    // so the program scrolls, instead of doing nothing (#170 — FinalShell /
+    // MobaXterm behave this way). If the app is tracking the mouse (e.g. tmux with
+    // `mouse on`), send a real wheel mouse-event in the encoding it asked for;
+    // otherwise fall back to arrow keys (xterm "alternate scroll"), which scrolls
+    // less / man / vim.
+    {
+        let bufs_wheel = bufs.clone();
+        let handles_wheel = handles.clone();
+        window.on_terminal_wheel(move |tab_id: SharedString, dir: i32, col: i32, row: i32| {
+            let tid = tab_id.to_string();
+            let bytes = {
+                let map = bufs_wheel.lock().unwrap();
+                let Some(buf) = map.get(&tid) else { return };
+                let screen = buf.parser.screen();
+                if screen.mouse_protocol_mode() != vt100::MouseProtocolMode::None {
+                    // 1-based cell under the cursor, clamped to the screen.
+                    let (rows, cols) = screen.size();
+                    let c = (col.clamp(0, cols.saturating_sub(1) as i32) as u16) + 1;
+                    let r = (row.clamp(0, rows.saturating_sub(1) as i32) as u16) + 1;
+                    let btn: u16 = if dir > 0 { 64 } else { 65 }; // wheel up / down
+                    if screen.mouse_protocol_encoding() == vt100::MouseProtocolEncoding::Sgr {
+                        format!("\x1b[<{btn};{c};{r}M").into_bytes()
+                    } else {
+                        // Legacy X10 encoding: ESC [ M  Cb Cx Cy  (each value + 32).
+                        let cb = (btn + 32) as u8;
+                        let cx = (c.min(223) + 32) as u8;
+                        let cy = (r.min(223) + 32) as u8;
+                        vec![0x1b, b'[', b'M', cb, cx, cy]
+                    }
+                } else {
+                    // alternate-scroll: 3 arrow presses per notch, app-cursor aware.
+                    let one: &[u8] = if dir > 0 {
+                        if screen.application_cursor() { b"\x1bOA" } else { b"\x1b[A" }
+                    } else if screen.application_cursor() {
+                        b"\x1bOB"
+                    } else {
+                        b"\x1b[B"
+                    };
+                    one.repeat(3)
+                }
+            };
+            if let Some(h) = handles_wheel.borrow().get(&tid) {
+                h.send_raw(bytes);
+            }
+        });
+    }
+
     // Scrollbar drag → jump to an absolute scrollback offset (#103).
     {
         let bufs_scroll = bufs.clone();

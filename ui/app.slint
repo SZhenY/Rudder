@@ -592,6 +592,8 @@ export component AppWindow inherits Window {
     callback find-query-changed(string /* tab-id */, string /* query */);
     // Scroll a session's scrollback history by N lines (+ = up/older).
     callback terminal-scroll(string /* tab-id */, int /* delta-lines */);
+    // Wheel forwarded to an alt-screen program (#170): tab-id, dir (+1 up/-1 down), col, row.
+    callback terminal-wheel(string, int, int, int);
     callback terminal-scroll-to(string /* tab-id */, int /* offset */); // scrollbar drag (#103)
     // Drag-selection lifecycle (grid row/col coordinates).
     callback term-select-start(string /* tab-id */, int /* row */, int /* col */);
@@ -976,6 +978,7 @@ export component AppWindow inherits Window {
                     clear-terminal() => { root.clear-terminal(term.id); }
                     find-query-changed(q) => { root.find-query-changed(term.id, q); }
                     terminal-scroll(d) => { root.terminal-scroll(term.id, d); }
+                    terminal-wheel(d, c, r) => { root.terminal-wheel(term.id, d, c, r); }
                     terminal-scroll-to(o) => { root.terminal-scroll-to(term.id, o); }
                     select-start(r, c) => { root.term-select-start(term.id, r, c); }
                     select-update(r, c) => { root.term-select-update(term.id, r, c); }
