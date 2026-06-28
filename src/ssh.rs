@@ -938,11 +938,16 @@ async fn run_session(
                         {
                             prompt_injected = true;
                             suppress_echo = true;
-                            // Give the hook ~1.2 s to echo its OSC 7; past that we
+                            // Give the hook ~2 s to echo its OSC 7; past that we
                             // assume a non-POSIX shell and stop hiding output (#140-1).
+                            // 1.2 s was too tight for slow PTY/SSH servers — the echo
+                            // + OSC 7 landed after the deadline, so the injected setup
+                            // line leaked through (#176). The cost of the larger window
+                            // is only a slightly longer blank on a non-POSIX shell that
+                            // wasn't already flagged disable_shell_integration.
                             suppress_deadline = Some(
                                 tokio::time::Instant::now()
-                                    + std::time::Duration::from_millis(1200),
+                                    + std::time::Duration::from_millis(2000),
                             );
                             let _ = channel.data(prompt_setup.as_bytes()).await;
                             // Fall through: this chunk is buffered below so the
