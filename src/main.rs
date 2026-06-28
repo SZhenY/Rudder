@@ -9,6 +9,7 @@ mod errlog;
 mod forward;
 mod i18n;
 mod known_hosts;
+mod panes;
 mod proxy;
 mod serial;
 mod sftp;
