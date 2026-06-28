@@ -1607,7 +1607,9 @@ export component AppWindow inherits Window {
         x: parent.width - 196px - root.toolbar-x-off;
         y: (root.custom-titlebar ? 78px : 40px + root.titlebar-inset) + root.toolbar-y-off;
         width: 198px;
-        height: 220px;
+        // Size to the menu's content so adding/removing items (or the
+        // ~/.ssh/config import hint expanding) never overflows the card (#150-fix).
+        height: menu-vl.preferred-height;
         visible: root.settings-open;
         background: Theme.bg-panel;
         border-radius: Theme.radius-md;
@@ -1618,7 +1620,7 @@ export component AppWindow inherits Window {
 
         TouchArea {}   // swallow events so they don't reach the terminal
 
-        VerticalLayout {
+        menu-vl := VerticalLayout {
             padding: 4px;
             spacing: 1px;
             // Interface (font) settings.
