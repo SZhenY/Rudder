@@ -575,6 +575,17 @@ export component AppWindow inherits Window {
     callback pane-split(int /* pane-id */, string /* tab-id */, string /* dir */);
     // Open another connection to the same session as `tab-id` (a new tab).
     callback tab-duplicate(string /* tab-id */);
+    // Drag-to-split (v0.5): cursor moved / dropped while dragging `tab-id`, in
+    // pane-area coordinates. Rust hit-tests the pane + edge zone.
+    callback tab-drag-move(string /* tab-id */, length /* x */, length /* y */);
+    callback tab-drag-drop(string /* tab-id */, length /* x */, length /* y */);
+    // Drop-zone highlight (set by Rust during a drag): the region the dropped
+    // tab's new pane would occupy.
+    in property <bool> drag-active;
+    in property <length> drag-hl-x;
+    in property <length> drag-hl-y;
+    in property <length> drag-hl-w;
+    in property <length> drag-hl-h;
     // Splitter drag: move split `split-id`'s boundary to `pos` (px along its axis).
     callback splitter-drag(int /* split-id */, length /* pos */, bool /* vertical */);
     // Reports the pane-area size to Rust so it can flatten the split tree into
@@ -886,6 +897,16 @@ export component AppWindow inherits Window {
                     tab-reorder(from, dir) => { root.pane-tab-reorder(pane.id, from, dir); }
                     tab-split(id, dir) => { root.pane-split(pane.id, id, dir); }
                     tab-duplicate(id) => { root.tab-duplicate(id); }
+                    tab-drag-move(id, ax, ay) => {
+                        root.tab-drag-move(id,
+                            ax - pane-area.absolute-position.x,
+                            ay - pane-area.absolute-position.y);
+                    }
+                    tab-drag-drop(id, ax, ay) => {
+                        root.tab-drag-drop(id,
+                            ax - pane-area.absolute-position.x,
+                            ay - pane-area.absolute-position.y);
+                    }
                 }
             }
 
@@ -1067,6 +1088,19 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
+            }
+
+            // Drag-to-split drop-zone highlight (v0.5). Purely visual (no
+            // TouchArea) so it never eats the drag; Rust sets the rect.
+            if root.drag-active : Rectangle {
+                x: root.drag-hl-x;
+                y: root.drag-hl-y;
+                width: root.drag-hl-w;
+                height: root.drag-hl-h;
+                background: Theme.accent.with-alpha(0.22);
+                border-width: 2px;
+                border-color: Theme.accent;
+                border-radius: Theme.radius-sm;
             }
             }
         }

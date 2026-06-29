@@ -19,6 +19,10 @@ component SingleTab inherits Rectangle {
     callback reorder(int /* dir */);
     // Right-click (v0.5): request a context menu at the given absolute position.
     callback context-requested(length /* abs-x */, length /* abs-y */);
+    // Drag-to-split (v0.5): report the absolute cursor while dragging, and the
+    // drop point on release. The parent maps these to pane drop-zones.
+    callback drag-moved(length /* abs-x */, length /* abs-y */);
+    callback drag-dropped(length /* abs-x */, length /* abs-y */);
 
     // Where inside the tab the drag began, and whether a drag (vs a click) is in
     // progress. `dragging` suppresses the select-on-release.
@@ -52,6 +56,9 @@ component SingleTab inherits Rectangle {
             } else if (e.kind == PointerEventKind.up) {
                 if (root.pressing && !root.dragging) {
                     root.selected();
+                } else if (root.pressing && root.dragging) {
+                    root.drag-dropped(self.absolute-position.x + self.mouse-x,
+                                      self.absolute-position.y + self.mouse-y);
                 }
                 root.pressing = false;
                 root.dragging = false;
@@ -59,17 +66,27 @@ component SingleTab inherits Rectangle {
         }
         moved => {
             if (root.pressing) {
-                // One slot = the tab's own width + the 2px strip spacing. When the
-                // grab point drifts more than half a slot, hop the tab that way and
-                // re-anchor grab-offset to the slot the tab just moved into — so the
-                // drift resets to ~0 (no oscillation, and a long drag keeps hopping).
-                if (abs(self.mouse-x - root.grab-offset) > 5px) { root.dragging = true; }
-                if (self.mouse-x - root.grab-offset > (root.width + 2px) / 2) {
-                    root.reorder(1);
-                    root.grab-offset = self.mouse-x - (root.width + 2px);
-                } else if (self.mouse-x - root.grab-offset < -(root.width + 2px) / 2) {
-                    root.reorder(-1);
-                    root.grab-offset = self.mouse-x + (root.width + 2px);
+                // A drag begins once the cursor drifts horizontally OR leaves the
+                // tab vertically (so a straight-down drag to split also counts).
+                if (abs(self.mouse-x - root.grab-offset) > 5px
+                        || self.mouse-y < -6px || self.mouse-y > root.height + 6px) {
+                    root.dragging = true;
+                }
+                // Tell the parent where the cursor is, for drop-to-split zones.
+                root.drag-moved(self.absolute-position.x + self.mouse-x,
+                                self.absolute-position.y + self.mouse-y);
+                // Reorder within the strip only while the cursor stays on the strip
+                // row; once it drops into a pane body we hand off to drag-to-split.
+                // One slot = the tab's own width + the 2px strip spacing; re-anchor
+                // grab-offset after each hop so the drift resets (no oscillation).
+                if (self.mouse-y > -10px && self.mouse-y < root.height + 10px) {
+                    if (self.mouse-x - root.grab-offset > (root.width + 2px) / 2) {
+                        root.reorder(1);
+                        root.grab-offset = self.mouse-x - (root.width + 2px);
+                    } else if (self.mouse-x - root.grab-offset < -(root.width + 2px) / 2) {
+                        root.reorder(-1);
+                        root.grab-offset = self.mouse-x + (root.width + 2px);
+                    }
                 }
             }
         }
@@ -151,6 +168,10 @@ export component TabBar inherits Rectangle {
     callback tab-split(string /* tab-id */, string /* dir */);
     // Open another connection to the same session as `tab-id` (#v0.5).
     callback tab-duplicate(string /* tab-id */);
+    // Drag-to-split (#v0.5): cursor moved / dropped while dragging `tab-id`, in
+    // absolute (window) coordinates.
+    callback tab-drag-move(string /* tab-id */, length /* abs-x */, length /* abs-y */);
+    callback tab-drag-drop(string /* tab-id */, length /* abs-x */, length /* abs-y */);
 
     // Right-click context-menu state.
     property <length> menu-x;
@@ -192,6 +213,8 @@ export component TabBar inherits Rectangle {
                         root.menu-y = ay - root.absolute-position.y;
                         tab-menu.show();
                     }
+                    drag-moved(ax, ay) => { root.tab-drag-move(tab.id, ax, ay); }
+                    drag-dropped(ax, ay) => { root.tab-drag-drop(tab.id, ax, ay); }
                 }
                 IconButton {
                     glyph: "+";

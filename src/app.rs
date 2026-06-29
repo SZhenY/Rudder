@@ -4052,6 +4052,49 @@ fn refresh_panes(
     }
 }
 
+/// Hit-test a drag point (pane-area coords) to a target pane + edge zone, plus
+/// the highlight rect the dropped tab's new pane would occupy. Zone is one of
+/// "left"/"right"/"up"/"down"/"center"; `None` when the point is outside every
+/// pane. The 30% edge bands trigger a split; the middle drops into the pane's
+/// tab group.
+fn drag_target(
+    layout: &crate::panes::Layout,
+    content: (f32, f32),
+    x: f32,
+    y: f32,
+) -> Option<(u64, &'static str, (f32, f32, f32, f32))> {
+    const STRIP: f32 = 36.0;
+    const EDGE: f32 = 0.30;
+    let (cw, ch) = (content.0.max(1.0), content.1.max(1.0));
+    let (panes, _) = layout.flatten(0.0, 0.0, cw, ch);
+    let p = panes
+        .iter()
+        .find(|p| x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h)?;
+    // Still on the tab strip — that's reorder territory, no split/move highlight.
+    let body_top = p.y + STRIP;
+    if y < body_top {
+        return None;
+    }
+    let bw = p.w.max(1.0);
+    let bh = (p.h - STRIP).max(1.0);
+    let rx = (x - p.x) / bw;
+    let ry = (y - body_top) / bh;
+    let (dl, dr, dt, db) = (rx, 1.0 - rx, ry, 1.0 - ry);
+    let m = dl.min(dr).min(dt).min(db);
+    let (zone, rect) = if m > EDGE {
+        ("center", (p.x, p.y, p.w, p.h))
+    } else if m == dl {
+        ("left", (p.x, p.y, p.w * 0.5, p.h))
+    } else if m == dr {
+        ("right", (p.x + p.w * 0.5, p.y, p.w * 0.5, p.h))
+    } else if m == dt {
+        ("up", (p.x, p.y, p.w, p.h * 0.5))
+    } else {
+        ("down", (p.x, p.y + p.h * 0.5, p.w, p.h * 0.5))
+    };
+    Some((p.id, zone, rect))
+}
+
 // ---------------------------------------------------------------------------
 // Tab callbacks
 // ---------------------------------------------------------------------------
@@ -4294,6 +4337,68 @@ fn wire_tab_callbacks(
                 }
             },
         );
+    }
+
+    // Drag-to-split: while a tab is dragged over the pane area, highlight the
+    // drop zone the cursor is in (an edge band → split, the middle → move).
+    {
+        let weak = window.as_weak();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        window.on_tab_drag_move(move |_tab_id: SharedString, x: f32, y: f32| {
+            if let Some(w) = weak.upgrade() {
+                match drag_target(&layout.borrow(), content_size.get(), x, y) {
+                    Some((_, _, (hx, hy, hw, hh))) => {
+                        w.set_drag_active(true);
+                        w.set_drag_hl_x(hx);
+                        w.set_drag_hl_y(hy);
+                        w.set_drag_hl_w(hw);
+                        w.set_drag_hl_h(hh);
+                    }
+                    None => w.set_drag_active(false),
+                }
+            }
+        });
+    }
+
+    // Drop: split the target pane toward the dropped-on edge (peeling the tab
+    // into the new pane), or drop into another pane's tab group from the middle.
+    {
+        let weak = window.as_weak();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        let tabs_model = tabs_model.clone();
+        window.on_tab_drag_drop(move |tab_id: SharedString, x: f32, y: f32| {
+            let tab_id = tab_id.to_string();
+            let target = drag_target(&layout.borrow(), content_size.get(), x, y);
+            if let Some((pane, zone, _)) = target {
+                let mut lay = layout.borrow_mut();
+                let src = lay.leaf_of_tab(&tab_id);
+                match zone {
+                    "left" => {
+                        lay.split(pane, crate::panes::Dir::Horizontal, &tab_id, true);
+                    }
+                    "right" => {
+                        lay.split(pane, crate::panes::Dir::Horizontal, &tab_id, false);
+                    }
+                    "up" => {
+                        lay.split(pane, crate::panes::Dir::Vertical, &tab_id, true);
+                    }
+                    "down" => {
+                        lay.split(pane, crate::panes::Dir::Vertical, &tab_id, false);
+                    }
+                    _ => {
+                        if src != Some(pane) {
+                            lay.move_tab(&tab_id, pane);
+                        }
+                    }
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_drag_active(false);
+                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+            }
+        });
     }
 }
 
