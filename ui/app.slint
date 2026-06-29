@@ -500,7 +500,18 @@ export component AppWindow inherits Window {
     // --- Tabs --------------------------------------------------------------
     in property <[TabInfo]> tabs;
     // --- Split panes (v0.5) — flattened from the Rust split tree -----------
-    in property <[PaneInfo]> panes;
+    // M1: bound here to a single full-area pane (one tab group == today's
+    // behaviour). M2 switches this to Rust-driven from the split tree.
+    in property <[PaneInfo]> panes: [{
+        id: 1,
+        x: 0, y: 0,
+        w: pane-area.width,
+        h: pane-area.height,
+        active-id: root.active-tab-id,
+        focused: true,
+        reserve-right: 140px,
+        tabs: root.tabs,
+    }];
     in property <[SplitterInfo]> splitters;
     in-out property <string> active-tab-id: "welcome";
     in property <[TerminalState]> terminals;
@@ -845,27 +856,30 @@ export component AppWindow inherits Window {
             width:  root.sidebar-horizontal ? parent.width - parent.sb-w - parent.sp : parent.width;
             height: root.sidebar-horizontal ? parent.height : parent.height - parent.sb-h - parent.sp - parent.bottom-strip-h;
             clip: true;
-            VerticalLayout {
-            spacing: 0;
+            // Split-pane area (v0.5): panes tile this rect; each pane has its own
+            // tab strip + active terminal / welcome. One pane == the full area.
+            pane-area := Rectangle {
+            for pane[pi] in root.panes : Rectangle {
+                x: pane.x; y: pane.y; width: pane.w; height: pane.h;
+                clip: true;
+                VerticalLayout {
+                spacing: 0;
 
-            HorizontalLayout {
+                HorizontalLayout {
                 spacing: 0;
                 // The sidebar collapse toggle now lives inside the panel header
-                // (so it follows the panel to any edge); expand-when-collapsed is
-                // a floating button at the docked edge below (#dock).
-                // When docked left/top + collapsed, leave room on the far left so
-                // the expand button sits just left of the first tab (not over it).
-                // Frosted backing (matches the expand button) so the reserved gap
-                // doesn't show the raw wallpaper as a dark block behind the button
-                // in immersive mode (#dock).
-                if (root.sidebar-dock == "left" || root.sidebar-dock == "top") && root.sidebar-collapsed : Rectangle { width: 30px; background: Theme.bg-elevated; }
+                // (so it follows the panel to any edge); expand-when-collapsed is a
+                // floating button at the docked edge below (#dock). When docked
+                // left/top + collapsed, reserve room on the far left of the FIRST
+                // pane so the expand button sits just left of its first tab.
+                if pi == 0 && (root.sidebar-dock == "left" || root.sidebar-dock == "top") && root.sidebar-collapsed : Rectangle { width: 30px; background: Theme.bg-elevated; }
                 TabBar {
                     horizontal-stretch: 1;
                     // Reserve room for the top-right toolbar icons that sit over
                     // this row so tabs don't slide underneath them (#122).
-                    reserve-right: 140px;
-                    tabs: root.tabs;
-                    active-id: root.active-tab-id;
+                    reserve-right: pane.reserve-right;
+                    tabs: pane.tabs;
+                    active-id: pane.active-id;
                     tab-selected(id) => {
                         root.active-tab-id = id;
                         root.tab-selected(id);
@@ -883,7 +897,7 @@ export component AppWindow inherits Window {
 
                 // Welcome tab — fill the content area explicitly (some renderers
                 // don't auto-fill, which spread the header/card apart) (#dock).
-                if root.active-tab-id == "welcome" : Welcome {
+                if pane.active-id == "welcome" : Welcome {
                     width: parent.width;
                     height: parent.height;
                     sessions: root.sessions;
@@ -914,9 +928,9 @@ export component AppWindow inherits Window {
                 // allow nesting `if` directly inside a `for`, so we toggle
                 // visibility instead and rely on the layout to overlap them.
                 for term[i] in root.terminals : TerminalView {
-                    visible: term.id == root.active-tab-id;
-                    width: term.id == root.active-tab-id ? parent.width : 0px;
-                    height: term.id == root.active-tab-id ? parent.height : 0px;
+                    visible: term.id == pane.active-id;
+                    width: term.id == pane.active-id ? parent.width : 0px;
+                    height: term.id == pane.active-id ? parent.height : 0px;
                     tab-id: term.id;
                     status-line: term.status;
                     spans: term.spans;
@@ -1027,6 +1041,25 @@ export component AppWindow inherits Window {
                     select-update(r, c) => { root.term-select-update(term.id, r, c); }
                     select-end() => { root.term-select-end(term.id); }
                     select-autoscroll(dir) => { root.term-select-autoscroll(term.id, dir); }
+                }
+                }
+                }
+            }
+
+            // Draggable splitters between panes. Single pane => the model is
+            // empty, so this renders nothing.
+            for sp[si] in root.splitters : Rectangle {
+                x: sp.x; y: sp.y; width: sp.w; height: sp.h;
+                background: Theme.border-strong;
+                TouchArea {
+                    mouse-cursor: sp.vertical ? ew-resize : ns-resize;
+                    moved => {
+                        if (self.pressed) {
+                            root.splitter-drag(sp.split-id,
+                                sp.vertical ? sp.x + self.mouse-x : sp.y + self.mouse-y,
+                                sp.vertical);
+                        }
+                    }
                 }
             }
             }
