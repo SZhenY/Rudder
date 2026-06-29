@@ -404,3 +404,6 @@ msgstr "向下拆分"
 
 msgid "Close tab"
 msgstr "关闭标签页"
+
+msgid "Duplicate connection"
+msgstr "复制打开"

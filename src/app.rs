@@ -2317,6 +2317,36 @@ fn wire_session_callbacks(
             start_session_in_tab(&tab_id, session, &ctx);
         });
     }
+
+    // Duplicate a tab's connection (#v0.5): open a fresh tab to the same saved
+    // session, landing in the same pane as the source tab.
+    {
+        let weak = window.as_weak();
+        let tab_statuses = tab_statuses.clone();
+        let layout = layout.clone();
+        window.on_tab_duplicate(move |tab_id: SharedString| {
+            let tab_id = tab_id.to_string();
+            let session_id = tab_statuses
+                .lock()
+                .unwrap()
+                .get(&tab_id)
+                .map(|s| s.session_id.clone())
+                .unwrap_or_default();
+            if session_id.is_empty() {
+                return;
+            }
+            // Land the new tab in the same pane as the source. Read the pane id
+            // into a local first so the immutable borrow is dropped before the
+            // borrow_mut (else RefCell panics on the overlapping borrow).
+            let pane = layout.borrow().leaf_of_tab(&tab_id);
+            if let Some(pane) = pane {
+                layout.borrow_mut().focused = pane;
+            }
+            if let Some(w) = weak.upgrade() {
+                w.invoke_connect_session(session_id.into());
+            }
+        });
+    }
 }
 
 type NetHist = Arc<Mutex<Vec<f32>>>;

@@ -149,6 +149,8 @@ export component TabBar inherits Rectangle {
     callback tab-reorder(int /* from */, int /* dir */);
     // Split this pane, peeling `tab-id` into a new pane on `dir` (#v0.5).
     callback tab-split(string /* tab-id */, string /* dir */);
+    // Open another connection to the same session as `tab-id` (#v0.5).
+    callback tab-duplicate(string /* tab-id */);
 
     // Right-click context-menu state.
     property <length> menu-x;
@@ -235,8 +237,8 @@ export component TabBar inherits Rectangle {
     tab-menu := PopupWindow {
         x: root.menu-x;
         y: root.menu-y;
-        width: 132px;
-        height: 4 * 29px + 8px;
+        width: 140px;
+        height: 5 * 29px + 12px;
         Rectangle {
             background: Theme.bg-panel;
             border-radius: Theme.radius-sm;
@@ -247,6 +249,12 @@ export component TabBar inherits Rectangle {
             VerticalLayout {
                 padding: 4px;
                 spacing: 1px;
+                TabMenuItem {
+                    label: @tr("Duplicate connection");
+                    enabled: root.menu-target != "welcome";
+                    clicked => { root.tab-duplicate(root.menu-target); }
+                }
+                Rectangle { height: 1px; background: Theme.border-subtle; }
                 TabMenuItem {
                     label: @tr("Split right");
                     enabled: root.tabs.length > 1;

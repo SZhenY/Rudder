@@ -573,6 +573,8 @@ export component AppWindow inherits Window {
     // Split pane `pane-id`, peeling `tab-id` into a new pane on `dir`
     // ("left"/"right"/"up"/"down").
     callback pane-split(int /* pane-id */, string /* tab-id */, string /* dir */);
+    // Open another connection to the same session as `tab-id` (a new tab).
+    callback tab-duplicate(string /* tab-id */);
     // Splitter drag: move split `split-id`'s boundary to `pos` (px along its axis).
     callback splitter-drag(int /* split-id */, length /* pos */, bool /* vertical */);
     // Reports the pane-area size to Rust so it can flatten the split tree into
@@ -883,6 +885,7 @@ export component AppWindow inherits Window {
                     new-tab() => { root.pane-new-tab(pane.id); }
                     tab-reorder(from, dir) => { root.pane-tab-reorder(pane.id, from, dir); }
                     tab-split(id, dir) => { root.pane-split(pane.id, id, dir); }
+                    tab-duplicate(id) => { root.tab-duplicate(id); }
                 }
             }
 
