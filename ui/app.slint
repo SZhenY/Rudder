@@ -20,7 +20,7 @@ import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
-import { LabeledInput, PrimaryButton, GhostButton, DockExpandButton, IconButton } from "widgets.slint";
+import { LabeledInput, PrimaryButton, GhostButton, DockExpandButton, IconButton, ToolStrip } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
@@ -762,45 +762,20 @@ export component AppWindow inherits Window {
         // (IDEA-style) + the welcome/session sidebar (0 when collapsed). The rest
         // (resource panel + central terminal, which never collapses) sits to their
         // right in `rest`.
-        property <length> strip-w: root.welcome-as-sidebar ? 36px : 0px;
+        // Collapsed-only (M5): the icon strip shows only while collapsed; the
+        // panel itself (welcome-w) only while expanded — one or the other.
+        property <length> strip-w: (root.welcome-as-sidebar && root.welcome-collapsed) ? 36px : 0px;
         property <length> welcome-w: (root.welcome-as-sidebar && !root.welcome-collapsed) ? root.welcome-sidebar-width : 0px;
         property <bool> welcome-sidebar-dragging;
 
-        // Always-on edge icon strip: one icon per collapsible tool panel. Clicking
-        // toggles it (highlighted = open), so a collapsed panel stays reachable.
-        if root.welcome-as-sidebar : Rectangle {
+        // Collapsed welcome → a thin left icon strip (click the icon to re-open).
+        if root.welcome-as-sidebar && root.welcome-collapsed : ToolStrip {
             x: 0; y: 0; width: parent.strip-w; height: parent.height;
-            background: Theme.bg-panel-alt;
-            Rectangle {
-                x: parent.width - 1px; width: 1px; height: parent.height;
-                background: Theme.border-subtle;
-            }
-            VerticalLayout {
-                padding: 4px;
-                spacing: 4px;
-                alignment: start;
-                // Session-list tool icon (toggles the welcome sidebar drawer).
-                Rectangle {
-                    height: 30px;
-                    border-radius: Theme.radius-sm;
-                    background: !root.welcome-collapsed ? Theme.bg-active
-                        : (sess-icon-ta.has-hover ? Theme.bg-hover : transparent);
-                    Text {
-                        text: "\u{E88A}";
-                        font-family: "Material Icons";
-                        font-size: 18px;
-                        color: !root.welcome-collapsed ? Theme.accent : Theme.text-secondary;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                    sess-icon-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => {
-                            root.welcome-collapsed = !root.welcome-collapsed;
-                            root.set-welcome-collapsed(root.welcome-collapsed);
-                        }
-                    }
-                }
+            dock-edge: "left";
+            glyph: "\u{E88A}";   // session list / welcome
+            expand => {
+                root.welcome-collapsed = false;
+                root.set-welcome-collapsed(false);
             }
         }
 
@@ -816,6 +791,10 @@ export component AppWindow inherits Window {
                 compact: true;
                 sessions: root.sessions;
                 import-hint: root.ssh-import-hint;
+                collapse => {
+                    root.welcome-collapsed = true;
+                    root.set-welcome-collapsed(true);
+                }
                 new-session => { root.new-session-clicked(); }
                 import-ssh-config => { root.import-ssh-config(); }
                 connect-session(id) => { root.connect-session(id); }

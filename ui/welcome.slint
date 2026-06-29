@@ -219,6 +219,8 @@ export component Welcome inherits Rectangle {
     // Compact mode (welcome-as-sidebar): drop the big title/tagline header and
     // tighten padding so the session list fits a narrow docked panel (#v0.5).
     in property <bool> compact;
+    // Collapse the sidebar to the edge icon strip (compact mode only) (#v0.5 M5).
+    callback collapse();
 
     background: Theme.bg-root;
 
@@ -272,6 +274,12 @@ export component Welcome inherits Rectangle {
                         font-weight: 600;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
+                    }
+                    // Collapse the sidebar into the edge icon strip (compact only).
+                    if root.compact : IconButton {
+                        glyph: "‹";   // collapse to the edge strip
+                        size: 24px;
+                        clicked => { root.collapse(); }
                     }
                     // Result of the last "Import ~/.ssh/config" (triggered from
                     // the settings menu), e.g. "imported 3".

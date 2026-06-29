@@ -185,6 +185,52 @@ export component Sparkline inherits Rectangle {
 // by the resource panel and the SFTP panel so they collapse/expand identically.
 // The host is responsible for any reserved gap (e.g. the bottom edge) so this
 // button never overlaps neighbouring chrome (#dock).
+// IDEA-style collapsed tool strip (#v0.5 M5): when a dockable panel is collapsed
+// the host renders this thin bar along the panel's docked edge instead of the
+// panel. It shows the panel's tool icon; clicking re-expands. The host reserves
+// the slot (≈36px) and fills this in; one reusable strip for welcome / resource /
+// SFTP so they all collapse the same way.
+export component ToolStrip inherits Rectangle {
+    in property <string> dock-edge;   // left | right | top | bottom
+    in property <string> glyph;       // the panel's tool icon (Material Icons)
+    in property <string> tooltip;
+    callback expand();
+    property <bool> horizontal: root.dock-edge == "top" || root.dock-edge == "bottom";
+
+    background: Theme.bg-panel-alt;
+    // Hairline on the inner edge (facing the central content).
+    Rectangle {
+        x: root.dock-edge == "left" ? parent.width - self.width : 0px;
+        y: root.dock-edge == "top" ? parent.height - self.height : 0px;
+        width: root.horizontal ? parent.width : 1px;
+        height: root.horizontal ? 1px : parent.height;
+        background: Theme.border-subtle;
+    }
+    // Tool icon, hugging the strip's near corner.
+    Rectangle {
+        width: 30px;
+        height: 30px;
+        x: root.horizontal ? 4px : (parent.width - self.width) / 2;
+        y: root.horizontal ? (parent.height - self.height) / 2 : 4px;
+        border-radius: Theme.radius-sm;
+        background: ta.has-hover ? Theme.bg-hover : transparent;
+        Text {
+            text: root.glyph;
+            font-family: "Material Icons";
+            font-size: 18px;
+            color: ta.has-hover ? Theme.text-primary : Theme.text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+        ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.expand(); }
+        }
+    }
+}
+
 export component DockExpandButton inherits Rectangle {
     in property <string> dock-edge;   // left | right | top | bottom
     // For top/bottom docks, hug the right corner instead of the left. SFTP uses
