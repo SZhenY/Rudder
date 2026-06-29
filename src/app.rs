@@ -659,16 +659,39 @@ pub fn run() -> Result<()> {
     )));
     let content_size: Rc<std::cell::Cell<(f32, f32)>> =
         Rc::new(std::cell::Cell::new((1200.0, 800.0)));
-    refresh_panes(&window, &layout.borrow(), content_size.get(), &tabs_model);
+    // Persistent pane / splitter models. refresh_panes updates these IN PLACE so
+    // the rendered `for pane` / `for sp` elements are reused (terminals survive,
+    // and the splitter keeps its pointer-grab during a drag).
+    let panes_model: Rc<VecModel<PaneInfo>> = Rc::new(VecModel::default());
+    window.set_panes(ModelRc::from(panes_model.clone()));
+    let splitters_model: Rc<VecModel<SplitterInfo>> = Rc::new(VecModel::default());
+    window.set_splitters(ModelRc::from(splitters_model.clone()));
+    refresh_panes(
+        &window,
+        &layout.borrow(),
+        content_size.get(),
+        &tabs_model,
+        &panes_model,
+        &splitters_model,
+    );
     {
         let weak = window.as_weak();
         let layout = layout.clone();
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         window.on_content_resized(move |w: f32, h: f32| {
             content_size.set((w, h));
             if let Some(win) = weak.upgrade() {
-                refresh_panes(&win, &layout.borrow(), content_size.get(), &tabs_model);
+                refresh_panes(
+                    &win,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
         });
     }
@@ -688,6 +711,8 @@ pub fn run() -> Result<()> {
         terminals_model.clone(),
         layout.clone(),
         content_size.clone(),
+        panes_model.clone(),
+        splitters_model.clone(),
         handles.clone(),
         bufs.clone(),
         runtime.clone(),
@@ -1005,6 +1030,8 @@ pub fn run() -> Result<()> {
         terminals_model.clone(),
         layout.clone(),
         content_size.clone(),
+        panes_model.clone(),
+        splitters_model.clone(),
         handles.clone(),
         bufs.clone(),
         sftp_handles.clone(),
@@ -1619,6 +1646,8 @@ fn wire_session_callbacks(
     terminals_model: Rc<VecModel<TerminalState>>,
     layout: Rc<RefCell<crate::panes::Layout>>,
     content_size: Rc<std::cell::Cell<(f32, f32)>>,
+    panes_model: Rc<VecModel<PaneInfo>>,
+    splitters_model: Rc<VecModel<SplitterInfo>>,
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
     bufs: TermBuffers,
     runtime: Arc<Runtime>,
@@ -2296,7 +2325,14 @@ fn wire_session_callbacks(
             // active-tab-id to the new tab via refresh_panes).
             layout.borrow_mut().add_tab(tab_id.clone());
             if let Some(w) = weak.upgrade() {
-                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+                refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
 
             // Spawn the shell (+ SFTP) workers and their event-pump threads.
@@ -3990,11 +4026,24 @@ fn resolve_front_mfa(win: &AppWindow, accept: bool) {
 /// the result into the AppWindow's `panes` / `splitters` models. Also keeps the
 /// single global `active-tab-id` pointing at the focused pane's active tab — the
 /// sidebar and key routing still read that one id.
+/// True when two tab sub-models hold the same ids in the same order.
+fn tabs_eq(a: &ModelRc<TabInfo>, b: &ModelRc<TabInfo>) -> bool {
+    if a.row_count() != b.row_count() {
+        return false;
+    }
+    (0..a.row_count()).all(|i| match (a.row_data(i), b.row_data(i)) {
+        (Some(x), Some(y)) => x.id == y.id,
+        _ => false,
+    })
+}
+
 fn refresh_panes(
     window: &AppWindow,
     layout: &crate::panes::Layout,
     content: (f32, f32),
     tabs_model: &VecModel<TabInfo>,
+    panes_model: &VecModel<PaneInfo>,
+    splitters_model: &VecModel<SplitterInfo>,
 ) {
     let (cw, ch) = (content.0.max(1.0), content.1.max(1.0));
     let (panes, splits) = layout.flatten(0.0, 0.0, cw, ch);
@@ -4030,7 +4079,27 @@ fn refresh_panes(
             }
         })
         .collect();
-    window.set_panes(ModelRc::from(Rc::new(VecModel::from(pane_infos))));
+
+    // Update the models IN PLACE rather than replacing them, so the `for pane` /
+    // `for sp` elements are reused: this keeps terminals from being recreated on
+    // every refresh AND preserves the splitter's pointer-grab during a drag (a
+    // fresh model would destroy the element mid-drag and drop the grab). When the
+    // structure changes (split/close → different row count) a full rebuild is fine
+    // since no drag is in flight.
+    if panes_model.row_count() == pane_infos.len() {
+        for (i, mut r) in pane_infos.into_iter().enumerate() {
+            if let Some(old) = panes_model.row_data(i) {
+                // Reuse the existing tab sub-model when the tabs are unchanged so a
+                // geometry-only refresh doesn't churn the tab strips.
+                if old.id == r.id && tabs_eq(&old.tabs, &r.tabs) {
+                    r.tabs = old.tabs;
+                }
+            }
+            panes_model.set_row_data(i, r);
+        }
+    } else {
+        panes_model.set_vec(pane_infos);
+    }
 
     let split_infos: Vec<SplitterInfo> = splits
         .iter()
@@ -4043,7 +4112,13 @@ fn refresh_panes(
             vertical: s.vertical,
         })
         .collect();
-    window.set_splitters(ModelRc::from(Rc::new(VecModel::from(split_infos))));
+    if splitters_model.row_count() == split_infos.len() {
+        for (i, r) in split_infos.into_iter().enumerate() {
+            splitters_model.set_row_data(i, r);
+        }
+    } else {
+        splitters_model.set_vec(split_infos);
+    }
 
     if let Some(fp) = panes.iter().find(|p| p.focused) {
         if window.get_active_tab_id().as_str() != fp.active.as_str() {
@@ -4105,6 +4180,8 @@ fn wire_tab_callbacks(
     terminals_model: Rc<VecModel<TerminalState>>,
     layout: Rc<RefCell<crate::panes::Layout>>,
     content_size: Rc<std::cell::Cell<(f32, f32)>>,
+    panes_model: Rc<VecModel<PaneInfo>>,
+    splitters_model: Rc<VecModel<SplitterInfo>>,
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
     bufs: TermBuffers,
     sftp_handles: SftpHandles,
@@ -4117,6 +4194,8 @@ fn wire_tab_callbacks(
         let layout = layout.clone();
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         window.on_pane_tab_selected(move |pane_id: i32, id: SharedString| {
             let id = id.to_string();
             {
@@ -4129,7 +4208,14 @@ fn wire_tab_callbacks(
                 }
             }
             if let Some(w) = weak.upgrade() {
-                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+                refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
         });
     }
@@ -4141,6 +4227,8 @@ fn wire_tab_callbacks(
         let layout = layout.clone();
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         window.on_pane_tab_reorder(move |pane_id: i32, from: i32, dir: i32| {
             {
                 let mut lay = layout.borrow_mut();
@@ -4159,7 +4247,14 @@ fn wire_tab_callbacks(
                 }
             }
             if let Some(w) = weak.upgrade() {
-                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+                refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
         });
     }
@@ -4177,6 +4272,8 @@ fn wire_tab_callbacks(
         let bufs = bufs.clone();
         let sftp_handles = sftp_handles.clone();
         let sftp_last_cwd = sftp_last_cwd.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         window.on_pane_tab_closed(move |_pane_id: i32, id: SharedString| {
             let id = id.to_string();
             if id == "welcome" {
@@ -4223,7 +4320,14 @@ fn wire_tab_callbacks(
 
             layout.borrow_mut().remove_tab(&id);
             if let Some(w) = weak.upgrade() {
-                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+                refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
         });
     }
@@ -4235,6 +4339,8 @@ fn wire_tab_callbacks(
         let layout = layout.clone();
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         window.on_pane_new_tab(move |pane_id: i32| {
             {
                 let mut lay = layout.borrow_mut();
@@ -4249,7 +4355,14 @@ fn wire_tab_callbacks(
                 }
             }
             if let Some(w) = weak.upgrade() {
-                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+                refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
         });
     }
@@ -4262,6 +4375,8 @@ fn wire_tab_callbacks(
         let layout = layout.clone();
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         window.on_pane_focus(move |pane_id: i32| {
             {
                 let mut lay = layout.borrow_mut();
@@ -4270,7 +4385,14 @@ fn wire_tab_callbacks(
                 }
             }
             if let Some(w) = weak.upgrade() {
-                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+                refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
         });
     }
@@ -4283,6 +4405,8 @@ fn wire_tab_callbacks(
         let layout = layout.clone();
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         window.on_splitter_drag(move |split_id: i32, pos: f32, _vertical: bool| {
             {
                 let mut lay = layout.borrow_mut();
@@ -4299,7 +4423,14 @@ fn wire_tab_callbacks(
                 }
             }
             if let Some(w) = weak.upgrade() {
-                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+                refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
         });
     }
@@ -4312,6 +4443,8 @@ fn wire_tab_callbacks(
         let layout = layout.clone();
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         window.on_pane_split(
             move |pane_id: i32, tab_id: SharedString, dir: SharedString| {
                 let tab_id = tab_id.to_string();
@@ -4333,7 +4466,14 @@ fn wire_tab_callbacks(
                     lay.split(pane_id as u64, d, &tab_id, before);
                 }
                 if let Some(w) = weak.upgrade() {
-                    refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+                    refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
                 }
             },
         );
@@ -4368,6 +4508,8 @@ fn wire_tab_callbacks(
         let layout = layout.clone();
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         window.on_tab_drag_drop(move |tab_id: SharedString, x: f32, y: f32| {
             let tab_id = tab_id.to_string();
             let target = drag_target(&layout.borrow(), content_size.get(), x, y);
@@ -4396,7 +4538,14 @@ fn wire_tab_callbacks(
             }
             if let Some(w) = weak.upgrade() {
                 w.set_drag_active(false);
-                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+                refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
         });
     }
