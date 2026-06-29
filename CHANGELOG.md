@@ -3,6 +3,48 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
+## [0.5.0] - 2026-06-30
+
+### Added / 新增
+
+- **分屏(IDEA 式拖动分屏)。** 标签右键「向右拆分 / 向下拆分」,或直接把标签拖到某个 pane 的上/下/左/右
+  边缘(带高亮预览)即可分屏;中间的分隔条可拖动调整两边比例,支持任意嵌套。每个 pane 有自己独立的标签组
+  和当前标签;关掉某个 pane 的最后一个标签会自动折叠回去。
+  **Split panes (IDEA-style drag-to-split).** Right-click a tab → "Split right / Split down", or just
+  drag a tab to a pane's top / bottom / left / right edge (with a highlight preview) to split; drag the
+  splitter between panes to rebalance, nest arbitrarily. Each pane has its own tab group and active tab;
+  closing a pane's last tab collapses it back.
+
+- **复制打开(再开一个当前会话)。** 终端标签右键「复制打开」,对当前会话再开一条独立连接,落在同一个 pane。
+  **Duplicate connection.** A terminal tab's right-click menu opens a second, independent connection to
+  the same session, landing in the same pane.
+
+- **欢迎页可设为侧栏 + IDEA 式收起抽屉。** 设置 → 界面 → 欢迎页,可把会话列表停靠到左侧(不再占用一个「新
+  标签页」标签),打开的会话占据中央;欢迎页 / 资源面板 / SFTP 收起后都变成沿停靠边的「图标条」(点图标
+  展开),取代原来的箭头展开按钮。欢迎侧栏宽度可拖动调整。
+  **Welcome page as a sidebar + IDEA-style collapse drawers.** Interface → Welcome page can dock the
+  session list on the left (no more "New tab" tab); opened sessions fill the centre. The welcome /
+  resource / SFTP panels now collapse to an icon strip along their docked edge (click to re-open),
+  replacing the old arrow expand button. The welcome sidebar is drag-resizable.
+
+- **沉浸式壁纸遮罩透明度可调 + 界面字体大小。** 设置 → 界面 → 壁纸 新增「壁纸遮罩透明度」拖动条,自己调
+  壁纸透出的程度(只影响背景填充,不动文字);设置 → 界面 → 字体 新增「界面字体大小」,可单独放大设置面板。
+  **Adjustable wallpaper-overlay opacity + settings font size.** Interface → Wallpaper adds a
+  "Wallpaper transparency" slider controlling how much the wallpaper shows through (background fills
+  only, text untouched); Interface → Font adds a "Settings font size" control to enlarge the panel.
+
+- **每个会话独立记住自己的 SFTP 状态。** SFTP 的收起 / 高度 / 宽度改为按会话独立,分屏下各 pane 互不影响
+  (新会话默认读「默认收起 SFTP」等公共配置)。
+  **Per-session SFTP state.** SFTP collapse / height / width are now remembered per session, so split
+  panes no longer interfere with one another (new sessions seed from the shared defaults).
+
+### Fixed / 修复
+
+- **设置面板字体发虚。** 设置卡片居中后落在半像素位置,导致面板内文字渲染在亚像素偏移上而发虚;现对齐到
+  整数逻辑像素,和资源面板一样清晰。
+  **Blurry settings-panel text.** The settings card was centred on a half-pixel, so its text rendered on
+  subpixel offsets and looked soft; it now snaps to whole logical pixels, as crisp as the resource panel.
+
 ## [0.4.20] - 2026-06-28
 
 ### Added / 新增
