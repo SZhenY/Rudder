@@ -380,3 +380,12 @@ msgstr "Please confirm"
 
 msgid "Confirm"
 msgstr "Confirm"
+
+msgid "Split right"
+msgstr "Split right"
+
+msgid "Split down"
+msgstr "Split down"
+
+msgid "Close tab"
+msgstr "Close tab"

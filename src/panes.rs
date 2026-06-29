@@ -71,6 +71,12 @@ pub struct SplitterRect {
     pub h: f32,
     /// True when the handle is vertical (a Horizontal split → drag left/right).
     pub vertical: bool,
+    /// Start of the split's axis (x for a Horizontal split, y for a Vertical
+    /// one) and its length — the `[start, start+len]` window `set_ratio` maps a
+    /// drag position into. Lets the drag handler recover the ratio without
+    /// tracking the parent rect separately.
+    pub axis_start: f32,
+    pub axis_len: f32,
 }
 
 /// Visible thickness of a splitter handle, in px.
@@ -272,6 +278,8 @@ fn layout_node(
                         w: SPLITTER,
                         h,
                         vertical: true,
+                        axis_start: x,
+                        axis_len: w,
                     });
                     layout_node(second, x + fw + SPLITTER, y, sw, h, focused, panes, splits);
                     let _ = half;
@@ -287,6 +295,8 @@ fn layout_node(
                         w,
                         h: SPLITTER,
                         vertical: false,
+                        axis_start: y,
+                        axis_len: h,
                     });
                     layout_node(second, x, y + fh + SPLITTER, w, sh, focused, panes, splits);
                 }

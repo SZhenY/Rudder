@@ -570,6 +570,9 @@ export component AppWindow inherits Window {
     callback pane-new-tab(int /* pane-id */);
     callback pane-tab-reorder(int /* pane-id */, int /* from */, int /* dir */);
     callback pane-focus(int /* pane-id */);
+    // Split pane `pane-id`, peeling `tab-id` into a new pane on `dir`
+    // ("left"/"right"/"up"/"down").
+    callback pane-split(int /* pane-id */, string /* tab-id */, string /* dir */);
     // Splitter drag: move split `split-id`'s boundary to `pos` (px along its axis).
     callback splitter-drag(int /* split-id */, length /* pos */, bool /* vertical */);
     // Reports the pane-area size to Rust so it can flatten the split tree into
@@ -879,6 +882,7 @@ export component AppWindow inherits Window {
                     tab-closed(id) => { root.pane-tab-closed(pane.id, id); }
                     new-tab() => { root.pane-new-tab(pane.id); }
                     tab-reorder(from, dir) => { root.pane-tab-reorder(pane.id, from, dir); }
+                    tab-split(id, dir) => { root.pane-split(pane.id, id, dir); }
                 }
             }
 
@@ -1039,16 +1043,23 @@ export component AppWindow inherits Window {
             }
 
             // Draggable splitters between panes. Single pane => the model is
-            // empty, so this renders nothing.
+            // empty, so this renders nothing. The handle is a thin 6px bar but its
+            // TouchArea reaches ±5px beyond so it's easy to grab.
             for sp[si] in root.splitters : Rectangle {
                 x: sp.x; y: sp.y; width: sp.w; height: sp.h;
-                background: Theme.border-strong;
-                TouchArea {
+                background: sp-ta.has-hover || sp-ta.pressed ? Theme.accent : Theme.border-strong;
+                animate background { duration: 100ms; }
+                sp-ta := TouchArea {
+                    x: sp.vertical ? -5px : 0px;
+                    y: sp.vertical ? 0px : -5px;
+                    width: sp.vertical ? parent.width + 10px : parent.width;
+                    height: sp.vertical ? parent.height : parent.height + 10px;
                     mouse-cursor: sp.vertical ? ew-resize : ns-resize;
                     moved => {
                         if (self.pressed) {
                             root.splitter-drag(sp.split-id,
-                                sp.vertical ? sp.x + self.mouse-x : sp.y + self.mouse-y,
+                                sp.vertical ? sp.x - 5px + self.mouse-x
+                                            : sp.y - 5px + self.mouse-y,
                                 sp.vertical);
                         }
                     }

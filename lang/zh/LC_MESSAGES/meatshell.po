@@ -395,3 +395,12 @@ msgstr "禁用 shell 集成(Windows / pwsh 服务端)"
 
 msgid "Turn on for Windows servers: skips the cwd-follow hook and monitor that assume a POSIX shell and otherwise break the shell."
 msgstr "Windows 服务端请勾选:跳过假定 POSIX shell 的 cwd 跟随注入与资源监控,否则它们会把 shell 弄坏。"
+
+msgid "Split right"
+msgstr "向右拆分"
+
+msgid "Split down"
+msgstr "向下拆分"
+
+msgid "Close tab"
+msgstr "关闭标签页"
