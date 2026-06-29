@@ -20,7 +20,7 @@ import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
-import { LabeledInput, PrimaryButton, GhostButton, DockExpandButton } from "widgets.slint";
+import { LabeledInput, PrimaryButton, GhostButton, DockExpandButton, IconButton } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
@@ -408,6 +408,9 @@ export component AppWindow inherits Window {
     // Drag-resizable width of that welcome sidebar (logical px), persisted.
     in-out property <length> welcome-sidebar-width: 240px;
     callback persist-welcome-sidebar-width(float);
+    // Welcome sidebar collapsed to the edge icon strip (IDEA-style), persisted.
+    in-out property <bool> welcome-collapsed: false;
+    callback set-welcome-collapsed(bool);          // apply + persist
     in-out property <bool> collapse-sftp-default: false;
     callback set-collapse-sftp-default(bool);      // apply + persist
     in-out property <bool> sftp-collapsed: false;       // (legacy global; per-tab now)
@@ -755,17 +758,56 @@ export component AppWindow inherits Window {
         // `sidebar-dock`, so the sidebar can sit on any window edge (#dock).
         dock-area := Rectangle {
         vertical-stretch: 1;
-        // Sidebar extent along its docked axis (0 when collapsed); plus a 4px
-        // splitter unless collapsed.
-        // Width carved off the left for the welcome/session sidebar (v0.5 M3b);
-        // 0 in tab mode. Everything else lives in `rest`, to the right of it.
-        property <length> welcome-w: root.welcome-as-sidebar ? root.welcome-sidebar-width : 0px;
+        // Left-edge layout (welcome-as-sidebar mode): a thin always-on icon strip
+        // (IDEA-style) + the welcome/session sidebar (0 when collapsed). The rest
+        // (resource panel + central terminal, which never collapses) sits to their
+        // right in `rest`.
+        property <length> strip-w: root.welcome-as-sidebar ? 36px : 0px;
+        property <length> welcome-w: (root.welcome-as-sidebar && !root.welcome-collapsed) ? root.welcome-sidebar-width : 0px;
         property <bool> welcome-sidebar-dragging;
 
-        // Welcome / session list docked as a left sidebar (welcome-as-sidebar
-        // mode). The central terminal area never collapses — only this toggles.
+        // Always-on edge icon strip: one icon per collapsible tool panel. Clicking
+        // toggles it (highlighted = open), so a collapsed panel stays reachable.
         if root.welcome-as-sidebar : Rectangle {
-            x: 0; y: 0; width: parent.welcome-w; height: parent.height;
+            x: 0; y: 0; width: parent.strip-w; height: parent.height;
+            background: Theme.bg-panel-alt;
+            Rectangle {
+                x: parent.width - 1px; width: 1px; height: parent.height;
+                background: Theme.border-subtle;
+            }
+            VerticalLayout {
+                padding: 4px;
+                spacing: 4px;
+                alignment: start;
+                // Session-list tool icon (toggles the welcome sidebar drawer).
+                Rectangle {
+                    height: 30px;
+                    border-radius: Theme.radius-sm;
+                    background: !root.welcome-collapsed ? Theme.bg-active
+                        : (sess-icon-ta.has-hover ? Theme.bg-hover : transparent);
+                    Text {
+                        text: "\u{E88A}";
+                        font-family: "Material Icons";
+                        font-size: 18px;
+                        color: !root.welcome-collapsed ? Theme.accent : Theme.text-secondary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    sess-icon-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.welcome-collapsed = !root.welcome-collapsed;
+                            root.set-welcome-collapsed(root.welcome-collapsed);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Welcome / session list, to the right of the icon strip. Hidden when
+        // collapsed — its icon stays in the strip; clicking it re-opens.
+        if root.welcome-as-sidebar && !root.welcome-collapsed : Rectangle {
+            x: parent.strip-w; y: 0; width: parent.welcome-w; height: parent.height;
             background: Theme.bg-panel;
             clip: true;
             Welcome {
@@ -801,8 +843,8 @@ export component AppWindow inherits Window {
         }
 
         // Drag the welcome sidebar's right edge to resize it (v0.5 M3b).
-        if root.welcome-as-sidebar : Rectangle {
-            x: parent.welcome-w - 2px; y: 0;
+        if root.welcome-as-sidebar && !root.welcome-collapsed : Rectangle {
+            x: parent.strip-w + parent.welcome-w - 2px; y: 0;
             width: 4px; height: parent.height;
             background: ws-split-ta.has-hover || dock-area.welcome-sidebar-dragging
                 ? Theme.accent : transparent;
@@ -819,18 +861,19 @@ export component AppWindow inherits Window {
                 moved => {
                     if (dock-area.welcome-sidebar-dragging) {
                         root.welcome-sidebar-width = clamp(
-                            self.absolute-position.x + self.mouse-x - dock-area.absolute-position.x,
+                            self.absolute-position.x + self.mouse-x
+                                - dock-area.absolute-position.x - dock-area.strip-w,
                             160px, 480px);
                     }
                 }
             }
         }
 
-        // Everything except the welcome sidebar — the resource panel, splitter and
-        // the central tab/pane content — sits to the right of it.
+        // Everything except the welcome strip/sidebar — the resource panel,
+        // splitter and the central tab/pane content — sits to the right of them.
         rest := Rectangle {
-        x: parent.welcome-w; y: 0;
-        width: parent.width - parent.welcome-w; height: parent.height;
+        x: parent.strip-w + parent.welcome-w; y: 0;
+        width: parent.width - parent.strip-w - parent.welcome-w; height: parent.height;
         // Sidebar extent along its docked axis (0 when collapsed); plus a 4px
         // splitter unless collapsed.
         property <length> sb-w: root.sidebar-collapsed ? 0px : root.sidebar-width;

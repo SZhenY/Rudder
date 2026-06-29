@@ -499,6 +499,9 @@ pub struct ConfigFile {
     /// Width (logical px) of the welcome/session sidebar when docked (v0.5).
     #[serde(default)]
     pub welcome_sidebar_width: f32,
+    /// Welcome sidebar collapsed to the edge icon strip (IDEA-style) (v0.5).
+    #[serde(default)]
+    pub welcome_collapsed: bool,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -938,6 +941,12 @@ impl ConfigStore {
     }
     pub fn set_welcome_sidebar_width(&mut self, v: f32) {
         self.cache.welcome_sidebar_width = v;
+    }
+    pub fn welcome_collapsed(&self) -> bool {
+        self.cache.welcome_collapsed
+    }
+    pub fn set_welcome_collapsed(&mut self, v: bool) {
+        self.cache.welcome_collapsed = v;
     }
     pub fn sftp_panel_width(&self) -> f32 {
         let w = self.cache.sftp_panel_width;
