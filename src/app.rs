@@ -650,6 +650,29 @@ pub fn run() -> Result<()> {
     let terminals_model: Rc<VecModel<TerminalState>> = Rc::new(VecModel::default());
     window.set_terminals(ModelRc::from(terminals_model.clone()));
 
+    // Split-pane layout tree (v0.5). Starts as a single pane owning the welcome
+    // tab; tab opens/closes/moves mutate it and re-flatten into the `panes`
+    // model. `content_size` is the pane-area px size reported from Slint.
+    let layout: Rc<RefCell<crate::panes::Layout>> = Rc::new(RefCell::new(crate::panes::Layout::new(
+        vec!["welcome".into()],
+        "welcome".into(),
+    )));
+    let content_size: Rc<std::cell::Cell<(f32, f32)>> =
+        Rc::new(std::cell::Cell::new((1200.0, 800.0)));
+    refresh_panes(&window, &layout.borrow(), content_size.get(), &tabs_model);
+    {
+        let weak = window.as_weak();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        let tabs_model = tabs_model.clone();
+        window.on_content_resized(move |w: f32, h: f32| {
+            content_size.set((w, h));
+            if let Some(win) = weak.upgrade() {
+                refresh_panes(&win, &layout.borrow(), content_size.get(), &tabs_model);
+            }
+        });
+    }
+
     // Per-tab connection status + remote resources, the latest local sample,
     // and the local machine's network history (bottom sparkline).
     let tab_statuses: TabStatuses = Arc::new(Mutex::new(HashMap::new()));
@@ -663,6 +686,8 @@ pub fn run() -> Result<()> {
         sessions_model.clone(),
         tabs_model.clone(),
         terminals_model.clone(),
+        layout.clone(),
+        content_size.clone(),
         handles.clone(),
         bufs.clone(),
         runtime.clone(),
@@ -978,6 +1003,8 @@ pub fn run() -> Result<()> {
         &window,
         tabs_model.clone(),
         terminals_model.clone(),
+        layout.clone(),
+        content_size.clone(),
         handles.clone(),
         bufs.clone(),
         sftp_handles.clone(),
@@ -1590,6 +1617,8 @@ fn wire_session_callbacks(
     sessions_model: Rc<VecModel<SessionInfo>>,
     tabs_model: Rc<VecModel<TabInfo>>,
     terminals_model: Rc<VecModel<TerminalState>>,
+    layout: Rc<RefCell<crate::panes::Layout>>,
+    content_size: Rc<std::cell::Cell<(f32, f32)>>,
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
     bufs: TermBuffers,
     runtime: Arc<Runtime>,
@@ -2162,6 +2191,8 @@ fn wire_session_callbacks(
         let store = store.clone();
         let tabs_model = tabs_model.clone();
         let terminals_model = terminals_model.clone();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
         let handles = handles.clone();
         let bufs = bufs.clone();
         let runtime = runtime.clone();
@@ -2261,8 +2292,11 @@ fn wire_session_callbacks(
             );
             // No followed-cwd yet: the first OSC 7 always triggers a follow.
             sftp_last_cwd.lock().unwrap().remove(&tab_id);
+            // Add the new tab to the focused pane and re-flatten (this also sets
+            // active-tab-id to the new tab via refresh_panes).
+            layout.borrow_mut().add_tab(tab_id.clone());
             if let Some(w) = weak.upgrade() {
-                w.set_active_tab_id(tab_id.clone().into());
+                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
             }
 
             // Spawn the shell (+ SFTP) workers and their event-pump threads.
@@ -3919,6 +3953,76 @@ fn resolve_front_mfa(win: &AppWindow, accept: bool) {
 }
 
 // ---------------------------------------------------------------------------
+// Split panes (v0.5)
+// ---------------------------------------------------------------------------
+
+/// Re-flatten the split-tree `layout` for the current content-area size and push
+/// the result into the AppWindow's `panes` / `splitters` models. Also keeps the
+/// single global `active-tab-id` pointing at the focused pane's active tab — the
+/// sidebar and key routing still read that one id.
+fn refresh_panes(
+    window: &AppWindow,
+    layout: &crate::panes::Layout,
+    content: (f32, f32),
+    tabs_model: &VecModel<TabInfo>,
+) {
+    let (cw, ch) = (content.0.max(1.0), content.1.max(1.0));
+    let (panes, splits) = layout.flatten(0.0, 0.0, cw, ch);
+
+    let pane_infos: Vec<PaneInfo> = panes
+        .iter()
+        .map(|p| {
+            // Map this pane's tab ids to their TabInfo rows (skipping any not yet
+            // in the model).
+            let tabs: Vec<TabInfo> = p
+                .tabs
+                .iter()
+                .filter_map(|tid| {
+                    (0..tabs_model.row_count()).find_map(|i| {
+                        let row = tabs_model.row_data(i)?;
+                        (row.id.as_str() == tid.as_str()).then_some(row)
+                    })
+                })
+                .collect();
+            // Only the pane touching the top-right corner keeps room for the
+            // floating toolbar icons (#122).
+            let top_right = p.x + p.w >= cw - 0.5 && p.y <= 0.5;
+            PaneInfo {
+                id: p.id as i32,
+                x: p.x,
+                y: p.y,
+                w: p.w,
+                h: p.h,
+                active_id: p.active.clone().into(),
+                focused: p.focused,
+                reserve_right: if top_right { 140.0 } else { 0.0 },
+                tabs: ModelRc::from(Rc::new(VecModel::from(tabs))),
+            }
+        })
+        .collect();
+    window.set_panes(ModelRc::from(Rc::new(VecModel::from(pane_infos))));
+
+    let split_infos: Vec<SplitterInfo> = splits
+        .iter()
+        .map(|s| SplitterInfo {
+            split_id: s.split_id as i32,
+            x: s.x,
+            y: s.y,
+            w: s.w,
+            h: s.h,
+            vertical: s.vertical,
+        })
+        .collect();
+    window.set_splitters(ModelRc::from(Rc::new(VecModel::from(split_infos))));
+
+    if let Some(fp) = panes.iter().find(|p| p.focused) {
+        if window.get_active_tab_id().as_str() != fp.active.as_str() {
+            window.set_active_tab_id(fp.active.clone().into());
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tab callbacks
 // ---------------------------------------------------------------------------
 
@@ -3926,50 +4030,81 @@ fn wire_tab_callbacks(
     window: &AppWindow,
     tabs_model: Rc<VecModel<TabInfo>>,
     terminals_model: Rc<VecModel<TerminalState>>,
+    layout: Rc<RefCell<crate::panes::Layout>>,
+    content_size: Rc<std::cell::Cell<(f32, f32)>>,
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
     bufs: TermBuffers,
     sftp_handles: SftpHandles,
     sftp_last_cwd: SftpLastCwd,
 ) {
-    // Selecting a tab is already applied inside the Slint callback; we just
-    // need to keep the C++/Rust state in sync if needed.
-    {
-        window.on_tab_selected(move |_id: SharedString| {
-            // No-op: AppWindow.active-tab-id is updated inline in the .slint.
-        });
-    }
-
-    // Drag-to-reorder tabs (v0.5): move the tab at `from` one slot in `dir`. Only
-    // the tab-bar order changes — terminal content is shown by active id, so nothing
-    // else needs reordering, and the welcome tab moves like any other.
-    {
-        let tabs_model = tabs_model.clone();
-        window.on_tab_reorder(move |from: i32, dir: i32| {
-            let n = tabs_model.row_count() as i32;
-            if n <= 1 {
-                return;
-            }
-            let from = from.clamp(0, n - 1);
-            let to = (from + dir).clamp(0, n - 1);
-            if from == to {
-                return;
-            }
-            if let Some(item) = tabs_model.row_data(from as usize) {
-                tabs_model.remove(from as usize);
-                tabs_model.insert(to as usize, item);
-            }
-        });
-    }
-
+    // Select a tab inside a pane: make it that pane's active tab and focus the
+    // pane. refresh_panes propagates active-tab-id (→ sidebar refresh).
     {
         let weak = window.as_weak();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        let tabs_model = tabs_model.clone();
+        window.on_pane_tab_selected(move |pane_id: i32, id: SharedString| {
+            let id = id.to_string();
+            {
+                let mut lay = layout.borrow_mut();
+                lay.focused = pane_id as u64;
+                if let Some(l) = lay.leaf_mut(pane_id as u64) {
+                    if l.tabs.iter().any(|t| t == &id) {
+                        l.active = id;
+                    }
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+            }
+        });
+    }
+
+    // Drag-to-reorder within a pane's strip: move the tab at `from` one slot in
+    // `dir`. Only the pane's own tab order changes; content shows by active id.
+    {
+        let weak = window.as_weak();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        let tabs_model = tabs_model.clone();
+        window.on_pane_tab_reorder(move |pane_id: i32, from: i32, dir: i32| {
+            {
+                let mut lay = layout.borrow_mut();
+                if let Some(l) = lay.leaf_mut(pane_id as u64) {
+                    let n = l.tabs.len() as i32;
+                    if n <= 1 {
+                        return;
+                    }
+                    let from = from.clamp(0, n - 1);
+                    let to = (from + dir).clamp(0, n - 1);
+                    if from == to {
+                        return;
+                    }
+                    let item = l.tabs.remove(from as usize);
+                    l.tabs.insert(to as usize, item);
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+            }
+        });
+    }
+
+    // Close a tab: tear down its session / buffers, drop it from the models, then
+    // remove it from the split tree (which re-homes the pane's active tab and
+    // collapses the pane if it becomes empty).
+    {
+        let weak = window.as_weak();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
         let terminals_model = terminals_model.clone();
         let handles = handles.clone();
         let bufs = bufs.clone();
         let sftp_handles = sftp_handles.clone();
         let sftp_last_cwd = sftp_last_cwd.clone();
-        window.on_tab_closed(move |id: SharedString| {
+        window.on_pane_tab_closed(move |_pane_id: i32, id: SharedString| {
             let id = id.to_string();
             if id == "welcome" {
                 return;
@@ -4013,20 +4148,56 @@ fn wire_tab_callbacks(
                 terminals_model.remove(i);
             }
 
-            // If we closed the active tab, fall back to the welcome page.
+            layout.borrow_mut().remove_tab(&id);
             if let Some(w) = weak.upgrade() {
-                if w.get_active_tab_id().as_str() == id {
-                    w.set_active_tab_id("welcome".into());
-                }
+                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
             }
         });
     }
 
+    // "+" in a pane's strip: focus the welcome page (there is a single welcome
+    // tab; move focus to whichever pane owns it and make it active).
     {
         let weak = window.as_weak();
-        window.on_new_tab_clicked(move || {
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        let tabs_model = tabs_model.clone();
+        window.on_pane_new_tab(move |pane_id: i32| {
+            {
+                let mut lay = layout.borrow_mut();
+                if let Some(owner) = lay.leaf_of_tab("welcome") {
+                    lay.focused = owner;
+                    if let Some(l) = lay.leaf_mut(owner) {
+                        l.active = "welcome".into();
+                    }
+                } else {
+                    lay.focused = pane_id as u64;
+                    lay.add_tab("welcome".into());
+                }
+            }
             if let Some(w) = weak.upgrade() {
-                w.set_active_tab_id("welcome".into());
+                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
+            }
+        });
+    }
+
+    // Click anywhere in a pane → focus it (drives which terminal the sidebar and
+    // key routing follow). A single pane is always focused, so this is a no-op
+    // until splits exist.
+    {
+        let weak = window.as_weak();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        let tabs_model = tabs_model.clone();
+        window.on_pane_focus(move |pane_id: i32| {
+            {
+                let mut lay = layout.borrow_mut();
+                if lay.leaf(pane_id as u64).is_some() {
+                    lay.focused = pane_id as u64;
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                refresh_panes(&w, &layout.borrow(), content_size.get(), &tabs_model);
             }
         });
     }

@@ -500,18 +500,7 @@ export component AppWindow inherits Window {
     // --- Tabs --------------------------------------------------------------
     in property <[TabInfo]> tabs;
     // --- Split panes (v0.5) — flattened from the Rust split tree -----------
-    // M1: bound here to a single full-area pane (one tab group == today's
-    // behaviour). M2 switches this to Rust-driven from the split tree.
-    in property <[PaneInfo]> panes: [{
-        id: 1,
-        x: 0, y: 0,
-        w: pane-area.width,
-        h: pane-area.height,
-        active-id: root.active-tab-id,
-        focused: true,
-        reserve-right: 140px,
-        tabs: root.tabs,
-    }];
+    in property <[PaneInfo]> panes;
     in property <[SplitterInfo]> splitters;
     in-out property <string> active-tab-id: "welcome";
     in property <[TerminalState]> terminals;
@@ -583,6 +572,9 @@ export component AppWindow inherits Window {
     callback pane-focus(int /* pane-id */);
     // Splitter drag: move split `split-id`'s boundary to `pos` (px along its axis).
     callback splitter-drag(int /* split-id */, length /* pos */, bool /* vertical */);
+    // Reports the pane-area size to Rust so it can flatten the split tree into
+    // absolute pane / splitter rects. Fired whenever the content area resizes.
+    callback content-resized(length /* w */, length /* h */);
     // Asks Rust to recompute the sidebar (status + resources) for whatever tab
     // is now active.  Fired on every active-tab change, UI- or code-driven.
     callback refresh-sidebar();
@@ -857,8 +849,11 @@ export component AppWindow inherits Window {
             height: root.sidebar-horizontal ? parent.height : parent.height - parent.sb-h - parent.sp - parent.bottom-strip-h;
             clip: true;
             // Split-pane area (v0.5): panes tile this rect; each pane has its own
-            // tab strip + active terminal / welcome. One pane == the full area.
+            // tab strip + active terminal / welcome. Rust flattens the split tree
+            // into `panes` for the size we report here.
             pane-area := Rectangle {
+            changed width => { root.content-resized(self.width, self.height); }
+            changed height => { root.content-resized(self.width, self.height); }
             for pane[pi] in root.panes : Rectangle {
                 x: pane.x; y: pane.y; width: pane.w; height: pane.h;
                 clip: true;
@@ -880,13 +875,10 @@ export component AppWindow inherits Window {
                     reserve-right: pane.reserve-right;
                     tabs: pane.tabs;
                     active-id: pane.active-id;
-                    tab-selected(id) => {
-                        root.active-tab-id = id;
-                        root.tab-selected(id);
-                    }
-                    tab-closed(id) => { root.tab-closed(id); }
-                    new-tab() => { root.new-tab-clicked(); }
-                    tab-reorder(from, dir) => { root.tab-reorder(from, dir); }
+                    tab-selected(id) => { root.pane-tab-selected(pane.id, id); }
+                    tab-closed(id) => { root.pane-tab-closed(pane.id, id); }
+                    new-tab() => { root.pane-new-tab(pane.id); }
+                    tab-reorder(from, dir) => { root.pane-tab-reorder(pane.id, from, dir); }
                 }
             }
 
