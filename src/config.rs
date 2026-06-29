@@ -502,6 +502,10 @@ pub struct ConfigFile {
     /// Welcome sidebar collapsed to the edge icon strip (IDEA-style) (v0.5).
     #[serde(default)]
     pub welcome_collapsed: bool,
+    /// Frosted-panel opacity over a wallpaper (0.40–1.00); user-adjustable via the
+    /// Interface › Wallpaper opacity slider. 0 = use the 0.86 default (v0.5).
+    #[serde(default)]
+    pub wallpaper_overlay: f32,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -947,6 +951,13 @@ impl ConfigStore {
     }
     pub fn set_welcome_collapsed(&mut self, v: bool) {
         self.cache.welcome_collapsed = v;
+    }
+    pub fn wallpaper_overlay(&self) -> f32 {
+        let a = self.cache.wallpaper_overlay;
+        if a <= 0.0 { 0.86 } else { a.clamp(0.40, 1.0) }
+    }
+    pub fn set_wallpaper_overlay(&mut self, v: f32) {
+        self.cache.wallpaper_overlay = v.clamp(0.40, 1.0);
     }
     pub fn sftp_panel_width(&self) -> f32 {
         let w = self.cache.sftp_panel_width;

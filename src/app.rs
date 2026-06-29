@@ -493,6 +493,7 @@ pub fn run() -> Result<()> {
         window.set_welcome_as_sidebar(s.welcome_as_sidebar());
         window.set_welcome_sidebar_width(s.welcome_sidebar_width());
         window.set_welcome_collapsed(s.welcome_collapsed());
+        window.set_wallpaper_overlay(s.wallpaper_overlay());
         if collapse_sidebar {
             window.set_sidebar_collapsed(true);
         }
@@ -537,6 +538,14 @@ pub fn run() -> Result<()> {
         window.on_set_welcome_collapsed(move |v| {
             let mut s = store.borrow_mut();
             s.set_welcome_collapsed(v);
+            let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_persist_wallpaper_overlay(move |v| {
+            let mut s = store.borrow_mut();
+            s.set_wallpaper_overlay(v);
             let _ = s.save();
         });
     }

@@ -373,6 +373,9 @@ export component AppWindow inherits Window {
     in-out property <bool> wallpaper-active <=> Theme.wallpaper-active;
     in-out property <color> wp-accent <=> Theme.wp-accent;
     in-out property <color> wp-tint <=> Theme.wp-tint;
+    // User-adjustable wallpaper overlay opacity (0.40–1.00), persisted.
+    in-out property <float> wallpaper-overlay <=> Theme.panel-alpha;
+    callback persist-wallpaper-overlay(float);
     in property <[string]> term-fonts;             // installed monospace families
     in-out property <bool> interface-open: false;  // Interface settings overlay
     // Interface card position (draggable by its title bar, clamped inside the
@@ -3323,6 +3326,7 @@ export component AppWindow inherits Window {
                     sync-upload-enabled <=> root.sync-upload-enabled;
                     download-always-ask <=> root.download-always-ask;
                     welcome-as-sidebar <=> root.welcome-as-sidebar;
+                    wallpaper-overlay <=> root.wallpaper-overlay;
                     current-wallpaper: root.current-wallpaper;
                     custom-wallpaper-name: root.custom-wallpaper-name;
                     set-wallpaper(v) => { root.set-wallpaper(v); }
@@ -3336,6 +3340,7 @@ export component AppWindow inherits Window {
                     set-sync-upload-enabled(v) => { root.set-sync-upload-enabled(v); }
                     set-download-always-ask(v) => { root.set-download-always-ask(v); }
                     set-welcome-as-sidebar(v) => { root.set-welcome-as-sidebar(v); }
+                    persist-wallpaper-overlay(v) => { root.persist-wallpaper-overlay(v); }
                 }
             }
         }
