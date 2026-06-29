@@ -491,6 +491,7 @@ pub fn run() -> Result<()> {
         window.set_sftp_panel_height(s.sftp_panel_height());
         window.set_sftp_dock(s.sftp_dock().into());
         window.set_welcome_as_sidebar(s.welcome_as_sidebar());
+        window.set_welcome_sidebar_width(s.welcome_sidebar_width());
         if collapse_sidebar {
             window.set_sidebar_collapsed(true);
         }
@@ -519,6 +520,14 @@ pub fn run() -> Result<()> {
         window.on_persist_sidebar_width(move |w| {
             let mut s = store.borrow_mut();
             s.set_sidebar_width(w);
+            let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_persist_welcome_sidebar_width(move |w| {
+            let mut s = store.borrow_mut();
+            s.set_welcome_sidebar_width(w);
             let _ = s.save();
         });
     }
@@ -733,6 +742,22 @@ pub fn run() -> Result<()> {
                     &panes_model,
                     &splitters_model,
                 );
+            }
+        });
+    }
+    // Per-session SFTP collapse: persist the toggle into that tab's TerminalState
+    // so split panes / other tabs each keep their own state (#v0.5).
+    {
+        let terminals_model = terminals_model.clone();
+        window.on_set_pane_sftp_collapsed(move |tab_id: SharedString, v: bool| {
+            for i in 0..terminals_model.row_count() {
+                if let Some(mut row) = terminals_model.row_data(i) {
+                    if row.id.as_str() == tab_id.as_str() {
+                        row.sftp_collapsed = v;
+                        terminals_model.set_row_data(i, row);
+                        break;
+                    }
+                }
             }
         });
     }
@@ -2313,6 +2338,12 @@ fn wire_session_callbacks(
                 kind: "terminal".into(),
                 connected: false,
             });
+            // Each session keeps its own SFTP-collapsed state, seeded from the
+            // "collapse SFTP by default" preference (#v0.5).
+            let sftp_collapsed_default = weak
+                .upgrade()
+                .map(|w| w.get_collapse_sftp_default())
+                .unwrap_or(false);
             terminals_model.push(TerminalState {
                 id: tab_id.clone().into(),
                 status: t("连接中...", "Connecting...").into(),
@@ -2339,6 +2370,7 @@ fn wire_session_callbacks(
                     std::rc::Rc::new(VecModel::<SftpTreeNode>::default()),
                 ),
                 sftp_selected_count: 0,
+                sftp_collapsed: sftp_collapsed_default,
             });
             // Create vt100 parser for this tab (default 24×80; resized on first
             // terminal-resize callback). 5000-line scrollback is stored for

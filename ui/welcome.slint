@@ -216,17 +216,21 @@ export component Welcome inherits Rectangle {
     callback edit-group(string /* current-name */);
     callback delete-group(string /* name */);
     callback remove-session(string);
+    // Compact mode (welcome-as-sidebar): drop the big title/tagline header and
+    // tighten padding so the session list fits a narrow docked panel (#v0.5).
+    in property <bool> compact;
 
     background: Theme.bg-root;
 
     VerticalLayout {
-        padding: 24px;
-        spacing: 20px;
+        padding: root.compact ? 12px : 24px;
+        spacing: root.compact ? 12px : 20px;
 
         // Header (title + tagline) — pinned to the top at its natural height so
         // it can't grab the stretch space and spread apart (seen on macOS); the
-        // quick-connect card below takes all the remaining height (#dock).
-        VerticalLayout {
+        // quick-connect card below takes all the remaining height (#dock). Hidden
+        // in compact/sidebar mode.
+        if !root.compact : VerticalLayout {
             vertical-stretch: 0;
             alignment: start;
             spacing: 4px;

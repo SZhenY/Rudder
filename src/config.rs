@@ -496,6 +496,9 @@ pub struct ConfigFile {
     /// a "New tab" tab (v0.5). Persisted so the layout choice sticks.
     #[serde(default)]
     pub welcome_as_sidebar: bool,
+    /// Width (logical px) of the welcome/session sidebar when docked (v0.5).
+    #[serde(default)]
+    pub welcome_sidebar_width: f32,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -928,6 +931,13 @@ impl ConfigStore {
     }
     pub fn set_welcome_as_sidebar(&mut self, v: bool) {
         self.cache.welcome_as_sidebar = v;
+    }
+    pub fn welcome_sidebar_width(&self) -> f32 {
+        let w = self.cache.welcome_sidebar_width;
+        if w <= 0.0 { 240.0 } else { w }
+    }
+    pub fn set_welcome_sidebar_width(&mut self, v: f32) {
+        self.cache.welcome_sidebar_width = v;
     }
     pub fn sftp_panel_width(&self) -> f32 {
         let w = self.cache.sftp_panel_width;

@@ -67,6 +67,7 @@ export struct TerminalState {
     sftp-loading: bool,
     sftp-tree-nodes: [SftpTreeNode],
     sftp-selected-count: int,   // checked entries in the SFTP panel (#100)
+    sftp-collapsed: bool,       // SFTP panel minimised — per session (#v0.5)
 }
 
 // One leaf pane of the split layout (v0.5). Geometry (x/y/w/h) is computed in Rust
@@ -401,10 +402,16 @@ export component AppWindow inherits Window {
     // Render the welcome/session list as a left sidebar instead of a tab (v0.5).
     in-out property <bool> welcome-as-sidebar: false;
     callback set-welcome-as-sidebar(bool);         // apply + persist
+    // Drag-resizable width of that welcome sidebar (logical px), persisted.
+    in-out property <length> welcome-sidebar-width: 240px;
+    callback persist-welcome-sidebar-width(float);
     in-out property <bool> collapse-sftp-default: false;
     callback set-collapse-sftp-default(bool);      // apply + persist
-    in-out property <bool> sftp-collapsed: false;       // shared across tabs
+    in-out property <bool> sftp-collapsed: false;       // (legacy global; per-tab now)
     in-out property <length> sftp-saved-height: 220px;  // restore height on un-collapse
+    // Per-session SFTP collapse: persist the toggle into that tab's TerminalState
+    // so split panes / other tabs keep their own state (#v0.5).
+    callback set-pane-sftp-collapsed(string /* tab-id */, bool);
     // Confirm-before-close when there are live session tabs (#88): a stray
     // double-click on the title-bar icon / X shouldn't drop active sessions.
     in-out property <bool> confirm-close-open: false;
@@ -746,7 +753,8 @@ export component AppWindow inherits Window {
         // splitter unless collapsed.
         // Width carved off the left for the welcome/session sidebar (v0.5 M3b);
         // 0 in tab mode. Everything else lives in `rest`, to the right of it.
-        property <length> welcome-w: root.welcome-as-sidebar ? 240px : 0px;
+        property <length> welcome-w: root.welcome-as-sidebar ? root.welcome-sidebar-width : 0px;
+        property <bool> welcome-sidebar-dragging;
 
         // Welcome / session list docked as a left sidebar (welcome-as-sidebar
         // mode). The central terminal area never collapses — only this toggles.
@@ -757,6 +765,7 @@ export component AppWindow inherits Window {
             Welcome {
                 width: parent.width;
                 height: parent.height;
+                compact: true;
                 sessions: root.sessions;
                 import-hint: root.ssh-import-hint;
                 new-session => { root.new-session-clicked(); }
@@ -782,6 +791,32 @@ export component AppWindow inherits Window {
             Rectangle {
                 x: parent.width - 1px; width: 1px; height: parent.height;
                 background: Theme.border-subtle;
+            }
+        }
+
+        // Drag the welcome sidebar's right edge to resize it (v0.5 M3b).
+        if root.welcome-as-sidebar : Rectangle {
+            x: parent.welcome-w - 2px; y: 0;
+            width: 4px; height: parent.height;
+            background: ws-split-ta.has-hover || dock-area.welcome-sidebar-dragging
+                ? Theme.accent : transparent;
+            ws-split-ta := TouchArea {
+                mouse-cursor: ew-resize;
+                pointer-event(ev) => {
+                    if (ev.kind == PointerEventKind.down) {
+                        dock-area.welcome-sidebar-dragging = true;
+                    } else if (ev.kind == PointerEventKind.up) {
+                        dock-area.welcome-sidebar-dragging = false;
+                        root.persist-welcome-sidebar-width(root.welcome-sidebar-width / 1px);
+                    }
+                }
+                moved => {
+                    if (dock-area.welcome-sidebar-dragging) {
+                        root.welcome-sidebar-width = clamp(
+                            self.absolute-position.x + self.mouse-x - dock-area.absolute-position.x,
+                            160px, 480px);
+                    }
+                }
             }
         }
 
@@ -1032,7 +1067,8 @@ export component AppWindow inherits Window {
                     sftp-panel-height <=> root.sftp-panel-height;
                     sftp-panel-width <=> root.sftp-panel-width;
                     sftp-dock <=> root.sftp-dock;
-                    sftp-collapsed <=> root.sftp-collapsed;
+                    sftp-collapsed: term.sftp-collapsed;
+                    set-sftp-collapsed(v) => { root.set-pane-sftp-collapsed(term.id, v); }
                     sftp-saved-height <=> root.sftp-saved-height;
                     sftp-path: term.sftp-path;
                     sftp-entries: term.sftp-entries;

@@ -108,7 +108,10 @@ export component TerminalView inherits Rectangle {
     // Shared with the AppWindow (like sftp-panel-height) so a startup default can
     // collapse the panel and the state stays consistent across tabs (#78).
     in-out property <length> sftp-saved-height: 220px;   // height to restore on un-collapse
-    in-out property <bool>   sftp-collapsed: false;       // SFTP panel minimised (toolbar only)
+    // Per-session now (#v0.5): the AppWindow stores this in each TerminalState and
+    // writes back via `set-sftp-collapsed`, so each tab/pane keeps its own state.
+    in property <bool>       sftp-collapsed: false;       // SFTP panel minimised (toolbar only)
+    callback set-sftp-collapsed(bool);
 
     // --- SFTP docking (within the terminal area) ---------------------------
     // Which edge of the terminal area the SFTP panel sits on: left|right|top|bottom.
@@ -1383,7 +1386,7 @@ export component TerminalView inherits Rectangle {
                 pointer-event(ev) => {
                     if (ev.kind == PointerEventKind.down) {
                         root.sftp-dragging = true;
-                        root.sftp-collapsed = false;
+                        root.set-sftp-collapsed(false);
                     } else if (ev.kind == PointerEventKind.up) {
                         root.sftp-dragging = false;
                     }
@@ -1446,12 +1449,12 @@ export component TerminalView inherits Rectangle {
                 if (root.sftp-collapsed) {
                     // Restore to the saved height.
                     root.sftp-panel-height = root.sftp-saved-height;
-                    root.sftp-collapsed = false;
+                    root.set-sftp-collapsed(false);
                 } else {
                     // Minimise: remember the height, shrink to the toolbar (30px).
                     root.sftp-saved-height = root.sftp-panel-height;
                     root.sftp-panel-height = 30px;
-                    root.sftp-collapsed = true;
+                    root.set-sftp-collapsed(true);
                 }
             }
             navigate(path)      => { root.sftp-navigate(path); }
@@ -1508,7 +1511,7 @@ export component TerminalView inherits Rectangle {
             hug-right: true;   // SFTP controls live on the right, keep the button there
             expand => {
                 root.sftp-panel-height = root.sftp-saved-height;
-                root.sftp-collapsed = false;
+                root.set-sftp-collapsed(false);
             }
         }
         }
