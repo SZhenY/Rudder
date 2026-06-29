@@ -382,8 +382,10 @@ export component AppWindow inherits Window {
     in-out property <bool> interface-open: false;  // Interface settings overlay
     // Interface card position (draggable by its title bar, clamped inside the
     // window so it can't leave the parent); init centered.
-    property <length> ifd-x: (root.width - 660px) / 2;
-    property <length> ifd-y: (root.height - 430px) / 2;
+    // Centred, snapped to whole logical pixels: a half-pixel origin makes the
+    // card's text render on subpixel offsets and look blurry (#v0.5).
+    property <length> ifd-x: round((root.width - 720px * Theme.panel-font) / 2 / 1px) * 1px;
+    property <length> ifd-y: round((root.height - 480px * Theme.panel-font) / 2 / 1px) * 1px;
     property <bool> ifd-dragging;
     property <length> ifd-base-x;
     property <length> ifd-base-y;
@@ -3278,11 +3280,11 @@ export component AppWindow inherits Window {
                         moved => {
                             if (root.ifd-dragging) {
                                 root.ifd-x = clamp(
-                                    root.ifd-base-x + (self.absolute-position.x + self.mouse-x - root.ifd-grab-x),
-                                    0px, max(0px, root.width - 660px));
+                                    round((root.ifd-base-x + (self.absolute-position.x + self.mouse-x - root.ifd-grab-x)) / 1px) * 1px,
+                                    0px, max(0px, root.width - 720px * Theme.panel-font));
                                 root.ifd-y = clamp(
-                                    root.ifd-base-y + (self.absolute-position.y + self.mouse-y - root.ifd-grab-y),
-                                    0px, max(0px, root.height - 430px));
+                                    round((root.ifd-base-y + (self.absolute-position.y + self.mouse-y - root.ifd-grab-y)) / 1px) * 1px,
+                                    0px, max(0px, root.height - 480px * Theme.panel-font));
                             }
                         }
                     }
