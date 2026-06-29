@@ -3309,6 +3309,28 @@ fn apply_session_event_to_window(
                 }
             }
         }
+        // The per-pane tab strips (v0.5 split panes) render snapshots copied from
+        // `tabs_model`, so they don't track this change on their own — propagate
+        // it into each pane's tab sub-model too (e.g. so the connected dot turns
+        // green without needing a tab switch).
+        let panes = win.get_panes();
+        if let Some(pm) = panes.as_any().downcast_ref::<VecModel<PaneInfo>>() {
+            for pi in 0..pm.row_count() {
+                let Some(pane) = pm.row_data(pi) else { continue };
+                let Some(tm) = pane.tabs.as_any().downcast_ref::<VecModel<TabInfo>>() else {
+                    continue;
+                };
+                for ti in 0..tm.row_count() {
+                    if let Some(mut row) = tm.row_data(ti) {
+                        if row.id.as_str() == tab_id {
+                            mutator(&mut row);
+                            tm.set_row_data(ti, row);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     };
 
     match event {
