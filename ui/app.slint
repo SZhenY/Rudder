@@ -744,6 +744,54 @@ export component AppWindow inherits Window {
         vertical-stretch: 1;
         // Sidebar extent along its docked axis (0 when collapsed); plus a 4px
         // splitter unless collapsed.
+        // Width carved off the left for the welcome/session sidebar (v0.5 M3b);
+        // 0 in tab mode. Everything else lives in `rest`, to the right of it.
+        property <length> welcome-w: root.welcome-as-sidebar ? 240px : 0px;
+
+        // Welcome / session list docked as a left sidebar (welcome-as-sidebar
+        // mode). The central terminal area never collapses — only this toggles.
+        if root.welcome-as-sidebar : Rectangle {
+            x: 0; y: 0; width: parent.welcome-w; height: parent.height;
+            background: Theme.bg-panel;
+            clip: true;
+            Welcome {
+                width: parent.width;
+                height: parent.height;
+                sessions: root.sessions;
+                import-hint: root.ssh-import-hint;
+                new-session => { root.new-session-clicked(); }
+                import-ssh-config => { root.import-ssh-config(); }
+                connect-session(id) => { root.connect-session(id); }
+                edit-session(id) => { root.edit-session(id); }
+                duplicate-session(id) => { root.duplicate-session(id); }
+                move-session(id, group) => { root.move-session(id, group); }
+                toggle-group(group) => { root.toggle-group(group); }
+                new-group => {
+                    root.group-dialog-orig = "";
+                    root.group-dialog-name = "";
+                    root.group-dialog-open = true;
+                }
+                edit-group(name) => {
+                    root.group-dialog-orig = name;
+                    root.group-dialog-name = name;
+                    root.group-dialog-open = true;
+                }
+                delete-group(name) => { root.delete-group(name); }
+                remove-session(id) => { root.remove-session(id); }
+            }
+            Rectangle {
+                x: parent.width - 1px; width: 1px; height: parent.height;
+                background: Theme.border-subtle;
+            }
+        }
+
+        // Everything except the welcome sidebar — the resource panel, splitter and
+        // the central tab/pane content — sits to the right of it.
+        rest := Rectangle {
+        x: parent.welcome-w; y: 0;
+        width: parent.width - parent.welcome-w; height: parent.height;
+        // Sidebar extent along its docked axis (0 when collapsed); plus a 4px
+        // splitter unless collapsed.
         property <length> sb-w: root.sidebar-collapsed ? 0px : root.sidebar-width;
         property <length> sb-h: root.sidebar-collapsed ? 0px : root.sidebar-height;
         property <length> sp: root.sidebar-collapsed ? 0px : 4px;
@@ -917,6 +965,22 @@ export component AppWindow inherits Window {
             Rectangle {
                 vertical-stretch: 1;
                 background: Theme.bg-root;
+
+                // Empty pane (welcome-as-sidebar mode, no session open yet): a
+                // centered hint pointing at the left session list.
+                if pane.tabs.length == 0 : Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    Text {
+                        text: root.lang-en
+                            ? "Pick a session on the left to begin"
+                            : "从左侧选择一个会话开始";
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-sm;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
 
                 // Welcome tab — fill the content area explicitly (some renderers
                 // don't auto-fill, which spread the header/card apart) (#dock).
@@ -1106,6 +1170,7 @@ export component AppWindow inherits Window {
                 border-radius: Theme.radius-sm;
             }
             }
+        }
         }
 
         // Collapsed → small per-edge expand button (shared with SFTP). Left/right/

@@ -516,14 +516,6 @@ pub fn run() -> Result<()> {
     }
     {
         let store = store.clone();
-        window.on_set_welcome_as_sidebar(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_welcome_as_sidebar(v);
-            let _ = s.save();
-        });
-    }
-    {
-        let store = store.clone();
         window.on_persist_sidebar_width(move |w| {
             let mut s = store.borrow_mut();
             s.set_sidebar_width(w);
@@ -662,10 +654,14 @@ pub fn run() -> Result<()> {
     // Split-pane layout tree (v0.5). Starts as a single pane owning the welcome
     // tab; tab opens/closes/moves mutate it and re-flatten into the `panes`
     // model. `content_size` is the pane-area px size reported from Slint.
-    let layout: Rc<RefCell<crate::panes::Layout>> = Rc::new(RefCell::new(crate::panes::Layout::new(
-        vec!["welcome".into()],
-        "welcome".into(),
-    )));
+    // In welcome-as-sidebar mode the session list lives in a left panel, so the
+    // layout starts empty (no "welcome" tab); otherwise it owns the welcome tab.
+    let welcome_sidebar = store.borrow().welcome_as_sidebar();
+    let layout: Rc<RefCell<crate::panes::Layout>> = Rc::new(RefCell::new(if welcome_sidebar {
+        crate::panes::Layout::new(Vec::new(), String::new())
+    } else {
+        crate::panes::Layout::new(vec!["welcome".into()], "welcome".into())
+    }));
     let content_size: Rc<std::cell::Cell<(f32, f32)>> =
         Rc::new(std::cell::Cell::new((1200.0, 800.0)));
     // Persistent pane / splitter models. refresh_panes updates these IN PLACE so
@@ -695,6 +691,42 @@ pub fn run() -> Result<()> {
             if let Some(win) = weak.upgrade() {
                 refresh_panes(
                     &win,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
+            }
+        });
+    }
+    // Toggle welcome-as-sidebar at runtime: persist, then move the welcome tab in
+    // or out of the split-tree (sidebar mode = no welcome tab) and re-flatten.
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
+        window.on_set_welcome_as_sidebar(move |v| {
+            {
+                let mut s = store.borrow_mut();
+                s.set_welcome_as_sidebar(v);
+                let _ = s.save();
+            }
+            {
+                let mut lay = layout.borrow_mut();
+                if v {
+                    lay.remove_tab("welcome");
+                } else if lay.leaf_of_tab("welcome").is_none() {
+                    lay.add_tab("welcome".into());
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                refresh_panes(
+                    &w,
                     &layout.borrow(),
                     content_size.get(),
                     &tabs_model,
@@ -4373,6 +4405,11 @@ fn wire_tab_callbacks(
         let panes_model = panes_model.clone();
         let splitters_model = splitters_model.clone();
         window.on_pane_new_tab(move |pane_id: i32| {
+            // In welcome-as-sidebar mode there is no welcome tab — the session list
+            // lives in the left panel, so "+" has nothing to open.
+            if weak.upgrade().map(|w| w.get_welcome_as_sidebar()).unwrap_or(false) {
+                return;
+            }
             {
                 let mut lay = layout.borrow_mut();
                 if let Some(owner) = lay.leaf_of_tab("welcome") {
