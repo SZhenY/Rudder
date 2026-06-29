@@ -69,6 +69,32 @@ export struct TerminalState {
     sftp-selected-count: int,   // checked entries in the SFTP panel (#100)
 }
 
+// One leaf pane of the split layout (v0.5). Geometry (x/y/w/h) is computed in Rust
+// from the split tree; `tabs` is the pane's own tab group and `active-id` the tab
+// it currently shows. `reserve-right` keeps room for the top-right toolbar icons on
+// whichever pane touches the top-right corner.
+export struct PaneInfo {
+    id: int,
+    x: length,
+    y: length,
+    w: length,
+    h: length,
+    active-id: string,
+    focused: bool,
+    reserve-right: length,
+    tabs: [TabInfo],
+}
+
+// A draggable splitter between two regions of the split layout (v0.5).
+export struct SplitterInfo {
+    split-id: int,
+    x: length,
+    y: length,
+    w: length,
+    h: length,
+    vertical: bool,   // true = vertical handle (drag left/right)
+}
+
 // A 26×26 top-bar icon button with a hover tooltip (right-aligned so it never
 // runs off the window edge). `active` keeps the hover background lit (e.g. while
 // its popup is open).
@@ -473,6 +499,9 @@ export component AppWindow inherits Window {
 
     // --- Tabs --------------------------------------------------------------
     in property <[TabInfo]> tabs;
+    // --- Split panes (v0.5) — flattened from the Rust split tree -----------
+    in property <[PaneInfo]> panes;
+    in property <[SplitterInfo]> splitters;
     in-out property <string> active-tab-id: "welcome";
     in property <[TerminalState]> terminals;
 
@@ -535,6 +564,14 @@ export component AppWindow inherits Window {
     callback tab-closed(string);
     callback new-tab-clicked();
     callback tab-reorder(int /* from-index */, int /* dir: -1 left / +1 right */);
+    // Per-pane tab actions (v0.5): the int is the pane (leaf) id.
+    callback pane-tab-selected(int /* pane-id */, string /* tab-id */);
+    callback pane-tab-closed(int /* pane-id */, string /* tab-id */);
+    callback pane-new-tab(int /* pane-id */);
+    callback pane-tab-reorder(int /* pane-id */, int /* from */, int /* dir */);
+    callback pane-focus(int /* pane-id */);
+    // Splitter drag: move split `split-id`'s boundary to `pos` (px along its axis).
+    callback splitter-drag(int /* split-id */, length /* pos */, bool /* vertical */);
     // Asks Rust to recompute the sidebar (status + resources) for whatever tab
     // is now active.  Fired on every active-tab change, UI- or code-driven.
     callback refresh-sidebar();
