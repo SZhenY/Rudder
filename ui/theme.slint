@@ -22,7 +22,9 @@ export global Theme {
     in-out property <bool>  wallpaper-active: false;
     in-out property <color> wp-accent: #4a90e2;   // vivid accent from the image
     in-out property <color> wp-tint:   #808080;   // average colour, tints surfaces
-    in-out property <float> panel-alpha: 0.86;    // frosted-panel opacity
+    // Frosted-panel opacity over a wallpaper. Light mode frosts thinner so the
+    // white wash isn't so heavy and the wallpaper reads through more (#v0.5).
+    in-out property <float> panel-alpha: dark ? 0.86 : 0.72;
     property <float> tint-amt: 0.10;              // how far surfaces pull to wp-tint
 
     // Frost a base surface: pull it slightly toward the wallpaper tint and make
@@ -48,7 +50,7 @@ export global Theme {
 
     // bg-root frosts lighter (lower alpha) so the wallpaper reads clearly in
     // empty / inset areas; panels stay mostly opaque for legible text.
-    out property <brush> bg-root:      frost(base-bg-root, 0.42);
+    out property <brush> bg-root:      frost(base-bg-root, dark ? 0.42 : 0.30);
     out property <brush> bg-panel:     frost(base-bg-panel, root.panel-alpha);
     out property <brush> bg-panel-alt: frost(base-bg-panel-alt, root.panel-alpha);
     out property <brush> bg-elevated:  frost(base-bg-elevated, root.panel-alpha);
@@ -76,7 +78,7 @@ export global Theme {
     // what the shell / remote app outputs via ANSI colour codes. With a
     // wallpaper it frosts (kept neutral, not tinted) so text stays legible.
     property <color> base-term-bg: dark ? #0e0f13 : #fafafa;
-    out property <brush> term-bg: root.wallpaper-active ? base-term-bg.with-alpha(0.72) : base-term-bg;
+    out property <brush> term-bg: root.wallpaper-active ? base-term-bg.with-alpha(dark ? 0.72 : 0.55) : base-term-bg;
     out property <brush> term-fg: dark ? #d4d4d4 : #2d2d2f;
 
     // True on macOS (set by Rust). App shortcuts use Cmd (⌘) here instead of
