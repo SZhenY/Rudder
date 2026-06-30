@@ -413,6 +413,8 @@ export component AppWindow inherits Window {
     // Render the welcome/session list as a left sidebar instead of a tab (v0.5).
     in-out property <bool> welcome-as-sidebar: false;
     callback set-welcome-as-sidebar(bool);         // apply + persist
+    in-out property <bool> update-check-enabled: true;   // startup new-version check (#184)
+    callback set-update-check-enabled(bool);       // apply + persist
     // Drag-resizable width of that welcome sidebar (logical px), persisted.
     in-out property <length> welcome-sidebar-width: 240px;
     callback persist-welcome-sidebar-width(float);
@@ -3335,6 +3337,7 @@ export component AppWindow inherits Window {
                     sync-upload-enabled <=> root.sync-upload-enabled;
                     download-always-ask <=> root.download-always-ask;
                     welcome-as-sidebar <=> root.welcome-as-sidebar;
+                    update-check-enabled <=> root.update-check-enabled;
                     wallpaper-overlay <=> root.wallpaper-overlay;
                     current-wallpaper: root.current-wallpaper;
                     custom-wallpaper-name: root.custom-wallpaper-name;
@@ -3350,6 +3353,7 @@ export component AppWindow inherits Window {
                     set-sync-upload-enabled(v) => { root.set-sync-upload-enabled(v); }
                     set-download-always-ask(v) => { root.set-download-always-ask(v); }
                     set-welcome-as-sidebar(v) => { root.set-welcome-as-sidebar(v); }
+                    set-update-check-enabled(v) => { root.set-update-check-enabled(v); }
                     persist-wallpaper-overlay(v) => { root.persist-wallpaper-overlay(v); }
                 }
             }

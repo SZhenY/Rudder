@@ -531,6 +531,11 @@ pub struct ConfigFile {
     /// Settings-panel font scale, percent (80–160). 0 = 100% default (v0.5).
     #[serde(default)]
     pub panel_font: u32,
+    /// Disable the startup "new version available" check (#184). Default false =
+    /// keep checking (preserves existing behaviour for upgrading users); turning
+    /// it on stops the GitHub releases query and the banner.
+    #[serde(default)]
+    pub update_check_disabled: bool,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -976,6 +981,13 @@ impl ConfigStore {
     }
     pub fn set_welcome_collapsed(&mut self, v: bool) {
         self.cache.welcome_collapsed = v;
+    }
+    /// Whether the startup new-version check is enabled (#184).
+    pub fn update_check_enabled(&self) -> bool {
+        !self.cache.update_check_disabled
+    }
+    pub fn set_update_check_enabled(&mut self, enabled: bool) {
+        self.cache.update_check_disabled = !enabled;
     }
     pub fn wallpaper_overlay(&self) -> f32 {
         let a = self.cache.wallpaper_overlay;

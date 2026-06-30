@@ -495,6 +495,7 @@ pub fn run() -> Result<()> {
         window.set_welcome_sidebar_width(s.welcome_sidebar_width());
         window.set_welcome_collapsed(s.welcome_collapsed());
         window.set_wallpaper_overlay(s.wallpaper_overlay());
+        window.set_update_check_enabled(s.update_check_enabled()); // #184
         if collapse_sidebar {
             window.set_sidebar_collapsed(true);
         }
@@ -515,6 +516,16 @@ pub fn run() -> Result<()> {
         window.on_set_collapse_sidebar_default(move |v| {
             let mut s = store.borrow_mut();
             s.set_collapse_sidebar_default(v);
+            let _ = s.save();
+        });
+    }
+    {
+        // Toggle the startup new-version check (#184). Takes effect next launch
+        // for the check itself; the banner just won't appear once it's off.
+        let store = store.clone();
+        window.on_set_update_check_enabled(move |v| {
+            let mut s = store.borrow_mut();
+            s.set_update_check_enabled(v);
             let _ = s.save();
         });
     }
@@ -1064,7 +1075,8 @@ pub fn run() -> Result<()> {
     // Query the GitHub releases API on a background thread; if a newer version
     // exists, flip the banner on. Best-effort: any network/parse error is
     // silently ignored and the app keeps working on the current version.
-    {
+    // Skipped entirely when the user turned the check off (#184).
+    if store.borrow().update_check_enabled() {
         let weak = window.as_weak();
         std::thread::spawn(move || {
             let body = match ureq::get(

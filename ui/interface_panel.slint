@@ -186,6 +186,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> sync-upload-enabled;
     in-out property <bool> download-always-ask;
     in-out property <bool> welcome-as-sidebar;
+    in-out property <bool> update-check-enabled;
     in-out property <float> wallpaper-overlay;   // frosted-panel opacity 0.40–1.00
     // Active wallpaper id: "" / "builtin:light" / "builtin:dark" / a file path.
     in property <string> current-wallpaper;
@@ -206,6 +207,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-sync-upload-enabled(bool);
     callback set-download-always-ask(bool);
     callback set-welcome-as-sidebar(bool);
+    callback set-update-check-enabled(bool);   // startup new-version check (#184)
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
     callback set-wallpaper(string);    // none / builtin selection
     callback pick-wallpaper-file();    // open the OS file dialog (Rust)
@@ -253,6 +255,11 @@ export component InterfacePanel inherits Rectangle {
                     icon: "\u{E2C4}"; label: root.lang-en ? "Download" : "下载";
                     active: root.ifd-page == "download";
                     clicked => { root.ifd-page = "download"; }
+                }
+                NavItem {
+                    icon: "\u{E923}"; label: root.lang-en ? "Update check" : "新版本提示";
+                    active: root.ifd-page == "update";
+                    clicked => { root.ifd-page = "update"; }
                 }
             }
         }
@@ -631,6 +638,27 @@ export component InterfacePanel inherits Rectangle {
                     Switch {
                         on: root.download-always-ask;
                         toggled(v) => { root.download-always-ask = v; root.set-download-always-ask(v); }
+                    }
+                }
+            }
+
+            // --- Update check page (#184) ------------------------------
+            if root.ifd-page == "update" : VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 14px;
+                spacing: 0;
+                alignment: start;
+                SectionHeader { text: root.lang-en ? "UPDATE CHECK" : "新版本提示"; height: 24px; }
+                SettingRow {
+                    label: root.lang-en ? "Check for new versions on startup" : "启动时检查新版本";
+                    desc: root.lang-en
+                        ? "Off: meatshell no longer queries GitHub for releases and the update banner won't appear (takes effect next launch)."
+                        : "关闭后:不再向 GitHub 查询新版本,也不会弹出更新提示(下次启动生效)。";
+                    show-divider: false;
+                    Switch {
+                        on: root.update-check-enabled;
+                        toggled(v) => { root.update-check-enabled = v; root.set-update-check-enabled(v); }
                     }
                 }
             }
