@@ -3269,7 +3269,11 @@ export component AppWindow inherits Window {
                 // Title bar — drag to move (clamped inside the window).
                 Rectangle {
                     height: 44px;
-                    background: Theme.bg-elevated;
+                    // Transparent so the card's single frosted layer shows through
+                    // — no extra stacked opacity, matching the welcome/resource
+                    // panels and following the wallpaper slider (#new-user-defaults
+                    // items 6/7). The 1px divider below still separates it.
+                    background: transparent;
                     title-drag := TouchArea {
                         mouse-cursor: move;
                         pointer-event(e) => {

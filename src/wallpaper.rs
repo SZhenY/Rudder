@@ -50,6 +50,7 @@ pub fn load(id: &str) -> Option<Wallpaper> {
         "builtin:light" => render_builtin(false),
         "builtin:dark" => render_builtin(true),
         "builtin:tech" => render_tech(),
+        "builtin:miku" => decode_miku()?,
         path => decode_custom(path)?,
     };
     let palette = derive_palette(&buf);
@@ -61,7 +62,7 @@ pub fn load(id: &str) -> Option<Wallpaper> {
 
 /// True if `id` names one of the procedurally-drawn built-ins.
 pub fn is_builtin(id: &str) -> bool {
-    id == "builtin:light" || id == "builtin:dark" || id == "builtin:tech"
+    id == "builtin:light" || id == "builtin:dark" || id == "builtin:tech" || id == "builtin:miku"
 }
 
 // ── Built-in wallpapers ───────────────────────────────────────────────────────
@@ -213,9 +214,21 @@ fn hash2(x: u32, y: u32) -> f32 {
 // ── Custom wallpapers ─────────────────────────────────────────────────────────
 
 fn decode_custom(path: &str) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
-    let img = image::open(path).ok()?.to_rgba8();
+    Some(to_buffer(image::open(path).ok()?.to_rgba8()))
+}
+
+/// The bundled "Miku" wallpaper, embedded in the binary so it ships as a
+/// built-in (the procedural built-ins are drawn in code; this one is a real
+/// image). The asset is pre-compressed to 2560×1440 (#new-user-defaults).
+fn decode_miku() -> Option<SharedPixelBuffer<Rgba8Pixel>> {
+    const BYTES: &[u8] = include_bytes!("../assets/miku.jpg");
+    Some(to_buffer(image::load_from_memory(BYTES).ok()?.to_rgba8()))
+}
+
+/// Downscale an oversized decoded image (preserving aspect; the UI covers it)
+/// and pack it into a Slint pixel buffer.
+fn to_buffer(img: image::RgbaImage) -> SharedPixelBuffer<Rgba8Pixel> {
     let (w, h) = img.dimensions();
-    // Downscale only oversized images; preserve aspect (the UI covers it).
     let img = if w.max(h) > MAX_EDGE {
         let scale = MAX_EDGE as f32 / w.max(h) as f32;
         let nw = ((w as f32 * scale) as u32).max(1);
@@ -227,7 +240,7 @@ fn decode_custom(path: &str) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
     let (w, h) = img.dimensions();
     let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(w, h);
     buf.make_mut_bytes().copy_from_slice(img.as_raw());
-    Some(buf)
+    buf
 }
 
 // ── Palette derivation ────────────────────────────────────────────────────────

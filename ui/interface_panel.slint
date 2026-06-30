@@ -195,7 +195,8 @@ export component InterfacePanel inherits Rectangle {
     property <string> ifd-page: "font";
     property <bool> wp-is-custom:
         root.current-wallpaper != "" && root.current-wallpaper != "builtin:light"
-        && root.current-wallpaper != "builtin:dark";
+        && root.current-wallpaper != "builtin:dark" && root.current-wallpaper != "builtin:tech"
+        && root.current-wallpaper != "builtin:miku";
 
     callback set-term-font(string);
     callback set-term-font-size(int);
@@ -216,7 +217,13 @@ export component InterfacePanel inherits Rectangle {
         // --- Left nav ------------------------------------------------------
         Rectangle {
             width: 168px;
-            background: Theme.bg-panel-alt;
+            // Transparent so the whole dialog is one frosted layer (the card's
+            // bg-panel); a 1px divider keeps the nav/content separation (items 6/7).
+            background: transparent;
+            Rectangle {
+                x: parent.width - 1px; width: 1px; height: parent.height;
+                background: Theme.border-subtle;
+            }
             VerticalLayout {
                 padding: 10px;
                 spacing: 2px;
@@ -266,7 +273,10 @@ export component InterfacePanel inherits Rectangle {
         // --- Right content -------------------------------------------------
         Rectangle {
             horizontal-stretch: 1;
-            background: Theme.bg-panel;
+            // Transparent: the card's single bg-panel frost shows through, so the
+            // settings panel matches the welcome/resource panels and tracks the
+            // wallpaper-opacity slider (items 6/7).
+            background: transparent;
 
             // --- Font page ---------------------------------------------
             if root.ifd-page == "font" : VerticalLayout {
@@ -439,6 +449,21 @@ export component InterfacePanel inherits Rectangle {
                         Text { text: root.lang-en ? "Fantasy 3048" : "幻想3048"; font-size: 11px * Theme.panel-font;
                                color: Theme.text-secondary; horizontal-alignment: center; }
                     }
+                    VerticalLayout {
+                        spacing: 5px;
+                        WallpaperSwatch {
+                            width: 100px;
+                            selected: root.current-wallpaper == "builtin:miku";
+                            clicked => { root.set-wallpaper("builtin:miku"); }
+                            Image {
+                                width: 100%; height: 100%;
+                                source: @image-url("../assets/miku.jpg");
+                                image-fit: cover;
+                            }
+                        }
+                        Text { text: "Miku"; font-size: 11px * Theme.panel-font;
+                               color: Theme.text-secondary; horizontal-alignment: center; }
+                    }
                 }
 
                 Rectangle { height: 16px; }
@@ -507,7 +532,9 @@ export component InterfacePanel inherits Rectangle {
                         Slider {
                             width: 150px;
                             minimum: 0;
-                            maximum: 60;
+                            // Up to 70% transparency (overlay floor 0.30) so the
+                            // 0.38 default (62%) and more see-through panels fit.
+                            maximum: 70;
                             value: (1.0 - root.wallpaper-overlay) * 100;
                             changed(v) => { root.wallpaper-overlay = 1.0 - v / 100; }
                             released(v) => { root.persist-wallpaper-overlay(1.0 - v / 100); }
