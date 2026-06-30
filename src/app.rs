@@ -3279,6 +3279,13 @@ fn selected_iface(st: &TabStatus) -> (String, u64, u64) {
 /// for whichever tab is active.  Welcome tab → local machine; a session tab →
 /// that server.  The bottom network graph is always the local machine.
 /// Must run on the Slint event loop thread.
+/// The copyable IP/host from a `user@host` connection label (#192): the part
+/// after the last `@`, trimmed. Falls back to the whole string when there's no
+/// `@` (already a bare host/IP).
+fn conn_ip(host: &str) -> String {
+    host.rsplit('@').next().unwrap_or(host).trim().to_string()
+}
+
 fn refresh_sidebar(
     win: &AppWindow,
     statuses: &TabStatuses,
@@ -3354,6 +3361,7 @@ fn refresh_sidebar(
         Some(st) if st.state == 1 => {
             win.set_conn_state(1);
             win.set_connection_state(st.host.clone().into());
+            win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             win.set_cpu_percent(st.cpu);
             win.set_mem_percent(pct(st.mem_used_kib, st.mem_total_kib));
@@ -3381,6 +3389,7 @@ fn refresh_sidebar(
         Some(st) if st.state == 2 => {
             win.set_conn_state(2);
             win.set_connection_state(format!("{} {}", st.host, t("已断开", "disconnected")).into());
+            win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
             set_top_local(win);
@@ -3389,6 +3398,7 @@ fn refresh_sidebar(
         Some(st) => {
             win.set_conn_state(0);
             win.set_connection_state(format!("{} {}", t("连接中", "Connecting"), st.host).into());
+            win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
             set_top_local(win);
@@ -3397,6 +3407,7 @@ fn refresh_sidebar(
         None => {
             win.set_conn_state(0);
             win.set_connection_state(t("未连接", "Not connected").into());
+            win.set_conn_host("".into());
             show_local_res(win);
             set_top_local(win);
         }

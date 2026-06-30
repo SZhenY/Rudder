@@ -231,6 +231,7 @@ export component AppWindow inherits Window {
 
     // --- Sidebar data ------------------------------------------------------
     in property <string> connection-state: @tr("Not connected");
+    in property <string> conn-host;             // clean IP/host for click-to-copy (#192)
     in property <int> conn-state;                       // 0 gray / 1 green / 2 yellow
     in property <string> resource-title: @tr("Local resources");    // @tr("Local resources") | @tr("Server resources")
     in property <float> cpu-percent;
@@ -885,6 +886,7 @@ export component AppWindow inherits Window {
             dock-edge: root.sidebar-dock;
             animate width, height { duration: root.sidebar-dragging ? 0ms : 150ms; easing: ease-out; }
             connection-state: root.connection-state;
+            conn-host: root.conn-host;
             conn-state: root.conn-state;
             resource-title: root.resource-title;
             cpu-percent: root.cpu-percent;
@@ -906,6 +908,7 @@ export component AppWindow inherits Window {
             app-version: root.app-version;
             select-net-iface(i) => { root.select-net-iface(i); }
             show-processes() => { root.open-processes(); }
+            copy-host(h) => { root.copy-text(h); }   // reuse the clipboard helper (#192)
             // Drag the sidebar header to dock it to another edge. Coordinates
             // arrive in window space; convert to dock-area-relative fractions.
             dock-drag-move(ax, ay) => {
