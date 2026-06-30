@@ -6593,7 +6593,13 @@ fn key_to_pty_bytes(key: &str, ctrl: bool, alt: bool, app_cursor: bool) -> Vec<u
         "\u{F72B}" => Some(b"\x1b[F"),   // End
         "\u{F72C}" => Some(b"\x1b[5~"),  // PageUp
         "\u{F72D}" => Some(b"\x1b[6~"),  // PageDown
-        "\u{F728}" => Some(b"\x1b[3~"),  // Delete (forward)
+        // Forward-Delete. Slint's canonical key code for the Delete key is
+        // U+007F (see i-slint-common key_codes: F728 is explicitly *not* used,
+        // it collapses to the 0x7f control code). The old F728 mapping never
+        // matched on any platform, so Delete fell through to the generic path
+        // and behaved like backspace / garbled the char instead of sending the
+        // VT "delete forward" sequence (B站 fan report).
+        "\u{007F}" | "\u{F728}" => Some(b"\x1b[3~"),  // Delete (forward)
         "\u{F704}" => Some(b"\x1bOP"),   // F1
         "\u{F705}" => Some(b"\x1bOQ"),   // F2
         "\u{F706}" => Some(b"\x1bOR"),   // F3
