@@ -155,6 +155,42 @@ impl SftpHandle {
 /// and requests the `sftp` subsystem. Events (directory listings, progress,
 /// errors) are sent back via `events`, which is the same sender used by the
 /// terminal's shell session.
+/// Turn an SFTP-worker failure into a status-bar message.
+///
+/// SFTP runs on its own SSH connection, fully separate from the shell PTY, so
+/// when it can't connect the terminal keeps working — we just surface why in the
+/// SFTP panel. The common bastion/jump-host case is "shell is allowed but the
+/// `sftp` subsystem is not", which shows up as a failed subsystem request /
+/// channel / handshake (or an explicit "permission denied"). For that family we
+/// give a plain-language hint instead of the raw russh error (#190).
+fn friendly_sftp_error(err: &anyhow::Error) -> String {
+    let chain = err
+        .chain()
+        .map(|e| e.to_string().to_lowercase())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let permission_like = [
+        "subsystem",       // server refused the `sftp` subsystem request
+        "sftp channel",    // channel_open_session refused
+        "sftp handshake",  // subsystem opened but no SFTP server behind it
+        "permission",
+        "denied",
+        "prohibited",      // "administratively prohibited"
+        "not allowed",
+    ]
+    .iter()
+    .any(|k| chain.contains(k));
+    if permission_like {
+        t(
+            "SFTP 不可用,请检查是否有访问权限(服务器可能未开放 SFTP)",
+            "SFTP unavailable — check whether you have permission (server may not allow SFTP)",
+        )
+        .to_string()
+    } else {
+        format!("{}: {err:#}", t("SFTP 错误", "SFTP error"))
+    }
+}
+
 pub fn spawn_sftp(
     runtime: &tokio::runtime::Handle,
     session: Session,
@@ -165,7 +201,7 @@ pub fn spawn_sftp(
     let events_err = events.clone();
     let join = runtime.spawn(async move {
         if let Err(err) = run_sftp(session, cmd_rx, self_tx, events).await {
-            let _ = events_err.send(SessionEvent::SftpStatus(format!("{}: {err:#}", t("SFTP 错误", "SFTP error"))));
+            let _ = events_err.send(SessionEvent::SftpStatus(friendly_sftp_error(&err)));
         }
     });
     SftpHandle {
