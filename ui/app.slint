@@ -335,9 +335,10 @@ export component AppWindow inherits Window {
     in-out property <string> qcm-name;                // manage form: name field
     in-out property <string> qcm-command;             // manage form: command field
     in-out property <string> qcm-group;               // manage form: group field (#55)
+    in-out property <bool> qcm-send-enter: true;      // click sends+executes (B站)
     in-out property <int> qcm-edit-index: -1;         // -1 = add, >=0 = edit that entry (#55)
-    callback add-quick-command(string /* name */, string /* command */, string /* group */);
-    callback save-quick-command(int /* index */, string /* name */, string /* command */, string /* group */);
+    callback add-quick-command(string /* name */, string /* command */, string /* group */, bool /* send-enter */);
+    callback save-quick-command(int /* index */, string /* name */, string /* command */, string /* group */, bool /* send-enter */);
     callback delete-quick-command(int /* index */);
     callback edit-quick-command(int /* index */);
     callback duplicate-quick-command(int /* index */);
@@ -558,6 +559,7 @@ export component AppWindow inherits Window {
     in-out property <string> dialog-parity: "none";
     in-out property <string> dialog-flow: "none";
     in-out property <bool> dialog-disable-shell-integration: false;
+    in-out property <string> dialog-note;
 
     // Delete-confirmation modal state (#28).
     in-out property <bool> confirm-delete-open: false;
@@ -2209,12 +2211,12 @@ export component AppWindow inherits Window {
                         accepted => {
                             if (root.qcm-name != "" && root.qcm-command != "") {
                                 if (root.qcm-edit-index >= 0) {
-                                    root.save-quick-command(root.qcm-edit-index, root.qcm-name, root.qcm-command, root.qcm-group);
+                                    root.save-quick-command(root.qcm-edit-index, root.qcm-name, root.qcm-command, root.qcm-group, root.qcm-send-enter);
                                 } else {
-                                    root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group);
+                                    root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group, root.qcm-send-enter);
                                 }
                                 root.qcm-edit-index = -1;
-                                root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = "";
+                                root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = ""; root.qcm-send-enter = true;
                             }
                         }
                     }
@@ -2223,7 +2225,7 @@ export component AppWindow inherits Window {
                         text: root.lang-en ? "Cancel" : "取消";
                         clicked => {
                             root.qcm-edit-index = -1;
-                            root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = "";
+                            root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = ""; root.qcm-send-enter = true;
                         }
                     }
                     Button {
@@ -2233,14 +2235,23 @@ export component AppWindow inherits Window {
                         enabled: root.qcm-name != "" && root.qcm-command != "";
                         clicked => {
                             if (root.qcm-edit-index >= 0) {
-                                root.save-quick-command(root.qcm-edit-index, root.qcm-name, root.qcm-command, root.qcm-group);
+                                root.save-quick-command(root.qcm-edit-index, root.qcm-name, root.qcm-command, root.qcm-group, root.qcm-send-enter);
                             } else {
-                                root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group);
+                                root.add-quick-command(root.qcm-name, root.qcm-command, root.qcm-group, root.qcm-send-enter);
                             }
                             root.qcm-edit-index = -1;
-                            root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = "";
+                            root.qcm-name = ""; root.qcm-command = ""; root.qcm-group = ""; root.qcm-send-enter = true;
                         }
                     }
+                }
+
+                // Whether a click sends+executes or just fills the input box to
+                // tweak first (B站 suggestion).
+                CheckBox {
+                    text: root.lang-en
+                        ? "Send + run on click (off: fill input box only)"
+                        : "点击即发送执行(关闭则只填入输入框,可修改后再发)";
+                    checked <=> root.qcm-send-enter;
                 }
 
                 // New (empty) group.
@@ -2957,6 +2968,7 @@ export component AppWindow inherits Window {
         draft-parity <=> root.dialog-parity;
         draft-flow <=> root.dialog-flow;
         draft-disable-shell-integration <=> root.dialog-disable-shell-integration;
+        draft-note <=> root.dialog-note;
         forwards: root.dialog-forwards;
         submit(draft) => { root.session-dialog-submit(draft); }
         cancel => { root.session-dialog-cancel(); }

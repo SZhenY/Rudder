@@ -414,6 +414,11 @@ pub struct Session {
     /// for such servers (#140).
     #[serde(default)]
     pub disable_shell_integration: bool,
+    /// Free-form note for this session — somewhere to stash extra info (jump-host
+    /// details, credentials hints, owner, etc.). Shown only in the edit dialog.
+    /// (B站 suggestion)
+    #[serde(default)]
+    pub note: String,
 }
 
 /// One SSH tunnel (#56). `kind` is "local" (-L), "remote" (-R) or
@@ -459,6 +464,7 @@ impl Session {
             flow_control: default_flow(),
             forwards: Vec::new(),
             disable_shell_integration: false,
+            note: String::new(),
         }
     }
 }
@@ -472,6 +478,15 @@ pub struct QuickCommand {
     /// Optional group/folder name. Empty = the implicit "default" group (#55).
     #[serde(default)]
     pub group: String,
+    /// Whether clicking the chip sends + executes (appends Return). `false` only
+    /// drops the command into the input box to tweak first. Defaults to `true` so
+    /// existing quick commands keep running on click. (B站 suggestion)
+    #[serde(default = "default_true")]
+    pub send_enter: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// On-disk layout. Keep additive to ease forward-compat.

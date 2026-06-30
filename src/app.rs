@@ -1829,6 +1829,7 @@ fn wire_session_callbacks(
             w.set_dialog_parity("none".into());
             w.set_dialog_flow("none".into());
             w.set_dialog_disable_shell_integration(false);
+            w.set_dialog_note("".into());
             w.set_dialog_editing(false);
             w.set_dialog_open(true);
         }
@@ -2021,6 +2022,7 @@ fn wire_session_callbacks(
                 w.set_dialog_parity(session.parity.clone().into());
                 w.set_dialog_flow(session.flow_control.clone().into());
                 w.set_dialog_disable_shell_integration(session.disable_shell_integration);
+                w.set_dialog_note(session.note.clone().into());
                 w.set_dialog_editing(true);
                 w.set_dialog_open(true);
             }
@@ -2250,6 +2252,7 @@ fn wire_session_callbacks(
                 flow_control: draft.flow_control.to_string(),
                 forwards: edit_forwards.borrow().clone(),
                 disable_shell_integration: draft.disable_shell_integration,
+                note: draft.note.to_string(),
             };
             {
                 let mut s = store.borrow_mut();
@@ -2937,6 +2940,7 @@ fn quick_cmd_model(
                 group_header: group.clone().into(),
                 collapsed: is_collapsed,
                 orig_index: -1,
+                send_enter: true,
             });
         } else {
             for (i, (orig_idx, c)) in members.iter().enumerate() {
@@ -2947,6 +2951,7 @@ fn quick_cmd_model(
                     group_header: if i == 0 { group.clone().into() } else { "".into() },
                     collapsed: is_collapsed,
                     orig_index: *orig_idx as i32,
+                    send_enter: c.send_enter,
                 });
             }
         }
@@ -5448,7 +5453,7 @@ fn wire_key_input(
         let weak = window.as_weak();
         let collapsed = collapsed_quick_groups.clone();
         window.on_add_quick_command(
-            move |name: SharedString, command: SharedString, group: SharedString| {
+            move |name: SharedString, command: SharedString, group: SharedString, send_enter: bool| {
                 let name = name.trim().to_string();
                 let command = command.to_string();
                 let group = group.trim().to_string();
@@ -5462,6 +5467,7 @@ fn wire_key_input(
                         name,
                         command,
                         group,
+                        send_enter,
                     });
                     s.set_quick_commands(v);
                     let _ = s.save();
@@ -5520,6 +5526,7 @@ fn wire_key_input(
                 w.set_qcm_name(c.name.into());
                 w.set_qcm_command(c.command.into());
                 w.set_qcm_group(c.group.into());
+                w.set_qcm_send_enter(c.send_enter);
                 w.set_qcm_edit_index(index);
                 w.set_quick_cmd_manage_open(true);
             }
@@ -5531,7 +5538,7 @@ fn wire_key_input(
         let weak = window.as_weak();
         let collapsed = collapsed_quick_groups.clone();
         window.on_save_quick_command(
-            move |index: i32, name: SharedString, command: SharedString, group: SharedString| {
+            move |index: i32, name: SharedString, command: SharedString, group: SharedString, send_enter: bool| {
                 let name = name.trim().to_string();
                 let command = command.to_string();
                 let group = group.trim().to_string();
@@ -5546,6 +5553,7 @@ fn wire_key_input(
                             name,
                             command,
                             group,
+                            send_enter,
                         },
                     );
                     let _ = s.save();
@@ -5570,6 +5578,7 @@ fn wire_key_input(
                         name: format!("{} (copy)", c.name),
                         command: c.command,
                         group: c.group,
+                        send_enter: c.send_enter,
                     };
                     v.insert(index as usize + 1, dup);
                     s.set_quick_commands(v);
