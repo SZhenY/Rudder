@@ -871,9 +871,10 @@ export component AppWindow inherits Window {
         property <length> bottom-strip-h: 0px;
 
         // Left sidebar — collapsible and drag-resizable, dockable to any edge.
-        // The animation is disabled while dragging so the splitter tracks the
-        // cursor 1:1 instead of lagging behind.
-        Sidebar {
+        // Only shown while expanded; collapsing swaps it for the ToolStrip icon
+        // bar below (mirrors the welcome sidebar), so no clipped widgets bleed
+        // through the 36px strip (#resource-collapse).
+        if !root.sidebar-collapsed : Sidebar {
             x: root.sidebar-dock == "right" ? parent.width - parent.sb-w
              : 0px;
             y: root.sidebar-dock == "bottom" ? parent.height - parent.sb-h
