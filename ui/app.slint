@@ -3256,7 +3256,9 @@ export component AppWindow inherits Window {
             // Bigger base, and scales with the settings font size (#v0.5).
             width: 720px * Theme.panel-font;
             height: 480px * Theme.panel-font;
-            background: Theme.bg-panel;
+            // 20% less transparent than the welcome/resource panels so the dense
+            // grey settings labels stay readable at a low overlay (user request).
+            background: Theme.bg-panel-strong;
             border-radius: Theme.radius-md;
             border-width: 1px;
             border-color: Theme.border-strong;
