@@ -4961,7 +4961,8 @@ fn wire_sftp_callbacks(
             let path = path.to_string();
             if let Ok(handles) = sftp_handles.lock() {
                 if let Some(h) = handles.get(&tab_id) {
-                    h.list_dir(path);
+                    // Refresh re-syncs the left tree too, not just the file list (#189).
+                    h.refresh_dir(path);
                 }
             }
         });
