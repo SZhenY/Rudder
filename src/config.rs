@@ -56,6 +56,28 @@ pub fn data_dir() -> PathBuf {
     DATA_DIR.get_or_init(resolve_data_dir).clone()
 }
 
+/// Directory for diagnostic logs (`error.log`). Kept *separate* from the config
+/// dir so logs don't clutter user data: portable-first → a `log/` folder beside
+/// the executable (a sibling of `config/`), falling back to a `log/` subdir
+/// under the per-user data dir when the exe dir is read-only (Program Files etc.)
+/// (#log-dir).
+pub fn log_dir() -> PathBuf {
+    // Portable: <exe_dir>/log, sibling of the portable config/ folder.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let log = parent.join("log");
+            if fs::create_dir_all(&log).is_ok() && dir_is_writable(&log) {
+                return log;
+            }
+        }
+    }
+    // Read-only exe dir → put logs in their own subdir under the per-user data
+    // dir (still not mixed in with sessions.json et al.).
+    let dir = data_dir().join("log");
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
 /// Pre-0.4.15 location: the per-user OS config dir
 /// (`%APPDATA%/meatshell`, `~/.config/meatshell`, …).
 fn legacy_data_dir() -> Option<PathBuf> {
