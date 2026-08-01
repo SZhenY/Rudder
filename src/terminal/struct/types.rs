@@ -27,6 +27,9 @@ pub(crate) struct TermBuffer {
     /// Scrollback lazily populated from the grid.  Index 0 = most recently
     /// scrolled-off line (grid Line(-1)), index 1 = second-most, etc.
     pub(crate) history: VecDeque<Line>,
+    /// Snapshot of visible lines from last ingest_chunk, used by detect_scroll
+    /// to find how many lines scrolled off the top.
+    pub(crate) prev: Vec<Line>,
     pub(crate) view_offset: usize,
     pub(crate) displayed_text: Vec<String>,
     pub(crate) csi_state: CsiState,

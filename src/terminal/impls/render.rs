@@ -116,7 +116,7 @@ pub(crate) fn build_row(term: &ATerm, row: u16, columns: u16) -> TermLine {
     (plain, runs, row_wrapped(term, row))
 }
 
-pub(crate) fn detect_scroll(previous: &[Line], current: &[Line]) -> usize {
+pub(crate) fn detect_scroll(previous: &[TermLine], current: &[TermLine]) -> usize {
     let mut best_shift = 0usize;
     let mut best_length = 0usize;
     for shift in 0..previous.len() {

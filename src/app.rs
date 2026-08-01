@@ -174,7 +174,7 @@ use crate::terminal::{
 #[cfg(test)]
 use crate::terminal::{
     build_row, highlight_plain_output, log_level_marker, normalize_pasted_newlines,
-    process_bytes, text_cell_width, vt_span_colors, CompiledOutputRule, HistSpan, Line,
+    process_bytes, text_cell_width, CompiledOutputRule, HistSpan,
 };
 #[cfg(windows)]
 use crate::terminal::c0_letter_key_down;
@@ -4416,6 +4416,7 @@ fn wire_session_callbacks(
                     output_highlight,
                     custom_highlight_rules,
                     history: VecDeque::new(),
+                    prev: Vec::new(),
                     view_offset: 0,
                     displayed_text: Vec::new(),
                     csi_state: CsiState::Normal,
@@ -8996,6 +8997,7 @@ fn wire_key_input(
                             (b.term, b.processor) = crate::terminal::new_term(rows, cols, 5000);
                             b.rendered.clear();
                             b.history.clear();
+                            b.prev.clear();
                             b.displayed_text.clear();
                             b.view_offset = 0;
                             b.term.selection = None;
@@ -9427,6 +9429,7 @@ fn wire_key_input(
                 buf.rendered.clear();
                 buf.find_query.clear();
                 buf.history = VecDeque::new(); // recycle the session scrollback
+                buf.prev = Vec::new();
                                 buf.view_offset = 0;
                 buf.term.selection = None;
                 buf.displayed_text = Vec::new();

@@ -1,5 +1,5 @@
 use crate::terminal::{
-    build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
+    build_row, cursor_pos, detect_scroll, highlight_plain_output, is_alt,
     process_bytes, render_term_span, resize_term, term_size, BuiltScreen, CsiState, HistSpan,
     Line, MAX_HISTORY, RenderedLine, TermBuffer, RAW_CAP,
 };
@@ -7,7 +7,7 @@ use crate::ui::TermMatch;
 use crate::ui::TermSpan;
 
 use alacritty_terminal::index::{Column, Line as GridLine, Point};
-use alacritty_terminal::selection::{Selection, SelectionType};
+// Selection type used only in selection_rects_visible via term.selection
 
 impl TermBuffer {
     /// Visible → grid Point (selection / mouse callbacks).
@@ -135,6 +135,7 @@ impl TermBuffer {
         if let Some(end) = erase_saved_through {
             self.raw.drain(..end);
             self.history.clear();
+            self.prev.clear();
             self.rendered.clear();
             self.view_offset = 0;
             self.term.selection = None;
@@ -143,51 +144,43 @@ impl TermBuffer {
         self.ingest_chunk(&bytes);
     }
 
-    /// Feed bytes to alacritty and capture any lines that scrolled off the
-    /// top since the last call.  Tracks `display_offset` deltas so scrolling
-    /// works immediately — the old `prev` / `detect_scroll` approach but
-    /// without the per-chunk full-grid traversal.
+    /// Feed bytes to alacritty and detect scrolling by comparing visible
+    /// lines before/after each chunk — the original reliable approach.
     fn ingest_chunk(&mut self, bytes: &[u8]) {
         let has_cursor_home = bytes.windows(3).any(|w| w == b"\x1b[H");
         let has_erase_display =
             bytes.windows(4).any(|w| w == b"\x1b[2J") || bytes.windows(3).any(|w| w == b"\x1b[J");
         let is_fullscreen_refresh = has_cursor_home && has_erase_display;
 
-        let old_offset = self.term.grid().display_offset();
         process_bytes(&mut self.processor, &mut self.term, bytes);
+        let (rows, cols) = term_size(&self.term);
         let alt = is_alt(&self.term);
         if alt {
             self.view_offset = 0;
             self.history.clear();
+            self.prev.clear();
             self.rendered.clear();
             return;
         }
         if is_fullscreen_refresh {
             self.view_offset = 0;
             self.history.clear();
+            self.prev.clear();
             self.rendered.clear();
             return;
         }
 
-        // Eagerly capture lines that scrolled into alacritty's scrollback
-        // during this chunk.  `ensure_history` (called by `render`) fills
-        // any gaps, but we do it here so scroll_max updates immediately after
-        // every ingest, not just on the next render frame.
-        let new_offset = self.term.grid().display_offset();
-        let delta = new_offset.saturating_sub(old_offset);
-        if delta > 0 {
-            let (_, cols) = term_size(&self.term);
-            // Read from scrollback: Line(-1 - idx) where idx 0 = most recent
-            // scrolled-off line (= Line(-1)), idx 1 = second-most (= Line(-2)).
-            for i in 0..delta {
-                let line = GridLine(-1 - (old_offset + i) as i32);
-                let rendered = build_line(&self.term, line, cols);
-                self.history.push_back(rendered);
+        let curr: Vec<Line> = (0..rows).map(|r| build_row(&self.term, r, cols)).collect();
+        if !self.prev.is_empty() {
+            let k = detect_scroll(&self.prev, &curr);
+            for line in self.prev.iter().take(k) {
+                self.history.push_back(line.clone());
             }
             while self.history.len() > MAX_HISTORY {
                 self.history.pop_front();
             }
         }
+        self.prev = curr;
     }
 
     fn cap_raw(&mut self) {
@@ -207,6 +200,7 @@ impl TermBuffer {
     pub(crate) fn reflow(&mut self, new_rows: u16, new_cols: u16) {
         resize_term(&mut self.term, new_rows, new_cols);
         self.history.clear();
+        self.prev.clear();
         self.rendered.clear();
         self.view_offset = 0;
         self.term.selection = None;
@@ -247,25 +241,10 @@ impl TermBuffer {
         out
     }
 
-    /// Ensure `self.history` is populated up to the current grid scrollback
-    /// depth.  Called before any method that reads from `self.history`.
+    /// History is now populated eagerly by `ingest_chunk` via `detect_scroll` —
+    /// the same reliable approach used in the original vt100-based code.
     fn ensure_history(&mut self) {
-        let offset = self.term.grid().display_offset();
-        if self.history.len() == offset {
-            return;
-        }
-        // Truncate if grid scrollback shrank (e.g. after clear / ESC[3J).
-        if self.history.len() > offset {
-            self.history.truncate(offset);
-            return;
-        }
-        let (_, cols) = term_size(&self.term);
-        while self.history.len() < offset {
-            let idx = self.history.len();
-            let line = GridLine(-1 - idx as i32);
-            let rendered = build_line(&self.term, line, cols);
-            self.history.push_back(rendered);
-        }
+        // no-op: ingest_chunk already fills self.history
     }
 
     /// Render the terminal grid for the current scrollback `view_offset`
