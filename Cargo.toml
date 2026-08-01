@@ -7,7 +7,7 @@ description = "A lightweight FinalShell-style SSH/terminal client written in Rus
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/your/meatshell"
 readme = "README.md"
-rust-version = "1.75"
+rust-version = "1.85"
 
 [dependencies]
 slint = { version = "1.8", features = ["compat-1-2"] }
@@ -45,12 +45,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rand = "0.8"
 async-trait = "0.1"
 futures = "0.3"
-vt100 = "0.15"
+# Full xterm-compatible terminal emulator (replaces vt100): Term + Grid +
+# native scrollback/reflow/selection, fed via vte::ansi::Processor.
+alacritty_terminal = "0.26"
 portable-pty = "0.8"
-# East Asian width detection for terminal copy/find column math. Pinned to the
-# same version vt100 uses so "is this glyph 2 cells wide?" agrees with how vt100
-# lays CJK glyphs on the grid 鈥?otherwise selection/find columns drift (#132).
-unicode-width = "0.1.14"
+# East Asian width detection for terminal copy/find column math. Version is
+# shared with alacritty_terminal's own dependency so "is this glyph 2 cells
+# wide?" agrees with how the grid lays CJK glyphs (#132).
+unicode-width = "0.2"
 # Split terminal output into complete emoji grapheme clusters (ZWJ sequences,
 # flags, skin tones, variation selectors) before replacing them with images.
 unicode-segmentation = "1.12"

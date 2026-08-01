@@ -1,21 +1,74 @@
 use crate::terminal::{
-    build_row, cell_prefix, char_after_cell_end, char_at_cell_start, detect_scroll,
-    highlight_plain_output, render_term_span, BuiltScreen, CsiState, Line, TermBuffer, MAX_HISTORY,
-    RAW_CAP,
+    build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
+    process_bytes, render_term_span, resize_term, term_size, BuiltScreen, CsiState, HistSpan,
+    Line, MAX_HISTORY, RenderedLine, TermBuffer, RAW_CAP,
 };
 use crate::ui::TermMatch;
-impl TermBuffer {
-    // ---- Absolute-coordinate selection helpers (#18 follow-up) -------------
-    //
-    // The "combined" buffer is `history` (oldest first) followed by the live
-    // screen rows.  A visible window of `rows` rows looks at a slice of it whose
-    // top index depends on whether we're at the live bottom or scrolled up.
+use crate::ui::TermSpan;
 
-    /// Live screen rows plus the count of non-blank ones at the top.
+use alacritty_terminal::index::{Column, Line as GridLine, Point};
+use alacritty_terminal::selection::{Selection, SelectionType};
+
+impl TermBuffer {
+    /// Visible → grid Point (selection / mouse callbacks).
+    fn vis_point(&self, vis_row: i32, vis_col: i32) -> Point {
+        Point {
+            line: GridLine(vis_row - self.view_offset as i32),
+            column: Column(vis_col.max(0) as usize),
+        }
+    }
+
+    /// Selection highlight rectangles for the current visible window.
+    pub(crate) fn selection_rects_visible(&self, cols: u16) -> Vec<TermMatch> {
+        let sel = match self.term.selection {
+            Some(ref s) => s,
+            None => return Vec::new(),
+        };
+        let range = match sel.to_range(&self.term) {
+            Some(r) => r,
+            None => return Vec::new(),
+        };
+
+        let rows = term_size(&self.term).0 as i32;
+        let vo = self.view_offset as i32;
+        let lo = range.start.line.0 + vo;
+        let hi = range.end.line.0 + vo;
+        if hi < 0 || lo >= rows {
+            return Vec::new();
+        }
+        let lo_r = lo.max(0);
+        let hi_r = hi.min(rows - 1);
+
+        let mut out = Vec::new();
+        for vis in lo_r..=hi_r {
+            let gl = GridLine(vis - vo);
+            let (c0, c1) = if gl == range.start.line && gl == range.end.line {
+                (
+                    range.start.column.0.min(range.end.column.0),
+                    range.end.column.0.max(range.start.column.0),
+                )
+            } else if gl == range.start.line {
+                (range.start.column.0, cols.saturating_sub(1) as usize)
+            } else if gl == range.end.line {
+                (0, range.end.column.0)
+            } else {
+                (0, cols.saturating_sub(1) as usize)
+            };
+            out.push(TermMatch {
+                row: vis,
+                col: c0 as i32,
+                len: (c1.saturating_sub(c0) + 1) as i32,
+            });
+        }
+        out
+    }
+
+    /// Live screen rows for find / scrollback-aware operations.
     fn live_rows(&self) -> (Vec<Line>, usize) {
-        let s = self.parser.screen();
-        let (rows, cols) = s.size();
-        let live: Vec<Line> = (0..rows).map(|r| build_row(s, r, cols)).collect();
+        let (rows, cols) = term_size(&self.term);
+        let live: Vec<Line> = (0..rows)
+            .map(|r| build_row(&self.term, r, cols))
+            .collect();
         let used = live
             .iter()
             .rposition(|(_, runs, _)| !runs.is_empty())
@@ -24,89 +77,15 @@ impl TermBuffer {
         (live, used)
     }
 
-    /// Absolute combined-row index of the top visible row for the current view.
-    fn view_top_abs(&self, _live_used: usize) -> usize {
-        let rows = self.parser.screen().size().0 as usize;
-        let hist_len = self.history.len();
-        if self.view_offset == 0 {
-            // Live view: visible row 0 is live screen row 0 = combined[hist_len].
-            hist_len
-        } else {
-            // Include the screen's full row count (trailing blanks too) so this
-            // mapping matches render()'s scroll window — keeping the live and
-            // scrolled views continuous after a shrink/grow (#119-followup).
-            let combined_len = hist_len + rows;
-            combined_len.saturating_sub(rows + self.view_offset)
-        }
-    }
-
-    /// Map a visible row (0..rows) to its absolute combined-row index.
-    pub(crate) fn vis_to_abs(&self, vis_row: u16) -> usize {
-        let (_, live_used) = self.live_rows();
-        self.view_top_abs(live_used) + vis_row as usize
-    }
-
-    /// Highlight rectangles for the current selection, clipped to the visible
-    /// window of the current view.
-    pub(crate) fn selection_rects_visible(&self, cols: u16) -> Vec<TermMatch> {
-        let ranges = if self.sel_ranges.is_empty() {
-            match (self.sel_anchor, self.sel_focus) {
-                (Some(anchor), Some(focus)) => vec![(anchor, focus)],
-                _ => Vec::new(),
-            }
-        } else {
-            self.sel_ranges.clone()
-        };
-        if ranges.is_empty() {
-            return Vec::new();
-        }
-        let (_, live_used) = self.live_rows();
-        let top = self.view_top_abs(live_used);
-        let rows = self.parser.screen().size().0;
-        let mut out = Vec::new();
-        for ((ar, ac), (fr, fc)) in ranges {
-            let (lo_r, lo_c, hi_r, hi_c) = if (ar, ac) <= (fr, fc) {
-                (ar, ac, fr, fc)
-            } else {
-                (fr, fc, ar, ac)
-            };
-            if (lo_r, lo_c) == (hi_r, hi_c) {
-                continue;
-            }
-            for vis in 0..rows {
-                let abs = top + vis as usize;
-                if abs < lo_r || abs > hi_r {
-                    continue;
-                }
-                let (c0, c1) = if abs == lo_r && abs == hi_r {
-                    (lo_c.min(hi_c), lo_c.max(hi_c))
-                } else if abs == lo_r {
-                    (lo_c, cols.saturating_sub(1))
-                } else if abs == hi_r {
-                    (0, hi_c)
-                } else {
-                    (0, cols.saturating_sub(1))
-                };
-                out.push(TermMatch {
-                    row: vis as i32,
-                    col: c0 as i32,
-                    len: (c1.saturating_sub(c0) + 1) as i32,
-                });
-            }
-        }
-        out
-    }
-
-    /// If the current find query is outside the visible window, jump to the
-    /// first matching row in scrollback/live content so old serial output can be
-    /// found without manually scrolling back first (#233).
+    /// Jump to the first matching row when the find query points outside the
+    /// visible window (#233).
     pub(crate) fn scroll_to_first_find_match(&mut self, query: &str) -> bool {
-        if query.is_empty() || self.parser.screen().alternate_screen() {
+        if query.is_empty() || is_alt(&self.term) {
             return false;
         }
         let q = query.to_lowercase();
         let (live, _) = self.live_rows();
-        let rows = self.parser.screen().size().0 as usize;
+        let rows = term_size(&self.term).0 as usize;
         let hist_len = self.history.len();
         let combined_len = hist_len + live.len();
         let Some(match_idx) = self
@@ -127,99 +106,7 @@ impl TermBuffer {
         true
     }
 
-    /// Extract the selected text from the combined buffer (whole selection,
-    /// even the parts currently scrolled out of view).
-    pub(crate) fn selection_has_extent(&self) -> bool {
-        if self.sel_ranges.is_empty() {
-            return matches!(
-                (self.sel_anchor, self.sel_focus),
-                (Some(anchor), Some(focus)) if anchor != focus
-            );
-        }
-        self.sel_ranges
-            .iter()
-            .any(|(anchor, focus)| anchor != focus)
-    }
-
-    pub(crate) fn extract_selection_text(&self) -> String {
-        let ranges = if self.sel_ranges.is_empty() {
-            match (self.sel_anchor, self.sel_focus) {
-                (Some(anchor), Some(focus)) => vec![(anchor, focus)],
-                _ => Vec::new(),
-            }
-        } else {
-            self.sel_ranges.clone()
-        };
-        if ranges.is_empty() {
-            return String::new();
-        }
-        ranges
-            .iter()
-            .map(|&(anchor, focus)| self.extract_range_text(anchor, focus))
-            .filter(|text| !text.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    fn extract_range_text(&self, (ar, ac): (usize, u16), (fr, fc): (usize, u16)) -> String {
-        let (lo_r, lo_c, hi_r, hi_c) = if (ar, ac) <= (fr, fc) {
-            (ar, ac, fr, fc)
-        } else {
-            (fr, fc, ar, ac)
-        };
-        let (live, live_used) = self.live_rows();
-        let hist_len = self.history.len();
-        let combined_len = hist_len + live_used;
-        // Clamp into real content so a focus parked on a blank row below the
-        // prompt doesn't emit trailing empty lines.
-        let hi_r = hi_r.min(combined_len.saturating_sub(1));
-        let mut out = String::new();
-        for r in lo_r..=hi_r {
-            let line: &str = if r < hist_len {
-                &self.history[r].0
-            } else if r - hist_len < live.len() {
-                &live[r - hist_len].0
-            } else {
-                ""
-            };
-            let chars: Vec<char> = line.chars().collect();
-            // `c0`/`c1` are GRID COLUMNS (inclusive). The plain text keeps one
-            // char per glyph, so wide (CJK) glyphs make char index != column;
-            // map columns → char indices via the cell prefix so the copied text
-            // doesn't drift by the number of wide glyphs before it (#132).
-            let (c0, c1) = if r == lo_r && r == hi_r {
-                (lo_c.min(hi_c), lo_c.max(hi_c))
-            } else if r == lo_r {
-                (lo_c, u16::MAX)
-            } else if r == hi_r {
-                (0, hi_c)
-            } else {
-                (0, u16::MAX)
-            };
-            let prefix = cell_prefix(&chars);
-            let start = char_at_cell_start(&prefix, c0 as usize);
-            let end = char_after_cell_end(&prefix, c1 as usize);
-            let seg: String = if start < end {
-                chars[start..end].iter().collect()
-            } else {
-                String::new()
-            };
-            out.push_str(seg.trim_end());
-            let wrapped = if r < hist_len {
-                self.history[r].2
-            } else if r - hist_len < live.len() {
-                live[r - hist_len].2
-            } else {
-                false
-            };
-            if r != hi_r && !wrapped {
-                out.push('\n');
-            }
-        }
-        out
-    }
-
-    /// Feed bytes to vt100 and capture scrolled-off lines into history.
+    /// Feed bytes and capture scrolled-off lines into history.
     ///
     /// We detect scroll by diffing the screen before/after a `process`, which
     /// can only recover up to one screen of shift per call.  A single large
@@ -248,42 +135,61 @@ impl TermBuffer {
         if let Some(end) = erase_saved_through {
             self.raw.drain(..end);
             self.history.clear();
-            self.prev.clear();
+            self.rendered.clear();
             self.view_offset = 0;
-            self.sel_anchor = None;
-            self.sel_focus = None;
-            self.sel_ranges.clear();
+            self.term.selection = None;
         }
         self.cap_raw();
-        self.feed_batched(&bytes);
+        self.ingest_chunk(&bytes);
     }
 
-    /// Feed a (already HVP-rewritten) byte slice to vt100 in newline-bounded
-    /// batches, capturing scrolled-off lines into history after each (see the
-    /// `ingest` doc comment). Does NOT touch `self.raw`, so it is reused by both
-    /// live ingest and resize-reflow replay.
-    fn feed_batched(&mut self, bytes: &[u8]) {
-        let rows = self.parser.screen().size().0 as usize;
-        let batch_lines = (rows / 2).max(1);
-        let mut start = 0usize;
-        let mut nl = 0usize;
-        for i in 0..bytes.len() {
-            if bytes[i] == b'\n' {
-                nl += 1;
-                if nl >= batch_lines {
-                    self.ingest_chunk(&bytes[start..=i]);
-                    start = i + 1;
-                    nl = 0;
-                }
+    /// Feed bytes to alacritty and capture any lines that scrolled off the
+    /// top since the last call.  Tracks `display_offset` deltas so scrolling
+    /// works immediately — the old `prev` / `detect_scroll` approach but
+    /// without the per-chunk full-grid traversal.
+    fn ingest_chunk(&mut self, bytes: &[u8]) {
+        let has_cursor_home = bytes.windows(3).any(|w| w == b"\x1b[H");
+        let has_erase_display =
+            bytes.windows(4).any(|w| w == b"\x1b[2J") || bytes.windows(3).any(|w| w == b"\x1b[J");
+        let is_fullscreen_refresh = has_cursor_home && has_erase_display;
+
+        let old_offset = self.term.grid().display_offset();
+        process_bytes(&mut self.processor, &mut self.term, bytes);
+        let alt = is_alt(&self.term);
+        if alt {
+            self.view_offset = 0;
+            self.history.clear();
+            self.rendered.clear();
+            return;
+        }
+        if is_fullscreen_refresh {
+            self.view_offset = 0;
+            self.history.clear();
+            self.rendered.clear();
+            return;
+        }
+
+        // Eagerly capture lines that scrolled into alacritty's scrollback
+        // during this chunk.  `ensure_history` (called by `render`) fills
+        // any gaps, but we do it here so scroll_max updates immediately after
+        // every ingest, not just on the next render frame.
+        let new_offset = self.term.grid().display_offset();
+        let delta = new_offset.saturating_sub(old_offset);
+        if delta > 0 {
+            let (_, cols) = term_size(&self.term);
+            // Read from scrollback: Line(-1 - idx) where idx 0 = most recent
+            // scrolled-off line (= Line(-1)), idx 1 = second-most (= Line(-2)).
+            for i in 0..delta {
+                let line = GridLine(-1 - (old_offset + i) as i32);
+                let rendered = build_line(&self.term, line, cols);
+                self.history.push_back(rendered);
+            }
+            while self.history.len() > MAX_HISTORY {
+                self.history.pop_front();
             }
         }
-        if start < bytes.len() {
-            self.ingest_chunk(&bytes[start..]);
-        }
     }
 
-    /// Trim the retained stream to `RAW_CAP`, dropping from the front up to the
-    /// next line boundary so a replay never starts mid-escape / mid-wrapped-line.
     fn cap_raw(&mut self) {
         if self.raw.len() <= RAW_CAP {
             return;
@@ -298,30 +204,14 @@ impl TermBuffer {
         }
     }
 
-    /// Resize-reflow (#169): rebuild the screen + scrollback at a new width by
-    /// replaying the retained byte stream through a fresh parser. vt100 itself
-    /// can't reflow (`set_size` just truncates/pads each row), and we only keep
-    /// rendered grid rows in `history`, so replaying the raw stream is what lets
-    /// long lines rewrap to the new width like FinalShell. Used only on the normal
-    /// screen — alt-screen programs (tmux/vim) get a SIGWINCH redraw from the
-    /// remote instead.
     pub(crate) fn reflow(&mut self, new_rows: u16, new_cols: u16) {
-        let stream: Vec<u8> = self.raw.iter().copied().collect();
-        self.parser = vt100::Parser::new(new_rows, new_cols, 5000);
+        resize_term(&mut self.term, new_rows, new_cols);
         self.history.clear();
-        self.prev.clear();
+        self.rendered.clear();
         self.view_offset = 0;
-        // Scrollback line count changes, so absolute selection coords no longer map.
-        self.sel_anchor = None;
-        self.sel_focus = None;
-        self.sel_ranges.clear();
-        self.feed_batched(&stream);
+        self.term.selection = None;
     }
 
-    /// Translate every CSI sequence terminated by `f` (HVP) into the identical
-    /// sequence terminated by `H` (CUP).  The scanner state persists across
-    /// calls, so a sequence split across read chunks is still handled.  Only the
-    /// final byte of a CSI sequence is ever touched; text bytes pass through.
     fn rewrite_hvp(&mut self, input: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(input.len());
         for &b in input {
@@ -336,8 +226,6 @@ impl TermBuffer {
                     if b == b'[' {
                         self.csi_state = CsiState::Csi;
                     } else {
-                        // Not a CSI (could be another ESC, OSC, etc.).  Re-arm on
-                        // a fresh ESC, otherwise fall back to normal text.
                         self.csi_state = if b == 0x1b {
                             CsiState::Esc
                         } else {
@@ -347,8 +235,6 @@ impl TermBuffer {
                     out.push(b);
                 }
                 CsiState::Csi => {
-                    // Final bytes are 0x40..=0x7e; params/intermediates are
-                    // 0x20..=0x3f.  Rewrite an `f` final into `H`.
                     if (0x40..=0x7e).contains(&b) {
                         out.push(if b == b'f' { b'H' } else { b });
                         self.csi_state = CsiState::Normal;
@@ -361,93 +247,74 @@ impl TermBuffer {
         out
     }
 
-    /// Process one bounded batch and capture any lines that scrolled off the top
-    /// (skipped for alt-screen programs like vim/nano).
-    fn ingest_chunk(&mut self, bytes: &[u8]) {
-        // Detect full-screen-clear sequences *before* processing so we can
-        // suppress history for programs that redraw without alt-screen (e.g.
-        // btop configured with `alt-screen = false`).
-        // We look for \033[H (cursor-home) and \033[2J / \033[J (erase display)
-        // as indicators that the program is doing a full-screen refresh.
-        let has_cursor_home = bytes.windows(3).any(|w| w == b"\x1b[H");
-        let has_erase_display =
-            bytes.windows(4).any(|w| w == b"\x1b[2J") || bytes.windows(3).any(|w| w == b"\x1b[J");
-        let is_fullscreen_refresh = has_cursor_home && has_erase_display;
-
-        self.parser.process(bytes);
-        let (is_alt, rows, cols) = {
-            let s = self.parser.screen();
-            let (r, c) = s.size();
-            (s.alternate_screen(), r, c)
-        };
-        if is_alt {
-            // Snap to live view whenever we're on the alt screen — this
-            // prevents old history (accumulated before alt-screen was entered)
-            // from mixing with the full-screen program's output after a scroll.
-            self.view_offset = 0;
-            self.prev.clear();
+    /// Ensure `self.history` is populated up to the current grid scrollback
+    /// depth.  Called before any method that reads from `self.history`.
+    fn ensure_history(&mut self) {
+        let offset = self.term.grid().display_offset();
+        if self.history.len() == offset {
             return;
         }
-        if is_fullscreen_refresh {
-            // Non-alt-screen full-screen refresh (btop, htop with alt disabled…).
-            // Don't capture lines into history; they'd mix with the next frame.
-            self.view_offset = 0;
-            self.prev.clear();
+        // Truncate if grid scrollback shrank (e.g. after clear / ESC[3J).
+        if self.history.len() > offset {
+            self.history.truncate(offset);
             return;
         }
-        let curr: Vec<Line> = {
-            let s = self.parser.screen();
-            (0..rows).map(|r| build_row(s, r, cols)).collect()
-        };
-        if !self.prev.is_empty() {
-            let k = detect_scroll(&self.prev, &curr);
-            for line in self.prev.iter().take(k) {
-                self.history.push_back(line.clone());
-            }
-            while self.history.len() > MAX_HISTORY {
-                self.history.pop_front();
-            }
+        let (_, cols) = term_size(&self.term);
+        while self.history.len() < offset {
+            let idx = self.history.len();
+            let line = GridLine(-1 - idx as i32);
+            let rendered = build_line(&self.term, line, cols);
+            self.history.push_back(rendered);
         }
-        self.prev = curr;
     }
 
     /// Render the terminal grid for the current scrollback `view_offset`
-    /// (0 = live).  Caches the displayed plain text for find/selection.
+    /// (0 = live).  Row-level caching avoids rebuilding spans for unchanged
+    /// lines — huge win for tail / idle screens.
     pub(crate) fn render(&mut self) -> BuiltScreen {
-        let (is_alt, rows, cols, cur_row, cur_col) = {
-            let s = self.parser.screen();
-            let (r, c) = s.size();
-            let (cr, cc) = s.cursor_position();
-            (s.alternate_screen(), r, c, cr, cc)
-        };
+        self.ensure_history();
+        let (rows, cols) = term_size(&self.term);
+        let (cur_row, cur_col) = cursor_pos(&self.term);
+        let alt = is_alt(&self.term);
+
+        // Ensure the cache matches the current grid size.
+        self.rendered.resize(rows as usize, None);
 
         // --- Live view (also alt-screen): render the current grid -----------
-        if is_alt || self.view_offset == 0 {
+        if alt || self.view_offset == 0 {
             let mut spans = Vec::new();
             let mut displayed = Vec::with_capacity(rows as usize);
             let mut last_content = 0i32;
-            let s = self.parser.screen();
             for r in 0..rows {
-                let (plain, runs, _wrapped) = build_row(s, r, cols);
-                let runs = if is_alt {
-                    runs
+                let (plain, runs, _wrapped) = build_row(&self.term, r, cols);
+                let display = plain.trim_end().to_string();
+
+                // Reuse cached spans when the plain text is identical.
+                // Reuse cached runs when plain text is identical, only
+                // re-running render_term_span to produce the final TermSpan
+                // slice (which contains non-Send slint::Image references).
+                let line_spans: Vec<_> = if let Some(ref cached) = self.rendered[r as usize] {
+                    if cached.plain_key == display {
+                        cached
+                            .runs
+                            .iter()
+                            .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
+                            .collect()
+                    } else {
+                        self.build_spans(r as i32, &display, &runs, alt)
+                    }
                 } else {
-                    highlight_plain_output(
-                        runs,
-                        self.output_highlight,
-                        &self.custom_highlight_rules,
-                    )
+                    self.build_spans(r as i32, &display, &runs, alt)
                 };
-                if !runs.is_empty() {
+
+                if !line_spans.is_empty() {
                     last_content = r as i32;
                 }
-                for hs in runs {
-                    spans.extend(render_term_span(&hs, r as i32, self.is_dark));
-                }
-                displayed.push(plain.trim_end().to_string());
+                spans.extend(line_spans);
+                displayed.push(display);
             }
             self.displayed_text = displayed;
-            let rows_used = if is_alt {
+            let rows_used = if alt {
                 rows as i32
             } else {
                 last_content + 1
@@ -457,24 +324,15 @@ impl TermBuffer {
                 cursor_row: cur_row as i32,
                 cursor_col: cur_col as i32,
                 rows_used,
-                is_alt,
-                scroll_max: if is_alt { 0 } else { self.history.len() as i32 },
+                is_alt: alt,
+                scroll_max: if alt { 0 } else { self.history.len() as i32 },
                 scroll_offset: 0,
             };
         }
 
         // --- Scrolled view: window into history ++ live content -------------
-        let live: Vec<Line> = {
-            let s = self.parser.screen();
-            (0..rows).map(|r| build_row(s, r, cols)).collect()
-        };
+        let live: Vec<Line> = (0..rows).map(|r| build_row(&self.term, r, cols)).collect();
         let hist_len = self.history.len();
-        // Include the screen's trailing blank rows in the scroll range so this
-        // scrolled view stays continuous with the live view (view_offset 0).
-        // Trimming to only the used rows made the two views misalign after a
-        // shrink-then-grow (dragging the SFTP panel over the terminal and back),
-        // so scrolling back jumped at the bottom instead of moving line-by-line
-        // (#119-followup).
         let combined_len = hist_len + live.len();
         let win = rows as usize;
         let start = combined_len.saturating_sub(win + self.view_offset);
@@ -504,12 +362,41 @@ impl TermBuffer {
         self.displayed_text = displayed;
         BuiltScreen {
             spans,
-            cursor_row: -1, // hide the live cursor while viewing history
+            cursor_row: -1,
             cursor_col: 0,
             rows_used: win as i32,
             is_alt: false,
             scroll_max: self.history.len() as i32,
             scroll_offset: self.view_offset as i32,
         }
+    }
+
+    /// Build spans for one live row, update the render cache, and return them.
+    fn build_spans(
+        &mut self,
+        row: i32,
+        plain_key: &str,
+        runs: &[HistSpan],
+        alt: bool,
+    ) -> Vec<TermSpan> {
+        let runs = if alt {
+            runs.to_vec()
+        } else {
+            highlight_plain_output(runs.to_vec(), self.output_highlight, &self.custom_highlight_rules)
+        };
+        let spans: Vec<_> = runs
+            .iter()
+            .flat_map(|hs| render_term_span(hs, row, self.is_dark))
+            .collect();
+        self.rendered[row as usize] = Some(RenderedLine {
+            plain_key: plain_key.to_string(),
+            runs,
+        });
+        spans
+    }
+
+    /// Invalidate all cached render rows (call after reset / reflow / ESC[3J).
+    fn invalidate_render_cache(&mut self) {
+        self.rendered.clear();
     }
 }

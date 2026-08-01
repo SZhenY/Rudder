@@ -1,9 +1,13 @@
+use alacritty_terminal::index::{Column, Line, Point};
+use alacritty_terminal::term::cell::Flags;
+
 use unicode_width::UnicodeWidthChar;
 
-use crate::terminal::{HistSpan, Line};
+use crate::terminal::{cell_attrs, is_wide_continuation, row_wrapped, ATerm, HistSpan, Line as TermLine, TermColor};
 
-/// How much terminal byte history is retained for resize reflow.
-pub(crate) const RAW_CAP: usize = 2 * 1024 * 1024;
+/// Small window of retained bytes for split-ESC[3J detection (no longer
+/// needed for resize reflow — alacritty handles that natively).
+pub(crate) const RAW_CAP: usize = 256;
 /// Per-session rendered scrollback cap.
 pub(crate) const MAX_HISTORY: usize = 100_000;
 
@@ -38,48 +42,26 @@ pub(crate) fn char_after_cell_end(prefix: &[usize], target: usize) -> usize {
     char_count
 }
 
-fn cell_attrs(
-    screen: &vt100::Screen,
-    row: u16,
-    column: u16,
-) -> (String, vt100::Color, vt100::Color, bool, bool, bool) {
-    match screen.cell(row, column) {
-        Some(cell) => {
-            let contents = cell.contents();
-            let contents = if cell.is_wide_continuation() {
-                String::new()
-            } else if contents.is_empty() {
-                " ".to_string()
-            } else {
-                contents
-            };
-            (
-                contents,
-                cell.fgcolor(),
-                cell.bgcolor(),
-                cell.bold(),
-                cell.is_wide(),
-                cell.inverse(),
-            )
-        }
-        None => (
-            " ".to_string(),
-            vt100::Color::Default,
-            vt100::Color::Default,
-            false,
-            false,
-            false,
-        ),
-    }
-}
-
-pub(crate) fn build_row(screen: &vt100::Screen, row: u16, columns: u16) -> Line {
+/// Build one rendered line from the alacritty grid.
+///
+/// Wide (CJK) glyphs: the leading cell carries `WIDE_CHAR` and the spacer cell
+/// `WIDE_CHAR_SPACER`; the spacer's empty content is skipped and the leading
+/// cell emits a 2-cell run. Combining marks are already folded into the cell
+/// contents by `cell_attrs`.
+pub(crate) fn build_row(term: &ATerm, row: u16, columns: u16) -> TermLine {
     let mut plain = String::with_capacity(columns as usize);
     let mut runs = Vec::new();
     let mut column = 0u16;
     while column < columns {
+        // Skip the spacer half of a wide char (its content lives in the
+        // leading cell).
+        if is_wide_continuation(term, row, column) {
+            column += 1;
+            continue;
+        }
+
         let (contents, foreground, background, bold, wide, inverse) =
-            cell_attrs(screen, row, column);
+            cell_attrs(term, row, column);
         if wide {
             plain.push_str(&contents);
             runs.push(HistSpan {
@@ -101,7 +83,7 @@ pub(crate) fn build_row(screen: &vt100::Screen, row: u16, columns: u16) -> Line 
         column += 1;
         while column < columns {
             let (next, next_fg, next_bg, next_bold, next_wide, next_inverse) =
-                cell_attrs(screen, row, column);
+                cell_attrs(term, row, column);
             if next_wide
                 || next_fg != foreground
                 || next_bg != background
@@ -117,7 +99,7 @@ pub(crate) fn build_row(screen: &vt100::Screen, row: u16, columns: u16) -> Line 
 
         let cells = (column - start_column) as i32;
         let invisible_default_blank = text.chars().all(|character| character == ' ')
-            && matches!(background, vt100::Color::Default)
+            && matches!(background, TermColor::Default)
             && !inverse;
         if !invisible_default_blank {
             runs.push(HistSpan {
@@ -131,7 +113,7 @@ pub(crate) fn build_row(screen: &vt100::Screen, row: u16, columns: u16) -> Line 
             });
         }
     }
-    (plain, runs, screen.row_wrapped(row))
+    (plain, runs, row_wrapped(term, row))
 }
 
 pub(crate) fn detect_scroll(previous: &[Line], current: &[Line]) -> usize {
@@ -151,4 +133,112 @@ pub(crate) fn detect_scroll(previous: &[Line], current: &[Line]) -> usize {
         }
     }
     best_shift
+}
+
+/// Read one grid line at the given `line` index (negative = scrollback
+/// history, positive / zero = visible area).  Used to capture lines that
+/// scrolled into alacritty's native scrollback without building the whole
+/// screen.
+pub(crate) fn build_line(term: &ATerm, line: Line, columns: u16) -> TermLine {
+    let mut plain = String::with_capacity(columns as usize);
+    let mut runs = Vec::new();
+    let mut column = 0u16;
+    while column < columns {
+        if column + 1 < columns {
+            let spacer_pt = Point {
+                line,
+                column: Column(column as usize),
+            };
+            if term.grid()[spacer_pt].flags.contains(Flags::WIDE_CHAR_SPACER) {
+                column += 1;
+                continue;
+            }
+        }
+
+        let point = Point {
+            line,
+            column: Column(column as usize),
+        };
+        let cell = &term.grid()[point];
+
+        let mut contents = cell.c.to_string();
+        if let Some(zw) = cell.zerowidth() {
+            for ch in zw {
+                contents.push(*ch);
+            }
+        }
+
+        let fg = TermColor::from(&cell.fg);
+        let bg = TermColor::from(&cell.bg);
+        let bold = cell.flags.contains(Flags::BOLD);
+        let wide = cell.flags.contains(Flags::WIDE_CHAR);
+        let inverse = cell.flags.contains(Flags::INVERSE);
+
+        if wide {
+            plain.push_str(&contents);
+            runs.push(HistSpan {
+                text: contents,
+                fg,
+                bg,
+                bold,
+                inverse,
+                col: column as i32,
+                cells: 2,
+            });
+            column += 2;
+            continue;
+        }
+
+        let start_column = column;
+        let mut text = contents.clone();
+        plain.push_str(&contents);
+        column += 1;
+        while column < columns {
+            let next_pt = Point {
+                line,
+                column: Column(column as usize),
+            };
+            let next = &term.grid()[next_pt];
+            let next_fg = TermColor::from(&next.fg);
+            let next_bg = TermColor::from(&next.bg);
+            let next_bold = next.flags.contains(Flags::BOLD);
+            let next_wide = next.flags.contains(Flags::WIDE_CHAR);
+            let next_inverse = next.flags.contains(Flags::INVERSE);
+            if next_wide || next_fg != fg || next_bg != bg || next_bold != bold || next_inverse != inverse
+            {
+                break;
+            }
+            let mut next_text = next.c.to_string();
+            if let Some(zw) = next.zerowidth() {
+                for ch in zw { next_text.push(*ch); }
+            }
+            plain.push_str(&next_text);
+            text.push_str(&next_text);
+            column += 1;
+        }
+
+        let cells = (column - start_column) as i32;
+        let invisible_default_blank = text.chars().all(|c| c == ' ')
+            && matches!(bg, TermColor::Default) && !inverse;
+        if !invisible_default_blank {
+            runs.push(HistSpan {
+                text,
+                fg,
+                bg,
+                bold,
+                inverse,
+                col: start_column as i32,
+                cells,
+            });
+        }
+    }
+
+    // WRAPLINE for scrollback rows: check the last cell.
+    let wrapped = if columns > 0 {
+        let last = Point { line, column: Column(columns as usize - 1) };
+        term.grid()[last].flags.contains(Flags::WRAPLINE)
+    } else {
+        false
+    };
+    (plain, runs, wrapped)
 }

@@ -166,14 +166,15 @@ use crate::ssh::{
 };
 use crate::terminal::{
     bare_ctrl_marker_workaround_enabled, cell_prefix, compile_output_rules,
-    encode_command_bar_input, encode_pasted_text, key_to_pty_bytes, paste_requires_large_review,
-    should_drop_bare_ctrl_marker, terminal_uses_bracketed_paste, CsiState,
-    OutputHighlightPreset, RenderGates, TabRenderGate, TermBuffer, TermBufferHandle, TermBuffers,
+    encode_command_bar_input, encode_pasted_text, key_to_pty_bytes, new_term,
+    paste_requires_large_review, should_drop_bare_ctrl_marker,
+    terminal_uses_bracketed_paste, CsiState, OutputHighlightPreset, RenderGates,
+    TabRenderGate, TermBuffer, TermBufferHandle, TermBuffers, TermColor,
 };
 #[cfg(test)]
 use crate::terminal::{
     build_row, highlight_plain_output, log_level_marker, normalize_pasted_newlines,
-    text_cell_width, vt_span_colors, CompiledOutputRule, HistSpan, Line,
+    process_bytes, text_cell_width, vt_span_colors, CompiledOutputRule, HistSpan, Line,
 };
 #[cfg(windows)]
 use crate::terminal::c0_letter_key_down;
@@ -2125,8 +2126,8 @@ pub fn run() -> Result<()> {
             t("ssh-key — SSH 密钥解析", "ssh-key — SSH key parsing"),
             t("tokio — 异步运行时", "tokio — async runtime"),
             t(
-                "vt100 — 终端 (VT100/xterm) 解析",
-                "vt100 — terminal (VT100/xterm) parser",
+                "alacritty_terminal — 终端 (alacritty) 解析",
+                "alacritty_terminal — terminal emulator & parser",
             ),
             t(
                 "sysinfo — 本机资源采集",
@@ -2837,13 +2838,13 @@ fn terminal_wheel_hit(
 
     let h = term_buf(bufs, &active)?;
     let guard = h.lock().ok()?;
-    let screen = guard.parser.screen();
-    let (rows, cols) = screen.size();
+    let (rows, cols) = crate::terminal::term_size(&guard.term);
+    let is_alt = crate::terminal::is_alt(&guard.term);
     let cell_w = (term_w / cols.max(1) as f32).max(1.0);
     let cell_h = (term_h / rows.max(1) as f32).max(1.0);
     Some(TerminalWheelHit {
         tab_id: active,
-        is_alt: screen.alternate_screen(),
+        is_alt,
         col: ((x - term_x) / cell_w).floor() as i32,
         row: ((y - term_y) / cell_h).floor() as i32,
     })
@@ -4403,23 +4404,23 @@ fn wire_session_callbacks(
                     compile_output_rules(settings.output_highlight_rules()),
                 )
             };
+            let (t24, p24) = new_term(24, 80, 5000);
             bufs.lock().unwrap().insert(
                 tab_id.clone(),
                 Arc::new(Mutex::new(TermBuffer {
-                    parser: vt100::Parser::new(24, 80, 5000),
+                    term: t24,
+                    processor: p24,
+                    config: alacritty_terminal::term::Config { scrolling_history: 5000, ..Default::default() },
                     find_query: String::new(),
                     is_dark: is_dark_now,
                     output_highlight,
                     custom_highlight_rules,
-                    sel_anchor: None,
-                    sel_focus: None,
-                    sel_ranges: Vec::new(),
                     history: VecDeque::new(),
-                    prev: Vec::new(),
                     view_offset: 0,
                     displayed_text: Vec::new(),
                     csi_state: CsiState::Normal,
                     raw: std::collections::VecDeque::new(),
+                    rendered: Vec::new(),
                 })),
             );
             render_gates
@@ -6024,21 +6025,18 @@ fn apply_terminal_resize(
     }
     if let Some(h) = term_buf(bufs, tab_id) {
         let mut buf = h.lock().unwrap();
-        let (old_rows, old_cols) = buf.parser.screen().size();
+        let (old_rows, old_cols) = crate::terminal::term_size(&buf.term);
         let (new_rows, new_cols) = (rows as u16, cols as u16);
         if (new_rows, new_cols) != (old_rows, old_cols) {
-            if buf.parser.screen().alternate_screen() {
+            if crate::terminal::is_alt(&buf.term) {
                 // Alt-screen (tmux/vim/btop): the remote redraws the whole screen
                 // on SIGWINCH, so just resize the grid and let that redraw fill it.
-                buf.parser.set_size(new_rows, new_cols);
+                crate::terminal::resize_term(&mut buf.term, new_rows, new_cols);
             } else {
                 // Reflow already-printed output to the new width by replaying the
                 // byte stream — vt100's set_size only truncates/pads (#169).
                 buf.reflow(new_rows, new_cols);
             }
-            // The pre/post-resize screens differ; drop the scroll-detection
-            // snapshot so the next output isn't mis-read as a scroll.
-            buf.prev.clear();
         }
     }
 }
@@ -6048,7 +6046,7 @@ fn apply_terminal_resize(
 /// Used by scroll + selection callbacks (Output has its own equivalent inline).
 fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
     let data = with_term_buf(bufs, tab_id, |buf| {
-        let cols = buf.parser.screen().size().1;
+        let cols = crate::terminal::term_size(&buf.term).1;
         let b = buf.render(); // also refreshes buf.displayed_text
         let matches = compute_find_matches(&buf.displayed_text, &buf.find_query);
         let sel = buf.selection_rects_visible(cols);
@@ -6081,7 +6079,7 @@ fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
 /// all terminal spans even though the underlying screen had not changed.
 fn refresh_terminal_selection(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
     let selection = with_term_buf(bufs, tab_id, |buf| {
-        let cols = buf.parser.screen().size().1;
+        let cols = crate::terminal::term_size(&buf.term).1;
         buf.selection_rects_visible(cols)
     });
     let Some(selection) = selection else {
@@ -8994,15 +8992,13 @@ fn wire_key_input(
                     {
                         if let Some(h) = term_buf(&ctx.bufs, tab_id.as_str()) {
                             let mut b = h.lock().unwrap();
-                            let (rows, cols) = b.parser.screen().size();
-                            b.parser = vt100::Parser::new(rows, cols, 5000);
+                            let (rows, cols) = crate::terminal::term_size(&b.term);
+                            (b.term, b.processor) = crate::terminal::new_term(rows, cols, 5000);
+                            b.rendered.clear();
                             b.history.clear();
-                            b.prev.clear();
                             b.displayed_text.clear();
                             b.view_offset = 0;
-                            b.sel_anchor = None;
-                            b.sel_focus = None;
-                            b.sel_ranges.clear();
+                            b.term.selection = None;
                             b.raw.clear();
                         }
                     }
@@ -9031,7 +9027,7 @@ fn wire_key_input(
                 // Typing snaps the view back to the live bottom so the
                 // user always sees what they're entering.
                 b.view_offset = 0;
-                b.parser.screen().application_cursor()
+                crate::terminal::app_cursor(&b.term)
             } else {
                 false
             };
@@ -9331,7 +9327,7 @@ fn wire_key_input(
                     let buf = h.lock().unwrap();
                     // Copy the drag-selection when there is one, else the
                     // whole displayed screen.
-                    let sel = buf.extract_selection_text();
+                    let sel = buf.term.selection_to_string().unwrap_or_default();
                     if sel.is_empty() {
                         buf.displayed_text.join("\n")
                     } else {
@@ -9426,15 +9422,13 @@ fn wire_key_input(
             let tid = tab_id.to_string();
             if let Some(h) = term_buf(&bufs_clear, &tid) {
                 let mut buf = h.lock().unwrap();
-                let (rows, cols) = buf.parser.screen().size();
-                buf.parser = vt100::Parser::new(rows, cols, 5000);
+                let (rows, cols) = crate::terminal::term_size(&buf.term);
+                (buf.term, buf.processor) = crate::terminal::new_term(rows, cols, 5000);
+                buf.rendered.clear();
                 buf.find_query.clear();
                 buf.history = VecDeque::new(); // recycle the session scrollback
-                buf.prev = Vec::new();
-                buf.view_offset = 0;
-                buf.sel_anchor = None;
-                buf.sel_focus = None;
-                buf.sel_ranges.clear();
+                                buf.view_offset = 0;
+                buf.term.selection = None;
                 buf.displayed_text = Vec::new();
                 buf.raw.clear();
             }
@@ -9519,14 +9513,13 @@ fn wire_key_input(
             let tid = tab_id.to_string();
             let bytes = term_buf(&bufs_wheel, &tid).map(|h| {
                 let buf = h.lock().unwrap();
-                let screen = buf.parser.screen();
-                if screen.mouse_protocol_mode() != vt100::MouseProtocolMode::None {
+                if crate::terminal::mouse_report(&buf.term) != crate::terminal::MouseReport::None {
                     // 1-based cell under the cursor, clamped to the screen.
-                    let (rows, cols) = screen.size();
+                    let (rows, cols) = crate::terminal::term_size(&buf.term);
                     let c = (col.clamp(0, cols.saturating_sub(1) as i32) as u16) + 1;
                     let r = (row.clamp(0, rows.saturating_sub(1) as i32) as u16) + 1;
                     let btn: u16 = if dir > 0 { 64 } else { 65 }; // wheel up / down
-                    if screen.mouse_protocol_encoding() == vt100::MouseProtocolEncoding::Sgr {
+                    if crate::terminal::mouse_report(&buf.term) == crate::terminal::MouseReport::Sgr {
                         format!("\x1b[<{btn};{c};{r}M").into_bytes()
                     } else {
                         // Legacy X10 encoding: ESC [ M  Cb Cx Cy  (each value + 32).
@@ -9538,12 +9531,12 @@ fn wire_key_input(
                 } else {
                     // alternate-scroll: 3 arrow presses per notch, app-cursor aware.
                     let one: &[u8] = if dir > 0 {
-                        if screen.application_cursor() {
+                        if crate::terminal::app_cursor(&buf.term) {
                             b"\x1bOA"
                         } else {
                             b"\x1b[A"
                         }
-                    } else if screen.application_cursor() {
+                    } else if crate::terminal::app_cursor(&buf.term) {
                         b"\x1bOB"
                     } else {
                         b"\x1b[B"
@@ -9573,33 +9566,26 @@ fn wire_key_input(
         });
     }
 
-    // Drag-selection lifecycle.
+    // Drag-selection lifecycle — alacritty native Selection (grid-coordinate,
+    // survives view_offset changes so the anchor doesn't drift on scroll).
     {
         let bufs_sel = bufs.clone();
         let weak = window.as_weak();
-        window.on_term_select_start(move |tab_id: SharedString, row: i32, col: i32, ctrl: bool, shift: bool| {
+        window.on_term_select_start(move |tab_id, row: i32, col: i32, _ctrl: bool, _shift: bool| {
             let tid = tab_id.to_string();
             with_term_buf(&bufs_sel, &tid, |buf| {
-                let (rows, cols) = buf.parser.screen().size();
-                let r = row.clamp(0, rows.saturating_sub(1) as i32) as u16;
-                let c = col.clamp(0, cols.saturating_sub(1) as i32) as u16;
-                // Anchor + focus in absolute scrollback coordinates.
-                let abs = buf.vis_to_abs(r);
-                let point = (abs, c);
-                if ctrl && !shift {
-                    buf.sel_ranges.push((point, point));
-                } else if shift && !buf.sel_ranges.is_empty() {
-                    let anchor = buf.sel_ranges.last().map(|range| range.0).unwrap_or(point);
-                    if let Some(range) = buf.sel_ranges.last_mut() {
-                        *range = (anchor, point);
-                    }
-                } else {
-                    buf.sel_ranges.clear();
-                    buf.sel_ranges.push((point, point));
-                }
-                let (anchor, focus) = buf.sel_ranges.last().copied().unwrap_or((point, point));
-                buf.sel_anchor = Some(anchor);
-                buf.sel_focus = Some(focus);
+                let (rows, cols) = crate::terminal::term_size(&buf.term);
+                let r = row.clamp(0, rows.saturating_sub(1) as i32);
+                let c = col.clamp(0, cols.saturating_sub(1) as i32);
+                let pt = alacritty_terminal::index::Point {
+                    line: alacritty_terminal::index::Line(r - buf.view_offset as i32),
+                    column: alacritty_terminal::index::Column(c.max(0) as usize),
+                };
+                buf.term.selection = Some(alacritty_terminal::selection::Selection::new(
+                    alacritty_terminal::selection::SelectionType::Simple,
+                    pt,
+                    alacritty_terminal::index::Side::Right,
+                ));
             });
             if let Some(win) = weak.upgrade() {
                 refresh_terminal_selection(&win, &bufs_sel, &tid);
@@ -9609,122 +9595,68 @@ fn wire_key_input(
     {
         let bufs_sel = bufs.clone();
         let weak = window.as_weak();
-        window.on_term_select_update(move |tab_id: SharedString, row: i32, col: i32| {
+        window.on_term_select_update(move |tab_id, row: i32, col: i32| {
             let tid = tab_id.to_string();
             with_term_buf(&bufs_sel, &tid, |buf| {
-                let (rows, cols) = buf.parser.screen().size();
-                let r = row.clamp(0, rows.saturating_sub(1) as i32) as u16;
-                let c = col.clamp(0, cols.saturating_sub(1) as i32) as u16;
-                if buf.sel_anchor.is_some() {
-                    let abs = buf.vis_to_abs(r);
-                    buf.sel_focus = Some((abs, c));
-                    if let Some(range) = buf.sel_ranges.last_mut() {
-                        range.1 = (abs, c);
-                    }
+                let (rows, cols) = crate::terminal::term_size(&buf.term);
+                let r = row.clamp(0, rows.saturating_sub(1) as i32);
+                let c = col.clamp(0, cols.saturating_sub(1) as i32);
+                if let Some(ref mut sel) = buf.term.selection {
+                    let pt = alacritty_terminal::index::Point {
+                        line: alacritty_terminal::index::Line(r - buf.view_offset as i32),
+                        column: alacritty_terminal::index::Column(c.max(0) as usize),
+                    };
+                    sel.update(pt, alacritty_terminal::index::Side::Right);
                 }
             });
-            if let Some(win) = weak.upgrade() {
-                refresh_terminal_selection(&win, &bufs_sel, &tid);
-            }
+            if let Some(win) = weak.upgrade() { refresh_terminal_selection(&win, &bufs_sel, &tid); }
         });
     }
     {
         let bufs_sel = bufs.clone();
         let weak = window.as_weak();
-        window.on_term_select_end(move |tab_id: SharedString| {
+        window.on_term_select_end(move |tab_id| {
             let tid = tab_id.to_string();
-            // Extract the selected text; a zero-area selection (a plain click)
-            // is cleared instead of copied.
             let text = with_term_buf(&bufs_sel, &tid, |buf| {
-                // Selection endpoints are inclusive, so extracting an
-                // anchor-only range returns the character under a plain click.
-                // Compare coordinates instead of using extracted text as the
-                // click-vs-drag signal (#319).
-                if !buf.selection_has_extent() {
-                    buf.sel_anchor = None;
-                    buf.sel_focus = None;
-                    buf.sel_ranges.clear();
-                    return None;
-                }
-                let extracted = buf.extract_selection_text();
-                if extracted.is_empty() {
-                    // Zero-area selection (a plain click) → clear it.
-                    buf.sel_anchor = None;
-                    buf.sel_focus = None;
-                    buf.sel_ranges.clear();
-                    None
-                } else {
-                    Some(extracted)
-                }
-            })
-            .flatten();
-            match text {
-                Some(t) if !t.is_empty() => {
-                    // Auto-copy on release (select-to-copy, PuTTY style).
-                    std::thread::spawn(move || clipboard_set_text(t));
-                }
-                _ => {}
-            }
-            if let Some(win) = weak.upgrade() {
-                refresh_terminal_selection(&win, &bufs_sel, &tid);
-            }
+                let text = buf.term.selection_to_string().unwrap_or_default();
+                if text.is_empty() { buf.term.selection = None; None } else { Some(text) }
+            }).flatten();
+            if let Some(t) = text { if !t.is_empty() { std::thread::spawn(move || clipboard_set_text(t)); } }
+            if let Some(win) = weak.upgrade() { refresh_terminal_selection(&win, &bufs_sel, &tid); }
         });
     }
-    // Auto-scroll while drag-selecting past the visible top/bottom edge.  The
-    // anchor is in absolute coordinates so it stays pinned no matter how far the
-    // view moves; we only advance the scrollback view and re-point the focus at
-    // the absolute row now sitting on the edge the mouse is parked against.
     {
         let bufs_sel = bufs.clone();
         let weak = window.as_weak();
-        window.on_term_select_autoscroll(move |tab_id: SharedString, dir: i32| {
+        window.on_term_select_autoscroll(move |tab_id, dir: i32| {
             let tid = tab_id.to_string();
-            let Some(h) = term_buf(&bufs_sel, &tid) else {
-                return;
-            };
+            let Some(h) = term_buf(&bufs_sel, &tid) else { return; };
             {
                 let mut buf = h.lock().unwrap();
-                // No scrollback on the alternate screen (vim/btop own the view).
-                if buf.parser.screen().alternate_screen() {
-                    return;
-                }
-                if buf.sel_anchor.is_none() {
-                    return;
-                }
-                let rows = buf.parser.screen().size().0;
-                let last = rows.saturating_sub(1);
+                if crate::terminal::is_alt(&buf.term) || buf.term.selection.is_none() { return; }
+                let rows = crate::terminal::term_size(&buf.term).0;
                 let max_off = buf.history.len();
                 let step = 2usize;
-                // Keep the focus column the user last dragged to.
-                let focus_col = buf.sel_focus.map(|f| f.1).unwrap_or(0);
-                let edge_vis = if dir < 0 {
-                    // Mouse above the top → reveal older lines.
+                let edge_line = if dir < 0 {
                     let new_off = (buf.view_offset + step).min(max_off);
-                    if new_off == buf.view_offset {
-                        return; // already at the oldest line
-                    }
+                    if new_off == buf.view_offset { return; }
                     buf.view_offset = new_off;
-                    0u16
+                    alacritty_terminal::index::Line(0 - buf.view_offset as i32)
                 } else if dir > 0 {
-                    // Mouse below the bottom → move toward the live tail.
                     let new_off = buf.view_offset.saturating_sub(step);
-                    if new_off == buf.view_offset {
-                        return; // already at the live bottom
-                    }
+                    if new_off == buf.view_offset { return; }
                     buf.view_offset = new_off;
-                    last
-                } else {
-                    return;
-                };
-                let abs = buf.vis_to_abs(edge_vis);
-                buf.sel_focus = Some((abs, focus_col));
-                if let Some(range) = buf.sel_ranges.last_mut() {
-                    range.1 = (abs, focus_col);
+                    alacritty_terminal::index::Line(rows as i32 - 1 - buf.view_offset as i32)
+                } else { return; };
+                if let Some(ref mut sel) = buf.term.selection {
+                    let pt = alacritty_terminal::index::Point {
+                        line: edge_line,
+                        column: alacritty_terminal::index::Column(0),
+                    };
+                    sel.update(pt, alacritty_terminal::index::Side::Right);
                 }
             }
-            if let Some(win) = weak.upgrade() {
-                rebuild_tab_display(&win, &bufs_sel, &tid);
-            }
+            if let Some(win) = weak.upgrade() { refresh_terminal_selection(&win, &bufs_sel, &tid); }
         });
     }
 }
@@ -10444,312 +10376,6 @@ mod key_tests {
     }
 }
 
-#[cfg(test)]
-mod selection_tests {
-    use super::*;
-
-    fn sftp_entry(name: &str, is_dir: bool) -> SftpEntry {
-        SftpEntry {
-            name: name.into(),
-            full_path: format!("/{name}").into(),
-            is_dir,
-            size: String::new().into(),
-            size_bytes: 0.0,
-            modified: String::new().into(),
-            modified_ts: 0.0,
-            mode: 0,
-            selected: false,
-        }
-    }
-
-    fn sftp_names(entries: &[SftpEntry]) -> Vec<String> {
-        entries.iter().map(|e| e.name.to_string()).collect()
-    }
-
-    #[test]
-    fn sftp_name_sort_uses_natural_numeric_order() {
-        let mut entries = vec![
-            sftp_entry("file100", false),
-            sftp_entry("file10", false),
-            sftp_entry("file2", false),
-            sftp_entry("file11", false),
-            sftp_entry("file1", false),
-        ];
-        sort_sftp_entries(&mut entries, "name", 1);
-        assert_eq!(
-            sftp_names(&entries),
-            vec!["file1", "file2", "file10", "file11", "file100"]
-        );
-
-        sort_sftp_entries(&mut entries, "name", -1);
-        assert_eq!(
-            sftp_names(&entries),
-            vec!["file100", "file11", "file10", "file2", "file1"]
-        );
-    }
-
-    #[test]
-    fn sftp_default_sort_keeps_dirs_first_with_natural_names() {
-        let mut entries = vec![
-            sftp_entry("file100", false),
-            sftp_entry("dir10", true),
-            sftp_entry("file11", false),
-            sftp_entry("dir2", true),
-        ];
-        sort_sftp_entries(&mut entries, "", 0);
-        assert_eq!(sftp_names(&entries), vec!["dir2", "dir10", "file11", "file100"]);
-    }
-
-    fn hist_line(s: &str) -> Line {
-        (s.to_string(), Vec::new(), false)
-    }
-
-    fn wrapped_hist_line(s: &str) -> Line {
-        (s.to_string(), Vec::new(), true)
-    }
-
-    /// A TermBuffer whose live screen (rows×cols) shows `live_lines`, with the
-    /// given `history` above it, viewed at `view_offset` (0 = live bottom).
-    fn make_buf(
-        rows: u16,
-        cols: u16,
-        history: &[&str],
-        live_lines: &[&str],
-        view_offset: usize,
-    ) -> TermBuffer {
-        let mut parser = vt100::Parser::new(rows, cols, 0);
-        parser.process(live_lines.join("\r\n").as_bytes());
-        TermBuffer {
-            parser,
-            find_query: String::new(),
-            is_dark: false,
-            output_highlight: OutputHighlightPreset::Log,
-            custom_highlight_rules: Vec::new(),
-            sel_anchor: None,
-            sel_focus: None,
-            sel_ranges: Vec::new(),
-            history: history.iter().map(|s| hist_line(s)).collect(),
-            prev: Vec::new(),
-            view_offset,
-            displayed_text: Vec::new(),
-            csi_state: CsiState::Normal,
-            raw: std::collections::VecDeque::new(),
-        }
-    }
-
-    #[test]
-    fn paste_tracks_remote_bracketed_paste_state() {
-        let bufs = TermBuffers::default();
-        let mut buffer = make_buf(2, 20, &[], &[], 0);
-        buffer.parser.process(b"\x1b[?2004h");
-        bufs.lock()
-            .unwrap()
-            .insert("tab".into(), Arc::new(Mutex::new(buffer)));
-
-        assert!(terminal_uses_bracketed_paste(&bufs, "tab"));
-        assert!(!terminal_uses_bracketed_paste(&bufs, "missing"));
-
-        let buffer = term_buf(&bufs, "tab").unwrap();
-        buffer.lock().unwrap().parser.process(b"\x1b[?2004l");
-        assert!(!terminal_uses_bracketed_paste(&bufs, "tab"));
-    }
-
-    #[test]
-    fn bash_readline_history_repaints_the_current_line() {
-        let mut buffer = make_buf(4, 40, &[], &[], 0);
-        buffer.ingest(b"\x1b[?2004hP> echo second");
-        // GNU readline replaces "second" with the shorter "first" using six
-        // backspaces, DCH for the leftover cell, then the replacement suffix.
-        buffer.ingest(b"\x08\x08\x08\x08\x08\x08\x1b[1Pfirst");
-        buffer.render();
-
-        assert_eq!(buffer.displayed_text[0], "P> echo first");
-        assert_eq!(buffer.parser.screen().cursor_position(), (0, 13));
-    }
-
-    #[test]
-    fn plain_click_has_no_selection_extent() {
-        let mut buffer = make_buf(2, 20, &[], &["one"], 0);
-        buffer.sel_anchor = Some((0, 1));
-        buffer.sel_focus = Some((0, 1));
-        buffer.sel_ranges.push(((0, 1), (0, 1)));
-        assert!(!buffer.selection_has_extent());
-
-        buffer.sel_focus = Some((0, 2));
-        buffer.sel_ranges[0].1 = (0, 2);
-        assert!(buffer.selection_has_extent());
-    }
-
-    #[test]
-    fn csi_3j_clears_meatshell_scrollback_even_when_split() {
-        let mut buffer = make_buf(3, 20, &["old one", "old two"], &["current"], 2);
-        buffer.raw.extend(b"old one\nold two\n");
-        buffer.prev.push(hist_line("old two"));
-        buffer.sel_anchor = Some((0, 0));
-        buffer.sel_focus = Some((1, 2));
-
-        buffer.ingest(b"\x1b[3");
-        assert_eq!(buffer.history.len(), 2);
-        buffer.ingest(b"J");
-
-        assert!(buffer.history.is_empty());
-        assert_eq!(buffer.view_offset, 0);
-        assert!(buffer.raw.is_empty());
-        assert!(buffer.sel_anchor.is_none());
-        assert!(buffer.sel_focus.is_none());
-    }
-
-    #[test]
-    fn vis_to_abs_maps_live_and_scrolled_consistently() {
-        // history H0..H2 (3 lines), live LIVE0/LIVE1 → combined len 5.
-        let live = make_buf(5, 20, &["H0", "H1", "H2"], &["LIVE0", "LIVE1"], 0);
-        assert_eq!(live.vis_to_abs(0), 3, "live row 0 is first live line");
-        assert_eq!(live.vis_to_abs(1), 4);
-
-        // Scrolled to the very top (offset = history len).
-        let top = make_buf(5, 20, &["H0", "H1", "H2"], &["LIVE0", "LIVE1"], 3);
-        assert_eq!(top.vis_to_abs(0), 0, "top row 0 is oldest history line");
-        assert_eq!(top.vis_to_abs(2), 2);
-        assert_eq!(top.vis_to_abs(3), 3, "row 3 crosses into live content");
-    }
-
-    #[test]
-    fn extract_spans_history_and_live() {
-        let mut buf = make_buf(5, 20, &["HIST0", "HIST1", "HIST2"], &["LIVE0", "LIVE1"], 3);
-        buf.sel_anchor = Some((0, 0)); // top of history
-        buf.sel_focus = Some((4, 19)); // end of last live line
-        assert_eq!(
-            buf.extract_selection_text(),
-            "HIST0\nHIST1\nHIST2\nLIVE0\nLIVE1"
-        );
-    }
-
-    #[test]
-    fn extract_is_view_independent() {
-        // The same absolute selection copies identically whether the view is
-        // scrolled to the top or sitting at the live bottom — this is the whole
-        // point of the fix (a top-to-bottom selection survives auto-scrolling).
-        let sel = |off| {
-            let mut b = make_buf(
-                5,
-                20,
-                &["HIST0", "HIST1", "HIST2"],
-                &["LIVE0", "LIVE1"],
-                off,
-            );
-            b.sel_anchor = Some((0, 0));
-            b.sel_focus = Some((4, 19));
-            b.extract_selection_text()
-        };
-        assert_eq!(sel(3), sel(0));
-        assert_eq!(sel(3), "HIST0\nHIST1\nHIST2\nLIVE0\nLIVE1");
-    }
-
-    #[test]
-    fn extract_joins_soft_wrapped_rows() {
-        let mut buf = make_buf(5, 10, &[], &["x"], 0);
-        buf.history = VecDeque::from([
-            wrapped_hist_line("0123456789"),
-            wrapped_hist_line("abcdefghij"),
-            hist_line("klmnop"),
-            hist_line("next"),
-        ]);
-        buf.sel_anchor = Some((0, 0));
-        buf.sel_focus = Some((3, 9));
-        assert_eq!(
-            buf.extract_selection_text(),
-            "0123456789abcdefghijklmnop\nnext"
-        );
-    }
-
-    #[test]
-    fn highlight_clipped_to_current_view() {
-        // Scrolled to the top: a history selection is on-screen and highlighted.
-        let mut top = make_buf(5, 20, &["HIST0", "HIST1", "HIST2"], &["LIVE0", "LIVE1"], 3);
-        top.sel_anchor = Some((0, 2));
-        top.sel_focus = Some((2, 4));
-        let rects = top.selection_rects_visible(20);
-        assert_eq!(
-            rects.len(),
-            3,
-            "rows 0,1,2 (the 3 history lines) highlighted"
-        );
-        assert_eq!(rects[0].row, 0);
-        assert_eq!(rects[2].row, 2);
-
-        // At the live bottom the same history selection is scrolled off → none.
-        let mut live = make_buf(5, 20, &["HIST0", "HIST1", "HIST2"], &["LIVE0", "LIVE1"], 0);
-        live.sel_anchor = Some((0, 2));
-        live.sel_focus = Some((2, 4));
-        assert!(live.selection_rects_visible(20).is_empty());
-    }
-
-    #[test]
-    fn extract_handles_wide_cjk_columns() {
-        // Regression for #132: copying after CJK glyphs drifted right by the
-        // number of wide chars before the selection (e.g. selecting "1pctl"
-        // yielded "ctl…"). The history line lays out on the grid as:
-        //   提(0-1) 示(2-3) :(4) space(5) 1(6) p(7) c(8) t(9) l(10)
-        let mut buf = make_buf(5, 20, &["提示: 1pctl"], &["x"], 0);
-
-        // The "1pctl" run sits at grid cols 6..=10.
-        buf.sel_anchor = Some((0, 6));
-        buf.sel_focus = Some((0, 10));
-        assert_eq!(buf.extract_selection_text(), "1pctl");
-
-        // Selecting from the second CJK glyph through the end.
-        buf.sel_anchor = Some((0, 2));
-        buf.sel_focus = Some((0, 10));
-        assert_eq!(buf.extract_selection_text(), "示: 1pctl");
-
-        // Anchoring on the *second* cell of a wide glyph still grabs the whole
-        // glyph — you can't half-select a CJK char.
-        buf.sel_anchor = Some((0, 3));
-        buf.sel_focus = Some((0, 10));
-        assert_eq!(buf.extract_selection_text(), "示: 1pctl");
-    }
-
-    #[test]
-    fn find_matches_report_grid_columns_past_cjk() {
-        // Highlight rects must sit at the GRID column, not the char index, so
-        // they line up over the text after CJK glyphs (#132).
-        let rows = vec!["提示: 1pctl".to_string()];
-        let m = compute_find_matches(&rows, "1pctl");
-        assert_eq!(m.len(), 1);
-        assert_eq!(m[0].col, 6, "grid column 6, not char index 4");
-        assert_eq!(m[0].len, 5);
-
-        // A CJK query spans two grid cells per glyph.
-        let m2 = compute_find_matches(&rows, "提示");
-        assert_eq!(m2.len(), 1);
-        assert_eq!(m2[0].col, 0);
-        assert_eq!(m2[0].len, 4, "two wide glyphs span four grid cells");
-    }
-
-    #[test]
-    fn inverse_default_colours_paint_a_visible_background() {
-        let (fg, bg) = vt_span_colors(
-            vt100::Color::Default,
-            vt100::Color::Default,
-            false,
-            true,
-            true,
-        );
-        assert_eq!(fg.as_argb_encoded(), 0xff0e0f13);
-        assert_eq!(bg.as_argb_encoded(), 0xffd4d4d4);
-
-        let mut parser = vt100::Parser::new(3, 30, 0);
-        parser.process(b"abc \x1b[7m20260705\x1b[27m end");
-        let (_plain, runs, _wrapped) = build_row(parser.screen(), 0, 30);
-        let hit = runs
-            .iter()
-            .find(|span| span.text.contains("20260705"))
-            .expect("reverse-video search hit should be a separate span");
-        assert!(hit.inverse);
-        assert!(matches!(hit.fg, vt100::Color::Default));
-        assert!(matches!(hit.bg, vt100::Color::Default));
-    }
-}
 
 #[cfg(test)]
 mod log_highlight_tests {
@@ -10758,8 +10384,8 @@ mod log_highlight_tests {
     fn plain_run(text: &str, col: i32) -> HistSpan {
         HistSpan {
             text: text.to_string(),
-            fg: vt100::Color::Default,
-            bg: vt100::Color::Default,
+            fg: TermColor::Default,
+            bg: TermColor::Default,
             bold: false,
             inverse: false,
             col,
@@ -10801,7 +10427,7 @@ mod log_highlight_tests {
         assert_eq!(runs[1].col, 21);
         assert_eq!(runs[1].cells, 5);
         assert!(runs[1].bold);
-        assert!(matches!(runs[1].fg, vt100::Color::Idx(9)));
+        assert!(matches!(runs[1].fg, TermColor::Idx(9)));
         assert_eq!(runs[2].col, 26);
     }
 
@@ -10817,7 +10443,7 @@ mod log_highlight_tests {
             .iter()
             .find(|run| run.text == "warn")
             .expect("structured level should be highlighted");
-        assert!(matches!(level.fg, vt100::Color::Idx(11)));
+        assert!(matches!(level.fg, TermColor::Idx(11)));
 
         assert!(log_level_marker("an error occurred", 96).is_none());
         assert!(log_level_marker("ERROR_CODE=5", 96).is_none());
@@ -10826,24 +10452,24 @@ mod log_highlight_tests {
     #[test]
     fn preserves_existing_ansi_styles() {
         let mut coloured = plain_run("ERROR", 0);
-        coloured.fg = vt100::Color::Idx(2);
+        coloured.fg = TermColor::Idx(2);
         let runs = highlight_plain_output(vec![coloured], OutputHighlightPreset::Log, &[]);
         assert_eq!(runs.len(), 1);
-        assert!(matches!(runs[0].fg, vt100::Color::Idx(2)));
+        assert!(matches!(runs[0].fg, TermColor::Idx(2)));
         assert!(!runs[0].bold);
     }
 
     #[test]
     fn alternate_screen_does_not_add_log_colours() {
-        let mut parser = vt100::Parser::new(3, 30, 0);
-        parser.process(b"\x1b[?1049hERROR");
-        assert!(parser.screen().alternate_screen());
-        let (_plain, runs, _wrapped) = build_row(parser.screen(), 0, 30);
+        let (mut term, mut processor) = crate::terminal::new_term(3, 30, 0);
+        process_bytes(&mut processor, &mut term, b"\x1b[?1049hERROR");
+        assert!(crate::terminal::is_alt(&term));
+        let (_plain, runs, _wrapped) = build_row(&term, 0, 30);
         let level = runs
             .iter()
             .find(|run| run.text.contains("ERROR"))
             .expect("alternate-screen text should still render");
-        assert!(matches!(level.fg, vt100::Color::Default));
+        assert!(matches!(level.fg, TermColor::Default));
         assert!(!level.bold);
     }
 
@@ -10855,7 +10481,7 @@ mod log_highlight_tests {
             &[],
         );
         assert_eq!(runs.len(), 1);
-        assert!(matches!(runs[0].fg, vt100::Color::Default));
+        assert!(matches!(runs[0].fg, TermColor::Default));
         assert!(!runs[0].bold);
     }
 
@@ -10870,7 +10496,7 @@ mod log_highlight_tests {
             .iter()
             .find(|run| run.text == "SUCCESS")
             .expect("DevOps success should be highlighted");
-        assert!(matches!(token.fg, vt100::Color::Idx(10)));
+        assert!(matches!(token.fg, TermColor::Idx(10)));
 
         let json = highlight_plain_output(
             vec![plain_run(r#"{"status":"failed"}"#, 0)],
@@ -10881,7 +10507,7 @@ mod log_highlight_tests {
             .iter()
             .find(|run| run.text == "failed")
             .expect("structured DevOps state should be highlighted");
-        assert!(matches!(token.fg, vt100::Color::Idx(9)));
+        assert!(matches!(token.fg, TermColor::Idx(9)));
 
         let conservative = highlight_plain_output(
             vec![plain_run("deploy SUCCESS", 0)],
@@ -10901,27 +10527,27 @@ mod log_highlight_tests {
         );
         let hits: Vec<_> = runs
             .iter()
-            .filter(|run| matches!(run.fg, vt100::Color::Idx(10)))
+            .filter(|run| matches!(run.fg, TermColor::Idx(10)))
             .collect();
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].text, "ERROR");
         assert_eq!(hits[1].text, "error");
-        assert!(!runs.iter().any(|run| matches!(run.fg, vt100::Color::Idx(9))));
+        assert!(!runs.iter().any(|run| matches!(run.fg, TermColor::Idx(9))));
     }
 
     #[test]
     fn custom_regex_can_highlight_whole_line_without_overwriting_ansi() {
         let rule = custom_rule(r"timeout|denied", true, false, true, "magenta");
         let mut ansi = plain_run(" ANSI", 18);
-        ansi.fg = vt100::Color::Idx(2);
+        ansi.fg = TermColor::Idx(2);
         let runs = highlight_plain_output(
             vec![plain_run("request timeout   ", 0), ansi],
             OutputHighlightPreset::Log,
             &[rule],
         );
-        assert!(matches!(runs[0].fg, vt100::Color::Idx(13)));
+        assert!(matches!(runs[0].fg, TermColor::Idx(13)));
         assert!(runs[0].bold);
-        assert!(matches!(runs[1].fg, vt100::Color::Idx(2)));
+        assert!(matches!(runs[1].fg, TermColor::Idx(2)));
     }
 
     #[test]

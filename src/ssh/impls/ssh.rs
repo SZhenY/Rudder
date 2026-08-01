@@ -2964,10 +2964,10 @@ mod prompt_setup_echo_tests {
     #[test]
     fn hidden_setup_echo_resynchronizes_the_prompt_cursor() {
         let prompt = "root@host:~# ";
-        let mut parser = vt100::Parser::new(4, 80, 0);
+        let (mut term, mut processor) = crate::terminal::new_term(4, 80, 0);
         // The initial prompt is painted immediately before shell integration is
         // injected. The buffered setup echo must replace, not append to, it.
-        parser.process(prompt.as_bytes());
+        crate::terminal::process_bytes(&mut processor, &mut term, prompt.as_bytes());
         let mut echoed = format!(
             "{prompt}{} && eval 'body; __ms7'\r\n\u{1b}]7;file://host/root\u{07}{prompt}",
             PROMPT_SETUP_PREFIX
@@ -2975,10 +2975,19 @@ mod prompt_setup_echo_tests {
         let prefix = echoed.find(PROMPT_SETUP_PREFIX).unwrap();
         let osc_end = echoed.rfind(prompt).unwrap();
         strip_prompt_setup_echo(&mut echoed, prefix, osc_end);
-        parser.process(echoed.as_bytes());
+        crate::terminal::process_bytes(&mut processor, &mut term, echoed.as_bytes());
 
-        assert_eq!(parser.screen().contents().lines().next(), Some(prompt));
-        assert_eq!(parser.screen().cursor_position(), (0, prompt.len() as u16));
+        let lines = crate::terminal::vt_adapter::grid_to_lines(&term);
+        // grid_to_lines trims trailing blanks (grid padding vs content spaces
+        // can't be distinguished), so compare trimmed.
+        assert_eq!(
+            lines.first().map(|s| s.trim_end()),
+            Some(prompt.trim_end())
+        );
+        assert_eq!(
+            crate::terminal::cursor_pos(&term),
+            (0, prompt.len() as u16)
+        );
     }
 }
 

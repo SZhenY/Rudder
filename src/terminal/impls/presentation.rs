@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use crate::terminal::{CompiledOutputRule, HistSpan, OutputHighlightPreset};
+use crate::terminal::{CompiledOutputRule, HistSpan, OutputHighlightPreset, TermColor};
 use crate::ui::TermSpan;
 
 /// Highlight the first recognisable log-level token in each otherwise unstyled
@@ -22,8 +22,8 @@ pub(crate) fn highlight_plain_output(
     let mut out = Vec::with_capacity(runs.len() + 2);
     for run in runs {
         let eligible = run.col < SEARCH_COLS
-            && matches!(run.fg, vt100::Color::Default)
-            && matches!(run.bg, vt100::Color::Default)
+            && matches!(run.fg, TermColor::Default)
+            && matches!(run.bg, TermColor::Default)
             && !run.bold
             && !run.inverse;
         let max_chars = SEARCH_COLS.saturating_sub(run.col) as usize;
@@ -50,7 +50,7 @@ pub(crate) fn highlight_plain_output(
 
         let mut level = run.clone();
         level.text = marker;
-        level.fg = vt100::Color::Idx(ansi_index);
+        level.fg = TermColor::Idx(ansi_index);
         level.bold = true;
         level.col += before_cells;
         level.cells = marker_cells;
@@ -76,7 +76,7 @@ fn highlight_custom_output(mut runs: Vec<HistSpan>, rules: &[CompiledOutputRule]
         {
             for run in &mut runs {
                 if custom_rule_eligible(run) {
-                    run.fg = vt100::Color::Idx(rule.ansi_index);
+                    run.fg = TermColor::Idx(rule.ansi_index);
                     run.bold = true;
                 }
             }
@@ -107,8 +107,8 @@ fn highlight_custom_output(mut runs: Vec<HistSpan>, rules: &[CompiledOutputRule]
 }
 
 fn custom_rule_eligible(run: &HistSpan) -> bool {
-    matches!(run.fg, vt100::Color::Default)
-        && matches!(run.bg, vt100::Color::Default)
+    matches!(run.fg, TermColor::Default)
+        && matches!(run.bg, TermColor::Default)
         && !run.bold
         && !run.inverse
 }
@@ -140,7 +140,7 @@ fn style_custom_matches(
         let cells = text_cell_width(text);
         let mut hit = run.clone();
         hit.text = text.to_string();
-        hit.fg = vt100::Color::Idx(ansi_index);
+        hit.fg = TermColor::Idx(ansi_index);
         hit.bold = true;
         hit.col = col;
         hit.cells = cells;
@@ -485,8 +485,8 @@ mod color_emoji_tests {
     fn run(text: &str, cells: i32) -> HistSpan {
         HistSpan {
             text: text.to_string(),
-            fg: vt100::Color::Default,
-            bg: vt100::Color::Default,
+            fg: TermColor::Default,
+            bg: TermColor::Default,
             bold: false,
             inverse: false,
             col: 4,
@@ -633,23 +633,23 @@ const ANSI16_LIGHT_BG: [(u8, u8, u8); 16] = [
     (0xff, 0xff, 0xff), // 15 bright white → white
 ];
 
-/// Convert a vt100 foreground colour (+ bold) to a Slint colour.
+/// Convert a terminal foreground colour (+ bold) to a Slint colour.
 /// Bold + a base colour (0–7) maps to the bright variant (8–15), matching
 /// how terminals render `ls --color` (bold-green executables, bold-blue dirs).
 ///
 /// In light mode, true-colour RGB foregrounds that are light (HSL lightness
 /// ≥ 0.55) are darkened so they remain readable on a near-white background.
-fn vt_color_to_slint(color: vt100::Color, bold: bool, is_dark: bool) -> slint::Color {
+fn vt_color_to_slint(color: TermColor, bold: bool, is_dark: bool) -> slint::Color {
     let (r, g, b) = match color {
-        vt100::Color::Default => {
+        TermColor::Default => {
             if is_dark {
                 (0xd4, 0xd4, 0xd4)
             } else {
                 (0x2d, 0x2d, 0x2f)
             }
         }
-        vt100::Color::Idx(i) => idx_to_rgb(i, bold, is_dark),
-        vt100::Color::Rgb(r, g, b) => {
+        TermColor::Idx(i) => idx_to_rgb(i, bold, is_dark),
+        TermColor::Rgb(r, g, b) => {
             if is_dark {
                 (r, g, b)
             } else {
@@ -677,8 +677,8 @@ fn vt_default_bg_rgb(is_dark: bool) -> (u8, u8, u8) {
 }
 
 pub(crate) fn vt_span_colors(
-    fg: vt100::Color,
-    bg: vt100::Color,
+    fg: TermColor,
+    bg: TermColor,
     bold: bool,
     inverse: bool,
     is_dark: bool,
@@ -691,14 +691,14 @@ pub(crate) fn vt_span_colors(
     }
 
     let fg_color = match bg {
-        vt100::Color::Default => {
+        TermColor::Default => {
             let (r, g, b) = vt_default_bg_rgb(is_dark);
             slint::Color::from_rgb_u8(r, g, b)
         }
         _ => vt_color_to_slint(bg, false, is_dark),
     };
     let bg_color = match fg {
-        vt100::Color::Default => {
+        TermColor::Default => {
             let (r, g, b) = vt_default_fg_rgb(is_dark);
             slint::Color::from_rgb_u8(r, g, b)
         }
@@ -720,7 +720,7 @@ fn darken_light_fg(r: u8, g: u8, b: u8) -> (u8, u8, u8) {
     hsl_to_rgb(h, s, new_l)
 }
 
-/// Convert a vt100 *background* colour to Slint.  The default background maps
+/// Convert a terminal *background* colour to Slint.  The default background maps
 /// to fully transparent so we don't paint a fill over the terminal's own bg.
 /// Non-default backgrounds (btop/htop bars, selected rows) become opaque.
 ///
@@ -728,14 +728,14 @@ fn darken_light_fg(r: u8, g: u8, b: u8) -> (u8, u8, u8) {
 /// - ANSI 16 colours use `ANSI16_LIGHT_BG` (light pastels).
 /// - True-colour RGB backgrounds that are dark (HSL lightness < 0.45) are
 ///   remapped to light pastels so programs like btop feel light-themed.
-fn vt_bg_to_slint(color: vt100::Color, is_dark: bool) -> slint::Color {
+fn vt_bg_to_slint(color: TermColor, is_dark: bool) -> slint::Color {
     match color {
-        vt100::Color::Default => slint::Color::from_argb_u8(0, 0, 0, 0), // transparent
-        vt100::Color::Idx(i) => {
+        TermColor::Default => slint::Color::from_argb_u8(0, 0, 0, 0), // transparent
+        TermColor::Idx(i) => {
             let (r, g, b) = idx_to_rgb_bg(i, is_dark);
             slint::Color::from_rgb_u8(r, g, b)
         }
-        vt100::Color::Rgb(r, g, b) => {
+        TermColor::Rgb(r, g, b) => {
             if is_dark {
                 slint::Color::from_rgb_u8(r, g, b)
             } else {

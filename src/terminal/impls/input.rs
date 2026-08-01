@@ -45,7 +45,7 @@ pub(crate) fn terminal_uses_bracketed_paste(bufs: &TermBuffers, tab_id: &str) ->
             buffer
                 .lock()
                 .ok()
-                .map(|buffer| buffer.parser.screen().bracketed_paste())
+                .map(|buffer| crate::terminal::bracketed_paste(&buffer.term))
         })
         .unwrap_or(false)
 }

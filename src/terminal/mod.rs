@@ -19,6 +19,8 @@ pub(crate) mod serial;
 pub(crate) mod telnet;
 #[path = "impls/term_buffer.rs"]
 mod term_buffer;
+#[path = "impls/vt_adapter.rs"]
+pub(crate) mod vt_adapter;
 #[path = "impls/zmodem.rs"]
 pub(crate) mod zmodem;
 
@@ -38,10 +40,14 @@ pub(crate) use presentation::{highlight_plain_output, render_term_span};
 #[cfg(test)]
 pub(crate) use presentation::{log_level_marker, text_cell_width, vt_span_colors};
 pub(crate) use render::{
-    build_row, cell_prefix, char_after_cell_end, char_at_cell_start, detect_scroll, MAX_HISTORY,
-    RAW_CAP,
+    build_line, build_row, cell_prefix, MAX_HISTORY, RAW_CAP,
 };
 pub(crate) use types::{
-    BuiltScreen, CompiledOutputRule, CsiState, HistSpan, Line, OutputHighlightPreset, RenderGates,
-    TabRenderGate, TermBuffer, TermBufferHandle, TermBuffers,
+    ATerm, BuiltScreen, CompiledOutputRule, CsiState, HistSpan, Line, OutputHighlightPreset,
+    RenderGates, RenderedLine, TabRenderGate, TermBuffer, TermBufferHandle, TermBuffers, TermColor,
+};
+pub(crate) use vt_adapter::{
+    app_cursor, bracketed_paste, cell_attrs, cursor_pos, display_offset, is_alt,
+    is_wide_continuation, mouse_report, new_term, process_bytes, resize_term, row_wrapped,
+    term_size, MouseReport,
 };
