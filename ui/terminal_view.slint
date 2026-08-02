@@ -1788,6 +1788,8 @@ export component TerminalView inherits Rectangle {
 
         // --- SFTP panel — positioned on the docked edge ---------------------
         if root.sftp-available : SftpPanel {
+            animate x { duration: 250ms; easing: ease-in-out; }
+            animate width { duration: 250ms; easing: ease-in-out; }
             x: root.sftp-dock == "right"  ? parent.width - parent.sf-w : 0px;
             y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h : 0px;
             width:  root.sftp-horizontal ? parent.sf-w : parent.width;
@@ -1887,6 +1889,8 @@ export component TerminalView inherits Rectangle {
         // Collapsed → a ToolStrip icon bar at the docked edge (M5), filling the
         // 36px slot the panel shrank to; click the icon to re-expand.
         if root.sftp-collapsed : ToolStrip {
+            animate x { duration: 250ms; easing: ease-in-out; }
+            animate width { duration: 250ms; easing: ease-in-out; }
             x: root.sftp-dock == "right"  ? parent.width - parent.sf-w : 0px;
             y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h : 0px;
             width:  root.sftp-horizontal ? parent.sf-w : parent.width;
