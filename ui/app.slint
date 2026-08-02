@@ -1197,6 +1197,8 @@ export component AppWindow inherits Window {
             clip: true;
             background: Theme.bg-panel;
         if !root.sidebar-collapsed : Rectangle {
+            animate opacity { duration: 120ms; easing: ease-out; }
+            opacity: root.sidebar-collapsed ? 0.0 : 1.0;
             width: parent.width; height: parent.height;
             Sidebar {
             width: parent.width;
@@ -1204,7 +1206,6 @@ export component AppWindow inherits Window {
             // Docked top/bottom → lay the resource widgets out in a row.
             lay-horizontal: !root.sidebar-horizontal;
             dock-edge: root.sidebar-dock;
-            animate width, height { duration: root.sidebar-dragging ? 0ms : 150ms; easing: ease-out; }
             connection-state: root.connection-state;
             conn-host: root.conn-host;
             conn-state: root.conn-state;
