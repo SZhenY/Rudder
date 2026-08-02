@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-
 use crate::terminal::{CompiledOutputRule, HistSpan, OutputHighlightPreset, TermColor};
 use crate::ui::TermSpan;
 
@@ -394,6 +393,23 @@ fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
 /// Twemoji asset become image spans so color survives Slint's monochrome font
 /// rasterizers. Columns still come from terminal cells, not image pixels.
 pub(crate) fn render_term_span(span: &HistSpan, row: i32, is_dark: bool) -> Vec<TermSpan> {
+    // ASCII fast path: >95% of terminal output is plain ASCII.
+    // Bypass grapheme segmentation, emoji lookup, and CJK detection entirely.
+    if span.text.is_ascii() && span.cells > 0 {
+        let (fg, bg) = vt_span_colors(span.fg, span.bg, span.bold, span.inverse, is_dark);
+        return vec![TermSpan {
+            text: span.text.clone().into(),
+            fg, bg,
+            bold: span.bold,
+            row,
+            col: span.col,
+            cells: span.cells,
+            cjk: false,
+            emoji: false,
+            emoji_image: slint::Image::default(),
+        }];
+    }
+
     use unicode_segmentation::UnicodeSegmentation as _;
     use unicode_width::UnicodeWidthStr as _;
 

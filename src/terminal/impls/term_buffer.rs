@@ -250,7 +250,7 @@ impl TermBuffer {
 
         // --- Live view (also alt-screen): render the current grid -----------
         if alt || self.view_offset == 0 {
-            let mut spans = Vec::new();
+            let mut spans = Vec::with_capacity(rows as usize * 6);
             let mut displayed = Vec::with_capacity(rows as usize);
             let mut last_content = 0i32;
             for r in 0..rows {
@@ -305,7 +305,7 @@ impl TermBuffer {
         let hist_len = self.term.total_lines().saturating_sub(self.term.screen_lines());
         let win = rows as usize;
         let vo = self.view_offset;
-        let mut spans = Vec::new();
+        let mut spans = Vec::with_capacity(win * 6);
         let mut displayed = Vec::with_capacity(win);
         for d in 0..win {
             let grid_line = GridLine(d as i32 - vo as i32);
