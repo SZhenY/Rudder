@@ -1262,10 +1262,10 @@ export component AppWindow inherits Window {
         // Collapsed resource panel → a ToolStrip icon bar at same docked edge.
         // Reads sb-taken directly so it moves with the animated property.
         if root.sidebar-collapsed && !dock-area.combine-collapsed-tools && !dock-area.sidebar-strip-outside : ToolStrip {
-            x: root.sidebar-dock == "right"  ? parent.width - parent.sb-taken : 0px;
-            y: root.sidebar-dock == "bottom" ? parent.height - parent.sb-h-taken : 0px;
-            width: root.sidebar-horizontal ? parent.sb-taken : parent.width;
-            height: root.sidebar-horizontal ? parent.height : parent.sb-h-taken;
+            x: root.sidebar-dock == "right"  ? parent.width - (root.sidebar-collapsed ? 36px : root.sidebar-width) : 0px;
+            y: root.sidebar-dock == "bottom" ? parent.height - (root.sidebar-collapsed ? 36px : root.sidebar-height) : 0px;
+            width: root.sidebar-horizontal ? (root.sidebar-collapsed ? 36px : root.sidebar-width) : parent.width;
+            height: root.sidebar-horizontal ? parent.height : (root.sidebar-collapsed ? 36px : root.sidebar-height);
             dock-edge: root.sidebar-dock;
             glyph: "\u{E871}";   // dashboard — resource panel
             show-second: dock-area.quick-merge-sidebar;
