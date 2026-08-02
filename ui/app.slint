@@ -1264,10 +1264,10 @@ export component AppWindow inherits Window {
         if root.sidebar-collapsed && !dock-area.combine-collapsed-tools && !dock-area.sidebar-strip-outside : ToolStrip {
             animate x     { duration: 250ms; easing: ease-in-out; }
             animate width { duration: 250ms; easing: ease-in-out; }
-            x: root.sidebar-dock == "right" ? dock-area.width - dock-area.sb-w : 0px;
-            y: root.sidebar-dock == "bottom" ? dock-area.height - dock-area.sb-h : 0px;
-            width: root.sidebar-horizontal ? dock-area.sb-w : dock-area.width;
-            height: root.sidebar-horizontal ? dock-area.height : dock-area.sb-h;
+            x: root.sidebar-dock == "right" ? dock-area.width - (root.sidebar-collapsed ? 36px : root.sidebar-width) : 0px;
+            y: root.sidebar-dock == "bottom" ? dock-area.height - (root.sidebar-collapsed ? 36px : root.sidebar-height) : 0px;
+            width: root.sidebar-horizontal ? (root.sidebar-collapsed ? 36px : root.sidebar-width) : dock-area.width;
+            height: root.sidebar-horizontal ? dock-area.height : (root.sidebar-collapsed ? 36px : root.sidebar-height);
             dock-edge: root.sidebar-dock;
             glyph: "\u{E871}";   // dashboard — resource panel
             show-second: dock-area.quick-merge-sidebar;
