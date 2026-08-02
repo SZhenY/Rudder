@@ -1172,13 +1172,14 @@ export component AppWindow inherits Window {
         height: parent.height
             - (!parent.welcome-horizontal ? parent.welcome-taken : 0px)
             - parent.quick-top - parent.quick-bottom;
-        // Sidebar extent along its docked axis. When collapsed it shrinks to the
-        // 36px ToolStrip icon bar (M5) instead of 0 + a floating button; the 4px
-        // splitter is gone while collapsed.
-        property <length> sb-w: root.sidebar-collapsed ? 36px : root.sidebar-width;
-        property <length> sb-h: root.sidebar-collapsed ? 36px : root.sidebar-height;
+        // Animated sidebar extent — single source of truth for ALL layout.
+        // All elements (sidebar-shell, quick-area, ToolStrip) read from this
+        // one property, so they move in perfect lockstep (same value, same frame).
+        property <length> sb-taken: root.sidebar-collapsed ? 36px : root.sidebar-width;
+        animate sb-taken { duration: 250ms; easing: ease-in-out; }
+        property <length> sb-h-taken: root.sidebar-collapsed ? 36px : root.sidebar-height;
+        animate sb-h-taken { duration: 250ms; easing: ease-in-out; }
         property <length> sp: root.sidebar-collapsed ? 0px : 4px;
-        // The collapsed bar (sb-h) already reserves the bottom strip now.
         property <length> bottom-strip-h: 0px;
 
         // Left sidebar — collapsible and drag-resizable, dockable to any edge.
@@ -1187,15 +1188,12 @@ export component AppWindow inherits Window {
         // clipped by the shrinking container during the 250ms transition, and
         // the swap between Sidebar ↔ ToolStrip is hidden behind the clip.
         sidebar-shell := Rectangle {
-            animate width  { duration: 250ms; easing: ease-in-out; }
-            animate height { duration: 250ms; easing: ease-in-out; }
-            animate x      { duration: 250ms; easing: ease-in-out; }
-            x: root.sidebar-dock == "right" ? parent.width - parent.sb-w
+            x: root.sidebar-dock == "right" ? parent.width - parent.sb-taken
              : 0px;
-            y: root.sidebar-dock == "bottom" ? parent.height - parent.sb-h
+            y: root.sidebar-dock == "bottom" ? parent.height - parent.sb-h-taken
              : 0px;
-            width: root.sidebar-horizontal ? parent.sb-w : parent.width;
-            height: root.sidebar-horizontal ? parent.height : parent.sb-h;
+            width: root.sidebar-horizontal ? parent.sb-taken : parent.width;
+            height: root.sidebar-horizontal ? parent.height : parent.sb-h-taken;
             clip: true;
             background: Theme.bg-panel;
         if !root.sidebar-collapsed : Rectangle {
@@ -1260,14 +1258,14 @@ export component AppWindow inherits Window {
             }
             }
         }
-        // Collapsed strip – inside sidebar-shell so it clips during animation.
+
+        // Collapsed resource panel → a ToolStrip icon bar at same docked edge.
+        // Reads sb-taken directly so it moves with the animated property.
         if root.sidebar-collapsed && !dock-area.combine-collapsed-tools && !dock-area.sidebar-strip-outside : ToolStrip {
-            animate x     { duration: 250ms; easing: ease-in-out; }
-            animate width { duration: 250ms; easing: ease-in-out; }
-            x: root.sidebar-dock == "right" ? dock-area.width - (root.sidebar-collapsed ? 36px : root.sidebar-width) : 0px;
-            y: root.sidebar-dock == "bottom" ? dock-area.height - (root.sidebar-collapsed ? 36px : root.sidebar-height) : 0px;
-            width: root.sidebar-horizontal ? (root.sidebar-collapsed ? 36px : root.sidebar-width) : dock-area.width;
-            height: root.sidebar-horizontal ? dock-area.height : (root.sidebar-collapsed ? 36px : root.sidebar-height);
+            x: root.sidebar-dock == "right"  ? parent.width - parent.sb-taken : 0px;
+            y: root.sidebar-dock == "bottom" ? parent.height - parent.sb-h-taken : 0px;
+            width: root.sidebar-horizontal ? parent.sb-taken : parent.width;
+            height: root.sidebar-horizontal ? parent.height : parent.sb-h-taken;
             dock-edge: root.sidebar-dock;
             glyph: "\u{E871}";   // dashboard — resource panel
             show-second: dock-area.quick-merge-sidebar;
@@ -1293,11 +1291,11 @@ export component AppWindow inherits Window {
             visible: !root.sidebar-collapsed;
             // Horizontal docks → a vertical 4px bar at the sidebar's inner edge;
             // vertical docks → a horizontal 4px bar.
-            x: root.sidebar-dock == "left"   ? parent.sb-w
-             : root.sidebar-dock == "right"  ? parent.width - parent.sb-w - 4px
+            x: root.sidebar-dock == "left"   ? parent.sb-taken
+             : root.sidebar-dock == "right"  ? parent.width - parent.sb-taken - 4px
              : 0px;
-            y: root.sidebar-dock == "top"    ? parent.sb-h
-             : root.sidebar-dock == "bottom" ? parent.height - parent.sb-h - 4px
+            y: root.sidebar-dock == "top"    ? parent.sb-h-taken
+             : root.sidebar-dock == "bottom" ? parent.height - parent.sb-h-taken - 4px
              : 0px;
             width:  root.sidebar-horizontal ? 4px : parent.width;
             height: root.sidebar-horizontal ? parent.height : 4px;
@@ -1348,13 +1346,10 @@ export component AppWindow inherits Window {
         // panel can never bleed (visually or for clicks) onto a panel docked on
         // the bottom or right (#dock).
         quick-area := Rectangle {
-            animate x { duration: 250ms; easing: ease-in-out; }
-            animate width { duration: 250ms; easing: ease-in-out; }
-            animate height { duration: 250ms; easing: ease-in-out; }
-            x: root.sidebar-dock == "left" ? parent.sb-w + parent.sp : 0px;
-            y: root.sidebar-dock == "top"  ? parent.sb-h + parent.sp : 0px;
-            width:  root.sidebar-horizontal ? parent.width - parent.sb-w - parent.sp : parent.width;
-            height: root.sidebar-horizontal ? parent.height : parent.height - parent.sb-h - parent.sp - parent.bottom-strip-h;
+            x: root.sidebar-dock == "left" ? parent.sb-taken + parent.sp : 0px;
+            y: root.sidebar-dock == "top"  ? parent.sb-h-taken + parent.sp : 0px;
+            width:  root.sidebar-horizontal ? parent.width - parent.sb-taken - parent.sp : parent.width;
+            height: root.sidebar-horizontal ? parent.height : parent.height - parent.sb-h-taken - parent.sp - parent.bottom-strip-h;
             clip: true;
             property <bool> quick-horizontal:
                 root.quick-panel-dock == "left" || root.quick-panel-dock == "right";

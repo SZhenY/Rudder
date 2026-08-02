@@ -551,13 +551,13 @@ export component TerminalView inherits Rectangle {
         vertical-stretch: 1;
         // Collapsed → shrink to the 36px ToolStrip icon bar at the docked edge
         // (M5), click its icon to re-expand. The 4px splitter is gone collapsed.
-        // Side-docked SFTP needs enough room for its compact action row and a
-        // usable path field. Clamp legacy/saved widths below that floor instead
-        // of letting Slint squeeze controls out of alignment.
-        property <length> sf-w: root.sftp-collapsed ? 36px
+        // Animated SFTP extent — single source of truth for terminal + panel layout.
+        property <length> sf-taken: root.sftp-collapsed ? 36px
             : root.sftp-horizontal ? max(300px, root.sftp-panel-width)
             : root.sftp-panel-width;
-        property <length> sf-h: root.sftp-collapsed ? 36px : root.sftp-panel-height;
+        animate sf-taken { duration: 250ms; easing: ease-in-out; }
+        property <length> sf-h-taken: root.sftp-collapsed ? 36px : root.sftp-panel-height;
+        animate sf-h-taken { duration: 250ms; easing: ease-in-out; }
         property <length> sp:   root.sftp-collapsed ? 0px : 6px;
         // Reserve room for the SFTP status bar at the bottom so that terminal
         // content and the command-input bar never visually overlap the SFTP
@@ -566,10 +566,10 @@ export component TerminalView inherits Rectangle {
         property <length> bottom-strip-h: 0px;
 
         central := Rectangle {
-            x: root.sftp-dock == "left" ? parent.sf-w + parent.sp : 0px;
-            y: root.sftp-dock == "top"  ? parent.sf-h + parent.sp : 0px;
-            width:  root.sftp-horizontal ? parent.width - parent.sf-w - parent.sp : parent.width;
-            height: root.sftp-horizontal ? parent.height : parent.height - parent.sf-h - parent.sp - parent.bottom-strip-h;
+            x: root.sftp-dock == "left" ? parent.sf-taken + parent.sp : 0px;
+            y: root.sftp-dock == "top"  ? parent.sf-h-taken + parent.sp : 0px;
+            width:  root.sftp-horizontal ? parent.width - parent.sf-taken - parent.sp : parent.width;
+            height: root.sftp-horizontal ? parent.height : parent.height - parent.sf-h-taken - parent.sp - parent.bottom-strip-h;
             clip: true;
             VerticalLayout {
             spacing: 0;
@@ -1733,11 +1733,11 @@ export component TerminalView inherits Rectangle {
         // --- SFTP resize splitter (orientation follows the dock edge) -------
         Rectangle {
             visible: root.sftp-available && !root.sftp-collapsed;   // gone when collapsed (like the resource splitter)
-            x: root.sftp-dock == "left"   ? parent.sf-w
-             : root.sftp-dock == "right"  ? parent.width - parent.sf-w - 4px
+            x: root.sftp-dock == "left"   ? parent.sf-taken
+             : root.sftp-dock == "right"  ? parent.width - parent.sf-taken - 4px
              : 0px;
-            y: root.sftp-dock == "top"    ? parent.sf-h
-             : root.sftp-dock == "bottom" ? parent.height - parent.sf-h - 4px
+            y: root.sftp-dock == "top"    ? parent.sf-h-taken
+             : root.sftp-dock == "bottom" ? parent.height - parent.sf-h-taken - 4px
              : 0px;
             width:  root.sftp-horizontal ? 4px : parent.width;
             height: root.sftp-horizontal ? parent.height : 4px;
@@ -1788,12 +1788,10 @@ export component TerminalView inherits Rectangle {
 
         // --- SFTP panel — positioned on the docked edge ---------------------
         if root.sftp-available : SftpPanel {
-            animate x { duration: 250ms; easing: ease-in-out; }
-            animate width { duration: 250ms; easing: ease-in-out; }
-            x: root.sftp-dock == "right"  ? parent.width - parent.sf-w : 0px;
-            y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h : 0px;
-            width:  root.sftp-horizontal ? parent.sf-w : parent.width;
-            height: root.sftp-horizontal ? parent.height : parent.sf-h;
+            x: root.sftp-dock == "right"  ? parent.width - parent.sf-taken : 0px;
+            y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h-taken : 0px;
+            width:  root.sftp-horizontal ? parent.sf-taken : parent.width;
+            height: root.sftp-horizontal ? parent.height : parent.sf-h-taken;
             clip: true;                     // prevent content from bleeding into central area
             show-tree: !root.sftp-horizontal;   // hide the tree when narrow (vertical)
             compact: root.sftp-collapsed && root.sftp-horizontal;  // clean strip when side+collapsed
@@ -1889,12 +1887,10 @@ export component TerminalView inherits Rectangle {
         // Collapsed → a ToolStrip icon bar at the docked edge (M5), filling the
         // 36px slot the panel shrank to; click the icon to re-expand.
         if root.sftp-collapsed : ToolStrip {
-            animate x { duration: 250ms; easing: ease-in-out; }
-            animate width { duration: 250ms; easing: ease-in-out; }
-            x: root.sftp-dock == "right"  ? parent.width - parent.sf-w : 0px;
-            y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h : 0px;
-            width:  root.sftp-horizontal ? parent.sf-w : parent.width;
-            height: root.sftp-horizontal ? parent.height : parent.sf-h;
+            x: root.sftp-dock == "right"  ? parent.width - parent.sf-taken : 0px;
+            y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h-taken : 0px;
+            width:  root.sftp-horizontal ? parent.sf-taken : parent.width;
+            height: root.sftp-horizontal ? parent.height : parent.sf-h-taken;
             dock-edge: root.sftp-dock;
             glyph: "\u{E2C7}";   // folder — SFTP
             tooltip: root.sftp-available ? "SFTP" : @tr("SFTP not available");
