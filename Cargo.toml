@@ -124,8 +124,8 @@ winresource = "0.1"
 
 [profile.release]
 opt-level = 3
-lto = "fat"                # Full LTO for smaller+faster binary (CI builds only)
-codegen-units = 1
+lto = "thin"               # Thin LTO: near-fat speed, much faster linking (~4x)
+codegen-units = 16          # Parallel codegen across all cores
 strip = "symbols"
 panic = "abort"
 # PGO (Profile-Guided Optimization) — run representative workloads first:
