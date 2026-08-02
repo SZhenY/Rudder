@@ -3584,7 +3584,6 @@ dependencies = [
  "slint-build",
  "ssh-key",
  "sysinfo",
- "thiserror 1.0.69",
  "tokio",
  "tokio-socks",
  "tracing",

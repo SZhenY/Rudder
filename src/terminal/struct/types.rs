@@ -2,7 +2,6 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
 
 use alacritty_terminal::event::VoidListener;
-use alacritty_terminal::term::Config as TermConfig;
 use alacritty_terminal::term::Term;
 use alacritty_terminal::vte::ansi::Processor;
 
@@ -17,18 +16,12 @@ pub(crate) struct TermBuffer {
     pub(crate) term: ATerm,
     /// Persistent ANSI state machine feeding bytes into `term`.
     pub(crate) processor: Processor,
-    /// Terminal config (scrolling_history etc.), kept for rebuilds.
-    #[allow(dead_code)]
-    pub(crate) config: TermConfig,
     pub(crate) find_query: String,
     pub(crate) is_dark: bool,
     pub(crate) output_highlight: OutputHighlightPreset,
     pub(crate) custom_highlight_rules: Vec<CompiledOutputRule>,
-    /// Scrollback lazily populated from the grid.  Index 0 = most recently
-    /// scrolled-off line (grid Line(-1)), index 1 = second-most, etc.
-    pub(crate) history: VecDeque<Line>,
-    /// Snapshot of visible lines from last ingest_chunk, used by detect_scroll
-    /// to find how many lines scrolled off the top.
+    /// Snapshot of visible lines from last ingest_chunk, used by damage-based
+    /// incremental rebuild (Partial → clone prev, overwrite damaged rows).
     pub(crate) prev: Vec<Line>,
     pub(crate) view_offset: usize,
     pub(crate) displayed_text: Vec<String>,

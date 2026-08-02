@@ -11,6 +11,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use alacritty_terminal::grid::Dimensions;
+
 /// Max bytes merged into one Output event before starting a fresh chunk (#209).
 /// Keeps a single UI callback from spending hundreds of ms in vt100 ingest.
 const OUTPUT_MERGE_BYTE_CAP: usize = 64 * 1024;
@@ -156,7 +158,7 @@ use crate::config::{
 use crate::i18n::t;
 use crate::layout::{LogicalRect, TerminalWheelHit};
 use crate::resource::{
-    LocalGpuInfo, LocalHardwareInfo, LocalSnap, NetHist, TabStatus, TabStatuses,
+    LocalSnap, NetHist, TabStatus, TabStatuses,
 };
 use crate::session::{ConnectCtx, PendingCred, PendingHostKey, PendingMfa};
 use crate::sftp::{spawn_sftp, SftpHandles, SftpLastCwd};
@@ -169,7 +171,7 @@ use crate::terminal::{
     encode_command_bar_input, encode_pasted_text, key_to_pty_bytes, new_term,
     paste_requires_large_review, should_drop_bare_ctrl_marker,
     terminal_uses_bracketed_paste, CsiState, OutputHighlightPreset, RenderGates,
-    TabRenderGate, TermBuffer, TermBufferHandle, TermBuffers, TermColor,
+    TabRenderGate, TermBuffer, TermBufferHandle, TermBuffers,
 };
 #[cfg(test)]
 use crate::terminal::{
@@ -2146,8 +2148,8 @@ pub fn run() -> Result<()> {
             t("chrono — 日期时间处理", "chrono — date/time handling"),
             t("uuid — 唯一标识符", "uuid — unique identifiers"),
             t(
-                "anyhow / thiserror — 错误处理",
-                "anyhow / thiserror — error handling",
+                "anyhow — 错误处理",
+                "anyhow — error handling",
             ),
             t(
                 "tracing / tracing-subscriber — 日志",
@@ -4410,12 +4412,10 @@ fn wire_session_callbacks(
                 Arc::new(Mutex::new(TermBuffer {
                     term: t24,
                     processor: p24,
-                    config: alacritty_terminal::term::Config { scrolling_history: 5000, ..Default::default() },
                     find_query: String::new(),
                     is_dark: is_dark_now,
                     output_highlight,
                     custom_highlight_rules,
-                    history: VecDeque::new(),
                     prev: Vec::new(),
                     view_offset: 0,
                     displayed_text: Vec::new(),
@@ -5185,287 +5185,6 @@ fn tuple5_rows(rows: &[(String, String, String, String, String)]) -> Vec<SysInfo
         .collect()
 }
 
-fn nonempty_or_dash(value: impl Into<String>) -> String {
-    let value = value.into();
-    if value.trim().is_empty() {
-        "-".to_string()
-    } else {
-        value
-    }
-}
-
-fn local_hardware_info() -> &'static LocalHardwareInfo {
-    static INFO: OnceLock<LocalHardwareInfo> = OnceLock::new();
-    INFO.get_or_init(|| {
-        let mut sys = sysinfo::System::new_all();
-        sys.refresh_all();
-        let first_cpu = sys.cpus().first();
-        let mut info = LocalHardwareInfo {
-            os: sysinfo::System::long_os_version()
-                .or_else(sysinfo::System::name)
-                .unwrap_or_else(|| std::env::consts::OS.to_string()),
-            kernel: sysinfo::System::name().unwrap_or_else(|| std::env::consts::FAMILY.to_string()),
-            kernel_version: sysinfo::System::kernel_version().unwrap_or_default(),
-            arch: std::env::consts::ARCH.to_string(),
-            hostname: sysinfo::System::host_name().unwrap_or_default(),
-            cpu_name: first_cpu
-                .map(|cpu| cpu.brand().to_string())
-                .unwrap_or_default(),
-            cpu_vendor: first_cpu
-                .map(|cpu| cpu.vendor_id().to_string())
-                .unwrap_or_default(),
-            cpu_cores: sys.cpus().len().to_string(),
-            cpu_frequency: first_cpu
-                .map(|cpu| {
-                    let mhz = cpu.frequency();
-                    if mhz == 0 {
-                        String::new()
-                    } else if mhz >= 1000 {
-                        format!("{:.2} GHz", mhz as f64 / 1000.0)
-                    } else {
-                        format!("{mhz} MHz")
-                    }
-                })
-                .unwrap_or_default(),
-            ..Default::default()
-        };
-        fill_local_gpu_info(&mut info);
-        info
-    })
-}
-
-#[cfg(target_os = "windows")]
-fn fill_local_gpu_info(info: &mut LocalHardwareInfo) {
-    let output = std::process::Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            "$controllers = @(Get-CimInstance Win32_VideoController | Select-Object Name,AdapterCompatibility,DriverVersion,AdapterRAM); $regs = @(Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}' -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-ItemProperty $_.PsPath -ErrorAction SilentlyContinue; if ($p.DriverDesc) { [pscustomobject]@{ Name=$p.DriverDesc; Vendor=$p.ProviderName; Driver=$p.DriverVersion; Memory=$p.'HardwareInformation.qwMemorySize' } } }); [pscustomobject]@{ Controllers=$controllers; Registry=$regs } | ConvertTo-Json -Compress -Depth 4",
-        ])
-        .output();
-    let Ok(output) = output else {
-        return;
-    };
-    if !output.status.success() {
-        return;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
-        return;
-    };
-    let registry_values = value
-        .get("Registry")
-        .map(json_values)
-        .unwrap_or_default();
-    let controller_values = value
-        .get("Controllers")
-        .map(json_values)
-        .unwrap_or_else(|| json_values(&value));
-    let registry_gpus: Vec<LocalGpuInfo> = registry_values
-        .iter()
-        .filter_map(gpu_from_registry_json)
-        .collect();
-    info.gpus = controller_values
-        .iter()
-        .filter_map(|gpu| {
-            let get_str = |key: &str| {
-                gpu.get(key)
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string()
-            };
-            let name = get_str("Name");
-            if name.is_empty() {
-                return None;
-            }
-            let matched = registry_gpus
-                .iter()
-                .find(|item| item.name.eq_ignore_ascii_case(&name))
-                .or_else(|| {
-                    registry_gpus
-                        .iter()
-                        .find(|item| !item.name.is_empty() && name.contains(&item.name))
-                });
-            Some(LocalGpuInfo {
-                name,
-                vendor: nonempty_prefer(
-                    matched.map(|item| item.vendor.as_str()).unwrap_or_default(),
-                    &get_str("AdapterCompatibility"),
-                ),
-                driver: nonempty_prefer(
-                    matched.map(|item| item.driver.as_str()).unwrap_or_default(),
-                    &get_str("DriverVersion"),
-                ),
-                memory: nonempty_prefer(
-                    matched.map(|item| item.memory.as_str()).unwrap_or_default(),
-                    &gpu
-                        .get("AdapterRAM")
-                        .and_then(|v| v.as_u64())
-                        .filter(|bytes| *bytes > 0)
-                        .map(format_size)
-                        .unwrap_or_default(),
-                ),
-            })
-        })
-        .collect();
-}
-
-#[cfg(target_os = "windows")]
-fn json_values(value: &serde_json::Value) -> Vec<serde_json::Value> {
-    if let Some(items) = value.as_array() {
-        items.clone()
-    } else if value.is_null() {
-        Vec::new()
-    } else {
-        vec![value.clone()]
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn nonempty_prefer(primary: &str, fallback: &str) -> String {
-    if primary.trim().is_empty() {
-        fallback.trim().to_string()
-    } else {
-        primary.trim().to_string()
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn gpu_from_registry_json(gpu: &serde_json::Value) -> Option<LocalGpuInfo> {
-    let get_str = |key: &str| {
-        gpu.get(key)
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .trim()
-            .to_string()
-    };
-    let name = get_str("Name");
-    if name.is_empty() {
-        return None;
-    }
-    Some(LocalGpuInfo {
-        name,
-        vendor: get_str("Vendor"),
-        driver: get_str("Driver"),
-        memory: gpu
-            .get("Memory")
-            .and_then(|v| {
-                v.as_u64().or_else(|| {
-                    v.as_array().and_then(|bytes| {
-                        let mut raw = [0u8; 8];
-                        let mut any = false;
-                        for (idx, b) in bytes.iter().take(8).enumerate() {
-                            if let Some(n) = b.as_u64() {
-                                raw[idx] = n as u8;
-                                any = true;
-                            }
-                        }
-                        any.then(|| u64::from_le_bytes(raw))
-                    })
-                })
-            })
-            .filter(|bytes| *bytes > 0)
-            .map(format_size)
-            .unwrap_or_default(),
-    })
-}
-
-#[cfg(not(target_os = "windows"))]
-fn fill_local_gpu_info(_info: &mut LocalHardwareInfo) {}
-
-fn local_system_details(snap: &SystemSnapshot) -> SystemDetails {
-    let mem_used = snap.mem_used_mib.saturating_mul(1024 * 1024);
-    let mem_total = snap.mem_total_mib.saturating_mul(1024 * 1024);
-    let swap_used = snap.swap_used_mib.saturating_mul(1024 * 1024);
-    let swap_total = snap.swap_total_mib.saturating_mul(1024 * 1024);
-    let info = local_hardware_info();
-    SystemDetails {
-        overview: vec![
-            (t("操作系统", "Operating system").to_string(), nonempty_or_dash(&info.os)),
-            (
-                t("内核版本", "Kernel version").to_string(),
-                nonempty_or_dash(&info.kernel_version),
-            ),
-            (t("主机名称", "Hostname").to_string(), nonempty_or_dash(&info.hostname)),
-            (t("内核", "Kernel").to_string(), nonempty_or_dash(&info.kernel)),
-            (t("硬件架构", "Architecture").to_string(), nonempty_or_dash(&info.arch)),
-            (t("连接", "Connection").to_string(), t("本机", "Local").to_string()),
-        ],
-        cpu_info: vec![
-            (t("名称", "Name").to_string(), nonempty_or_dash(&info.cpu_name)),
-            (t("核心数", "Cores").to_string(), nonempty_or_dash(&info.cpu_cores)),
-            (t("频率", "Frequency").to_string(), nonempty_or_dash(&info.cpu_frequency)),
-            (t("缓存", "Cache").to_string(), "-".to_string()),
-            ("BogoMips".to_string(), nonempty_or_dash(&info.cpu_vendor)),
-        ],
-        gpu_info: info
-            .gpus
-            .iter()
-            .flat_map(|gpu| {
-                [
-                    (t("名称", "Name").to_string(), nonempty_or_dash(&gpu.name)),
-                    (t("厂商", "Vendor").to_string(), nonempty_or_dash(&gpu.vendor)),
-                    (t("驱动", "Driver").to_string(), nonempty_or_dash(&gpu.driver)),
-                    (t("内存", "Memory").to_string(), nonempty_or_dash(&gpu.memory)),
-                ]
-            })
-            .collect(),
-        cpu_usage: vec![
-            (t("用户", "User").to_string(), format!("{:.1}%", snap.cpu_percent * 100.0)),
-            ("Nice".to_string(), "-".to_string()),
-            (t("系统", "System").to_string(), "-".to_string()),
-            (t("空闲", "Idle").to_string(), "-".to_string()),
-        ],
-        memory: vec![
-            (t("总计", "Total").to_string(), format_size(mem_total)),
-            (t("已使用", "Used").to_string(), format_size(mem_used)),
-            (
-                t("剩余", "Free").to_string(),
-                format_size(mem_total.saturating_sub(mem_used)),
-            ),
-            (t("已用", "Usage").to_string(), format!("{:.1}%", snap.mem_percent * 100.0)),
-            (t("缓存", "Cached").to_string(), "-".to_string()),
-        ],
-        swap: vec![
-            (t("总计", "Total").to_string(), format_size(swap_total)),
-            (t("已使用", "Used").to_string(), format_size(swap_used)),
-            (
-                t("剩余", "Free").to_string(),
-                format_size(swap_total.saturating_sub(swap_used)),
-            ),
-            (t("已用", "Usage").to_string(), format!("{:.1}%", snap.swap_percent * 100.0)),
-        ],
-        networks: vec![(
-            t("本机", "Local").to_string(),
-            "-".to_string(),
-            "-".to_string(),
-            format_bytes_per_sec(snap.net_tx_per_sec),
-            format_bytes_per_sec(snap.net_rx_per_sec),
-        )],
-        filesystems: snap
-            .disks
-            .iter()
-            .map(|(mount, avail, total)| {
-                let used = total.saturating_sub(*avail);
-                let pct = if *total == 0 {
-                    "-".to_string()
-                } else {
-                    format!("{:.1}%", used as f64 * 100.0 / *total as f64)
-                };
-                (
-                    mount.clone(),
-                    format_size(*total),
-                    pct,
-                    format_size(*avail),
-                    mount.clone(),
-                )
-            })
-            .collect(),
-    }
-}
 
 /// Mirror the main window's theme/scale/UI-font onto the detached process
 /// window. Theme is a per-window Slint global, so a detached window keeps its
@@ -8996,7 +8715,6 @@ fn wire_key_input(
                             let (rows, cols) = crate::terminal::term_size(&b.term);
                             (b.term, b.processor) = crate::terminal::new_term(rows, cols, 5000);
                             b.rendered.clear();
-                            b.history.clear();
                             b.prev.clear();
                             b.displayed_text.clear();
                             b.view_offset = 0;
@@ -9428,7 +9146,6 @@ fn wire_key_input(
                 (buf.term, buf.processor) = crate::terminal::new_term(rows, cols, 5000);
                 buf.rendered.clear();
                 buf.find_query.clear();
-                buf.history = VecDeque::new(); // recycle the session scrollback
                 buf.prev = Vec::new();
                                 buf.view_offset = 0;
                 buf.term.selection = None;
@@ -9493,7 +9210,7 @@ fn wire_key_input(
             with_term_buf(&bufs_scroll, &tid, |buf| {
                 // Scroll within our own session scrollback (history lines above
                 // the live screen).  Offset 0 = live bottom.
-                let max_off = buf.history.len() as i64;
+                let max_off = buf.term.total_lines().saturating_sub(buf.term.screen_lines()) as i64;
                 let cur = buf.view_offset as i64;
                 buf.view_offset = (cur + delta as i64).clamp(0, max_off) as usize;
             });
@@ -9560,7 +9277,7 @@ fn wire_key_input(
         window.on_terminal_scroll_to(move |tab_id: SharedString, offset: i32| {
             let tid = tab_id.to_string();
             with_term_buf(&bufs_scroll, &tid, |buf| {
-                let max_off = buf.history.len() as i64;
+                let max_off = buf.term.total_lines().saturating_sub(buf.term.screen_lines()) as i64;
                 buf.view_offset = (offset as i64).clamp(0, max_off) as usize;
             });
             if let Some(win) = weak.upgrade() {
@@ -9638,7 +9355,7 @@ fn wire_key_input(
                 let mut buf = h.lock().unwrap();
                 if crate::terminal::is_alt(&buf.term) || buf.term.selection.is_none() { return; }
                 let rows = crate::terminal::term_size(&buf.term).0;
-                let max_off = buf.history.len();
+                let max_off = buf.term.total_lines().saturating_sub(buf.term.screen_lines());
                 let step = 2usize;
                 let edge_line = if dir < 0 {
                     let new_off = (buf.view_offset + step).min(max_off);
@@ -10383,6 +10100,7 @@ mod key_tests {
 #[cfg(test)]
 mod log_highlight_tests {
     use super::*;
+    use crate::terminal::TermColor;
 
     fn plain_run(text: &str, col: i32) -> HistSpan {
         HistSpan {

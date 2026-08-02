@@ -8,8 +8,6 @@ use crate::terminal::{cell_attrs, is_wide_continuation, row_wrapped, ATerm, Hist
 /// Small window of retained bytes for split-ESC[3J detection (no longer
 /// needed for resize reflow — alacritty handles that natively).
 pub(crate) const RAW_CAP: usize = 256;
-/// Per-session rendered scrollback cap.
-pub(crate) const MAX_HISTORY: usize = 100_000;
 
 pub(crate) fn cell_prefix(chars: &[char]) -> Vec<usize> {
     let mut prefix = Vec::with_capacity(chars.len() + 1);
@@ -22,26 +20,6 @@ pub(crate) fn cell_prefix(chars: &[char]) -> Vec<usize> {
     prefix
 }
 
-pub(crate) fn char_at_cell_start(prefix: &[usize], target: usize) -> usize {
-    let char_count = prefix.len().saturating_sub(1);
-    for index in 0..char_count {
-        if prefix[index] <= target && target < prefix[index + 1] {
-            return index;
-        }
-    }
-    char_count
-}
-
-pub(crate) fn char_after_cell_end(prefix: &[usize], target: usize) -> usize {
-    let char_count = prefix.len().saturating_sub(1);
-    for index in 0..char_count {
-        if prefix[index] > target {
-            return index;
-        }
-    }
-    char_count
-}
-
 /// Build one rendered line from the alacritty grid.
 ///
 /// Wide (CJK) glyphs: the leading cell carries `WIDE_CHAR` and the spacer cell
@@ -49,6 +27,13 @@ pub(crate) fn char_after_cell_end(prefix: &[usize], target: usize) -> usize {
 /// cell emits a 2-cell run. Combining marks are already folded into the cell
 /// contents by `cell_attrs`.
 pub(crate) fn build_row(term: &ATerm, row: u16, columns: u16) -> TermLine {
+    // Fast path: skip rows that alacritty's occ tracking knows are empty.
+    // Most terminal screens are only partially filled, so this avoids
+    // scanning all `columns` cells for blank rows.
+    if term.grid()[Line(row as i32)].is_clear() {
+        return (String::new(), Vec::new(), false);
+    }
+
     let mut plain = String::with_capacity(columns as usize);
     let mut runs = Vec::new();
     let mut column = 0u16;
@@ -116,30 +101,17 @@ pub(crate) fn build_row(term: &ATerm, row: u16, columns: u16) -> TermLine {
     (plain, runs, row_wrapped(term, row))
 }
 
-pub(crate) fn detect_scroll(previous: &[TermLine], current: &[TermLine]) -> usize {
-    let mut best_shift = 0usize;
-    let mut best_length = 0usize;
-    for shift in 0..previous.len() {
-        let mut length = 0usize;
-        while shift + length < previous.len()
-            && length < current.len()
-            && previous[shift + length].0 == current[length].0
-        {
-            length += 1;
-        }
-        if length > best_length {
-            best_length = length;
-            best_shift = shift;
-        }
-    }
-    best_shift
-}
+
 
 /// Read one grid line at the given `line` index (negative = scrollback
 /// history, positive / zero = visible area).  Used to capture lines that
 /// scrolled into alacritty's native scrollback without building the whole
 /// screen.
 pub(crate) fn build_line(term: &ATerm, line: Line, columns: u16) -> TermLine {
+    if term.grid()[line].is_clear() {
+        return (String::new(), Vec::new(), false);
+    }
+
     let mut plain = String::with_capacity(columns as usize);
     let mut runs = Vec::new();
     let mut column = 0u16;

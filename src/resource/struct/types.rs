@@ -5,28 +5,6 @@ use crate::resource::system::SystemSnapshot;
 use crate::ssh::{ProcInfo, SystemDetails};
 
 #[derive(Clone, Default)]
-pub(crate) struct LocalHardwareInfo {
-    pub(crate) os: String,
-    pub(crate) kernel: String,
-    pub(crate) kernel_version: String,
-    pub(crate) arch: String,
-    pub(crate) hostname: String,
-    pub(crate) cpu_name: String,
-    pub(crate) cpu_vendor: String,
-    pub(crate) cpu_cores: String,
-    pub(crate) cpu_frequency: String,
-    pub(crate) gpus: Vec<LocalGpuInfo>,
-}
-
-#[derive(Clone, Default)]
-pub(crate) struct LocalGpuInfo {
-    pub(crate) name: String,
-    pub(crate) vendor: String,
-    pub(crate) driver: String,
-    pub(crate) memory: String,
-}
-
-#[derive(Clone, Default)]
 pub(crate) struct TabStatus {
     pub(crate) host: String,
     pub(crate) user: String,

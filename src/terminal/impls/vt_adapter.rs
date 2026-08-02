@@ -9,7 +9,7 @@ use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::vte::ansi::Processor;
 
 use crate::terminal::types::ATerm;
-use crate::terminal::{Line as TermLine, TermColor};
+use crate::terminal::TermColor;
 
 // ── Custom Dimensions impl — alacritty 0.26 does not export a standalone
 //    TermSize type (it's behind #[cfg(test)]), so we bring our own.
@@ -57,11 +57,6 @@ pub(crate) fn term_size(term: &ATerm) -> (u16, u16) {
     (grid.screen_lines() as u16, grid.columns() as u16)
 }
 
-/// Current scroll-offset (how many lines have been pushed into scrollback).
-pub(crate) fn display_offset(term: &ATerm) -> usize {
-    term.grid().display_offset()
-}
-
 /// Cursor position `(row, col)` — replaces `screen.cursor_position()`.
 pub(crate) fn cursor_pos(term: &ATerm) -> (u16, u16) {
     let point = term.grid().cursor.point;
@@ -104,14 +99,10 @@ pub(crate) fn mouse_report(term: &ATerm) -> MouseReport {
 }
 
 /// Mouse protocol state (mirrors the old `vt100::MouseProtocolMode` usage).
-/// `Urxvt` is kept for API compatibility but is never returned — alacritty 0.26
-/// dropped URXVT mouse encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MouseReport {
     None,
     X10,
-    #[allow(dead_code)]
-    Urxvt,
     Sgr,
 }
 
@@ -210,15 +201,6 @@ pub(crate) fn grid_to_lines(term: &ATerm) -> Vec<String> {
         out.push(s[..trim_end].to_string());
     }
     out
-}
-
-/// Rebuild `build_row`-compatible rows for a live viewport.
-#[allow(dead_code)]
-pub(crate) fn build_screen_lines(term: &ATerm) -> Vec<TermLine> {
-    let (rows, cols) = term_size(term);
-    (0..rows)
-        .map(|r| crate::terminal::build_row(term, r, cols))
-        .collect()
 }
 
 #[cfg(test)]

@@ -1,23 +1,17 @@
 use crate::terminal::{
-    build_row, cursor_pos, detect_scroll, highlight_plain_output, is_alt,
+    build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
     process_bytes, render_term_span, resize_term, term_size, BuiltScreen, CsiState, HistSpan,
-    Line, MAX_HISTORY, RenderedLine, TermBuffer, RAW_CAP,
+    Line, RenderedLine, TermBuffer, RAW_CAP,
 };
 use crate::ui::TermMatch;
 use crate::ui::TermSpan;
 
+use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line as GridLine, Point};
+use alacritty_terminal::term::TermDamage;
 // Selection type used only in selection_rects_visible via term.selection
 
 impl TermBuffer {
-    /// Visible → grid Point (selection / mouse callbacks).
-    fn vis_point(&self, vis_row: i32, vis_col: i32) -> Point {
-        Point {
-            line: GridLine(vis_row - self.view_offset as i32),
-            column: Column(vis_col.max(0) as usize),
-        }
-    }
-
     /// Selection highlight rectangles for the current visible window.
     pub(crate) fn selection_rects_visible(&self, cols: u16) -> Vec<TermMatch> {
         let sel = match self.term.selection {
@@ -63,38 +57,27 @@ impl TermBuffer {
         out
     }
 
-    /// Live screen rows for find / scrollback-aware operations.
-    fn live_rows(&self) -> (Vec<Line>, usize) {
-        let (rows, cols) = term_size(&self.term);
-        let live: Vec<Line> = (0..rows)
-            .map(|r| build_row(&self.term, r, cols))
-            .collect();
-        let used = live
-            .iter()
-            .rposition(|(_, runs, _)| !runs.is_empty())
-            .map(|i| i + 1)
-            .unwrap_or(0);
-        (live, used)
-    }
-
     /// Jump to the first matching row when the find query points outside the
-    /// visible window (#233).
+    /// visible window (#233).  Searches alacritty's native scrollback grid
+    /// (negative Line indices) and the live visible rows.
     pub(crate) fn scroll_to_first_find_match(&mut self, query: &str) -> bool {
         if query.is_empty() || is_alt(&self.term) {
             return false;
         }
         let q = query.to_lowercase();
-        let (live, _) = self.live_rows();
-        let rows = term_size(&self.term).0 as usize;
-        let hist_len = self.history.len();
-        let combined_len = hist_len + live.len();
-        let Some(match_idx) = self
-            .history
-            .iter()
-            .map(|line| &line.0)
-            .chain(live.iter().map(|line| &line.0))
-            .position(|line| line.to_lowercase().contains(&q))
-        else {
+        let (rows, cols) = term_size(&self.term);
+        let rows = rows as usize;
+        let hist_len = self.term.total_lines().saturating_sub(self.term.screen_lines());
+        let combined_len = hist_len + rows;
+
+        // Search scrollback first (newest → oldest), then live rows.
+        let find_idx = (0..hist_len)
+            .rev()
+            .map(|i| build_line(&self.term, GridLine(-(i as i32 + 1)), cols).0)
+            .chain((0..rows).map(|r| build_row(&self.term, r as u16, cols).0))
+            .position(|line| line.to_lowercase().contains(&q));
+
+        let Some(match_idx) = find_idx else {
             return false;
         };
         let top = match_idx.min(combined_len.saturating_sub(rows));
@@ -106,15 +89,9 @@ impl TermBuffer {
         true
     }
 
-    /// Feed bytes and capture scrolled-off lines into history.
-    ///
-    /// We detect scroll by diffing the screen before/after a `process`, which
-    /// can only recover up to one screen of shift per call.  A single large
-    /// burst can scroll many screens at once, so we split the input at newline
-    /// boundaries into batches of at most ~half a screen of lines and capture
-    /// after each — that way no batch ever scrolls more than the diff can see,
-    /// and nothing is lost.  (Splitting only on `\n` is safe: VT escape
-    /// sequences never contain a newline.)
+    /// Feed bytes to alacritty.  Scrollback is read on demand from the
+    /// alacritty Grid via negative `Line` indices in `render()`, so we no
+    /// longer need to capture scrolled-off lines into a separate history.
     pub(crate) fn ingest(&mut self, input: &[u8]) {
         // Rewrite HVP (`ESC [ … f`) → CUP (`ESC [ … H`) so vt100 (which only
         // implements `H`) honours btop/htop's absolute cursor positioning.
@@ -134,7 +111,6 @@ impl TermBuffer {
         };
         if let Some(end) = erase_saved_through {
             self.raw.drain(..end);
-            self.history.clear();
             self.prev.clear();
             self.rendered.clear();
             self.view_offset = 0;
@@ -144,8 +120,10 @@ impl TermBuffer {
         self.ingest_chunk(&bytes);
     }
 
-    /// Feed bytes to alacritty and detect scrolling by comparing visible
-    /// lines before/after each chunk — the original reliable approach.
+    /// Feed bytes to alacritty.  Scrollback is read directly from
+    /// alacritty's native Grid on demand (via `build_line` with negative
+    /// Line indices), so we no longer need to capture scrolled-off lines
+    /// into a separate history.
     fn ingest_chunk(&mut self, bytes: &[u8]) {
         let has_cursor_home = bytes.windows(3).any(|w| w == b"\x1b[H");
         let has_erase_display =
@@ -157,29 +135,42 @@ impl TermBuffer {
         let alt = is_alt(&self.term);
         if alt {
             self.view_offset = 0;
-            self.history.clear();
             self.prev.clear();
             self.rendered.clear();
             return;
         }
         if is_fullscreen_refresh {
             self.view_offset = 0;
-            self.history.clear();
             self.prev.clear();
             self.rendered.clear();
             return;
         }
 
-        let curr: Vec<Line> = (0..rows).map(|r| build_row(&self.term, r, cols)).collect();
-        if !self.prev.is_empty() {
-            let k = detect_scroll(&self.prev, &curr);
-            for line in self.prev.iter().take(k) {
-                self.history.push_back(line.clone());
+        // Build the current visible grid.  Use alacritty's built-in damage
+        // tracking to only rebuild lines that actually changed (a full-screen
+        // rebuild is still done when damage indicates a full redraw).
+        //
+        // display_offset is read *before* damage() to avoid conflicting
+        // with the mutable borrow held by the damage iterator.
+        let display_offset = self.term.grid().display_offset();
+        let curr: Vec<Line> = match self.term.damage() {
+            TermDamage::Full => {
+                (0..rows).map(|r| build_row(&self.term, r, cols)).collect()
             }
-            while self.history.len() > MAX_HISTORY {
-                self.history.pop_front();
+            TermDamage::Partial(damaged_lines) => {
+                let damaged_rows: Vec<usize> = damaged_lines
+                    .map(|b| b.line.saturating_sub(display_offset))
+                    .filter(|&r| r < rows as usize)
+                    .collect();
+                let mut cur = self.prev.clone();
+                cur.resize(rows as usize, (String::new(), Vec::new(), false));
+                for r in damaged_rows {
+                    cur[r] = build_row(&self.term, r as u16, cols);
+                }
+                cur
             }
-        }
+        };
+        self.term.reset_damage();
         self.prev = curr;
     }
 
@@ -199,7 +190,6 @@ impl TermBuffer {
 
     pub(crate) fn reflow(&mut self, new_rows: u16, new_cols: u16) {
         resize_term(&mut self.term, new_rows, new_cols);
-        self.history.clear();
         self.prev.clear();
         self.rendered.clear();
         self.view_offset = 0;
@@ -241,10 +231,9 @@ impl TermBuffer {
         out
     }
 
-    /// History is now populated eagerly by `ingest_chunk` via `detect_scroll` —
-    /// the same reliable approach used in the original vt100-based code.
+    /// Scrollback is read directly from alacritty's grid on demand.
     fn ensure_history(&mut self) {
-        // no-op: ingest_chunk already fills self.history
+        // no-op: alacritty maintains scrollback natively
     }
 
     /// Render the terminal grid for the current scrollback `view_offset`
@@ -304,36 +293,29 @@ impl TermBuffer {
                 cursor_col: cur_col as i32,
                 rows_used,
                 is_alt: alt,
-                scroll_max: if alt { 0 } else { self.history.len() as i32 },
+                scroll_max: if alt { 0 } else { (self.term.total_lines().saturating_sub(self.term.screen_lines())) as i32 },
                 scroll_offset: 0,
             };
         }
 
-        // --- Scrolled view: window into history ++ live content -------------
-        let live: Vec<Line> = (0..rows).map(|r| build_row(&self.term, r, cols)).collect();
-        let hist_len = self.history.len();
-        let combined_len = hist_len + live.len();
+        // --- Scrolled view: read directly from alacritty's native scrollback
+        //     grid via negative Line indices.  No separate rendered history —
+        //     build_line() lazily converts raw Cells as needed, and the
+        //     is_clear() fast path skips empty rows entirely.
+        let hist_len = self.term.total_lines().saturating_sub(self.term.screen_lines());
         let win = rows as usize;
-        let start = combined_len.saturating_sub(win + self.view_offset);
-        let end = (start + win).min(combined_len);
-
+        let vo = self.view_offset;
         let mut spans = Vec::new();
         let mut displayed = Vec::with_capacity(win);
-        for (d, idx) in (start..end).enumerate() {
-            let line: &Line = if idx < hist_len {
-                &self.history[idx]
-            } else {
-                &live[idx - hist_len]
-            };
-            let runs = highlight_plain_output(
-                line.1.clone(),
-                self.output_highlight,
-                &self.custom_highlight_rules,
-            );
-            for hs in &runs {
+        for d in 0..win {
+            let grid_line = GridLine(d as i32 - vo as i32);
+            let (plain, runs, _wrapped) = build_line(&self.term, grid_line, cols);
+            let display = plain.trim_end().to_string();
+            let hr = highlight_plain_output(runs, self.output_highlight, &self.custom_highlight_rules);
+            for hs in &hr {
                 spans.extend(render_term_span(hs, d as i32, self.is_dark));
             }
-            displayed.push(line.0.trim_end().to_string());
+            displayed.push(display);
         }
         while displayed.len() < win {
             displayed.push(String::new());
@@ -345,8 +327,8 @@ impl TermBuffer {
             cursor_col: 0,
             rows_used: win as i32,
             is_alt: false,
-            scroll_max: self.history.len() as i32,
-            scroll_offset: self.view_offset as i32,
+            scroll_max: hist_len as i32,
+            scroll_offset: vo as i32,
         }
     }
 
@@ -374,8 +356,4 @@ impl TermBuffer {
         spans
     }
 
-    /// Invalidate all cached render rows (call after reset / reflow / ESC[3J).
-    fn invalidate_render_cache(&mut self) {
-        self.rendered.clear();
-    }
 }

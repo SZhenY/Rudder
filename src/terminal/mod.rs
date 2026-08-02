@@ -40,7 +40,7 @@ pub(crate) use presentation::{highlight_plain_output, render_term_span};
 #[cfg(test)]
 pub(crate) use presentation::{log_level_marker, text_cell_width, vt_span_colors};
 pub(crate) use render::{
-    build_row, cell_prefix, detect_scroll, MAX_HISTORY, RAW_CAP,
+    build_line, build_row, cell_prefix, RAW_CAP,
 };
 pub(crate) use types::{
     ATerm, BuiltScreen, CompiledOutputRule, CsiState, HistSpan, Line, OutputHighlightPreset,

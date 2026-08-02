@@ -26,7 +26,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
 anyhow = "1"
-thiserror = "1"
 directories = "5"
 chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.33"
@@ -125,14 +124,21 @@ winresource = "0.1"
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"                # Full LTO for smaller+faster binary (CI builds only)
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+# PGO (Profile-Guided Optimization) — run representative workloads first:
+#   1. RUSTFLAGS="-Cprofile-generate=/tmp/pgo" cargo build --release
+#   2. ./target/release/meatshell  (use for a few minutes, quit)
+#   3. llvm-profdata merge -o /tmp/pgo/merged.profdata /tmp/pgo
+#   4. RUSTFLAGS="-Cprofile-use=/tmp/pgo/merged.profdata" cargo build --release
+# Uncomment the line below for the final PGO build:
+# lto = "fat"
 
 [profile.dev]
 opt-level = 0
 debug = 1
 
 [profile.dev.package."*"]
-opt-level = 1
+opt-level = 2               # Dependencies with light optimisation (faster test builds)

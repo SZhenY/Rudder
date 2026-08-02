@@ -439,14 +439,26 @@ export component TerminalView inherits Rectangle {
     // output-text; usable height = key-capture height minus the 8px top pad.
     // The old 16px bottom focus-recovery strip was redundant once body-touch
     // covered the full output and visibly stole one terminal row.
-    property <float> term-cols: max(10, floor((root.width - 20px) / cell-w));
+    //
+    // When SFTP is docked left or right (horizontal), the actual terminal
+    // visible area is narrower than root.width by the SFTP panel width + gap.
+    // If term-cols is computed from root.width, btop/htop render at the larger
+    // virtual width but Slint clips the right side → display cut off (#dock).
+    // SFTP left/right dock occupies terminal width even when collapsed
+    // (36 px tool-strip vs expanded panel+gap).
+    property <length> term-sftp-overhead:
+        (root.sftp-dock == "left" || root.sftp-dock == "right")
+            ? (root.sftp-collapsed ? 36px : max(300px, root.sftp-panel-width) + 6px)
+            : 0px;
+    property <length> term-available-w: root.width - root.term-sftp-overhead;
+    property <float> term-cols: max(10, floor((root.term-available-w - 20px) / cell-w));
     property <float> term-rows: max(5,  floor((key-capture.height - 8px) / cell-h));
     // Only resize the PTY while this tab is visible.  Inactive tabs are laid
     // out at width 0 (→ term-cols collapses to 10); resizing the remote to 10
     // columns reflows the vt100 screen and destroys the scrollback, so when you
     // switch back the output is gone.  Guarding on `visible` keeps each hidden
     // session frozen at its real size; `changed visible` re-syncs on return.
-    property <bool> has-real-size: root.width >= 80px && key-capture.height >= 80px;
+    property <bool> has-real-size: root.term-available-w >= 80px && key-capture.height >= 80px;
     changed term-cols => { if (root.visible && root.has-real-size) { root.terminal-resize(root.term-cols, root.term-rows); } }
     changed term-rows => { if (root.visible && root.has-real-size) { root.terminal-resize(root.term-cols, root.term-rows); } }
     changed has-real-size => { if (root.visible && root.has-real-size) { root.terminal-resize(root.term-cols, root.term-rows); } }
@@ -546,8 +558,11 @@ export component TerminalView inherits Rectangle {
             : root.sftp-horizontal ? max(300px, root.sftp-panel-width)
             : root.sftp-panel-width;
         property <length> sf-h: root.sftp-collapsed ? 36px : root.sftp-panel-height;
-        property <length> sp:   root.sftp-collapsed ? 0px : 4px;
-        // The collapsed bar (sf-h) already reserves the bottom strip now.
+        property <length> sp:   root.sftp-collapsed ? 0px : 6px;
+        // Reserve room for the SFTP status bar at the bottom so that terminal
+        // content and the command-input bar never visually overlap the SFTP
+        // panel's edge elements.  Non-zero only when SFTP is docked at the
+        // left or right (horizontal) and is expanded.
         property <length> bottom-strip-h: 0px;
 
         central := Rectangle {
@@ -1777,6 +1792,7 @@ export component TerminalView inherits Rectangle {
             y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h : 0px;
             width:  root.sftp-horizontal ? parent.sf-w : parent.width;
             height: root.sftp-horizontal ? parent.height : parent.sf-h;
+            clip: true;                     // prevent content from bleeding into central area
             show-tree: !root.sftp-horizontal;   // hide the tree when narrow (vertical)
             compact: root.sftp-collapsed && root.sftp-horizontal;  // clean strip when side+collapsed
             dock-drag-move(ax, ay) => {
