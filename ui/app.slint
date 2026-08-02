@@ -1182,13 +1182,14 @@ export component AppWindow inherits Window {
         property <length> bottom-strip-h: 0px;
 
         // Left sidebar — collapsible and drag-resizable, dockable to any edge.
-        // Only shown while expanded; collapsing swaps it for the ToolStrip icon
-        // bar below (mirrors the welcome sidebar), so no clipped widgets bleed
-        // through the 36px strip (#resource-collapse).
-        if !root.sidebar-collapsed : Rectangle {
-            animate width { duration: 200ms; easing: ease-in-out; }
-            animate height { duration: 200ms; easing: ease-in-out; }
-            animate x { duration: 200ms; easing: ease-in-out; }
+        // Always rendered so width animates smoothly on collapse (Slint removes
+        // `if`-gated elements instantly, skipping the animation).  Content is
+        // clipped by the shrinking container during the 250ms transition, and
+        // the swap between Sidebar ↔ ToolStrip is hidden behind the clip.
+        sidebar-shell := Rectangle {
+            animate width  { duration: 250ms; easing: ease-in-out; }
+            animate height { duration: 250ms; easing: ease-in-out; }
+            animate x      { duration: 250ms; easing: ease-in-out; }
             x: root.sidebar-dock == "right" ? parent.width - parent.sb-w
              : 0px;
             y: root.sidebar-dock == "bottom" ? parent.height - parent.sb-h
@@ -1196,6 +1197,9 @@ export component AppWindow inherits Window {
             width: root.sidebar-horizontal ? parent.sb-w : parent.width;
             height: root.sidebar-horizontal ? parent.height : parent.sb-h;
             clip: true;
+            background: Theme.bg-panel;
+        if !root.sidebar-collapsed : Rectangle {
+            width: parent.width; height: parent.height;
             Sidebar {
             width: parent.width;
             height: parent.height;
@@ -1256,12 +1260,10 @@ export component AppWindow inherits Window {
             }
             }
         }
-
-        // Collapsed resource panel → a ToolStrip icon bar at the same docked edge
-        // (M5), in place of the old floating expand button.
+        // Collapsed strip – inside sidebar-shell so it clips during animation.
         if root.sidebar-collapsed && !dock-area.combine-collapsed-tools && !dock-area.sidebar-strip-outside : ToolStrip {
-            animate width { duration: 200ms; easing: ease-in-out; }
-            animate x { duration: 200ms; easing: ease-in-out; }
+            animate x     { duration: 250ms; easing: ease-in-out; }
+            animate width { duration: 250ms; easing: ease-in-out; }
             x: root.sidebar-dock == "right" ? parent.width - parent.sb-w : 0px;
             y: root.sidebar-dock == "bottom" ? parent.height - parent.sb-h : 0px;
             width: root.sidebar-horizontal ? parent.sb-w : parent.width;
@@ -1283,6 +1285,7 @@ export component AppWindow inherits Window {
             }
             expand-second => { root.quick-panel-collapsed = false; }
         }
+        } // sidebar-shell
 
         // Splitter — drag to resize the sidebar. Orientation + which dimension it
         // adjusts follow the dock edge. Hidden while collapsed.
@@ -1345,9 +1348,9 @@ export component AppWindow inherits Window {
         // panel can never bleed (visually or for clicks) onto a panel docked on
         // the bottom or right (#dock).
         quick-area := Rectangle {
-            animate x { duration: 200ms; easing: ease-in-out; }
-            animate width { duration: 200ms; easing: ease-in-out; }
-            animate height { duration: 200ms; easing: ease-in-out; }
+            animate x { duration: 250ms; easing: ease-in-out; }
+            animate width { duration: 250ms; easing: ease-in-out; }
+            animate height { duration: 250ms; easing: ease-in-out; }
             x: root.sidebar-dock == "left" ? parent.sb-w + parent.sp : 0px;
             y: root.sidebar-dock == "top"  ? parent.sb-h + parent.sp : 0px;
             width:  root.sidebar-horizontal ? parent.width - parent.sb-w - parent.sp : parent.width;
