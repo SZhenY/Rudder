@@ -555,9 +555,9 @@ export component TerminalView inherits Rectangle {
         property <length> sf-taken: root.sftp-collapsed ? 36px
             : root.sftp-horizontal ? max(300px, root.sftp-panel-width)
             : root.sftp-panel-width;
-        animate sf-taken { duration: 250ms; easing: ease-in-out; }
+        animate sf-taken { duration: 200ms; easing: ease-in-out; }
         property <length> sf-h-taken: root.sftp-collapsed ? 36px : root.sftp-panel-height;
-        animate sf-h-taken { duration: 250ms; easing: ease-in-out; }
+        animate sf-h-taken { duration: 200ms; easing: ease-in-out; }
         property <length> sp:   root.sftp-collapsed ? 0px : 6px;
         // Reserve room for the SFTP status bar at the bottom so that terminal
         // content and the command-input bar never visually overlap the SFTP

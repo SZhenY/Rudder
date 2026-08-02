@@ -1176,9 +1176,9 @@ export component AppWindow inherits Window {
         // All elements (sidebar-shell, quick-area, ToolStrip) read from this
         // one property, so they move in perfect lockstep (same value, same frame).
         property <length> sb-taken: root.sidebar-collapsed ? 36px : root.sidebar-width;
-        animate sb-taken { duration: 250ms; easing: ease-in-out; }
+        animate sb-taken { duration: 200ms; easing: ease-in-out; }
         property <length> sb-h-taken: root.sidebar-collapsed ? 36px : root.sidebar-height;
-        animate sb-h-taken { duration: 250ms; easing: ease-in-out; }
+        animate sb-h-taken { duration: 200ms; easing: ease-in-out; }
         property <length> sp: root.sidebar-collapsed ? 0px : 4px;
         property <length> bottom-strip-h: 0px;
 
