@@ -4393,7 +4393,7 @@ fn wire_session_callbacks(
                 sftp_saved_height: sftp_h_default,
             });
             // Create vt100 parser for this tab (default 24×80; resized on first
-            // terminal-resize callback). 5000-line scrollback is stored for
+            // terminal-resize callback). 100000-line scrollback is stored for
             // future scroll-navigation support.
             let is_dark_now = weak.upgrade().map(|w| w.get_dark_mode()).unwrap_or(true);
             let (output_highlight, custom_highlight_rules) = {
@@ -4406,7 +4406,7 @@ fn wire_session_callbacks(
                     compile_output_rules(settings.output_highlight_rules()),
                 )
             };
-            let (t24, p24) = new_term(24, 80, 5000);
+            let (t24, p24) = new_term(24, 80, 100000);
             bufs.lock().unwrap().insert(
                 tab_id.clone(),
                 Arc::new(Mutex::new(TermBuffer {
@@ -8713,7 +8713,7 @@ fn wire_key_input(
                         if let Some(h) = term_buf(&ctx.bufs, tab_id.as_str()) {
                             let mut b = h.lock().unwrap();
                             let (rows, cols) = crate::terminal::term_size(&b.term);
-                            (b.term, b.processor) = crate::terminal::new_term(rows, cols, 5000);
+                            (b.term, b.processor) = crate::terminal::new_term(rows, cols, 100000);
                             b.rendered.clear();
                             b.prev.clear();
                             b.displayed_text.clear();
@@ -9143,7 +9143,7 @@ fn wire_key_input(
             if let Some(h) = term_buf(&bufs_clear, &tid) {
                 let mut buf = h.lock().unwrap();
                 let (rows, cols) = crate::terminal::term_size(&buf.term);
-                (buf.term, buf.processor) = crate::terminal::new_term(rows, cols, 5000);
+                (buf.term, buf.processor) = crate::terminal::new_term(rows, cols, 100000);
                 buf.rendered.clear();
                 buf.find_query.clear();
                 buf.prev = Vec::new();
