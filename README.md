@@ -7,6 +7,10 @@
 （资源监控侧栏、会话管理、多标签页终端）的同时，把内存占用从 400 MB+ 的
 JVM 压到几十 MB 原生级别。
 
+> 本项目 fork 自 [yituorou/meatshell](https://github.com/yituorou/meatshell)。
+> 主要技术栈变更：终端模拟引擎从 `vt100` 迁移至 `alacritty_terminal` 0.26，
+> 新增 Scrollback 修复、SFTP 遮挡修复、Storage scrollback 方案等多项架构优化。
+
 ## 截图
 
 <p align="center">
@@ -109,12 +113,22 @@ open /Applications/meatshell.app
 
 | 模块          | 选型                                                              |
 | ------------- | ----------------------------------------------------------------- |
-| UI            | [Slint](https://slint.dev)（纯 Rust 编译，无 GC）                 |
-| 异步运行时    | [`tokio`](https://tokio.rs)                                       |
-| SSH 协议      | [`russh`](https://crates.io/crates/russh)（无 libssh 依赖）       |
-| 系统指标      | [`sysinfo`](https://crates.io/crates/sysinfo)                     |
-| 序列化        | `serde` + `serde_json`                                            |
-| 日志          | `tracing` + `tracing-subscriber`                                  |
+| UI            | [Slint](https://slint.dev) 1.8（纯 Rust 编译，无 GC）            |
+| 终端模拟      | [`alacritty_terminal`](https://crates.io/crates/alacritty_terminal) 0.26（VT/ANSI + 原生 scrollback/reflow） |
+| PTY           | `portable-pty` 0.8（跨平台伪终端）                                |
+| 异步运行时    | [`tokio`](https://tokio.rs) 1.x（rt-multi-thread）                |
+| SSH 协议      | [`russh`](https://crates.io/crates/russh) 0.49（纯 Rust，无 libssh） |
+| SFTP          | `russh-sftp` 2                                                     |
+| 系统指标      | [`sysinfo`](https://crates.io/crates/sysinfo) 0.33                 |
+| 序列化        | `serde` + `serde_json`                                             |
+| 日志          | `tracing` + `tracing-subscriber`                                   |
+| 密码加密      | `chacha20poly1305`（会话密码）+ `aes`/`argon2`/`hmac`/`sha2`（PuTTY PPK） |
+| 表情符号      | `twemoji-assets` 1.5（内嵌 PNG）                                   |
+| 代理          | `tokio-socks` 5（SOCKS5）                                          |
+| 串口          | `serialport` 4                                                     |
+| 系统字体      | `fontdb` 0.16                                                     |
+| 图像解码      | `image` 0.25（PNG/JPEG/WebP/BMP 壁纸）                             |
+| 更新检查      | `ureq` 2（HTTPS，后台线程）                                        |
 
 ## 运行
 
@@ -130,22 +144,59 @@ cargo run --release
 ```
 meatshell/
 ├── Cargo.toml
-├── build.rs                 # Slint 编译器入口
-├── ui/
-│   ├── app.slint            # 顶层窗口
-│   ├── theme.slint          # 设计 tokens
-│   ├── widgets.slint        # 可复用按钮 / 输入框 / sparkline
-│   ├── sidebar.slint        # 左侧系统监控面板
-│   ├── tabs.slint           # 顶部标签栏
-│   ├── welcome.slint        # 欢迎页 / 快速连接
-│   ├── session_dialog.slint # 新建 / 编辑会话弹框
-│   └── terminal_view.slint  # 终端视图（v0.1 行缓冲）
+├── build.rs                     # Slint 编译器入口
+├── ui/                          # Slint 界面定义
+│   ├── app.slint                # 顶层窗口
+│   ├── terminal_view.slint      # 终端视图 + SFTP dock
+│   ├── sftp_panel.slint         # SFTP 文件浏览面板
+│   ├── sidebar.slint            # 左侧系统监控面板
+│   ├── tabs.slint               # 顶部标签栏
+│   ├── welcome.slint            # 欢迎页 / 快速连接
+│   ├── session_dialog.slint     # 新建 / 编辑会话弹框
+│   ├── interface_panel.slint    # 界面设置面板
+│   ├── proc_window.slint        # 进程管理窗口
+│   ├── system_info_window.slint # 系统信息窗口
+│   ├── confirm_dialog.slint     # 确认 / 删除对话框
+│   ├── theme.slint              # 设计 tokens（深色/浅色）
+│   ├── widgets.slint            # 可复用组件
+│   └── fonts/                   # 内嵌字体
+├── lang/                        # 国际化
+│   ├── zh/                      # 简体中文
+│   └── en/                      # English
 └── src/
-    ├── main.rs
-    ├── app.rs               # UI ↔ 后端桥接
-    ├── config.rs            # 会话 JSON 持久化
-    ├── system.rs            # CPU / 内存 / 网络采样
-    └── ssh.rs               # SSH 会话 worker
+    ├── main.rs                  # 入口
+    ├── app.rs                   # UI ↔ 后端桥接（核心控制器）
+    ├── terminal/                # 终端模拟子系统
+    │   └── impls/
+    │       ├── vt_adapter.rs    # alacritty_terminal 封装
+    │       ├── term_buffer.rs   # 终端缓冲区（scrollback/渲染/缓存）
+    │       ├── render.rs        # 行构建（build_row/build_line）
+    │       ├── presentation.rs  # 终端输出渲染 + emoji
+    │       ├── input.rs         # 键盘输入编码（PTY/IME/Ctrl）
+    │       ├── local.rs         # 本地 shell（portable-pty）
+    │       ├── serial.rs        # 串口终端
+    │       ├── telnet.rs        # Telnet
+    │       ├── zmodem.rs        # ZMODEM 文件传输
+    │       ├── render_gate.rs   # 帧同步栅栏
+    │       └── output_highlight.rs  # 日志/DevOps 级别着色
+    ├── ssh/                     # SSH 子系统
+    │   └── impls/
+    │       ├── ssh.rs           # SSH 会话 worker
+    │       ├── known_hosts.rs   # 主机密钥校验
+    │       ├── ppk.rs           # PuTTY PPK 私钥加载
+    │       ├── proxy.rs         # 出站代理（SOCKS5）
+    │       └── ssh_config.rs    # ~/.ssh/config 导入
+    ├── sftp/                    # SFTP 文件浏览 + 上传/下载
+    ├── session/                 # 会话管理（JSON 持久化、加密存储）
+    ├── tunnel/                  # SSH 端口转发（-L/-R/-D）
+    ├── resource/                # 系统资源监控（CPU/内存/交换/磁盘/网络）
+    ├── config/                  # 配置管理
+    ├── i18n/                    # 国际化
+    ├── layout/                  # 窗口布局 / 分屏
+    ├── logging/                 # tracing 初始化
+    ├── ui/                      # Slint UI 辅助类型（TermSpan/Match）
+    ├── wallpaper/               # 自定义背景图
+    └── webdav/                  # WebDAV 客户端
 ```
 
 ## 开发提示
