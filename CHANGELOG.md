@@ -5,6 +5,34 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.6.9-beta2] - 2026-08-03
+
+### 项目重命名：meatshell → Rudder
+
+- **项目名**：`meatshell` → `rudder`（Cargo package、XDG app ID、配置目录、日志前缀、i18n 文件、asset 文件全部更新）
+- **图标替换**：窗口图标、任务栏图标、关于对话框图标更换为 Rudder 船轮图标（`rudder.ico` + `rudder_icon_1024.png`）
+- **GitHub 仓库**：远程仓库名从 `SZhenY/meatshell` 改为 `SZhenY/Rudder`
+- **README 重写**：移除 FinalShell 灵感描述，聚焦 Fork 来源和优化清单（中英双语）
+- **About 对话框**：新增 "Forked from yituorou/meatshell" 说明行
+- **欢迎页 i18n**：中文 "Rudder —— 一款轻量级的 Rust + Slint SSH 客户端"
+
+### UI 动画 & 交互优化
+
+- **SFTP 面板动画**：`sf-viz` / `sf-h-viz`（动画）与 `sf-taken` / `sf-h-taken`（终端瞬跳）分离，消除终端连续抖动
+- **SFTP 折叠修复**：`compact` 属性覆盖所有停靠方向（原来只在左右停靠时生效），顶部/底部折叠不再残留可点击区域
+- **欢迎页侧栏动画**：从 `if` 显隐改为始终渲染 + 动画宽度 + 内容 opacity 淡入，实现平滑展开/收起
+- **所有侧栏动画时长**：从 200ms ease-in-out 统一改为 150ms ease-out
+
+### 设置页调整
+
+- **"欢迎页设为侧栏"**设置项从独立的"欢迎页"页面移入"侧栏"页面，作为侧栏设置的子集
+- 删除不再需要的"欢迎页"导航标签
+
+### 编译优化
+
+- **Release profile**：`opt-level = "s"`、`lto = "fat"`、`codegen-units = 1`、`strip = "debuginfo"`、`overflow-checks = false`
+- **chrono**：移除未使用的 `serde` feature
+
 ## [0.6.9-beta1] - 2026-08-02
 
 ### 架构变更：vt100 → alacritty_terminal 迁移完成
