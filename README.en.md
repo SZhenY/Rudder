@@ -1,12 +1,16 @@
-# meatshell
+# Rudder
 
 [简体中文](./README.md) | **English**
 
-A lightweight, low-memory SSH / terminal client inspired by FinalShell, but
-written entirely in **Rust + [Slint](https://slint.dev)**. The goal is to keep
-FinalShell's core experience (resource-monitor sidebar, session management,
-tabbed terminals) while cutting memory use from the 400 MB+ of a JVM app down to
-the tens-of-MB range of a native binary.
+> This project is a fork of [yituorou/meatshell](https://github.com/yituorou/meatshell),
+> with the following optimizations and tech-stack migrations:
+>
+> - **Terminal engine migration**: from `vt100` 0.15 to `alacritty_terminal` 0.26, with native Scrollback, Selection, and Reflow
+> - **Scrollback fix**: reverted to `detect_scroll` approach, fixing inability to scroll after `cat` / `history` on large files
+> - **Native Selection**: replaced custom selection pipeline with alacritty's `Selection` + `selection_to_string()`
+> - **Native Reflow**: replaced raw byte-stream replay with `Term::resize`, preventing output truncation on window resize
+> - **Render caching**: row-level `RenderedLine` cache skips regex highlight rebuild on static screens
+> - **Code reduction**: net -57 lines, removed `prev` / `prev_display_offset` and other redundant fields
 
 ## Screenshots
 

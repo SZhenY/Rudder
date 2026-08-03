@@ -2,14 +2,13 @@
 
 **简体中文** | [English](./README.en.md)
 
-一个轻量级、低内存占用的 SSH / 终端客户端，灵感来自 FinalShell，但完全由
-**Rust + [Slint](https://slint.dev)** 实现。目标是保留 FinalShell 的核心体验
-（资源监控侧栏、会话管理、多标签页终端）的同时，把内存占用从 400 MB+ 的
-JVM 压到几十 MB 原生级别。
-
-> 本项目 fork 自 [yituorou/meatshell](https://github.com/yituorou/meatshell)。
-> 主要技术栈变更：终端模拟引擎从 `vt100` 迁移至 `alacritty_terminal` 0.26，
-> 新增 Scrollback 修复、SFTP 遮挡修复、Storage scrollback 方案等多项架构优化。
+> 本项目 Fork 自 [yituorou/meatshell](https://github.com/yituorou/meatshell)，
+> 在原版基础上进行了以下优化和技术栈迁移：
+>
+> - **终端引擎迁移**：从 `vt100` 0.15 完全迁移至 `alacritty_terminal` 0.26，原生支持 Scrollback、Selection、Reflow
+> - **自研 Selection 替换**：用 alacritty 原生 `Selection` + `selection_to_string()` 替代自定义选区管线
+> - **原生 Reflow**：用 `Term::resize` 替代原始字节流重放，窗口缩放不再裁切输出
+> - **渲染缓存**：行级 `RenderedLine` 缓存，静态画面跳过正则高亮重建
 
 ## 截图
 
@@ -128,7 +127,6 @@ open /Applications/rudder.app
 | 串口          | `serialport` 4                                                     |
 | 系统字体      | `fontdb` 0.16                                                     |
 | 图像解码      | `image` 0.25（PNG/JPEG/WebP/BMP 壁纸）                             |
-| 更新检查      | `ureq` 2（HTTPS，后台线程）                                        |
 
 ## 运行
 
