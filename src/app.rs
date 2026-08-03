@@ -770,7 +770,7 @@ pub fn run() -> Result<()> {
     // the Linux desktop shell can match the running window to the installed
     // `meatshell.desktop` entry and show our icon in the dock/taskbar.  (On
     // Windows the icon comes from the embedded .ico, so this is a no-op there.)
-    let _ = slint::set_xdg_app_id("meatshell");
+    let _ = slint::set_xdg_app_id("rudder");
     let window = AppWindow::new().context("failed to build Slint window")?;
     // Slint applies preferred-width/height while the native window is being
     // created. Do not treat those startup Resized events as user adjustments;
@@ -2039,7 +2039,7 @@ pub fn run() -> Result<()> {
     // --- In-app update check (#48) -----------------------------------------
     // "Download" on the banner opens the latest-release page in the browser.
     window.on_open_update_url(move || {
-        let url = "https://github.com/jeff141/meatshell/releases/latest";
+        let url = "https://github.com/SZhenY/Rudder/releases/latest";
         #[cfg(windows)]
         let _ = std::process::Command::new("explorer").arg(url).spawn();
         #[cfg(target_os = "macos")]
@@ -2049,7 +2049,7 @@ pub fn run() -> Result<()> {
     });
     // The open-source link in the About dialog opens the project page.
     window.on_open_repo(move || {
-        let url = "https://github.com/jeff141/meatshell";
+        let url = "https://github.com/SZhenY/Rudder";
         #[cfg(windows)]
         let _ = std::process::Command::new("explorer").arg(url).spawn();
         #[cfg(target_os = "macos")]
@@ -2065,8 +2065,8 @@ pub fn run() -> Result<()> {
         let weak = window.as_weak();
         std::thread::spawn(move || {
             let body =
-                match ureq::get("https://api.github.com/repos/jeff141/meatshell/releases/latest")
-                    .set("User-Agent", "meatshell-update-check")
+                match ureq::get("https://api.github.com/repos/SZhenY/Rudder/releases/latest")
+                    .set("User-Agent", "rudder-update-check")
                     .timeout(std::time::Duration::from_secs(8))
                     .call()
                 {
@@ -3611,7 +3611,7 @@ fn wire_session_callbacks(
         let store = store.clone();
         window.on_export_sessions(move || {
             if let Some(path) = rfd::FileDialog::new()
-                .set_file_name("meatshell-connections.json")
+                .set_file_name("rudder-connections.json")
                 .add_filter("JSON", &["json"])
                 .save_file()
             {
@@ -6487,7 +6487,7 @@ fn apply_session_event_to_window(
                     win,
                     tab_id,
                     SessionEvent::Output(format!(
-                        "\r\n[meatshell] {} {}: {}\r\n",
+                        "\r\n[rudder] {} {}: {}\r\n",
                         crate::i18n::t("无法打开", "Cannot open"),
                         name,
                         error
@@ -9421,8 +9421,8 @@ fn webdav_url(base: &str, remote_path: &str) -> Result<String> {
         anyhow::bail!(
             "{}",
             t(
-                "飞牛 WebDAV 需要写入某个共享目录，不能直接写到根路径；请把 WebDAV 地址改成 https://IP:5006/all/，或把远端文件改成 all/meatshell-connections.json",
-                "FnOS WebDAV needs a writable shared folder, not the server root; use https://IP:5006/all/ or set the remote file to all/meatshell-connections.json"
+                "飞牛 WebDAV 需要写入某个共享目录，不能直接写到根路径；请把 WebDAV 地址改成 https://IP:5006/all/，或把远端文件改成 all/rudder-connections.json",
+                "FnOS WebDAV needs a writable shared folder, not the server root; use https://IP:5006/all/ or set the remote file to all/rudder-connections.json"
             )
         );
     }
@@ -9509,8 +9509,8 @@ fn webdav_error(e: ureq::Error) -> anyhow::Error {
             return anyhow::anyhow!(
                 "{}: {url}: status code 405{detail}",
                 t(
-                    "当前 WebDAV 路径不允许上传；飞牛请写入已开启协议访问的共享目录，例如 WebDAV 地址填 https://IP:5006/all/，或远端文件填 all/meatshell-connections.json",
-                    "The current WebDAV path does not allow upload; for FnOS, write into a shared folder such as https://IP:5006/all/ or set remote file to all/meatshell-connections.json"
+                    "当前 WebDAV 路径不允许上传；飞牛请写入已开启协议访问的共享目录，例如 WebDAV 地址填 https://IP:5006/all/，或远端文件填 all/rudder-connections.json",
+                    "The current WebDAV path does not allow upload; for FnOS, write into a shared folder such as https://IP:5006/all/ or set remote file to all/rudder-connections.json"
                 )
             );
         }

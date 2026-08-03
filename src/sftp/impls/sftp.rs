@@ -794,7 +794,7 @@ async fn run_sftp(
                 let cancels_done = cancels.clone();
                 tokio::spawn(async move {
                     let n = names.len();
-                    let tmp = format!("/tmp/meatshell-{}.tar", Uuid::new_v4());
+                    let tmp = format!("/tmp/rudder-{}.tar", Uuid::new_v4());
                     // Name the archive after the first item's stem, per the user:
                     // 11.txt → "11等文件.tar". Sanitize since names come from the server.
                     let first = names.first().map(|s| s.as_str()).unwrap_or("download");
@@ -1250,7 +1250,7 @@ async fn run_sftp(
                 // Sanitize the remote-controlled name before it becomes a local
                 // file path that we later hand to the OS "open" call.
                 let filename = sanitize_filename(&base_name(&remote));
-                let tmp_dir = std::env::temp_dir().join("meatshell");
+                let tmp_dir = std::env::temp_dir().join("rudder");
                 let _ = tokio::fs::create_dir_all(&tmp_dir).await;
                 let local = tmp_dir.join(&filename);
                 let local_str = local.to_string_lossy().to_string();
@@ -1628,7 +1628,7 @@ async fn stage_remote_for_copy(
     events: &UnboundedSender<SessionEvent>,
 ) -> Result<(PathBuf, PathBuf)> {
     let cleanup_root =
-        std::env::temp_dir().join(format!("meatshell-remote-copy-{}", Uuid::new_v4()));
+        std::env::temp_dir().join(format!("rudder-remote-copy-{}", Uuid::new_v4()));
     tokio::fs::create_dir_all(&cleanup_root)
         .await
         .with_context(|| format!("failed to create temp dir {}", cleanup_root.display()))?;

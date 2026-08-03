@@ -615,7 +615,7 @@ export component InterfacePanel inherits Rectangle {
                     border-color: Theme.border-subtle;
                     Text {
                         x: 12px;
-                        text: "meatshell ~$ echo preview 0123";
+                        text: "Rudder ~$ echo preview 0123";
                         font-family: Theme.term-font-family;
                         font-size: Theme.term-font-size;
                         font-weight: Theme.term-font-bold ? 700 : 400;
@@ -1146,8 +1146,8 @@ export component InterfacePanel inherits Rectangle {
                 Text {
                     text: root.renderer-restart-required
                         ? (root.lang-en
-                            ? "Restart MeatShell to apply the renderer change."
-                            : "重启 MeatShell 后渲染器设置才会生效。")
+                            ? "Restart Rudder to apply the renderer change."
+                            : "重启 Rudder 后渲染器设置才会生效。")
                         : (root.lang-en
                             ? (Theme.is-mac
                                 ? "FemtoVG remains the default renderer on macOS."
@@ -1283,8 +1283,8 @@ export component InterfacePanel inherits Rectangle {
                 SettingRow {
                     label: root.lang-en ? "Enable WebDAV sync" : "启用 WebDAV 同步";
                     desc: root.lang-en
-                        ? "Manual upload/download only; meatshell will not connect on startup."
-                        : "仅手动上传/下载;meatshell 启动时不会自动连接。";
+                        ? "Manual upload/download only; Rudder will not connect on startup."
+                        : "仅手动上传/下载;Rudder 启动时不会自动连接。";
                     show-divider: false;
                     Switch {
                         on: root.webdav-enabled;
@@ -1293,7 +1293,7 @@ export component InterfacePanel inherits Rectangle {
                 }
                 LabeledInput {
                     label: root.lang-en ? "Endpoint URL" : "WebDAV 地址";
-                    placeholder: "https://nas:5006/all/ or https://nas:5006/all/meatshell-connections.json";
+                    placeholder: "https://nas:5006/all/ or https://nas:5006/all/rudder-connections.json";
                     value <=> root.webdav-url;
                 }
                 LabeledInput {
@@ -1309,7 +1309,7 @@ export component InterfacePanel inherits Rectangle {
                 }
                 LabeledInput {
                     label: root.lang-en ? "Remote file" : "远端文件";
-                    placeholder: "meatshell-connections.json";
+                    placeholder: "rudder-connections.json";
                     value <=> root.webdav-remote-path;
                 }
                 SettingRow {
@@ -1384,7 +1384,7 @@ export component InterfacePanel inherits Rectangle {
                 SettingRow {
                     label: root.lang-en ? "Check for new versions on startup" : "启动时检查新版本";
                     desc: root.lang-en
-                        ? "Off: meatshell no longer queries GitHub for releases and the update banner won't appear (takes effect next launch)."
+                        ? "Off: Rudder no longer queries GitHub for releases and the update banner won't appear (takes effect next launch)."
                         : "关闭后:不再向 GitHub 查询新版本,也不会弹出更新提示(下次启动生效)。";
                     show-divider: false;
                     Switch {

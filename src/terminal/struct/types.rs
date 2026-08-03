@@ -7,7 +7,7 @@ use alacritty_terminal::vte::ansi::Processor;
 
 use crate::ui::TermSpan;
 
-/// Alacritty terminal handle used across MeatShell.
+/// Alacritty terminal handle used across Rudder.
 pub(crate) type ATerm = Term<VoidListener>;
 
 /// Per-terminal state used by normal and alternate-screen rendering.

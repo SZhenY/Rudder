@@ -7,7 +7,7 @@
 # force a large allocation (denial of service). The fix caps the agent frame at
 # 256 KiB.
 #
-# meatshell does NOT use the ssh-agent in any way — no agent authentication, no
+# Rudder does NOT use the ssh-agent in any way — no agent authentication, no
 # agent forwarding (grep the source tree for "agent": the only hits are HTTP
 # "User-Agent" and colour comments). The vulnerable code path is therefore never
 # reached in this binary, so the advisory is not exploitable here.

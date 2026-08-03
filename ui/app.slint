@@ -216,7 +216,7 @@ component ShortcutRow inherits Rectangle {
 }
 
 export component AppWindow inherits Window {
-    title: "meatshell";
+    title: "Rudder";
     icon: @image-url("../assets/icon.png");
     // Frameless when we draw our own title bar (#119); Rust sets custom-titlebar
     // true on Windows/Linux. Slint maps no-frame → winit set_decorations(false).
@@ -877,7 +877,7 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     alignment: center;
                     Text {
-                        text: "meatshell";
+                        text: "Rudder";
                         color: Theme.text-secondary;
                         font-size: Theme.fs-sm;
                     }
@@ -3138,7 +3138,7 @@ export component AppWindow inherits Window {
                 padding: 18px;
                 spacing: 12px;
                 Text {
-                    text: root.lang-en ? "Close meatshell?" : "确定关闭 meatshell?";
+                    text: root.lang-en ? "Close Rudder?" : "确定关闭 Rudder?";
                     color: Theme.text-primary; font-size: Theme.fs-lg; font-weight: 700;
                 }
                 Text {
@@ -3404,7 +3404,7 @@ export component AppWindow inherits Window {
                         alignment: start;
                         spacing: 8px;
                         Text {
-                            text: "meatshell";
+                            text: "Rudder";
                             color: Theme.text-primary;
                             font-size: 22px;
                             font-weight: 700;
@@ -3419,10 +3419,17 @@ export component AppWindow inherits Window {
                     }
 
                     Text {
-                        text: @tr("meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'");
+                        text: @tr("Rudder — a lightweight Rust + Slint SSH client");
                         color: Theme.text-secondary;
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
+                    }
+
+                    Text {
+                        text: @tr("Forked from yituorou/meatshell");
+                        color: Theme.text-muted;
+                        font-size: 11px;
+                        vertical-alignment: center;
                     }
 
                     // Clickable open-source link → opens the GitHub page.
@@ -3441,7 +3448,7 @@ export component AppWindow inherits Window {
                             HorizontalLayout {
                                 padding-left: 4px; padding-right: 4px;
                                 Text {
-                                    text: "github.com/jeff141/meatshell";
+                                    text: "github.com/SZhenY/Rudder";
                                     color: Theme.accent;
                                     font-size: Theme.fs-sm;
                                     vertical-alignment: center;

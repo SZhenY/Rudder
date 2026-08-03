@@ -1,7 +1,7 @@
 fn main() {
     // Bundle the gettext `.po` translations under `lang/` so the UI's `@tr(...)`
     // strings can switch language at runtime via slint::select_bundled_translation.
-    // Source language is Chinese (the msgids); `lang/<lc>/LC_MESSAGES/meatshell.po`
+    // Source language is Chinese (the msgids); `lang/<lc>/LC_MESSAGES/rudder.po`
     // provides other locales.  No per-component context, so msgids are the raw
     // Chinese strings.
     println!("cargo:rerun-if-changed=lang");
@@ -18,17 +18,17 @@ fn main() {
     // Explorer, the taskbar and shortcuts. No-op on non-Windows targets.
     #[cfg(windows)]
     {
-        println!("cargo:rerun-if-changed=assets/meatshell.ico");
-        println!("cargo:rerun-if-changed=assets/meatshell.exe.manifest");
+        println!("cargo:rerun-if-changed=assets/rudder.ico");
+        println!("cargo:rerun-if-changed=assets/rudder.exe.manifest");
         let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/meatshell.ico");
+        res.set_icon("assets/rudder.ico");
         // Embed an application manifest declaring Per-Monitor DPI Awareness V2.
         // Without it the DPI-awareness level depends on winit's runtime
         // SetProcessDpiAwarenessContext call, which races: if anything touches a
         // DPI API first the call silently fails and the window jumps in size /
         // cursor offset when dragged across monitors with different scaling (#194).
         // The manifest is authoritative and applied before any code runs.
-        res.set_manifest_file("assets/meatshell.exe.manifest");
+        res.set_manifest_file("assets/rudder.exe.manifest");
         if let Err(e) = res.compile() {
             println!("cargo:warning=failed to embed Windows icon: {e}");
         }

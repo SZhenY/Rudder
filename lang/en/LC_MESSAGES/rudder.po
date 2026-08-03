@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: meatshell\n"
+"Project-Id-Version: rudder\n"
 "Language: en\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -51,11 +51,11 @@ msgstr "No transfers yet"
 msgid "About"
 msgstr "About"
 
-msgid "About meatshell"
-msgstr "About meatshell"
+msgid "About Rudder"
+msgstr "About Rudder"
 
-msgid "A lightweight Rust + Slint SSH terminal client by 'lil meatball'."
-msgstr "A lightweight Rust + Slint SSH terminal client by 'lil meatball'."
+msgid "A lightweight Rust + Slint SSH terminal client."
+msgstr "A lightweight Rust + Slint SSH terminal client."
 
 msgid "Open source · MIT / Apache-2.0"
 msgstr "Open source · MIT / Apache-2.0"
@@ -390,8 +390,11 @@ msgstr "-R: server port → target reached from here"
 msgid "-D: local SOCKS5 proxy"
 msgstr "-D: local SOCKS5 proxy"
 
-msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
-msgstr "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
+msgid "Rudder — a lightweight Rust + Slint SSH client"
+msgstr "Rudder — a lightweight Rust + Slint SSH client"
+
+msgid "Forked from yituorou/meatshell"
+msgstr "Forked from yituorou/meatshell"
 
 msgid "Quick connect"
 msgstr "Quick connect"

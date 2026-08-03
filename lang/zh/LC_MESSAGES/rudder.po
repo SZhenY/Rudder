@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: meatshell\n"
+"Project-Id-Version: rudder\n"
 "Language: zh\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -51,11 +51,11 @@ msgstr "暂无传输记录"
 msgid "About"
 msgstr "关于"
 
-msgid "About meatshell"
-msgstr "关于 meatshell"
+msgid "About Rudder"
+msgstr "关于 Rudder"
 
-msgid "A lightweight Rust + Slint SSH terminal client by 'lil meatball'."
-msgstr "一个由「一坨肉」开发的轻量 Rust + Slint SSH 终端客户端。"
+msgid "A lightweight Rust + Slint SSH terminal client."
+msgstr "一个轻量级 Rust + Slint SSH 终端客户端。"
 
 msgid "Open source · MIT / Apache-2.0"
 msgstr "开源项目 · 协议 MIT / Apache-2.0"
@@ -390,8 +390,11 @@ msgstr "-R：服务器端口 → 由本机访问的目标"
 msgid "-D: local SOCKS5 proxy"
 msgstr "-D：本地 SOCKS5 代理"
 
-msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
-msgstr "meatshell 一个由「一坨肉」开发的轻量 Rust + Slint SSH 客户端"
+msgid "Rudder — a lightweight Rust + Slint SSH client"
+msgstr "Rudder —— 一款轻量级的 Rust + Slint SSH 客户端"
+
+msgid "Forked from yituorou/meatshell"
+msgstr "Fork 自 yituorou/meatshell"
 
 msgid "Quick connect"
 msgstr "快速连接"

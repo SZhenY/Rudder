@@ -3546,58 +3546,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
-name = "meatshell"
-version = "0.6.9-beta1"
-dependencies = [
- "aes",
- "alacritty_terminal",
- "anyhow",
- "arboard",
- "argon2",
- "async-trait",
- "base64",
- "cbc",
- "chacha20poly1305",
- "chrono",
- "dark-light",
- "directories",
- "fontdb 0.16.2",
- "futures",
- "hmac",
- "i-slint-backend-winit",
- "icu_provider",
- "image",
- "portable-pty",
- "rand 0.8.7",
- "raw-window-handle",
- "regex",
- "rfd",
- "russh",
- "russh-keys",
- "russh-sftp",
- "serde",
- "serde_json",
- "serialport",
- "sha1",
- "sha2",
- "slint",
- "slint-build",
- "ssh-key",
- "sysinfo",
- "tokio",
- "tokio-socks",
- "tracing",
- "tracing-subscriber",
- "twemoji-assets",
- "unicode-segmentation",
- "unicode-width",
- "ureq",
- "uuid",
- "winresource",
- "zeroize",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5379,6 +5327,58 @@ dependencies = [
  "snafu",
  "unicode-linebreak",
  "unicode-width",
+]
+
+[[package]]
+name = "rudder"
+version = "0.6.9-beta1"
+dependencies = [
+ "aes",
+ "alacritty_terminal",
+ "anyhow",
+ "arboard",
+ "argon2",
+ "async-trait",
+ "base64",
+ "cbc",
+ "chacha20poly1305",
+ "chrono",
+ "dark-light",
+ "directories",
+ "fontdb 0.16.2",
+ "futures",
+ "hmac",
+ "i-slint-backend-winit",
+ "icu_provider",
+ "image",
+ "portable-pty",
+ "rand 0.8.7",
+ "raw-window-handle",
+ "regex",
+ "rfd",
+ "russh",
+ "russh-keys",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "serialport",
+ "sha1",
+ "sha2",
+ "slint",
+ "slint-build",
+ "ssh-key",
+ "sysinfo",
+ "tokio",
+ "tokio-socks",
+ "tracing",
+ "tracing-subscriber",
+ "twemoji-assets",
+ "unicode-segmentation",
+ "unicode-width",
+ "ureq",
+ "uuid",
+ "winresource",
+ "zeroize",
 ]
 
 [[package]]

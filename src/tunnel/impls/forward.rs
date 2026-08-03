@@ -20,7 +20,7 @@ use crate::ssh::{ClientHandler, SessionEvent};
 
 /// Emit a one-line notice into the terminal output stream.
 fn notice(events: &UnboundedSender<SessionEvent>, msg: String) {
-    let _ = events.send(SessionEvent::Output(format!("\r\n[meatshell] {msg}\r\n")));
+    let _ = events.send(SessionEvent::Output(format!("\r\n[rudder] {msg}\r\n")));
 }
 
 fn bind_target(bind_addr: &str, bind_port: u16) -> String {

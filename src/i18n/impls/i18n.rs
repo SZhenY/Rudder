@@ -4,7 +4,7 @@
 //!
 //! * **Static `.slint` text** uses Slint's own `@tr("English")` plus bundled
 //!   `.po` translations.  The source language (the msgids) is **English**; the
-//!   Chinese strings live in `lang/zh/LC_MESSAGES/meatshell.po`.  Switching is
+//!   Chinese strings live in `lang/zh/LC_MESSAGES/rudder.po`.  Switching is
 //!   done with `slint::select_bundled_translation` (`"zh"` → Chinese, `""`/`"en"`
 //!   → the English source).
 //!

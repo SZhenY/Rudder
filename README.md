@@ -1,4 +1,4 @@
-# meatshell
+# Rudder
 
 **简体中文** | [English](./README.en.md)
 
@@ -26,18 +26,18 @@ JVM 压到几十 MB 原生级别。
 ## 下载与安装
 
 每次打 `v*` 标签，GitHub Actions 会自动构建 **Windows / Linux / macOS** 三平台二进制，
-发布到 [Releases](https://github.com/jeff141/meatshell/releases) 页面。
+发布到 [Releases](https://github.com/SZhenY/Rudder/releases) 页面。
 
 ### Windows
 
-下载 `meatshell-*-windows-x86_64.zip`，解压后双击 `meatshell.exe`。
+下载 `rudder-*-windows-x86_64.zip`，解压后双击 `rudder.exe`。
 
 ### Linux
 
 ```bash
-tar -xzf meatshell-*-linux-x86_64.tar.gz
-cd meatshell-*-linux-x86_64
-./meatshell                                  # 直接运行
+tar -xzf rudder-*-linux-x86_64.tar.gz
+cd rudder-*-linux-x86_64
+./rudder                                  # 直接运行
 # 可选：装应用图标 + 启动器入口（Dock / 应用列表里显示图标，无需传参）
 chmod +x install-linux.sh && ./install-linux.sh
 ```
@@ -59,20 +59,20 @@ sudo apt install -y --no-install-recommends \
 
 ### macOS
 
-下载得到的是 `.zip`，里面是 `meatshell.app` 应用程序包：
+下载得到的是 `.zip`，里面是 `rudder.app` 应用程序包：
 
 ```bash
 # 解压(aarch64 = Apple 芯片，x86_64 = Intel)
-unzip meatshell-*-macos-*.zip
+unzip rudder-*-macos-*.zip
 # 移到「应用程序」(可选，留在原地也行)
-mv meatshell.app /Applications/
-# 去掉「未签名应用」的隔离属性，否则会提示「meatshell 已损坏，无法打开」
-xattr -dr com.apple.quarantine /Applications/meatshell.app
+mv rudder.app /Applications/
+# 去掉「未签名应用」的隔离属性，否则会提示「rudder 已损坏，无法打开」
+xattr -dr com.apple.quarantine /Applications/rudder.app
 # 打开(或在「访达」里双击)
-open /Applications/meatshell.app
+open /Applications/rudder.app
 ```
 
-> 若未移到 `/Applications`，把上面两条路径换成 `.app` 实际所在位置(如 `~/Downloads/meatshell.app`)即可。
+> 若未移到 `/Applications`，把上面两条路径换成 `.app` 实际所在位置(如 `~/Downloads/rudder.app`)即可。
 
 > 从源码构建见下方 [运行](#运行)。
 
@@ -87,9 +87,9 @@ open /Applications/meatshell.app
 - [x] 彩色 emoji（支持肤色、旗帜及 ZWJ 组合序列）
 - [x] 多标签页（欢迎页 + 多个会话）
 - [x] 会话管理：新建 / 编辑 / 删除 / 分组，本地 JSON 持久化，导出 / 导入
-  - 配置位置：`%APPDATA%/meatshell/sessions.json`（Windows）
-    / `~/.config/meatshell/sessions.json`（Linux）
-    / `~/Library/Application Support/meatshell/sessions.json`（macOS）
+  - 配置位置：`%APPDATA%/rudder/sessions.json`（Windows）
+    / `~/.config/rudder/sessions.json`（Linux）
+    / `~/Library/Application Support/rudder/sessions.json`（macOS）
 - [x] SSH（`russh`，纯 Rust）：密码 / 私钥 / 加密私钥（密码短语）
 - [x] SFTP 文件浏览 + 上传 / 下载（拖拽）+ 终端内 ZMODEM（`sz`）接收
 - [x] SSH 端口转发 / 隧道：本地 -L / 远程 -R / 动态 -D（SOCKS5）
@@ -136,13 +136,13 @@ open /Applications/meatshell.app
 cargo run --release
 ```
 
-首次启动会在 `%APPDATA%/meatshell/sessions.json` 建立空的会话库。点击右上
+首次启动会在 `%APPDATA%/rudder/sessions.json` 建立空的会话库。点击右上
 角 **“＋ 新建会话”** 添加第一台服务器。
 
 ## 项目布局
 
 ```
-meatshell/
+rudder/
 ├── Cargo.toml
 ├── build.rs                     # Slint 编译器入口
 ├── ui/                          # Slint 界面定义
@@ -216,7 +216,7 @@ meatshell/
 .\scripts\release.ps1 v0.6.0 -Push
 ```
 
-脚本会更新 `Cargo.toml` / `Cargo.lock`，运行 `cargo check --locked`，验证 `meatshell --version`，提交 `Release v0.6.0`，创建 annotated tag，并推送当前分支和 tag。更多细节见 [docs/release.md](docs/release.md)。
+脚本会更新 `Cargo.toml` / `Cargo.lock`，运行 `cargo check --locked`，验证 `rudder --version`，提交 `Release v0.6.0`，创建 annotated tag，并推送当前分支和 tag。更多细节见 [docs/release.md](docs/release.md)。
 
 ## License
 

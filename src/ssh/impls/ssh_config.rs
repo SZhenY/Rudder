@@ -1,4 +1,4 @@
-//! Minimal `~/.ssh/config` parser used to import hosts as meatshell sessions.
+//! Minimal `~/.ssh/config` parser used to import hosts as Rudder sessions.
 //!
 //! We only read the handful of fields a session needs — `HostName`, `User`,
 //! `Port`, `IdentityFile` — grouped under each concrete `Host` alias.  Wildcard

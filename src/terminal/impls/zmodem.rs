@@ -223,7 +223,7 @@ pub async fn receive(
 
     let _ = events.send(SessionEvent::Output(
         format!(
-            "\r\n[meatshell] {} {} → {}\r\n",
+            "\r\n[rudder] {} {} → {}\r\n",
             received,
             t("个文件已通过 sz 下载到", "file(s) downloaded via sz to"),
             dest.display()
@@ -439,7 +439,7 @@ fn is_close_byte(b: u8) -> bool {
 fn download_dir() -> PathBuf {
     directories::UserDirs::new()
         .and_then(|u| u.download_dir().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| std::env::temp_dir().join("meatshell"))
+        .unwrap_or_else(|| std::env::temp_dir().join("rudder"))
 }
 
 /// Reduce a sender-supplied name to a safe basename inside the download dir.

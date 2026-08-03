@@ -1,4 +1,4 @@
-//! Thin adapter over `alacritty_terminal` so the rest of MeatShell talks to a
+//! Thin adapter over `alacritty_terminal` so the rest of Rudder talks to a
 //! stable, parser-agnostic surface (mirrors the old `vt100::Screen` API shape).
 
 use alacritty_terminal::event::VoidListener;

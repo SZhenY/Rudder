@@ -7,7 +7,7 @@ use crate::ui::TermMatch;
 use crate::ui::TermSpan;
 
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Line as GridLine, Point};
+use alacritty_terminal::index::Line as GridLine;
 use alacritty_terminal::term::TermDamage;
 // Selection type used only in selection_rects_visible via term.selection
 
@@ -100,7 +100,7 @@ impl TermBuffer {
         // the new width and reflow already-printed output (#169).
         self.raw.extend(bytes.iter().copied());
         // CSI 3 J means "erase saved lines". The vt100 crate clears its own
-        // scrollback, but MeatShell maintains a separate rendered history and a
+        // scrollback, but Rudder maintains a separate rendered history and a
         // raw replay stream for resize reflow. Drop both sides of that history,
         // including when the CSI sequence was split across SSH reads (#319).
         let erase_saved_through = {

@@ -1,11 +1,11 @@
 [package]
-name = "meatshell"
+name = "rudder"
 version = "0.6.9-beta1"
 edition = "2021"
-authors = ["meatshell contributors"]
+authors = ["Rudder contributors"]
 description = "A lightweight FinalShell-style SSH/terminal client written in Rust + Slint"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/your/meatshell"
+repository = "https://github.com/your/rudder"
 readme = "README.md"
 rust-version = "1.85"
 
@@ -33,7 +33,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs"] }
 # Pinned to 0.49: RUSTSEC-2026-0154 (an unbounded-allocation DoS in russh's
 # ssh-AGENT frame parsing) is fixed only in >= 0.60.3, which drags in pre-release
-# crypto crates (ed25519-dalek 3.0.0-pre, aes-gcm 0.11.0-rc, 鈥?. meatshell never
+# crypto crates (ed25519-dalek 3.0.0-pre, aes-gcm 0.11.0-rc, 鈥?. Rudder never
 # uses the ssh-agent, so the advisory is not reachable here 鈥?see audit.toml.
 # Revisit the upgrade once russh's deps leave the -rc channel (cf. PR #151).
 russh = "0.49"
@@ -117,7 +117,7 @@ slint = { version = "1.8", features = ["renderer-skia"] }
 [build-dependencies]
 slint-build = "1.8"
 
-# Embeds assets/meatshell.ico into the .exe so Explorer / taskbar / shortcuts
+# Embeds assets/rudder.ico into the .exe so Explorer / taskbar / shortcuts
 # show the app icon. Windows-only; ignored on other targets.
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
@@ -130,7 +130,7 @@ strip = "symbols"
 panic = "abort"
 # PGO (Profile-Guided Optimization) — run representative workloads first:
 #   1. RUSTFLAGS="-Cprofile-generate=/tmp/pgo" cargo build --release
-#   2. ./target/release/meatshell  (use for a few minutes, quit)
+#   2. ./target/release/rudder  (use for a few minutes, quit)
 #   3. llvm-profdata merge -o /tmp/pgo/merged.profdata /tmp/pgo
 #   4. RUSTFLAGS="-Cprofile-use=/tmp/pgo/merged.profdata" cargo build --release
 # Uncomment the line below for the final PGO build:
