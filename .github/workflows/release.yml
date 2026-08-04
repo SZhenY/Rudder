@@ -217,7 +217,7 @@ jobs:
       # Best-effort: if the WiX/cargo-wix tooling hiccups it must not block the
       # .zip release, hence continue-on-error.
       - name: Build MSI installer (Windows)
-        if: matrix.name == 'windows-x86_64'
+        if: matrix.name == 'windows-x86_64' && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') && !contains(github.ref, '-rc')
         continue-on-error: true
         shell: pwsh
         run: |
