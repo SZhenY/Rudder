@@ -112,9 +112,9 @@ open /Applications/rudder.app
 
 | 模块          | 选型                                                              |
 | ------------- | ----------------------------------------------------------------- |
-| UI            | [Slint](https://slint.dev) 1.8（纯 Rust 编译，无 GC）            |
+| UI            | [Slint](https://slint.dev) 1.17（纯 Rust 编译，无 GC）           |
 | 终端模拟      | [`alacritty_terminal`](https://crates.io/crates/alacritty_terminal) 0.26（VT/ANSI + 原生 scrollback/reflow） |
-| PTY           | `portable-pty` 0.8（跨平台伪终端）                                |
+| PTY           | `portable-pty` 0.9（跨平台伪终端）                                |
 | 异步运行时    | [`tokio`](https://tokio.rs) 1.x（rt-multi-thread）                |
 | SSH 协议      | [`russh`](https://crates.io/crates/russh) 0.49（纯 Rust，无 libssh） |
 | SFTP          | `russh-sftp` 2                                                     |
