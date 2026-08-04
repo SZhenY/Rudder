@@ -47,7 +47,7 @@ futures = "0.3"
 # Full xterm-compatible terminal emulator (replaces vt100): Term + Grid +
 # native scrollback/reflow/selection, fed via vte::ansi::Processor.
 alacritty_terminal = "0.26"
-portable-pty = "0.8"
+portable-pty = "0.9"
 # East Asian width detection for terminal copy/find column math. Version is
 # shared with alacritty_terminal's own dependency so "is this glyph 2 cells
 # wide?" agrees with how the grid lays CJK glyphs (#132).

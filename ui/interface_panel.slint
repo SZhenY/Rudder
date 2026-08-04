@@ -472,11 +472,6 @@ export component InterfacePanel inherits Rectangle {
                     clicked => { root.ifd-page = "sidebar"; }
                 }
                 NavItem {
-                    icon: "\u{E88A}"; label: root.lang-en ? "Welcome page" : "欢迎页";
-                    active: root.ifd-page == "welcome";
-                    clicked => { root.ifd-page = "welcome"; }
-                }
-                NavItem {
                     icon: "\u{E627}"; label: root.lang-en ? "Session sync" : "会话同步";
                     active: root.ifd-page == "sync";
                     clicked => { root.ifd-page = "sync"; }
@@ -1221,16 +1216,6 @@ export component InterfacePanel inherits Rectangle {
                         }
                     }
                 }
-            }
-
-            // --- Welcome page ------------------------------------------
-            if root.ifd-page == "welcome" : VerticalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 14px;
-                spacing: 0;
-                alignment: start;
-                SectionHeader { text: root.lang-en ? "WELCOME PAGE" : "欢迎页"; height: 24px; }
                 SettingRow {
                     label: root.lang-en ? "Show the welcome page as a sidebar" : "欢迎页设为侧栏";
                     desc: root.lang-en

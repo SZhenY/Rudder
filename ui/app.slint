@@ -912,6 +912,8 @@ export component AppWindow inherits Window {
         property <length> sidebar-outside-strip: dock-area.sidebar-strip-outside ? 36px : 0px;
         property <length> welcome-strip: (root.welcome-as-sidebar && root.welcome-collapsed) ? 36px : 0px;
         property <length> welcome-size: (root.welcome-as-sidebar && !root.welcome-collapsed) ? root.welcome-sidebar-width : 0px;
+        animate welcome-size { duration: 150ms; easing: ease-out; }
+        animate welcome-strip { duration: 150ms; easing: ease-out; }
         property <length> welcome-taken: welcome-strip + welcome-size + sidebar-outside-strip;
         property <bool> welcome-horizontal: root.welcome-sidebar-horizontal;
         property <bool> welcome-sidebar-dragging;
@@ -1037,9 +1039,10 @@ export component AppWindow inherits Window {
             expand-second => { root.quick-panel-collapsed = false; }
         }
 
-        // Welcome / session list, to the right of the icon strip. Hidden when
-        // collapsed — its icon stays in the strip; clicking it re-opens.
-        if root.welcome-as-sidebar && !root.welcome-collapsed : Rectangle {
+        // Welcome / session list, to the right of the icon strip. Always
+        // rendered so width animates smoothly on collapse (Slint removes
+        // `if`-gated elements instantly, skipping the animation).
+        if root.welcome-as-sidebar : welcome-w := Rectangle {
             x: root.welcome-sidebar-dock == "right" ? parent.width - parent.quick-right - parent.sidebar-outside-strip - parent.welcome-size
              : root.welcome-sidebar-dock == "left" ? parent.quick-left + parent.sidebar-outside-strip
              : parent.quick-left;
@@ -1052,7 +1055,11 @@ export component AppWindow inherits Window {
                 ? parent.height - parent.quick-top - parent.quick-bottom : parent.welcome-size;
             background: Theme.bg-panel;
             clip: true;
-            Welcome {
+            if !root.welcome-collapsed : Rectangle {
+                animate opacity { duration: 120ms; easing: ease-out; }
+                opacity: root.welcome-collapsed ? 0.0 : 1.0;
+                width: parent.width; height: parent.height;
+                Welcome {
                 width: parent.width;
                 height: parent.height;
                 compact: true;
@@ -1101,6 +1108,7 @@ export component AppWindow inherits Window {
                 }
                 delete-group(name) => { root.delete-group(name); }
                 remove-session(id) => { root.remove-session(id); }
+            }
             }
             Rectangle {
                 x: root.welcome-sidebar-dock == "left" ? parent.width - 1px : 0px;
@@ -1176,9 +1184,9 @@ export component AppWindow inherits Window {
         // All elements (sidebar-shell, quick-area, ToolStrip) read from this
         // one property, so they move in perfect lockstep (same value, same frame).
         property <length> sb-taken: root.sidebar-collapsed ? 36px : root.sidebar-width;
-        animate sb-taken { duration: 200ms; easing: ease-in-out; }
+        animate sb-taken { duration: 150ms; easing: ease-out; }
         property <length> sb-h-taken: root.sidebar-collapsed ? 36px : root.sidebar-height;
-        animate sb-h-taken { duration: 200ms; easing: ease-in-out; }
+        animate sb-h-taken { duration: 150ms; easing: ease-out; }
         property <length> sp: root.sidebar-collapsed ? 0px : 4px;
         property <length> bottom-strip-h: 0px;
 
