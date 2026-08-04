@@ -29,7 +29,7 @@ jobs:
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           CARGO_VERSION="$(sed -n '/^\[package\]/,/^\[/ s/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
           LOCK_VERSION="$(awk '
-            $0 == "name = \"meatshell\"" { found = 1; next }
+            $0 == "name = \"rudder\"" { found = 1; next }
             found && $1 == "version" {
               gsub(/"/, "", $3)
               print $3
@@ -42,7 +42,7 @@ jobs:
             exit 1
           fi
           if [ "$TAG_VERSION" != "$LOCK_VERSION" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match Cargo.lock meatshell version ${LOCK_VERSION}."
+            echo "Tag ${GITHUB_REF_NAME} does not match Cargo.lock rudder version ${LOCK_VERSION}."
             echo "Run: pwsh ./scripts/release.ps1 ${GITHUB_REF_NAME}"
             exit 1
           fi
@@ -58,23 +58,23 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows-x86_64
-            bin: meatshell.exe
+            bin: rudder.exe
           - os: ubuntu-22.04            # build on the oldest supported runner for
             target: x86_64-unknown-linux-gnu   # broader glibc compatibility
             name: linux-x86_64
-            bin: meatshell
+            bin: rudder
           - os: ubuntu-22.04-arm       # free native arm64 runner (public repos)
             target: aarch64-unknown-linux-gnu  # builds the Linux ARM64 .tar.gz (#82)
             name: linux-aarch64
-            bin: meatshell
+            bin: rudder
           - os: macos-14               # Apple Silicon
             target: aarch64-apple-darwin
             name: macos-aarch64
-            bin: meatshell
+            bin: rudder
           - os: macos-14               # Apple Silicon runner — cross-compiles the
             target: x86_64-apple-darwin # x86_64 Mac binary. (Dedicated Intel
             name: macos-x86_64          # macos-13 runners queue for ages / time out.)
-            bin: meatshell
+            bin: rudder
 
     steps:
       - uses: actions/checkout@v4
@@ -117,7 +117,7 @@ jobs:
             EXPECTED="$(sed -n '/^\[package\]/,/^\[/ s/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
           fi
           ACTUAL="$(target/${{ matrix.target }}/release/${{ matrix.bin }} --version)"
-          test "$ACTUAL" = "meatshell ${EXPECTED}"
+          test "$ACTUAL" = "rudder ${EXPECTED}"
 
       - name: Build AppImage
         if: matrix.name == 'linux-x86_64'
@@ -133,47 +133,47 @@ jobs:
             https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
           chmod +x linuxdeploy linuxdeploy-plugin-appimage
 
-          install -Dm755 target/${{ matrix.target }}/release/meatshell AppDir/usr/bin/meatshell
-          install -Dm644 assets/meatshell.desktop          AppDir/usr/share/applications/meatshell.desktop
-          install -Dm644 assets/icon@512.png               AppDir/usr/share/icons/hicolor/512x512/apps/meatshell.png
+          install -Dm755 target/${{ matrix.target }}/release/rudder AppDir/usr/bin/rudder
+          install -Dm644 assets/rudder.desktop          AppDir/usr/share/applications/rudder.desktop
+          install -Dm644 assets/icon@512.png               AppDir/usr/share/icons/hicolor/512x512/apps/rudder.png
 
           # --output appimage already invokes the plugin; --plugin appimage is redundant and causes an error
           ./linuxdeploy --appdir AppDir --output appimage
 
-          mv meatshell*.AppImage "meatshell-${VERSION}-linux-x86_64.AppImage"
-          echo "APPIMAGE=meatshell-${VERSION}-linux-x86_64.AppImage" >> "$GITHUB_ENV"
+          mv rudder*.AppImage "rudder-${VERSION}-linux-x86_64.AppImage"
+          echo "APPIMAGE=rudder-${VERSION}-linux-x86_64.AppImage" >> "$GITHUB_ENV"
 
       - name: Package
         shell: bash
         run: |
           set -eu
           VERSION="${GITHUB_REF_NAME:-dev}"
-          STAGE="meatshell-${VERSION}-${{ matrix.name }}"
+          STAGE="rudder-${VERSION}-${{ matrix.name }}"
 
           if [ "${{ runner.os }}" = "macOS" ]; then
             # ── Build a proper .app bundle ────────────────────────────────────
             # Without a bundle macOS opens raw binaries in Terminal.app, which
             # stays alive after the app exits and never shows a Dock icon.
-            APP="meatshell.app"
+            APP="rudder.app"
             CONTENTS="$APP/Contents"
             mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 
-            cp "target/${{ matrix.target }}/release/meatshell" "$CONTENTS/MacOS/"
+            cp "target/${{ matrix.target }}/release/rudder" "$CONTENTS/MacOS/"
             cp THIRD_PARTY_NOTICES.md "$CONTENTS/Resources/"
 
             # Generate .icns from the 512×512 PNG using sips + iconutil (both
             # ship with every macOS, no extra tooling needed in CI).
-            mkdir -p meatshell.iconset
-            sips -z 16  16  "assets/icon@512.png" --out meatshell.iconset/icon_16x16.png       >/dev/null
-            sips -z 32  32  "assets/icon@512.png" --out meatshell.iconset/icon_16x16@2x.png    >/dev/null
-            sips -z 32  32  "assets/icon@512.png" --out meatshell.iconset/icon_32x32.png        >/dev/null
-            sips -z 64  64  "assets/icon@512.png" --out meatshell.iconset/icon_32x32@2x.png    >/dev/null
-            sips -z 128 128 "assets/icon@512.png" --out meatshell.iconset/icon_128x128.png     >/dev/null
-            sips -z 256 256 "assets/icon@512.png" --out meatshell.iconset/icon_128x128@2x.png  >/dev/null
-            sips -z 256 256 "assets/icon@512.png" --out meatshell.iconset/icon_256x256.png     >/dev/null
-            sips -z 512 512 "assets/icon@512.png" --out meatshell.iconset/icon_256x256@2x.png  >/dev/null
-            sips -z 512 512 "assets/icon@512.png" --out meatshell.iconset/icon_512x512.png     >/dev/null
-            iconutil -c icns meatshell.iconset -o "$CONTENTS/Resources/meatshell.icns"
+            mkdir -p rudder.iconset
+            sips -z 16  16  "assets/icon@512.png" --out rudder.iconset/icon_16x16.png       >/dev/null
+            sips -z 32  32  "assets/icon@512.png" --out rudder.iconset/icon_16x16@2x.png    >/dev/null
+            sips -z 32  32  "assets/icon@512.png" --out rudder.iconset/icon_32x32.png        >/dev/null
+            sips -z 64  64  "assets/icon@512.png" --out rudder.iconset/icon_32x32@2x.png    >/dev/null
+            sips -z 128 128 "assets/icon@512.png" --out rudder.iconset/icon_128x128.png     >/dev/null
+            sips -z 256 256 "assets/icon@512.png" --out rudder.iconset/icon_128x128@2x.png  >/dev/null
+            sips -z 256 256 "assets/icon@512.png" --out rudder.iconset/icon_256x256.png     >/dev/null
+            sips -z 512 512 "assets/icon@512.png" --out rudder.iconset/icon_256x256@2x.png  >/dev/null
+            sips -z 512 512 "assets/icon@512.png" --out rudder.iconset/icon_512x512.png     >/dev/null
+            iconutil -c icns rudder.iconset -o "$CONTENTS/Resources/rudder.icns"
 
             # Substitute __VERSION__ placeholder (strip leading 'v' from tag)
             VERSION_NUM="${VERSION#v}"
@@ -208,7 +208,7 @@ jobs:
             cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$STAGE/"
             cp README.md README.en.md CHANGELOG.md THIRD_PARTY_NOTICES.md "$STAGE/" 2>/dev/null || true
             # Ship the desktop entry + installer + icon so the dock shows the icon.
-            cp assets/meatshell.desktop assets/install-linux.sh "assets/icon@512.png" "$STAGE/" 2>/dev/null || true
+            cp assets/rudder.desktop assets/install-linux.sh "assets/icon@512.png" "$STAGE/" 2>/dev/null || true
             tar -czf "${STAGE}.tar.gz" "$STAGE"
             echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
           fi
@@ -227,8 +227,8 @@ jobs:
           $candle = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*\bin\candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($candle) { $env:PATH = "$($candle.DirectoryName);$env:PATH" }
           cargo install cargo-wix --locked
-          cargo wix --no-build --nocapture --target ${{ matrix.target }} --output "meatshell-$VERSION-windows-x86_64.msi"
-          echo "MSI=meatshell-$VERSION-windows-x86_64.msi" >> $env:GITHUB_ENV
+          cargo wix --no-build --nocapture --target ${{ matrix.target }} --output "rudder-$VERSION-windows-x86_64.msi"
+          echo "MSI=rudder-$VERSION-windows-x86_64.msi" >> $env:GITHUB_ENV
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -327,8 +327,8 @@ jobs:
         run: |
           set -eu
           ldd --version | sed -n '1p'
-          file target/aarch64-unknown-linux-gnu/release/meatshell
-          objdump -T target/aarch64-unknown-linux-gnu/release/meatshell \
+          file target/aarch64-unknown-linux-gnu/release/rudder
+          objdump -T target/aarch64-unknown-linux-gnu/release/rudder \
             | grep -o 'GLIBC_[0-9.]*' \
             | sort -Vu \
             | tail -n 10 || true
@@ -338,12 +338,12 @@ jobs:
         run: |
           set -eu
           VERSION="${GITHUB_REF_NAME:-dev}"
-          STAGE="meatshell-${VERSION}-linux-aarch64-glibc228"
+          STAGE="rudder-${VERSION}-linux-aarch64-glibc228"
 
           mkdir "$STAGE"
-          cp "target/aarch64-unknown-linux-gnu/release/meatshell" "$STAGE/"
+          cp "target/aarch64-unknown-linux-gnu/release/rudder" "$STAGE/"
           cp README.md README.en.md CHANGELOG.md THIRD_PARTY_NOTICES.md "$STAGE/" 2>/dev/null || true
-          cp assets/meatshell.desktop assets/install-linux.sh "assets/icon@512.png" "$STAGE/" 2>/dev/null || true
+          cp assets/rudder.desktop assets/install-linux.sh "assets/icon@512.png" "$STAGE/" 2>/dev/null || true
           tar -czf "${STAGE}.tar.gz" "$STAGE"
           echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
 
@@ -416,8 +416,8 @@ jobs:
         run: |
           set -eu
           ldd --version | sed -n '1p'
-          file target/x86_64-unknown-linux-gnu/release/meatshell
-          objdump -T target/x86_64-unknown-linux-gnu/release/meatshell \
+          file target/x86_64-unknown-linux-gnu/release/rudder
+          objdump -T target/x86_64-unknown-linux-gnu/release/rudder \
             | grep -o 'GLIBC_[0-9.]*' \
             | sort -Vu \
             | tail -n 10 || true
@@ -427,12 +427,12 @@ jobs:
         run: |
           set -eu
           VERSION="${GITHUB_REF_NAME:-dev}"
-          STAGE="meatshell-${VERSION}-linux-x86_64-glibc228"
+          STAGE="rudder-${VERSION}-linux-x86_64-glibc228"
 
           mkdir "$STAGE"
-          cp "target/x86_64-unknown-linux-gnu/release/meatshell" "$STAGE/"
+          cp "target/x86_64-unknown-linux-gnu/release/rudder" "$STAGE/"
           cp README.md README.en.md CHANGELOG.md THIRD_PARTY_NOTICES.md "$STAGE/" 2>/dev/null || true
-          cp assets/meatshell.desktop assets/install-linux.sh "assets/icon@512.png" "$STAGE/" 2>/dev/null || true
+          cp assets/rudder.desktop assets/install-linux.sh "assets/icon@512.png" "$STAGE/" 2>/dev/null || true
           tar -czf "${STAGE}.tar.gz" "$STAGE"
           echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
 
