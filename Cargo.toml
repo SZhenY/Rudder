@@ -123,12 +123,26 @@ slint-build = "1.8"
 winresource = "0.1"
 
 [profile.release]
-opt-level = "s"              # Size-optimised: smaller binary, still fast enough for interactive use
+opt-level = 3                # Speed: our code (Slint animations, terminal rendering)
 lto = "fat"                  # Fat LTO: maximum dead-code & cross-crate optimisation
-codegen-units = 1            # Single CGU: best optimisation, ~15% smaller than multi-CGU
+codegen-units = 1            # Single CGU: best optimisation
 strip = "debuginfo"          # Strip all debug info (not just symbols)
 panic = "abort"              # No unwinding tables
 overflow-checks = false
+
+# Dependencies: size-optimized to shrink the binary
+[profile.release.package."*"]
+opt-level = "s"
+
+# Keep animation-critical deps fast
+[profile.release.package.slint]
+opt-level = 3
+[profile.release.package.slint-build]
+opt-level = 3
+[profile.release.package.i-slint-backend-winit]
+opt-level = 3
+[profile.release.package.alacritty_terminal]
+opt-level = 3
 
 [profile.dev]
 opt-level = 0
