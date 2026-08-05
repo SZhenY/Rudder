@@ -155,7 +155,8 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tokio::runtime::Runtime;
 
 use crate::config::{
-    AuthMethod, ConfigStore, OutputHighlightRule, Secret, Session, SessionKind,
+    is_reserved_session_group, AuthMethod, ConfigStore, OutputHighlightRule, Secret, Session,
+    SessionKind,
 };
 use crate::i18n::t;
 use crate::layout::{LogicalRect, TerminalWheelHit};
@@ -3253,11 +3254,14 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
     let mut named: Vec<String> = store
         .groups()
         .iter()
+        .filter(|group| !is_reserved_session_group(group.trim()))
         .cloned()
         .chain(
             sessions
                 .iter()
-                .filter(|s| !s.group.is_empty())
+                .filter(|s| {
+                    !s.group.is_empty() && !is_reserved_session_group(s.group.trim())
+                })
                 .map(|s| s.group.clone()),
         )
         .collect();
@@ -3283,6 +3287,7 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
         group: group.into(),
         group_header: group.into(),
         collapsed: group_is_collapsed(group),
+        builtin: false,
     };
 
     let mut rows: Vec<SessionInfo> = Vec::new();
@@ -3298,11 +3303,17 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
             group: "system".into(),
             group_header: if i == 0 { "system".into() } else { "".into() },
             collapsed: group_is_collapsed("system"),
+            builtin: true,
         });
     }
     for group in &display_groups {
         let mut gs: Vec<&Session> = if group == "default" {
-            sessions.iter().filter(|s| s.group.is_empty()).collect()
+            sessions
+                .iter()
+                .filter(|s| {
+                    s.group.is_empty() || is_reserved_session_group(s.group.trim())
+                })
+                .collect()
         } else {
             sessions.iter().filter(|s| &s.group == group).collect()
         };
@@ -3331,6 +3342,7 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
                         "".into()
                     },
                     collapsed: group_is_collapsed(group),
+                    builtin: false,
                 });
             }
         }
@@ -3815,8 +3827,11 @@ fn wire_session_callbacks(
                 if let Some(orig) = s.get(&id.to_string()).cloned() {
                     let mut moved = orig;
                     // "default" is the display label for ungrouped → store empty.
-                    moved.group = if group.as_str() == "default" {
+                    moved.group = if group.as_str().eq_ignore_ascii_case("default") {
                         String::new()
+                    } else if is_reserved_session_group(group.as_str().trim()) {
+                        // `system` belongs exclusively to built-in local shells.
+                        return;
                     } else {
                         group.to_string()
                     };
@@ -3881,12 +3896,33 @@ fn wire_session_callbacks(
         let store = store.clone();
         let sessions_model = sessions_model.clone();
         window.on_submit_group(move |orig: SharedString, name: SharedString| {
+            let trimmed = name.trim();
+            let error = {
+                let s = store.borrow();
+                if trimmed.is_empty() {
+                    Some(t("请输入分组名称", "Enter a group name"))
+                } else if is_reserved_session_group(trimmed) {
+                    Some(t(
+                        "该名称为系统保留分组",
+                        "This group name is reserved",
+                    ))
+                } else if (orig.is_empty() || !trimmed.eq_ignore_ascii_case(orig.as_str()))
+                    && s.session_group_exists(trimmed)
+                {
+                    Some(t("分组已存在", "Group already exists"))
+                } else {
+                    None
+                }
+            };
+            if let Some(message) = error {
+                return SharedString::from(message);
+            }
             {
                 let mut s = store.borrow_mut();
                 if orig.is_empty() {
-                    s.add_group(name.to_string());
+                    s.add_group(trimmed.to_string());
                 } else {
-                    s.rename_group(&orig.to_string(), name.to_string());
+                    s.rename_group(orig.as_str(), trimmed.to_string());
                 }
                 if let Err(err) = s.save() {
                     tracing::warn!("failed to save config: {err:#}");
@@ -3896,6 +3932,7 @@ fn wire_session_callbacks(
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
+            SharedString::new()
         });
     }
     // Group delete (#41) — UI only offers this on empty groups.
