@@ -1,83 +1,139 @@
 use crate::terminal::{
-    build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
-    process_bytes, render_term_span, resize_term, term_size, BuiltScreen, CsiState, HistSpan,
-    Line, RenderedLine, TermBuffer, RAW_CAP,
+    build_row, cell_prefix, char_after_cell_end, char_at_cell_start, detect_scroll,
+    highlight_plain_output, render_term_span, BuiltScreen, CsiState, Line, TermBuffer, MAX_HISTORY,
+    RAW_CAP,
 };
 use crate::ui::TermMatch;
-use crate::ui::TermSpan;
 
-use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::Line as GridLine;
-use alacritty_terminal::term::TermDamage;
-// Selection type used only in selection_rects_visible via term.selection
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TerminalQuery {
+    Status,
+    CursorPosition { private: bool },
+    PrimaryDeviceAttributes,
+}
+
+fn terminal_query(sequence: &[u8]) -> Option<TerminalQuery> {
+    match sequence {
+        b"\x1b[5n" => Some(TerminalQuery::Status),
+        b"\x1b[6n" => Some(TerminalQuery::CursorPosition { private: false }),
+        b"\x1b[?6n" => Some(TerminalQuery::CursorPosition { private: true }),
+        b"\x1b[c" | b"\x1b[0c" => Some(TerminalQuery::PrimaryDeviceAttributes),
+        _ => None,
+    }
+}
 
 impl TermBuffer {
-    /// Selection highlight rectangles for the current visible window.
-    pub(crate) fn selection_rects_visible(&self, cols: u16) -> Vec<TermMatch> {
-        let sel = match self.term.selection {
-            Some(ref s) => s,
-            None => return Vec::new(),
-        };
-        let range = match sel.to_range(&self.term) {
-            Some(r) => r,
-            None => return Vec::new(),
-        };
+    // ---- Absolute-coordinate selection helpers (#18 follow-up) -------------
+    //
+    // The "combined" buffer is `history` (oldest first) followed by the live
+    // screen rows.  A visible window of `rows` rows looks at a slice of it whose
+    // top index depends on whether we're at the live bottom or scrolled up.
 
-        let rows = term_size(&self.term).0 as i32;
-        let vo = self.view_offset as i32;
-        let lo = range.start.line.0 + vo;
-        let hi = range.end.line.0 + vo;
-        if hi < 0 || lo >= rows {
+    /// Live screen rows plus the count of non-blank ones at the top.
+    fn live_rows(&self) -> (Vec<Line>, usize) {
+        let s = self.parser.screen();
+        let (rows, cols) = s.size();
+        let live: Vec<Line> = (0..rows).map(|r| build_row(s, r, cols)).collect();
+        let used = live
+            .iter()
+            .rposition(|(_, runs, _)| !runs.is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        (live, used)
+    }
+
+    /// Absolute combined-row index of the top visible row for the current view.
+    fn view_top_abs(&self, _live_used: usize) -> usize {
+        let rows = self.parser.screen().size().0 as usize;
+        let hist_len = self.history.len();
+        if self.view_offset == 0 {
+            // Live view: visible row 0 is live screen row 0 = combined[hist_len].
+            hist_len
+        } else {
+            // Include the screen's full row count (trailing blanks too) so this
+            // mapping matches render()'s scroll window — keeping the live and
+            // scrolled views continuous after a shrink/grow (#119-followup).
+            let combined_len = hist_len + rows;
+            combined_len.saturating_sub(rows + self.view_offset)
+        }
+    }
+
+    /// Map a visible row (0..rows) to its absolute combined-row index.
+    pub(crate) fn vis_to_abs(&self, vis_row: u16) -> usize {
+        let (_, live_used) = self.live_rows();
+        self.view_top_abs(live_used) + vis_row as usize
+    }
+
+    /// Highlight rectangles for the current selection, clipped to the visible
+    /// window of the current view.
+    pub(crate) fn selection_rects_visible(&self, cols: u16) -> Vec<TermMatch> {
+        let ranges = if self.sel_ranges.is_empty() {
+            match (self.sel_anchor, self.sel_focus) {
+                (Some(anchor), Some(focus)) => vec![(anchor, focus)],
+                _ => Vec::new(),
+            }
+        } else {
+            self.sel_ranges.clone()
+        };
+        if ranges.is_empty() {
             return Vec::new();
         }
-        let lo_r = lo.max(0);
-        let hi_r = hi.min(rows - 1);
-
+        let (_, live_used) = self.live_rows();
+        let top = self.view_top_abs(live_used);
+        let rows = self.parser.screen().size().0;
         let mut out = Vec::new();
-        for vis in lo_r..=hi_r {
-            let gl = GridLine(vis - vo);
-            let (c0, c1) = if gl == range.start.line && gl == range.end.line {
-                (
-                    range.start.column.0.min(range.end.column.0),
-                    range.end.column.0.max(range.start.column.0),
-                )
-            } else if gl == range.start.line {
-                (range.start.column.0, cols.saturating_sub(1) as usize)
-            } else if gl == range.end.line {
-                (0, range.end.column.0)
+        for ((ar, ac), (fr, fc)) in ranges {
+            let (lo_r, lo_c, hi_r, hi_c) = if (ar, ac) <= (fr, fc) {
+                (ar, ac, fr, fc)
             } else {
-                (0, cols.saturating_sub(1) as usize)
+                (fr, fc, ar, ac)
             };
-            out.push(TermMatch {
-                row: vis,
-                col: c0 as i32,
-                len: (c1.saturating_sub(c0) + 1) as i32,
-            });
+            if (lo_r, lo_c) == (hi_r, hi_c) {
+                continue;
+            }
+            for vis in 0..rows {
+                let abs = top + vis as usize;
+                if abs < lo_r || abs > hi_r {
+                    continue;
+                }
+                let (c0, c1) = if abs == lo_r && abs == hi_r {
+                    (lo_c.min(hi_c), lo_c.max(hi_c))
+                } else if abs == lo_r {
+                    (lo_c, cols.saturating_sub(1))
+                } else if abs == hi_r {
+                    (0, hi_c)
+                } else {
+                    (0, cols.saturating_sub(1))
+                };
+                out.push(TermMatch {
+                    row: vis as i32,
+                    col: c0 as i32,
+                    len: (c1.saturating_sub(c0) + 1) as i32,
+                });
+            }
         }
         out
     }
 
-    /// Jump to the first matching row when the find query points outside the
-    /// visible window (#233).  Searches alacritty's native scrollback grid
-    /// (negative Line indices) and the live visible rows.
+    /// If the current find query is outside the visible window, jump to the
+    /// first matching row in scrollback/live content so old serial output can be
+    /// found without manually scrolling back first (#233).
     pub(crate) fn scroll_to_first_find_match(&mut self, query: &str) -> bool {
-        if query.is_empty() || is_alt(&self.term) {
+        if query.is_empty() || self.parser.screen().alternate_screen() {
             return false;
         }
         let q = query.to_lowercase();
-        let (rows, cols) = term_size(&self.term);
-        let rows = rows as usize;
-        let hist_len = self.term.total_lines().saturating_sub(self.term.screen_lines());
-        let combined_len = hist_len + rows;
-
-        // Search scrollback first (newest → oldest), then live rows.
-        let find_idx = (0..hist_len)
-            .rev()
-            .map(|i| build_line(&self.term, GridLine(-(i as i32 + 1)), cols).0)
-            .chain((0..rows).map(|r| build_row(&self.term, r as u16, cols).0))
-            .position(|line| line.to_lowercase().contains(&q));
-
-        let Some(match_idx) = find_idx else {
+        let (live, _) = self.live_rows();
+        let rows = self.parser.screen().size().0 as usize;
+        let hist_len = self.history.len();
+        let combined_len = hist_len + live.len();
+        let Some(match_idx) = self
+            .history
+            .iter()
+            .map(|line| &line.0)
+            .chain(live.iter().map(|line| &line.0))
+            .position(|line| line.to_lowercase().contains(&q))
+        else {
             return false;
         };
         let top = match_idx.min(combined_len.saturating_sub(rows));
@@ -89,18 +145,196 @@ impl TermBuffer {
         true
     }
 
-    /// Feed bytes to alacritty.  Scrollback is read on demand from the
-    /// alacritty Grid via negative `Line` indices in `render()`, so we no
-    /// longer need to capture scrolled-off lines into a separate history.
-    pub(crate) fn ingest(&mut self, input: &[u8]) {
-        // Rewrite HVP (`ESC [ … f`) → CUP (`ESC [ … H`) so vt100 (which only
-        // implements `H`) honours btop/htop's absolute cursor positioning.
-        let bytes = self.rewrite_hvp(input);
+    /// Extract the selected text from the combined buffer (whole selection,
+    /// even the parts currently scrolled out of view).
+    pub(crate) fn selection_has_extent(&self) -> bool {
+        if self.sel_ranges.is_empty() {
+            return matches!(
+                (self.sel_anchor, self.sel_focus),
+                (Some(anchor), Some(focus)) if anchor != focus
+            );
+        }
+        self.sel_ranges
+            .iter()
+            .any(|(anchor, focus)| anchor != focus)
+    }
+
+    pub(crate) fn extract_selection_text(&self) -> String {
+        let ranges = if self.sel_ranges.is_empty() {
+            match (self.sel_anchor, self.sel_focus) {
+                (Some(anchor), Some(focus)) => vec![(anchor, focus)],
+                _ => Vec::new(),
+            }
+        } else {
+            self.sel_ranges.clone()
+        };
+        if ranges.is_empty() {
+            return String::new();
+        }
+        ranges
+            .iter()
+            .map(|&(anchor, focus)| self.extract_range_text(anchor, focus))
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn extract_range_text(&self, (ar, ac): (usize, u16), (fr, fc): (usize, u16)) -> String {
+        let (lo_r, lo_c, hi_r, hi_c) = if (ar, ac) <= (fr, fc) {
+            (ar, ac, fr, fc)
+        } else {
+            (fr, fc, ar, ac)
+        };
+        let (live, live_used) = self.live_rows();
+        let hist_len = self.history.len();
+        let combined_len = hist_len + live_used;
+        // Clamp into real content so a focus parked on a blank row below the
+        // prompt doesn't emit trailing empty lines.
+        let hi_r = hi_r.min(combined_len.saturating_sub(1));
+        let mut out = String::new();
+        for r in lo_r..=hi_r {
+            let line: &str = if r < hist_len {
+                &self.history[r].0
+            } else if r - hist_len < live.len() {
+                &live[r - hist_len].0
+            } else {
+                ""
+            };
+            let chars: Vec<char> = line.chars().collect();
+            // `c0`/`c1` are GRID COLUMNS (inclusive). The plain text keeps one
+            // char per glyph, so wide (CJK) glyphs make char index != column;
+            // map columns → char indices via the cell prefix so the copied text
+            // doesn't drift by the number of wide glyphs before it (#132).
+            let (c0, c1) = if r == lo_r && r == hi_r {
+                (lo_c.min(hi_c), lo_c.max(hi_c))
+            } else if r == lo_r {
+                (lo_c, u16::MAX)
+            } else if r == hi_r {
+                (0, hi_c)
+            } else {
+                (0, u16::MAX)
+            };
+            let prefix = cell_prefix(&chars);
+            let start = char_at_cell_start(&prefix, c0 as usize);
+            let end = char_after_cell_end(&prefix, c1 as usize);
+            let seg: String = if start < end {
+                chars[start..end].iter().collect()
+            } else {
+                String::new()
+            };
+            out.push_str(seg.trim_end());
+            let wrapped = if r < hist_len {
+                self.history[r].2
+            } else if r - hist_len < live.len() {
+                live[r - hist_len].2
+            } else {
+                false
+            };
+            if r != hi_r && !wrapped {
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    /// Feed bytes to vt100 and capture scrolled-off lines into history.
+    ///
+    /// We detect scroll by diffing the screen before/after a `process`, which
+    /// can only recover up to one screen of shift per call.  A single large
+    /// burst can scroll many screens at once, so we split the input at newline
+    /// boundaries into batches of at most ~half a screen of lines and capture
+    /// after each — that way no batch ever scrolls more than the diff can see,
+    /// and nothing is lost.  (Splitting only on `\n` is safe: VT escape
+    /// sequences never contain a newline.)
+    /// The returned bytes are terminal-query replies that must be written back
+    /// to the PTY immediately (DSR/CPR and primary device attributes, #328).
+    pub(crate) fn ingest(&mut self, input: &[u8]) -> Vec<u8> {
+        let mut replies = Vec::new();
+        let mut display = Vec::with_capacity(input.len());
+
+        for &byte in input {
+            match self.csi_state {
+                CsiState::Normal => {
+                    if byte == 0x1b {
+                        self.csi_pending.clear();
+                        self.csi_pending.push(byte);
+                        self.csi_state = CsiState::Esc;
+                    } else {
+                        display.push(byte);
+                    }
+                }
+                CsiState::Esc => {
+                    if byte == b'[' {
+                        self.csi_pending.push(byte);
+                        self.csi_state = CsiState::Csi;
+                    } else {
+                        display.extend(self.csi_pending.drain(..));
+                        if byte == 0x1b {
+                            self.csi_pending.push(byte);
+                        } else {
+                            display.push(byte);
+                            self.csi_state = CsiState::Normal;
+                        }
+                    }
+                }
+                CsiState::Csi => {
+                    self.csi_pending.push(byte);
+                    if (0x40..=0x7e).contains(&byte) {
+                        if let Some(kind) = terminal_query(&self.csi_pending) {
+                            self.ingest_display_bytes(&display);
+                            display.clear();
+                            match kind {
+                                TerminalQuery::Status => replies.extend_from_slice(b"\x1b[0n"),
+                                TerminalQuery::CursorPosition { private } => {
+                                    let (row, col) = self.parser.screen().cursor_position();
+                                    let response = if private {
+                                        format!("\x1b[?{};{}R", row + 1, col + 1)
+                                    } else {
+                                        format!("\x1b[{};{}R", row + 1, col + 1)
+                                    };
+                                    replies.extend_from_slice(response.as_bytes());
+                                }
+                                // Identify only as a VT100 with the advanced
+                                // video option; do not claim unsupported features.
+                                TerminalQuery::PrimaryDeviceAttributes => {
+                                    replies.extend_from_slice(b"\x1b[?1;2c")
+                                }
+                            }
+                        } else {
+                            // Rewrite HVP (`CSI … f`) to CUP (`CSI … H`) because
+                            // vt100 implements only the latter.
+                            if byte == b'f' {
+                                if let Some(final_byte) = self.csi_pending.last_mut() {
+                                    *final_byte = b'H';
+                                }
+                            }
+                            display.extend(self.csi_pending.drain(..));
+                        }
+                        self.csi_pending.clear();
+                        self.csi_state = CsiState::Normal;
+                    } else if self.csi_pending.len() > 64 {
+                        // Malformed/unbounded CSI: stop buffering and let vt100
+                        // handle the bytes as ordinary terminal input.
+                        display.extend(self.csi_pending.drain(..));
+                        self.csi_state = CsiState::Normal;
+                    }
+                }
+            }
+        }
+
+        self.ingest_display_bytes(&display);
+        replies
+    }
+
+    fn ingest_display_bytes(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
         // Retain the (post-rewrite) stream, capped, so a resize can replay it at
         // the new width and reflow already-printed output (#169).
         self.raw.extend(bytes.iter().copied());
         // CSI 3 J means "erase saved lines". The vt100 crate clears its own
-        // scrollback, but Rudder maintains a separate rendered history and a
+        // scrollback, but MeatShell maintains a separate rendered history and a
         // raw replay stream for resize reflow. Drop both sides of that history,
         // including when the CSI sequence was split across SSH reads (#319).
         let erase_saved_through = {
@@ -111,69 +345,43 @@ impl TermBuffer {
         };
         if let Some(end) = erase_saved_through {
             self.raw.drain(..end);
+            self.history.clear();
             self.prev.clear();
-            self.rendered.clear();
             self.view_offset = 0;
-            self.term.selection = None;
+            self.sel_anchor = None;
+            self.sel_focus = None;
+            self.sel_ranges.clear();
         }
         self.cap_raw();
-        self.ingest_chunk(&bytes);
+        self.feed_batched(bytes);
     }
 
-    /// Feed bytes to alacritty.  Scrollback is read directly from
-    /// alacritty's native Grid on demand (via `build_line` with negative
-    /// Line indices), so we no longer need to capture scrolled-off lines
-    /// into a separate history.
-    fn ingest_chunk(&mut self, bytes: &[u8]) {
-        let has_cursor_home = bytes.windows(3).any(|w| w == b"\x1b[H");
-        let has_erase_display =
-            bytes.windows(4).any(|w| w == b"\x1b[2J") || bytes.windows(3).any(|w| w == b"\x1b[J");
-        let is_fullscreen_refresh = has_cursor_home && has_erase_display;
-
-        process_bytes(&mut self.processor, &mut self.term, bytes);
-        let (rows, cols) = term_size(&self.term);
-        let alt = is_alt(&self.term);
-        if alt {
-            self.view_offset = 0;
-            self.prev.clear();
-            self.rendered.clear();
-            return;
-        }
-        if is_fullscreen_refresh {
-            self.view_offset = 0;
-            self.prev.clear();
-            self.rendered.clear();
-            return;
-        }
-
-        // Build the current visible grid.  Use alacritty's built-in damage
-        // tracking to only rebuild lines that actually changed (a full-screen
-        // rebuild is still done when damage indicates a full redraw).
-        //
-        // display_offset is read *before* damage() to avoid conflicting
-        // with the mutable borrow held by the damage iterator.
-        let display_offset = self.term.grid().display_offset();
-        let curr: Vec<Line> = match self.term.damage() {
-            TermDamage::Full => {
-                (0..rows).map(|r| build_row(&self.term, r, cols)).collect()
-            }
-            TermDamage::Partial(damaged_lines) => {
-                let damaged_rows: Vec<usize> = damaged_lines
-                    .map(|b| b.line.saturating_sub(display_offset))
-                    .filter(|&r| r < rows as usize)
-                    .collect();
-                let mut cur = self.prev.clone();
-                cur.resize(rows as usize, (String::new(), Vec::new(), false));
-                for r in damaged_rows {
-                    cur[r] = build_row(&self.term, r as u16, cols);
+    /// Feed a (already HVP-rewritten) byte slice to vt100 in newline-bounded
+    /// batches, capturing scrolled-off lines into history after each (see the
+    /// `ingest` doc comment). Does NOT touch `self.raw`, so it is reused by both
+    /// live ingest and resize-reflow replay.
+    fn feed_batched(&mut self, bytes: &[u8]) {
+        let rows = self.parser.screen().size().0 as usize;
+        let batch_lines = (rows / 2).max(1);
+        let mut start = 0usize;
+        let mut nl = 0usize;
+        for i in 0..bytes.len() {
+            if bytes[i] == b'\n' {
+                nl += 1;
+                if nl >= batch_lines {
+                    self.ingest_chunk(&bytes[start..=i]);
+                    start = i + 1;
+                    nl = 0;
                 }
-                cur
             }
-        };
-        self.term.reset_damage();
-        self.prev = curr;
+        }
+        if start < bytes.len() {
+            self.ingest_chunk(&bytes[start..]);
+        }
     }
 
+    /// Trim the retained stream to `RAW_CAP`, dropping from the front up to the
+    /// next line boundary so a replay never starts mid-escape / mid-wrapped-line.
     fn cap_raw(&mut self) {
         if self.raw.len() <= RAW_CAP {
             return;
@@ -188,101 +396,113 @@ impl TermBuffer {
         }
     }
 
+    /// Resize-reflow (#169): rebuild the screen + scrollback at a new width by
+    /// replaying the retained byte stream through a fresh parser. vt100 itself
+    /// can't reflow (`set_size` just truncates/pads each row), and we only keep
+    /// rendered grid rows in `history`, so replaying the raw stream is what lets
+    /// long lines rewrap to the new width like FinalShell. Used only on the normal
+    /// screen — alt-screen programs (tmux/vim) get a SIGWINCH redraw from the
+    /// remote instead.
     pub(crate) fn reflow(&mut self, new_rows: u16, new_cols: u16) {
-        resize_term(&mut self.term, new_rows, new_cols);
+        let stream: Vec<u8> = self.raw.iter().copied().collect();
+        self.parser = vt100::Parser::new(new_rows, new_cols, 5000);
+        self.history.clear();
         self.prev.clear();
-        self.rendered.clear();
         self.view_offset = 0;
-        self.term.selection = None;
+        // Scrollback line count changes, so absolute selection coords no longer map.
+        self.sel_anchor = None;
+        self.sel_focus = None;
+        self.sel_ranges.clear();
+        self.feed_batched(&stream);
     }
 
-    fn rewrite_hvp(&mut self, input: &[u8]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(input.len());
-        for &b in input {
-            match self.csi_state {
-                CsiState::Normal => {
-                    if b == 0x1b {
-                        self.csi_state = CsiState::Esc;
-                    }
-                    out.push(b);
-                }
-                CsiState::Esc => {
-                    if b == b'[' {
-                        self.csi_state = CsiState::Csi;
-                    } else {
-                        self.csi_state = if b == 0x1b {
-                            CsiState::Esc
-                        } else {
-                            CsiState::Normal
-                        };
-                    }
-                    out.push(b);
-                }
-                CsiState::Csi => {
-                    if (0x40..=0x7e).contains(&b) {
-                        out.push(if b == b'f' { b'H' } else { b });
-                        self.csi_state = CsiState::Normal;
-                    } else {
-                        out.push(b);
-                    }
-                }
+    /// Process one bounded batch and capture any lines that scrolled off the top
+    /// (skipped for alt-screen programs like vim/nano).
+    fn ingest_chunk(&mut self, bytes: &[u8]) {
+        // Detect full-screen-clear sequences *before* processing so we can
+        // suppress history for programs that redraw without alt-screen (e.g.
+        // btop configured with `alt-screen = false`).
+        // We look for \033[H (cursor-home) and \033[2J / \033[J (erase display)
+        // as indicators that the program is doing a full-screen refresh.
+        let has_cursor_home = bytes.windows(3).any(|w| w == b"\x1b[H");
+        let has_erase_display =
+            bytes.windows(4).any(|w| w == b"\x1b[2J") || bytes.windows(3).any(|w| w == b"\x1b[J");
+        let is_fullscreen_refresh = has_cursor_home && has_erase_display;
+
+        self.parser.process(bytes);
+        let (is_alt, rows, cols) = {
+            let s = self.parser.screen();
+            let (r, c) = s.size();
+            (s.alternate_screen(), r, c)
+        };
+        if is_alt {
+            // Snap to live view whenever we're on the alt screen — this
+            // prevents old history (accumulated before alt-screen was entered)
+            // from mixing with the full-screen program's output after a scroll.
+            self.view_offset = 0;
+            self.prev.clear();
+            return;
+        }
+        if is_fullscreen_refresh {
+            // Non-alt-screen full-screen refresh (btop, htop with alt disabled…).
+            // Don't capture lines into history; they'd mix with the next frame.
+            self.view_offset = 0;
+            self.prev.clear();
+            return;
+        }
+        let curr: Vec<Line> = {
+            let s = self.parser.screen();
+            (0..rows).map(|r| build_row(s, r, cols)).collect()
+        };
+        if !self.prev.is_empty() {
+            let k = detect_scroll(&self.prev, &curr);
+            for line in self.prev.iter().take(k) {
+                self.history.push_back(line.clone());
+            }
+            while self.history.len() > MAX_HISTORY {
+                self.history.pop_front();
             }
         }
-        out
-    }
-
-    /// Scrollback is read directly from alacritty's grid on demand.
-    fn ensure_history(&mut self) {
-        // no-op: alacritty maintains scrollback natively
+        self.prev = curr;
     }
 
     /// Render the terminal grid for the current scrollback `view_offset`
-    /// (0 = live).  Row-level caching avoids rebuilding spans for unchanged
-    /// lines — huge win for tail / idle screens.
+    /// (0 = live).  Caches the displayed plain text for find/selection.
     pub(crate) fn render(&mut self) -> BuiltScreen {
-        self.ensure_history();
-        let (rows, cols) = term_size(&self.term);
-        let (cur_row, cur_col) = cursor_pos(&self.term);
-        let alt = is_alt(&self.term);
-
-        // Ensure the cache matches the current grid size.
-        self.rendered.resize(rows as usize, None);
+        let (is_alt, rows, cols, cur_row, cur_col) = {
+            let s = self.parser.screen();
+            let (r, c) = s.size();
+            let (cr, cc) = s.cursor_position();
+            (s.alternate_screen(), r, c, cr, cc)
+        };
 
         // --- Live view (also alt-screen): render the current grid -----------
-        if alt || self.view_offset == 0 {
-            let mut spans = Vec::with_capacity(rows as usize * 6);
+        if is_alt || self.view_offset == 0 {
+            let mut spans = Vec::new();
             let mut displayed = Vec::with_capacity(rows as usize);
             let mut last_content = 0i32;
+            let s = self.parser.screen();
             for r in 0..rows {
-                let (plain, runs, _wrapped) = build_row(&self.term, r, cols);
-                let display = plain.trim_end().to_string();
-
-                // Reuse cached spans when the plain text is identical.
-                // Reuse cached runs when plain text is identical, only
-                // re-running render_term_span to produce the final TermSpan
-                // slice (which contains non-Send slint::Image references).
-                let line_spans: Vec<_> = if let Some(ref cached) = self.rendered[r as usize] {
-                    if cached.plain_key == display {
-                        cached
-                            .runs
-                            .iter()
-                            .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
-                            .collect()
-                    } else {
-                        self.build_spans(r as i32, &display, &runs, alt)
-                    }
+                let (plain, runs, _wrapped) = build_row(s, r, cols);
+                let runs = if is_alt {
+                    runs
                 } else {
-                    self.build_spans(r as i32, &display, &runs, alt)
+                    highlight_plain_output(
+                        runs,
+                        self.output_highlight,
+                        &self.custom_highlight_rules,
+                    )
                 };
-
-                if !line_spans.is_empty() {
+                if !runs.is_empty() {
                     last_content = r as i32;
                 }
-                spans.extend(line_spans);
-                displayed.push(display);
+                for hs in runs {
+                    spans.extend(render_term_span(&hs, r as i32, self.is_dark));
+                }
+                displayed.push(plain.trim_end().to_string());
             }
             self.displayed_text = displayed;
-            let rows_used = if alt {
+            let rows_used = if is_alt {
                 rows as i32
             } else {
                 last_content + 1
@@ -292,30 +512,46 @@ impl TermBuffer {
                 cursor_row: cur_row as i32,
                 cursor_col: cur_col as i32,
                 rows_used,
-                is_alt: alt,
-                scroll_max: if alt { 0 } else { (self.term.total_lines().saturating_sub(self.term.screen_lines())) as i32 },
+                is_alt,
+                scroll_max: if is_alt { 0 } else { self.history.len() as i32 },
                 scroll_offset: 0,
             };
         }
 
-        // --- Scrolled view: read directly from alacritty's native scrollback
-        //     grid via negative Line indices.  No separate rendered history —
-        //     build_line() lazily converts raw Cells as needed, and the
-        //     is_clear() fast path skips empty rows entirely.
-        let hist_len = self.term.total_lines().saturating_sub(self.term.screen_lines());
+        // --- Scrolled view: window into history ++ live content -------------
+        let live: Vec<Line> = {
+            let s = self.parser.screen();
+            (0..rows).map(|r| build_row(s, r, cols)).collect()
+        };
+        let hist_len = self.history.len();
+        // Include the screen's trailing blank rows in the scroll range so this
+        // scrolled view stays continuous with the live view (view_offset 0).
+        // Trimming to only the used rows made the two views misalign after a
+        // shrink-then-grow (dragging the SFTP panel over the terminal and back),
+        // so scrolling back jumped at the bottom instead of moving line-by-line
+        // (#119-followup).
+        let combined_len = hist_len + live.len();
         let win = rows as usize;
-        let vo = self.view_offset;
-        let mut spans = Vec::with_capacity(win * 6);
+        let start = combined_len.saturating_sub(win + self.view_offset);
+        let end = (start + win).min(combined_len);
+
+        let mut spans = Vec::new();
         let mut displayed = Vec::with_capacity(win);
-        for d in 0..win {
-            let grid_line = GridLine(d as i32 - vo as i32);
-            let (plain, runs, _wrapped) = build_line(&self.term, grid_line, cols);
-            let display = plain.trim_end().to_string();
-            let hr = highlight_plain_output(runs, self.output_highlight, &self.custom_highlight_rules);
-            for hs in &hr {
+        for (d, idx) in (start..end).enumerate() {
+            let line: &Line = if idx < hist_len {
+                &self.history[idx]
+            } else {
+                &live[idx - hist_len]
+            };
+            let runs = highlight_plain_output(
+                line.1.clone(),
+                self.output_highlight,
+                &self.custom_highlight_rules,
+            );
+            for hs in &runs {
                 spans.extend(render_term_span(hs, d as i32, self.is_dark));
             }
-            displayed.push(display);
+            displayed.push(line.0.trim_end().to_string());
         }
         while displayed.len() < win {
             displayed.push(String::new());
@@ -323,37 +559,12 @@ impl TermBuffer {
         self.displayed_text = displayed;
         BuiltScreen {
             spans,
-            cursor_row: -1,
+            cursor_row: -1, // hide the live cursor while viewing history
             cursor_col: 0,
             rows_used: win as i32,
             is_alt: false,
-            scroll_max: hist_len as i32,
-            scroll_offset: vo as i32,
+            scroll_max: self.history.len() as i32,
+            scroll_offset: self.view_offset as i32,
         }
     }
-
-    /// Build spans for one live row, update the render cache, and return them.
-    fn build_spans(
-        &mut self,
-        row: i32,
-        plain_key: &str,
-        runs: &[HistSpan],
-        alt: bool,
-    ) -> Vec<TermSpan> {
-        let runs = if alt {
-            runs.to_vec()
-        } else {
-            highlight_plain_output(runs.to_vec(), self.output_highlight, &self.custom_highlight_rules)
-        };
-        let spans: Vec<_> = runs
-            .iter()
-            .flat_map(|hs| render_term_span(hs, row, self.is_dark))
-            .collect();
-        self.rendered[row as usize] = Some(RenderedLine {
-            plain_key: plain_key.to_string(),
-            runs,
-        });
-        spans
-    }
-
 }

@@ -45,9 +45,11 @@ fn with_term_buf<R>(
     Some(f(&mut guard))
 }
 
-fn ingest_terminal_output(bufs: &TermBuffers, tab_id: &str, chunk: &[u8]) {
+fn ingest_terminal_output(bufs: &TermBuffers, tab_id: &str, chunk: &[u8]) -> Vec<u8> {
     if let Some(h) = term_buf(bufs, tab_id) {
-        h.lock().unwrap().ingest(chunk);
+        h.lock().unwrap().ingest(chunk)
+    } else {
+        Vec::new()
     }
 }
 
@@ -4420,6 +4422,7 @@ fn wire_session_callbacks(
                     view_offset: 0,
                     displayed_text: Vec::new(),
                     csi_state: CsiState::Normal,
+                    csi_pending: Vec::new(),
                     raw: std::collections::VecDeque::new(),
                     rendered: Vec::new(),
                 })),
@@ -4549,6 +4552,7 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
             initial_rows,
         ),
     };
+    let terminal_reply_tx = handle.commands.clone();
     ctx.handles.borrow_mut().insert(tab_id.to_string(), handle);
 
     // Separate SFTP connection for the same session (SSH only). It waits for
@@ -4711,7 +4715,14 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
                     match evt {
                         SessionEvent::Output(chunk) => {
                             let chunk_len = chunk.len();
-                            ingest_terminal_output(&bufs_thread, &tab_id_pump, chunk.as_bytes());
+                            let reply = ingest_terminal_output(
+                                &bufs_thread,
+                                &tab_id_pump,
+                                chunk.as_bytes(),
+                            );
+                            if !reply.is_empty() {
+                                let _ = terminal_reply_tx.send(SessionCommand::RawInput(reply));
+                            }
                             remaining_output_bytes =
                                 remaining_output_bytes.saturating_sub(chunk_len);
                             dirty_since_request = true;
@@ -6293,7 +6304,7 @@ fn apply_session_event_to_window(
         SessionEvent::Output(chunk) => {
             // Synthetic Output (disconnect hint, editor error, …) — rare, already
             // on the UI thread. Live shell output is ingested on the pump thread.
-            ingest_terminal_output(bufs, tab_id, chunk.as_bytes());
+            let _ = ingest_terminal_output(bufs, tab_id, chunk.as_bytes());
             request_tab_render_from_ui(win.as_weak(), tab_id, bufs, gates);
         }
         SessionEvent::Connected => {

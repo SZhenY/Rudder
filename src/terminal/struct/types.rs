@@ -1,45 +1,25 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Condvar, Mutex};
 
-use alacritty_terminal::event::VoidListener;
-use alacritty_terminal::term::Term;
-use alacritty_terminal::vte::ansi::Processor;
-
 use crate::ui::TermSpan;
-
-/// Alacritty terminal handle used across Rudder.
-pub(crate) type ATerm = Term<VoidListener>;
 
 /// Per-terminal state used by normal and alternate-screen rendering.
 pub(crate) struct TermBuffer {
-    /// Alacritty terminal emulator (grid + native scrollback).
-    pub(crate) term: ATerm,
-    /// Persistent ANSI state machine feeding bytes into `term`.
-    pub(crate) processor: Processor,
+    pub(crate) parser: vt100::Parser,
     pub(crate) find_query: String,
     pub(crate) is_dark: bool,
     pub(crate) output_highlight: OutputHighlightPreset,
     pub(crate) custom_highlight_rules: Vec<CompiledOutputRule>,
-    /// Snapshot of visible lines from last ingest_chunk, used by damage-based
-    /// incremental rebuild (Partial → clone prev, overwrite damaged rows).
+    pub(crate) sel_anchor: Option<(usize, u16)>,
+    pub(crate) sel_focus: Option<(usize, u16)>,
+    pub(crate) sel_ranges: Vec<((usize, u16), (usize, u16))>,
+    pub(crate) history: VecDeque<Line>,
     pub(crate) prev: Vec<Line>,
     pub(crate) view_offset: usize,
     pub(crate) displayed_text: Vec<String>,
     pub(crate) csi_state: CsiState,
+    pub(crate) csi_pending: Vec<u8>,
     pub(crate) raw: VecDeque<u8>,
-    /// Row-level render cache: Some(line) when the live grid row has not
-    /// changed since the last render, None for cold/invalidated rows.
-    pub(crate) rendered: Vec<Option<RenderedLine>>,
-}
-
-/// Cached rendering for one live-screen row.  Stores raw HistSpan runs (our
-/// own type — `Send`) so the cache can live inside an `Arc<Mutex<TermBuffer>>`.
-/// Span→TermSpan conversion (which creates `slint::Image` emoji icons that are
-/// not `Send`) happens lazily during render.
-#[derive(Clone)]
-pub(crate) struct RenderedLine {
-    pub(crate) plain_key: String,
-    pub(crate) runs: Vec<HistSpan>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -107,31 +87,12 @@ pub(crate) struct BuiltScreen {
     pub(crate) scroll_offset: i32,
 }
 
-/// Terminal colour, decoupled from the VT parser crate so presentation logic
-/// doesn't depend on alacritty internals.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TermColor {
-    Default,
-    Idx(u8),
-    Rgb(u8, u8, u8),
-}
-
-impl From<&alacritty_terminal::vte::ansi::Color> for TermColor {
-    fn from(color: &alacritty_terminal::vte::ansi::Color) -> Self {
-        match color {
-            alacritty_terminal::vte::ansi::Color::Named(_) => TermColor::Default,
-            alacritty_terminal::vte::ansi::Color::Indexed(i) => TermColor::Idx(*i),
-            alacritty_terminal::vte::ansi::Color::Spec(rgb) => TermColor::Rgb(rgb.r, rgb.g, rgb.b),
-        }
-    }
-}
-
 /// One coloured run within a terminal line.
 #[derive(Clone)]
 pub(crate) struct HistSpan {
     pub(crate) text: String,
-    pub(crate) fg: TermColor,
-    pub(crate) bg: TermColor,
+    pub(crate) fg: vt100::Color,
+    pub(crate) bg: vt100::Color,
     pub(crate) bold: bool,
     pub(crate) inverse: bool,
     pub(crate) col: i32,
