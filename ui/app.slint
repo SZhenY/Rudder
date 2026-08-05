@@ -376,7 +376,7 @@ export component AppWindow inherits Window {
     property <bool> quick-external-send-enter;
     property <int> quick-external-sequence;
     in property <[string]> command-history;          // oldest first (newest last, #113)
-    in property <[string]> history-view;             // filtered dropdown list (#101)
+    in property <[string]> history-view;             // filtered dropdown, newest first (#101, #331)
     callback run-command(string /* tab-id */, string /* cmd */, bool /* to-all */);
     callback copy-text(string);                 // copy a history command (#96)
     callback delete-history(int /* index */);   // remove a history entry (#96)

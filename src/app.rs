@@ -5688,17 +5688,50 @@ fn validate_output_highlight_rule(
     Ok(())
 }
 
-/// Build the filtered history-view model for the dropdown: case-insensitive
-/// substring matches of `query`, in the same order as the full history (#101).
-fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
+/// Build the filtered history-view rows for the dropdown, newest first. The
+/// command-history model itself remains oldest first so ↑/↓ recall keeps its
+/// existing shell-like navigation semantics (#55, #101, #331).
+fn history_view_rows(history: &[String], query: &str) -> Vec<SharedString> {
     let q = query.trim().to_lowercase();
-    let rows: Vec<SharedString> = store
-        .command_history()
+    history
         .iter()
-        .filter(|c| q.is_empty() || c.to_lowercase().contains(&q))
-        .map(|s| s.clone().into())
-        .collect();
+        .rev()
+        .filter(|command| q.is_empty() || command.to_lowercase().contains(&q))
+        .map(|command| command.clone().into())
+        .collect()
+}
+
+/// Build the filtered history-view model for the dropdown: case-insensitive
+/// substring matches of `query`, ordered from newest to oldest (#101, #331).
+fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
+    let rows = history_view_rows(store.command_history(), query);
     ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
+#[cfg(test)]
+mod history_view_tests {
+    use super::history_view_rows;
+
+    #[test]
+    fn lists_and_filters_commands_newest_first() {
+        let history = vec![
+            "git status".to_string(),
+            "cargo check".to_string(),
+            "git log".to_string(),
+        ];
+
+        let all: Vec<String> = history_view_rows(&history, "")
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        assert_eq!(all, ["git log", "cargo check", "git status"]);
+
+        let filtered: Vec<String> = history_view_rows(&history, "GIT")
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        assert_eq!(filtered, ["git log", "git status"]);
+    }
 }
 
 /// Find every (case-insensitive) occurrence of `query` across the currently
@@ -8404,8 +8437,8 @@ fn wire_key_input(
             std::thread::spawn(move || clipboard_set_text(t));
         });
     }
-    // Delete a history entry (#96). The model is in storage order now (#113),
-    // so the row index maps straight through.
+    // Delete a history entry (#96). The command-history model remains in
+    // storage order, so this legacy row index still maps straight through.
     {
         let store_rc = store.clone();
         let weak = window.as_weak();

@@ -5,3 +5,9 @@ Cargo.lock
 /.vscode
 /.idea
 /.claude
+remove_welcome_sidebar.py
+remove_welcome_v2.py
+rename_phase2.py
+rename_project.py
+src/app.rs.bak
+src/app.rs.rej
