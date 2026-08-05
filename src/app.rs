@@ -45,9 +45,11 @@ fn with_term_buf<R>(
     Some(f(&mut guard))
 }
 
-fn ingest_terminal_output(bufs: &TermBuffers, tab_id: &str, chunk: &[u8]) {
+fn ingest_terminal_output(bufs: &TermBuffers, tab_id: &str, chunk: &[u8]) -> Vec<u8> {
     if let Some(h) = term_buf(bufs, tab_id) {
-        h.lock().unwrap().ingest(chunk);
+        h.lock().unwrap().ingest(chunk)
+    } else {
+        Vec::new()
     }
 }
 
@@ -153,7 +155,8 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tokio::runtime::Runtime;
 
 use crate::config::{
-    AuthMethod, ConfigStore, OutputHighlightRule, Secret, Session, SessionKind,
+    is_reserved_session_group, AuthMethod, ConfigStore, OutputHighlightRule, Secret, Session,
+    SessionKind,
 };
 use crate::i18n::t;
 use crate::layout::{LogicalRect, TerminalWheelHit};
@@ -3251,11 +3254,14 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
     let mut named: Vec<String> = store
         .groups()
         .iter()
+        .filter(|group| !is_reserved_session_group(group.trim()))
         .cloned()
         .chain(
             sessions
                 .iter()
-                .filter(|s| !s.group.is_empty())
+                .filter(|s| {
+                    !s.group.is_empty() && !is_reserved_session_group(s.group.trim())
+                })
                 .map(|s| s.group.clone()),
         )
         .collect();
@@ -3281,6 +3287,7 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
         group: group.into(),
         group_header: group.into(),
         collapsed: group_is_collapsed(group),
+        builtin: false,
     };
 
     let mut rows: Vec<SessionInfo> = Vec::new();
@@ -3296,11 +3303,17 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
             group: "system".into(),
             group_header: if i == 0 { "system".into() } else { "".into() },
             collapsed: group_is_collapsed("system"),
+            builtin: true,
         });
     }
     for group in &display_groups {
         let mut gs: Vec<&Session> = if group == "default" {
-            sessions.iter().filter(|s| s.group.is_empty()).collect()
+            sessions
+                .iter()
+                .filter(|s| {
+                    s.group.is_empty() || is_reserved_session_group(s.group.trim())
+                })
+                .collect()
         } else {
             sessions.iter().filter(|s| &s.group == group).collect()
         };
@@ -3329,6 +3342,7 @@ fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
                         "".into()
                     },
                     collapsed: group_is_collapsed(group),
+                    builtin: false,
                 });
             }
         }
@@ -3813,8 +3827,11 @@ fn wire_session_callbacks(
                 if let Some(orig) = s.get(&id.to_string()).cloned() {
                     let mut moved = orig;
                     // "default" is the display label for ungrouped → store empty.
-                    moved.group = if group.as_str() == "default" {
+                    moved.group = if group.as_str().eq_ignore_ascii_case("default") {
                         String::new()
+                    } else if is_reserved_session_group(group.as_str().trim()) {
+                        // `system` belongs exclusively to built-in local shells.
+                        return;
                     } else {
                         group.to_string()
                     };
@@ -3879,12 +3896,33 @@ fn wire_session_callbacks(
         let store = store.clone();
         let sessions_model = sessions_model.clone();
         window.on_submit_group(move |orig: SharedString, name: SharedString| {
+            let trimmed = name.trim();
+            let error = {
+                let s = store.borrow();
+                if trimmed.is_empty() {
+                    Some(t("请输入分组名称", "Enter a group name"))
+                } else if is_reserved_session_group(trimmed) {
+                    Some(t(
+                        "该名称为系统保留分组",
+                        "This group name is reserved",
+                    ))
+                } else if (orig.is_empty() || !trimmed.eq_ignore_ascii_case(orig.as_str()))
+                    && s.session_group_exists(trimmed)
+                {
+                    Some(t("分组已存在", "Group already exists"))
+                } else {
+                    None
+                }
+            };
+            if let Some(message) = error {
+                return SharedString::from(message);
+            }
             {
                 let mut s = store.borrow_mut();
                 if orig.is_empty() {
-                    s.add_group(name.to_string());
+                    s.add_group(trimmed.to_string());
                 } else {
-                    s.rename_group(&orig.to_string(), name.to_string());
+                    s.rename_group(orig.as_str(), trimmed.to_string());
                 }
                 if let Err(err) = s.save() {
                     tracing::warn!("failed to save config: {err:#}");
@@ -3894,6 +3932,7 @@ fn wire_session_callbacks(
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
+            SharedString::new()
         });
     }
     // Group delete (#41) — UI only offers this on empty groups.
@@ -4420,6 +4459,7 @@ fn wire_session_callbacks(
                     view_offset: 0,
                     displayed_text: Vec::new(),
                     csi_state: CsiState::Normal,
+                    csi_pending: Vec::new(),
                     raw: std::collections::VecDeque::new(),
                     rendered: Vec::new(),
                 })),
@@ -4549,6 +4589,7 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
             initial_rows,
         ),
     };
+    let terminal_reply_tx = handle.commands.clone();
     ctx.handles.borrow_mut().insert(tab_id.to_string(), handle);
 
     // Separate SFTP connection for the same session (SSH only). It waits for
@@ -4711,7 +4752,14 @@ fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
                     match evt {
                         SessionEvent::Output(chunk) => {
                             let chunk_len = chunk.len();
-                            ingest_terminal_output(&bufs_thread, &tab_id_pump, chunk.as_bytes());
+                            let reply = ingest_terminal_output(
+                                &bufs_thread,
+                                &tab_id_pump,
+                                chunk.as_bytes(),
+                            );
+                            if !reply.is_empty() {
+                                let _ = terminal_reply_tx.send(SessionCommand::RawInput(reply));
+                            }
                             remaining_output_bytes =
                                 remaining_output_bytes.saturating_sub(chunk_len);
                             dirty_since_request = true;
@@ -5677,17 +5725,50 @@ fn validate_output_highlight_rule(
     Ok(())
 }
 
-/// Build the filtered history-view model for the dropdown: case-insensitive
-/// substring matches of `query`, in the same order as the full history (#101).
-fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
+/// Build the filtered history-view rows for the dropdown, newest first. The
+/// command-history model itself remains oldest first so ↑/↓ recall keeps its
+/// existing shell-like navigation semantics (#55, #101, #331).
+fn history_view_rows(history: &[String], query: &str) -> Vec<SharedString> {
     let q = query.trim().to_lowercase();
-    let rows: Vec<SharedString> = store
-        .command_history()
+    history
         .iter()
-        .filter(|c| q.is_empty() || c.to_lowercase().contains(&q))
-        .map(|s| s.clone().into())
-        .collect();
+        .rev()
+        .filter(|command| q.is_empty() || command.to_lowercase().contains(&q))
+        .map(|command| command.clone().into())
+        .collect()
+}
+
+/// Build the filtered history-view model for the dropdown: case-insensitive
+/// substring matches of `query`, ordered from newest to oldest (#101, #331).
+fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
+    let rows = history_view_rows(store.command_history(), query);
     ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
+#[cfg(test)]
+mod history_view_tests {
+    use super::history_view_rows;
+
+    #[test]
+    fn lists_and_filters_commands_newest_first() {
+        let history = vec![
+            "git status".to_string(),
+            "cargo check".to_string(),
+            "git log".to_string(),
+        ];
+
+        let all: Vec<String> = history_view_rows(&history, "")
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        assert_eq!(all, ["git log", "cargo check", "git status"]);
+
+        let filtered: Vec<String> = history_view_rows(&history, "GIT")
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        assert_eq!(filtered, ["git log", "git status"]);
+    }
 }
 
 /// Find every (case-insensitive) occurrence of `query` across the currently
@@ -6293,7 +6374,7 @@ fn apply_session_event_to_window(
         SessionEvent::Output(chunk) => {
             // Synthetic Output (disconnect hint, editor error, …) — rare, already
             // on the UI thread. Live shell output is ingested on the pump thread.
-            ingest_terminal_output(bufs, tab_id, chunk.as_bytes());
+            let _ = ingest_terminal_output(bufs, tab_id, chunk.as_bytes());
             request_tab_render_from_ui(win.as_weak(), tab_id, bufs, gates);
         }
         SessionEvent::Connected => {
@@ -8393,8 +8474,8 @@ fn wire_key_input(
             std::thread::spawn(move || clipboard_set_text(t));
         });
     }
-    // Delete a history entry (#96). The model is in storage order now (#113),
-    // so the row index maps straight through.
+    // Delete a history entry (#96). The command-history model remains in
+    // storage order, so this legacy row index still maps straight through.
     {
         let store_rc = store.clone();
         let weak = window.as_weak();

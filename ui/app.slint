@@ -376,7 +376,7 @@ export component AppWindow inherits Window {
     property <bool> quick-external-send-enter;
     property <int> quick-external-sequence;
     in property <[string]> command-history;          // oldest first (newest last, #113)
-    in property <[string]> history-view;             // filtered dropdown list (#101)
+    in property <[string]> history-view;             // filtered dropdown, newest first (#101, #331)
     callback run-command(string /* tab-id */, string /* cmd */, bool /* to-all */);
     callback copy-text(string);                 // copy a history command (#96)
     callback delete-history(int /* index */);   // remove a history entry (#96)
@@ -566,8 +566,9 @@ export component AppWindow inherits Window {
     in-out property <bool> group-dialog-open: false;
     in-out property <string> group-dialog-orig;    // "" = create, else rename
     in-out property <string> group-dialog-name;
+    in-out property <string> group-dialog-error;
     callback delete-group(string /* name */);
-    callback submit-group(string /* orig */, string /* name */);
+    callback submit-group(string /* orig */, string /* name */) -> string;
     callback toggle-theme();               // flip dark ↔ light
     // Session sync / broadcast input (#78 pt.4): mirror keystrokes to every
     // online session. Default off (it types into ALL sessions at once).
@@ -1099,11 +1100,13 @@ export component AppWindow inherits Window {
                 new-group => {
                     root.group-dialog-orig = "";
                     root.group-dialog-name = "";
+                    root.group-dialog-error = "";
                     root.group-dialog-open = true;
                 }
                 edit-group(name) => {
                     root.group-dialog-orig = name;
                     root.group-dialog-name = name;
+                    root.group-dialog-error = "";
                     root.group-dialog-open = true;
                 }
                 delete-group(name) => { root.delete-group(name); }
@@ -1467,11 +1470,13 @@ export component AppWindow inherits Window {
                     new-group => {
                         root.group-dialog-orig = "";
                         root.group-dialog-name = "";
+                        root.group-dialog-error = "";
                         root.group-dialog-open = true;
                     }
                     edit-group(name) => {
                         root.group-dialog-orig = name;
                         root.group-dialog-name = name;
+                        root.group-dialog-error = "";
                         root.group-dialog-open = true;
                     }
                     delete-group(name) => { root.delete-group(name); }
@@ -2608,7 +2613,7 @@ export component AppWindow inherits Window {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             width: 340px;
-            height: 178px;
+            height: 208px;
             background: Theme.bg-panel;
             border-radius: Theme.radius-md;
             border-width: 1px;
@@ -2637,13 +2642,25 @@ export component AppWindow inherits Window {
                     text <=> root.group-dialog-name;
                     font-family: Theme.ui-font-family; // CJK-capable (#54)
                     placeholder-text: @tr("Group name");
+                    edited => { root.group-dialog-error = ""; }
                     // Enter confirms when non-empty.
                     accepted => {
                         if (root.group-dialog-name != "") {
-                            root.submit-group(root.group-dialog-orig, root.group-dialog-name);
-                            root.group-dialog-open = false;
+                            root.group-dialog-error = root.submit-group(
+                                root.group-dialog-orig,
+                                root.group-dialog-name,
+                            );
+                            if (root.group-dialog-error == "") {
+                                root.group-dialog-open = false;
+                            }
                         }
                     }
+                }
+                Text {
+                    text: root.group-dialog-error;
+                    color: Theme.danger;
+                    font-size: Theme.fs-xs;
+                    height: 18px;
                 }
                 Rectangle { vertical-stretch: 1; }
                 HorizontalLayout {
@@ -2658,8 +2675,13 @@ export component AppWindow inherits Window {
                         primary: true;
                         enabled: root.group-dialog-name != "";
                         clicked => {
-                            root.submit-group(root.group-dialog-orig, root.group-dialog-name);
-                            root.group-dialog-open = false;
+                            root.group-dialog-error = root.submit-group(
+                                root.group-dialog-orig,
+                                root.group-dialog-name,
+                            );
+                            if (root.group-dialog-error == "") {
+                                root.group-dialog-open = false;
+                            }
                         }
                     }
                 }

@@ -6,6 +6,23 @@ use crate::terminal::{
 use crate::ui::TermMatch;
 use crate::ui::TermSpan;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TerminalQuery {
+    Status,
+    CursorPosition { private: bool },
+    PrimaryDeviceAttributes,
+}
+
+fn terminal_query(sequence: &[u8]) -> Option<TerminalQuery> {
+    match sequence {
+        b"\x1b[5n" => Some(TerminalQuery::Status),
+        b"\x1b[6n" => Some(TerminalQuery::CursorPosition { private: false }),
+        b"\x1b[?6n" => Some(TerminalQuery::CursorPosition { private: true }),
+        b"\x1b[c" | b"\x1b[0c" => Some(TerminalQuery::PrimaryDeviceAttributes),
+        _ => None,
+    }
+}
+
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::Line as GridLine;
 use alacritty_terminal::term::TermDamage;
@@ -92,7 +109,10 @@ impl TermBuffer {
     /// Feed bytes to alacritty.  Scrollback is read on demand from the
     /// alacritty Grid via negative `Line` indices in `render()`, so we no
     /// longer need to capture scrolled-off lines into a separate history.
-    pub(crate) fn ingest(&mut self, input: &[u8]) {
+    /// The returned bytes are terminal-query replies (DSR/CPR/DA1) that must
+    /// be written back to the PTY immediately (#328).
+    pub(crate) fn ingest(&mut self, input: &[u8]) -> Vec<u8> {
+        let replies = self.detect_terminal_queries(input);
         // Rewrite HVP (`ESC [ … f`) → CUP (`ESC [ … H`) so vt100 (which only
         // implements `H`) honours btop/htop's absolute cursor positioning.
         let bytes = self.rewrite_hvp(input);
@@ -118,6 +138,65 @@ impl TermBuffer {
         }
         self.cap_raw();
         self.ingest_chunk(&bytes);
+        replies
+    }
+
+    /// Scan input for DSR/CPR/DA1 terminal queries and build replies.  The
+    /// CSI scanner survives split reads thanks to `csi_pending`.
+    fn detect_terminal_queries(&mut self, input: &[u8]) -> Vec<u8> {
+        let mut replies = Vec::new();
+        for &byte in input {
+            match self.csi_state {
+                CsiState::Normal => {
+                    if byte == 0x1b {
+                        self.csi_pending.clear();
+                        self.csi_pending.push(byte);
+                        self.csi_state = CsiState::Esc;
+                    }
+                }
+                CsiState::Esc => {
+                    if byte == b'[' {
+                        self.csi_pending.push(byte);
+                        self.csi_state = CsiState::Csi;
+                    } else {
+                        self.csi_pending.clear();
+                        if byte == 0x1b {
+                            self.csi_pending.push(byte);
+                        } else {
+                            self.csi_state = CsiState::Normal;
+                        }
+                    }
+                }
+                CsiState::Csi => {
+                    self.csi_pending.push(byte);
+                    if (0x40..=0x7e).contains(&byte) {
+                        if let Some(kind) = terminal_query(&self.csi_pending) {
+                            match kind {
+                                TerminalQuery::Status => replies.extend_from_slice(b"\x1b[0n"),
+                                TerminalQuery::CursorPosition { private } => {
+                                    let point = self.term.grid().cursor.point;
+                                    let response = if private {
+                                        format!("\x1b[?{};{}R", point.line.0 + 1, point.column.0 + 1)
+                                    } else {
+                                        format!("\x1b[{};{}R", point.line.0 + 1, point.column.0 + 1)
+                                    };
+                                    replies.extend_from_slice(response.as_bytes());
+                                }
+                                TerminalQuery::PrimaryDeviceAttributes => {
+                                    replies.extend_from_slice(b"\x1b[?1;2c")
+                                }
+                            }
+                        }
+                        self.csi_pending.clear();
+                        self.csi_state = CsiState::Normal;
+                    } else if self.csi_pending.len() > 64 {
+                        self.csi_pending.clear();
+                        self.csi_state = CsiState::Normal;
+                    }
+                }
+            }
+        }
+        replies
     }
 
     /// Feed bytes to alacritty.  Scrollback is read directly from

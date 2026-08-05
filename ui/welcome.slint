@@ -13,6 +13,7 @@ export struct SessionInfo {
     group: string,        // folder/group name ("" = ungrouped)
     group-header: string, // set on the first row of each group → render a header
     collapsed: bool,      // group is collapsed → this session row is hidden
+    builtin: bool,        // built-in local shell, not a saved server session
 }
 
 // --- SessionRow ------------------------------------------------------------
@@ -26,7 +27,7 @@ component SessionRow inherits Rectangle {
     // Full session list — group-header is non-empty once per group, so the
     // "move to group" submenu can iterate it to list each group exactly once.
     in property <[SessionInfo]> all-sessions;
-    property <bool> system-row: root.session.group == "system";
+    property <bool> system-row: root.session.builtin;
 
     height: 36px;
     border-radius: Theme.radius-sm;
@@ -136,7 +137,8 @@ component SessionRow inherits Rectangle {
                 // per group (incl. empty folders), so iterating the full list
                 // yields each group once; the current group is skipped.
                 for s[i] in root.all-sessions : Rectangle {
-                    visible: !root.system-row && s.group-header != "" && s.group-header != root.session.group;
+                    visible: !root.system-row && s.group-header != ""
+                        && s.group-header != "system" && s.group-header != root.session.group;
                     height: self.visible ? 28px : 0px;
                     border-radius: Theme.radius-sm;
                     background: mv-ta.has-hover ? Theme.bg-hover : transparent;
@@ -435,7 +437,7 @@ export component Welcome inherits Rectangle {
                                 // empty); right-click opens the group menu.
                                 clicked => { root.toggle-group(session.group); }
                                 pointer-event(e) => {
-                                    if (session.group != "system" && e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                                    if (!session.builtin && e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
                                         gmx = self.mouse-x;
                                         gmy = self.mouse-y;
                                         grp-menu.show();

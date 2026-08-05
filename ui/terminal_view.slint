@@ -299,7 +299,7 @@ export component TerminalView inherits Rectangle {
     // fed from Rust); send-to-all is a per-tab toggle.
     in property <[QuickCmd]> quick-commands;
     in property <[string]> command-history;   // oldest first (newest last, #113)
-    in property <[string]> history-view;       // filtered view shown in the dropdown (#101)
+    in property <[string]> history-view;       // filtered dropdown, newest first (#101, #331)
     property <bool> send-to-all: false;
     property <bool> quick-open: false;         // quick-command popup visibility
     property <bool> history-open: false;       // history dropdown visibility

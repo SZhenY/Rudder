@@ -794,7 +794,7 @@ async fn run_sftp(
                 let cancels_done = cancels.clone();
                 tokio::spawn(async move {
                     let n = names.len();
-                    let tmp = format!("/tmp/rudder-{}.tar", Uuid::new_v4());
+                    let tmp = format!("/tmp/meatshell-{}.tar", Uuid::new_v4());
                     // Name the archive after the first item's stem, per the user:
                     // 11.txt → "11等文件.tar". Sanitize since names come from the server.
                     let first = names.first().map(|s| s.as_str()).unwrap_or("download");
@@ -1250,7 +1250,7 @@ async fn run_sftp(
                 // Sanitize the remote-controlled name before it becomes a local
                 // file path that we later hand to the OS "open" call.
                 let filename = sanitize_filename(&base_name(&remote));
-                let tmp_dir = std::env::temp_dir().join("rudder");
+                let tmp_dir = std::env::temp_dir().join("meatshell");
                 let _ = tokio::fs::create_dir_all(&tmp_dir).await;
                 let local = tmp_dir.join(&filename);
                 let local_str = local.to_string_lossy().to_string();
@@ -1341,51 +1341,106 @@ async fn run_sftp(
     Ok(())
 }
 
-/// Read a remote file as UTF-8 text for the built-in editor, rejecting files
-/// that are too large, binary, or not valid UTF-8 (#70). Returns the text on
-/// success or a human-readable error message on failure.
+const MAX_BUILTIN_EDITOR_BYTES: usize = 512 * 1024;
+const MAX_BUILTIN_EDITOR_LINES: usize = 20_000;
+const MAX_BUILTIN_EDITOR_LINE_BYTES: usize = 64 * 1024;
+
+#[derive(Debug, PartialEq, Eq)]
+enum EditorTextRejection {
+    TooLarge,
+    TooManyLines,
+    LineTooLong,
+    Binary,
+    InvalidUtf8,
+}
+
+fn validate_editor_text(bytes: Vec<u8>) -> std::result::Result<String, EditorTextRejection> {
+    if bytes.len() > MAX_BUILTIN_EDITOR_BYTES {
+        return Err(EditorTextRejection::TooLarge);
+    }
+    if bytes
+        .iter()
+        .any(|&byte| {
+            (byte < 0x20 && byte != b'\t' && byte != b'\n' && byte != b'\r') || byte == 0x7f
+        })
+    {
+        return Err(EditorTextRejection::Binary);
+    }
+
+    let text = String::from_utf8(bytes).map_err(|_| EditorTextRejection::InvalidUtf8)?;
+    let mut line_count = 1usize;
+    let mut line_bytes = 0usize;
+    for byte in text.bytes() {
+        if byte == b'\n' {
+            line_count += 1;
+            line_bytes = 0;
+            if line_count > MAX_BUILTIN_EDITOR_LINES {
+                return Err(EditorTextRejection::TooManyLines);
+            }
+        } else {
+            line_bytes += 1;
+            if line_bytes > MAX_BUILTIN_EDITOR_LINE_BYTES {
+                return Err(EditorTextRejection::LineTooLong);
+            }
+        }
+    }
+    Ok(text)
+}
+
+fn editor_rejection_message(rejection: EditorTextRejection) -> String {
+    match rejection {
+        EditorTextRejection::TooLarge => t(
+            "文件过大,无法在内置编辑器中打开(上限 512 KB),请使用外部打开/编辑或下载",
+            "Too large for the built-in editor (512 KB limit); open/edit externally or download it instead",
+        ),
+        EditorTextRejection::TooManyLines => t(
+            "文件行数过多,无法在内置编辑器中安全打开,请使用外部打开/编辑或下载",
+            "Too many lines for the built-in editor; open/edit externally or download it instead",
+        ),
+        EditorTextRejection::LineTooLong => t(
+            "文件包含过长的单行,无法在内置编辑器中安全打开,请使用外部打开/编辑或下载",
+            "Contains a line too long for the built-in editor; open/edit externally or download it instead",
+        ),
+        EditorTextRejection::Binary => t(
+            "包含控制字符(疑似二进制),无法以文本打开,请下载查看",
+            "Contains control characters (likely binary); download it instead",
+        ),
+        EditorTextRejection::InvalidUtf8 => {
+            t("非 UTF-8 文本,无法打开", "Not UTF-8 text; cannot open")
+        }
+    }
+    .into()
+}
+
+/// Read a remote file as UTF-8 text for the built-in editor, rejecting content
+/// that would make Slint eagerly lay out an unsafe amount of text (#70, #331).
+/// Returns the text on success or a human-readable error message on failure.
 async fn read_text_guarded(
     sftp: &SftpSession,
     remote: &str,
 ) -> std::result::Result<String, String> {
     use tokio::io::AsyncReadExt;
-    const MAX_EDIT_BYTES: u64 = 2 * 1024 * 1024; // 2 MiB
     let size = sftp
         .metadata(remote)
         .await
         .ok()
         .and_then(|m| m.size)
         .unwrap_or(0);
-    if size > MAX_EDIT_BYTES {
-        return Err(t(
-            "文件过大,无法在内置编辑器中打开(上限 2 MB),请下载查看",
-            "Too large for the built-in editor (2 MB limit); download it instead",
-        )
-        .into());
+    if size > MAX_BUILTIN_EDITOR_BYTES as u64 {
+        return Err(editor_rejection_message(EditorTextRejection::TooLarge));
     }
-    let mut f = sftp
+    let f = sftp
         .open(remote)
         .await
         .map_err(|e| format!("{}: {e}", t("打开失败", "Open failed")))?;
-    let mut bytes = Vec::new();
-    f.read_to_end(&mut bytes)
+    // Metadata may be missing or stale. Read at most one byte past the limit so
+    // an untrusted remote file can never make this path allocate without bound.
+    let mut bytes = Vec::with_capacity((size as usize).min(MAX_BUILTIN_EDITOR_BYTES));
+    f.take(MAX_BUILTIN_EDITOR_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
         .await
         .map_err(|e| format!("{}: {e}", t("读取失败", "Read failed")))?;
-    // Control characters (beyond tab/newline/CR) have no glyph — they render as
-    // tofu boxes — and round-tripping them through the editor risks corrupting
-    // the file (e.g. .viminfo). Treat such files as binary (#70).
-    if bytes
-        .iter()
-        .any(|&b| (b < 0x20 && b != b'\t' && b != b'\n' && b != b'\r') || b == 0x7f)
-    {
-        return Err(t(
-            "包含控制字符(疑似二进制),无法以文本打开,请下载查看",
-            "Contains control characters (likely binary); download it instead",
-        )
-        .into());
-    }
-    String::from_utf8(bytes)
-        .map_err(|_| t("非 UTF-8 文本,无法打开", "Not UTF-8 text; cannot open").into())
+    validate_editor_text(bytes).map_err(editor_rejection_message)
 }
 
 /// Overwrite a remote file with the given text (CREATE | WRITE | TRUNCATE).
@@ -1628,7 +1683,7 @@ async fn stage_remote_for_copy(
     events: &UnboundedSender<SessionEvent>,
 ) -> Result<(PathBuf, PathBuf)> {
     let cleanup_root =
-        std::env::temp_dir().join(format!("rudder-remote-copy-{}", Uuid::new_v4()));
+        std::env::temp_dir().join(format!("meatshell-remote-copy-{}", Uuid::new_v4()));
     tokio::fs::create_dir_all(&cleanup_root)
         .await
         .with_context(|| format!("failed to create temp dir {}", cleanup_root.display()))?;
@@ -2232,7 +2287,10 @@ const _: fn() = || {
 
 #[cfg(test)]
 mod sanitize_tests {
-    use super::sanitize_filename;
+    use super::{
+        sanitize_filename, validate_editor_text, EditorTextRejection,
+        MAX_BUILTIN_EDITOR_BYTES, MAX_BUILTIN_EDITOR_LINES, MAX_BUILTIN_EDITOR_LINE_BYTES,
+    };
 
     #[test]
     fn plain_names_pass_through() {
@@ -2287,5 +2345,36 @@ mod sanitize_tests {
         assert_eq!(sanitize_filename(""), "file");
         assert_eq!(sanitize_filename("   "), "file");
         assert_eq!(sanitize_filename("..."), "file");
+    }
+
+    #[test]
+    fn editor_rejects_content_over_the_safe_byte_limit() {
+        let bytes = vec![b'a'; MAX_BUILTIN_EDITOR_BYTES + 1];
+        assert_eq!(
+            validate_editor_text(bytes),
+            Err(EditorTextRejection::TooLarge)
+        );
+    }
+
+    #[test]
+    fn editor_rejects_pathological_text_layouts() {
+        let lines = vec![b'\n'; MAX_BUILTIN_EDITOR_LINES];
+        assert_eq!(
+            validate_editor_text(lines),
+            Err(EditorTextRejection::TooManyLines)
+        );
+        let line = vec![b'a'; MAX_BUILTIN_EDITOR_LINE_BYTES + 1];
+        assert_eq!(
+            validate_editor_text(line),
+            Err(EditorTextRejection::LineTooLong)
+        );
+    }
+
+    #[test]
+    fn editor_accepts_regular_utf8_text_within_limits() {
+        assert_eq!(
+            validate_editor_text("第一行\nsecond line\n".as_bytes().to_vec()),
+            Ok("第一行\nsecond line\n".into())
+        );
     }
 }
