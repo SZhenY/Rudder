@@ -7,7 +7,7 @@ description = "A lightweight FinalShell-style SSH/terminal client written in Rus
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/your/rudder"
 readme = "README.md"
-rust-version = "1.85"
+rust-version = "1.96"
 
 [dependencies]
 slint = { version = "1.17", features = ["compat-1-2"] }

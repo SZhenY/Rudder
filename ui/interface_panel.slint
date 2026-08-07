@@ -1154,6 +1154,20 @@ export component InterfacePanel inherits Rectangle {
                     font-size: 11px * Theme.panel-font;
                     wrap: word-wrap;
                 }
+                Rectangle { height: 12px; }
+                SettingRow {
+                    show-divider: false;
+                    label: root.lang-en ? "Animations" : "动画";
+                    desc: root.lang-en
+                        ? "Enable or disable all sidebar and panel animations."
+                        : "启用或禁用所有侧边栏和面板动画。";
+                    Switch {
+                        checked: AnimationSettings.enabled;
+                        toggled => {
+                            AnimationSettings.enabled = !AnimationSettings.enabled;
+                        }
+                    }
+                }
             }
 
             // --- SFTP page ---------------------------------------------

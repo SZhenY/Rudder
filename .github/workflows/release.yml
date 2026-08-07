@@ -96,6 +96,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.96
           targets: ${{ matrix.target }}
 
       - name: Cache cargo build

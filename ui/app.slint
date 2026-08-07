@@ -215,6 +215,10 @@ component ShortcutRow inherits Rectangle {
     }
 }
 
+export global AnimationSettings {
+    in-out property <bool> enabled: true;
+}
+
 export component AppWindow inherits Window {
     title: "Rudder";
     icon: @image-url("../assets/icon.png");
@@ -913,8 +917,8 @@ export component AppWindow inherits Window {
         property <length> sidebar-outside-strip: dock-area.sidebar-strip-outside ? 36px : 0px;
         property <length> welcome-strip: (root.welcome-as-sidebar && root.welcome-collapsed) ? 36px : 0px;
         property <length> welcome-size: (root.welcome-as-sidebar && !root.welcome-collapsed) ? root.welcome-sidebar-width : 0px;
-        animate welcome-size { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); }
-        animate welcome-strip { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+        animate welcome-size { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
+        animate welcome-strip { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
         property <length> welcome-taken: welcome-strip + welcome-size + sidebar-outside-strip;
         property <bool> welcome-horizontal: root.welcome-sidebar-horizontal;
         property <bool> welcome-sidebar-dragging;
@@ -1057,7 +1061,7 @@ export component AppWindow inherits Window {
             background: Theme.bg-panel;
             clip: true;
             if !root.welcome-collapsed : Rectangle {
-                animate opacity { duration: 120ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+                animate opacity { duration: 120ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
                 opacity: root.welcome-collapsed ? 0.0 : 1.0;
                 width: parent.width; height: parent.height;
                 Welcome {
@@ -1187,9 +1191,9 @@ export component AppWindow inherits Window {
         // All elements (sidebar-shell, quick-area, ToolStrip) read from this
         // one property, so they move in perfect lockstep (same value, same frame).
         property <length> sb-taken: root.sidebar-collapsed ? 36px : root.sidebar-width;
-        animate sb-taken { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+        animate sb-taken { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
         property <length> sb-h-taken: root.sidebar-collapsed ? 36px : root.sidebar-height;
-        animate sb-h-taken { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+        animate sb-h-taken { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
         property <length> sp: root.sidebar-collapsed ? 0px : 4px;
         property <length> bottom-strip-h: 0px;
 
@@ -1208,7 +1212,7 @@ export component AppWindow inherits Window {
             clip: true;
             background: Theme.bg-panel;
         if !root.sidebar-collapsed : Rectangle {
-            animate opacity { duration: 120ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+            animate opacity { duration: 120ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
             opacity: root.sidebar-collapsed ? 0.0 : 1.0;
             width: parent.width; height: parent.height;
             Sidebar {
