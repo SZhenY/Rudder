@@ -1162,7 +1162,7 @@ export component InterfacePanel inherits Rectangle {
                         ? "Enable or disable all sidebar and panel animations."
                         : "启用或禁用所有侧边栏和面板动画。";
                     Switch {
-                        checked: AnimationSettings.enabled;
+                        on: AnimationSettings.enabled;
                         toggled => {
                             AnimationSettings.enabled = !AnimationSettings.enabled;
                         }
