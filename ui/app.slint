@@ -1,4 +1,5 @@
 // Embedded cross-platform fonts (compile-time): terminal monospace + UI icons.
+import { AnimationSettings } from "theme.slint";
 // Embedding means Windows / Linux / macOS all render the same glyphs without
 // relying on Consolas / Segoe MDL2 Assets being installed.
 //
@@ -215,9 +216,6 @@ component ShortcutRow inherits Rectangle {
     }
 }
 
-export global AnimationSettings {
-    in-out property <bool> enabled: true;
-}
 
 export component AppWindow inherits Window {
     title: "Rudder";
