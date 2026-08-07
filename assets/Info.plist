@@ -5,20 +5,20 @@
 <dict>
     <!-- The executable inside Contents/MacOS/ -->
     <key>CFBundleExecutable</key>
-    <string>meatshell</string>
+    <string>rudder</string>
 
-    <!-- Points to Contents/Resources/meatshell.icns (no extension) -->
+    <!-- Points to Contents/Resources/rudder.icns (no extension) -->
     <key>CFBundleIconFile</key>
-    <string>meatshell</string>
+    <string>rudder</string>
 
     <key>CFBundleIdentifier</key>
-    <string>dev.meatshell.meatshell</string>
+    <string>dev.rudder.rudder</string>
 
     <key>CFBundleName</key>
-    <string>meatshell</string>
+    <string>Rudder</string>
 
     <key>CFBundleDisplayName</key>
-    <string>meatshell</string>
+    <string>Rudder</string>
 
     <key>CFBundlePackageType</key>
     <string>APPL</string>
@@ -39,6 +39,6 @@
     <string>11.0</string>
 
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2024 meatshell contributors. MIT OR Apache-2.0.</string>
+    <string>Copyright © 2024 rudder contributors. MIT OR Apache-2.0.</string>
 </dict>
 </plist>
