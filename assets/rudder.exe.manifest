@@ -24,7 +24,7 @@
 
   <assemblyIdentity
     type="win32"
-    name="meatshell"
+    name="rudder"
     version="1.0.0.0"
     processorArchitecture="*"/>
 
