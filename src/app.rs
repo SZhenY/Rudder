@@ -5099,9 +5099,25 @@ fn normalized_model(buf: &[f32]) -> ModelRc<f32> {
 }
 
 /// Build the filesystem-usage model (path, "avail/total", used fraction).
-fn disk_rows(disks: &[(String, u64, u64)]) -> Vec<DiskInfo> {
+fn disk_rows(disks: &[(String, u64, u64)], mount_filter: &str) -> Vec<DiskInfo> {
+    let filters: Vec<&str> = if mount_filter.is_empty() {
+        vec![]
+    } else {
+        mount_filter
+            .split(|c: char| c == ' ' || c == ',' || c == ';')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
     disks
         .iter()
+        .filter(|(mount, _, _)| {
+            if filters.is_empty() {
+                true
+            } else {
+                filters.iter().any(|f| mount.as_str() == *f)
+            }
+        })
         .map(|(mount, avail, total)| {
             let used = total.saturating_sub(*avail);
             let percent = if *total > 0 {
@@ -5118,8 +5134,17 @@ fn disk_rows(disks: &[(String, u64, u64)]) -> Vec<DiskInfo> {
         .collect()
 }
 
-fn disk_model(disks: &[(String, u64, u64)]) -> ModelRc<DiskInfo> {
-    ModelRc::from(Rc::new(VecModel::from(disk_rows(disks))))
+fn disk_model(disks: &[(String, u64, u64)], mount_filter: &str) -> ModelRc<DiskInfo> {
+    ModelRc::from(Rc::new(VecModel::from(disk_rows(disks, mount_filter))))
+}
+
+/// Read the current mount-filter string from the store.  Empty = show all.
+fn mount_filter() -> String {
+    HISTORY_STORE.with(|s| {
+        s.borrow().as_ref()
+            .map(|st| st.borrow().mount_filter().to_owned())
+            .unwrap_or_default()
+    })
 }
 
 /// Build the process-monitor model for the popup (#23). `cpu`/`mem` are
@@ -6136,7 +6161,7 @@ fn refresh_sidebar(
         win.set_net_selected("".into());
         win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
         // Non-connected tabs show the local machine's filesystems.
-        win.set_disks(disk_model(&snap.disks));
+        win.set_disks(disk_model(&snap.disks, &mount_filter()));
     };
     let show_local_res = |win: &AppWindow| {
         win.set_resource_title(t("本机资源", "Local resources").into());
@@ -6289,7 +6314,7 @@ fn refresh_sidebar(
             win.set_net_selected(name.into());
             let ifaces: Vec<SharedString> = st.net.iter().map(|e| e.0.clone().into()).collect();
             win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::from(ifaces))));
-            win.set_disks(disk_model(&st.disks));
+            win.set_disks(disk_model(&st.disks, &mount_filter()));
             win.set_proc_available(true);
             win.set_system_info_available(true);
             set_procs(win, &st.procs, &st.user, &active);
@@ -6301,7 +6326,7 @@ fn refresh_sidebar(
                 format_mem(st.mem_used_kib / 1024, st.mem_total_kib / 1024).into(),
                 format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
                 net_rows(&st.net),
-                disk_rows(&st.disks),
+                disk_rows(&st.disks, &mount_filter()),
                 st.sys.clone(),
             );
         }

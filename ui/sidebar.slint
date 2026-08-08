@@ -394,15 +394,6 @@ component DiskBlock inherits Rectangle {
                 spacing: 1px;
                 for d[i] in root.disks : Rectangle {
                     height: 20px; border-radius: 2px; clip: true;
-                    ta := TouchArea {
-                        changed has-hover => {
-                            if (self.has-hover) {
-                                root.tip-path = d.path; root.tip-idx = i;
-                            } else if (root.tip-path == d.path) {
-                                root.tip-path = ""; root.tip-idx = -1;
-                            }
-                        }
-                    }
                     Rectangle {
                         x: 0; y: 0; height: parent.height;
                         width: parent.width * clamp(d.percent, 0.0, 1.0);
@@ -416,6 +407,17 @@ component DiskBlock inherits Rectangle {
                                vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                         Text { text: d.detail; color: Theme.text-muted; font-size: Theme.fs-xs;
                                vertical-alignment: center; horizontal-alignment: right; }
+                    }
+                    ta := TouchArea {
+                        width: parent.width; height: parent.height; x: 0; y: 0;
+                        mouse-cursor: pointer;
+                        changed has-hover => {
+                            if (self.has-hover) {
+                                root.tip-path = d.path; root.tip-idx = i;
+                            } else if (root.tip-path == d.path) {
+                                root.tip-path = ""; root.tip-idx = -1;
+                            }
+                        }
                     }
                 }
             }
