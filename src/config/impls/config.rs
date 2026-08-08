@@ -1216,9 +1216,6 @@ impl ConfigStore {
     pub fn set_mount_filter(&mut self, v: String) {
         self.cache.mount_filter = v;
     }
-    /// Network-interface filter for the resource panel.
-    }
-    }
 
     /// Selected terminal insertion cursor shape. Legacy and invalid values use
     /// the existing block cursor so upgrades preserve the current appearance.
