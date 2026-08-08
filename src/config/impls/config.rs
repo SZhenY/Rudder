@@ -313,9 +313,6 @@ fn default_parity() -> String {
 fn default_scrollback_lines() -> usize {
     5000
 }
-fn default_true() -> bool {
-    true
-}
 /// Ships with the "幻想 3048" sci-fi wallpaper on by default (a dark theme). New
 /// installs and users upgrading from before the wallpaper feature get it; once
 /// the user picks anything (including "无"/none, stored as ""), their choice is
