@@ -813,10 +813,6 @@ pub struct ConfigFile {
     /// Empty = show all detected mounts.
     #[serde(default)]
     pub mount_filter: String,
-    /// Only list the given network interfaces (space / comma / semicolon delimited).
-    /// Empty = show all detected NICs.
-    #[serde(default)]
-    pub nic_filter: String,
     /// One-time default-layout migration marker (#new-user-defaults). 0 = config
     /// predates the migration. `migrate_defaults` bumps it to `DEFAULTS_REV` after
     /// pushing the new look (default wallpaper / welcome-as-sidebar / right-docked
@@ -1221,11 +1217,7 @@ impl ConfigStore {
         self.cache.mount_filter = v;
     }
     /// Network-interface filter for the resource panel.
-    pub fn nic_filter(&self) -> &str {
-        &self.cache.nic_filter
     }
-    pub fn set_nic_filter(&mut self, v: String) {
-        self.cache.nic_filter = v;
     }
 
     /// Selected terminal insertion cursor shape. Legacy and invalid values use

@@ -436,8 +436,6 @@ export component InterfacePanel inherits Rectangle {
     callback set-hide-special-partitions(bool);
     in-out property <string> mount-filter: "";
     callback set-mount-filter(string);
-    in-out property <string> nic-filter: "";
-    callback set-nic-filter(string);
     callback pick-wallpaper-file();    // open the OS file dialog (Rust)
 
     HorizontalLayout {
@@ -602,6 +600,12 @@ export component InterfacePanel inherits Rectangle {
                         : "终端历史记录保留的最大行数（100–1,000,000）。";
                     TextInput {
                         width: 140px;
+                        height: 30px;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: Theme.border-subtle;
+                        background: Theme.bg-elevated;
+                        color: Theme.text-primary;
                         text: root.scrollback-lines;
                         changed text => {
                             root.scrollback-valid = root.set-scrollback-lines(self.text);
@@ -1205,19 +1209,14 @@ export component InterfacePanel inherits Rectangle {
                         : "仅显示这些挂载点的磁盘信息（空格/逗号/分号分隔）。留空表示显示全部。";
                     TextInput {
                         width: 200px;
+                        height: 30px;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: Theme.border-subtle;
+                        background: Theme.bg-elevated;
+                        color: Theme.text-primary;
                         text <=> root.mount-filter;
                         accepted => { root.set-mount-filter(root.mount-filter); }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "NIC filter" : "网卡过滤";
-                    desc: root.lang-en
-                        ? "Only show these network interfaces (space/comma/semicolon separated). Leave empty to show all."
-                        : "仅显示这些网卡的流量信息（空格/逗号/分号分隔）。留空表示显示全部。";
-                    TextInput {
-                        width: 200px;
-                        text <=> root.nic-filter;
-                        accepted => { root.set-nic-filter(root.nic-filter); }
                     }
                 }
             }

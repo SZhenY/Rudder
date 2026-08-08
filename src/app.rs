@@ -1062,12 +1062,10 @@ pub fn run() -> Result<()> {
         window.set_convert_eol(s.convert_eol());
         window.set_osc52_clipboard(s.osc52_clipboard());
     }
-    // Resource panel: partition / mount / NIC filters.
     {
         let s = store.borrow();
         window.set_hide_special_partitions(s.hide_special_partitions());
         window.set_mount_filter(s.mount_filter().into());
-        window.set_nic_filter(s.nic_filter().into());
     }
 
     // Interface setting: collapse the sidebars by default (#78). Seed the
@@ -1528,9 +1526,7 @@ pub fn run() -> Result<()> {
     }
     {
         let store = store.clone();
-        window.on_set_nic_filter(move |v: slint::SharedString| {
             let mut s = store.borrow_mut();
-            s.set_nic_filter(v.to_string());
             let _ = s.save();
         });
     }
