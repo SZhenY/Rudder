@@ -311,7 +311,7 @@ fn default_parity() -> String {
     "none".to_string()
 }
 fn default_scrollback_lines() -> usize {
-    100000
+    5000
 }
 /// Ships with the "幻想 3048" sci-fi wallpaper on by default (a dark theme). New
 /// installs and users upgrading from before the wallpaper feature get it; once
@@ -1168,7 +1168,7 @@ impl ConfigStore {
     }
 
     pub fn set_scrollback_lines(&mut self, lines: usize) {
-        self.cache.scrollback_lines = lines.clamp(0, 10_000_000);
+        self.cache.scrollback_lines = lines.clamp(100, 1_000_000);
     }
 
     /// Selected terminal insertion cursor shape. Legacy and invalid values use

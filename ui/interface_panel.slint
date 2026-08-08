@@ -405,7 +405,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-term-font-bold(bool);
     callback set-term-cursor-style(string);
     callback set-term-cursor-color(string) -> bool;
-    in-out property <int> scrollback-lines: 100000;
+    in-out property <int> scrollback-lines: 5000;
     callback set-scrollback-lines(int);
     callback set-output-highlight(bool, string);
     callback add-output-highlight-rule(string, bool, bool, bool, string) -> bool;
@@ -637,16 +637,22 @@ export component InterfacePanel inherits Rectangle {
                     show-divider: true;
                     label: root.lang-en ? "Scrollback lines" : "回滚行数";
                     desc: root.lang-en
-                        ? "Maximum number of lines kept in terminal history (0 = no scrollback)."
-                        : "终端历史记录保留的最大行数（0 = 不保留）。";
-                    TextInput {
-                        text: "";
-                        width: 100px;
-                        input-type: number;
-                        accepted(text) => {
-                            if let parsed = text.to-float(): root.set-scrollback-lines(parsed as int);
-                        }
+                        ? "Number of lines kept in terminal history."
+                        : "终端历史记录保留的最大行数。";
+                    SpinBox {
+                        min: 100;
+                        max: 1_000_000;
+                        value: root.scrollback-lines;
+                        changed(v) => { root.set-scrollback-lines(v); }
                     }
+                }
+                Text {
+                    text: root.lang-en
+                        ? "Higher values use more memory. Restart existing sessions to apply."
+                        : "行数越大占用内存越多。已有会话需重连后生效。";
+                    font-size: 11px * Theme.panel-font;
+                    color: Theme.text-muted;
+                    wrap: word-wrap;
                 }
                 Rectangle { height: 14px; }
                 SectionHeader { text: root.lang-en ? "OUTPUT HIGHLIGHTING" : "输出高亮"; height: 24px; }
