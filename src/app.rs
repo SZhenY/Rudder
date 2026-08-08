@@ -10248,14 +10248,14 @@ mod key_tests {
         // CRLF (Windows clipboard) and LF both collapse to a single CR so a
         // backslash-continued multi-line command pastes intact.
         assert_eq!(
-            normalize_pasted_newlines("sudo apt install \\\r\n  docker-ce"),
+            normalize_pasted_newlines("sudo apt install \\\r\n  docker-ce", false),
             "sudo apt install \\\r  docker-ce"
         );
-        assert_eq!(normalize_pasted_newlines("a\nb\nc"), "a\rb\rc");
+        assert_eq!(normalize_pasted_newlines("a\nb\nc", false), "a\rb\rc");
         // A lone CR is left as-is; no doubling.
-        assert_eq!(normalize_pasted_newlines("a\rb"), "a\rb");
+        assert_eq!(normalize_pasted_newlines("a\rb", false), "a\rb");
         // No newlines → unchanged.
-        assert_eq!(normalize_pasted_newlines("echo hi"), "echo hi");
+        assert_eq!(normalize_pasted_newlines("echo hi", false), "echo hi");
     }
 
     #[test]
