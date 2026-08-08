@@ -405,8 +405,9 @@ export component InterfacePanel inherits Rectangle {
     callback set-term-font-bold(bool);
     callback set-term-cursor-style(string);
     callback set-term-cursor-color(string) -> bool;
-    in-out property <string> scrollback-lines: "5 000";
-    callback set-scrollback-lines(string);
+    in-out property <string> scrollback-lines: "5000";
+    property <bool> scrollback-valid: true;
+    callback set-scrollback-lines(string) -> bool;
     callback set-output-highlight(bool, string);
     callback add-output-highlight-rule(string, bool, bool, bool, string) -> bool;
     callback remove-output-highlight-rule(int);
@@ -637,20 +638,25 @@ export component InterfacePanel inherits Rectangle {
                     show-divider: true;
                     label: root.lang-en ? "Scrollback lines" : "回滚行数";
                     desc: root.lang-en
-                        ? "Number of lines kept in terminal history."
-                        : "终端历史记录保留的最大行数。";
-                    ComboBox {
-                        model: ["100", "1 000", "5 000", "10 000", "100 000", "1 000 000"];
-                        current-value: root.scrollback-lines;
-                        selected(v) => { root.set-scrollback-lines(v); }
+                        ? "Number of lines kept in terminal history (100–1,000,000)."
+                        : "终端历史记录保留的最大行数（100–1,000,000）。";
+                    TextInput {
+                        width: 140px;
+                        text: root.scrollback-lines;
+                        accepted(text) => {
+                            if (!root.set-scrollback-lines(text)) {
+                                root.scrollback-valid = false;
+                            }
+                        }
+                        edited(text) => { root.scrollback-valid = true; }
                     }
                 }
                 Text {
                     text: root.lang-en
-                        ? "Higher values use more memory. Restart existing sessions to apply."
-                        : "行数越大占用内存越多。已有会话需重连后生效。";
+                        ? "Larger values use more memory. Invalid input is not applied."
+                        : "行数越大占用内存越多。非法输入不会被应用。";
                     font-size: 11px * Theme.panel-font;
-                    color: Theme.text-muted;
+                    color: root.scrollback-valid ? Theme.text-muted : Theme.danger;
                     wrap: word-wrap;
                 }
                 Rectangle { height: 14px; }

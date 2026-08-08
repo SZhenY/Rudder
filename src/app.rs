@@ -1459,14 +1459,18 @@ pub fn run() -> Result<()> {
     {
         let weak = window.as_weak();
         let store = store.clone();
-        window.on_set_scrollback_lines(move |lines: slint::SharedString| {
-            // ComboBox sends "1 000"-style formatted strings; strip spaces and
-            // parse, ignoring malformed input.
+        window.on_set_scrollback_lines(move |lines: slint::SharedString| -> bool {
+            // Validate: 100..=1_000_000. Malformed input is rejected (UI shows
+            // the invalid state) and nothing is persisted.
             let digits: String = lines.chars().filter(|c| c.is_ascii_digit()).collect();
-            if let Ok(n) = digits.parse::<usize>() {
-                let mut s = store.borrow_mut();
-                s.set_scrollback_lines(n);
-                let _ = s.save();
+            match digits.parse::<usize>() {
+                Ok(n) if (100..=1_000_000).contains(&n) => {
+                    let mut s = store.borrow_mut();
+                    s.set_scrollback_lines(n);
+                    let _ = s.save();
+                    true
+                }
+                _ => false,
             }
         });
     }

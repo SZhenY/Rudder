@@ -424,7 +424,7 @@ export component AppWindow inherits Window {
     in-out property <string> term-cursor-color-hex: root.dark-mode ? "#D4D4D4" : "#2D2D2F";
     in-out property <color> term-cursor-color: Theme.term-fg;
     in-out property <bool> output-highlight-enabled: true;
-    in-out property <string> scrollback-lines: "5 000";
+    in-out property <string> scrollback-lines: "5000";
     in-out property <string> output-highlight-preset: "log";
     in property <[OutputRuleItem]> output-highlight-rules;
     in-out property <string> output-highlight-rule-status;
@@ -486,7 +486,7 @@ export component AppWindow inherits Window {
     callback set-term-cursor-style(string);        // apply + persist cursor shape (#275)
     callback set-term-cursor-color(string) -> bool;// validate + persist cursor colour (#275)
     callback set-output-highlight(bool, string);   // enable + built-in preset
-    callback set-scrollback-lines(string);         // persist terminal history lines
+    callback set-scrollback-lines(string) -> bool;  // persist terminal history lines
     callback add-output-highlight-rule(string, bool, bool, bool, string) -> bool;
     callback remove-output-highlight-rule(int);
     callback set-output-highlight-rule-enabled(int, bool);
@@ -3988,7 +3988,7 @@ export component AppWindow inherits Window {
                     set-output-highlight(enabled, preset) => {
                         root.set-output-highlight(enabled, preset);
                     }
-                    set-scrollback-lines(v) => { root.set-scrollback-lines(v); }
+                    set-scrollback-lines(v) => { return root.set-scrollback-lines(v); }
                     add-output-highlight-rule(pattern, regex, case-sensitive, whole-line, color) => {
                         root.add-output-highlight-rule(
                             pattern, regex, case-sensitive, whole-line, color)
