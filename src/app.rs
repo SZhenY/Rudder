@@ -1061,6 +1061,7 @@ pub fn run() -> Result<()> {
         let s = store.borrow();
         window.set_convert_eol(s.convert_eol());
         window.set_osc52_clipboard(s.osc52_clipboard());
+        crate::terminal::vt_adapter::OSC52_ENABLED.store(s.osc52_clipboard(), std::sync::atomic::Ordering::Relaxed);
     }
     {
         let s = store.borrow();
@@ -1506,6 +1507,7 @@ pub fn run() -> Result<()> {
             let mut s = store.borrow_mut();
             s.set_osc52_clipboard(v);
             let _ = s.save();
+            crate::terminal::vt_adapter::OSC52_ENABLED.store(v, std::sync::atomic::Ordering::Relaxed);
         });
     }
     {
@@ -5151,6 +5153,15 @@ fn hide_special_partitions() -> bool {
         s.borrow().as_ref()
             .map(|st| st.borrow().hide_special_partitions())
             .unwrap_or(true)
+    })
+}
+
+/// Read the convert-eol flag from the store.
+fn convert_eol() -> bool {
+    HISTORY_STORE.with(|s| {
+        s.borrow().as_ref()
+            .map(|st| st.borrow().convert_eol())
+            .unwrap_or(false)
     })
 }
 
@@ -9303,7 +9314,7 @@ fn wire_key_input(
                                 }
                             });
                         } else {
-                            let bytes = encode_pasted_text(&text, bracketed);
+                            let bytes = encode_pasted_text(&text, bracketed, convert_eol());
                             let _ = sender.send(SessionCommand::RawInput(bytes));
                         }
                     }
@@ -9330,7 +9341,7 @@ fn wire_key_input(
             let text = w.get_paste_confirm_text().to_string();
             let bracketed = terminal_uses_bracketed_paste(&bufs_paste, tab_id.as_str());
             let _ = sender.send(SessionCommand::RawInput(encode_pasted_text(
-                &text, bracketed,
+                &text, bracketed, convert_eol(),
             )));
             w.set_paste_confirm_open(false);
         });
@@ -10259,15 +10270,15 @@ mod key_tests {
     #[test]
     fn paste_uses_remote_bracketed_paste_mode() {
         assert_eq!(
-            encode_pasted_text("first\r\n  second", true),
+            encode_pasted_text("first\r\n  second", true, false),
             b"\x1b[200~first\r  second\x1b[201~"
         );
         assert_eq!(
-            encode_pasted_text("safe\x1b[201~\x03text", true),
+            encode_pasted_text("safe\x1b[201~\x03text", true, false),
             b"\x1b[200~safe[201~text\x1b[201~"
         );
         assert_eq!(
-            encode_pasted_text("first\r\nsecond", false),
+            encode_pasted_text("first\r\nsecond", false, false),
             b"first\rsecond"
         );
     }

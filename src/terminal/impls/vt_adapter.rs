@@ -7,9 +7,13 @@ use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::vte::ansi::Processor;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::terminal::types::ATerm;
 use crate::terminal::TermColor;
+
+/// Global OSC 52 toggle — set by app.rs on startup / config change.
+pub static OSC52_ENABLED: AtomicBool = AtomicBool::new(true);
 
 // ── Custom Dimensions impl — alacritty 0.26 does not export a standalone
 //    TermSize type (it's behind #[cfg(test)]), so we bring our own.
@@ -170,8 +174,49 @@ pub(crate) fn row_wrapped(term: &ATerm, row: u16) -> bool {
 /// Feed bytes into the terminal (replaces `parser.process`).
 /// vte 0.15 `Processor::advance<H: Handler>(&mut self, handler: &mut H, bytes: &[u8])`
 /// accepts a whole slice, so we can just pass it through.
+/// Before feeding, intercept OSC 52 clipboard writes for the `osc52_clipboard` feature.
 pub(crate) fn process_bytes(processor: &mut Processor, term: &mut ATerm, bytes: &[u8]) {
+    // OSC 52 clipboard interception — only when enabled by the user.
+    if OSC52_ENABLED.load(Ordering::Relaxed) {
+        if let Some(data) = osc52_extract(bytes) {
+            std::thread::spawn(move || {
+                let _ = arboard::Clipboard::new().and_then(|mut c| c.set_text(data));
+            });
+        }
+    }
     processor.advance(term, bytes);
+}
+
+/// Scan `bytes` for a single OSC 52 clipboard-write sequence and return the
+/// decoded payload if found.  Format: ESC ] 5 2 ; Pc ; base64 ST  where ST is
+/// BEL (\\x07) or ESC \\ (\\x1b\\x5c).
+fn osc52_extract(bytes: &[u8]) -> Option<String> {
+    // Fast path: no ESC byte at all → nothing to do.
+    let esc_pos = bytes.iter().position(|&b| b == 0x1b)?;
+    let rest = &bytes[esc_pos..];
+
+    if !rest.starts_with(b"\x1b]52;") {
+        return None;
+    }
+    // Skip OSC introducer "ESC]52;"
+    let after_prefix = &rest[5..];
+    // Find the second semicolon (after Pc).  Pc is a single optional clipboard
+    // selector char; skip it and locate the payload start.
+    let payload_start = {
+        let semicolon = after_prefix.iter().position(|&b| b == b';')?;
+        after_prefix.get(semicolon + 1)?
+    };
+    // Find the terminator: BEL (\\x07) or ST (ESC \\x5c).
+    let payload_end = payload_start.iter().position(|&b| b == 0x07 || b == 0x1b)?;
+    let b64 = &payload_start[..payload_end];
+
+    if b64.is_empty() {
+        return None;
+    }
+    // Decode base64 — ignore errors (malformed OSC 52 = no-op).
+    use base64::Engine as _;
+    let decoded = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+    String::from_utf8(decoded).ok()
 }
 
 /// Resize the grid (native reflow) — replaces `parser.set_size` and the

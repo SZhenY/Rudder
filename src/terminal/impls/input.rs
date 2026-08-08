@@ -5,8 +5,14 @@ use crate::terminal::TermBuffers;
 
 /// Normalize clipboard line endings to the single CR byte expected for Enter
 /// by a terminal, including inside bracketed-paste payloads.
-pub(crate) fn normalize_pasted_newlines(text: &str) -> String {
-    text.replace("\r\n", "\r").replace('\n', "\r")
+/// When `convert_eol` is true, LF is converted to CR+LF for Windows programs.
+pub(crate) fn normalize_pasted_newlines(text: &str, convert_eol: bool) -> String {
+    if convert_eol {
+        // Convert \r\n → placeholder, \n → \r\n, restore \r\n
+        text.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        text.replace("\r\n", "\r").replace('\n', "\r")
+    }
 }
 
 pub(crate) fn encode_command_bar_input(command: &str) -> Option<(String, Vec<u8>)> {
@@ -19,8 +25,8 @@ pub(crate) fn encode_command_bar_input(command: &str) -> Option<(String, Vec<u8>
     Some((command, bytes))
 }
 
-pub(crate) fn encode_pasted_text(text: &str, bracketed: bool) -> Vec<u8> {
-    let normalized = normalize_pasted_newlines(text);
+pub(crate) fn encode_pasted_text(text: &str, bracketed: bool, convert_eol: bool) -> Vec<u8> {
+    let normalized = normalize_pasted_newlines(text, convert_eol);
     if !bracketed {
         return normalized.into_bytes();
     }
