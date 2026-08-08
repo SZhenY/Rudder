@@ -98,12 +98,12 @@ if ($newCargoToml -eq $cargoToml) {
 $cargoLock = Get-Content -LiteralPath $cargoLockPath -Raw
 $newCargoLock = [regex]::Replace(
     $cargoLock,
-    '(?ms)^(name\s*=\s*"meatshell"\s*)(\r?\n)(version\s*=\s*")[^"]+(")',
+    '(?ms)^(name\s*=\s*"rudder"\s*)(\r?\n)(version\s*=\s*")[^"]+(")',
     "`${1}`${2}`${3}$version`${4}",
     1
 )
 if ($newCargoLock -eq $cargoLock) {
-    throw "Could not update meatshell version in Cargo.lock."
+    throw "Could not update rudder version in Cargo.lock."
 }
 
 if ($DryRun) {
@@ -118,7 +118,7 @@ if ($DryRun) {
 }
 
 Run-Cargo -CargoArgs @("check", "--locked")
-Run-CheckedOutput -Expected "meatshell $version" -Command @(
+Run-CheckedOutput -Expected "rudder $version" -Command @(
     "cargo", "run", "--locked", "--", "--version"
 )
 
