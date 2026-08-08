@@ -8774,6 +8774,7 @@ fn wire_key_input(
 
     // Forward each keystroke as raw bytes to the SSH PTY. The server's bash /
     // readline handles echo, history (↑↓), Tab completion, Ctrl+C, etc.
+    let store_clear = store.clone(); // also used by 清空缓存 handler below
     {
         let handles = handles.clone();
         let bufs = bufs.clone();
@@ -9234,7 +9235,6 @@ fn wire_key_input(
     {
         let bufs_clear = bufs.clone();
         let handles_clear = handles.clone();
-        let store_clear = store.clone();
         let weak = window.as_weak();
         window.on_clear_terminal(move |tab_id: SharedString| {
             let tid = tab_id.to_string();
