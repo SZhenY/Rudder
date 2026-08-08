@@ -1525,12 +1525,6 @@ pub fn run() -> Result<()> {
         });
     }
     {
-        let store = store.clone();
-            let mut s = store.borrow_mut();
-            let _ = s.save();
-        });
-    }
-    {
         let weak = window.as_weak();
         let store = store.clone();
         window.on_set_term_cursor_style(move |style: SharedString| {
