@@ -5093,7 +5093,7 @@ fn normalized_model(buf: &[f32]) -> ModelRc<f32> {
 }
 
 /// Build the filesystem-usage model (path, "avail/total", used fraction).
-fn disk_rows(disks: &[(String, u64, u64)], mount_filter: &str) -> Vec<DiskInfo> {
+fn disk_rows(disks: &[(String, u64, u64)], mount_filter: &str, hide_special: bool) -> Vec<DiskInfo> {
     let filters: Vec<&str> = if mount_filter.is_empty() {
         vec![]
     } else {
@@ -5106,6 +5106,10 @@ fn disk_rows(disks: &[(String, u64, u64)], mount_filter: &str) -> Vec<DiskInfo> 
     disks
         .iter()
         .filter(|(mount, _, _)| {
+            // Hide pseudo-filesystems and tiny special partitions when enabled.
+            if hide_special && is_special_partition(mount) {
+                return false;
+            }
             if filters.is_empty() {
                 true
             } else {
@@ -5128,8 +5132,8 @@ fn disk_rows(disks: &[(String, u64, u64)], mount_filter: &str) -> Vec<DiskInfo> 
         .collect()
 }
 
-fn disk_model(disks: &[(String, u64, u64)], mount_filter: &str) -> ModelRc<DiskInfo> {
-    ModelRc::from(Rc::new(VecModel::from(disk_rows(disks, mount_filter))))
+fn disk_model(disks: &[(String, u64, u64)], mount_filter: &str, hide_special: bool) -> ModelRc<DiskInfo> {
+    ModelRc::from(Rc::new(VecModel::from(disk_rows(disks, mount_filter, hide_special))))
 }
 
 /// Read the current mount-filter string from the store.  Empty = show all.
@@ -5139,6 +5143,32 @@ fn mount_filter() -> String {
             .map(|st| st.borrow().mount_filter().to_owned())
             .unwrap_or_default()
     })
+}
+
+/// Read the hide-special-partitions flag from the store.
+fn hide_special_partitions() -> bool {
+    HISTORY_STORE.with(|s| {
+        s.borrow().as_ref()
+            .map(|st| st.borrow().hide_special_partitions())
+            .unwrap_or(true)
+    })
+}
+
+/// Known pseudo-filesystems and tiny special partitions to suppress in the
+/// resource panel when hide-special-partitions is on.
+fn is_special_partition(mount: &str) -> bool {
+    mount == "/proc"
+        || mount == "/sys"
+        || mount == "/dev"
+        || mount == "/run"
+        || mount.starts_with("/proc/")
+        || mount.starts_with("/sys/")
+        || mount.starts_with("/dev/")
+        || mount.starts_with("/run/")
+        || mount.starts_with("/boot/efi")
+        || mount == "/tmp"
+        || mount.starts_with("/snap/")
+        || mount.starts_with("/var/snap/")
 }
 
 /// Build the process-monitor model for the popup (#23). `cpu`/`mem` are
@@ -6155,7 +6185,7 @@ fn refresh_sidebar(
         win.set_net_selected("".into());
         win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
         // Non-connected tabs show the local machine's filesystems.
-        win.set_disks(disk_model(&snap.disks, &mount_filter()));
+        win.set_disks(disk_model(&snap.disks, &mount_filter(), hide_special_partitions()));
     };
     let show_local_res = |win: &AppWindow| {
         win.set_resource_title(t("本机资源", "Local resources").into());
@@ -6320,7 +6350,7 @@ fn refresh_sidebar(
                 format_mem(st.mem_used_kib / 1024, st.mem_total_kib / 1024).into(),
                 format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
                 net_rows(&st.net),
-                disk_rows(&st.disks, &mount_filter()),
+                disk_rows(&st.disks, &mount_filter(), hide_special_partitions()),
                 st.sys.clone(),
             );
         }
