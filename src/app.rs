@@ -1460,7 +1460,6 @@ pub fn run() -> Result<()> {
         let weak = window.as_weak();
         let store = store.clone();
         window.on_set_scrollback_lines(move |lines: slint::SharedString| {
-            let lines: usize = lines.trim().replace(|c: char| !c.is_ascii_digit(), "").parse().unwrap_or(100000);
             // ComboBox sends "1 000"-style formatted strings; strip spaces and
             // parse, ignoring malformed input.
             let digits: String = lines.chars().filter(|c| c.is_ascii_digit()).collect();
