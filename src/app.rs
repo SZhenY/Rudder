@@ -978,7 +978,7 @@ pub fn run() -> Result<()> {
         }
         window.set_term_font_size(s.font_size() as f32);
         window.set_term_font_bold(s.terminal_bold());
-        window.set_scrollback_lines(s.scrollback_lines() as i32);
+        window.set_scrollback_lines(s.scrollback_lines().to_string().into());
         window.set_term_cursor_style(s.terminal_cursor_style().into());
         if let Some(color) = parse_hex_color(s.terminal_cursor_color()) {
             window.set_term_cursor_color_hex(s.terminal_cursor_color().into());
@@ -1459,11 +1459,16 @@ pub fn run() -> Result<()> {
     {
         let weak = window.as_weak();
         let store = store.clone();
-        window.on_set_scrollback_lines(move |lines: i32| {
-            let lines = lines as usize;
-            let mut s = store.borrow_mut();
-            s.set_scrollback_lines(lines);
-            let _ = s.save();
+        window.on_set_scrollback_lines(move |lines: slint::SharedString| {
+            let lines: usize = lines.trim().replace(|c: char| !c.is_ascii_digit(), "").parse().unwrap_or(100000);
+            // ComboBox sends "1 000"-style formatted strings; strip spaces and
+            // parse, ignoring malformed input.
+            let digits: String = lines.chars().filter(|c| c.is_ascii_digit()).collect();
+            if let Ok(n) = digits.parse::<usize>() {
+                let mut s = store.borrow_mut();
+                s.set_scrollback_lines(n);
+                let _ = s.save();
+            }
         });
     }
     {
