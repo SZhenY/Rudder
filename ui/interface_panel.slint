@@ -643,12 +643,9 @@ export component InterfacePanel inherits Rectangle {
                     TextInput {
                         width: 140px;
                         text: root.scrollback-lines;
-                        accepted(text) => {
-                            if (!root.set-scrollback-lines(text)) {
-                                root.scrollback-valid = false;
-                            }
+                        changed text => {
+                            root.scrollback-valid = root.set-scrollback-lines(self.text);
                         }
-                        edited(text) => { root.scrollback-valid = true; }
                     }
                 }
                 Text {
