@@ -455,9 +455,9 @@ export component InterfacePanel inherits Rectangle {
                     clicked => { root.ifd-page = "renderer"; }
                 }
                 NavItem {
-                    icon: "\u{E120}"; label: root.lang-en ? "Terminal" : "终端";
+                    icon: "\u{E8B9}"; label: root.lang-en ? "Terminal" : "终端";
                     active: root.ifd-page == "terminal";
-                    clicked => { root.ifd-page = "output"; }
+                    clicked => { root.ifd-page = "terminal"; }
                 }
                 NavItem {
                     icon: "\u{E1BC}"; label: root.lang-en ? "Wallpaper" : "壁纸";
