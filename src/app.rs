@@ -6349,7 +6349,7 @@ fn refresh_sidebar(
             win.set_net_selected(name.into());
             let ifaces: Vec<SharedString> = st.net.iter().map(|e| e.0.clone().into()).collect();
             win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::from(ifaces))));
-            win.set_disks(disk_model(&st.disks, &mount_filter()));
+            win.set_disks(disk_model(&st.disks, &mount_filter(), hide_special_partitions()));
             win.set_proc_available(true);
             win.set_system_info_available(true);
             set_procs(win, &st.procs, &st.user, &active);

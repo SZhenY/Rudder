@@ -204,7 +204,7 @@ fn osc52_extract(bytes: &[u8]) -> Option<String> {
     // selector char; skip it and locate the payload start.
     let payload_start = {
         let semicolon = after_prefix.iter().position(|&b| b == b';')?;
-        after_prefix.get(semicolon + 1)?
+        after_prefix.get(semicolon + 1..)?
     };
     // Find the terminator: BEL (\\x07) or ST (ESC \\x5c).
     let payload_end = payload_start.iter().position(|&b| b == 0x07 || b == 0x1b)?;
