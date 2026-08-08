@@ -1468,6 +1468,12 @@ pub fn run() -> Result<()> {
                     let mut s = store.borrow_mut();
                     s.set_scrollback_lines(n);
                     let _ = s.save();
+                    // Write the canonical value back to the UI so the settings
+                    // panel (conditionally rendered) shows the new value when
+                    // reopened — without this it reverts to the stale one.
+                    if let Some(w) = weak.upgrade() {
+                        w.set_scrollback_lines(digits.into());
+                    }
                     true
                 }
                 _ => false,
