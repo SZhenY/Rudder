@@ -310,6 +310,9 @@ fn default_stop_bits() -> u8 {
 fn default_parity() -> String {
     "none".to_string()
 }
+fn default_scrollback_lines() -> usize {
+    100000
+}
 /// Ships with the "幻想 3048" sci-fi wallpaper on by default (a dark theme). New
 /// installs and users upgrading from before the wallpaper feature get it; once
 /// the user picks anything (including "无"/none, stored as ""), their choice is
@@ -646,6 +649,9 @@ pub struct ConfigFile {
     /// Force regular terminal text to render with a bold face (#262).
     #[serde(default)]
     pub terminal_bold: bool,
+    /// Terminal scrollback lines (0 = no scrollback). Default 100000.
+    #[serde(default = "default_scrollback_lines")]
+    pub scrollback_lines: usize,
     /// Terminal insertion cursor shape: block (default), bar, or underline (#275).
     #[serde(default)]
     pub terminal_cursor_style: String,
@@ -1155,6 +1161,14 @@ impl ConfigStore {
 
     pub fn set_terminal_bold(&mut self, bold: bool) {
         self.cache.terminal_bold = bold;
+    }
+
+    pub fn scrollback_lines(&self) -> usize {
+        self.cache.scrollback_lines
+    }
+
+    pub fn set_scrollback_lines(&mut self, lines: usize) {
+        self.cache.scrollback_lines = lines.clamp(0, 10_000_000);
     }
 
     /// Selected terminal insertion cursor shape. Legacy and invalid values use

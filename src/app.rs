@@ -978,6 +978,7 @@ pub fn run() -> Result<()> {
         }
         window.set_term_font_size(s.font_size() as f32);
         window.set_term_font_bold(s.terminal_bold());
+        window.set_scrollback_lines(s.scrollback_lines() as i32);
         window.set_term_cursor_style(s.terminal_cursor_style().into());
         if let Some(color) = parse_hex_color(s.terminal_cursor_color()) {
             window.set_term_cursor_color_hex(s.terminal_cursor_color().into());
@@ -1453,6 +1454,16 @@ pub fn run() -> Result<()> {
             if let Some(w) = weak.upgrade() {
                 w.set_term_font_bold(bold);
             }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_scrollback_lines(move |lines: i32| {
+            let lines = lines as usize;
+            let mut s = store.borrow_mut();
+            s.set_scrollback_lines(lines);
+            let _ = s.save();
         });
     }
     {
@@ -4445,7 +4456,7 @@ fn wire_session_callbacks(
                     compile_output_rules(settings.output_highlight_rules()),
                 )
             };
-            let (t24, p24) = new_term(24, 80, 100000);
+            let (t24, p24) = new_term(24, 80, store.borrow().scrollback_lines());
             bufs.lock().unwrap().insert(
                 tab_id.clone(),
                 Arc::new(Mutex::new(TermBuffer {
@@ -8794,7 +8805,7 @@ fn wire_key_input(
                         if let Some(h) = term_buf(&ctx.bufs, tab_id.as_str()) {
                             let mut b = h.lock().unwrap();
                             let (rows, cols) = crate::terminal::term_size(&b.term);
-                            (b.term, b.processor) = crate::terminal::new_term(rows, cols, 100000);
+                            (b.term, b.processor) = crate::terminal::new_term(rows, cols, ctx.store.borrow().scrollback_lines());
                             b.rendered.clear();
                             b.prev.clear();
                             b.displayed_text.clear();
@@ -9218,13 +9229,14 @@ fn wire_key_input(
     {
         let bufs_clear = bufs.clone();
         let handles_clear = handles.clone();
+        let store_clear = store.clone();
         let weak = window.as_weak();
         window.on_clear_terminal(move |tab_id: SharedString| {
             let tid = tab_id.to_string();
             if let Some(h) = term_buf(&bufs_clear, &tid) {
                 let mut buf = h.lock().unwrap();
                 let (rows, cols) = crate::terminal::term_size(&buf.term);
-                (buf.term, buf.processor) = crate::terminal::new_term(rows, cols, 100000);
+                (buf.term, buf.processor) = crate::terminal::new_term(rows, cols, store_clear.borrow().scrollback_lines());
                 buf.rendered.clear();
                 buf.find_query.clear();
                 buf.prev = Vec::new();
@@ -9905,22 +9917,10 @@ fn resolve_ui_font_family() -> slint::SharedString {
 }
 
 fn system_monospace_fonts() -> Vec<slint::SharedString> {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
-    let mut names: Vec<String> = db
-        .faces()
-        .filter(|f| f.monospaced)
-        .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
-        .collect();
-    names.sort();
-    names.dedup();
-    // Surface the built-in glyph-complete font first so it's selectable and the
-    // default selection is shown — it isn't a system face so fontdb won't list it
-    // (#114).
-    names.retain(|n| n != "Meatshell Mono");
-    let mut out = vec![slint::SharedString::from("Meatshell Mono")];
-    out.extend(names.into_iter().map(slint::SharedString::from));
-    out
+    vec![
+        slint::SharedString::from("JetBrains Mono"),
+        slint::SharedString::from("Meatshell Mono"),
+    ]
 }
 
 /// Split a stored proxy URL into `(type, host:port)` for the session dialog.
