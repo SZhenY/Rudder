@@ -598,18 +598,20 @@ export component InterfacePanel inherits Rectangle {
                     desc: root.lang-en
                         ? "Number of lines kept in terminal history (100–1,000,000)."
                         : "终端历史记录保留的最大行数（100–1,000,000）。";
-                    TextInput {
-                        width: 140px;
-                        height: 30px;
-                        border-radius: 6px;
-                        border-width: 1px;
+                    Rectangle {
+                        width: 148px; height: 30px;
+                        border-radius: 6px; border-width: 1px;
                         border-color: Theme.border-subtle;
                         background: Theme.bg-elevated;
-                        color: Theme.text-primary;
-                        text: root.scrollback-lines;
+                        TextInput {
+                            width: parent.width - 8px; height: parent.height;
+                            x: 4px; vertical-alignment: center;
+                            color: Theme.text-primary;
+                            text: root.scrollback-lines;
                         changed text => {
                             root.scrollback-valid = root.set-scrollback-lines(self.text);
                         }
+                    }
                     }
                 }
                 Text {
@@ -1207,16 +1209,18 @@ export component InterfacePanel inherits Rectangle {
                     desc: root.lang-en
                         ? "Only show these mount points (space/comma/semicolon separated). Leave empty to show all."
                         : "仅显示这些挂载点的磁盘信息（空格/逗号/分号分隔）。留空表示显示全部。";
-                    TextInput {
-                        width: 200px;
-                        height: 30px;
-                        border-radius: 6px;
-                        border-width: 1px;
+                    Rectangle {
+                        width: 208px; height: 30px;
+                        border-radius: 6px; border-width: 1px;
                         border-color: Theme.border-subtle;
                         background: Theme.bg-elevated;
-                        color: Theme.text-primary;
-                        text <=> root.mount-filter;
+                        TextInput {
+                            width: parent.width - 8px; x: 4px;
+                            height: parent.height; vertical-alignment: center;
+                            color: Theme.text-primary;
+                            text <=> root.mount-filter;
                         accepted => { root.set-mount-filter(root.mount-filter); }
+                    }
                     }
                 }
             }
