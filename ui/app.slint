@@ -425,6 +425,11 @@ export component AppWindow inherits Window {
     in-out property <color> term-cursor-color: Theme.term-fg;
     in-out property <bool> output-highlight-enabled: true;
     in-out property <string> scrollback-lines: "5000";
+    in-out property <bool> convert-eol: false;
+    in-out property <bool> osc52-clipboard: true;
+    in-out property <bool> hide-special-partitions: true;
+    in-out property <string> mount-filter: "";
+    in-out property <string> nic-filter: "";
     in-out property <string> output-highlight-preset: "log";
     in property <[OutputRuleItem]> output-highlight-rules;
     in-out property <string> output-highlight-rule-status;
@@ -487,6 +492,11 @@ export component AppWindow inherits Window {
     callback set-term-cursor-color(string) -> bool;// validate + persist cursor colour (#275)
     callback set-output-highlight(bool, string);   // enable + built-in preset
     callback set-scrollback-lines(string) -> bool;  // persist terminal history lines
+    callback set-convert-eol(bool);                 // persist LF→CRLF
+    callback set-osc52-clipboard(bool);             // persist OSC 52 toggle
+    callback set-hide-special-partitions(bool);      // persist partition hiding
+    callback set-mount-filter(string);               // persist mount point filter
+    callback set-nic-filter(string);                // persist NIC filter
     callback add-output-highlight-rule(string, bool, bool, bool, string) -> bool;
     callback remove-output-highlight-rule(int);
     callback set-output-highlight-rule-enabled(int, bool);
@@ -3956,6 +3966,11 @@ export component AppWindow inherits Window {
                     term-cursor-color: root.term-cursor-color;
                     output-highlight-enabled <=> root.output-highlight-enabled;
                     scrollback-lines <=> root.scrollback-lines;
+                    convert-eol <=> root.convert-eol;
+                    osc52-clipboard <=> root.osc52-clipboard;
+                    hide-special-partitions <=> root.hide-special-partitions;
+                    mount-filter <=> root.mount-filter;
+                    nic-filter <=> root.nic-filter;
                     output-highlight-preset <=> root.output-highlight-preset;
                     output-highlight-rules: root.output-highlight-rules;
                     output-highlight-rule-status <=> root.output-highlight-rule-status;
@@ -3989,6 +4004,11 @@ export component AppWindow inherits Window {
                         root.set-output-highlight(enabled, preset);
                     }
                     set-scrollback-lines(v) => { return root.set-scrollback-lines(v); }
+                    set-convert-eol(v) => { root.set-convert-eol(v); }
+                    set-osc52-clipboard(v) => { root.set-osc52-clipboard(v); }
+                    set-hide-special-partitions(v) => { root.set-hide-special-partitions(v); }
+                    set-mount-filter(v) => { root.set-mount-filter(v); }
+                    set-nic-filter(v) => { root.set-nic-filter(v); }
                     add-output-highlight-rule(pattern, regex, case-sensitive, whole-line, color) => {
                         root.add-output-highlight-rule(
                             pattern, regex, case-sensitive, whole-line, color)

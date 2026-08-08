@@ -1056,6 +1056,20 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // Terminal: EOL conversion + OSC 52 clipboard.  Read-once seed + persist.
+    {
+        let s = store.borrow();
+        window.set_convert_eol(s.convert_eol());
+        window.set_osc52_clipboard(s.osc52_clipboard());
+    }
+    // Resource panel: partition / mount / NIC filters.
+    {
+        let s = store.borrow();
+        window.set_hide_special_partitions(s.hide_special_partitions());
+        window.set_mount_filter(s.mount_filter().into());
+        window.set_nic_filter(s.nic_filter().into());
+    }
+
     // Interface setting: collapse the sidebars by default (#78). Seed the
     // checkboxes, apply the collapsed state once at startup, and persist toggles.
     {
@@ -1478,6 +1492,46 @@ pub fn run() -> Result<()> {
                 }
                 _ => false,
             }
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_set_convert_eol(move |v: bool| {
+            let mut s = store.borrow_mut();
+            s.set_convert_eol(v);
+            let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_set_osc52_clipboard(move |v: bool| {
+            let mut s = store.borrow_mut();
+            s.set_osc52_clipboard(v);
+            let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_set_hide_special_partitions(move |v: bool| {
+            let mut s = store.borrow_mut();
+            s.set_hide_special_partitions(v);
+            let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_set_mount_filter(move |v: slint::SharedString| {
+            let mut s = store.borrow_mut();
+            s.set_mount_filter(v.to_string());
+            let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_set_nic_filter(move |v: slint::SharedString| {
+            let mut s = store.borrow_mut();
+            s.set_nic_filter(v.to_string());
+            let _ = s.save();
         });
     }
     {

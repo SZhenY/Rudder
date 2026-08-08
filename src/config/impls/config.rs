@@ -313,6 +313,9 @@ fn default_parity() -> String {
 fn default_scrollback_lines() -> usize {
     5000
 }
+fn default_true() -> bool {
+    true
+}
 /// Ships with the "幻想 3048" sci-fi wallpaper on by default (a dark theme). New
 /// installs and users upgrading from before the wallpaper feature get it; once
 /// the user picks anything (including "无"/none, stored as ""), their choice is
@@ -652,6 +655,15 @@ pub struct ConfigFile {
     /// Terminal scrollback lines (0 = no scrollback). Default 100000.
     #[serde(default = "default_scrollback_lines")]
     pub scrollback_lines: usize,
+    /// Convert LF to CRLF in pasted / typed text for programs that expect
+    /// Windows line endings (e.g. PowerShell ISE, legacy cmd.exe tools).
+    #[serde(default)]
+    pub convert_eol: bool,
+    /// Allow remote programs (zellij, tmux, vim, etc.) to write clipboard
+    /// contents via OSC 52.  Disable for stricter security when you don't
+    /// need remote copy support.
+    #[serde(default = "default_true")]
+    pub osc52_clipboard: bool,
     /// Terminal insertion cursor shape: block (default), bar, or underline (#275).
     #[serde(default)]
     pub terminal_cursor_style: String,
@@ -796,6 +808,18 @@ pub struct ConfigFile {
     /// it on stops the GitHub releases query and the banner.
     #[serde(default)]
     pub update_check_disabled: bool,
+    /// Hide EFI / temporary / swap pseudo-filesystems and very small partitions
+    /// in the system resource panel so they don't clutter the disk view.
+    #[serde(default = "default_true")]
+    pub hide_special_partitions: bool,
+    /// Only list the given mount points (space / comma / semicolon delimited).
+    /// Empty = show all detected mounts.
+    #[serde(default)]
+    pub mount_filter: String,
+    /// Only list the given network interfaces (space / comma / semicolon delimited).
+    /// Empty = show all detected NICs.
+    #[serde(default)]
+    pub nic_filter: String,
     /// One-time default-layout migration marker (#new-user-defaults). 0 = config
     /// predates the migration. `migrate_defaults` bumps it to `DEFAULTS_REV` after
     /// pushing the new look (default wallpaper / welcome-as-sidebar / right-docked
@@ -1169,6 +1193,42 @@ impl ConfigStore {
 
     pub fn set_scrollback_lines(&mut self, lines: usize) {
         self.cache.scrollback_lines = lines.clamp(100, 1_000_000);
+    }
+
+    /// Convert LF to CRLF in pasted/typed text.
+    pub fn convert_eol(&self) -> bool {
+        self.cache.convert_eol
+    }
+    pub fn set_convert_eol(&mut self, v: bool) {
+        self.cache.convert_eol = v;
+    }
+    /// Allow OSC 52 clipboard writes from remote programs.
+    pub fn osc52_clipboard(&self) -> bool {
+        self.cache.osc52_clipboard
+    }
+    pub fn set_osc52_clipboard(&mut self, v: bool) {
+        self.cache.osc52_clipboard = v;
+    }
+    /// Hide special partitions in the resource panel.
+    pub fn hide_special_partitions(&self) -> bool {
+        self.cache.hide_special_partitions
+    }
+    pub fn set_hide_special_partitions(&mut self, v: bool) {
+        self.cache.hide_special_partitions = v;
+    }
+    /// Mount-point filter for the resource panel.
+    pub fn mount_filter(&self) -> &str {
+        &self.cache.mount_filter
+    }
+    pub fn set_mount_filter(&mut self, v: String) {
+        self.cache.mount_filter = v;
+    }
+    /// Network-interface filter for the resource panel.
+    pub fn nic_filter(&self) -> &str {
+        &self.cache.nic_filter
+    }
+    pub fn set_nic_filter(&mut self, v: String) {
+        self.cache.nic_filter = v;
     }
 
     /// Selected terminal insertion cursor shape. Legacy and invalid values use
