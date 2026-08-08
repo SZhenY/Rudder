@@ -5,6 +5,34 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.6.10-beta2] - 2026-08-08
+
+### 新特性 / Features
+
+- **OSC 52 剪贴板**：支持远程主机通过 OSC 52 转义序列读写本地剪贴板（`terminal.osc52_clipboard` 设置）
+- **convertEol 设置**：新增终端 `convertEol` 选项，控制 CR 转换行为
+- **隐藏特殊分区**：磁盘信息面板可隐藏特殊分区（如 SWAP / System Reserved），并支持挂载点过滤（`hide_special_partitions` / `mount_filter`）
+- **Scrollback 可配置**：终端滚动行数可在设置中配置，范围 100–1,000,000，默认 5000，附带内存占用提示与输入校验，保存时写回规范化数值
+- **JetBrainsMono 内嵌字体**：默认终端字体改为内嵌 JetBrainsMono，不再依赖系统安装字体
+
+### 设置页重构 / Settings Restructure
+
+- 设置导航从 10 个域精简为 6 个功能域
+- 新增 convertEol、OSC 52、隐藏分区、挂载过滤设置项（NIC 过滤在开发阶段添加后又移除）
+
+### Bug 修复 / Fixed
+
+- **OSC 52 slice bug**：修复剪贴板序列处理时的切片越界及 `hide_special` 参数缺失问题
+- **TextInput 样式**：Slint `TextInput` 原生无 `border-radius`/`border-width`，改为用 `Rectangle` 包裹实现边框与背景
+- **重复定义清理**：移除重复的 `default_true` 定义与重复的 scrollback 解析逻辑（`usize` shadow）
+- **终端导航图标**：修复缺失的 U+E8B9 图标与页面切换逻辑
+- **触摸悬停层级**：修复触摸模式下悬停 z-order 问题
+
+### 图标 / Icons
+
+- 替换旧的 macOS/Linux 图标为新的 Rudder 图标
+- 多分辨率图标生成改用 Lanczos 降采样，质量更佳
+
 ## [0.6.9-beta2] - 2026-08-03
 
 ### 项目重命名：meatshell → Rudder
