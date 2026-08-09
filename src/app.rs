@@ -973,9 +973,21 @@ pub fn run() -> Result<()> {
     {
         let s = store.borrow();
         let fam = s.font_family().to_string();
+        // Does the active terminal font cover CJK? Terminal spans then keep
+        // it for Chinese text (italic/thin variants apply) instead of falling
+        // back to the UI sans font (#54). Family-name tag probe: CN/SC/TC/
+        // JP/KR/CJK/Han. An empty family means the embedded JetBrains Mono
+        // default, which has no CJK glyphs → Chinese falls back to the UI
+        // font (external CJK fonts like Maple Mono CN self-identify via "CN").
+        let cjk = term_font_covers_cjk(if fam.is_empty() {
+            "JetBrains Mono"
+        } else {
+            &fam
+        });
         if !fam.is_empty() {
             window.set_term_font_family(fam.into());
         }
+        window.set_term_font_cjk(cjk);
         window.set_term_font_size(s.font_size() as f32);
         window.set_term_font_bold(s.terminal_bold());
         window.set_scrollback_lines(s.scrollback_lines().to_string().into());
@@ -1012,9 +1024,13 @@ pub fn run() -> Result<()> {
     // resolvable CJK family, falling back to the embedded "Meatshell Mono" so the
     // window is never fully blank even when the system font DB is unreadable.
     window.set_ui_font_family(resolve_ui_font_family());
+    // Runtime font loading: fonts dropped into the fonts dir (Windows:/n    // <exe_dir>/config/fonts; macOS/Linux: per-user config dir) are registered
+    // with Slint's shared collection and become selectable below — large CJK
+    // families like Maple Mono no longer need to be embedded at build time.
+    let external_fonts = crate::fonts::load_external_fonts(&crate::fonts::external_fonts_dir());
     // Populate the Interface font picker with installed monospace families.
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(
-        system_monospace_fonts(),
+        system_monospace_fonts(&external_fonts),
     ))));
 
     // Command bar (#55): seed quick commands + history from the config. Groups
@@ -1418,7 +1434,8 @@ pub fn run() -> Result<()> {
                 let _ = s.save();
             }
             if let Some(w) = weak.upgrade() {
-                w.set_term_font_family(family);
+                w.set_term_font_family(family.clone());
+                w.set_term_font_cjk(term_font_covers_cjk(&family));
             }
         });
     }
@@ -4502,9 +4519,10 @@ fn wire_session_callbacks(
                 sftp_panel_width: sftp_w_default,
                 sftp_saved_height: sftp_h_default,
             });
-            // Create vt100 parser for this tab (default 24×80; resized on first
-            // terminal-resize callback). 100000-line scrollback is stored for
-            // future scroll-navigation support.
+            // Create the alacritty-backed terminal for this tab (default
+            // 24×80; resized on the first terminal-resize callback). The
+            // scrollback depth comes from the settings value
+            // (scrollback_lines, clamped to 100..=1_000_000 in config.rs).
             let is_dark_now = weak.upgrade().map(|w| w.get_dark_mode()).unwrap_or(true);
             let (output_highlight, custom_highlight_rules) = {
                 let settings = store.borrow();
@@ -4533,6 +4551,10 @@ fn wire_session_callbacks(
                     csi_pending: Vec::new(),
                     raw: std::collections::VecDeque::new(),
                     rendered: Vec::new(),
+                    overline_active: false,
+                    overline_start: None,
+                    overline_ranges: Vec::new(),
+                    sgr_buf: Vec::new(),
                 })),
             );
             render_gates
@@ -9955,6 +9977,19 @@ fn clipboard_set_text(text: String) {
 ///
 /// Emits a one-line WARN summary (faces loaded + chosen font) so the choice lands
 /// in `error.log` for diagnostics without needing RUST_LOG.
+/// Does the terminal font family cover CJK glyphs?  A lightweight family-name
+/// probe: CJK-capable builds conventionally tag their names with CN / SC /
+/// TC / JP / KR / CJK / Han (e.g. "Maple Mono Normal NL NF CN", "Noto Sans
+/// CJK SC").  When true, terminal spans keep the terminal font for Chinese
+/// text so italic / thin variants apply to CJK glyphs too; when false they
+/// fall back to the UI sans font (the embedded mono fonts have no CJK).
+fn term_font_covers_cjk(family: &str) -> bool {
+    let f = family.to_lowercase();
+    ["cn", "sc", "tc", "jp", "kr", "cjk", "han"]
+        .iter()
+        .any(|tag| f.contains(tag))
+}
+
 fn resolve_ui_font_family() -> slint::SharedString {
     use fontdb::{Database, Family, Query, Stretch, Style, Weight};
 
@@ -9993,7 +10028,18 @@ fn resolve_ui_font_family() -> slint::SharedString {
         "Hiragino Sans GB",
     ];
     #[cfg(target_os = "windows")]
-    let candidates: &[&str] = &["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "SimSun"];
+    let candidates: &[&str] = &[
+        // DengXian (等线) leads on Windows: it is the only built-in CJK family
+        // with an Italic face, and Slint's femtovg renderer does *not* synthesize
+        // oblique — font-italic matches real italic font files only. YaHei/SimHei/
+        // SimSun have no italic variants, so CJK spans (rendered with this UI
+        // font) would never appear slanted (#italic-cjk).
+        "DengXian",
+        "Microsoft YaHei UI",
+        "Microsoft YaHei",
+        "SimHei",
+        "SimSun",
+    ];
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let candidates: &[&str] = &[
         "Noto Sans CJK SC",
@@ -10040,11 +10086,20 @@ fn resolve_ui_font_family() -> slint::SharedString {
     "Meatshell Mono".into()
 }
 
-fn system_monospace_fonts() -> Vec<slint::SharedString> {
-    vec![
+/// Built-in + runtime-registered monospace font choices for the Interface
+/// picker. Embedded fonts are the always-available defaults; `external` are
+/// the families loaded from the external fonts dir at startup (may be empty).
+fn system_monospace_fonts(external: &[String]) -> Vec<slint::SharedString> {
+    let mut list = vec![
         slint::SharedString::from("JetBrains Mono"),
         slint::SharedString::from("Meatshell Mono"),
-    ]
+    ];
+    for name in external {
+        if !list.iter().any(|f| f.as_str() == name) {
+            list.push(slint::SharedString::from(name.as_str()));
+        }
+    }
+    list
 }
 
 /// Split a stored proxy URL into `(type, host:port)` for the session dialog.
@@ -10313,6 +10368,12 @@ mod log_highlight_tests {
             fg: TermColor::Default,
             bg: TermColor::Default,
             bold: false,
+            dim: false,
+            italic: false,
+            underline: Default::default(),
+            hidden: false,
+            strike: false,
+            overline: false,
             inverse: false,
             col,
             cells: text.chars().count() as i32,
@@ -10390,7 +10451,7 @@ mod log_highlight_tests {
         let (mut term, mut processor) = crate::terminal::new_term(3, 30, 0);
         process_bytes(&mut processor, &mut term, b"\x1b[?1049hERROR");
         assert!(crate::terminal::is_alt(&term));
-        let (_plain, runs, _wrapped) = build_row(&term, 0, 30);
+        let (_plain, runs, _wrapped) = build_row(&term, 0, 30, &[]);
         let level = runs
             .iter()
             .find(|run| run.text.contains("ERROR"))

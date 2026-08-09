@@ -31,6 +31,18 @@ pub(crate) struct TermBuffer {
     /// Row-level render cache: Some(line) when the live grid row has not
     /// changed since the last render, None for cold/invalidated rows.
     pub(crate) rendered: Vec<Option<RenderedLine>>,
+    /// SGR 53 (overline) interceptor state.  vte 0.15 and alacritty 0.26 both
+    /// drop the overline attribute, so `ingest` scans the raw byte stream for
+    /// `ESC [ … 53 … m` and records the affected column ranges itself.
+    pub(crate) overline_active: bool,
+    pub(crate) overline_start: Option<(i32, i32)>,
+    pub(crate) overline_ranges: Vec<OverlineRange>,
+    /// Tail of an incomplete CSI sequence split across ingest chunks (SSH /
+    /// pipe reads are arbitrary).  The parser itself is chunk-agnostic, but
+    /// our SGR interceptor must reassemble the sequence before it can act on
+    /// it — otherwise `ESC [ 5` + `3 m` across two chunks silently loses the
+    /// overline (SGR 53) or double-underline (21) attribute.
+    pub(crate) sgr_buf: Vec<u8>,
 }
 
 /// Cached rendering for one live-screen row.  Stores raw HistSpan runs (our
@@ -119,10 +131,69 @@ pub(crate) enum TermColor {
 
 impl From<&alacritty_terminal::vte::ansi::Color> for TermColor {
     fn from(color: &alacritty_terminal::vte::ansi::Color) -> Self {
+        use alacritty_terminal::vte::ansi::NamedColor;
         match color {
-            alacritty_terminal::vte::ansi::Color::Named(_) => TermColor::Default,
+            // The 16 ANSI colours (Black=0 .. BrightWhite=15) must be kept so
+            // the presentation layer can map them through our palettes.  Before
+            // this branch existed they were collapsed into `Default`, which is
+            // why SGR 30-37/40-47/90-97/100-107 all rendered black-on-white.
+            alacritty_terminal::vte::ansi::Color::Named(name) => match name {
+                NamedColor::Black
+                | NamedColor::Red
+                | NamedColor::Green
+                | NamedColor::Yellow
+                | NamedColor::Blue
+                | NamedColor::Magenta
+                | NamedColor::Cyan
+                | NamedColor::White
+                | NamedColor::BrightBlack
+                | NamedColor::BrightRed
+                | NamedColor::BrightGreen
+                | NamedColor::BrightYellow
+                | NamedColor::BrightBlue
+                | NamedColor::BrightMagenta
+                | NamedColor::BrightCyan
+                | NamedColor::BrightWhite => TermColor::Idx(*name as u8),
+                // SGR 39/49 (default fg/bg) plus every other special slot
+                // (Cursor, Dim* — vte keeps them as colour names) fall back
+                // to the terminal default.
+                _ => TermColor::Default,
+            },
             alacritty_terminal::vte::ansi::Color::Indexed(i) => TermColor::Idx(*i),
             alacritty_terminal::vte::ansi::Color::Spec(rgb) => TermColor::Rgb(rgb.r, rgb.g, rgb.b),
+        }
+    }
+}
+
+/// Underline style, mirroring alacritty's `Flags::ALL_UNDERLINES` family.
+/// SGR 4:0 = none, 4 = single, 4:2 = double, 4:3 = curly, 4:4 = dotted,
+/// 4:5 = dashed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(crate) enum UnderlineStyle {
+    #[default]
+    None,
+    Single,
+    Double,
+    Curly,
+    Dotted,
+    Dashed,
+}
+
+impl UnderlineStyle {
+    pub(crate) fn from_flags(flags: alacritty_terminal::term::cell::Flags) -> Self {
+        use alacritty_terminal::term::cell::Flags;
+        if flags.contains(Flags::DOUBLE_UNDERLINE) {
+            UnderlineStyle::Double
+        } else if flags.contains(Flags::UNDERCURL) {
+            UnderlineStyle::Curly
+        } else if flags.contains(Flags::DOTTED_UNDERLINE) {
+            UnderlineStyle::Dotted
+        } else if flags.contains(Flags::DASHED_UNDERLINE) {
+            UnderlineStyle::Dashed
+        } else if flags.contains(Flags::UNDERLINE) {
+            UnderlineStyle::Single
+        } else {
+            UnderlineStyle::None
         }
     }
 }
@@ -134,9 +205,34 @@ pub(crate) struct HistSpan {
     pub(crate) fg: TermColor,
     pub(crate) bg: TermColor,
     pub(crate) bold: bool,
+    pub(crate) dim: bool,
+    pub(crate) italic: bool,
+    pub(crate) underline: UnderlineStyle,
+    pub(crate) hidden: bool,
+    pub(crate) strike: bool,
+    pub(crate) overline: bool,
     pub(crate) inverse: bool,
     pub(crate) col: i32,
     pub(crate) cells: i32,
+}
+
+/// A column range on one grid row marked by our SGR-53 (overline) interceptor.
+///
+/// vte 0.15 / alacritty 0.26 both drop SGR 53, so `ingest` scans the raw byte
+/// stream itself and records where an overline was active.  Ranges are closed
+/// when the overline SGR is reset (0m / 22m / 24m / 29m or any SGR without 53).
+/// `col_end` is exclusive.
+///
+/// `abs` is the grid's *absolute* row position at record time
+/// (`display_offset() + row`).  Rendering matches against the same absolute
+/// position, so ranges follow their content when the screen scrolls (live
+/// rows as well as scrollback lines) instead of drifting to whatever new
+/// content occupies the same relative row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct OverlineRange {
+    pub(crate) abs: i64,
+    pub(crate) col_start: i32,
+    pub(crate) col_end: i32,
 }
 
 pub(crate) type Line = (String, Vec<HistSpan>, bool);

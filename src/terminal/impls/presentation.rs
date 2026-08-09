@@ -388,6 +388,24 @@ fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
     })
 }
 
+/// Apply DIM (faint, SGR 2) and HIDDEN (conceal, SGR 8) to a resolved
+/// foreground colour: faint text is drawn at reduced opacity, concealed text
+/// at full transparency (its background fill still shows).
+///
+/// DIM is mostly a *weight* change these days: the UI switches the span to
+/// the font's " Thin" variant (see terminal_view.slint), so the alpha here is
+/// a gentle 0.85 rather than a heavy 0.55 — heavy translucency made faint
+/// text look washed out.
+fn vt_apply_attr_alpha(color: slint::Color, dim: bool, hidden: bool) -> slint::Color {
+    if hidden {
+        color.with_alpha(0.0)
+    } else if dim {
+        color.with_alpha(0.85)
+    } else {
+        color
+    }
+}
+
 /// Split a styled terminal run only at complete Unicode grapheme boundaries.
 /// Ordinary graphemes remain grouped into large Text spans; emoji with a
 /// Twemoji asset become image spans so color survives Slint's monochrome font
@@ -399,8 +417,15 @@ pub(crate) fn render_term_span(span: &HistSpan, row: i32, is_dark: bool) -> Vec<
         let (fg, bg) = vt_span_colors(span.fg, span.bg, span.bold, span.inverse, is_dark);
         return vec![TermSpan {
             text: span.text.clone().into(),
-            fg, bg,
+            fg: vt_apply_attr_alpha(fg, span.dim, span.hidden),
+            bg,
             bold: span.bold,
+            dim: span.dim,
+            italic: span.italic,
+            underline: span.underline as i32,
+            hidden: span.hidden,
+            strike: span.strike,
+            overline: span.overline,
             row,
             col: span.col,
             cells: span.cells,
@@ -419,6 +444,7 @@ pub(crate) fn render_term_span(span: &HistSpan, row: i32, is_dark: bool) -> Vec<
     }
 
     let (fg, bg) = vt_span_colors(span.fg, span.bg, span.bold, span.inverse, is_dark);
+    let fg = vt_apply_attr_alpha(fg, span.dim, span.hidden);
     let mut result = Vec::new();
     let mut col = span.col;
     let mut remaining_cells = span.cells.max(0);
@@ -444,6 +470,12 @@ pub(crate) fn render_term_span(span: &HistSpan, row: i32, is_dark: bool) -> Vec<
                     fg: fg.clone(),
                     bg: bg.clone(),
                     bold: span.bold,
+                    dim: span.dim,
+                    italic: span.italic,
+                    underline: span.underline as i32,
+                    hidden: span.hidden,
+                    strike: span.strike,
+                    overline: span.overline,
                     row,
                     col: plain_col,
                     cells: plain_cells,
@@ -458,6 +490,12 @@ pub(crate) fn render_term_span(span: &HistSpan, row: i32, is_dark: bool) -> Vec<
                 fg: fg.clone(),
                 bg: bg.clone(),
                 bold: span.bold,
+                dim: span.dim,
+                italic: span.italic,
+                underline: span.underline as i32,
+                hidden: span.hidden,
+                strike: span.strike,
+                overline: span.overline,
                 row,
                 col,
                 cells,
@@ -483,6 +521,12 @@ pub(crate) fn render_term_span(span: &HistSpan, row: i32, is_dark: bool) -> Vec<
             fg,
             bg,
             bold: span.bold,
+            dim: span.dim,
+            italic: span.italic,
+            underline: span.underline as i32,
+            hidden: span.hidden,
+            strike: span.strike,
+            overline: span.overline,
             row,
             col: plain_col,
             cells: plain_cells,
@@ -504,6 +548,12 @@ mod color_emoji_tests {
             fg: TermColor::Default,
             bg: TermColor::Default,
             bold: false,
+            dim: false,
+            italic: false,
+            underline: Default::default(),
+            hidden: false,
+            strike: false,
+            overline: false,
             inverse: false,
             col: 4,
             cells,
@@ -549,11 +599,68 @@ mod color_emoji_tests {
     }
 
     #[test]
+    fn light_theme_lightens_dark_cube_backgrounds() {
+        // 17 = (0,0,95) deep blue: on a light theme the cube background must
+        // be lightened like true-colour RGB backgrounds, or it reads as a
+        // near-black block (matches how [2] of the char test suite renders).
+        let (r, g, b) = idx_to_rgb_bg(17, false);
+        assert!(r > 100 && b > 100, "cube colour must be lightened on light theme: ({r},{g},{b})");
+        // Dark mode keeps the exact xterm cube value.
+        assert_eq!(idx_to_rgb_bg(17, true), (0, 0, 95));
+    }
+
+    #[test]
     fn keeps_plain_text_grouped() {
         let spans = render_term_span(&run("plain text", 10), 0, true);
         assert_eq!(spans.len(), 1);
         assert!(!spans[0].emoji);
         assert_eq!(spans[0].text.as_str(), "plain text");
+    }
+
+    #[test]
+    fn dim_and_hidden_fade_the_foreground() {
+        let mut span = run("text", 4);
+        span.dim = true;
+        let spans = render_term_span(&span, 0, true);
+        let alpha = spans[0].fg.alpha();
+        assert!(alpha > 0 && alpha < 255, "SGR 2 dim → partially transparent fg (got {alpha})");
+
+        let mut span = run("text", 4);
+        span.hidden = true;
+        let spans = render_term_span(&span, 0, true);
+        assert_eq!(spans[0].fg.alpha(), 0, "SGR 8 conceal → fully transparent fg");
+    }
+
+    #[test]
+    fn style_flags_flow_into_term_spans() {
+        let mut span = run("AB", 2);
+        span.italic = true;
+        span.strike = true;
+        span.overline = true;
+        span.underline = crate::terminal::UnderlineStyle::Double;
+        let spans = render_term_span(&span, 3, true);
+        assert!(spans[0].italic);
+        assert!(spans[0].strike);
+        assert!(spans[0].overline);
+        assert_eq!(spans[0].underline, 2);
+        assert_eq!(spans[0].row, 3);
+    }
+
+    #[test]
+    fn emoji_row_columns_conserve_grid_width() {
+        // [8] row 5 of the char test suite: 2 bars + 20 emoji × 2 cells = 42.
+        let text = "|😀😃😄😁😆😅😂🤣😊😇😍😘🥰😗😙😚🙂🤗😜😝|";
+        let spans = render_term_span(&run(text, 42), 0, true);
+        assert_eq!(spans.len(), 22, "2 plain bars + 20 emoji images");
+        let total: i32 = spans.iter().map(|s| s.cells).sum();
+        assert_eq!(total, 42, "column width must match the terminal grid");
+        // Columns must be contiguous with no gaps or overlaps.
+        let mut col = spans[0].col;
+        for span in &spans {
+            assert_eq!(span.col, col, "span columns must line up");
+            col += span.cells;
+        }
+        assert_eq!(col, spans[0].col + 42);
     }
 }
 
@@ -865,10 +972,18 @@ fn idx_to_rgb(i: u8, bold: bool, is_dark: bool) -> (u8, u8, u8) {
 
 /// Same as [`idx_to_rgb`] but for **background** fills in light mode: the 16
 /// ANSI base colours use `ANSI16_LIGHT_BG` (light pastels) so TUI program
-/// backgrounds feel light.  256-colour cube / grayscale are used as-is.
+/// backgrounds feel light, and colour-cube / grayscale entries (16+) are
+/// lightened like true-colour RGB backgrounds — otherwise dark cube colours
+/// (e.g. 17 = (0,0,95)) would read as near-black blocks on a light theme.
+/// 256-colour cube / grayscale are used as-is in dark mode.
 fn idx_to_rgb_bg(i: u8, is_dark: bool) -> (u8, u8, u8) {
     if !is_dark && i < 16 {
         return ANSI16_LIGHT_BG[i as usize];
     }
-    idx_to_rgb(i, false, is_dark)
+    let (r, g, b) = idx_to_rgb(i, false, is_dark);
+    if is_dark {
+        (r, g, b)
+    } else {
+        lighten_dark_bg(r, g, b)
+    }
 }

@@ -11,6 +11,17 @@ import { DockExpandButton, ToolStrip } from "widgets.slint";
 // them here guarantees the probe uses Meatshell Mono for its width calc.
 import "fonts/MeatshellMono-Regular.ttf";
 import "fonts/MeatshellMono-Bold.ttf";
+// JetBrains Mono is the default term-font-family and the cell-probe measures
+// *its* advance width when configured, so all three variants must be
+// registered here too — otherwise the probe silently falls back to a system
+// font and the column grid drifts. The Italic face is what SGR 3 (italic)
+// matches via Slint's font-variant lookup.
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+// Large CJK fonts are runtime-loaded from the fonts dir (src/fonts.rs), not
+// embedded — the cell-probe falls back to a system font for unregistered
+// external families, which is acceptable for optional user fonts.
 
 // One coloured run of text on the terminal grid.  The Rust side groups
 // consecutive vt100 cells that share fg + bg + bold into a single span and
@@ -22,6 +33,15 @@ export struct TermSpan {
     fg: color,
     bg: color,
     bold: bool,
+    dim: bool,      // SGR 2 — rendered with the font's " Thin" variant + 0.85 alpha
+    italic: bool,
+    // underline style: 0=none 1=single 2=double 3=curly 4=dotted 5=dashed
+    // (curly/dotted/dashed fall back to a single line — Slint has no
+    // decorated-line primitives, so the style is approximated)
+    underline: int,
+    hidden: bool,   // SGR 8 conceal — text already has alpha 0 from Rust
+    strike: bool,   // SGR 9
+    overline: bool, // SGR 53 — tracked by the ingest interceptor
     row: int,
     col: int,
     cells: int,
@@ -768,12 +788,20 @@ export component TerminalView inherits Rectangle {
                                 y: 0px;
                                 text: span.text;
                                 color: span.fg;
-                                // CJK spans use the CJK-capable UI font: the mono
-                                // terminal font lacks CJK glyphs and Slint tofu's
-                                // *isolated* CJK punctuation (、。,) on fallback (#54).
-                                font-family: span.cjk ? Theme.ui-font-family : Theme.term-font-family;
+                                // CJK spans use the CJK-capable UI font when the
+                                // terminal font itself lacks CJK glyphs (#54);
+                                // otherwise (e.g. Maple Mono CN) they keep the
+                                // terminal font so Chinese text inherits the
+                                // italic / thin variants too.
+                                // SGR 2 (dim) switches to the family's " Thin"
+                                // variant (MapleMono ships Thin as its own
+                                // family) for a genuine light-weight look.
+                                font-family: (span.cjk && !Theme.term-font-cjk) ? Theme.ui-font-family
+                                           : span.dim ? Theme.term-font-family + " Thin"
+                                           : Theme.term-font-family;
                                 font-size: Theme.term-font-size;
                                 font-weight: (Theme.term-font-bold || span.bold) ? 700 : 400;
+                                font-italic: span.italic;
                             }
                             if span.emoji : Image {
                                 x: 0px;
@@ -782,6 +810,50 @@ export component TerminalView inherits Rectangle {
                                 height: parent.height;
                                 source: span.emoji-image;
                                 image-fit: contain;
+                            }
+                            // --- SGR text decorations (drawn as overlay lines;
+                            //     Slint's Text has no underline/strike support).
+                            //     Thickness matches real terminal underlines
+                            //     (~1 logical px; Slint scales with DPI).
+                            property <length> line-w: 1px;
+                            // Single underline (+ curly/dotted/dashed fallback).
+                            if span.underline == 1 || span.underline == 3 || span.underline == 4 || span.underline == 5 : Rectangle {
+                                x: 0px;
+                                y: parent.height - line-w;
+                                width: parent.width;
+                                height: line-w;
+                                background: span.fg;
+                            }
+                            // Double underline: two parallel lines.
+                            if span.underline == 2 : Rectangle {
+                                x: 0px;
+                                y: parent.height - line-w * 2 - 1px;
+                                width: parent.width;
+                                height: line-w;
+                                background: span.fg;
+                            }
+                            if span.underline == 2 : Rectangle {
+                                x: 0px;
+                                y: parent.height - line-w;
+                                width: parent.width;
+                                height: line-w;
+                                background: span.fg;
+                            }
+                            // Strikethrough: line through the glyph centre.
+                            if span.strike : Rectangle {
+                                x: 0px;
+                                y: parent.height / 2 - line-w / 2;
+                                width: parent.width;
+                                height: line-w;
+                                background: span.fg;
+                            }
+                            // Overline (SGR 53, intercepted by the ingest layer).
+                            if span.overline : Rectangle {
+                                x: 0px;
+                                y: 0px;
+                                width: parent.width;
+                                height: line-w;
+                                background: span.fg;
                             }
                         }
 

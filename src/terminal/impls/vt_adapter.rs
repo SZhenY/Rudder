@@ -10,7 +10,7 @@ use alacritty_terminal::vte::ansi::Processor;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::terminal::types::ATerm;
-use crate::terminal::TermColor;
+use crate::terminal::{TermColor, UnderlineStyle};
 
 /// Global OSC 52 toggle — set by app.rs on startup / config change.
 pub static OSC52_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -110,24 +110,25 @@ pub(crate) enum MouseReport {
     Sgr,
 }
 
-/// Read one cell's attributes — replaces `screen.cell(row, col)` +
-/// `cell.contents()/fgcolor()/bgcolor()/bold()/is_wide()/inverse()`.
-///
-/// Wide chars: the leading cell carries `WIDE_CHAR`; the spacer cell carries
-/// `WIDE_CHAR_SPACER` (its `c` is a space). Combining marks live in
-/// `cell.zerowidth()` and are appended to the contents.
-#[allow(clippy::type_complexity)]
-pub(crate) fn cell_attrs(
-    term: &ATerm,
-    row: u16,
-    column: u16,
-) -> (String, TermColor, TermColor, bool, bool, bool) {
-    let point = Point {
-        line: Line(row as i32),
-        column: Column(column as usize),
-    };
-    let cell = &term.grid()[point];
+/// Attributes of one grid cell, extracted from alacritty's `Cell`.
+#[derive(Clone, Debug)]
+pub(crate) struct CellAttr {
+    pub(crate) contents: String,
+    pub(crate) fg: TermColor,
+    pub(crate) bg: TermColor,
+    pub(crate) bold: bool,
+    pub(crate) dim: bool,
+    pub(crate) italic: bool,
+    pub(crate) underline: UnderlineStyle,
+    pub(crate) hidden: bool,
+    pub(crate) strike: bool,
+    pub(crate) wide: bool,
+    pub(crate) inverse: bool,
+}
 
+/// Shared extraction used by both `cell_attrs` (live rows, u16 coords) and
+/// `build_line` (scrollback rows, possibly negative `Line`).
+pub(crate) fn attr_from_cell(cell: &alacritty_terminal::term::cell::Cell) -> CellAttr {
     let mut contents = cell.c.to_string();
     if let Some(zw) = cell.zerowidth() {
         for ch in zw {
@@ -135,13 +136,34 @@ pub(crate) fn cell_attrs(
         }
     }
 
-    let fg = TermColor::from(&cell.fg);
-    let bg = TermColor::from(&cell.bg);
-    let bold = cell.flags.contains(Flags::BOLD);
-    let wide = cell.flags.contains(Flags::WIDE_CHAR);
-    let inverse = cell.flags.contains(Flags::INVERSE);
+    let flags = cell.flags;
+    CellAttr {
+        contents,
+        fg: TermColor::from(&cell.fg),
+        bg: TermColor::from(&cell.bg),
+        bold: flags.contains(Flags::BOLD),
+        dim: flags.contains(Flags::DIM),
+        italic: flags.contains(Flags::ITALIC),
+        underline: UnderlineStyle::from_flags(flags),
+        hidden: flags.contains(Flags::HIDDEN),
+        strike: flags.contains(Flags::STRIKEOUT),
+        wide: flags.contains(Flags::WIDE_CHAR),
+        inverse: flags.contains(Flags::INVERSE),
+    }
+}
 
-    (contents, fg, bg, bold, wide, inverse)
+/// Read one cell's attributes — replaces `screen.cell(row, col)` +
+/// `cell.contents()/fgcolor()/bgcolor()/bold()/is_wide()/inverse()`.
+///
+/// Wide chars: the leading cell carries `WIDE_CHAR`; the spacer cell carries
+/// `WIDE_CHAR_SPACER` (its `c` is a space). Combining marks live in
+/// `cell.zerowidth()` and are appended to the contents.
+pub(crate) fn cell_attrs(term: &ATerm, row: u16, column: u16) -> CellAttr {
+    let point = Point {
+        line: Line(row as i32),
+        column: Column(column as usize),
+    };
+    attr_from_cell(&term.grid()[point])
 }
 
 /// Is this cell the spacer half of a wide (CJK) char? — replaces
@@ -236,8 +258,8 @@ pub(crate) fn grid_to_lines(term: &ATerm) -> Vec<String> {
         let mut s = String::new();
         let mut c = 0u16;
         while c < cols {
-            let (text, ..) = cell_attrs(term, r, c);
-            s.push_str(&text);
+            let attr = cell_attrs(term, r, c);
+            s.push_str(&attr.contents);
             c += 1;
         }
         // Trim only trailing empty / space-fill cells (after the last
@@ -257,8 +279,8 @@ mod tests {
         let (mut term, mut proc) = new_term(5, 30, 100);
         process_bytes(&mut proc, &mut term, b"hello");
         assert_eq!(term_size(&term), (5, 30));
-        let (text, ..) = cell_attrs(&term, 0, 0);
-        assert_eq!(text, "h");
+        let attr = cell_attrs(&term, 0, 0);
+        assert_eq!(attr.contents, "h");
         let (row, col) = cursor_pos(&term);
         assert_eq!((row, col), (0, 5));
     }
@@ -268,14 +290,14 @@ mod tests {
         let (mut term, mut proc) = new_term(3, 30, 100);
         // "你" is a 2-cell wide char.
         process_bytes(&mut proc, &mut term, "你".as_bytes());
-        let (_, _, _, _, wide, _) = cell_attrs(&term, 0, 0);
-        assert!(wide, "leading cell should carry WIDE_CHAR");
+        let attr = cell_attrs(&term, 0, 0);
+        assert!(attr.wide, "leading cell should carry WIDE_CHAR");
         assert!(
             is_wide_continuation(&term, 0, 1),
             "spacer cell should carry WIDE_CHAR_SPACER"
         );
-        let (text, ..) = cell_attrs(&term, 0, 0);
-        assert_eq!(text, "你");
+        let attr = cell_attrs(&term, 0, 0);
+        assert_eq!(attr.contents, "你");
     }
 
     #[test]
@@ -321,7 +343,91 @@ mod tests {
         let (mut term, mut proc) = new_term(3, 30, 100);
         // "e" + U+0301 (combining acute)
         process_bytes(&mut proc, &mut term, "e\u{301}".as_bytes());
-        let (text, ..) = cell_attrs(&term, 0, 0);
-        assert_eq!(text, "e\u{301}");
+        let attr = cell_attrs(&term, 0, 0);
+        assert_eq!(attr.contents, "e\u{301}");
+    }
+
+    #[test]
+    fn scrollback_limit_above_100k_is_honored() {
+        // The settings panel allows up to 1_000_000 scrollback lines
+        // (config.rs clamps to 100..=1_000_000 and app.rs validates the
+        // input). Regression guard: the configured limit must reach
+        // alacritty's grid verbatim — nothing may silently cap history at
+        // 100_000 lines.
+        let (mut term, mut proc) = new_term(5, 30, 150_000);
+        let rec = b"L0000000\r\n"; // 10 bytes, one scrollback line each
+        let line: Vec<u8> = rec
+            .iter()
+            .copied()
+            .cycle()
+            .take(rec.len() * 150_010)
+            .collect();
+        for chunk in line.chunks(64 * 1024) {
+            process_bytes(&mut proc, &mut term, chunk);
+        }
+        let history = term.grid().total_lines() - term.grid().screen_lines();
+        assert_eq!(
+            history, 150_000,
+            "history must cap at the configured 150k limit, not at 100k"
+        );
+    }
+
+    #[test]
+    fn million_line_limit_reaches_grid() {
+        // The settings max (1_000_000) must construct without panic and
+        // start with exactly the screen lines before any output arrives.
+        let (term, _) = new_term(24, 80, 1_000_000);
+        assert_eq!(term.grid().screen_lines(), 24);
+        assert_eq!(term.grid().total_lines(), 24);
+    }
+
+    #[test]
+    fn ansi16_colors_map_to_indexes() {
+        let (mut term, mut proc) = new_term(3, 30, 100);
+        // SGR 31 (red fg) + 42 (green bg), then 93 (bright yellow fg).
+        process_bytes(&mut proc, &mut term, b"\x1b[31;42mX\x1b[93mY");
+        let attr = cell_attrs(&term, 0, 0);
+        assert_eq!(attr.fg, TermColor::Idx(1));
+        assert_eq!(attr.bg, TermColor::Idx(2));
+        let attr = cell_attrs(&term, 0, 1);
+        assert_eq!(attr.fg, TermColor::Idx(11), "SGR 93 → BrightYellow index");
+        assert_eq!(attr.bg, TermColor::Idx(2));
+    }
+
+    #[test]
+    fn sgr_39_49_reset_to_default() {
+        let (mut term, mut proc) = new_term(3, 30, 100);
+        process_bytes(&mut proc, &mut term, b"\x1b[31;42mX\x1b[39;49mY");
+        let attr = cell_attrs(&term, 0, 1);
+        assert_eq!(attr.fg, TermColor::Default);
+        assert_eq!(attr.bg, TermColor::Default);
+    }
+
+    #[test]
+    fn text_attributes_are_extracted_from_flags() {
+        let (mut term, mut proc) = new_term(3, 60, 100);
+        process_bytes(&mut proc, &mut term, b"\x1b[1;2;3;4;8;9mABCDEF");
+        let attr = cell_attrs(&term, 0, 0);
+        assert!(attr.bold);
+        assert!(attr.dim);
+        assert!(attr.italic);
+        assert_eq!(attr.underline, UnderlineStyle::Single);
+        assert!(attr.hidden);
+        assert!(attr.strike);
+
+        // 4:2 (double underline) — the colon sub-parameter form vte parses.
+        process_bytes(&mut proc, &mut term, b"\r\x1b[0m\x1b[4:2mX");
+        let attr = cell_attrs(&term, 0, 0);
+        assert_eq!(attr.underline, UnderlineStyle::Double);
+
+        // Curly / dotted / dashed variants, one column each.
+        process_bytes(
+            &mut proc,
+            &mut term,
+            b"\r\x1b[0m\x1b[4:3mX\x1b[0m\x1b[4:4mY\x1b[0m\x1b[4:5mZ",
+        );
+        assert_eq!(cell_attrs(&term, 0, 0).underline, UnderlineStyle::Curly);
+        assert_eq!(cell_attrs(&term, 0, 1).underline, UnderlineStyle::Dotted);
+        assert_eq!(cell_attrs(&term, 0, 2).underline, UnderlineStyle::Dashed);
     }
 }

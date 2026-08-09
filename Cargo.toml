@@ -1,6 +1,6 @@
 [package]
 name = "rudder"
-version = "0.6.10-beta2"
+version = "0.6.10-beta3"
 edition = "2021"
 authors = ["Rudder contributors"]
 description = "A lightweight FinalShell-style SSH/terminal client written in Rust + Slint"
@@ -10,7 +10,10 @@ readme = "README.md"
 rust-version = "1.96"
 
 [dependencies]
-slint = { version = "1.17", features = ["compat-1-2"] }
+# unstable-fontique-010: runtime font registration (user fonts dropped into
+# <config>/fonts are loaded at startup instead of being embedded at build
+# time — avoids the ~80 MB Maple Mono embed while keeping it optional).
+slint = { version = "1.17", features = ["compat-1-2", "unstable-fontique-010"] }
 # ICU4X (pulled in by Slint's text layout) spams stderr with raw `eprintln!`
 # ("ICU4X data error: No segmentation model for language: ja") because its
 # `log` shim falls back to eprintln when the `logging` feature is off. Turning
@@ -121,6 +124,9 @@ slint-build = "1.17"
 # show the app icon. Windows-only; ignored on other targets.
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 opt-level = 3                # Speed: our code (Slint animations, terminal rendering)

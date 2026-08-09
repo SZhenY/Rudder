@@ -130,7 +130,17 @@ export global Theme {
 
     // Terminal font — user-configurable via Interface settings, set by Rust
     // from the config on startup. cell size in terminal_view derives from these.
+    // Default: "JetBrains Mono" (embedded). Large CJK fonts (e.g. Maple Mono,
+    // ~20 MB/weight) are NOT embedded; users drop them into the fonts dir and
+    // they become selectable here after a restart. If the chosen family has a
+    // "… Thin" sub-family, the SGR-2 dim styling switches to it for a genuine
+    // light-weight look (#dim-thin).
     in-out property <string> term-font-family: "JetBrains Mono";
+    // True when the active terminal font covers CJK glyphs (Rust probes the
+    // family name for CN/SC/TC/JP/KR/CJK/Han tags). CJK terminal spans then
+    // keep the terminal font — so Chinese text also gets italic / thin
+    // variants — instead of falling back to the UI sans font.
+    in-out property <bool> term-font-cjk: false;
     in-out property <length> term-font-size: 13px;
     in-out property <bool> term-font-bold: false;
 

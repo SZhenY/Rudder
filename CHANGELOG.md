@@ -3,6 +3,29 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [0.6.10-beta3] - 2026-08-09
+
+### 新特性 / Features
+
+- **运行时外部字体加载 / Runtime font loading**: 将 `.ttf`/`.otf`/`.ttc`/`.otc` 字体文件放入字体目录(Windows: `<exe>/config/fonts`;macOS/Linux: per-user 配置目录),重启后自动注册并在 设置 → 界面 → 终端字体 中可选;不再内嵌 80MB MapleMono,内置字体精简为 JetBrainsMono + MeatshellMono + MaterialIcons
+- **Windows 全量可移植化 / Portable Windows layout**: 安装版/便携版一致,配置(`config/`)、日志(`log/`)、字体(`config/fonts/`)全部位于程序运行目录,不再写入 AppData;首次启动自动从旧 AppData 迁移已有数据(macOS/Linux 保留原有逻辑)
+- **TTC/OTC 集合字体支持 / Font collection support**: 单个 `.ttc`/`.otc` 文件内的全部字体面都会注册并出现在设置中
+
+### Bug 修复 / Fixed
+
+- **16 色渲染 / 16-color rendering**: SGR 30-37/40-47/90-97/100-107 不再折叠为黑白,Named 颜色正确映射 0-15 索引(反显+彩色随之恢复)
+- **文本属性全链路 / Text attributes**: dim/italic/underline(单/双/波浪/点/虚线)/hidden/strikethrough/overline 从解析到渲染全链路透传;dim=前景 55% 透明度(配合瘦体家族)、hidden=全透明、italic=字体变体、下划线/删除线/上划线=自绘 1px 装饰线
+- **SGR 21/53 拦截 / SGR 21/53 interception**: vte 0.15 将 SGR 21 解析为 CancelBold、SGR 53(上划线)完全丢弃 → ingest 层按 CSI 分段拦截,21 重写为 `4:2` 双下划线,53 记录精确列区间(绝对锚点,滚动后跟随)
+- **上划线越界与不稳定 / Overline overflow & flakiness**: 上划线从 span 级布尔改为列区间裁剪(不再横跨整行);拦截器跨 chunk 缓冲(SSH/管道分块不再丢失);渲染缓存命中时按当前区间刷新
+- **制表符渲染 / Tab rendering**: `	` 展开为至下一 8 列制表位的空格,不再显示黑框
+- **回显剥离可靠性 / Setup echo stripping**: setup 命令回显在任意会话次数/时序下都不会显示(窗口过期整段丢弃替代行尾切割;final guard 终极保险;late-echo 10s 生命周期防误吞历史命令)
+- **中文斜体 / Chinese italic**: Windows UI 字体候选加入 DengXian(等线,自带 Italic 变体)——Slint 不做合成斜体,依赖字体真实斜体变体
+- **浅色主题一致性 / Light theme consistency**: 256 色背景块在浅色主题下统一浅色化(与 RGB 分支一致)
+
+### 测试 / Tests
+
+- 回归测试 125 → **163**(新增 38 项:16 色映射、样式 flags、tab 展开、上划线区间/裁剪/滚动存活/缓存刷新、跨 chunk SGR、final guard、字体扫描/家族名解析/目录断言)
+
 ## [Unreleased]
 
 ## [0.6.10-beta2] - 2026-08-08

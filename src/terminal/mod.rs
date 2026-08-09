@@ -38,16 +38,17 @@ pub(crate) use input::{windows_process_ctrl_release, CtrlKeySide};
 pub(crate) use output_highlight::compile_output_rules;
 pub(crate) use presentation::{highlight_plain_output, render_term_span};
 #[cfg(test)]
-pub(crate) use presentation::{log_level_marker, text_cell_width, vt_span_colors};
+pub(crate) use presentation::{log_level_marker, text_cell_width};
 pub(crate) use render::{
-    build_line, build_row, cell_prefix, RAW_CAP,
+    build_line, build_row, cell_prefix, refresh_overlines, RAW_CAP,
 };
 pub(crate) use types::{
     ATerm, BuiltScreen, CompiledOutputRule, CsiState, HistSpan, Line, OutputHighlightPreset,
-    RenderGates, RenderedLine, TabRenderGate, TermBuffer, TermBufferHandle, TermBuffers, TermColor,
+    OverlineRange, RenderGates, RenderedLine, TabRenderGate, TermBuffer, TermBufferHandle,
+    TermBuffers, TermColor, UnderlineStyle,
 };
 pub(crate) use vt_adapter::{
-    app_cursor, bracketed_paste, cell_attrs, cursor_pos, is_alt,
+    app_cursor, attr_from_cell, bracketed_paste, cell_attrs, cursor_pos, is_alt,
     is_wide_continuation, mouse_report, new_term, process_bytes, resize_term, row_wrapped,
-    term_size, MouseReport,
+    term_size, CellAttr, MouseReport,
 };

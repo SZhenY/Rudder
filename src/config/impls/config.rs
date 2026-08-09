@@ -104,6 +104,35 @@ fn dir_is_writable(dir: &Path) -> bool {
     }
 }
 
+/// Windows: the data dir is ALWAYS beside the executable — `<exe_dir>/config`
+/// (logs in `<exe_dir>/log`, user fonts in `<exe_dir>/config/fonts`) —
+/// whether installed or portable. The app is fully self-contained and never
+/// writes to AppData. On the first launch in a portable location, existing
+/// legacy data is copied over once (`migrate_legacy`). The only fallback is a
+/// temp dir, so the app still launches from a read-only exe dir (e.g. Program
+/// Files), at the cost of persistence.
+#[cfg(target_os = "windows")]
+fn resolve_data_dir() -> PathBuf {
+    if let Some(portable) = portable_data_dir() {
+        if fs::create_dir_all(&portable).is_ok() && dir_is_writable(&portable) {
+            if let Some(legacy) = legacy_data_dir().filter(|l| l != &portable) {
+                migrate_legacy(&legacy, &portable);
+            }
+            return portable;
+        }
+    }
+
+    // Read-only exe dir → temp dir, so the app still launches. Data is lost on
+    // reboot, but never silently goes to AppData.
+    let dir = std::env::temp_dir().join("rudder");
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+/// macOS / Linux: keep the original behaviour — portable-first when the exe
+/// dir is writable, otherwise the per-user OS config dir (AppData-style), with
+/// a temp dir as the last resort.
+#[cfg(not(target_os = "windows"))]
 fn resolve_data_dir() -> PathBuf {
     let legacy = legacy_data_dir();
 

@@ -5316,7 +5316,7 @@ dependencies = [
 
 [[package]]
 name = "rudder"
-version = "0.6.10-beta2"
+version = "0.6.10-beta3"
 dependencies = [
  "aes",
  "alacritty_terminal",
@@ -5353,6 +5353,7 @@ dependencies = [
  "slint-build",
  "ssh-key",
  "sysinfo",
+ "tempfile",
  "tokio",
  "tokio-socks",
  "tracing",

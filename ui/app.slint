@@ -17,6 +17,10 @@ import "fonts/JetBrainsMono-Regular.ttf";
 import "fonts/JetBrainsMono-Bold.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
 import "fonts/MaterialIcons-Regular.ttf";
+// Large CJK fonts (e.g. Maple Mono, ~20 MB/weight) are intentionally NOT
+// embedded — users drop them into the fonts dir (Windows: <exe_dir>/config/fonts;
+// macOS/Linux: per-user config dir) and Rust registers them at startup
+// (src/fonts.rs), making them selectable in Settings after a restart.
 
 import { Theme } from "theme.slint";
 import { Sidebar, DiskInfo } from "sidebar.slint";
@@ -418,6 +422,7 @@ export component AppWindow inherits Window {
     init => { Palette.color-scheme = root.dark-mode ? ColorScheme.dark : ColorScheme.light; }
     changed dark-mode => { Palette.color-scheme = root.dark-mode ? ColorScheme.dark : ColorScheme.light; }
     in-out property <string> term-font-family <=> Theme.term-font-family;
+    in-out property <bool> term-font-cjk <=> Theme.term-font-cjk;
     in-out property <length> term-font-size <=> Theme.term-font-size;
     in-out property <bool> term-font-bold <=> Theme.term-font-bold;
     in-out property <string> term-cursor-style: "block";

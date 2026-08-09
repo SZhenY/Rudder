@@ -206,15 +206,68 @@ fn include_following_line_break(text: &str, mut pos: usize) -> usize {
     pos
 }
 
-fn prompt_setup_echo_end(text: &str, prefix_pos: usize) -> usize {
-    if let Some(rel) = text[prefix_pos..].find(PROMPT_SETUP_SUFFIX) {
-        return include_following_line_break(text, prefix_pos + rel + PROMPT_SETUP_SUFFIX.len());
+/// End of the echoed setup command.  The suffix (`__ms7'`) is the command's
+/// final characters, so a match means the whole — possibly wrapped — line has
+/// landed.  Returns `None` while the line is still incomplete: callers must
+/// keep waiting or, past the late-echo window, discard.  They must NEVER fall
+/// back to a line end: the ~1.4 KiB command wraps across many rows, so cutting
+/// at the first newline leaks every wrapped row after it (#289 follow-up).
+fn prompt_setup_echo_end(text: &str, prefix_pos: usize) -> Option<usize> {
+    text[prefix_pos..]
+        .find(PROMPT_SETUP_SUFFIX)
+        .map(|rel| prefix_pos + rel + PROMPT_SETUP_SUFFIX.len())
+}
+
+/// Discard everything from the setup line's start to the end of the buffer.
+///
+/// Used once the late-echo window has expired or the buffer cap has blown
+/// while the wrapped echo is still incomplete.  At that point the buffer holds
+/// little but the setup echo — the session began moments ago, so no user
+/// output has accumulated yet — and cutting at the first newline would leak
+/// the remaining wrapped rows of the command.
+fn discard_prompt_setup_tail(text: &mut String, prefix_pos: usize) {
+    let start = line_start_before(text, prefix_pos);
+    text.replace_range(start.., "\r\x1b[2K");
+}
+
+/// Release the late-echo accumulator once its window has expired.  A setup
+/// echo that only now finishes arriving must not leak: if the prefix has
+/// landed, discard the whole remainder first, then release.
+fn release_after_window_expiry(buf: &mut String, chunk: &str) -> String {
+    let mut held = std::mem::take(buf);
+    held.push_str(chunk);
+    if let Some(p) = held.find(PROMPT_SETUP_PREFIX) {
+        discard_prompt_setup_tail(&mut held, p);
     }
-    let line_end = text[prefix_pos..]
-        .find(['\r', '\n'])
-        .map(|i| prefix_pos + i)
+    held
+}
+
+/// Final safety net: strip a fully-landed setup echo out of any output block
+/// about to be rendered, regardless of the suppress state machine's state.
+///
+/// The user's requirement is absolute — the setup command must never show, on
+/// any session, under any timing.  The suppression window / accumulator only
+/// cover the "normal" races; if the state machine ends up disabled for any
+/// reason while a wrapped echo still lands, this guard still catches it.
+///
+/// Matching is anchored on the command's unique prefix (`test -z "$FISH_VERSION"`)
+/// and terminated by the command's final `__ms7'` or the OSC 7 that follows it
+/// (or the block end).  False positives would require the user to type a
+/// command literally starting with `test -z "$FISH_VERSION"` — essentially
+/// impossible, and exactly the case #289 wanted stripped anyway.
+fn final_setup_guard(text: &mut String) -> bool {
+    let Some(p) = text.find(PROMPT_SETUP_PREFIX) else {
+        return false;
+    };
+    // Terminate at the suffix (command tail), the trailing OSC 7, or the end
+    // of the block — never at a bare newline: the command wraps across rows.
+    let end = text[p..]
+        .find(PROMPT_SETUP_SUFFIX)
+        .map(|rel| p + rel + PROMPT_SETUP_SUFFIX.len())
+        .or_else(|| extract_osc7_end(&text[p..]).map(|(_, rel)| p + rel))
         .unwrap_or(text.len());
-    include_following_line_break(text, line_end)
+    strip_prompt_setup_echo(text, p, end);
+    true
 }
 
 fn strip_prompt_setup_echo(text: &mut String, prefix_pos: usize, end_pos: usize) {
@@ -265,11 +318,12 @@ fn accumulate_late_echo(buf: &mut String, chunk: &str) -> (String, bool) {
     }
     if buf.contains(PROMPT_SETUP_PREFIX) {
         // Prefix landed but the line is still incomplete: hold it back. A cap
-        // fallback keeps an unresponsive shell from freezing the terminal.
+        // fallback keeps an unresponsive shell from freezing the terminal —
+        // and discards the wrapped remainder whole, never cutting at a line
+        // end (which would leak the other rows of the echo).
         if buf.len() >= ECHO_BUF_CAP {
             if let Some(p) = buf.find(PROMPT_SETUP_PREFIX) {
-                let end = prompt_setup_echo_end(buf, p);
-                strip_prompt_setup_echo(buf, p, end);
+                discard_prompt_setup_tail(buf, p);
                 return (std::mem::take(buf), true);
             }
         }
@@ -1510,6 +1564,12 @@ async fn run_session(
     // (and therefore can never display or get stuck parsing) the setup command.
     let prompt_setup_supported =
         !session.disable_shell_integration && remote_supports_prompt_setup(&handle).await;
+    tracing::info!(
+        "[SETUP] id={} probe result: shell-integration-supported={} (disable={})",
+        session.id,
+        prompt_setup_supported,
+        session.disable_shell_integration
+    );
 
     // --- Shell channel --------------------------------------------------
     let mut channel = handle
@@ -1571,6 +1631,19 @@ async fn run_session(
     // the whole injected command (prefix and suffix in different chunks can
     // never match again). See `accumulate_late_echo`.
     let mut late_echo_buf = String::new();
+    // Hard lifetime for the late-echo stripping state, counted from injection.
+    // If the echoed setup line never completes (wrapped prefix, truncated by
+    // the suppression cap, a shell that silently dropped the echo), pending
+    // must not survive forever: a later command that happens to contain
+    // PROMPT_SETUP_PREFIX (e.g. recalling the setup line from shell history on
+    // a *second* session, where the server's history file already holds it)
+    // would otherwise be swallowed by the accumulator (#289 follow-up).
+    let mut late_echo_window: Option<tokio::time::Instant> = None;
+    // Cross-chunk overlap for the final safety net (`final_setup_guard`):
+    // keeps at most PREFIX.len()-1 bytes of the previous output block so a
+    // setup echo split across chunk boundaries is still caught even if the
+    // suppression state machine never engaged.
+    let mut guard_tail = String::new();
     // After a ZMODEM transfer finishes we briefly ignore ZMODEM detection so the
     // sender's lingering close frames can't spawn a spurious second receive (#76).
     let mut zmodem_done_at: Option<std::time::Instant> = None;
@@ -1881,10 +1954,10 @@ async fn run_session(
                 if let Some(p) = buf.find(PROMPT_SETUP_PREFIX) {
                     if buf[p..].contains(PROMPT_SETUP_SUFFIX) {
                         // The whole echoed line has landed: strip it normally.
-                        let end = prompt_setup_echo_end(&buf, p);
+                        let end = prompt_setup_echo_end(&buf, p).unwrap();
                         strip_prompt_setup_echo(&mut buf, p, end);
                         late_prompt_echo_pending = false;
-                    } else {
+                    } else if late_echo_window.is_none_or(|w| tokio::time::Instant::now() < w) {
                         // The prefix arrived but the line is still in flight
                         // (TCP/PTY segmentation). Hand it to the late-echo
                         // accumulator instead of cutting mid-line — that would
@@ -1893,12 +1966,28 @@ async fn run_session(
                         let split = buf.floor_char_boundary(line_start_before(&buf, p));
                         late_echo_buf.push_str(&buf[split..]);
                         buf.truncate(split);
+                    } else {
+                        // Window expired while the wrapped echo was still
+                        // incomplete. Discard the whole remainder — cutting at
+                        // the first newline would leak the other rows of the
+                        // wrapped command (#289 follow-up).
+                        discard_prompt_setup_tail(&mut buf, p);
+                        late_prompt_echo_pending = false;
                     }
-                } else {
+                } else if late_echo_window.is_none_or(|w| tokio::time::Instant::now() < w) {
                     // Nothing identifiable arrived before the deadline. Allow
                     // one later setup echo to be removed, then permanently
                     // disable the special-case stripping for this session.
                     late_prompt_echo_pending = true;
+                    // Keep a trailing overlap window so a setup echo whose
+                    // prefix is still splitting in can still match once the
+                    // remaining bytes land (otherwise the tail leaks).
+                    let overlap = PROMPT_SETUP_PREFIX.len().saturating_sub(1);
+                    if buf.len() > overlap {
+                        let split = buf.floor_char_boundary(buf.len() - overlap);
+                        late_echo_buf.push_str(&buf[split..]);
+                        buf.truncate(split);
+                    }
                 }
                 if !buf.is_empty() {
                     let _ = events.send(SessionEvent::Output(buf));
@@ -1963,6 +2052,17 @@ async fn run_session(
                         {
                             prompt_injected = true;
                             suppress_echo = true;
+                            tracing::info!(
+                                "[SETUP] id={} injected prompt_setup bytes={} suppress_echo=true",
+                                session.id,
+                                prompt_setup.len()
+                            );
+                            // Late-echo stripping may only run for a bounded
+                            // window after injection; see `late_echo_window`.
+                            late_echo_window = Some(
+                                tokio::time::Instant::now()
+                                    + std::time::Duration::from_secs(10),
+                            );
                             // Give the hook ~2 s to echo its OSC 7; past that we
                             // assume a non-POSIX shell and stop hiding output (#140-1).
                             // 1.2 s was too tight for slow PTY/SSH servers — the echo
@@ -1994,7 +2094,7 @@ async fn run_session(
                         // short, un-wrappable prefix of the injected command. A size
                         // cap is the safety valve for a shell that never reports back
                         // (e.g. dash without PROMPT_COMMAND).
-                        let mut text = if suppress_echo {
+                        let text = if suppress_echo {
                             echo_buf.push_str(&chunk);
                             const ECHO_BUF_CAP: usize = 1 << 14; // 16 KiB
                             // The command echo + its trailing OSC 7 (the one after
@@ -2018,10 +2118,12 @@ async fn run_session(
                                 let mut buf = std::mem::take(&mut echo_buf);
                                 if let Some(p) = buf.find(PROMPT_SETUP_PREFIX) {
                                     if buf[p..].contains(PROMPT_SETUP_SUFFIX) {
-                                        let end = prompt_setup_echo_end(&buf, p);
+                                        let end = prompt_setup_echo_end(&buf, p).unwrap();
                                         strip_prompt_setup_echo(&mut buf, p, end);
                                         late_prompt_echo_pending = false;
-                                    } else {
+                                    } else if late_echo_window
+                                        .is_none_or(|w| tokio::time::Instant::now() < w)
+                                    {
                                         // Incomplete line: defer to the
                                         // late-echo accumulator.
                                         late_prompt_echo_pending = true;
@@ -2029,9 +2131,25 @@ async fn run_session(
                                             buf.floor_char_boundary(line_start_before(&buf, p));
                                         late_echo_buf.push_str(&buf[split..]);
                                         buf.truncate(split);
+                                    } else {
+                                        // Window expired: discard the whole
+                                        // wrapped remainder (see deadline path).
+                                        discard_prompt_setup_tail(&mut buf, p);
+                                        late_prompt_echo_pending = false;
                                     }
-                                } else {
+                                } else if late_echo_window
+                                    .is_none_or(|w| tokio::time::Instant::now() < w)
+                                {
                                     late_prompt_echo_pending = true;
+                                    // Keep a trailing overlap window so a setup
+                                    // echo still splitting in can match later.
+                                    let overlap = PROMPT_SETUP_PREFIX.len().saturating_sub(1);
+                                    if buf.len() > overlap {
+                                        let split =
+                                            buf.floor_char_boundary(buf.len() - overlap);
+                                        late_echo_buf.push_str(&buf[split..]);
+                                        buf.truncate(split);
+                                    }
                                 }
                                 buf
                             } else {
@@ -2043,15 +2161,28 @@ async fn run_session(
                             // closed. Accumulate across chunks so a split echo
                             // is stripped in one piece instead of leaking.
                             let clean = if late_prompt_echo_pending {
-                                let (release, done) =
-                                    accumulate_late_echo(&mut late_echo_buf, &chunk);
-                                if done {
+                                // Bounded lifetime: past the window the echo
+                                // can no longer be in flight; stop stripping
+                                // and release everything (a later command that
+                                // merely looks like the setup line must not be
+                                // swallowed — e.g. recalling it from shell
+                                // history on a second session).
+                                let window_expired = late_echo_window
+                                    .is_none_or(|w| tokio::time::Instant::now() >= w);
+                                if window_expired {
                                     late_prompt_echo_pending = false;
+                                    release_after_window_expiry(&mut late_echo_buf, &chunk)
+                                } else {
+                                    let (release, done) =
+                                        accumulate_late_echo(&mut late_echo_buf, &chunk);
+                                    if done {
+                                        late_prompt_echo_pending = false;
+                                    }
+                                    if release.is_empty() {
+                                        continue; // echo incomplete — hold back
+                                    }
+                                    release
                                 }
-                                if release.is_empty() {
-                                    continue; // echo incomplete — hold back
-                                }
-                                release
                             } else {
                                 chunk
                             };
@@ -2062,6 +2193,31 @@ async fn run_session(
                             }
                             clean
                         };
+
+                        // Final safety net, applied to EVERY rendered block
+                        // regardless of which path produced it: a fully
+                        // landed setup echo must never display, no matter the
+                        // session count or timing. The tail overlap carries
+                        // the block boundary so a split echo still matches.
+                        guard_tail.push_str(&text);
+                        let mut guarded = std::mem::take(&mut guard_tail);
+                        if final_setup_guard(&mut guarded) {
+                            tracing::info!(
+                                "[SETUP] id={} final guard stripped echoed setup ({} bytes)",
+                                session.id,
+                                text.len()
+                            );
+                        }
+                        // Only hold back a tail that is literally a prefix of
+                        // the setup command (a split echo arriving next block);
+                        // anything else is rendered immediately, so normal
+                        // output is never delayed or dropped.
+                        let keep = PROMPT_SETUP_PREFIX.len().saturating_sub(1).min(guarded.len());
+                        let split = guarded.floor_char_boundary(guarded.len() - keep);
+                        if PROMPT_SETUP_PREFIX.starts_with(&guarded[split..]) {
+                            guard_tail = guarded.split_off(split);
+                        }
+                        let mut text = guarded;
 
                         // Capture commands run in the terminal via our OSC 697
                         // hook, and strip the sequence so it never reaches the
@@ -2952,7 +3108,8 @@ fn _assert_handle_send() {
 #[cfg(test)]
 mod prompt_setup_echo_tests {
     use super::{
-        accumulate_late_echo, prompt_setup_echo_end, prompt_setup_supported,
+        accumulate_late_echo, discard_prompt_setup_tail, final_setup_guard,
+        prompt_setup_echo_end, prompt_setup_supported, release_after_window_expiry,
         strip_late_prompt_setup_echo, strip_prompt_setup_echo, PROMPT_BODY,
         PROMPT_SETUP_HISTORY_MARKER, PROMPT_SETUP_PREFIX,
     };
@@ -2992,7 +3149,7 @@ mod prompt_setup_echo_tests {
             PROMPT_SETUP_PREFIX
         );
         let p = text.find(PROMPT_SETUP_PREFIX).unwrap();
-        let end = prompt_setup_echo_end(&text, p);
+        let end = prompt_setup_echo_end(&text, p).unwrap();
         strip_prompt_setup_echo(&mut text, p, end);
         assert_eq!(text, "\r\x1b[2Kafter prompt");
     }
@@ -3112,6 +3269,112 @@ mod prompt_setup_echo_tests {
         let (t2, done2) = accumulate_late_echo(&mut buf, &pad);
         assert!(done2, "cap fallback must end the late-echo state");
         assert!(!t2.contains(PROMPT_SETUP_PREFIX));
+    }
+
+    #[test]
+    fn echo_end_is_none_while_line_incomplete() {
+        // The suffix is the command's final characters; without it the line is
+        // still in flight and the caller must keep waiting — never fall back
+        // to a line end (the wrapped command has many rows).
+        let text = format!("{} && eval 'x; __ms7", PROMPT_SETUP_PREFIX);
+        let p = text.find(PROMPT_SETUP_PREFIX).unwrap();
+        assert_eq!(prompt_setup_echo_end(&text, p), None);
+        let complete = format!("{} && eval 'x; __ms7'\r\n", PROMPT_SETUP_PREFIX);
+        let p = complete.find(PROMPT_SETUP_PREFIX).unwrap();
+        assert!(prompt_setup_echo_end(&complete, p).is_some());
+    }
+
+    #[test]
+    fn window_expiry_discards_wrapped_echo_but_keeps_prefix_free_text() {
+        // Simulates the second-session failure mode: the ~1.4 KiB setup
+        // command wraps across many rows and the OSC 7 never arrives before
+        // the 10 s late-echo window expires. The old code cut at the first
+        // newline and leaked the remaining wrapped rows; now the whole tail is
+        // discarded, only text before the command line survives.
+        let wrapped = format!(
+            "banner\r\n{} && eval 'row1; row2; row3; __ms7", // incomplete: no suffix
+            PROMPT_SETUP_PREFIX
+        );
+        let mut buf = String::new();
+        let release = release_after_window_expiry(&mut buf, &wrapped);
+        assert!(!release.contains(PROMPT_SETUP_PREFIX), "wrapped echo must not leak");
+        assert!(release.contains("banner"), "pre-echo text survives");
+        assert_eq!(release.find("\r\x1b[2K"), Some(release.len() - "\r\x1b[2K".len()));
+    }
+
+    #[test]
+    fn window_expiry_passes_normal_output_through() {
+        let mut buf = String::new();
+        let release = release_after_window_expiry(&mut buf, "normal output after window");
+        assert_eq!(release, "normal output after window");
+    }
+
+    #[test]
+    fn cap_discards_wrapped_echo_whole() {
+        // Cap fallback with the prefix landed but no suffix: the accumulator
+        // must discard the entire wrapped remainder, not cut at a newline.
+        let mut buf = String::new();
+        let head = format!("{} && eval 'x; __ms7", PROMPT_SETUP_PREFIX);
+        let (t1, _) = accumulate_late_echo(&mut buf, &head);
+        assert!(t1.is_empty());
+        let pad = "z".repeat(1 << 14);
+        let (t2, done2) = accumulate_late_echo(&mut buf, &pad);
+        assert!(done2);
+        assert!(!t2.contains(PROMPT_SETUP_PREFIX));
+        assert_eq!(t2.find("\r\x1b[2K"), Some(t2.len() - "\r\x1b[2K".len()));
+    }
+
+    #[test]
+    fn discard_tail_clears_from_line_start() {
+        // The discard starts at the beginning of the line the prefix sits on,
+        // so a prompt/banner already on that line is wiped along with it.
+        let mut text = format!(
+            "➜  ~  {} && eval 'incomplete",
+            PROMPT_SETUP_PREFIX
+        );
+        let p = text.find(PROMPT_SETUP_PREFIX).unwrap();
+        discard_prompt_setup_tail(&mut text, p);
+        assert_eq!(text, "\r\x1b[2K");
+    }
+
+    #[test]
+    fn final_guard_strips_fully_landed_echo() {
+        // The exact shape the user reported: the complete setup command echoed
+        // back in one block. Must be stripped no matter what the suppression
+        // state machine thinks.
+        let mut text = format!(
+            "banner\r\n{} && eval 'body; __ms7'\r\n\u{1b}]7;file://host/root\u{07}prompt",
+            PROMPT_SETUP_PREFIX
+        );
+        assert!(final_setup_guard(&mut text));
+        assert!(!text.contains(PROMPT_SETUP_PREFIX), "echo must not leak");
+        assert!(text.contains("banner"), "pre-echo text survives");
+        assert!(text.contains("prompt"));
+    }
+
+    #[test]
+    fn final_guard_strips_wrapped_partial_without_suffix() {
+        // The wrapped command is still in flight (no suffix yet): the guard
+        // cuts to the end of the block rather than a newline, so no row of the
+        // wrapped echo can leak. Only text before the command line survives.
+        let mut text = format!(
+            "banner\r\n{} && eval 'row1; row2; row3; __ms7",
+            PROMPT_SETUP_PREFIX
+        );
+        assert!(final_setup_guard(&mut text));
+        assert!(!text.contains(PROMPT_SETUP_PREFIX));
+        assert!(text.contains("banner"));
+    }
+
+    #[test]
+    fn final_guard_passes_normal_output() {
+        let mut text = "ls -la\r\nhello world".to_string();
+        assert!(!final_setup_guard(&mut text));
+        assert_eq!(text, "ls -la\r\nhello world");
+        // The prefix inside a larger unrelated word must not match either.
+        let mut text2 = "x test -z \"$FISH_VERSION\" is not a real prefix".to_string();
+        assert!(final_setup_guard(&mut text2));
+        assert!(!text2.contains(PROMPT_SETUP_PREFIX));
     }
 
     #[test]
