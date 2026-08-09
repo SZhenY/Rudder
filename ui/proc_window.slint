@@ -106,7 +106,7 @@ export component ProcWindow inherits Window {
     property <length> menu-x;
     property <length> menu-y;
 
-    callback close();
+    callback request-close();
     callback win-drag();          // start an OS window-move (frameless titlebar)
     callback win-resize-se();     // start an OS resize from the bottom-right grip
     callback copy-pid(string);
@@ -189,7 +189,7 @@ export component ProcWindow inherits Window {
                     animate background { duration: 90ms; }
                     close-ta := TouchArea {
                         mouse-cursor: pointer;
-                        clicked => { root.close(); }
+                        clicked => { root.request-close(); }
                     }
                     Text {
                         text: "\u{E5CD}";

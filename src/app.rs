@@ -844,7 +844,7 @@ pub fn run() -> Result<()> {
     {
         // ✕ hides the window (data keeps flowing into the shared model).
         let weak = proc_win.as_weak();
-        proc_win.on_close(move || {
+        proc_win.on_request_close(move || {
             if let Some(w) = weak.upgrade() {
                 let _ = w.hide();
             }
@@ -898,7 +898,7 @@ pub fn run() -> Result<()> {
     }
     {
         let weak = sys_win.as_weak();
-        sys_win.on_close(move || {
+        sys_win.on_request_close(move || {
             if let Some(w) = weak.upgrade() {
                 let _ = w.hide();
             }
@@ -1024,14 +1024,24 @@ pub fn run() -> Result<()> {
     // resolvable CJK family, falling back to the embedded "Meatshell Mono" so the
     // window is never fully blank even when the system font DB is unreadable.
     window.set_ui_font_family(resolve_ui_font_family());
-    // Runtime font loading: fonts dropped into the fonts dir (Windows:/n    // <exe_dir>/config/fonts; macOS/Linux: per-user config dir) are registered
+    // Runtime font loading: fonts dropped into the fonts dir (Windows:
+    // <exe_dir>/config/fonts; macOS/Linux: per-user config dir) are registered
     // with Slint's shared collection and become selectable below — large CJK
     // families like Maple Mono no longer need to be embedded at build time.
     let external_fonts = crate::fonts::load_external_fonts(&crate::fonts::external_fonts_dir());
-    // Populate the Interface font picker with installed monospace families.
-    window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(
-        system_monospace_fonts(&external_fonts),
-    ))));
+    // Populate the Interface font picker: embedded first, external next,
+    // system monospace families last, each labelled with its source.
+    let (font_labels, font_entries) = font_choices(&external_fonts);
+    window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(font_labels))));
+    // Restore the saved family: find its index in the picker list (fall back
+    // to the first selectable family when it isn't listed).
+    let saved_family = store.borrow().font_family().to_string();
+    let font_index = font_entries
+        .iter()
+        .position(|e| matches!(e, FontEntry::Family(f) if *f == saved_family))
+        .or_else(|| font_entries.iter().position(|e| matches!(e, FontEntry::Family(_))))
+        .unwrap_or(0);
+    window.set_term_font_index(font_index as i32);
 
     // Command bar (#55): seed quick commands + history from the config. Groups
     // start collapsed by default (#55).
@@ -1427,15 +1437,21 @@ pub fn run() -> Result<()> {
     {
         let weak = window.as_weak();
         let store = store.clone();
-        window.on_set_term_font(move |family: SharedString| {
+        window.on_set_term_font(move |label: SharedString| {
+            // The picker labels entries with their source; store only the
+            // bare family name so the config stays portable. Group headers
+            // (▍…) are not selectable — ignore them.
+            let Some(family) = family_from_label(&label) else {
+                return;
+            };
             {
                 let mut s = store.borrow_mut();
                 s.set_font_family(family.to_string());
                 let _ = s.save();
             }
             if let Some(w) = weak.upgrade() {
-                w.set_term_font_family(family.clone());
-                w.set_term_font_cjk(term_font_covers_cjk(&family));
+                w.set_term_font_family(family.into());
+                w.set_term_font_cjk(term_font_covers_cjk(family));
             }
         });
     }
@@ -10086,20 +10102,85 @@ fn resolve_ui_font_family() -> slint::SharedString {
     "Meatshell Mono".into()
 }
 
-/// Built-in + runtime-registered monospace font choices for the Interface
-/// picker. Embedded fonts are the always-available defaults; `external` are
-/// the families loaded from the external fonts dir at startup (may be empty).
-fn system_monospace_fonts(external: &[String]) -> Vec<slint::SharedString> {
-    let mut list = vec![
-        slint::SharedString::from("JetBrains Mono"),
-        slint::SharedString::from("Meatshell Mono"),
-    ];
-    for name in external {
-        if !list.iter().any(|f| f.as_str() == name) {
-            list.push(slint::SharedString::from(name.as_str()));
+/// One entry of the font picker list.
+#[allow(dead_code)] // Header payload read by tests only
+enum FontEntry {
+    /// A non-selectable group header, shown as `▍内嵌字体` etc.
+    Header(&'static str),
+    /// A selectable family, rendered indented under its header.
+    Family(String),
+}
+
+/// Font picker list for Settings → Interface → Terminal font.
+///
+/// The ComboBox model is a flat string list with group headers:
+///
+/// ```text
+/// ▍内嵌字体
+///   JetBrains Mono
+///   Meatshell Mono
+/// ▍外置字体
+///   Maple Mono Normal NL NF CN
+/// ▍系统字体
+///   Consolas
+///   Cascadia Mono
+/// ```
+///
+/// Header rows (▍) are not selectable; family rows strip their two-space
+/// indent via [`family_from_label`] before the config is written, so the
+/// stored value stays a bare family name. System monospace families are
+/// listed last. Duplicates keep the highest-priority label (embedded >
+/// external > system).
+///
+/// Returns `(labels, entries)` — parallel vectors, `entries` used to map a
+/// saved family back to its list index.
+fn font_choices(external: &[String]) -> (Vec<slint::SharedString>, Vec<FontEntry>) {
+    let mut labels: Vec<slint::SharedString> = Vec::new();
+    let mut entries: Vec<FontEntry> = Vec::new();
+    let mut known: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    let push_family = |family: &str,
+                           labels: &mut Vec<slint::SharedString>,
+                           entries: &mut Vec<FontEntry>,
+                           known: &mut std::collections::HashSet<String>| {
+        if known.insert(family.to_string()) {
+            labels.push(format!("  {family}").into());
+            entries.push(FontEntry::Family(family.to_string()));
         }
+    };
+    let push_header = |header: &'static str,
+                       labels: &mut Vec<slint::SharedString>,
+                       entries: &mut Vec<FontEntry>| {
+        labels.push(format!("▍{header}").into());
+        entries.push(FontEntry::Header(header));
+    };
+
+    // Embedded first, external (registered from the fonts dir) next,
+    // system monospace families last — highest priority wins on duplicates.
+    push_header("内嵌字体", &mut labels, &mut entries);
+    for family in ["JetBrains Mono", "Meatshell Mono"] {
+        push_family(family, &mut labels, &mut entries, &mut known);
     }
-    list
+    push_header("外置字体", &mut labels, &mut entries);
+    for family in external {
+        push_family(family, &mut labels, &mut entries, &mut known);
+    }
+    push_header("系统字体", &mut labels, &mut entries);
+    for family in crate::fonts::system_monospace_families() {
+        push_family(&family, &mut labels, &mut entries, &mut known);
+    }
+    (labels, entries)
+}
+
+/// Resolve a picker label to a bare family name.
+///
+/// Group headers (`▍…`) return `None` — selecting them must be a no-op.
+/// Family rows (two-space indented) return the name without the indent.
+fn family_from_label(label: &str) -> Option<&str> {
+    if label.starts_with('▍') {
+        return None;
+    }
+    Some(label.strip_prefix("  ").unwrap_or(label))
 }
 
 /// Split a stored proxy URL into `(type, host:port)` for the session dialog.
@@ -10560,5 +10641,57 @@ mod log_highlight_tests {
     fn invalid_regex_is_rejected_before_persistence() {
         assert!(validate_output_highlight_rule("([", true, false).is_err());
         assert!(validate_output_highlight_rule("literal", false, false).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod font_choice_tests {
+    use super::{family_from_label, font_choices, FontEntry};
+
+    #[test]
+    fn label_strips_indent_and_rejects_headers() {
+        // Family rows carry a two-space indent under their group header.
+        assert_eq!(family_from_label("  JetBrains Mono"), Some("JetBrains Mono"));
+        assert_eq!(
+            family_from_label("  Maple Mono Normal NL NF CN"),
+            Some("Maple Mono Normal NL NF CN")
+        );
+        assert_eq!(family_from_label("  Consolas"), Some("Consolas"));
+        // Group headers are not selectable.
+        assert_eq!(family_from_label("▍内嵌字体"), None);
+        assert_eq!(family_from_label("▍系统字体"), None);
+        // Unknown/unlabelled values pass through unchanged (backward compat).
+        assert_eq!(family_from_label("JetBrains Mono"), Some("JetBrains Mono"));
+    }
+
+    #[test]
+    fn choices_list_built_embedded_external_system() {
+        let external = vec!["外部字体 A".to_string(), "外部字体 B".to_string()];
+        let (labels, entries) = font_choices(&external);
+        // Grouped layout: header, then indented families under it.
+        assert!(matches!(&entries[0], FontEntry::Header("内嵌字体")));
+        assert!(labels[0].as_str().starts_with("▍"));
+        assert!(matches!(&entries[1], FontEntry::Family(f) if f == "JetBrains Mono"));
+        assert!(matches!(&entries[2], FontEntry::Family(f) if f == "Meatshell Mono"));
+        assert!(matches!(&entries[3], FontEntry::Header("外置字体")));
+        assert!(matches!(&entries[4], FontEntry::Family(f) if f == "外部字体 A"));
+        // The last header is the system group.
+        let last_header = entries
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                FontEntry::Header(h) => Some(*h),
+                _ => None,
+            })
+            .expect("system header must exist");
+        assert_eq!(last_header, "系统字体");
+        // Every family row strips back to its bare family name.
+        for (label, entry) in labels.iter().zip(entries.iter()) {
+            if let FontEntry::Family(f) = entry {
+                assert_eq!(family_from_label(label), Some(f.as_str()));
+            } else {
+                assert!(family_from_label(label).is_none(), "headers are not selectable");
+            }
+        }
     }
 }

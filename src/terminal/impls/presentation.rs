@@ -610,6 +610,31 @@ mod color_emoji_tests {
     }
 
     #[test]
+    fn dark_theme_keeps_exact_xterm_cube_values() {
+        // The standard 256-colour palette must render exactly in dark mode —
+        // 53 = (95,0,95) dark magenta, exactly like PowerShell / Windows
+        // Terminal. No lifting, no shifting (a lifted 53 visually collided
+        // with cube 91 = (135,0,135)).
+        let c17 = vt_bg_to_slint(TermColor::Idx(17), true); // (0,0,95)
+        assert_eq!((c17.red(), c17.green(), c17.blue()), (0, 0, 95));
+
+        let c53 = vt_bg_to_slint(TermColor::Idx(53), true); // (95,0,95)
+        assert_eq!((c53.red(), c53.green(), c53.blue()), (95, 0, 95));
+
+        let c58 = vt_bg_to_slint(TermColor::Idx(58), true); // (95,95,0)
+        assert_eq!((c58.red(), c58.green(), c58.blue()), (95, 95, 0));
+
+        let c91 = vt_bg_to_slint(TermColor::Idx(91), true); // (135,0,175)
+        assert_eq!((c91.red(), c91.green(), c91.blue()), (135, 0, 175));
+
+        let c16 = vt_bg_to_slint(TermColor::Idx(16), true); // (0,0,0)
+        assert_eq!((c16.red(), c16.green(), c16.blue()), (0, 0, 0), "true black stays black");
+
+        let g232 = vt_bg_to_slint(TermColor::Idx(232), true); // (8,8,8)
+        assert_eq!((g232.red(), g232.green(), g232.blue()), (8, 8, 8));
+    }
+
+    #[test]
     fn keeps_plain_text_grouped() {
         let spans = render_term_span(&run("plain text", 10), 0, true);
         assert_eq!(spans.len(), 1);
@@ -855,6 +880,9 @@ fn vt_bg_to_slint(color: TermColor, is_dark: bool) -> slint::Color {
     match color {
         TermColor::Default => slint::Color::from_argb_u8(0, 0, 0, 0), // transparent
         TermColor::Idx(i) => {
+            // Exact xterm 256-colour value in both themes — the standard cube
+            // values must never be shifted (53 = (95,0,95) stays dark magenta,
+            // exactly as Windows Terminal / PowerShell render it).
             let (r, g, b) = idx_to_rgb_bg(i, is_dark);
             slint::Color::from_rgb_u8(r, g, b)
         }
@@ -985,5 +1013,50 @@ fn idx_to_rgb_bg(i: u8, is_dark: bool) -> (u8, u8, u8) {
         (r, g, b)
     } else {
         lighten_dark_bg(r, g, b)
+    }
+}
+
+#[cfg(test)]
+mod real_file_cube_tests {
+    use super::*;
+    use crate::terminal::{build_line, new_term, process_bytes, term_size, TermColor};
+    use alacritty_terminal::grid::Dimensions;
+    use alacritty_terminal::index::Line as GridLine;
+
+    /// End-to-end regression for the user-reported "cube index 53 renders
+    /// black" issue: feeding the *whole* real char-test file, the 53 swatch
+    /// (dark magenta) must come out as a lifted magenta — never the theme
+    /// background, never black.
+    #[test]
+    fn real_file_cube_53_is_magenta() {
+        let Ok(data) = std::fs::read("../terminal_chars_test.txt") else {
+            eprintln!("skipping: terminal_chars_test.txt not found");
+            return;
+        };
+        let (mut term, mut proc) = new_term(40, 100, 2000);
+        process_bytes(&mut proc, &mut term, &data);
+        let (rows, cols) = term_size(&term);
+        let mut found = false;
+        // [2] lives in scrollback after the whole file is fed; scan every
+        // grid line including history.
+        let hist = term.grid().history_size() as i32;
+        for line in (-hist..0).chain(0..rows as i32) {
+            let (_plain, runs, _) = build_line(&term, GridLine(line), cols, &[]);
+            for run in runs.iter() {
+                if matches!(run.bg, TermColor::Idx(53)) {
+                    found = true;
+                    let (_fg, bg) = vt_span_colors(run.fg, run.bg, run.bold, run.inverse, true);
+                    assert_eq!(
+                        (bg.red(), bg.green(), bg.blue()),
+                        (95, 0, 95),
+                        "cube 53 must render exact dark magenta (95,0,95), got ({},{},{})",
+                        bg.red(),
+                        bg.green(),
+                        bg.blue()
+                    );
+                }
+            }
+        }
+        assert!(found, "no span with bg=Idx(53) found in the whole file");
     }
 }

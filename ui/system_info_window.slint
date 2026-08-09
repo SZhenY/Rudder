@@ -216,7 +216,7 @@ export component SystemInfoWindow inherits Window {
     in property <[SysInfoRow]> network-rows;
     in property <[SysInfoRow]> filesystem-rows;
 
-    callback close();
+    callback request-close();
     callback win-drag();
     callback win-resize-se();
 
@@ -261,7 +261,7 @@ export component SystemInfoWindow inherits Window {
                 Rectangle {
                     width: 46px;
                     background: close-ta.has-hover ? #e81123 : transparent;
-                    close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.close(); } }
+                    close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.request-close(); } }
                     Text {
                         text: "\u{E5CD}";
                         font-family: "Material Icons";

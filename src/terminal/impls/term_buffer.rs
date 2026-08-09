@@ -325,10 +325,20 @@ impl TermBuffer {
         // splicing in place guarantees a dropped tail parameter leaves no
         // trailing `;` behind (an empty SGR param would read as a reset).
         let mut parts: Vec<&[u8]> = Vec::with_capacity(4);
-        for part in params.split(|&b| b == b';') {
-            let is_21 = part == b"21";
-            let is_53 = part == b"53";
-            let is_reset = matches!(part, b"0" | b"22" | b"24" | b"29");
+        let split: Vec<&[u8]> = params.split(|&b| b == b';').collect();
+        for (i, part) in split.iter().enumerate() {
+            // 38;5;N / 48;5;N — the trailing N is the 256-colour *index*, not
+            // an independent SGR parameter. Treating it as SGR 21/53/reset
+            // would corrupt e.g. `48;5;53m` (dark magenta background) into a
+            // dropped/rewritten parameter → alacritty ignores it → the cell
+            // keeps its previous background (transparent) and the swatch
+            // renders as the theme background (#cube53-regression).
+            let is_color_index = i >= 2
+                && split[i - 1] == b"5"
+                && (split[i - 2] == b"38" || split[i - 2] == b"48");
+            let is_21 = !is_color_index && *part == b"21";
+            let is_53 = !is_color_index && *part == b"53";
+            let is_reset = !is_color_index && matches!(*part, b"0" | b"22" | b"24" | b"29");
             has_53 |= is_53;
             has_reset |= is_reset;
             if is_53 {
@@ -953,5 +963,104 @@ mod real_file_overline_verify {
         let (line_no, plain, overlined) = found.expect("overline row must be in scrollback");
         eprintln!("overline row at grid line {line_no}: {plain:?} overlined={overlined}");
         assert!(overlined, "overline must survive in the real-file scrollback scenario");
+    }
+}
+
+#[cfg(test)]
+mod render_path_cube_tests {
+    use super::*;
+    use crate::terminal::{build_row, new_term, OutputHighlightPreset, TermColor, UnderlineStyle};
+
+    fn make_buffer() -> TermBuffer {
+        let (term, processor) = new_term(10, 40, 100);
+        TermBuffer {
+            term,
+            processor,
+            find_query: String::new(),
+            is_dark: true,
+            output_highlight: OutputHighlightPreset::Off,
+            custom_highlight_rules: Vec::new(),
+            prev: Vec::new(),
+            view_offset: 0,
+            displayed_text: Vec::new(),
+            csi_state: CsiState::Normal,
+            csi_pending: Vec::new(),
+            raw: std::collections::VecDeque::new(),
+            rendered: Vec::new(),
+            overline_active: false,
+            overline_start: None,
+            overline_ranges: Vec::new(),
+            sgr_buf: Vec::new(),
+        }
+    }
+
+    /// The user's exact path: ingest through TermBuffer, render(), and check
+    /// the produced TermSpan for cube index 53 — it must be magenta, not the
+    /// theme background (transparent) and not black.
+    #[test]
+    fn render_path_cube_53_is_magenta() {
+        let mut buf = make_buffer(); // 10 rows x 40 cols
+        // Fill two rows so the cube row lands on the live screen (row 2).
+        buf.ingest(b"line1\r\nline2\r\n");
+        let mut input = Vec::new();
+        for i in 52u8..=87 {
+            input.extend_from_slice(format!("\x1b[48;5;{i}m \x1b[0m").as_bytes());
+        }
+        input.push(b'\r');
+        buf.ingest(&input);
+
+        let screen = buf.render();
+        // Find the span at col 1 (second cube cell = index 53) with a space.
+        let span53 = screen
+            .spans
+            .iter()
+            .find(|s| s.col == 1 && s.text.as_str() == " ")
+            .expect("53 swatch span must exist");
+        eprintln!(
+            "span53: bg=({},{},{}) alpha={}",
+            span53.bg.red(),
+            span53.bg.green(),
+            span53.bg.blue(),
+            span53.bg.alpha()
+        );
+        // Exact xterm value: 53 = (95,0,95) dark magenta, opaque.
+        assert_eq!(
+            (span53.bg.red(), span53.bg.green(), span53.bg.blue()),
+            (95, 0, 95),
+            "53 must be exact dark magenta via render()"
+        );
+        assert!(span53.bg.alpha() > 0, "53 must be opaque");
+    }
+
+    /// The root cause of the "cube 53 renders black" regression: the SGR
+    /// interceptor used to treat the trailing `53` of `48;5;53m` as the
+    /// overline parameter (SGR 53), dropping it and leaving the cell with a
+    /// transparent background. 256-colour indices must never be intercepted.
+    #[test]
+    fn sgr_interceptor_leaves_256_colour_indices_alone() {
+        // Background 48;5;53 must survive untouched.
+        let mut buf = make_buffer();
+        buf.ingest(b"\x1b[48;5;53mX\x1b[0m");
+        let (_plain, runs, _) = build_row(&buf.term, 0, 40, &[]);
+        assert!(matches!(runs[0].bg, TermColor::Idx(53)), "48;5;53 bg must be Idx(53)");
+        // Foreground 38;5;53 likewise.
+        let mut buf = make_buffer();
+        buf.ingest(b"\x1b[38;5;53mX\x1b[0m");
+        let (_plain, runs, _) = build_row(&buf.term, 0, 40, &[]);
+        assert!(matches!(runs[0].fg, TermColor::Idx(53)), "38;5;53 fg must be Idx(53)");
+        // 48;5;21 must NOT be rewritten into double underline (4:2).
+        let mut buf = make_buffer();
+        buf.ingest(b"\x1b[48;5;21mX\x1b[0m");
+        let (_plain, runs, _) = build_row(&buf.term, 0, 40, &[]);
+        assert!(matches!(runs[0].bg, TermColor::Idx(21)), "48;5;21 bg must be Idx(21)");
+        assert_eq!(runs[0].underline, UnderlineStyle::None, "no double underline from 256-colour 21");
+        // A *standalone* SGR 53 still opens the overline range.
+        let mut buf = make_buffer();
+        buf.ingest(b"\x1b[53mOVERLINE\x1b[0m");
+        assert_eq!(buf.overline_ranges.len(), 1);
+        assert_eq!((buf.overline_ranges[0].col_start, buf.overline_ranges[0].col_end), (0, 8));
+        // And the existing overline cells still render overlined.
+        let (_plain, runs, _) = build_row(&buf.term, 0, 40, &buf.overline_ranges);
+        assert!(runs[0].overline, "standalone 53m must still produce overline");
     }
 }

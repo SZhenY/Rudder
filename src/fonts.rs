@@ -63,7 +63,8 @@ pub(crate) fn scan_font_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// Family names inside one font file (first English family of each face,
-/// deduplicated and sorted). Used for tests and for the Settings picker.
+/// deduplicated and sorted). Used by tests only.
+#[cfg(test)]
 pub(crate) fn family_names_in(font_path: &Path) -> Vec<String> {
     let Ok(bytes) = std::fs::read(font_path) else {
         return Vec::new();
@@ -72,6 +73,23 @@ pub(crate) fn family_names_in(font_path: &Path) -> Vec<String> {
     db.load_font_data(bytes);
     let mut names: Vec<String> = db
         .faces()
+        .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// Monospace families installed on the system, for the Settings font picker.
+/// Sorted, deduplicated. Slint's fontique collection already contains the
+/// system fonts, so choosing one only sets the family name — no registration
+/// needed.
+pub(crate) fn system_monospace_families() -> Vec<String> {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    let mut names: Vec<String> = db
+        .faces()
+        .filter(|f| f.monospaced)
         .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
         .collect();
     names.sort();

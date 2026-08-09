@@ -423,6 +423,7 @@ export component AppWindow inherits Window {
     changed dark-mode => { Palette.color-scheme = root.dark-mode ? ColorScheme.dark : ColorScheme.light; }
     in-out property <string> term-font-family <=> Theme.term-font-family;
     in-out property <bool> term-font-cjk <=> Theme.term-font-cjk;
+    in property <int> term-font-index: 0;   // picker selection into term-fonts
     in-out property <length> term-font-size <=> Theme.term-font-size;
     in-out property <bool> term-font-bold <=> Theme.term-font-bold;
     in-out property <string> term-cursor-style: "block";
@@ -3962,6 +3963,7 @@ export component AppWindow inherits Window {
                     renderer-mode <=> root.renderer-mode;
                     term-fonts: root.term-fonts;
                     term-font-family: root.term-font-family;
+                    term-font-index: root.term-font-index;
                     term-font-size: root.term-font-size;
                     term-font-bold: root.term-font-bold;
                     term-cursor-style <=> root.term-cursor-style;
