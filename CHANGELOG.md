@@ -3,6 +3,24 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [0.6.10-beta5] - 2026-08-10
+
+### 新特性 / Features
+
+- **界面字体设置 / UI font picker**: 设置 → 外观新增"界面字体"下拉框（内嵌/外置/系统三组），用于菜单、设置、对话框等 UI 文字显示，独立于终端字体设置
+- **文本装饰线重构 / Text decoration overhaul**: 下划线、删除线、上划线、双下划线、点状线、虚线改用字体自适应线宽 (`max(1px, font-size/16)`)，HiDPI 下线条不再过细；各装饰线位置改为基于 cell 高度比例定位
+- **点状下划线 (SGR 4:4) / Dotted underline**: 60 段小圆点填充 span 宽度，clip 裁剪溢出
+- **虚线下划线 (SGR 4:5) / Dashed underline**: 25 段短线填充 span 宽度，clip 裁剪溢出
+
+### 修复 / Fixed
+
+- **装饰线位置漂移 / Decoration position fix**: Slint 匿名 for 块内 `property` 声明的 `parent.height` 被提升到组件层解析为 viewport 高度，导致装饰线偏移到错误行。改用 `root.cell-h` 行内计算
+- **点状/虚线未覆盖完整 span / Dotted/dashed partial coverage**: 段数从 8/5 增至 60/25 确保覆盖宽 span
+
+### 测试 / Tests
+
+- **终端装饰线测试文件 / Terminal decoration test file**: `tests/terminal_chars_test.txt` 新增 19 组测试，覆盖单线/双线/点状/虚线/删除线/上划线及组合场景
+
 ## [0.6.10-beta4] - 2026-08-09
 
 ### 修复 / Fixed
