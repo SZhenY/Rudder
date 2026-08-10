@@ -834,14 +834,14 @@ export component TerminalView inherits Rectangle {
                                 x: 0px; y: ch * 0.94; width: parent.width;
                                 height: line-w; background: span.fg;
                             }
-                            // Curly undercurl: Path whose height is constrained
-                            // to the lower ~18% of the cell so the wave never
-                            // bleeds into the next row.
+                            // Curly undercurl: dense sawtooth sine wave (24 periods
+                            // per 48-viewbox-unit span) so short and long spans
+                            // both produce sharp, visually-consistent waves.
                             if span.underline == 3 : Path {
                                 x: 0px; y: ch * 0.82; width: parent.width; height: ch * 0.18;
                                 stroke: span.fg; stroke-width: line-w;
                                 fit: fill; viewbox-width: 48; viewbox-height: 8;
-                                commands: "M 0 5 Q 3 -1 6 5 T 12 5 T 18 5 T 24 5 T 30 5 T 36 5 T 42 5 T 48 5";
+                                commands: "M 0 4 Q 1 0 2 4 T 4 4 T 6 4 T 8 4 T 10 4 T 12 4 T 14 4 T 16 4 T 18 4 T 20 4 T 22 4 T 24 4 T 26 4 T 28 4 T 30 4 T 32 4 T 34 4 T 36 4 T 38 4 T 40 4 T 42 4 T 44 4 T 46 4 T 48 4";
                             }
                             // Dotted underline: 60 tiny dots, clipped to span width.
                             if span.underline == 4 : Rectangle {
