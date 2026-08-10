@@ -812,48 +812,61 @@ export component TerminalView inherits Rectangle {
                                 image-fit: contain;
                             }
                             // --- SGR text decorations (drawn as overlay lines;
-                            //     Slint's Text has no underline/strike support).
-                            //     Thickness matches real terminal underlines
-                            //     (~1 logical px; Slint scales with DPI).
-                            property <length> line-w: 1px;
-                            // Single underline (+ curly/dotted/dashed fallback).
-                            if span.underline == 1 || span.underline == 3 || span.underline == 4 || span.underline == 5 : Rectangle {
-                                x: 0px;
-                                y: parent.height - line-w;
-                                width: parent.width;
-                                height: line-w;
-                                background: span.fg;
+                            // ── Text decorations ───────────────────────────
+                            // Adaptive line metrics: scale with font size.
+                            property <length> line-w: max(1px, Theme.term-font-size / 16);
+                            // Baseline-relative positions (ratio estimates).
+                            property <length> uline-y: parent.height * 0.88;
+                            property <length> strike-y: parent.height * 0.40;
+                            property <length> dbl-gap: max(1px, line-w * 1.5);
+
+                            // Single underline.
+                            if span.underline == 1 : Rectangle {
+                                x: 0px; y: uline-y; width: parent.width;
+                                height: line-w; background: span.fg;
                             }
-                            // Double underline: two parallel lines.
+                            // Double underline: two parallel lines around uline-y.
                             if span.underline == 2 : Rectangle {
-                                x: 0px;
-                                y: parent.height - line-w * 2 - 1px;
-                                width: parent.width;
-                                height: line-w;
-                                background: span.fg;
+                                x: 0px; y: uline-y - dbl-gap; width: parent.width;
+                                height: line-w; background: span.fg;
                             }
                             if span.underline == 2 : Rectangle {
-                                x: 0px;
-                                y: parent.height - line-w;
-                                width: parent.width;
-                                height: line-w;
-                                background: span.fg;
+                                x: 0px; y: uline-y + dbl-gap; width: parent.width;
+                                height: line-w; background: span.fg;
                             }
-                            // Strikethrough: line through the glyph centre.
+                            // Curly undercurl: Path with sine-wave SVG commands.
+                            if span.underline == 3 : Path {
+                                x: 0px; y: uline-y - 2px; width: parent.width; height: 8px;
+                                stroke: span.fg; stroke-width: line-w;
+                                viewbox-width: 48; viewbox-height: 8;
+                                commands: "M 0 5 Q 3 -1 6 5 T 12 5 T 18 5 T 24 5 T 30 5 T 36 5 T 42 5 T 48 5";
+                            }
+                            // Dotted underline: repeating dot segments (8 per span).
+                            if span.underline == 4 : HorizontalLayout {
+                                spacing: 2px;
+                                for _ in 8 : Rectangle {
+                                    width: line-w; height: line-w;
+                                    border-radius: line-w / 2;
+                                    background: span.fg;
+                                }
+                            }
+                            // Dashed underline: repeating short segments (5 per span).
+                            if span.underline == 5 : HorizontalLayout {
+                                spacing: 3px;
+                                for _ in 5 : Rectangle {
+                                    width: line-w * 4; height: line-w;
+                                    background: span.fg;
+                                }
+                            }
+                            // Strikethrough: line at estimated glyph centre.
                             if span.strike : Rectangle {
-                                x: 0px;
-                                y: parent.height / 2 - line-w / 2;
-                                width: parent.width;
-                                height: line-w;
-                                background: span.fg;
+                                x: 0px; y: strike-y; width: parent.width;
+                                height: line-w; background: span.fg;
                             }
                             // Overline (SGR 53, intercepted by the ingest layer).
                             if span.overline : Rectangle {
-                                x: 0px;
-                                y: 0px;
-                                width: parent.width;
-                                height: line-w;
-                                background: span.fg;
+                                x: 0px; y: 0px; width: parent.width;
+                                height: line-w; background: span.fg;
                             }
                         }
 
