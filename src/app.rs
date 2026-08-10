@@ -1031,7 +1031,7 @@ pub fn run() -> Result<()> {
     let external_fonts = crate::fonts::load_external_fonts(&crate::fonts::external_fonts_dir());
     // Populate the Interface font picker: embedded first, external next,
     // system monospace families last, each labelled with its source.
-    let (font_labels, font_entries) = font_choices(&external_fonts);
+    let (font_labels, font_entries) = font_choices(&external_fonts, true);
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(font_labels))));
     // Restore the saved family: find its index in the picker list (fall back
     // to the first selectable family when it isn't listed).
@@ -1042,6 +1042,21 @@ pub fn run() -> Result<()> {
         .or_else(|| font_entries.iter().position(|e| matches!(e, FontEntry::Family(_))))
         .unwrap_or(0);
     window.set_term_font_index(font_index as i32);
+
+    // UI font picker: embedded + external + system (proportional fonts allowed).
+    let (ui_labels, ui_entries) = font_choices(&external_fonts, false);
+    window.set_ui_fonts(ModelRc::from(Rc::new(VecModel::from(ui_labels))));
+    // Restore saved UI font index (empty string = auto-detect).
+    let ui_saved = store.borrow().ui_font_family().to_string();
+    let ui_index = if ui_saved.is_empty() {
+        0 // "auto" position — first header
+    } else {
+        ui_entries
+            .iter()
+            .position(|e| matches!(e, FontEntry::Family(f) if *f == ui_saved))
+            .unwrap_or(0)
+    };
+    window.set_ui_font_index(ui_index as i32);
 
     // Command bar (#55): seed quick commands + history from the config. Groups
     // start collapsed by default (#55).
@@ -1452,6 +1467,23 @@ pub fn run() -> Result<()> {
             if let Some(w) = weak.upgrade() {
                 w.set_term_font_family(family.into());
                 w.set_term_font_cjk(term_font_covers_cjk(family));
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_ui_font(move |label: SharedString| {
+            let Some(family) = family_from_label(&label) else {
+                return;
+            };
+            {
+                let mut s = store.borrow_mut();
+                s.set_ui_font_family(family.to_string());
+                let _ = s.save();
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_ui_font_family(family.into());
             }
         });
     }
@@ -10009,6 +10041,17 @@ fn term_font_covers_cjk(family: &str) -> bool {
 fn resolve_ui_font_family() -> slint::SharedString {
     use fontdb::{Database, Family, Query, Stretch, Style, Weight};
 
+    // User has picked a UI font in settings → use it unconditionally.
+    let saved = HISTORY_STORE.with(|s| {
+        s.borrow().as_ref()
+            .map(|st| st.borrow().ui_font_family().to_owned())
+            .unwrap_or_default()
+    });
+    if !saved.is_empty() {
+        tracing::debug!(font = %saved, "ui-font: using saved preference");
+        return saved.into();
+    }
+
     // Diagnostic / escape hatch (#129): force a specific UI font without a rebuild.
     // e.g. MEATSHELL_UI_FONT="Meatshell Mono" to test whether the embedded font
     // renders when system fonts don't. Empty value is ignored.
@@ -10134,7 +10177,9 @@ enum FontEntry {
 ///
 /// Returns `(labels, entries)` — parallel vectors, `entries` used to map a
 /// saved family back to its list index.
-fn font_choices(external: &[String]) -> (Vec<slint::SharedString>, Vec<FontEntry>) {
+/// When `monospace_filter` is false, all system fonts are included (for UI
+/// font picker); when true, only monospace families (for terminal font picker).
+fn font_choices(external: &[String], monospace_filter: bool) -> (Vec<slint::SharedString>, Vec<FontEntry>) {
     let mut labels: Vec<slint::SharedString> = Vec::new();
     let mut entries: Vec<FontEntry> = Vec::new();
     let mut known: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -10166,7 +10211,12 @@ fn font_choices(external: &[String]) -> (Vec<slint::SharedString>, Vec<FontEntry
         push_family(family, &mut labels, &mut entries, &mut known);
     }
     push_header("系统字体", &mut labels, &mut entries);
-    for family in crate::fonts::system_monospace_families() {
+    let sys = if monospace_filter {
+        crate::fonts::system_monospace_families()
+    } else {
+        crate::fonts::system_families()
+    };
+    for family in sys {
         push_family(&family, &mut labels, &mut entries, &mut known);
     }
     (labels, entries)

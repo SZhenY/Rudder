@@ -672,6 +672,10 @@ pub struct ConfigFile {
     /// Terminal font family. Empty = the built-in default ("Meatshell Mono").
     #[serde(default)]
     pub font_family: String,
+    /// UI font family for the application interface (menus, settings, dialogs).
+    /// Empty = auto-detect the best system CJK font at startup.
+    #[serde(default)]
+    pub ui_font_family: String,
     /// Terminal font size in px. 0 = the built-in default.
     #[serde(default)]
     pub font_size: u32,
@@ -1185,6 +1189,19 @@ impl ConfigStore {
 
     pub fn set_font_family(&mut self, family: String) {
         self.cache.font_family = family;
+    }
+
+    /// UI font family (empty = auto-detect at startup).
+    pub fn ui_font_family(&self) -> &str {
+        if self.cache.ui_font_family.is_empty() {
+            ""
+        } else {
+            &self.cache.ui_font_family
+        }
+    }
+
+    pub fn set_ui_font_family(&mut self, family: String) {
+        self.cache.ui_font_family = family;
     }
 
     /// Terminal font size in px (falls back to 13 when unset).

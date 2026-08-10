@@ -97,6 +97,21 @@ pub(crate) fn system_monospace_families() -> Vec<String> {
     names
 }
 
+/// All families installed on the system (not limited to monospace), for the
+/// UI font picker. The UI can use proportional fonts since its text is
+/// naturally laid out (not grid-aligned like terminal cells).
+pub(crate) fn system_families() -> Vec<String> {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    let mut names: Vec<String> = db
+        .faces()
+        .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// Ensure the fonts dir exists and register every font file in it with
 /// Slint's shared collection. Returns the registered family names
 /// (deduplicated, sorted) for the Settings font picker.

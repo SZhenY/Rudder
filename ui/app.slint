@@ -459,6 +459,9 @@ export component AppWindow inherits Window {
     in-out property <float> wallpaper-overlay <=> Theme.panel-alpha;
     callback persist-wallpaper-overlay(float);
     in property <[string]> term-fonts;             // installed monospace families
+    in property <[string]> ui-fonts;              // all families for UI font picker
+    in property <int> ui-font-index: 0;           // picker selection into ui-fonts
+    callback set-ui-font(string);                  // persist UI font choice
     in-out property <bool> interface-open: false;  // Interface settings overlay
     // Interface card position (draggable by its title bar, clamped inside the
     // window so it can't leave the parent); init centered.
@@ -3964,6 +3967,8 @@ export component AppWindow inherits Window {
                     term-fonts: root.term-fonts;
                     term-font-family: root.term-font-family;
                     term-font-index: root.term-font-index;
+                    ui-fonts: root.ui-fonts;
+                    ui-font-index: root.ui-font-index;
                     term-font-size: root.term-font-size;
                     term-font-bold: root.term-font-bold;
                     term-cursor-style <=> root.term-cursor-style;
@@ -4000,6 +4005,7 @@ export component AppWindow inherits Window {
                     set-wallpaper(v) => { root.set-wallpaper(v); }
                     pick-wallpaper-file() => { root.pick-wallpaper-file(); }
                     set-term-font(v) => { root.set-term-font(v); }
+                    set-ui-font(v) => { root.set-ui-font(v); }
                     set-term-font-size(v) => { root.set-term-font-size(v); }
                     set-term-font-bold(v) => { root.set-term-font-bold(v); }
                     set-term-cursor-style(v) => { root.set-term-cursor-style(v); }

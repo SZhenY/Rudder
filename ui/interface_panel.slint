@@ -359,6 +359,9 @@ export component InterfacePanel inherits Rectangle {
     in property <[string]> term-fonts;
     in property <string> term-font-family;
     in property <int> term-font-index: 0;   // picker selection; labels carry a source prefix
+    in property <[string]> ui-fonts;        // all font families for UI picker
+    in property <int> ui-font-index: 0;     // UI font picker selection
+    callback set-ui-font(string);            // persist UI font choice
     in property <length> term-font-size;
     in-out property <bool> term-font-bold;
     in-out property <string> term-cursor-style: "block";
@@ -868,6 +871,20 @@ export component InterfacePanel inherits Rectangle {
                 padding-top: 14px;
                 spacing: 0;
                 alignment: start;
+
+                SectionHeader { text: root.lang-en ? "UI FONT" : "界面字体"; height: 24px; }
+                SettingRow {
+                    label: root.lang-en ? "UI font" : "界面字体";
+                    desc: root.lang-en
+                        ? "Choose a font for menus, settings and dialogs. Changes take effect immediately."
+                        : "选择菜单、设置和对话框的字体。修改后即时生效。";
+                    ComboBox {
+                        width: 220px;
+                        model: root.ui-fonts;
+                        current-index: root.ui-font-index;
+                        selected(v) => { root.set-ui-font(v); }
+                    }
+                }
 
                 SectionHeader { text: root.lang-en ? "WALLPAPER" : "壁纸"; height: 24px; }
                 Text {
