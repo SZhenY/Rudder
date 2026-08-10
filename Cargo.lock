@@ -5316,7 +5316,7 @@ dependencies = [
 
 [[package]]
 name = "rudder"
-version = "0.6.10-beta4"
+version = "0.6.10-beta5"
 dependencies = [
  "aes",
  "alacritty_terminal",
