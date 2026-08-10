@@ -352,7 +352,6 @@ impl TermBuffer {
         if has_53 && !self.overline_active {
             self.overline_active = true;
             self.overline_start = Some((row, col));
-            eprintln!("OVERLINE start at row={row} col={col}");
         } else if !has_53 && self.overline_active {
             self.close_overline(row, col);
         }
@@ -386,16 +385,15 @@ impl TermBuffer {
         if let Some((r0, c0)) = self.overline_start.take() {
             let (_rows, cols) = term_size(&self.term);
             let cols = cols as i32;
-            let base = self.term.grid().history_size() as i64;
-            let abs = base + r0 as i64;
-            let total = self.term.grid().total_lines();
-            eprintln!(
-                "OVERLINE close: r0={r0} c0={c0} row={row} col={col} base={base} abs={abs} total={total}",
-            );
+            // Use the visible-row-relative coordinate directly (cursor_pos
+            // returns Line(0) = bottom of visible area).  Both close_overline
+            // and overline_segments use the same reference frame, so scrolling
+            // rotates the grid consistently for both sides.
+            let abs = r0 as i64;
             if row == r0 {
                 if col > c0 {
                     self.overline_ranges.push(OverlineRange {
-                        abs: base + r0 as i64,
+                        abs: r0 as i64,
                         col_start: c0,
                         col_end: col,
                     });
@@ -404,14 +402,14 @@ impl TermBuffer {
                 for r in r0..row {
                     let col_start = if r == r0 { c0 } else { 0 };
                     self.overline_ranges.push(OverlineRange {
-                        abs: base + r as i64,
+                        abs: r as i64,
                         col_start,
                         col_end: cols,
                     });
                 }
                 if col > 0 {
                     self.overline_ranges.push(OverlineRange {
-                        abs: base + row as i64,
+                        abs: row as i64,
                         col_start: 0,
                         col_end: col,
                     });
