@@ -54,6 +54,21 @@ fn overline_segments(
 ) -> Vec<(i32, i32)> {
     let abs = term.grid().history_size() as i64 + line as i64;
     let end = col + cells;
+    let matches: Vec<_> = overlines
+        .iter()
+        .filter(|r| r.abs == abs)
+        .collect();
+    if !matches.is_empty() {
+        eprintln!(
+            "OVERLINE segs: line={line} col={col} cells={cells} abs={abs} hist={} total={} matches={}",
+            term.grid().history_size(),
+            term.grid().total_lines(),
+            matches.len(),
+        );
+        for m in &matches {
+            eprintln!("  range: abs={} col_start={} col_end={}", m.abs, m.col_start, m.col_end);
+        }
+    }
     let mut segs: Vec<(i32, i32)> = overlines
         .iter()
         .filter(|r| r.abs == abs)
