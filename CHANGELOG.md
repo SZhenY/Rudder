@@ -21,6 +21,10 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 - **终端装饰线测试文件 / Terminal decoration test file**: `tests/terminal_chars_test.txt` 新增 19 组测试，覆盖单线/双线/点状/虚线/删除线/上划线及组合场景
 
+### 已知问题 / Known Issues
+
+- **波浪下划线 (SGR 4:3) 暂不支持 / Curly underline unsupported**: 因 Slint Path 在窄 span（CJK 单字符仅 2 cell）下波形过密导致视觉重叠，且 `fit: fill` 在不同宽度下缩放效果不一致，当前回退为单下划线。计划后续探索 Slint Path 或自定义 shader 方案后再实现
+
 ## [0.6.10-beta4] - 2026-08-09
 
 ### 修复 / Fixed
