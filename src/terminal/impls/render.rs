@@ -52,9 +52,7 @@ fn overline_segments(
     cells: i32,
     overlines: &[OverlineRange],
 ) -> Vec<(i32, i32)> {
-    // Visible-row-relative coordinate: same reference frame as
-    // close_overline (cursor_pos returns Line(0) = bottom of visible area).
-    let abs = line as i64;
+    let abs = term.grid().history_size() as i64 + line as i64;
     let end = col + cells;
     let mut segs: Vec<(i32, i32)> = overlines
         .iter()

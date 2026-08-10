@@ -820,8 +820,8 @@ export component TerminalView inherits Rectangle {
                             property <length> line-w: max(1px, Theme.term-font-size / 16);
                             property <length> ch: root.cell-h;
 
-                            // Single underline.
-                            if span.underline == 1 : Rectangle {
+                            // Single underline (+ curly fallback — curly is unsupported).
+                            if span.underline == 1 || span.underline == 3 : Rectangle {
                                 x: 0px; y: ch * 0.88; width: parent.width;
                                 height: line-w; background: span.fg;
                             }
@@ -832,23 +832,6 @@ export component TerminalView inherits Rectangle {
                             }
                             if span.underline == 2 : Rectangle {
                                 x: 0px; y: ch * 0.94; width: parent.width;
-                                height: line-w; background: span.fg;
-                            }
-                            // Curly undercurl: dense sawtooth wave for non-CJK spans.
-                            // CJK spans are typically only 2 cells wide (≈16 px);
-                            // 24 wave periods at that density visually merge into an
-                            // overlapping mess → fall back to a clean single underline.
-                            if span.underline == 3 && !span.cjk : Path {
-                                x: 0px; y: ch * 0.82; width: parent.width; height: ch * 0.18;
-                                stroke: span.fg; stroke-width: line-w;
-                                fit: fill; viewbox-width: 48; viewbox-height: 8;
-                                commands: "M 0 4 Q 1 0 2 4 T 4 4 T 6 4 T 8 4 T 10 4 T 12 4 T 14 4 T 16 4 T 18 4 T 20 4 T 22 4 T 24 4 T 26 4 T 28 4 T 30 4 T 32 4 T 34 4 T 36 4 T 38 4 T 40 4 T 42 4 T 44 4 T 46 4 T 48 4";
-                            }
-                            // CJK curly → single-underline fallback: CJK cells
-                            // are too narrow for the sawtooth wave to render
-                            // clearly (it merges into overlapping lines).
-                            if span.underline == 3 && span.cjk : Rectangle {
-                                x: 0px; y: ch * 0.88; width: parent.width;
                                 height: line-w; background: span.fg;
                             }
                             // Dotted underline: 60 tiny dots, clipped to span width.
