@@ -1,0 +1,61 @@
+========== Terminal Text Decoration Test ==========
+Usage: cat terminal_chars_test_raw.txt
+
+[1] Single Underline
+Normal [4munderlined[24m normal.
+
+[2] Double Underline
+Normal [21mdouble underlined[24m normal.
+
+[3] Curly Undercurl
+Normal [4:3mcurly undercurl[24m normal.
+
+[4] Dotted Underline
+Normal [4:4mdotted underline[24m normal.
+
+[5] Dashed Underline
+Normal [4:5mdashed underline[24m normal.
+
+[6] Strikethrough
+Normal [9mstrikethrough[29m normal.
+
+[7] Overline (SGR 53)
+Normal [53moverline[55m normal.
+
+[8] Bold + Underline
+[1mBOLD[4m+underline[0m normal.
+
+[9] Italic + Strikethrough
+[3mItalic[9m+strike[0m normal.
+
+[10] Underline + Strikethrough
+[4mUnderline[9m+strike[0m normal.
+
+[11] All: Bold+Under+Strike+Over
+[1m[4m[9m[53mBold+Under+Strike+Over[0m normal.
+
+[12] Long underlined (span many cells)
+[4mAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[24m
+
+[13] Long strikethrough
+[9mXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX[29m
+
+[14] Long overline
+[53m============================================================[55m
+
+[15] Mixed on one line
+[4msingle[24m [21mdouble[24m [4:3mcurly[24m [4:4mdotted[24m [4:5mdashed[24m [9mstrike[29m [53mover[55m
+
+[16] Double underline adjacent
+[21mAAAAAAAAAA[24m normal [21mBBBBBBBBBB[24m
+
+[17] Curly adjacent
+[4:3m~~~~~~~~~~[24m normal [4:3m~~~~~~~~~~[24m
+
+[18] Dotted vs Dashed same line
+[4:4m..... dots .....[24m [4:5m----- dash -----[24m
+
+[19] Overline adjacent
+[53m^^^^^^^^^^[55m normal [53m^^^^^^^^^^[55m
+
+========== End of decoration test ==========
