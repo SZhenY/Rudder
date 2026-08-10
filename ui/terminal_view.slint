@@ -837,8 +837,10 @@ export component TerminalView inherits Rectangle {
                             // Curly undercurl: dense sawtooth sine wave (24 periods
                             // per 48-viewbox-unit span) so short and long spans
                             // both produce sharp, visually-consistent waves.
+                            // y+height = ch*0.98 leaves 2% bottom margin to
+                            // avoid clip-edge cutoff on CJK spans (clip:true).
                             if span.underline == 3 : Path {
-                                x: 0px; y: ch * 0.82; width: parent.width; height: ch * 0.18;
+                                x: 0px; y: ch * 0.84; width: parent.width; height: ch * 0.14;
                                 stroke: span.fg; stroke-width: line-w;
                                 fit: fill; viewbox-width: 48; viewbox-height: 8;
                                 commands: "M 0 4 Q 1 0 2 4 T 4 4 T 6 4 T 8 4 T 10 4 T 12 4 T 14 4 T 16 4 T 18 4 T 20 4 T 22 4 T 24 4 T 26 4 T 28 4 T 30 4 T 32 4 T 34 4 T 36 4 T 38 4 T 40 4 T 42 4 T 44 4 T 46 4 T 48 4";
