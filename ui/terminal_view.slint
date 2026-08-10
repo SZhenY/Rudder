@@ -834,28 +834,39 @@ export component TerminalView inherits Rectangle {
                                 x: 0px; y: ch * 0.94; width: parent.width;
                                 height: line-w; background: span.fg;
                             }
-                            // Curly undercurl: Path with sine-wave SVG commands.
+                            // Curly undercurl: Path with sine-wave commands,
+                            // stretched to fill the full span width (fit: fill
+                            // overrides the default contain-aspect-ratio).
                             if span.underline == 3 : Path {
                                 x: 0px; y: ch * 0.86; width: parent.width; height: 8px;
                                 stroke: span.fg; stroke-width: line-w;
-                                viewbox-width: 48; viewbox-height: 8;
+                                fit: fill; viewbox-width: 48; viewbox-height: 8;
                                 commands: "M 0 5 Q 3 -1 6 5 T 12 5 T 18 5 T 24 5 T 30 5 T 36 5 T 42 5 T 48 5";
                             }
-                            // Dotted underline.
-                            if span.underline == 4 : HorizontalLayout {
-                                y: ch * 0.90; spacing: 2px;
-                                for _ in 8 : Rectangle {
-                                    width: line-w; height: line-w;
-                                    border-radius: line-w / 2;
-                                    background: span.fg;
+                            // Dotted underline: many dot segments wrapped in a
+                            // clipped Rectangle so extras beyond parent.width are hidden.
+                            if span.underline == 4 : Rectangle {
+                                y: ch * 0.90; width: parent.width; height: line-w;
+                                clip: true;
+                                HorizontalLayout {
+                                    spacing: 2px;
+                                    for _ in 30 : Rectangle {
+                                        width: line-w; height: line-w;
+                                        border-radius: line-w / 2;
+                                        background: span.fg;
+                                    }
                                 }
                             }
-                            // Dashed underline.
-                            if span.underline == 5 : HorizontalLayout {
-                                y: ch * 0.90; spacing: 3px;
-                                for _ in 5 : Rectangle {
-                                    width: line-w * 4; height: line-w;
-                                    background: span.fg;
+                            // Dashed underline: many dash segments, clipped.
+                            if span.underline == 5 : Rectangle {
+                                y: ch * 0.90; width: parent.width; height: line-w;
+                                clip: true;
+                                HorizontalLayout {
+                                    spacing: 3px;
+                                    for _ in 15 : Rectangle {
+                                        width: line-w * 4; height: line-w;
+                                        background: span.fg;
+                                    }
                                 }
                             }
                             // Strikethrough: line at estimated glyph centre.
