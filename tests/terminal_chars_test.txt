@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Test script for terminal text decorations.
+# Usage: bash terminal_chars_test.txt
+# Or generate the raw file for cat: bash terminal_chars_test.txt --raw
+
+if [ "$1" = "--raw" ]; then
+    exec > terminal_chars_test_raw.txt
+fi
+
+RESET="\033[0m"
+BOLD="\033[1m"
+DIM="\033[2m"
+ITALIC="\033[3m"
+
+# Underlines
+UNDERLINE="\033[4m"
+DOUBLE_UL="\033[21m"
+CURLY_UL="\033[4:3m"
+DOTTED_UL="\033[4:4m"
+DASHED_UL="\033[4:5m"
+UNDERLINE_OFF="\033[24m"
+
+# Strikethrough
+STRIKE="\033[9m"
+STRIKE_OFF="\033[29m"
+
+# Overline
+OVERLINE="\033[53m"
+OVERLINE_OFF="\033[55m"
+
+echo -e "============================================"
+echo -e "  Terminal Text Decoration Test"
+echo -e "  Run: bash terminal_chars_test.txt"
+echo -e "============================================"
+echo ""
+
+echo -e "${BOLD}[1] Single Underline${RESET}"
+echo -e "Normal text ${UNDERLINE}underlined${UNDERLINE_OFF} normal again."
+echo ""
+
+echo -e "${BOLD}[2] Double Underline${RESET}"
+echo -e "Normal text ${DOUBLE_UL}double underlined${UNDERLINE_OFF} normal again."
+echo ""
+
+echo -e "${BOLD}[3] Curly Undercurl${RESET}"
+echo -e "Normal text ${CURLY_UL}curly undercurl${UNDERLINE_OFF} normal again."
+echo ""
+
+echo -e "${BOLD}[4] Dotted Underline${RESET}"
+echo -e "Normal text ${DOTTED_UL}dotted underline${UNDERLINE_OFF} normal again."
+echo ""
+
+echo -e "${BOLD}[5] Dashed Underline${RESET}"
+echo -e "Normal text ${DASHED_UL}dashed underline${UNDERLINE_OFF} normal again."
+echo ""
+
+echo -e "${BOLD}[6] Strikethrough${RESET}"
+echo -e "Normal text ${STRIKE}strikethrough${STRIKE_OFF} normal again."
+echo ""
+
+echo -e "${BOLD}[7] Overline (SGR 53)${RESET}"
+echo -e "Normal text ${OVERLINE}overline${OVERLINE_OFF} normal again."
+echo ""
+
+echo -e "${BOLD}[8] Bold + Underline${RESET}"
+echo -e "${BOLD}BOLD${UNDERLINE}+underline${RESET} normal."
+echo ""
+
+echo -e "${BOLD}[9] Italic + Strikethrough${RESET}"
+echo -e "${ITALIC}Italic${STRIKE}+strike${RESET} normal."
+echo ""
+
+echo -e "${BOLD}[10] Underline + Strikethrough${RESET}"
+echo -e "${UNDERLINE}Underline${STRIKE}+strike${RESET} normal."
+echo ""
+
+echo -e "${BOLD}[11] All decorations${RESET}"
+echo -e "${BOLD}${UNDERLINE}${STRIKE}${OVERLINE}Bold+Under+Strike+Over${RESET} normal."
+echo ""
+
+echo -e "${BOLD}[12] Long decorated line${RESET}"
+echo -e "${UNDERLINE}This is a long underlined line that spans many columns to test decoration across cells.${UNDERLINE_OFF}"
+echo ""
+echo -e "${STRIKE}This is a long strikethrough line that spans many columns to test the line position.${STRIKE_OFF}"
+echo ""
+
+echo -e "${BOLD}[13] Mixed in one line${RESET}"
+echo -e "${UNDERLINE}single${UNDERLINE_OFF} ${DOUBLE_UL}double${UNDERLINE_OFF} ${CURLY_UL}curly${UNDERLINE_OFF} ${DOTTED_UL}dotted${UNDERLINE_OFF} ${DASHED_UL}dashed${UNDERLINE_OFF} ${STRIKE}strike${STRIKE_OFF} ${OVERLINE}over${OVERLINE_OFF}"
+echo ""
+
+echo -e "${BOLD}[14] Double underline adjacent${RESET}"
+echo -e "${DOUBLE_UL}AAAAAAAAAA${UNDERLINE_OFF} normal ${DOUBLE_UL}BBBBBBBBBB${UNDERLINE_OFF}"
+echo ""
+
+echo -e "${BOLD}[15] Curly underline adjacent${RESET}"
+echo -e "${CURLY_UL}~~~~~~~~~~${UNDERLINE_OFF} normal ${CURLY_UL}~~~~~~~~~~${UNDERLINE_OFF}"
+echo ""
+
+echo -e "${BOLD}[16] Dotted vs Dashed on same line${RESET}"
+echo -e "${DOTTED_UL}..... dots .....${UNDERLINE_OFF} ${DASHED_UL}----- dash -----${UNDERLINE_OFF}"
+echo ""
+
+echo ""
+echo -e "============================================"
+echo -e "  End of decoration test"
+echo -e "============================================"

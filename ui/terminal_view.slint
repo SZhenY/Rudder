@@ -811,48 +811,48 @@ export component TerminalView inherits Rectangle {
                                 source: span.emoji-image;
                                 image-fit: contain;
                             }
-                            // --- SGR text decorations (drawn as overlay lines;
                             // ── Text decorations ───────────────────────────
-                            // Adaptive line metrics: scale with font size.
+                            // line-w scales with font size for HiDPI.
+                            // All y-positions use root.cell-h (cell height), NOT
+                            // parent.height — Slint hoists property declarations
+                            // inside anonymous for-blocks to the component, so
+                            // parent.height would resolve to the grid viewport!
                             property <length> line-w: max(1px, Theme.term-font-size / 16);
-                            // Baseline-relative positions (ratio estimates).
-                            property <length> uline-y: parent.height * 0.88;
-                            property <length> strike-y: parent.height * 0.40;
-                            property <length> dbl-gap: max(1px, line-w * 1.5);
+                            property <length> ch: root.cell-h;
 
                             // Single underline.
                             if span.underline == 1 : Rectangle {
-                                x: 0px; y: uline-y; width: parent.width;
+                                x: 0px; y: ch * 0.88; width: parent.width;
                                 height: line-w; background: span.fg;
                             }
-                            // Double underline: two parallel lines around uline-y.
+                            // Double underline: two parallel lines.
                             if span.underline == 2 : Rectangle {
-                                x: 0px; y: uline-y - dbl-gap; width: parent.width;
+                                x: 0px; y: ch * 0.84; width: parent.width;
                                 height: line-w; background: span.fg;
                             }
                             if span.underline == 2 : Rectangle {
-                                x: 0px; y: uline-y + dbl-gap; width: parent.width;
+                                x: 0px; y: ch * 0.94; width: parent.width;
                                 height: line-w; background: span.fg;
                             }
                             // Curly undercurl: Path with sine-wave SVG commands.
                             if span.underline == 3 : Path {
-                                x: 0px; y: uline-y - 2px; width: parent.width; height: 8px;
+                                x: 0px; y: ch * 0.86; width: parent.width; height: 8px;
                                 stroke: span.fg; stroke-width: line-w;
                                 viewbox-width: 48; viewbox-height: 8;
                                 commands: "M 0 5 Q 3 -1 6 5 T 12 5 T 18 5 T 24 5 T 30 5 T 36 5 T 42 5 T 48 5";
                             }
-                            // Dotted underline: repeating dot segments (8 per span).
+                            // Dotted underline.
                             if span.underline == 4 : HorizontalLayout {
-                                spacing: 2px;
+                                y: ch * 0.90; spacing: 2px;
                                 for _ in 8 : Rectangle {
                                     width: line-w; height: line-w;
                                     border-radius: line-w / 2;
                                     background: span.fg;
                                 }
                             }
-                            // Dashed underline: repeating short segments (5 per span).
+                            // Dashed underline.
                             if span.underline == 5 : HorizontalLayout {
-                                spacing: 3px;
+                                y: ch * 0.90; spacing: 3px;
                                 for _ in 5 : Rectangle {
                                     width: line-w * 4; height: line-w;
                                     background: span.fg;
@@ -860,7 +860,7 @@ export component TerminalView inherits Rectangle {
                             }
                             // Strikethrough: line at estimated glyph centre.
                             if span.strike : Rectangle {
-                                x: 0px; y: strike-y; width: parent.width;
+                                x: 0px; y: ch * 0.40; width: parent.width;
                                 height: line-w; background: span.fg;
                             }
                             // Overline (SGR 53, intercepted by the ingest layer).
