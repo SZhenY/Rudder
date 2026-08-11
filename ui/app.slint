@@ -1207,12 +1207,16 @@ export component AppWindow inherits Window {
         height: parent.height
             - (!parent.welcome-horizontal ? parent.welcome-taken : 0px)
             - parent.quick-top - parent.quick-bottom;
-        // Animated sidebar extent — single source of truth for ALL layout.
-        // All elements (sidebar-shell, quick-area, ToolStrip) read from this
-        // one property, so they move in perfect lockstep (same value, same frame).
-        property <length> sb-taken: root.sidebar-collapsed ? 36px : root.sidebar-width;
+        // Sidebar extent along docked axis. When the welcome panel is expanded
+        // or both panels are collapsed and sharing a merged ToolStrip, the 36px
+        // strip is already reserved outside `rest` — do not reserve it twice.
+        property <length> sb-taken: dock-area.sidebar-strip-outside
+                || dock-area.combine-collapsed-tools ? 0px
+            : root.sidebar-collapsed ? 36px : root.sidebar-width;
         animate sb-taken { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
-        property <length> sb-h-taken: root.sidebar-collapsed ? 36px : root.sidebar-height;
+        property <length> sb-h-taken: dock-area.sidebar-strip-outside
+                || dock-area.combine-collapsed-tools ? 0px
+            : root.sidebar-collapsed ? 36px : root.sidebar-height;
         animate sb-h-taken { duration: 200ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
         property <length> sp: root.sidebar-collapsed ? 0px : 4px;
         property <length> bottom-strip-h: 0px;
