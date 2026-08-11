@@ -1837,16 +1837,28 @@ pub fn run() -> Result<()> {
                     lay.add_tab("welcome".into());
                 }
             }
-            if let Some(w) = weak.upgrade() {
-                refresh_panes(
-                    &w,
-                    &layout.borrow(),
-                    content_size.get(),
-                    &tabs_model,
-                    &panes_model,
-                    &splitters_model,
-                );
-            }
+            // Switching the property destroys the sidebar Welcome component and
+            // creates the tabbed one (or vice versa).  Defer the pane-model
+            // rebuild to the next event-loop turn so Slint never mutates that
+            // component tree recursively from inside the Switch callback (#323).
+            let weak = weak.clone();
+            let layout = layout.clone();
+            let content_size = content_size.clone();
+            let tabs_model = tabs_model.clone();
+            let panes_model = panes_model.clone();
+            let splitters_model = splitters_model.clone();
+            slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+                if let Some(w) = weak.upgrade() {
+                    refresh_panes(
+                        &w,
+                        &layout.borrow(),
+                        content_size.get(),
+                        &tabs_model,
+                        &panes_model,
+                        &splitters_model,
+                    );
+                }
+            });
         });
     }
     // Per-session SFTP state: collapse + sizes live in each tab's TerminalState so
