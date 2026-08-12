@@ -18,7 +18,6 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
 use russh::client::{self, Handler};
 use russh::keys::key::PrivateKeyWithHashAlg;
@@ -2255,7 +2254,6 @@ fn sftp_handler(session: &Session, events: &UnboundedSender<SessionEvent>) -> Sf
     }
 }
 
-#[async_trait]
 impl Handler for SftpClientHandler {
     type Error = russh::Error;
 
