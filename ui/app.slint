@@ -3537,24 +3537,20 @@ export component AppWindow inherits Window {
                 Rectangle {
                     width: parent.width - 48px;
                     height: 1px;
-                    background: Theme.border-dim;
+                    background: Theme.border-strong;
                 }
 
-                VerticalLayout {
+                Rectangle {
                     padding-top: 10px;
-                    spacing: 2px;
                     height: 164px;
                     clip: true;
-                    for lib in root.about-libs : Text {
-                        text: lib;
-                        color: Theme.text-muted;
-                        font-size: Theme.fs-xs;
-                    }
-                    TouchArea {
-                        width: 12px;
-                        height: 100%;
-                        x: parent.width - 14px;
-                        // Thumb not needed for simple scrolling via wheel
+                    VerticalLayout {
+                        spacing: 2px;
+                        for lib in root.about-libs : Text {
+                            text: lib;
+                            color: Theme.text-muted;
+                            font-size: Theme.fs-xs;
+                        }
                     }
                 }
             }
