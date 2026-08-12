@@ -38,7 +38,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-ut
 # ring backend avoids the optional rsa 0.10.0-rc.18 pre-release crate.
 # russh-keys is now merged into russh core; ssh-key 0.7.0-rc.11 is the
 # only remaining RC dep — in practical use by 153+ downstream crates.
-russh = { version = "0.62", default-features = false, features = ["ring"] }
+russh = { version = "0.62", default-features = false, features = ["ring", "async-trait", "des"] }
 ssh-key = "0.7.0-rc.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -397,12 +397,13 @@ async fn run_sftp(
     };
 
     // --- Authenticate (same method as the shell session) -------------------
-    let authed = match session.auth {
+    let authed: bool = match session.auth {
         AuthMethod::Password => {
-            let mut ok = handle
+            let auth_result = handle
                 .authenticate_password(&user, password.as_str())
                 .await
                 .context("sftp password auth failed")?;
+            let mut ok = matches!(auth_result, russh::client::AuthResult::Success);
             if !ok {
                 // Match the shell session's fallback: russh can hang if a second
                 // auth method is attempted on the same failed handle, so reconnect
@@ -483,12 +484,12 @@ async fn run_sftp(
             let keypair = crate::ssh::load_session_private_key(&session, pass)?;
             // RSA keys need an explicit SHA-2 hash; other key types don't.
             let hash = keypair.algorithm().is_rsa().then_some(HashAlg::Sha256);
-            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash)
-                .context("invalid private key")?;
-            handle
+            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash);
+            let auth_result = handle
                 .authenticate_publickey(&user, key_with_hash)
                 .await
-                .context("sftp publickey auth failed")?
+                .context("sftp publickey auth failed")?;
+            matches!(auth_result, russh::client::AuthResult::Success)
         }
     };
 
