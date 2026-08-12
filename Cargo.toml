@@ -31,7 +31,7 @@ regex = "1"
 anyhow = "1"
 directories = "5"
 chrono = "0.4"
-sysinfo = "0.38"
+sysinfo = { version = "0.38", default-features = false }
 uuid = { version = "1", features = ["v4", "serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs"] }
 # russh 0.62 fixes 7 CVEs (RUSTSEC-2026-0154 et al.).
@@ -94,7 +94,7 @@ dark-light = "1"
 # Lightweight synchronous HTTPS client (bundled rustls, no OpenSSL) for the
 # in-app update check against the GitHub releases API (#48). Runs on a
 # background thread so it never blocks startup; failure is silently ignored.
-ureq = { version = "2", features = ["tls"] }
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 # Image decoding: custom wallpapers (PNG/JPEG/WebP/BMP) for the immersive theme,
 # and the embedded PNG window icon on Linux. On Windows the icon comes from the
@@ -130,7 +130,7 @@ tempfile = "3"
 opt-level = 3                # Speed: our code (Slint animations, terminal rendering)
 lto = "fat"                  # Fat LTO: maximum dead-code & cross-crate optimisation
 codegen-units = 1            # Single CGU: best optimisation
-strip = "debuginfo"          # Strip all debug info (not just symbols)
+strip = true                  # Strip symbols + debuginfo (max size reduction)
 panic = "abort"              # No unwinding tables
 overflow-checks = false
 
