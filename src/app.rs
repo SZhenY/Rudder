@@ -400,7 +400,7 @@ fn apply_window_chrome(window: &slint::Window) {
         let hwnd = h.hwnd.get();
 
         #[link(name = "dwmapi")]
-        extern "system" {
+        unsafe extern "system" {
             fn DwmSetWindowAttribute(
                 hwnd: isize,
                 attr: u32,
@@ -2886,7 +2886,7 @@ fn center_window(win: &AppWindow) {
         bottom: i32,
     }
     #[link(name = "user32")]
-    extern "system" {
+    unsafe extern "system" {
         fn SystemParametersInfoW(action: u32, uiparam: u32, pvparam: *mut Rect, winini: u32)
             -> i32;
     }
@@ -3190,7 +3190,7 @@ fn cursor_pos() -> Option<(i32, i32)> {
         x: i32,
         y: i32,
     }
-    extern "system" {
+    unsafe extern "system" {
         fn GetCursorPos(p: *mut Point) -> i32;
     }
     let mut p = Point { x: 0, y: 0 };
