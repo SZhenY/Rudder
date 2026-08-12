@@ -3408,12 +3408,13 @@ export component AppWindow inherits Window {
         background: #00000080;            // dim backdrop
         TouchArea { clicked => { root.about-open = false; } }
 
-        // Landscape card: logo on the left, a short intro + repo link on the right.
+        // Landscape card: logo on the left, a short intro + repo link on the right,
+        // plus a scrollable open-source library list below.
         Rectangle {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            width: 520px;
-            height: 188px;
+            width: 540px;
+            height: min(420px, parent.height - 40px);
             background: Theme.bg-panel;
             border-radius: Theme.radius-lg;
             border-width: 1px;
@@ -3523,6 +3524,37 @@ export component AppWindow inherits Window {
                         text: "MIT / Apache-2.0";
                         color: Theme.text-muted;
                         font-size: Theme.fs-xs;
+                    }
+                }
+            }
+
+            // --- Open-source library versions (scrollable) ---
+            if root.about-libs.length > 0 : VerticalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-bottom: 16px;
+
+                Rectangle {
+                    width: parent.width - 48px;
+                    height: 1px;
+                    background: Theme.border-dim;
+                }
+
+                VerticalLayout {
+                    padding-top: 10px;
+                    spacing: 2px;
+                    height: 164px;
+                    clip: true;
+                    for lib in root.about-libs : Text {
+                        text: lib;
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-xs;
+                    }
+                    TouchArea {
+                        width: 12px;
+                        height: 100%;
+                        x: parent.width - 14px;
+                        // Thumb not needed for simple scrolling via wheel
                     }
                 }
             }
