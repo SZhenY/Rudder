@@ -239,7 +239,7 @@ pub(crate) fn c0_letter_key_down(codepoint: u32) -> bool {
     }
     let virtual_key = (codepoint + 0x40) as i32;
     #[allow(non_snake_case)]
-    extern "system" {
+    unsafe extern "system" {
         fn GetKeyState(nVirtKey: i32) -> i16;
     }
     unsafe { (GetKeyState(virtual_key) as u16) & 0x8000 != 0 }

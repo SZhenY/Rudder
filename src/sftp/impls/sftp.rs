@@ -1528,7 +1528,7 @@ fn open_with_os(path: &str) {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     #[link(name = "shell32")]
-    extern "system" {
+    unsafe extern "system" {
         fn ShellExecuteW(
             hwnd: isize,
             lp_operation: *const u16,
