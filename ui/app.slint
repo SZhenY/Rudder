@@ -3408,13 +3408,11 @@ export component AppWindow inherits Window {
         background: #00000080;            // dim backdrop
         TouchArea { clicked => { root.about-open = false; } }
 
-        // Landscape card: logo on the left, a short intro + repo link on the right,
-        // plus a scrollable open-source library list below.
         Rectangle {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             width: 540px;
-            height: min(420px, parent.height - 40px);
+            height: min(440px, parent.height - 40px);
             background: Theme.bg-panel;
             border-radius: Theme.radius-lg;
             border-width: 1px;
@@ -3422,13 +3420,12 @@ export component AppWindow inherits Window {
             drop-shadow-blur: 24px;
             drop-shadow-color: #000000a0;
 
-            // Swallow clicks so the backdrop doesn't close when clicking inside.
+            // Swallow clicks inside the card
             TouchArea {}
 
-            // Close (×) in the top-right corner.
+            // Close (×) button
             Rectangle {
-                x: parent.width - 30px;
-                y: 8px;
+                x: parent.width - 30px; y: 8px;
                 width: 22px; height: 22px;
                 border-radius: Theme.radius-sm;
                 background: ab-close-ta.has-hover ? Theme.bg-hover : transparent;
@@ -3441,112 +3438,99 @@ export component AppWindow inherits Window {
                        horizontal-alignment: center; vertical-alignment: center; }
             }
 
-            HorizontalLayout {
+            VerticalLayout {
                 padding: 24px;
-                spacing: 20px;
+                padding-bottom: 16px;
+                spacing: 0px;
 
-                VerticalLayout {
-                    alignment: center;
-                    Image {
-                        source: @image-url("../assets/icon.png");
-                        width: 76px;
-                        height: 76px;
+                // --- Top row: logo + info ---
+                HorizontalLayout {
+                    spacing: 20px;
+                    VerticalLayout {
+                        alignment: center;
+                        Image {
+                            source: @image-url("../assets/icon.png");
+                            width: 76px; height: 76px;
+                        }
                     }
-                }
-
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 7px;
-                    horizontal-stretch: 1;
-
-                    HorizontalLayout {
-                        alignment: start;
-                        spacing: 8px;
-                        Text {
-                            text: "Rudder";
-                            color: Theme.text-primary;
-                            font-size: 22px;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    VerticalLayout {
+                        spacing: 7px;
+                        horizontal-stretch: 1;
+                        HorizontalLayout {
+                            alignment: start; spacing: 8px;
+                            Text {
+                                text: "Rudder";
+                                color: Theme.text-primary;
+                                font-size: 22px; font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: "v" + root.app-version;
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                vertical-alignment: center;
+                            }
                         }
                         Text {
-                            text: "v" + root.app-version;
-                            color: Theme.text-muted;
+                            text: @tr("Rudder — a lightweight Rust + Slint SSH client");
+                            color: Theme.text-secondary;
                             font-size: Theme.fs-sm;
-                            vertical-alignment: center;
+                            wrap: word-wrap;
                         }
-                    }
-
-                    Text {
-                        text: @tr("Rudder — a lightweight Rust + Slint SSH client");
-                        color: Theme.text-secondary;
-                        font-size: Theme.fs-sm;
-                        wrap: word-wrap;
-                    }
-
-                    Text {
-                        text: @tr("Forked from yituorou/meatshell");
-                        color: Theme.text-muted;
-                        font-size: 11px;
-                        vertical-alignment: center;
-                    }
-
-                    // Clickable open-source link → opens the GitHub page.
-                    HorizontalLayout {
-                        alignment: start;
-                        spacing: 6px;
                         Text {
-                            text: @tr("Open source");
+                            text: @tr("Forked from yituorou/meatshell");
                             color: Theme.text-muted;
-                            font-size: Theme.fs-sm;
+                            font-size: 11px;
                             vertical-alignment: center;
                         }
-                        Rectangle {
-                            border-radius: Theme.radius-sm;
-                            background: repo-ta.has-hover ? Theme.bg-hover : transparent;
-                            HorizontalLayout {
-                                padding-left: 4px; padding-right: 4px;
-                                Text {
-                                    text: "github.com/SZhenY/Rudder";
-                                    color: Theme.accent;
-                                    font-size: Theme.fs-sm;
-                                    vertical-alignment: center;
+                        HorizontalLayout {
+                            alignment: start; spacing: 6px;
+                            Text {
+                                text: @tr("Open source");
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                vertical-alignment: center;
+                            }
+                            Rectangle {
+                                border-radius: Theme.radius-sm;
+                                background: repo-ta.has-hover ? Theme.bg-hover : transparent;
+                                HorizontalLayout {
+                                    padding-left: 4px; padding-right: 4px;
+                                    Text {
+                                        text: "github.com/SZhenY/Rudder";
+                                        color: Theme.accent;
+                                        font-size: Theme.fs-sm;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                repo-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.open-repo(); }
                                 }
                             }
-                            repo-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { root.open-repo(); }
-                            }
+                        }
+                        Text {
+                            text: "MIT / Apache-2.0";
+                            color: Theme.text-muted;
+                            font-size: Theme.fs-xs;
                         }
                     }
-
-                    Text {
-                        text: "MIT / Apache-2.0";
-                        color: Theme.text-muted;
-                        font-size: Theme.fs-xs;
-                    }
                 }
-            }
 
-            // --- Open-source library versions (scrollable) ---
-            if root.about-libs.length > 0 : VerticalLayout {
-                padding-left: 24px;
-                padding-right: 24px;
-                padding-bottom: 16px;
-
-                Rectangle {
-                    width: parent.width - 48px;
+                // --- Divider + open-source library versions ---
+                if root.about-libs.length > 0 : Rectangle {
                     height: 1px;
                     background: Theme.border-strong;
                 }
-
-                Rectangle {
-                    height: 174px;
+                if root.about-libs.length > 0 : Rectangle {
+                    // Reserve remaining height for the scrollable list.
+                    // The top section is roughly 110px + padding, so leave ~270px.
+                    horizontal-stretch: 1;
                     clip: true;
                     VerticalLayout {
-                        y: 10px;
                         spacing: 2px;
-                        for lib in root.about-libs : Text {
+                        padding-top: 8px;
+                        for lib[i] in root.about-libs : Text {
                             text: lib;
                             color: Theme.text-muted;
                             font-size: Theme.fs-xs;
