@@ -2301,7 +2301,7 @@ pub fn run() -> Result<()> {
             SharedString::from(format!("winresource v{} — {}", get_ver("winresource"), zh("Windows 图标嵌入", "Windows icon embedding"))),
         ]
         .iter()
-        .map(|s| (*s).into())
+        .map(|s| s.clone().into())
         .collect();
         window.set_about_libs(ModelRc::from(Rc::new(VecModel::from(libs))));
     }
