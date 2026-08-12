@@ -2269,8 +2269,8 @@ pub fn run() -> Result<()> {
         let libs: Vec<SharedString> = [
             t("Slint — 图形界面框架 (GUI)", "Slint — GUI framework"),
             t(
-                "russh / russh-keys — SSH 协议实现",
-                "russh / russh-keys — SSH protocol",
+                "russh — SSH 协议实现",
+                "russh — SSH protocol",
             ),
             t(
                 "russh-sftp — SFTP 文件传输",

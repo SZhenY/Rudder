@@ -34,14 +34,12 @@ chrono = "0.4"
 sysinfo = "0.38"
 uuid = { version = "1", features = ["v4", "serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs"] }
-# Pinned to 0.49: RUSTSEC-2026-0154 (an unbounded-allocation DoS in russh's
-# ssh-AGENT frame parsing) is fixed only in >= 0.60.3, which drags in pre-release
-# crypto crates (ed25519-dalek 3.0.0-pre, aes-gcm 0.11.0-rc, 鈥?. Rudder never
-# uses the ssh-agent, so the advisory is not reachable here 鈥?see audit.toml.
-# Revisit the upgrade once russh's deps leave the -rc channel (cf. PR #151).
-russh = "0.49"
-russh-keys = "0.49"
-ssh-key = "0.6"
+# russh 0.62 fixes 7 CVEs (RUSTSEC-2026-0154 et al.).
+# ring backend avoids the optional rsa 0.10.0-rc.18 pre-release crate.
+# russh-keys is now merged into russh core; ssh-key 0.7.0-rc.11 is the
+# only remaining RC dep — in practical use by 153+ downstream crates.
+russh = { version = "0.62", default-features = false, features = ["ring"] }
+ssh-key = "0.7.0-rc.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rand = "0.8"

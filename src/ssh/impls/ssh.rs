@@ -8,7 +8,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
 use russh::client::{self, Handle, Handler, Msg};
 use russh::keys::key::PrivateKeyWithHashAlg;
 use russh::keys::{decode_secret_key, load_secret_key, PrivateKey};
@@ -1314,8 +1313,7 @@ pub(crate) async fn authenticate_session(
             // RSA keys must be signed with an explicit SHA-2 hash; every other
             // key type carries its own algorithm, so no override is needed.
             let hash = keypair.algorithm().is_rsa().then_some(HashAlg::Sha256);
-            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash)
-                .context("invalid private key / hash algorithm combination")?;
+            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash);
             handle
                 .authenticate_publickey(&user, key_with_hash)
                 .await
@@ -2900,7 +2898,7 @@ where
     for _ in 0..16 {
         match res {
             Kb::Success => return Ok(true),
-            Kb::Failure => return Ok(false),
+            Kb::Failure { .. } => return Ok(false),
             Kb::InfoRequest { prompts, .. } => {
                 let mut responses = Vec::with_capacity(prompts.len());
                 for p in &prompts {
@@ -3042,7 +3040,6 @@ pub(crate) async fn resolve_credentials(
     }
 }
 
-#[async_trait]
 impl Handler for ClientHandler {
     type Error = russh::Error;
 
