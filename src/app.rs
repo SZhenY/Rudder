@@ -2264,57 +2264,38 @@ pub fn run() -> Result<()> {
         });
     }
 
-    // Open-source libraries shown in the About popup.
+    // Open-source libraries with resolved versions, shown in the About popup.
+    // Versions are baked in at compile time by build.rs → $OUT_DIR/deps.rs.
     {
-        let libs: Vec<SharedString> = [
-            t("Slint — 图形界面框架 (GUI)", "Slint — GUI framework"),
-            t(
-                "russh — SSH 协议实现",
-                "russh — SSH protocol",
-            ),
-            t(
-                "russh-sftp — SFTP 文件传输",
-                "russh-sftp — SFTP file transfer",
-            ),
-            t("ssh-key — SSH 密钥解析", "ssh-key — SSH key parsing"),
-            t("tokio — 异步运行时", "tokio — async runtime"),
-            t(
-                "alacritty_terminal — 终端 (alacritty) 解析",
-                "alacritty_terminal — terminal emulator & parser",
-            ),
-            t(
-                "sysinfo — 本机资源采集",
-                "sysinfo — local resource sampling",
-            ),
-            t(
-                "serde / serde_json — 配置序列化",
-                "serde / serde_json — config serialization",
-            ),
-            t("arboard — 系统剪贴板", "arboard — system clipboard"),
-            t("rfd — 原生文件对话框", "rfd — native file dialogs"),
-            t(
-                "directories — 配置目录定位",
-                "directories — config dir lookup",
-            ),
-            t("chrono — 日期时间处理", "chrono — date/time handling"),
-            t("uuid — 唯一标识符", "uuid — unique identifiers"),
-            t(
-                "anyhow — 错误处理",
-                "anyhow — error handling",
-            ),
-            t(
-                "tracing / tracing-subscriber — 日志",
-                "tracing / tracing-subscriber — logging",
-            ),
-            t(
-                "futures / async-trait — 异步辅助",
-                "futures / async-trait — async helpers",
-            ),
-            t("rand — 随机数", "rand — randomness"),
-            t(
-                "winresource — Windows 图标/资源嵌入",
-                "winresource — Windows icon/resource embedding",
-            ),
+        let dep_versions = include!(concat!(env!("OUT_DIR"), "/deps.rs"));
+        let get_ver = |name: &str| -> &str {
+            dep_versions
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, v)| *v)
+                .unwrap_or("-")
+        };
+
+        let zh = crate::i18n::t;
+        let libs: Vec<SharedString> = vec![
+            SharedString::from(format!("Slint v{} — {}", get_ver("slint"), zh("图形界面框架", "GUI framework"))),
+            SharedString::from(format!("russh v{} — {}", get_ver("russh"), zh("SSH 协议实现", "SSH protocol"))),
+            SharedString::from(format!("russh-sftp v{} — {}", get_ver("russh-sftp"), zh("SFTP 文件传输", "SFTP file transfer"))),
+            SharedString::from(format!("ssh-key v{} — {}", get_ver("ssh-key"), zh("SSH 密钥解析", "SSH key parsing"))),
+            SharedString::from(format!("tokio v{} — {}", get_ver("tokio"), zh("异步运行时", "async runtime"))),
+            SharedString::from(format!("alacritty_terminal v{} — {}", get_ver("alacritty_terminal"), zh("终端模拟与解析", "terminal emulator & parser"))),
+            SharedString::from(format!("sysinfo v{} — {}", get_ver("sysinfo"), zh("本机资源采集", "local resource sampling"))),
+            SharedString::from(format!("serde v{} — {}", get_ver("serde"), zh("配置序列化", "config serialization"))),
+            SharedString::from(format!("arboard v{} — {}", get_ver("arboard"), zh("系统剪贴板", "system clipboard"))),
+            SharedString::from(format!("rfd v{} — {}", get_ver("rfd"), zh("原生文件对话框", "native file dialogs"))),
+            SharedString::from(format!("directories v{} — {}", get_ver("directories"), zh("配置目录定位", "config dir lookup"))),
+            SharedString::from(format!("chrono v{} — {}", get_ver("chrono"), zh("日期时间处理", "date/time handling"))),
+            SharedString::from(format!("uuid v{} — {}", get_ver("uuid"), zh("唯一标识符", "unique identifiers"))),
+            SharedString::from(format!("anyhow v{} — {}", get_ver("anyhow"), zh("错误处理", "error handling"))),
+            SharedString::from(format!("tracing v{} — {}", get_ver("tracing"), zh("日志", "logging"))),
+            SharedString::from(format!("futures v{} — {}", get_ver("futures"), zh("异步辅助", "async helpers"))),
+            SharedString::from(format!("rand v{} — {}", get_ver("rand"), zh("随机数", "randomness"))),
+            SharedString::from(format!("winresource v{} — {}", get_ver("winresource"), zh("Windows 图标嵌入", "Windows icon embedding"))),
         ]
         .iter()
         .map(|s| (*s).into())
