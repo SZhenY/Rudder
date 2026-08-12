@@ -116,16 +116,16 @@ open /Applications/rudder.app
 | 终端模拟      | [`alacritty_terminal`](https://crates.io/crates/alacritty_terminal) 0.26（VT/ANSI + 原生 scrollback/reflow） |
 | PTY           | `portable-pty` 0.9（跨平台伪终端）                                |
 | 异步运行时    | [`tokio`](https://tokio.rs) 1.x（rt-multi-thread）                |
-| SSH 协议      | [`russh`](https://crates.io/crates/russh) 0.49（纯 Rust，无 libssh） |
-| SFTP          | `russh-sftp` 2                                                     |
-| 系统指标      | [`sysinfo`](https://crates.io/crates/sysinfo) 0.33                 |
+| SSH 协议      | [`russh`](https://crates.io/crates/russh) 0.49（纯 Rust，无 libssh；0.62.6 升级分支 `russh-0.62` 待合入） |
+| SFTP          | `russh-sftp` 2.4                                                   |
+| 系统指标      | [`sysinfo`](https://crates.io/crates/sysinfo) 0.38                 |
 | 序列化        | `serde` + `serde_json`                                             |
 | 日志          | `tracing` + `tracing-subscriber`                                   |
 | 密码加密      | `chacha20poly1305`（会话密码）+ `aes`/`argon2`/`hmac`/`sha2`（PuTTY PPK） |
 | 表情符号      | `twemoji-assets` 1.5（内嵌 PNG）                                   |
 | 代理          | `tokio-socks` 5（SOCKS5）                                          |
 | 串口          | `serialport` 4                                                     |
-| 系统字体      | `fontdb` 0.16                                                     |
+| 系统字体      | `fontdb` 0.23                                                      |
 | 图像解码      | `image` 0.25（PNG/JPEG/WebP/BMP 壁纸）                             |
 
 ## 运行
@@ -142,7 +142,7 @@ cargo run --release
 ```
 rudder/
 ├── Cargo.toml
-├── build.rs                     # Slint 编译器入口
+├── build.rs                     # Slint 编译 + 依赖版本生成
 ├── ui/                          # Slint 界面定义
 │   ├── app.slint                # 顶层窗口
 │   ├── terminal_view.slint      # 终端视图 + SFTP dock

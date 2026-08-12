@@ -11,11 +11,24 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **文本装饰线重构 / Text decoration overhaul**: 下划线、删除线、上划线、双下划线、点状线、虚线改用字体自适应线宽 (`max(1px, font-size/16)`)，HiDPI 下线条不再过细；各装饰线位置改为基于 cell 高度比例定位
 - **点状下划线 (SGR 4:4) / Dotted underline**: 60 段小圆点填充 span 宽度，clip 裁剪溢出
 - **虚线下划线 (SGR 4:5) / Dashed underline**: 25 段短线填充 span 宽度，clip 裁剪溢出
+- **关于对话框显示依赖版本 / About dialog shows dep versions**: 每次编译时 build.rs 解析 Cargo.lock 自动生成依赖列表及其版本号，在关于界面的开源许可信息下方以滚动列表展示
 
 ### 修复 / Fixed
 
 - **装饰线位置漂移 / Decoration position fix**: Slint 匿名 for 块内 `property` 声明的 `parent.height` 被提升到组件层解析为 viewport 高度，导致装饰线偏移到错误行。改用 `root.cell-h` 行内计算
 - **点状/虚线未覆盖完整 span / Dotted/dashed partial coverage**: 段数从 8/5 增至 60/25 确保覆盖宽 span
+- **欢迎页侧栏切换闪退（#323） / Welcome page sidebar crash**: 延迟 refresh_panes 到下一事件循环，避免递归重建界面导致 Windows 下闪退
+- **右侧面板重复收起栏占位 / Duplicate collapsed-strip spacing**: sb-taken 在 dock-area.sidebar-strip-outside 或 combine-collapsed-tools 为 true 时不再重复预留 36px
+
+### 优化 / Optimizations
+
+- **Rust edition 升级至 2024 / Rust 2024 edition**: `extern "system"` 块增加 `unsafe` 关键字；移除不必要的 `#[async_trait]`（russh 分支）
+- **依赖库升级 / Dependency upgrades**: sysinfo 0.33→0.38, fontdb 0.16→0.23, russh-sftp 2→2.4
+- **二进制体积优化 / Binary size**: `strip = true`, `panic = abort`; ureq/sysinfo/chrono `default-features = false` 减小最终体积
+
+### 开发 / Dev
+
+- **russh 0.62 升级分支 / russh 0.62 upgrade branch**: 在 `russh-0.62` 分支完成了 russh 0.49→0.62.6 的 API 迁移（修复 7 个 CVE），待 ssh-key 0.7 稳定后合入主线
 
 ### 测试 / Tests
 
