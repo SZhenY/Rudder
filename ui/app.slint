@@ -3541,10 +3541,10 @@ export component AppWindow inherits Window {
                 }
 
                 Rectangle {
-                    padding-top: 10px;
-                    height: 164px;
+                    height: 174px;
                     clip: true;
                     VerticalLayout {
+                        y: 10px;
                         spacing: 2px;
                         for lib in root.about-libs : Text {
                             text: lib;

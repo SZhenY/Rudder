@@ -160,6 +160,9 @@ use crate::config::{
 };
 use crate::i18n::t;
 use crate::layout::{LogicalRect, TerminalWheelHit};
+
+// Dependency versions baked in by build.rs → $OUT_DIR/deps.rs.
+include!(concat!(env!("OUT_DIR"), "/deps.rs"));
 use crate::resource::{
     LocalSnap, NetHist, TabStatus, TabStatuses,
 };
@@ -2265,11 +2268,11 @@ pub fn run() -> Result<()> {
     }
 
     // Open-source libraries with resolved versions, shown in the About popup.
-    // Versions are baked in at compile time by build.rs → $OUT_DIR/deps.rs.
+    // Versions are baked in at compile time by build.rs → $OUT_DIR/deps.rs
+    // (included as module-level `DEP_VERSIONS` above).
     {
-        let dep_versions = include!(concat!(env!("OUT_DIR"), "/deps.rs"));
         let get_ver = |name: &str| -> &str {
-            dep_versions
+            DEP_VERSIONS
                 .iter()
                 .find(|(n, _)| *n == name)
                 .map(|(_, v)| *v)
