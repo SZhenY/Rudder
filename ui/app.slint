@@ -36,7 +36,7 @@ import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_in
 import { InterfacePanel, OutputRuleItem } from "interface_panel.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
 export { ProcWindow, SystemInfoWindow }
-import { ComboBox, SpinBox, LineEdit, Button, ScrollView, CheckBox, Palette } from "std-widgets.slint";
+import { ComboBox, SpinBox, LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd }
 
@@ -3522,19 +3522,17 @@ export component AppWindow inherits Window {
                     height: 1px;
                     background: Theme.border-strong;
                 }
-                if root.about-libs.length > 0 : Rectangle {
-                    // Reserve remaining height for the scrollable list.
-                    // The top section is roughly 110px + padding, so leave ~270px.
-                    horizontal-stretch: 1;
-                    clip: true;
-                    VerticalLayout {
-                        spacing: 2px;
-                        padding-top: 8px;
-                        for lib[i] in root.about-libs : Text {
-                            text: lib;
-                            color: Theme.text-muted;
-                            font-size: Theme.fs-xs;
-                        }
+                if root.about-libs.length > 0 : ListView {
+                    // ListView virtualizes: only visible rows are instantiated,
+                    // and it provides its own scrollbar. `vertical-stretch`
+                    // makes it fill the remaining space below the intro, so the
+                    // About card never overflows regardless of UI font size.
+                    vertical-stretch: 1;
+                    min-height: 0px;
+                    for lib[i] in root.about-libs : Text {
+                        text: lib;
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-xs;
                     }
                 }
             }
