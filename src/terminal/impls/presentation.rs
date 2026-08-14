@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use crate::terminal::{CompiledOutputRule, HistSpan, OutputHighlightPreset, TermColor};
+use crate::terminal::{builtin_rules, CompiledOutputRule, HistSpan, OutputHighlightPreset, TermColor};
 use crate::ui::TermSpan;
 
 /// Highlight the first recognisable log-level token in each otherwise unstyled
@@ -14,6 +14,12 @@ pub(crate) fn highlight_plain_output(
 ) -> Vec<HistSpan> {
     if preset == OutputHighlightPreset::Off {
         return runs;
+    }
+    // Built-in (tailspin-style) preset: custom rules first, then the embedded
+    // pattern set. No log-level marker pass — it's an independent rule family.
+    if preset == OutputHighlightPreset::Builtin {
+        let runs = highlight_custom_output(runs, custom_rules);
+        return highlight_custom_output(runs, builtin_rules());
     }
     let runs = highlight_custom_output(runs, custom_rules);
     const SEARCH_COLS: i32 = 96;

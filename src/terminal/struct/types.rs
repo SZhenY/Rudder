@@ -67,6 +67,9 @@ pub(crate) enum OutputHighlightPreset {
     Off,
     Log,
     DevOps,
+    /// tailspin-style built-in rule set (numbers, URLs, IPs, UUIDs, dates,
+    /// key-value pairs, quoted strings, severity keywords, …).
+    Builtin,
 }
 
 #[derive(Clone)]

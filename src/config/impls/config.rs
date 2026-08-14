@@ -704,7 +704,7 @@ pub struct ConfigFile {
     /// output highlighter enabled by default.
     #[serde(default)]
     pub output_highlight_disabled: bool,
-    /// Built-in output highlight preset: "log" (default) or "devops".
+    /// Built-in output highlight preset: "log" (default), "devops", or "builtin".
     #[serde(default)]
     pub output_highlight_preset: String,
     /// User-defined rules applied before the selected built-in preset.
@@ -1311,6 +1311,7 @@ impl ConfigStore {
     pub fn output_highlight_preset(&self) -> &str {
         match self.cache.output_highlight_preset.as_str() {
             "devops" => "devops",
+            "builtin" => "builtin",
             _ => "log",
         }
     }
@@ -1318,6 +1319,7 @@ impl ConfigStore {
     pub fn set_output_highlight_preset(&mut self, preset: String) {
         self.cache.output_highlight_preset = match preset.as_str() {
             "devops" => "devops".to_string(),
+            "builtin" => "builtin".to_string(),
             _ => "log".to_string(),
         };
     }

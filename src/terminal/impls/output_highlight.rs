@@ -42,6 +42,8 @@ impl OutputHighlightPreset {
             Self::Off
         } else if preset == "devops" {
             Self::DevOps
+        } else if preset == "builtin" {
+            Self::Builtin
         } else {
             Self::Log
         }
