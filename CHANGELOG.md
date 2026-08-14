@@ -3,22 +3,18 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
-## [0.6.10-beta5] - 2026-08-10
+## [0.6.10-beta6] - 2026-08-14
 
 ### 新特性 / Features
 
-- **界面字体设置 / UI font picker**: 设置 → 外观新增"界面字体"下拉框（内嵌/外置/系统三组），用于菜单、设置、对话框等 UI 文字显示，独立于终端字体设置
-- **文本装饰线重构 / Text decoration overhaul**: 下划线、删除线、上划线、双下划线、点状线、虚线改用字体自适应线宽 (`max(1px, font-size/16)`)，HiDPI 下线条不再过细；各装饰线位置改为基于 cell 高度比例定位
-- **点状下划线 (SGR 4:4) / Dotted underline**: 60 段小圆点填充 span 宽度，clip 裁剪溢出
-- **虚线下划线 (SGR 4:5) / Dashed underline**: 25 段短线填充 span 宽度，clip 裁剪溢出
-- **关于对话框显示依赖版本 / About dialog shows dep versions**: 每次编译时 build.rs 解析 Cargo.lock 自动生成依赖列表及其版本号，在关于界面的开源许可信息下方以滚动列表展示
+- **关于对话框显示依赖版本 / About dialog shows dep versions**: 每次编译时 build.rs 解析 Cargo.lock 自动生成依赖列表及其版本号，在关于界面的开源许可信息下方以可滚动虚拟列表展示
 
 ### 修复 / Fixed
 
-- **装饰线位置漂移 / Decoration position fix**: Slint 匿名 for 块内 `property` 声明的 `parent.height` 被提升到组件层解析为 viewport 高度，导致装饰线偏移到错误行。改用 `root.cell-h` 行内计算
-- **点状/虚线未覆盖完整 span / Dotted/dashed partial coverage**: 段数从 8/5 增至 60/25 确保覆盖宽 span
 - **欢迎页侧栏切换闪退（#323） / Welcome page sidebar crash**: 延迟 refresh_panes 到下一事件循环，避免递归重建界面导致 Windows 下闪退
 - **右侧面板重复收起栏占位 / Duplicate collapsed-strip spacing**: sb-taken 在 dock-area.sidebar-strip-outside 或 combine-collapsed-tools 为 true 时不再重复预留 36px
+- **界面/终端字体下拉框未刷新选中项 / Font picker selection not refreshed**: 切换字体后关闭再打开设置，下拉框仍显示旧字体。索引属性由只读改为双向绑定（in-out + `<=>`），选择变化即时同步
+- **关于对话框依赖列表溢出 / About dep list overflow**: 部分 UI 字体下依赖库文字溢出卡片。改用 ListView 虚拟列表（仅实例化可见项 + 自带滚动条），并修正 vertical-stretch 布局
 
 ### 优化 / Optimizations
 
@@ -30,13 +26,27 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 - **russh 0.62 升级分支 / russh 0.62 upgrade branch**: 在 `russh-0.62` 分支完成了 russh 0.49→0.62.6 的 API 迁移（修复 7 个 CVE），待 ssh-key 0.7 稳定后合入主线
 
-### 测试 / Tests
-
-- **终端装饰线测试文件 / Terminal decoration test file**: `tests/terminal_chars_test.txt` 新增 19 组测试，覆盖单线/双线/点状/虚线/删除线/上划线及组合场景
-
 ### 已知问题 / Known Issues
 
 - **波浪下划线 (SGR 4:3) 暂不支持 / Curly underline unsupported**: 因 Slint Path 在窄 span（CJK 单字符仅 2 cell）下波形过密导致视觉重叠，且 `fit: fill` 在不同宽度下缩放效果不一致，当前回退为单下划线。计划后续探索 Slint Path 或自定义 shader 方案后再实现
+
+## [0.6.10-beta5] - 2026-08-10
+
+### 新特性 / Features
+
+- **界面字体设置 / UI font picker**: 设置 → 外观新增"界面字体"下拉框（内嵌/外置/系统三组），用于菜单、设置、对话框等 UI 文字显示，独立于终端字体设置
+- **文本装饰线重构 / Text decoration overhaul**: 下划线、删除线、上划线、双下划线、点状线、虚线改用字体自适应线宽 (`max(1px, font-size/16)`)，HiDPI 下线条不再过细；各装饰线位置改为基于 cell 高度比例定位
+- **点状下划线 (SGR 4:4) / Dotted underline**: 60 段小圆点填充 span 宽度，clip 裁剪溢出
+- **虚线下划线 (SGR 4:5) / Dashed underline**: 25 段短线填充 span 宽度，clip 裁剪溢出
+
+### 修复 / Fixed
+
+- **装饰线位置漂移 / Decoration position fix**: Slint 匿名 for 块内 `property` 声明的 `parent.height` 被提升到组件层解析为 viewport 高度，导致装饰线偏移到错误行。改用 `root.cell-h` 行内计算
+- **点状/虚线未覆盖完整 span / Dotted/dashed partial coverage**: 段数从 8/5 增至 60/25 确保覆盖宽 span
+
+### 测试 / Tests
+
+- **终端装饰线测试文件 / Terminal decoration test file**: `tests/terminal_chars_test.txt` 新增 19 组测试，覆盖单线/双线/点状/虚线/删除线/上划线及组合场景
 
 ## [0.6.10-beta4] - 2026-08-09
 
