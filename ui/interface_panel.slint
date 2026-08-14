@@ -358,9 +358,9 @@ export component InterfacePanel inherits Rectangle {
     in-out property <string> renderer-mode: "software";
     in property <[string]> term-fonts;
     in property <string> term-font-family;
-    in property <int> term-font-index: 0;   // picker selection; labels carry a source prefix
+    in-out property <int> term-font-index: 0;   // picker selection; labels carry a source prefix
     in property <[string]> ui-fonts;        // all font families for UI picker
-    in property <int> ui-font-index: 0;     // UI font picker selection
+    in-out property <int> ui-font-index: 0;     // UI font picker selection
     callback set-ui-font(string);            // persist UI font choice
     in property <length> term-font-size;
     in-out property <bool> term-font-bold;
@@ -520,7 +520,7 @@ export component InterfacePanel inherits Rectangle {
                     ComboBox {
                         width: 220px;
                         model: root.term-fonts;
-                        current-index: root.term-font-index;
+                        current-index <=> root.term-font-index;
                         selected(v) => { root.set-term-font(v); }
                     }
                 }
@@ -881,7 +881,7 @@ export component InterfacePanel inherits Rectangle {
                     ComboBox {
                         width: 220px;
                         model: root.ui-fonts;
-                        current-index: root.ui-font-index;
+                        current-index <=> root.ui-font-index;
                         selected(v) => { root.set-ui-font(v); }
                     }
                 }
