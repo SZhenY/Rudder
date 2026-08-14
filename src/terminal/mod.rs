@@ -15,6 +15,8 @@ mod render;
 mod render_gate;
 #[path = "impls/serial.rs"]
 pub(crate) mod serial;
+#[path = "impls/tailspin_rules.rs"]
+mod tailspin_rules;
 #[path = "impls/telnet.rs"]
 pub(crate) mod telnet;
 #[path = "impls/term_buffer.rs"]
@@ -37,6 +39,7 @@ pub(crate) use input::{
 pub(crate) use input::{windows_process_ctrl_release, CtrlKeySide};
 pub(crate) use output_highlight::compile_output_rules;
 pub(crate) use presentation::{highlight_plain_output, render_term_span};
+pub(crate) use tailspin_rules::builtin_rules;
 #[cfg(test)]
 pub(crate) use presentation::{log_level_marker, text_cell_width};
 pub(crate) use render::{

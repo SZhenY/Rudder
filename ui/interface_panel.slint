@@ -665,18 +665,27 @@ export component InterfacePanel inherits Rectangle {
                 SettingRow {
                     label: root.lang-en ? "Built-in rule set" : "内置规则集";
                     desc: root.lang-en
-                        ? "Log levels is conservative; DevOps also recognises deployment and health states."
-                        : "日志级别更保守；DevOps 还识别部署与健康状态。";
+                        ? "Log levels is conservative; DevOps recognises deployment states; Built-in highlights numbers, URLs, IPs, UUIDs, dates and more."
+                        : "日志级别更保守；DevOps 识别部署状态；内置规则高亮数字、URL、IP、UUID、日期等。";
                     show-divider: false;
                     ComboBox {
                         width: 190px;
                         enabled: root.output-highlight-enabled;
-                        model: [root.lang-en ? "Log levels" : "日志级别", "DevOps"];
+                        model: [
+                            root.lang-en ? "Log levels" : "日志级别",
+                            "DevOps",
+                            root.lang-en ? "Built-in rules" : "内置规则",
+                        ];
                         current-value: root.output-highlight-preset == "devops"
                             ? "DevOps"
-                            : (root.lang-en ? "Log levels" : "日志级别");
+                            : (root.output-highlight-preset == "builtin"
+                                ? (root.lang-en ? "Built-in rules" : "内置规则")
+                                : (root.lang-en ? "Log levels" : "日志级别"));
                         selected(v) => {
-                            root.output-highlight-preset = v == "DevOps" ? "devops" : "log";
+                            root.output-highlight-preset =
+                                v == "DevOps" ? "devops"
+                                : (v == (root.lang-en ? "Built-in rules" : "内置规则")
+                                    ? "builtin" : "log");
                             root.set-output-highlight(
                                 root.output-highlight-enabled,
                                 root.output-highlight-preset);
@@ -687,7 +696,7 @@ export component InterfacePanel inherits Rectangle {
                 Rectangle { height: 18px; }
                 SectionHeader { text: root.lang-en ? "PREVIEW" : "预览"; height: 22px; }
                 Rectangle {
-                    height: root.output-highlight-preset == "devops" ? 116px : 92px;
+                    height: root.output-highlight-preset == "devops" || root.output-highlight-preset == "builtin" ? 116px : 92px;
                     background: Theme.term-bg;
                     border-radius: 6px;
                     border-width: 1px;
@@ -695,11 +704,20 @@ export component InterfacePanel inherits Rectangle {
                     VerticalLayout {
                         padding: 12px;
                         spacing: 5px;
-                        Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.text-muted : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                        Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                        Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                        Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                        if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                        if root.output-highlight-preset == "builtin" : VerticalLayout {
+                            spacing: 5px;
+                            Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                            Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                            Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                        }
+                        if root.output-highlight-preset != "builtin" : VerticalLayout {
+                            spacing: 5px;
+                            Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.text-muted : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                            Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                            Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                            Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                            if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                        }
                     }
                 }
 

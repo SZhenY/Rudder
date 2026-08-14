@@ -10688,6 +10688,59 @@ mod log_highlight_tests {
         assert!(validate_output_highlight_rule("([", true, false).is_err());
         assert!(validate_output_highlight_rule("literal", false, false).is_ok());
     }
+
+    #[test]
+    fn builtin_preset_highlights_numbers_urls_ips_uuids_and_keywords() {
+        // Number → cyan (14)
+        let num = highlight_plain_output(
+            vec![plain_run("processed 42 records", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(num
+            .iter()
+            .any(|r| r.text == "42" && matches!(r.fg, TermColor::Idx(14))));
+
+        // URL → blue (12), including the port and path
+        let url = highlight_plain_output(
+            vec![plain_run("GET http://api.dev:8080/v1", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(url
+            .iter()
+            .any(|r| r.text.contains("http") && matches!(r.fg, TermColor::Idx(12))));
+
+        // IPv4 → blue (12)
+        let ip = highlight_plain_output(
+            vec![plain_run("client 192.168.1.100", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(ip.iter().any(
+            |r| r.text == "192.168.1.100" && matches!(r.fg, TermColor::Idx(12))
+        ));
+
+        // UUID → magenta (13)
+        let uuid = highlight_plain_output(
+            vec![plain_run("id=550e8400-e29b-41d4-a716-446655440000", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(uuid.iter().any(
+            |r| r.text.contains("550e8400") && matches!(r.fg, TermColor::Idx(13))
+        ));
+
+        // Severity keyword → red (9), case-insensitive
+        let kw = highlight_plain_output(
+            vec![plain_run("error failed", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(kw
+            .iter()
+            .any(|r| r.text == "error" && matches!(r.fg, TermColor::Idx(9))));
+    }
 }
 
 #[cfg(test)]
@@ -10713,7 +10766,7 @@ mod font_choice_tests {
     #[test]
     fn choices_list_built_embedded_external_system() {
         let external = vec!["外部字体 A".to_string(), "外部字体 B".to_string()];
-        let (labels, entries) = font_choices(&external);
+        let (labels, entries) = font_choices(&external, true);
         // Grouped layout: header, then indented families under it.
         assert!(matches!(&entries[0], FontEntry::Header("内嵌字体")));
         assert!(labels[0].as_str().starts_with("▍"));
