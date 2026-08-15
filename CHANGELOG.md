@@ -8,6 +8,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 ### 新特性 / Features
 
 - **关于对话框显示依赖版本 / About dialog shows dep versions**: 每次编译时 build.rs 解析 Cargo.lock 自动生成依赖列表及其版本号，在关于界面的开源许可信息下方以可滚动虚拟列表展示
+- **终端输出高亮规则集 / Terminal output highlight rules**: 新增 tailspin 风格的「Rudder 规则」内置高亮集，按语义分色高亮数字、URL、IP、UUID、日期时间、键值对、路径、提示符、严重级别关键词等；设置 → 界面 → 终端可切换规则集，并设为默认
+- **裸域名高亮 / Bare domain highlight**: 无协议前缀的多段域名（如 `www.baidu.com`、`mail.qq.com`）高亮为蓝色
 
 ### 修复 / Fixed
 
@@ -15,6 +17,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **右侧面板重复收起栏占位 / Duplicate collapsed-strip spacing**: sb-taken 在 dock-area.sidebar-strip-outside 或 combine-collapsed-tools 为 true 时不再重复预留 36px
 - **界面/终端字体下拉框未刷新选中项 / Font picker selection not refreshed**: 切换字体后关闭再打开设置，下拉框仍显示旧字体。索引属性由只读改为双向绑定（in-out + `<=>`），选择变化即时同步
 - **关于对话框依赖列表溢出 / About dep list overflow**: 部分 UI 字体下依赖库文字溢出卡片。改用 ListView 虚拟列表（仅实例化可见项 + 自带滚动条），并修正 vertical-stretch 布局
+- **选区首字符无法选中 / Selection first-character fix**: 拖选时选区起点（第一行第一个字符）总被跳过。改为根据鼠标在字符格内左右半边传入 Side，选区起止字符现在都能正确选中
+- **高亮颜色方案与匹配 / Highlight colour & matching**: 移除灰色（裸数字/指针不再把日期与 IPv6 拆成灰色碎片）；IPv6 支持 `::` 压缩形式；补充月名日期（`Aug 15`）、年份（`2026`）、百分比（`48%`）规则
 
 ### 优化 / Optimizations
 
