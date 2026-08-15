@@ -10727,6 +10727,28 @@ mod log_highlight_tests {
             .iter()
             .any(|r| r.text.contains("http") && matches!(r.fg, TermColor::Idx(12))));
 
+        // Bare domain without scheme → blue (12)
+        let domain = highlight_plain_output(
+            vec![plain_run("ping www.baidu.com", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(domain.iter().any(
+            |r| r.text == "www.baidu.com" && matches!(r.fg, TermColor::Idx(12))
+        ),
+            "bare domain www.baidu.com should be styled blue");
+
+        // A single-dot filename must NOT be mistaken for a domain.
+        let fname = highlight_plain_output(
+            vec![plain_run("-rw-r--r-- 1 root root 8388608 querylog.json", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(!fname.iter().any(
+            |r| r.text.contains("querylog.json") && matches!(r.fg, TermColor::Idx(12))
+        ),
+            "single-dot filename should not be styled as a domain");
+
         // IPv4 → blue (12)
         let ip = highlight_plain_output(
             vec![plain_run("client 192.168.1.100", 0)],
