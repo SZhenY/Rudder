@@ -40,6 +40,14 @@ static BUILTIN_RULES: LazyLock<Vec<CompiledOutputRule>> = LazyLock::new(|| {
             12,
             false,
         ),
+        // Bare domain without a scheme: `www.baidu.com`, `mail.qq.com`.
+        // Requires at least two dots so a bare filename (`querylog.json`,
+        // `sessions.db`) with a single dot is never mistaken for a domain.
+        (
+            r"\b(?:[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?\.){2,}[A-Za-z]{2,}\b",
+            12,
+            false,
+        ),
         // IPv4 (dotted quad)
         (r"\b(?:\d{1,3}\.){3}\d{1,3}\b", 12, false),
         // IPv6 — supports the `::` zero-compression form.  Requires at least
