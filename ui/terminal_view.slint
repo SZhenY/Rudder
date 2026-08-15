@@ -386,8 +386,8 @@ export component TerminalView inherits Rectangle {
     // arrow keys (alternate-scroll).
     callback terminal-wheel(int /* dir */, int /* col */, int /* row */);
     callback terminal-scroll-to(int);       // jump to an absolute scrollback offset (#103)
-    callback select-start(int, int, bool, bool); // row, col, ctrl, shift
-    callback select-update(int, int);       // extend drag-selection to (row, col)
+    callback select-start(int, int, bool, bool, bool); // row, col, left-half, ctrl, shift
+    callback select-update(int, int, bool);       // extend drag-selection to (row, col, left-half)
     callback select-end();                  // finish selection → copy to clipboard
     callback select-autoscroll(int);        // auto-scroll while dragging past edge (dir: -1 up / +1 down)
 
@@ -687,6 +687,7 @@ export component TerminalView inherits Rectangle {
                                         root.select-start(
                                             floor(self.mouse-y / root.cell-h),
                                             floor(self.mouse-x / root.cell-w),
+                                            self.mouse-x - root.cell-w * floor(self.mouse-x / root.cell-w) < root.cell-w / 2,
                                             ev.modifiers.control,
                                             ev.modifiers.shift);
                                     }
@@ -709,7 +710,8 @@ export component TerminalView inherits Rectangle {
                                     // at content y=8px; viewport-y offsets the scroll).
                                     root.select-update(
                                         floor(self.mouse-y / root.cell-h),
-                                        floor(self.mouse-x / root.cell-w));
+                                        floor(self.mouse-x / root.cell-w),
+                                        self.mouse-x - root.cell-w * floor(self.mouse-x / root.cell-w) < root.cell-w / 2);
                                     if (!root.is-alt-screen) {
                                         // vy = mouse position inside the visible window.
                                         // Only auto-scroll once the drag actually leaves
@@ -914,6 +916,7 @@ export component TerminalView inherits Rectangle {
                                         root.select-start(
                                             floor(self.mouse-y / root.cell-h),
                                             floor(self.mouse-x / root.cell-w),
+                                            self.mouse-x - root.cell-w * floor(self.mouse-x / root.cell-w) < root.cell-w / 2,
                                             ev.modifiers.control,
                                             ev.modifiers.shift);
                                     }
@@ -933,7 +936,8 @@ export component TerminalView inherits Rectangle {
                                 if (root.selecting) {
                                     root.select-update(
                                         floor(self.mouse-y / root.cell-h),
-                                        floor(self.mouse-x / root.cell-w));
+                                        floor(self.mouse-x / root.cell-w),
+                                        self.mouse-x - root.cell-w * floor(self.mouse-x / root.cell-w) < root.cell-w / 2);
                                     if (!root.is-alt-screen) {
                                         root.vis-y = self.mouse-y + 8px + flickable.viewport-y;
                                         if (root.vis-y < 0) {

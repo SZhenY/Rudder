@@ -7,21 +7,26 @@
 //! pipeline, which already colours `HistSpan::fg` while preserving `bg` and the
 //! bold/italic flags.
 //!
+//! Colour scheme (xterm-256 indices, matching `highlight_color_index`):
+//!   9 = red (errors), 10 = green (values/success), 11 = yellow (time/warning),
+//!   12 = blue (network), 13 = magenta (identifiers), 14 = cyan (paths/info).
+//! Grey is deliberately **not** used — it reads as "disabled" and hurts the
+//! otherwise colourful terminal palette.
+//!
 //! Order matters: `highlight_custom_output` only recolours runs whose `fg` is
 //! still `Default`, so earlier rules win.  Specific rules (URL, IP, UUID, date,
-//! sized numbers, paths) therefore run before generic ones (bare number) so a
-//! generic rule never claims the digits inside a specific token.
+//! sized numbers, paths) therefore run before generic ones, and there is no
+//! catch-all "bare number" rule — plain digits stay in the default colour so a
+//! date or IPv6 hex group is never split into an ugly grey fragment.
 
 use std::sync::LazyLock;
 
 use crate::terminal::CompiledOutputRule;
 
-/// xterm-256 indices matching `highlight_color_index` in `output_highlight.rs`.
-/// 8 = gray, 9 = red, 10 = green, 11 = yellow, 12 = blue, 13 = magenta, 14 = cyan.
 static BUILTIN_RULES: LazyLock<Vec<CompiledOutputRule>> = LazyLock::new(|| {
     // (pattern, colour, case_insensitive)
     const RULES: &[(&str, u8, bool)] = &[
-        // --- structured tokens (most specific first) -----------------------
+        // --- network (blue) -------------------------------------------------
         // URL: http(s)://host[:port][/path]
         (
             r"https?://[A-Za-z0-9._~\-]+(?::\d{1,5})?(?:/[^\s]*)?",
@@ -35,45 +40,58 @@ static BUILTIN_RULES: LazyLock<Vec<CompiledOutputRule>> = LazyLock::new(|| {
             12,
             false,
         ),
-        // IPv4 (dotted quad; tailspin additionally range-checks octets, but a
-        // permissive match is enough for colouring)
+        // IPv4 (dotted quad)
         (r"\b(?:\d{1,3}\.){3}\d{1,3}\b", 12, false),
-        // IPv6 (heuristic: 2+ colon-separated hex groups)
-        (r"\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b", 12, false),
+        // IPv6 — supports the `::` zero-compression form.  Requires at least
+        // three `:group` segments so a plain clock (`10:44:22`) is never
+        // mistaken for an address.  `fe80::f0da:145:b458:4e3e` matches whole.
+        (r"\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){3,}\b", 12, false),
         // UUID (8-4-4-4-12)
         (
             r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
             13,
             false,
         ),
-        // ISO date (2026-08-14)
+        // --- date & time (yellow) ------------------------------------------
+        // ISO date (2026-08-15)
         (r"\b\d{4}-\d{2}-\d{2}\b", 11, false),
+        // Month-name date (Aug 15, Sep 3) — e.g. `ll` / `date` output
+        (
+            r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}\b",
+            11,
+            true,
+        ),
         // clock time (HH:MM:SS, optional fractional)
         (
             r"\b(?:[01]?\d|2[0-3]):[0-5]\d:[0-5]\d(?:[.,:]\d+)?\b",
             11,
             false,
         ),
-        // --- sized numbers (must run before the bare-number rule, otherwise
-        //     `1.9G` matches only `1` because `9G` is not a word boundary) ---
-        // Storage size: 1.9G / 391M / 6.7G / 3.2G / 40M / 1.5K / 2.3GiB
-        (r"\b\d+(?:\.\d+)?[KMGTPE](?:i?B)?\b", 14, false),
+        // 4-digit year (1900-2099) — `date` prints a trailing year
+        (r"\b(?:19|20)\d{2}\b", 11, false),
+        // --- sized numbers (green, distinct from paths) ---------------------
+        // Storage size: 1.9G / 391M / 6.7G / 40M / 1.5K / 2.3GiB
+        (r"\b\d+(?:\.\d+)?[KMGTPE](?:i?B)?\b", 10, false),
         // Duration: 150ms / 2.5s / 30min / 1h / 3d
         (
             r"\b\d+(?:\.\d+)?\s?(?:ns|us|µs|ms|s|sec|min|hr|h|d)\b",
             11,
             false,
         ),
-        // memory pointer (0x7ffe...)
-        (r"\b0x[0-9a-fA-F]+\b", 8, false),
-        // --- Unix path: accepts the bare root `/` (a common mount point in
-        //     `df`/`mount` output) and paths following a prompt colon, e.g.
-        //     `ne@fnnas:/vol1/1000/...`.  `:` and `=` anchors cover prompt and
-        //     `key=/path` forms. -------------------------------------------
-        (r"(?:^|[\s:=])/(?:[\w.\-]+(?:/[\w.\-]+)*)?", 14, false),
+        // Percentage: 48% / 11% / 0%
+        (r"\b\d+(?:\.\d+)?%\b", 10, false),
+        // --- paths, split by context so scenarios get distinct colours ------
+        // Prompt current-directory path: `user@host:/path` or `user@host:~`.
+        // Anchored on `@host:` so it only fires inside a shell prompt.
+        // (magenta)
+        (r"@[A-Za-z0-9._\-]+:(?:~|/[\w.\-]+(?:/[\w.\-]+)*)", 13, false),
+        // Plain absolute path / mount point: `/dev`, `/run`, `/dev/mmcblk0p2`,
+        // and the bare root `/` in `df`/`mount` output.  `=` covers `key=/path`.
+        // (cyan)
+        (r"(?:^|[\s=])/(?:[\w.\-]+(?:/[\w.\-]+)*)?", 14, false),
         // key=value (the key and `=`; tailspin styles only `key=`)
         (r"(?:^|\s)\w+=", 13, false),
-        // quoted strings
+        // quoted strings (green)
         (r#""[^"\n]*""#, 10, false),
         (r"'[^'\n]*'", 10, false),
         // --- severity keywords ---------------------------------------------
@@ -97,9 +115,6 @@ static BUILTIN_RULES: LazyLock<Vec<CompiledOutputRule>> = LazyLock::new(|| {
             14,
             true,
         ),
-        // --- bare number (last: earlier rules already claimed the digits
-        //     inside IPs / UUIDs / dates / sized numbers) -------------------
-        (r"\b\d+(?:\.\d+)?\b", 14, false),
     ];
 
     RULES
