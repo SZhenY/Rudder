@@ -704,7 +704,7 @@ pub struct ConfigFile {
     /// output highlighter enabled by default.
     #[serde(default)]
     pub output_highlight_disabled: bool,
-    /// Built-in output highlight preset: "log" (default), "devops", or "builtin".
+    /// Built-in output highlight preset: "builtin" (Rudder rules, default), "log", or "devops".
     #[serde(default)]
     pub output_highlight_preset: String,
     /// User-defined rules applied before the selected built-in preset.
@@ -1306,21 +1306,21 @@ impl ConfigStore {
         self.cache.output_highlight_disabled = !enabled;
     }
 
-    /// Selected built-in rule set. Unknown values safely fall back to the
-    /// conservative log-level preset for forward/backward compatibility.
+    /// Selected built-in rule set. The default is the Rudder built-in
+    /// (tailspin-style) rule set; unknown values fall back to it as well.
     pub fn output_highlight_preset(&self) -> &str {
         match self.cache.output_highlight_preset.as_str() {
             "devops" => "devops",
-            "builtin" => "builtin",
-            _ => "log",
+            "log" => "log",
+            _ => "builtin",
         }
     }
 
     pub fn set_output_highlight_preset(&mut self, preset: String) {
         self.cache.output_highlight_preset = match preset.as_str() {
             "devops" => "devops".to_string(),
-            "builtin" => "builtin".to_string(),
-            _ => "log".to_string(),
+            "log" => "log".to_string(),
+            _ => "builtin".to_string(),
         };
     }
 
@@ -2379,7 +2379,7 @@ mod tests {
     fn output_highlight_defaults_and_preset_validation() {
         let mut store = temp_store();
         assert!(store.output_highlight_enabled());
-        assert_eq!(store.output_highlight_preset(), "log");
+        assert_eq!(store.output_highlight_preset(), "builtin");
 
         store.set_output_highlight_enabled(false);
         store.set_output_highlight_preset("devops".to_string());
@@ -2387,7 +2387,7 @@ mod tests {
         assert_eq!(store.output_highlight_preset(), "devops");
 
         store.set_output_highlight_preset("future-preset".to_string());
-        assert_eq!(store.output_highlight_preset(), "log");
+        assert_eq!(store.output_highlight_preset(), "builtin");
 
         store.add_output_highlight_rule(OutputHighlightRule {
             pattern: "  connection refused  ".to_string(),
@@ -2409,11 +2409,12 @@ mod tests {
         assert!(store.output_highlight_rules().is_empty());
 
         // An older settings file without either field retains the feature that
-        // shipped in the previous version: enabled with the log preset.
+        // shipped in the previous version: enabled with the Rudder built-in
+        // (tailspin-style) preset.
         let legacy: ConfigFile = serde_json::from_str("{}").unwrap();
         store.cache = legacy;
         assert!(store.output_highlight_enabled());
-        assert_eq!(store.output_highlight_preset(), "log");
+        assert_eq!(store.output_highlight_preset(), "builtin");
     }
 
     #[test]

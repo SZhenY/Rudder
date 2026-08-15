@@ -10741,6 +10741,51 @@ mod log_highlight_tests {
             .iter()
             .any(|r| r.text == "error" && matches!(r.fg, TermColor::Idx(9))));
     }
+
+    #[test]
+    fn builtin_preset_handles_sized_numbers_root_mount_and_prompt_path() {
+        // 1.9G must be highlighted as a whole, not just the leading `1`
+        // (regression: `\b\d+...\b` backtracks at `9G` because both are word
+        // chars, leaving `.9` unstyled).
+        // Sized number must be styled as one cyan span (e.g. `391M`), not a
+        // bare `391` followed by an unstyled `M`.
+        let sized = highlight_plain_output(
+            vec![plain_run("tmpfs  391M  40M  351M  11% /run", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(sized
+            .iter()
+            .any(|r| r.text == "391M" && matches!(r.fg, TermColor::Idx(14))),
+            "sized number 391M should be one cyan span");
+        assert!(sized
+            .iter()
+            .all(|r| r.text != "391"),
+            "391 must not be split off from its M unit");
+        // The full `df`-style line: the bare root `/` mount point is styled.
+        let df = highlight_plain_output(
+            vec![plain_run("/dev/mmcblk0p2  6.7G  3.2G  3.4G  48% /", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(df.iter().any(|r| r.text == "6.7G" && matches!(r.fg, TermColor::Idx(14))));
+        assert!(df
+            .iter()
+            .any(|r| r.text.ends_with('/') && matches!(r.fg, TermColor::Idx(14))),
+            "bare root mount point `/` should be styled as a path");
+
+        // Prompt path after a colon: `ne@fnnas:/vol1/1000/...` — the path
+        // following the `:` must be styled (the `:` anchor covers prompts).
+        let prompt = highlight_plain_output(
+            vec![plain_run("ne@fnnas:/vol1/1000/Adguardhome/work/data$", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(prompt.iter().any(
+            |r| r.text.contains("/vol1/1000") && matches!(r.fg, TermColor::Idx(14))
+        ),
+            "prompt path after colon should be styled");
+    }
 }
 
 #[cfg(test)]

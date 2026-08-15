@@ -8,9 +8,9 @@
 //! bold/italic flags.
 //!
 //! Order matters: `highlight_custom_output` only recolours runs whose `fg` is
-//! still `Default`, so earlier rules win.  Specific rules (URL, IP, UUID, date)
-//! therefore run before generic ones (number, keyword) to avoid a bare number
-//! rule claiming the digits inside an IPv4 address or a UUID.
+//! still `Default`, so earlier rules win.  Specific rules (URL, IP, UUID, date,
+//! sized numbers, paths) therefore run before generic ones (bare number) so a
+//! generic rule never claims the digits inside a specific token.
 
 use std::sync::LazyLock;
 
@@ -24,11 +24,12 @@ static BUILTIN_RULES: LazyLock<Vec<CompiledOutputRule>> = LazyLock::new(|| {
         // --- structured tokens (most specific first) -----------------------
         // URL: http(s)://host[:port][/path]
         (
-            r"https?://[A-Za-z0-9._~\-]+(?::\d{1,5})?(?:/[A-Za-z0-9._~\-/%+&?=;,@!*()]*)?",
+            r"https?://[A-Za-z0-9._~\-]+(?::\d{1,5})?(?:/[^\s]*)?",
             12,
             false,
         ),
-        // email address
+        // email address (requires a dotted domain, so a bare `user@host`
+        // prompt is not mistaken for an email)
         (
             r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
             12,
@@ -53,18 +54,25 @@ static BUILTIN_RULES: LazyLock<Vec<CompiledOutputRule>> = LazyLock::new(|| {
             11,
             false,
         ),
-        // duration (150ms / 2.5s / 30m / 1h)
+        // --- sized numbers (must run before the bare-number rule, otherwise
+        //     `1.9G` matches only `1` because `9G` is not a word boundary) ---
+        // Storage size: 1.9G / 391M / 6.7G / 3.2G / 40M / 1.5K / 2.3GiB
+        (r"\b\d+(?:\.\d+)?[KMGTPE](?:i?B)?\b", 14, false),
+        // Duration: 150ms / 2.5s / 30min / 1h / 3d
         (
-            r"\b\d+(?:\.\d+)?\s?(?:ns|us|µs|ms|s|sec|min|m|h|hr|d)\b",
+            r"\b\d+(?:\.\d+)?\s?(?:ns|us|µs|ms|s|sec|min|hr|h|d)\b",
             11,
             false,
         ),
         // memory pointer (0x7ffe...)
         (r"\b0x[0-9a-fA-F]+\b", 8, false),
+        // --- Unix path: accepts the bare root `/` (a common mount point in
+        //     `df`/`mount` output) and paths following a prompt colon, e.g.
+        //     `ne@fnnas:/vol1/1000/...`.  `:` and `=` anchors cover prompt and
+        //     `key=/path` forms. -------------------------------------------
+        (r"(?:^|[\s:=])/(?:[\w.\-]+(?:/[\w.\-]+)*)?", 14, false),
         // key=value (the key and `=`; tailspin styles only `key=`)
         (r"(?:^|\s)\w+=", 13, false),
-        // Unix absolute path (/var/log/foo)
-        (r"(?:^|\s)/(?:[\w.\-]+/)*[\w.\-]+", 14, false),
         // quoted strings
         (r#""[^"\n]*""#, 10, false),
         (r"'[^'\n]*'", 10, false),
@@ -89,8 +97,8 @@ static BUILTIN_RULES: LazyLock<Vec<CompiledOutputRule>> = LazyLock::new(|| {
             14,
             true,
         ),
-        // --- generic number (last: earlier rules already claimed the digits
-        //     inside IPs / UUIDs / dates) -----------------------------------
+        // --- bare number (last: earlier rules already claimed the digits
+        //     inside IPs / UUIDs / dates / sized numbers) -------------------
         (r"\b\d+(?:\.\d+)?\b", 14, false),
     ];
 
