@@ -9574,7 +9574,7 @@ fn wire_key_input(
     {
         let bufs_sel = bufs.clone();
         let weak = window.as_weak();
-        window.on_term_select_start(move |tab_id, row: i32, col: i32, _ctrl: bool, _shift: bool| {
+        window.on_term_select_start(move |tab_id, row: i32, col: i32, left_half: bool, _ctrl: bool, _shift: bool| {
             let tid = tab_id.to_string();
             with_term_buf(&bufs_sel, &tid, |buf| {
                 let (rows, cols) = crate::terminal::term_size(&buf.term);
@@ -9584,10 +9584,20 @@ fn wire_key_input(
                     line: alacritty_terminal::index::Line(r - buf.view_offset as i32),
                     column: alacritty_terminal::index::Column(c.max(0) as usize),
                 };
+                // The anchor side is derived from where the pointer landed inside
+                // the cell: on the left half the cell itself is selected, on the
+                // right half the selection starts at the next cell.  A fixed
+                // `Side::Right` previously skipped the first character of a
+                // selection (the very first cell of a row could never be selected).
+                let side = if left_half {
+                    alacritty_terminal::index::Side::Left
+                } else {
+                    alacritty_terminal::index::Side::Right
+                };
                 buf.term.selection = Some(alacritty_terminal::selection::Selection::new(
                     alacritty_terminal::selection::SelectionType::Simple,
                     pt,
-                    alacritty_terminal::index::Side::Right,
+                    side,
                 ));
             });
             if let Some(win) = weak.upgrade() {
@@ -9598,7 +9608,7 @@ fn wire_key_input(
     {
         let bufs_sel = bufs.clone();
         let weak = window.as_weak();
-        window.on_term_select_update(move |tab_id, row: i32, col: i32| {
+        window.on_term_select_update(move |tab_id, row: i32, col: i32, left_half: bool| {
             let tid = tab_id.to_string();
             with_term_buf(&bufs_sel, &tid, |buf| {
                 let (rows, cols) = crate::terminal::term_size(&buf.term);
@@ -9609,7 +9619,12 @@ fn wire_key_input(
                         line: alacritty_terminal::index::Line(r - buf.view_offset as i32),
                         column: alacritty_terminal::index::Column(c.max(0) as usize),
                     };
-                    sel.update(pt, alacritty_terminal::index::Side::Right);
+                    let side = if left_half {
+                        alacritty_terminal::index::Side::Left
+                    } else {
+                        alacritty_terminal::index::Side::Right
+                    };
+                    sel.update(pt, side);
                 }
             });
             if let Some(win) = weak.upgrade() { refresh_terminal_selection(&win, &bufs_sel, &tid); }
@@ -10691,7 +10706,7 @@ mod log_highlight_tests {
 
     #[test]
     fn builtin_preset_highlights_numbers_urls_ips_uuids_and_keywords() {
-        // Number → cyan (14)
+        // Bare number → left unstyled (no catch-all number rule, no grey)
         let num = highlight_plain_output(
             vec![plain_run("processed 42 records", 0)],
             OutputHighlightPreset::Builtin,
@@ -10699,7 +10714,8 @@ mod log_highlight_tests {
         );
         assert!(num
             .iter()
-            .any(|r| r.text == "42" && matches!(r.fg, TermColor::Idx(14))));
+            .any(|r| r.text.contains("42") && matches!(r.fg, TermColor::Default)),
+            "bare number should stay default-coloured");
 
         // URL → blue (12), including the port and path
         let url = highlight_plain_output(
@@ -10720,6 +10736,17 @@ mod log_highlight_tests {
         assert!(ip.iter().any(
             |r| r.text == "192.168.1.100" && matches!(r.fg, TermColor::Idx(12))
         ));
+
+        // IPv6 with `::` compression → one blue span (not split, no grey hex)
+        let ipv6 = highlight_plain_output(
+            vec![plain_run("addr fe80::f0da:145:b458:4e3e", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(ipv6.iter().any(
+            |r| r.text == "fe80::f0da:145:b458:4e3e" && matches!(r.fg, TermColor::Idx(12))
+        ),
+            "IPv6 with :: must be one blue span");
 
         // UUID → magenta (13)
         let uuid = highlight_plain_output(
@@ -10743,11 +10770,37 @@ mod log_highlight_tests {
     }
 
     #[test]
+    fn builtin_preset_highlights_dates_and_times_without_grey_fragments() {
+        // `date` output: month-day, time and year are yellow; no grey digits.
+        let date = highlight_plain_output(
+            vec![plain_run("Sat Aug 15 10:44:22 AM CST 2026", 0)],
+            OutputHighlightPreset::Builtin,
+            &[],
+        );
+        assert!(date.iter().any(
+            |r| r.text.contains("Aug 15") && matches!(r.fg, TermColor::Idx(11))
+        ),
+            "month-day should be yellow");
+        assert!(date.iter().any(
+            |r| r.text.contains("10:44:22") && matches!(r.fg, TermColor::Idx(11))
+        ),
+            "clock time should be yellow");
+        assert!(date.iter().any(
+            |r| r.text == "2026" && matches!(r.fg, TermColor::Idx(11))
+        ),
+            "year should be yellow");
+        assert!(date.iter().all(
+            |r| !matches!(r.fg, TermColor::Idx(8))
+        ),
+            "no grey fragment should appear in date output");
+    }
+
+    #[test]
     fn builtin_preset_handles_sized_numbers_root_mount_and_prompt_path() {
         // 1.9G must be highlighted as a whole, not just the leading `1`
         // (regression: `\b\d+...\b` backtracks at `9G` because both are word
         // chars, leaving `.9` unstyled).
-        // Sized number must be styled as one cyan span (e.g. `391M`), not a
+        // Sized number must be styled as one green span (e.g. `391M`), not a
         // bare `391` followed by an unstyled `M`.
         let sized = highlight_plain_output(
             vec![plain_run("tmpfs  391M  40M  351M  11% /run", 0)],
@@ -10756,8 +10809,8 @@ mod log_highlight_tests {
         );
         assert!(sized
             .iter()
-            .any(|r| r.text == "391M" && matches!(r.fg, TermColor::Idx(14))),
-            "sized number 391M should be one cyan span");
+            .any(|r| r.text == "391M" && matches!(r.fg, TermColor::Idx(10))),
+            "sized number 391M should be one green span");
         assert!(sized
             .iter()
             .all(|r| r.text != "391"),
@@ -10768,23 +10821,23 @@ mod log_highlight_tests {
             OutputHighlightPreset::Builtin,
             &[],
         );
-        assert!(df.iter().any(|r| r.text == "6.7G" && matches!(r.fg, TermColor::Idx(14))));
+        assert!(df.iter().any(|r| r.text == "6.7G" && matches!(r.fg, TermColor::Idx(10))));
         assert!(df
             .iter()
             .any(|r| r.text.ends_with('/') && matches!(r.fg, TermColor::Idx(14))),
             "bare root mount point `/` should be styled as a path");
 
         // Prompt path after a colon: `ne@fnnas:/vol1/1000/...` — the path
-        // following the `:` must be styled (the `:` anchor covers prompts).
+        // following the `:` must be styled magenta, distinct from mount points.
         let prompt = highlight_plain_output(
             vec![plain_run("ne@fnnas:/vol1/1000/Adguardhome/work/data$", 0)],
             OutputHighlightPreset::Builtin,
             &[],
         );
         assert!(prompt.iter().any(
-            |r| r.text.contains("/vol1/1000") && matches!(r.fg, TermColor::Idx(14))
+            |r| r.text.contains("/vol1/1000") && matches!(r.fg, TermColor::Idx(13))
         ),
-            "prompt path after colon should be styled");
+            "prompt path after colon should be styled magenta");
     }
 }
 
