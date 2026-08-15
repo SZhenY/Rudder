@@ -665,8 +665,8 @@ export component InterfacePanel inherits Rectangle {
                 SettingRow {
                     label: root.lang-en ? "Built-in rule set" : "内置规则集";
                     desc: root.lang-en
-                        ? "Log levels is conservative; DevOps recognises deployment states; Built-in highlights numbers, URLs, IPs, UUIDs, dates and more."
-                        : "日志级别更保守；DevOps 识别部署状态；内置规则高亮数字、URL、IP、UUID、日期等。";
+                        ? "Log levels is conservative; DevOps recognises deployment states; Rudder rules highlight numbers, URLs, IPs, UUIDs, dates and more."
+                        : "日志级别更保守；DevOps 识别部署状态；Rudder规则高亮数字、URL、IP、UUID、日期等。";
                     show-divider: false;
                     ComboBox {
                         width: 190px;
@@ -674,17 +674,17 @@ export component InterfacePanel inherits Rectangle {
                         model: [
                             root.lang-en ? "Log levels" : "日志级别",
                             "DevOps",
-                            root.lang-en ? "Built-in rules" : "内置规则",
+                            root.lang-en ? "Rudder rules" : "Rudder规则",
                         ];
                         current-value: root.output-highlight-preset == "devops"
                             ? "DevOps"
                             : (root.output-highlight-preset == "builtin"
-                                ? (root.lang-en ? "Built-in rules" : "内置规则")
+                                ? (root.lang-en ? "Rudder rules" : "Rudder规则")
                                 : (root.lang-en ? "Log levels" : "日志级别"));
                         selected(v) => {
                             root.output-highlight-preset =
                                 v == "DevOps" ? "devops"
-                                : (v == (root.lang-en ? "Built-in rules" : "内置规则")
+                                : (v == (root.lang-en ? "Rudder rules" : "Rudder规则")
                                     ? "builtin" : "log");
                             root.set-output-highlight(
                                 root.output-highlight-enabled,
