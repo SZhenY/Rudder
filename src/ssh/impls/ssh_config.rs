@@ -5,6 +5,7 @@
 //! patterns (`Host *`) and unsupported directives are ignored; this is a
 //! convenience importer, not a full ssh_config implementation.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// One importable host parsed from `~/.ssh/config`.
@@ -17,16 +18,81 @@ pub struct ImportedHost {
     pub identity_file: String,
 }
 
+const MAX_INCLUDE_DEPTH: usize = 16;
+
 /// Parse the user's `~/.ssh/config` (returns empty if it doesn't exist).
 pub fn parse_default() -> Vec<ImportedHost> {
     let Some(home) = home_dir() else {
         return Vec::new();
     };
     let path = home.join(".ssh").join("config");
-    match std::fs::read_to_string(&path) {
-        Ok(text) => parse_str(&text, &home),
-        Err(_) => Vec::new(),
+    parse_file(&path, &home)
+}
+
+fn parse_file(path: &Path, home: &Path) -> Vec<ImportedHost> {
+    let mut visited = HashSet::new();
+    let text = read_with_includes(path, home, &mut visited, 0);
+    parse_str(&text, home)
+}
+
+fn read_with_includes(
+    path: &Path,
+    home: &Path,
+    visited: &mut HashSet<PathBuf>,
+    depth: usize,
+) -> String {
+    if depth > MAX_INCLUDE_DEPTH {
+        tracing::warn!(path = %path.display(), "SSH config Include depth limit reached");
+        return String::new();
     }
+    let canonical = match path.canonicalize() {
+        Ok(path) => path,
+        Err(_) => return String::new(),
+    };
+    if !visited.insert(canonical.clone()) {
+        tracing::warn!(path = %canonical.display(), "skipping cyclic SSH config Include");
+        return String::new();
+    }
+    let Ok(text) = std::fs::read_to_string(&canonical) else {
+        return String::new();
+    };
+    let ssh_dir = home.join(".ssh");
+    let mut expanded = String::new();
+    for raw in text.lines() {
+        let include = split_kv(raw).filter(|(key, _)| key == "include");
+        if let Some((_, patterns)) = include {
+            for pattern in patterns.split_whitespace() {
+                let pattern = pattern.trim_matches('"');
+                let resolved = if let Some(rest) = pattern.strip_prefix("~/") {
+                    home.join(rest)
+                } else if Path::new(pattern).is_absolute() {
+                    PathBuf::from(pattern)
+                } else {
+                    ssh_dir.join(pattern)
+                };
+                let glob_pattern = resolved.to_string_lossy().to_string();
+                let mut matches: Vec<PathBuf> = glob::glob(&glob_pattern)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Result::ok)
+                    .filter(|path| path.is_file())
+                    .collect();
+                matches.sort();
+                for included in matches {
+                    expanded.push_str(&read_with_includes(
+                        &included,
+                        home,
+                        visited,
+                        depth + 1,
+                    ));
+                }
+            }
+        } else {
+            expanded.push_str(raw);
+            expanded.push('\n');
+        }
+    }
+    expanded
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -239,5 +305,35 @@ Host scheme
         assert!(!is_valid_hostname("http://x.com"));
         assert!(!is_valid_hostname("-bad.com"));
         assert!(!is_valid_hostname(""));
+    }
+
+    #[test]
+    fn expands_relative_globbed_includes_and_ignores_cycles() {
+        let home = std::env::temp_dir().join(format!("meatshell-ssh-config-{}", uuid::Uuid::new_v4()));
+        let ssh = home.join(".ssh");
+        let config_d = ssh.join("config.d");
+        std::fs::create_dir_all(&config_d).unwrap();
+        std::fs::write(
+            ssh.join("config"),
+            "Include config.d/*\nHost main\n  HostName main.example.com\n",
+        )
+        .unwrap();
+        std::fs::write(
+            config_d.join("10-prod"),
+            "Host prod\n  HostName 10.0.0.8\n  User deploy\n",
+        )
+        .unwrap();
+        std::fs::write(
+            config_d.join("20-cycle"),
+            "Include ~/.ssh/config\nHost backup\n  HostName backup.example.com\n",
+        )
+        .unwrap();
+
+        let hosts = parse_file(&ssh.join("config"), &home);
+        let aliases: Vec<&str> = hosts.iter().map(|host| host.alias.as_str()).collect();
+        assert_eq!(aliases, vec!["prod", "backup", "main"]);
+        assert_eq!(hosts[0].user, "deploy");
+
+        std::fs::remove_dir_all(home).unwrap();
     }
 }
