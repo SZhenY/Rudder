@@ -4949,6 +4949,30 @@ fn wire_key_input(
             }
         });
     }
+    // Reorder inside the current group (#310). The stored Vec remains the
+    // source of truth; the grouped display model preserves this relative order.
+    {
+        let store_rc = store.clone();
+        let weak = window.as_weak();
+        let collapsed = collapsed_quick_groups.clone();
+        window.on_reorder_quick_command(move |index: i32, move_up: bool| {
+            let changed = {
+                let mut s = store_rc.borrow_mut();
+                let mut commands = s.quick_commands().to_vec();
+                let changed = reorder_quick_command(&mut commands, index as usize, move_up);
+                if changed {
+                    s.set_quick_commands(commands);
+                    let _ = s.save();
+                }
+                changed
+            };
+            if changed {
+                if let Some(w) = weak.upgrade() {
+                    w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
+                }
+            }
+        });
+    }
     // Quick-group create / rename (#55).
     {
         let store_rc = store.clone();

@@ -92,3 +92,58 @@ pub(super) fn quick_cmd_model(
     }
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
+
+pub(super) fn reorder_quick_command(
+    commands: &mut [crate::config::QuickCommand],
+    index: usize,
+    move_up: bool,
+) -> bool {
+    let Some(current) = commands.get(index) else {
+        return false;
+    };
+    let group = current.group.trim().to_string();
+    let target = if move_up {
+        (0..index)
+            .rev()
+            .find(|&candidate| commands[candidate].group.trim() == group)
+    } else {
+        (index + 1..commands.len())
+            .find(|&candidate| commands[candidate].group.trim() == group)
+    };
+    if let Some(target) = target {
+        commands.swap(index, target);
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(test)]
+mod reorder_tests {
+    use super::reorder_quick_command;
+    use crate::config::QuickCommand;
+
+    fn command(name: &str, group: &str) -> QuickCommand {
+        QuickCommand {
+            name: name.to_string(),
+            command: name.to_string(),
+            group: group.to_string(),
+            send_enter: true,
+        }
+    }
+
+    #[test]
+    fn reorders_only_within_the_current_group() {
+        let mut commands = vec![
+            command("a", "ops"),
+            command("x", "other"),
+            command("b", "ops"),
+        ];
+        assert!(reorder_quick_command(&mut commands, 2, true));
+        assert_eq!(
+            commands.iter().map(|item| item.name.as_str()).collect::<Vec<_>>(),
+            vec!["b", "x", "a"]
+        );
+        assert!(!reorder_quick_command(&mut commands, 0, true));
+    }
+}

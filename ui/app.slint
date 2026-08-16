@@ -403,6 +403,7 @@ export component AppWindow inherits Window {
     callback edit-quick-command(int /* index */);
     callback duplicate-quick-command(int /* index */);
     callback move-quick-command(int /* index */, string /* group */);
+    callback reorder-quick-command(int /* index */, bool /* move up */);
     callback toggle-quick-group(string /* group */);  // collapse/expand a group (#55)
     // Quick-command group management (mirror session groups) (#55).
     in-out property <bool> qcg-open: false;           // group name dialog open
@@ -2938,6 +2939,30 @@ export component AppWindow inherits Window {
                                                overflow: elide; }
                                         Text { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
                                                overflow: elide; font-family: Theme.ui-font-family; }
+                                    }
+                                    Rectangle {
+                                        width: 24px; height: 28px;
+                                        border-radius: Theme.radius-sm;
+                                        background: up-ta.has-hover ? Theme.bg-hover : transparent;
+                                        up-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.reorder-quick-command(q.orig-index, true); }
+                                        }
+                                        Text { text: "\u{E5D8}"; font-family: "Material Icons";
+                                               color: Theme.text-secondary; font-size: Theme.fs-sm;
+                                               horizontal-alignment: center; vertical-alignment: center; }
+                                    }
+                                    Rectangle {
+                                        width: 24px; height: 28px;
+                                        border-radius: Theme.radius-sm;
+                                        background: down-ta.has-hover ? Theme.bg-hover : transparent;
+                                        down-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.reorder-quick-command(q.orig-index, false); }
+                                        }
+                                        Text { text: "\u{E5DB}"; font-family: "Material Icons";
+                                               color: Theme.text-secondary; font-size: Theme.fs-sm;
+                                               horizontal-alignment: center; vertical-alignment: center; }
                                     }
                                     Rectangle {
                                         width: 28px;
