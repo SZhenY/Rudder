@@ -1156,12 +1156,23 @@ impl ConfigStore {
 
     /// Missing and invalid Windows values deliberately use software so upgrades
     /// preserve the high-DPI/VM compatibility from #224.
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     pub fn renderer_mode(&self) -> &str {
         match self.cache.renderer_mode.as_str() {
             "auto" => "auto",
             "gpu" => "gpu",
             _ => "software",
+        }
+    }
+
+    /// Linux previously used Slint's automatic renderer selection and had no
+    /// settings entry. Keep that behaviour for existing configurations.
+    #[cfg(target_os = "linux")]
+    pub fn renderer_mode(&self) -> &str {
+        match self.cache.renderer_mode.as_str() {
+            "gpu" => "gpu",
+            "software" => "software",
+            _ => "auto",
         }
     }
 
@@ -1173,12 +1184,21 @@ impl ConfigStore {
         };
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     pub fn set_renderer_mode(&mut self, mode: String) {
         self.cache.renderer_mode = match mode.as_str() {
             "auto" => "auto".into(),
             "gpu" => "gpu".into(),
             _ => "software".into(),
+        };
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn set_renderer_mode(&mut self, mode: String) {
+        self.cache.renderer_mode = match mode.as_str() {
+            "gpu" => "gpu".into(),
+            "software" => "software".into(),
+            _ => "auto".into(),
         };
     }
 
@@ -2140,7 +2160,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     fn renderer_mode_preserves_compatibility_default_and_validates() {
         let mut store = temp_store();
         assert_eq!(store.renderer_mode(), "software");
@@ -2154,6 +2174,23 @@ mod tests {
 
         store.cache = serde_json::from_str("{}").expect("legacy config must deserialize");
         assert_eq!(store.renderer_mode(), "software");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn renderer_mode_preserves_linux_automatic_default_and_validates() {
+        let mut store = temp_store();
+        assert_eq!(store.renderer_mode(), "auto");
+
+        store.set_renderer_mode("gpu".into());
+        assert_eq!(store.renderer_mode(), "gpu");
+        store.set_renderer_mode("software".into());
+        assert_eq!(store.renderer_mode(), "software");
+        store.set_renderer_mode("unexpected".into());
+        assert_eq!(store.renderer_mode(), "auto");
+
+        store.cache = serde_json::from_str("{}").expect("legacy config must deserialize");
+        assert_eq!(store.renderer_mode(), "auto");
     }
 
     #[test]

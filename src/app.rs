@@ -483,6 +483,54 @@ fn setup_windows_platform(renderer_mode: &str) {
     }
 }
 
+/// Linux renderer selection from Settings. Leave Slint in charge when the
+/// environment explicitly selects a backend, including non-winit backends.
+/// Automatic mode likewise keeps Slint's native backend/renderer selection.
+#[cfg(target_os = "linux")]
+fn setup_linux_platform(renderer_mode: &str) {
+    if let Some(env_backend) = std::env::var_os("SLINT_BACKEND") {
+        tracing::info!(
+            renderer_mode,
+            renderer = %env_backend.to_string_lossy(),
+            source = "SLINT_BACKEND",
+            "initializing Linux renderer"
+        );
+        return;
+    }
+
+    let renderer = match renderer_mode {
+        "gpu" => "femtovg",
+        "software" => "software",
+        _ => {
+            tracing::info!(
+                renderer_mode,
+                renderer = "auto",
+                source = "settings",
+                "initializing Linux renderer"
+            );
+            return;
+        }
+    };
+
+    tracing::info!(
+        renderer_mode,
+        renderer,
+        source = "settings",
+        "initializing Linux renderer"
+    );
+    match i_slint_backend_winit::Backend::builder()
+        .with_renderer_name(renderer.to_owned())
+        .build()
+    {
+        Ok(backend) => {
+            if slint::platform::set_platform(Box::new(backend)).is_err() {
+                tracing::warn!("Linux winit backend was already initialized");
+            }
+        }
+        Err(err) => tracing::warn!("failed to initialize Linux winit backend: {err}"),
+    }
+}
+
 fn clamp_window_size_to_monitor(
     window: &slint::Window,
     preferred: Option<(f32, f32)>,
@@ -738,6 +786,10 @@ pub fn run() -> Result<()> {
     // invisible frame that shifts mouse hit testing (#193).
     #[cfg(windows)]
     setup_windows_platform(config.renderer_mode());
+
+    // Linux renderer selection from Settings (SLINT_BACKEND still wins).
+    #[cfg(target_os = "linux")]
+    setup_linux_platform(config.renderer_mode());
 
     // Immersive native title bar on macOS (must precede the first window).
     #[cfg(target_os = "macos")]
