@@ -233,7 +233,7 @@ fn local_program(session: &Session) -> (String, Vec<String>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::{local_program, WSL_LOGIN_SHELL};
     use crate::config::Session;

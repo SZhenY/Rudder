@@ -1337,7 +1337,7 @@ pub fn run() -> Result<()> {
             let _ = s.save();
             if let Some(w) = weak.upgrade() {
                 w.set_wsl_profiles(wsl_profile_model(&s));
-                sync_sessions_to_model(&s, &sessions_model);
+                sync_sessions_for_window(&weak, &s, &sessions_model);
             }
         });
     }
@@ -1351,7 +1351,7 @@ pub fn run() -> Result<()> {
             let _ = s.save();
             if let Some(w) = weak.upgrade() {
                 w.set_wsl_profiles(wsl_profile_model(&s));
-                sync_sessions_to_model(&s, &sessions_model);
+                sync_sessions_for_window(&weak, &s, &sessions_model);
             }
         });
     }
@@ -1393,7 +1393,7 @@ pub fn run() -> Result<()> {
             .and_then(|json| store.borrow_mut().import_json(&json));
             let msg = match res {
                 Ok((added, skipped)) => {
-                    sync_sessions_to_model(&store.borrow(), &sessions_model);
+                    sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
                     format!(
                         "{} {}, {} {}",
                         t("已导入", "imported"),
@@ -2969,6 +2969,18 @@ fn handle_file_drop(_win: &AppWindow, _sftp_handles: &SftpHandles, _path: std::p
 // Model helpers
 // ---------------------------------------------------------------------------
 
+fn sync_sessions_for_window(
+    window: &slint::Weak<AppWindow>,
+    store: &ConfigStore,
+    model: &VecModel<SessionInfo>,
+) {
+    let query = window
+        .upgrade()
+        .map(|window| window.get_host_search_query().to_string())
+        .unwrap_or_default();
+    sync_sessions_to_model_with_filter(store, model, &query);
+}
+
 /// Parse the batch-import textarea (#150). Each non-empty, non-`#` line is
 /// `host|port|user|password|name`; trailing fields are optional (port → 22,
 /// user → root, password → none, name → user@host). A leading header row such as
@@ -3000,6 +3012,28 @@ fn wire_session_callbacks(
     // Session.forwards; opening the dialog (new/edit) resets it.
     let edit_forwards: Rc<RefCell<Vec<PortFwd>>> =
         Rc::new(RefCell::new(vec![blank_forward_draft()]));
+
+    // Rebuild the session list as the user edits the Quick Connect search.
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_host_search_changed(move |query| {
+            if let Some(window) = weak.upgrade() {
+                let query = if query.trim().is_empty() {
+                    SharedString::new()
+                } else {
+                    query
+                };
+                window.set_host_search_query(query.clone());
+                sync_sessions_to_model_with_filter(
+                    &store.borrow(),
+                    &sessions_model,
+                    query.as_str(),
+                );
+            }
+        });
+    }
 
     // New session -> open dialog with blank draft.
     let weak = window.as_weak();
@@ -3099,7 +3133,7 @@ fn wire_session_callbacks(
                     let _ = s.save();
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let hint = if added > 0 {
                     format!("{} {}", t("已导入", "imported"), added)
@@ -3162,7 +3196,7 @@ fn wire_session_callbacks(
                     let _ = s.save();
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let hint = if total == 0 {
                     t("没有可导入的连接", "nothing to import").to_string()
@@ -3190,7 +3224,7 @@ fn wire_session_callbacks(
                 if let Some(w) = weak.upgrade() {
                     let hint = match res {
                         Ok((added, skipped)) => {
-                            sync_sessions_to_model(&store.borrow(), &sessions_model);
+                            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
                             format!(
                                 "{} {} / {} {}",
                                 t("已导入", "imported"),
@@ -3276,7 +3310,7 @@ fn wire_session_callbacks(
                     tracing::warn!("failed to save config: {err:#}");
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 // Touch a property so the list re-renders reliably.
                 let _ = w.get_sessions();
@@ -3303,7 +3337,7 @@ fn wire_session_callbacks(
                     }
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3335,7 +3369,7 @@ fn wire_session_callbacks(
                     }
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3350,6 +3384,13 @@ fn wire_session_callbacks(
         let store = store.clone();
         let sessions_model = sessions_model.clone();
         window.on_toggle_group(move |group: SharedString| {
+            if weak
+                .upgrade()
+                .map(|window| !window.get_host_search_query().trim().is_empty())
+                .unwrap_or(false)
+            {
+                return;
+            }
             use slint::Model as _;
             let target = group.to_string();
             let n = sessions_model.row_count();
@@ -3419,7 +3460,7 @@ fn wire_session_callbacks(
                     tracing::warn!("failed to save config: {err:#}");
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3439,7 +3480,7 @@ fn wire_session_callbacks(
                     tracing::warn!("failed to save config: {err:#}");
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3557,7 +3598,7 @@ fn wire_session_callbacks(
                     tracing::warn!("failed to save config: {err:#}");
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 w.set_dialog_open(false);
             }

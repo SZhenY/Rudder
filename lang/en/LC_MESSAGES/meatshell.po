@@ -527,3 +527,12 @@ msgstr "Terminating process..."
 
 msgid "Terminate"
 msgstr "Terminate"
+
+msgid "Search by name or host..."
+msgstr "Search by name or host..."
+
+msgid "No matching sessions"
+msgstr "No matching sessions"
+
+msgid "Clear search"
+msgstr "Clear search"

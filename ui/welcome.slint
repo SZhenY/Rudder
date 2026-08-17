@@ -252,6 +252,7 @@ component CollapseButton inherits Rectangle {
 export component Welcome inherits Rectangle {
     in property <[SessionInfo]> sessions;
     in property <string> import-hint;        // result text after an import
+    in-out property <string> search-query;
     callback new-session();
     callback import-ssh-config();
     callback connect-session(string);
@@ -263,6 +264,7 @@ export component Welcome inherits Rectangle {
     callback edit-group(string /* current-name */);
     callback delete-group(string /* name */);
     callback remove-session(string);
+    callback search-changed(string);
     callback cycle-tab(bool /* reverse */);
     // Compact mode (welcome-as-sidebar): drop the big title/tagline header and
     // tighten padding so the session list fits a narrow docked panel (#v0.5).
@@ -395,6 +397,110 @@ export component Welcome inherits Rectangle {
                     clicked => { root.new-session(); }
                 }
 
+                // Filter saved and built-in sessions by display name or host.
+                Rectangle {
+                    height: 32px;
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: search-input.has-focus ? Theme.accent : Theme.border-subtle;
+                    background: Theme.bg-root;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 4px;
+                        spacing: 6px;
+
+                        Text {
+                            text: "\u{E8B6}";
+                            font-family: "Material Icons";
+                            color: Theme.text-muted;
+                            font-size: Theme.fs-sm;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+
+                            search-input := TextInput {
+                                width: parent.width;
+                                height: parent.height;
+                                text <=> root.search-query;
+                                color: Theme.text-primary;
+                                font-family: Theme.ui-font-family;
+                                font-size: Theme.fs-sm;
+                                vertical-alignment: center;
+                                single-line: true;
+                                edited => { root.search-changed(root.search-query); }
+                            }
+
+                            if root.search-query == "" : Text {
+                                width: parent.width;
+                                height: parent.height;
+                                text: @tr("Search by name or host...");
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                horizontal-alignment: left;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        if root.search-query != "" : Rectangle {
+                            width: 24px;
+                            height: parent.height;
+
+                            Rectangle {
+                                width: 24px;
+                                height: 24px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: Theme.radius-sm;
+                                background: clear-search.has-hover ? Theme.bg-hover : transparent;
+                                accessible-role: button;
+                                accessible-label: @tr("Clear search");
+
+                                Text {
+                                    text: "\u{E5CD}";
+                                    font-family: "Material Icons";
+                                    color: Theme.text-muted;
+                                    font-size: Theme.fs-sm;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                clear-search := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.search-query = "";
+                                        root.search-changed("");
+                                        search-input.focus();
+                                    }
+                                }
+
+                                if clear-search.has-hover : Rectangle {
+                                    x: parent.width - self.width;
+                                    y: parent.height + 4px;
+                                    width: clear-search-tip.preferred-width + 16px;
+                                    height: 22px;
+                                    background: Theme.bg-elevated;
+                                    border-radius: Theme.radius-sm;
+                                    border-width: 1px;
+                                    border-color: Theme.border-strong;
+                                    drop-shadow-blur: 8px;
+                                    drop-shadow-color: #00000070;
+
+                                    clear-search-tip := Text {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        text: @tr("Clear search");
+                                        color: Theme.text-primary;
+                                        font-size: Theme.fs-xs;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if sessions.length == 0 : Rectangle {
                     vertical-stretch: 1;
                     background: Theme.bg-root;
@@ -406,12 +512,14 @@ export component Welcome inherits Rectangle {
                         alignment: center;
                         spacing: 6px;
                         Text {
-                            text: @tr("No sessions yet");
+                            text: root.search-query == ""
+                                ? @tr("No sessions yet")
+                                : @tr("No matching sessions");
                             color: Theme.text-secondary;
                             font-size: Theme.fs-md;
                             horizontal-alignment: center;
                         }
-                        Text {
+                        if root.search-query == "" : Text {
                             text: @tr("Use 'New session' (top-right) to add your first server");
                             color: Theme.text-muted;
                             font-size: Theme.fs-sm;
@@ -425,8 +533,12 @@ export component Welcome inherits Rectangle {
                     viewport-width: self.visible-width;
                     viewport-height: max(self.visible-height, sess-list.preferred-height);
                     sess-list := VerticalLayout {
-                    spacing: 2px;
+                    spacing: 0px;
                     for session[i] in sessions : VerticalLayout {
+                        // Exclude hidden rows from layout spacing while a group
+                        // is collapsed; keep its first row for the group header.
+                        visible: session.group-header != "" || !session.collapsed;
+                        padding-top: self.visible && i > 0 ? 2px : 0px;
                         spacing: 2px;
                         // Group header on the first row of each group (#41).
                         // Click anywhere on it to collapse / expand the group.
@@ -470,7 +582,11 @@ export component Welcome inherits Rectangle {
                                 mouse-cursor: pointer;
                                 // Left-click toggles collapse (any group, incl.
                                 // empty); right-click opens the group menu.
-                                clicked => { root.toggle-group(session.group); }
+                                clicked => {
+                                    if root.search-query == "" {
+                                        root.toggle-group(session.group);
+                                    }
+                                }
                                 pointer-event(e) => {
                                     if (!session.builtin && e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
                                         gmx = self.mouse-x;
