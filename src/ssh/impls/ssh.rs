@@ -5,6 +5,7 @@
 //! output lines are pushed back via an `UnboundedSender<SessionEvent>`.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
@@ -1440,14 +1441,26 @@ async fn run_session(
     let (mon_ready_tx, mut mon_ready_rx) = tokio::sync::oneshot::channel();
     let (proc_ready_tx, mut proc_ready_rx) = tokio::sync::oneshot::channel();
     let (sys_ready_tx, mut sys_ready_rx) = tokio::sync::oneshot::channel();
+    // Shared flag so the delayed spawn tasks can skip opening a channel
+    // when monitoring was disabled (e.g. sidebar collapsed) during the
+    // sleep window. Opening a channel just to immediately close it can
+    // cause some SSH servers to drop the entire transport (#345).
+    let mon_flag = Arc::new(AtomicBool::new(true));
     if session.disable_shell_integration {
         let _ = mon_ready_tx.send(None);
         let _ = proc_ready_tx.send(None);
         let _ = sys_ready_tx.send(None);
     } else {
+        let proc_flag = mon_flag.clone();
+        let sys_flag = mon_flag.clone();
+        let mon_flag = mon_flag.clone();
         let mon_handle = handle.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+            if !mon_flag.load(Ordering::Relaxed) {
+                let _ = mon_ready_tx.send(None);
+                return;
+            }
             let channel = match mon_handle.channel_open_session().await {
                 Ok(ch) => match ch.exec(true, MON_CMD).await {
                     Ok(()) => Some(ch),
@@ -1466,6 +1479,10 @@ async fn run_session(
         let proc_handle = handle.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            if !proc_flag.load(Ordering::Relaxed) {
+                let _ = proc_ready_tx.send(None);
+                return;
+            }
             let channel = match proc_handle.channel_open_session().await {
                 Ok(ch) => match ch.exec(true, PROC_CMD).await {
                     Ok(()) => Some(ch),
@@ -1484,6 +1501,10 @@ async fn run_session(
         let sys_handle = handle.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+            if !sys_flag.load(Ordering::Relaxed) {
+                let _ = sys_ready_tx.send(None);
+                return;
+            }
             let channel = match sys_handle.channel_open_session().await {
                 Ok(ch) => match ch.exec(true, SYS_CMD).await {
                     Ok(()) => Some(ch),
@@ -1504,6 +1525,7 @@ async fn run_session(
     let mut proc_start_pending = true;
     let mut sys_start_pending = true;
     let mut resource_monitoring = true;
+    mon_flag.store(true, Ordering::Relaxed);
     let mut first_terminal_output = true;
     // Local (-L) and dynamic (-D) listen client-side; their tasks are aborted
     // on session exit.
@@ -1585,6 +1607,7 @@ async fn run_session(
                             continue;
                         }
                         resource_monitoring = enabled;
+                        mon_flag.store(enabled, Ordering::Relaxed);
                         if !enabled {
                             if let Some(monitor) = mon_channel.take() {
                                 let _ = monitor.close().await;

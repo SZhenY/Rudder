@@ -5,3 +5,6 @@ Cargo.lock
 /.vscode
 /.idea
 /.claude
+/.codegraph
+/AGENTS.md
+/opencode.jsonc
