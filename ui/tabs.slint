@@ -200,7 +200,7 @@ export component TabBar inherits Rectangle {
     // so showing the arrows (which shrink the flickable) can't feed back into this
     // condition and form a binding loop. The 64px allows for the two arrows.
     property <bool> tab-overflow:
-        strip.preferred-width > root.width - root.reserve-right - 94px;
+        strip.preferred-width > root.width - root.reserve-right - 64px;
 
     HorizontalLayout {
         padding: 3px;
@@ -240,15 +240,6 @@ export component TabBar inherits Rectangle {
             }
         }
 
-        // A stable right-edge entry point for finding any open session when
-        // the tab strip is crowded (#340).
-        IconButton {
-            glyph: "\u{E5C5}";
-            size: 28px;
-            y: (parent.height - self.height) / 2;
-            clicked => { all-tabs-menu.show(); }
-        }
-
         // Reserved gap for the external top-right toolbar icons (#122).
         Rectangle { width: root.reserve-right; }
     }
@@ -267,7 +258,7 @@ export component TabBar inherits Rectangle {
         }
     }
     if root.tab-overflow : Rectangle {
-        x: root.width - root.reserve-right - 59px;
+        x: root.width - root.reserve-right - 29px;
         y: (parent.height - self.height) / 2;
         width: 26px; height: 26px;
         background: Theme.bg-panel-alt;
@@ -278,41 +269,6 @@ export component TabBar inherits Rectangle {
             }
         }
     }
-
-
-    all-tabs-menu := PopupWindow {
-        x: max(4px, root.width - root.reserve-right - self.width - 4px);
-        y: root.height;
-        width: 230px;
-        height: min(308px, root.tabs.length * 29px + 8px);
-        Rectangle {
-            background: Theme.popup-bg;
-            border-radius: Theme.radius-sm;
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            drop-shadow-blur: 12px;
-            drop-shadow-color: #00000060;
-            clip: true;
-            Flickable {
-                x: 4px; y: 4px;
-                width: parent.width - 8px;
-                height: parent.height - 8px;
-                viewport-width: self.width;
-                viewport-height: max(self.height, all-tabs-list.preferred-height);
-                all-tabs-list := VerticalLayout {
-                    spacing: 1px;
-                    for tab in root.tabs : TabMenuItem {
-                        label: (tab.id == root.active-id ? "●  " : "    ") + tab.title;
-                        clicked => {
-                            root.tab-selected(tab.id);
-                            all-tabs-menu.close();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     // Right-click context menu (v0.5): split this pane by peeling the clicked tab
     // into a new pane. Splitting needs at least two tabs so the source pane survives.
     tab-menu := PopupWindow {

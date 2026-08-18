@@ -19,8 +19,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **支持双击标签复制连接（#340）。** 双击任意终端会话标签会创建一条独立的新连接，与右键“复制连接”一致；欢迎页标签不会被复制，现有单击选择和拖动排序/分屏行为保持不变。
 - **Support duplicating connections by double-clicking tabs (#340).** Double-clicking any terminal session tab now opens an independent duplicate connection, matching the context-menu action. The Welcome tab is excluded, and existing single-click selection plus drag reorder/split behavior remain unchanged.
 
-- **完善多标签导航并在隐藏运行状态时暂停采样（#340）。** 标签栏右侧新增全部会话下拉列表，可从大量已打开标签中直接定位并切换；收起运行状态面板或开启专注模式后，本地 `sysinfo` 采样和 SSH 远端资源/进程监控会暂停，重新展开时自动恢复，避免隐藏面板继续消耗本机与服务器资源。
-- **Complete crowded-tab navigation and pause hidden status sampling (#340).** The tab bar now provides an all-sessions dropdown for locating and switching among many open tabs. Collapsing the status panel or enabling Zen mode pauses local `sysinfo` sampling plus remote SSH resource/process monitoring, and expanding it resumes monitoring automatically so hidden UI no longer consumes local or server resources.
+- **在隐藏运行状态时暂停采样（#340）。** 收起运行状态面板或开启专注模式后，本地 `sysinfo` 采样和 SSH 远端资源/进程监控会暂停，重新展开时自动恢复，避免隐藏面板继续消耗本机与服务器资源。
+- **Pause hidden status sampling (#340).** Collapsing the status panel or enabling Zen mode pauses local `sysinfo` sampling plus remote SSH resource/process monitoring, and expanding it resumes monitoring automatically so hidden UI no longer consumes local or server resources.
 
 - **命令栏新增历史命令自动提示（#349）。** 输入命令时会自动筛选并向上展示曾执行过的匹配命令，可用方向键选择、Tab 补全、Esc 关闭；原有的历史按钮、`Ctrl+R` 搜索、复制、删除和直接运行功能保持不变，且无需修改远端 Shell 配置。
 - **Add command-history autocomplete to the command bar (#349).** Typing now filters previously executed commands into an upward suggestion list with arrow-key selection, Tab completion, and Esc dismissal. Existing history-button and `Ctrl+R` search, copy, delete, and run actions remain available, with no remote shell configuration required.
