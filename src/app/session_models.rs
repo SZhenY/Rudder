@@ -128,37 +128,76 @@ pub(super) fn jump_candidates(
     )
 }
 
-pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
+fn normalized_query(query: &str) -> String {
+    query.trim().to_lowercase()
+}
+
+fn session_matches_normalized_query(session: &Session, query: &str) -> bool {
+    query.is_empty()
+        || session.name.to_lowercase().contains(query)
+        || session.host.to_lowercase().contains(query)
+}
+
+#[cfg(test)]
+fn session_matches_query(session: &Session, query: &str) -> bool {
+    let query = normalized_query(query);
+    session_matches_normalized_query(session, &query)
+}
+
+fn build_session_rows(
+    sessions: &[Session],
+    explicit_groups: &[String],
+    collapsed_groups: Option<&[String]>,
+    builtin_sessions: &[Session],
+    query: &str,
+) -> Vec<SessionInfo> {
     // Group sessions by their `group` (named groups alphabetically, ungrouped
     // last), then by name within each group, and tag the first row of every
     // group with a header so the welcome list can render a folder heading (#41).
-    let sessions = store.sessions();
-    let collapsed_groups = store.collapsed_session_groups();
+    let query = normalized_query(query);
+    let searching = !query.is_empty();
+    let matches = |session: &Session| session_matches_normalized_query(session, &query);
     let group_is_collapsed = |group: &str| {
-        collapsed_groups
-            .map(|groups| groups.iter().any(|collapsed| collapsed == group))
-            .unwrap_or(true)
+        !searching
+            && collapsed_groups
+                .map(|groups| groups.iter().any(|collapsed| collapsed == group))
+                .unwrap_or(true)
     };
 
     // Ordered list of display groups:
     //  - "default" only when there are ungrouped sessions (group == "")
     //  - named groups: explicit folders (incl. empty ones) ∪ sessions' groups,
     //    de-duplicated, alphabetical.
-    let has_default = sessions
-        .iter()
-        .any(|s| s.group.is_empty() || is_reserved_session_group(s.group.trim()));
-    let mut named: Vec<String> = store
-        .groups()
-        .iter()
-        .filter(|group| !is_reserved_session_group(group.trim()))
-        .cloned()
-        .chain(
-            sessions
-                .iter()
-                .filter(|s| !s.group.is_empty() && !is_reserved_session_group(s.group.trim()))
-                .map(|s| s.group.clone()),
-        )
-        .collect();
+    let has_default = sessions.iter().any(|session| {
+        (session.group.is_empty() || is_reserved_session_group(session.group.trim()))
+            && matches(session)
+    });
+    let mut named: Vec<String> = if searching {
+        sessions
+            .iter()
+            .filter(|session| {
+                !session.group.is_empty()
+                    && !is_reserved_session_group(session.group.trim())
+                    && matches(session)
+            })
+            .map(|session| session.group.clone())
+            .collect()
+    } else {
+        explicit_groups
+            .iter()
+            .filter(|group| !is_reserved_session_group(group.trim()))
+            .cloned()
+            .chain(
+                sessions
+                    .iter()
+                    .filter(|session| {
+                        !session.group.is_empty()
+                            && !is_reserved_session_group(session.group.trim())
+                    })
+                    .map(|session| session.group.clone()),
+            )
+            .collect()
+    };
     named.sort_by_key(|g| g.to_lowercase());
     named.dedup();
 
@@ -185,7 +224,11 @@ pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<Sessi
     };
 
     let mut rows: Vec<SessionInfo> = Vec::new();
-    for (i, s) in builtin_local_sessions(store.wsl_profiles()).iter().enumerate() {
+    for (i, s) in builtin_sessions
+        .iter()
+        .filter(|session| matches(session))
+        .enumerate()
+    {
         rows.push(SessionInfo {
             id: s.id.clone().into(),
             name: s.name.clone().into(),
@@ -204,14 +247,20 @@ pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<Sessi
         let mut gs: Vec<&Session> = if group == "default" {
             sessions
                 .iter()
-                .filter(|s| s.group.is_empty() || is_reserved_session_group(s.group.trim()))
+                .filter(|session| {
+                    (session.group.is_empty() || is_reserved_session_group(session.group.trim()))
+                        && matches(session)
+                })
                 .collect()
         } else {
-            sessions.iter().filter(|s| &s.group == group).collect()
+            sessions
+                .iter()
+                .filter(|session| &session.group == group && matches(session))
+                .collect()
         };
         gs.sort_by_key(|s| s.name.to_lowercase());
 
-        if gs.is_empty() {
+        if gs.is_empty() && !searching {
             rows.push(blank(group));
         } else {
             for (i, s) in gs.iter().enumerate() {
@@ -239,7 +288,26 @@ pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<Sessi
             }
         }
     }
-    model.set_vec(rows);
+    rows
+}
+
+pub(super) fn sync_sessions_to_model_with_filter(
+    store: &ConfigStore,
+    model: &VecModel<SessionInfo>,
+    query: &str,
+) {
+    let builtin_sessions = builtin_local_sessions(store.wsl_profiles());
+    model.set_vec(build_session_rows(
+        store.sessions(),
+        store.groups(),
+        store.collapsed_session_groups(),
+        &builtin_sessions,
+        query,
+    ));
+}
+
+pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
+    sync_sessions_to_model_with_filter(store, model, "");
 }
 
 pub(super) fn builtin_local_sessions(
@@ -398,5 +466,87 @@ pub(super) fn session_from_draft(
         disable_shell_integration: draft.disable_shell_integration,
         note: draft.note.to_string(),
         jump_session_id: draft.jump_session_id.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    fn session(id: &str, name: &str, host: &str, group: &str) -> Session {
+        let mut value = Session::new_empty();
+        value.id = id.into();
+        value.name = name.into();
+        value.host = host.into();
+        value.group = group.into();
+        value
+    }
+
+    #[test]
+    fn session_search_matches_name_and_host_case_insensitively() {
+        let value = session("1", "Prod API", "DB.EXAMPLE.COM", "prod");
+        assert!(session_matches_query(&value, "  prod  "));
+        assert!(session_matches_query(&value, "example.com"));
+        assert!(!session_matches_query(&value, "staging"));
+    }
+
+    #[test]
+    fn filtered_rows_hide_empty_groups_and_expand_matches() {
+        let saved = vec![session("1", "Prod API", "10.0.0.8", "prod")];
+        let builtins = vec![session("local", "Local terminal", "localhost", "system")];
+        let groups = vec!["empty".to_string(), "prod".to_string()];
+        let collapsed = vec!["prod".to_string(), "system".to_string()];
+
+        let rows = build_session_rows(&saved, &groups, Some(&collapsed), &builtins, "prod");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name.as_str(), "Prod API");
+        assert_eq!(rows[0].group_header.as_str(), "prod");
+        assert!(!rows[0].collapsed);
+    }
+
+    #[test]
+    fn filtered_rows_include_matching_builtin_sessions() {
+        let builtins = vec![session("local", "Local terminal", "localhost", "system")];
+
+        let rows = build_session_rows(
+            &[],
+            &[],
+            Some(&["system".to_string()]),
+            &builtins,
+            "LOCALHOST",
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name.as_str(), "Local terminal");
+        assert_eq!(rows[0].group_header.as_str(), "system");
+        assert!(rows[0].builtin);
+        assert!(!rows[0].collapsed);
+    }
+
+    #[test]
+    fn filtered_rows_are_empty_when_nothing_matches() {
+        let saved = vec![session("1", "Prod API", "10.0.0.8", "prod")];
+        let builtins = vec![session("local", "Local terminal", "localhost", "system")];
+
+        let rows = build_session_rows(&saved, &[], None, &builtins, "staging");
+
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn empty_query_restores_saved_groups_and_collapse_state() {
+        let saved = vec![session("1", "Prod API", "10.0.0.8", "prod")];
+        let groups = vec!["empty".to_string(), "prod".to_string()];
+        let collapsed = vec!["prod".to_string()];
+
+        let rows = build_session_rows(&saved, &groups, Some(&collapsed), &[], "");
+
+        assert!(rows
+            .iter()
+            .any(|row| row.group.as_str() == "empty" && row.id.is_empty()));
+        assert!(rows
+            .iter()
+            .any(|row| row.group.as_str() == "prod" && row.collapsed));
     }
 }

@@ -5,7 +5,6 @@
 //! output lines are pushed back via an `UnboundedSender<SessionEvent>`.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
@@ -103,6 +102,115 @@ const PROMPT_SETUP_HISTORY_MARKER: &str = "__MEATSHELL_INTERNAL_SETUP_1";
 const PROMPT_SETUP_DONE: &str = "\u{1b}]699;ready\u{07}";
 const PROMPT_BODY: &str = "test -z \"$FISH_VERSION\" && eval '__msc(){ __c=\"$(fc -ln -1 2>/dev/null)\"; [ -n \"$__c\" ] && [ \"$__c\" != \"$__cl\" ] && { __cl=\"$__c\"; printf \"\\033]697;%s\\007\" \"$__c\"; }; }; __ms7(){ printf \"\\033]7;file://%s%s\\007\" \"$HOSTNAME\" \"$PWD\"; __msc; }; if [ -n \"$ZSH_VERSION\" ]; then autoload -Uz add-zsh-hook 2>/dev/null; add-zsh-hook precmd __ms7; else PROMPT_COMMAND=\"__ms7${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi; : __MEATSHELL_INTERNAL_SETUP_1; if [ -n \"$BASH_VERSION\" ]; then __md=\"$(history 2>/dev/null | { __md=\"\"; while read -r __mn __mr; do case \"$__mr\" in *\"__ms7()\"*\"PROMPT_COMMAND=\"*) __mn=\"${__mn%\\*}\"; __md=\"$__mn $__md\";; esac; done; printf \"%s\" \"$__md\"; })\"; for __mn in $__md; do history -d \"$__mn\" 2>/dev/null; done; unset __md __mn __mr; fi; __cl=\"$(fc -ln -1 2>/dev/null)\"; printf \"\\033]699;ready\\007\"; __ms7'";
 const PROMPT_SHELL_PROBE: &[u8] = b"if [ -n \"$BASH_VERSION\" ]; then printf '__MEATSHELL_SHELL__:bash\\n'; elif [ -n \"$ZSH_VERSION\" ]; then printf '__MEATSHELL_SHELL__:zsh\\n'; else printf '__MEATSHELL_SHELL__:other\\n'; fi";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuxiliaryChannelKind {
+    Resources,
+    Processes,
+    SystemInfo,
+}
+
+impl AuxiliaryChannelKind {
+    fn delay(self) -> std::time::Duration {
+        match self {
+            Self::Resources => std::time::Duration::from_millis(750),
+            Self::Processes => std::time::Duration::from_millis(1500),
+            Self::SystemInfo => std::time::Duration::from_millis(2500),
+        }
+    }
+
+    fn next(self) -> Option<Self> {
+        match self {
+            Self::Resources => Some(Self::Processes),
+            Self::Processes => Some(Self::SystemInfo),
+            Self::SystemInfo => None,
+        }
+    }
+}
+
+struct AuxiliaryStartup {
+    pending: Option<AuxiliaryChannelKind>,
+    in_progress: bool,
+}
+
+impl AuxiliaryStartup {
+    fn new(enabled: bool) -> Self {
+        Self {
+            pending: enabled.then_some(AuxiliaryChannelKind::Resources),
+            in_progress: false,
+        }
+    }
+
+    fn pending(&self) -> Option<AuxiliaryChannelKind> {
+        if self.in_progress {
+            None
+        } else {
+            self.pending
+        }
+    }
+
+    fn begin(&mut self) -> Option<AuxiliaryChannelKind> {
+        let kind = self.pending()?;
+        if self.in_progress {
+            return None;
+        }
+        self.in_progress = true;
+        Some(kind)
+    }
+
+    fn complete(&mut self) {
+        if !self.in_progress {
+            return;
+        }
+        self.pending = self.pending.and_then(AuxiliaryChannelKind::next);
+        self.in_progress = false;
+    }
+}
+
+const AUXILIARY_CHANNEL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+async fn auxiliary_timeout<F, T>(
+    timeout: std::time::Duration,
+    future: F,
+) -> Result<T, tokio::time::error::Elapsed>
+where
+    F: std::future::Future<Output = T>,
+{
+    tokio::time::timeout(timeout, future).await
+}
+
+async fn open_auxiliary_channel(
+    handle: &Handle<ClientHandler>,
+    command: &'static [u8],
+    label: &'static str,
+) -> Option<Channel<Msg>> {
+    let operation = async {
+        let channel = handle
+            .channel_open_session()
+            .await
+            .with_context(|| format!("{label} channel open"))?;
+        channel
+            .exec(true, command)
+            .await
+            .with_context(|| format!("{label} exec"))?;
+        Ok::<Channel<Msg>, anyhow::Error>(channel)
+    };
+
+    match auxiliary_timeout(AUXILIARY_CHANNEL_TIMEOUT, operation).await {
+        Ok(Ok(channel)) => Some(channel),
+        Ok(Err(error)) => {
+            tracing::warn!("{label} startup failed: {error:#}");
+            None
+        }
+        Err(_) => {
+            tracing::warn!(
+                "{label} startup timed out after {} ms",
+                AUXILIARY_CHANNEL_TIMEOUT.as_millis()
+            );
+            None
+        }
+    }
+}
 
 fn prompt_setup_supported(probe_output: &str) -> Option<bool> {
     if probe_output.contains("__MEATSHELL_SHELL__:bash")
@@ -1435,97 +1543,16 @@ async fn run_session(
     }
     let handle = Arc::new(handle);
 
-    // Auxiliary channels are deliberately outside the terminal-ready critical
-    // path. SFTP gets the first opportunity after Connected; lightweight
-    // resources follow, and process/system enrichment starts last.
-    let (mon_ready_tx, mut mon_ready_rx) = tokio::sync::oneshot::channel();
-    let (proc_ready_tx, mut proc_ready_rx) = tokio::sync::oneshot::channel();
-    let (sys_ready_tx, mut sys_ready_rx) = tokio::sync::oneshot::channel();
-    // Shared flag so the delayed spawn tasks can skip opening a channel
-    // when monitoring was disabled (e.g. sidebar collapsed) during the
-    // sleep window. Opening a channel just to immediately close it can
-    // cause some SSH servers to drop the entire transport (#345).
-    let mon_flag = Arc::new(AtomicBool::new(true));
-    if session.disable_shell_integration {
-        let _ = mon_ready_tx.send(None);
-        let _ = proc_ready_tx.send(None);
-        let _ = sys_ready_tx.send(None);
-    } else {
-        let proc_flag = mon_flag.clone();
-        let sys_flag = mon_flag.clone();
-        let mon_flag = mon_flag.clone();
-        let mon_handle = handle.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(750)).await;
-            if !mon_flag.load(Ordering::Relaxed) {
-                let _ = mon_ready_tx.send(None);
-                return;
-            }
-            let channel = match mon_handle.channel_open_session().await {
-                Ok(ch) => match ch.exec(true, MON_CMD).await {
-                    Ok(()) => Some(ch),
-                    Err(error) => {
-                        tracing::warn!("monitor exec failed: {error}");
-                        None
-                    }
-                },
-                Err(error) => {
-                    tracing::warn!("monitor channel open failed: {error}");
-                    None
-                }
-            };
-            let _ = mon_ready_tx.send(channel);
-        });
-        let proc_handle = handle.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-            if !proc_flag.load(Ordering::Relaxed) {
-                let _ = proc_ready_tx.send(None);
-                return;
-            }
-            let channel = match proc_handle.channel_open_session().await {
-                Ok(ch) => match ch.exec(true, PROC_CMD).await {
-                    Ok(()) => Some(ch),
-                    Err(error) => {
-                        tracing::warn!("process monitor exec failed: {error}");
-                        None
-                    }
-                },
-                Err(error) => {
-                    tracing::warn!("process monitor channel open failed: {error}");
-                    None
-                }
-            };
-            let _ = proc_ready_tx.send(channel);
-        });
-        let sys_handle = handle.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
-            if !sys_flag.load(Ordering::Relaxed) {
-                let _ = sys_ready_tx.send(None);
-                return;
-            }
-            let channel = match sys_handle.channel_open_session().await {
-                Ok(ch) => match ch.exec(true, SYS_CMD).await {
-                    Ok(()) => Some(ch),
-                    Err(error) => {
-                        tracing::warn!("system-info exec failed: {error}");
-                        None
-                    }
-                },
-                Err(error) => {
-                    tracing::warn!("system-info channel open failed: {error}");
-                    None
-                }
-            };
-            let _ = sys_ready_tx.send(channel);
-        });
-    }
-    let mut mon_start_pending = true;
-    let mut proc_start_pending = true;
-    let mut sys_start_pending = true;
+    // Delay auxiliary channels until after the terminal is usable, but open them
+    // from this task. Opening them in detached tasks while `channel.wait()` was
+    // being polled could make russh/strict servers close the primary PTY exactly
+    // when the first monitor started (#264 follow-up).
+    let auxiliary_started_at = tokio::time::Instant::now();
+    let mut auxiliary_startup = AuxiliaryStartup::new(!session.disable_shell_integration);
+    let mut auxiliary_deadline = auxiliary_startup
+        .pending()
+        .map(|kind| auxiliary_started_at + kind.delay());
     let mut resource_monitoring = true;
-    mon_flag.store(true, Ordering::Relaxed);
     let mut first_terminal_output = true;
     // Local (-L) and dynamic (-D) listen client-side; their tasks are aborted
     // on session exit.
@@ -1550,42 +1577,45 @@ async fn run_session(
     // --- Main pump ------------------------------------------------------
     loop {
         tokio::select! {
-            ready = &mut mon_ready_rx, if mon_start_pending => {
-                mon_start_pending = false;
-                let ready_channel = ready.unwrap_or(None);
-                if resource_monitoring {
-                    mon_channel = ready_channel;
-                } else if let Some(channel) = ready_channel {
-                    let _ = channel.close().await;
+            _ = async {
+                match auxiliary_deadline {
+                    Some(deadline) => tokio::time::sleep_until(deadline).await,
+                    None => std::future::pending().await,
                 }
-                tracing::debug!(
-                    "[SESSION_START] id={} stage=resources-started elapsed_ms={}",
-                    session.id,
-                    session_started.elapsed().as_millis()
-                );
-            }
-            ready = &mut proc_ready_rx, if proc_start_pending => {
-                proc_start_pending = false;
-                let ready_channel = ready.unwrap_or(None);
-                if resource_monitoring {
-                    proc_channel = ready_channel;
-                } else if let Some(channel) = ready_channel {
-                    let _ = channel.close().await;
+            } => {
+                if let Some(kind) = auxiliary_startup.begin() {
+                    let auxiliary_channel = match kind {
+                        AuxiliaryChannelKind::Resources if resource_monitoring => {
+                            open_auxiliary_channel(&handle, MON_CMD, "monitor").await
+                        }
+                        AuxiliaryChannelKind::Processes if resource_monitoring => {
+                            open_auxiliary_channel(&handle, PROC_CMD, "process monitor").await
+                        }
+                        AuxiliaryChannelKind::SystemInfo => {
+                            open_auxiliary_channel(&handle, SYS_CMD, "system-info").await
+                        }
+                        _ => None,
+                    };
+                    let auxiliary_available = auxiliary_channel.is_some();
+
+                    match kind {
+                        AuxiliaryChannelKind::Resources => mon_channel = auxiliary_channel,
+                        AuxiliaryChannelKind::Processes => proc_channel = auxiliary_channel,
+                        AuxiliaryChannelKind::SystemInfo => sys_channel = auxiliary_channel,
+                    }
+                    auxiliary_startup.complete();
+                    auxiliary_deadline = auxiliary_startup
+                        .pending()
+                        .map(|next| tokio::time::Instant::now() + next.delay());
+                    tracing::debug!(
+                        "[SESSION_START] id={} stage={kind:?}-startup-finished available={} elapsed_ms={}",
+                        session.id,
+                        auxiliary_available,
+                        session_started.elapsed().as_millis()
+                    );
+                } else {
+                    auxiliary_deadline = None;
                 }
-                tracing::debug!(
-                    "[SESSION_START] id={} stage=process-monitor-started elapsed_ms={}",
-                    session.id,
-                    session_started.elapsed().as_millis()
-                );
-            }
-            ready = &mut sys_ready_rx, if sys_start_pending => {
-                sys_start_pending = false;
-                sys_channel = ready.unwrap_or(None);
-                tracing::debug!(
-                    "[SESSION_START] id={} stage=system-info-started elapsed_ms={}",
-                    session.id,
-                    session_started.elapsed().as_millis()
-                );
             }
             cmd = commands.recv() => {
                 match cmd {
@@ -1607,7 +1637,6 @@ async fn run_session(
                             continue;
                         }
                         resource_monitoring = enabled;
-                        mon_flag.store(enabled, Ordering::Relaxed);
                         if !enabled {
                             if let Some(monitor) = mon_channel.take() {
                                 let _ = monitor.close().await;
@@ -2809,6 +2838,46 @@ mod prompt_setup_echo_tests {
 
         assert_eq!(parser.screen().contents().lines().next(), Some(prompt));
         assert_eq!(parser.screen().cursor_position(), (0, prompt.len() as u16));
+    }
+}
+
+#[cfg(test)]
+mod auxiliary_startup_tests {
+    use super::{auxiliary_timeout, AuxiliaryChannelKind, AuxiliaryStartup};
+
+    #[test]
+    fn starts_channels_in_order_and_never_overlaps_them() {
+        let mut startup = AuxiliaryStartup::new(true);
+
+        assert_eq!(startup.begin(), Some(AuxiliaryChannelKind::Resources));
+        assert_eq!(startup.begin(), None);
+        startup.complete();
+
+        assert_eq!(startup.begin(), Some(AuxiliaryChannelKind::Processes));
+        assert_eq!(startup.begin(), None);
+        startup.complete();
+
+        assert_eq!(startup.begin(), Some(AuxiliaryChannelKind::SystemInfo));
+        startup.complete();
+        assert_eq!(startup.begin(), None);
+    }
+
+    #[test]
+    fn disabled_shell_integration_skips_all_auxiliary_channels() {
+        let mut startup = AuxiliaryStartup::new(false);
+
+        assert_eq!(startup.begin(), None);
+    }
+
+    #[tokio::test]
+    async fn auxiliary_channel_startup_timeout_releases_the_pump() {
+        let result = auxiliary_timeout(
+            std::time::Duration::from_millis(1),
+            std::future::pending::<()>(),
+        )
+        .await;
+
+        assert!(result.is_err());
     }
 }
 

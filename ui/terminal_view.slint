@@ -1329,10 +1329,12 @@ export component TerminalView inherits Rectangle {
                     }
                     if cmd-input.text == "" : Text {
                         x: 8px;
+                        width: parent.width - 16px;
                         height: parent.height;
                         text: @tr("Type a command, Enter to send");
                         color: Theme.text-muted;
                         font-size: Theme.fs-md;
+                        horizontal-alignment: left;
                         vertical-alignment: center;
                     }
                 }
