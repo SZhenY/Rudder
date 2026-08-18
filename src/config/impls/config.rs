@@ -2219,9 +2219,10 @@ mod tests {
     }
 
     #[test]
-    fn reserved_session_groups_are_repaired_and_rejected() {
+    fn issue_316_reserved_system_groups_are_repaired_and_rejected() {
         let mut system_session = sample_session("misfiled");
         system_session.group = "system".into();
+        system_session.password = Secret::default();
         let mut default_session = sample_session("legacy-default");
         default_session.group = "Default".into();
         let mut cfg = ConfigFile {
@@ -2234,6 +2235,7 @@ mod tests {
         assert!(normalize_reserved_session_groups(&mut cfg));
         assert_eq!(cfg.groups, ["prod"]);
         assert!(cfg.sessions.iter().all(|session| session.group.is_empty()));
+        assert!(cfg.sessions[0].password.is_empty());
         // The built-in system folder's collapse preference is display state,
         // not a user-created group, so normalization must preserve it.
         assert_eq!(
