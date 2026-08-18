@@ -10438,6 +10438,29 @@ mod key_tests {
     }
 
     #[test]
+    fn home_and_end_follow_application_cursor_mode() {
+        // Normal cursor mode: CSI sequences.
+        assert_eq!(
+            key_to_pty_bytes("\u{F729}", false, false, false),
+            b"\x1b[H"
+        );
+        assert_eq!(
+            key_to_pty_bytes("\u{F72B}", false, false, false),
+            b"\x1b[F"
+        );
+        // Application cursor mode (DECCKM): SS3 sequences, required by
+        // oh-my-zsh / ZLE for beginning-/end-of-line movement.
+        assert_eq!(
+            key_to_pty_bytes("\u{F729}", false, false, true),
+            b"\x1bOH"
+        );
+        assert_eq!(
+            key_to_pty_bytes("\u{F72B}", false, false, true),
+            b"\x1bOF"
+        );
+    }
+
+    #[test]
     fn ctrl_letter_c0_still_passes() {
         // A real Ctrl+R encoded as the C0 byte 0x12 with ctrl=true must still be
         // forwarded; the #274/#312 fix filters only bare Ctrl/CtrlR markers.
