@@ -11,11 +11,6 @@ const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
     LATEST_PROTOCOL_VERSION,
 ];
 
-pub(crate) fn is_serve_command(args: &[String]) -> bool {
-    args.get(1).is_some_and(|value| value == "mcp")
-        && args.get(2).is_some_and(|value| value == "serve")
-}
-
 pub(crate) fn run_stdio() -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
