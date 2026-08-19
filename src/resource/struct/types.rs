@@ -1,8 +1,39 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::resource::system::SystemSnapshot;
+use sysinfo::{Disks, Networks, System};
+
 use crate::ssh::{ProcInfo, SystemDetails};
+
+/// Snapshot passed to the UI each tick.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SystemSnapshot {
+    pub cpu_percent: f32,
+    pub mem_percent: f32,
+    pub swap_percent: f32,
+    pub mem_used_mib: u64,
+    pub mem_total_mib: u64,
+    pub swap_used_mib: u64,
+    pub swap_total_mib: u64,
+    pub net_bytes_per_sec: u64,
+    pub net_rx_per_sec: u64,
+    pub net_tx_per_sec: u64,
+    /// Per-filesystem (mount, available_bytes, total_bytes).
+    pub disks: Vec<(String, u64, u64)>,
+}
+
+/// Stateful sampler. Construct once per process and poll via [`Self::sample`].
+///
+/// Fields are `pub(crate)` so the sampling logic in `impls/system.rs` can reach
+/// them across modules (struct def lives here, impl lives in the impls module).
+pub(crate) struct SystemSampler {
+    pub(crate) sys: System,
+    pub(crate) nets: Networks,
+    pub(crate) disks: Disks,
+    pub(crate) last_rx_total: u64,
+    pub(crate) last_tx_total: u64,
+    pub(crate) last_instant: std::time::Instant,
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct TabStatus {

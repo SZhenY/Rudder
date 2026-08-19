@@ -3,6 +3,9 @@ use std::sync::OnceLock;
 
 use crate::terminal::TermBuffers;
 
+#[cfg(any(target_os = "windows", test))]
+use super::state::CtrlKeySide;
+
 /// Normalize clipboard line endings to the single CR byte expected for Enter
 /// by a terminal, including inside bracketed-paste payloads.
 /// When `convert_eol` is true, LF is converted to CR+LF for Windows programs.
@@ -76,13 +79,6 @@ pub(crate) fn paste_requires_large_review(text: &str) -> bool {
         index += 1;
     }
     text.chars().count() > COMPACT_CHAR_LIMIT || lines > COMPACT_LINE_LIMIT
-}
-
-#[cfg(any(target_os = "windows", test))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CtrlKeySide {
-    Left,
-    Right,
 }
 
 #[cfg(any(target_os = "windows", test))]

@@ -9,7 +9,7 @@ use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::vte::ansi::Processor;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::terminal::types::ATerm;
+use crate::terminal::state::ATerm;
 use crate::terminal::{TermColor, UnderlineStyle};
 
 /// Global OSC 52 toggle — set by app.rs on startup / config change.

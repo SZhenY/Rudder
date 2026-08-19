@@ -1,6 +1,6 @@
 use std::sync::Condvar;
 
-use super::types::{RenderGatePhase, RenderGateState, RenderWaitResult, TabRenderGate};
+use super::state::{RenderGatePhase, RenderGateState, RenderWaitResult, TabRenderGate};
 
 impl TabRenderGate {
     pub(crate) fn new(min_interval: std::time::Duration) -> Self {

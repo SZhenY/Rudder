@@ -3,6 +3,16 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [Unreleased]
+
+### 开发 / Dev
+
+- **合入上游结构性重构 (5d4e957) / Upstream structural refactor integration**: 有机整合 meatshell 提交 `5d4e957`（"refactor: split app and shared types into domain modules"）。经逐条核查，该提交为 100% 纯结构性重构、零逻辑变更，故按 Rudder 自身结构选择性合入而非盲搬：
+  - `app.rs` 拆分为 14 个领域子模块，归入新建 `src/app/` 目录
+  - `*/struct/types.rs` 语义化重命名：`layout.rs`、`prompts.rs`(session)、`transfer.rs`(sftp)、`state.rs`(terminal)、`components.rs`(ui)；`resource` 因与既有 `mod system` 模块名冲突，保留原名
+  - 类型提取（impls → struct 模块）：`SftpCommand`/`SftpHandle`→`transfer.rs`、`CtrlKeySide`→`state.rs`(保留 `#[cfg]` 门控)、`SystemSnapshot`/`SystemSampler`→`resource/types.rs`(字段 `pub(crate)` 化以允许跨模块 impl)
+  - `config`/`ssh`/`wallpaper`/`logging` 因与上游基线重度分歧或缺少对应 `struct` 子模块，未照搬，保留 Rudder 单体/既有结构
+
 ## [0.6.10-beta6] - 2026-08-14
 
 ### 新特性 / Features

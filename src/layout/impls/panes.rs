@@ -9,7 +9,7 @@
 //! plain lists the UI renders directly with `for`. Any structural change (split,
 //! close, move a tab, drag a splitter) mutates the tree and re-flattens.
 
-use super::types::{Dir, Layout, Leaf, Node, PaneRect, SplitterRect};
+use super::layout::{Dir, Layout, Leaf, Node, PaneRect, SplitterRect};
 
 /// Visible thickness of a splitter handle, in px.
 pub const SPLITTER: f32 = 6.0;

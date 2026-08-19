@@ -1,6 +1,6 @@
 #[path = "impls/panes.rs"]
 mod panes;
-#[path = "struct/types.rs"]
-mod types;
+#[path = "struct/layout.rs"]
+mod layout;
 
-pub(crate) use types::{Dir, Layout, LogicalRect, TerminalWheelHit};
+pub(crate) use layout::{Dir, Layout, LogicalRect, TerminalWheelHit};

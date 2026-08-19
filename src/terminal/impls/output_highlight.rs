@@ -1,4 +1,4 @@
-use super::types::OutputHighlightPreset;
+use super::state::OutputHighlightPreset;
 use crate::config::OutputHighlightRule;
 use crate::terminal::CompiledOutputRule;
 

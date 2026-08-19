@@ -7,6 +7,13 @@ use alacritty_terminal::vte::ansi::Processor;
 
 use crate::ui::TermSpan;
 
+#[cfg(any(target_os = "windows", test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CtrlKeySide {
+    Left,
+    Right,
+}
+
 /// Alacritty terminal handle used across Rudder.
 pub(crate) type ATerm = Term<VoidListener>;
 

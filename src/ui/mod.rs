@@ -1,4 +1,4 @@
-#[path = "struct/types.rs"]
-mod types;
+#[path = "struct/components.rs"]
+mod components;
 
-pub(crate) use types::*;
+pub(crate) use components::*;
