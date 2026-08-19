@@ -41,24 +41,11 @@ component CellText inherits Text {
     color: root.muted ? Theme.text-muted : Theme.text-primary;
     font-size: Theme.fs-xs;
     font-family: Theme.font-mono;
-    overflow: elide;
+    // Long values (mount paths, CPU breakdown lines, wide headers) wrap into a
+    // second line instead of being elided; rows grow to fit via preferred-height.
+    wrap: char-wrap;
     horizontal-alignment: center;
     vertical-alignment: center;
-}
-
-component CellBox inherits Rectangle {
-    in property <string> text;
-    in property <bool> muted: false;
-    in property <float> weight: 1.0;
-    horizontal-stretch: root.weight;
-    clip: true;
-
-    CellText {
-        text: root.text;
-        muted: root.muted;
-        width: parent.width;
-        height: parent.height;
-    }
 }
 
 component PairGrid inherits InfoCard {
@@ -92,7 +79,7 @@ component PairGrid inherits InfoCard {
                 }
             }
             for r in root.rows : Rectangle {
-                height: 34px;
+                height: max(34px, c1.preferred-height, c2.preferred-height, c3.preferred-height, c4.preferred-height);
                 Rectangle {
                     x: 0;
                     y: parent.height - 1px;
@@ -100,13 +87,10 @@ component PairGrid inherits InfoCard {
                     height: 1px;
                     background: Theme.border-subtle.with-alpha(0.65);
                 }
-                HorizontalLayout {
-                    spacing: 12px;
-                        CellBox { text: r.c1; muted: true; weight: 0.12; }
-                        CellBox { text: r.c2; weight: 0.38; }
-                        CellBox { text: r.c3; muted: true; weight: 0.12; }
-                        CellBox { text: r.c4; weight: 0.38; }
-                }
+                c1 := CellText { text: r.c1; muted: true; x: 14px; width: (parent.width - 28px - 36px) * 0.12; height: parent.height; }
+                c2 := CellText { text: r.c2; x: 14px + (parent.width - 28px - 36px) * 0.12 + 12px; width: (parent.width - 28px - 36px) * 0.38; height: parent.height; }
+                c3 := CellText { text: r.c3; muted: true; x: 14px + (parent.width - 28px - 36px) * 0.50 + 24px; width: (parent.width - 28px - 36px) * 0.12; height: parent.height; }
+                c4 := CellText { text: r.c4; x: 14px + (parent.width - 28px - 36px) * 0.62 + 36px; width: (parent.width - 28px - 36px) * 0.38; height: parent.height; }
             }
         }
     }
@@ -141,18 +125,13 @@ component TableCard inherits InfoCard {
             }
         }
         Rectangle {
-            height: 30px;
+            height: max(30px, h1.preferred-height, h2.preferred-height, h3.preferred-height, h4.preferred-height, h5.preferred-height);
             background: Theme.bg-root.with-alpha(0.28);
-            HorizontalLayout {
-                padding-left: 14px;
-                padding-right: 14px;
-                spacing: 12px;
-                CellBox { text: root.h1; muted: true; weight: root.c1w; }
-                CellBox { text: root.h2; muted: true; weight: root.c2w; }
-                CellBox { text: root.h3; muted: true; weight: root.c3w; }
-                CellBox { text: root.h4; muted: true; weight: root.c4w; }
-                if root.c5w > 0.0 : CellBox { text: root.h5; muted: true; weight: root.c5w; }
-            }
+            h1 := CellText { text: root.h1; muted: true; x: 14px; width: (parent.width - 28px - 48px) * root.c1w; height: parent.height; }
+            h2 := CellText { text: root.h2; muted: true; x: 14px + (parent.width - 28px - 48px) * root.c1w + 12px; width: (parent.width - 28px - 48px) * root.c2w; height: parent.height; }
+            h3 := CellText { text: root.h3; muted: true; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w) + 24px; width: (parent.width - 28px - 48px) * root.c3w; height: parent.height; }
+            h4 := CellText { text: root.h4; muted: true; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w + root.c3w) + 36px; width: (parent.width - 28px - 48px) * root.c4w; height: parent.height; }
+            h5 := CellText { text: root.h5; muted: true; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w + root.c3w + root.c4w) + 48px; width: (parent.width - 28px - 48px) * root.c5w; height: parent.height; }
         }
         if root.rows.length == 0 : Rectangle {
             height: 36px;
@@ -165,7 +144,7 @@ component TableCard inherits InfoCard {
             }
         }
         for r in root.rows : Rectangle {
-            height: 34px;
+            height: max(34px, c1.preferred-height, c2.preferred-height, c3.preferred-height, c4.preferred-height, c5.preferred-height);
             background: row-ta.has-hover ? Theme.bg-hover : transparent;
             Rectangle {
                 width: parent.width;
@@ -173,16 +152,11 @@ component TableCard inherits InfoCard {
                 background: Theme.border-subtle.with-alpha(0.48);
             }
             row-ta := TouchArea {}
-            HorizontalLayout {
-                padding-left: 14px;
-                padding-right: 14px;
-                spacing: 12px;
-                CellBox { text: r.c1; weight: root.c1w; }
-                CellBox { text: r.c2; weight: root.c2w; }
-                CellBox { text: r.c3; weight: root.c3w; }
-                CellBox { text: r.c4; weight: root.c4w; }
-                if root.c5w > 0.0 : CellBox { text: r.c5; weight: root.c5w; }
-            }
+            c1 := CellText { text: r.c1; x: 14px; width: (parent.width - 28px - 48px) * root.c1w; height: parent.height; }
+            c2 := CellText { text: r.c2; x: 14px + (parent.width - 28px - 48px) * root.c1w + 12px; width: (parent.width - 28px - 48px) * root.c2w; height: parent.height; }
+            c3 := CellText { text: r.c3; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w) + 24px; width: (parent.width - 28px - 48px) * root.c3w; height: parent.height; }
+            c4 := CellText { text: r.c4; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w + root.c3w) + 36px; width: (parent.width - 28px - 48px) * root.c4w; height: parent.height; }
+            c5 := CellText { text: r.c5; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w + root.c3w + root.c4w) + 48px; width: (parent.width - 28px - 48px) * root.c5w; height: parent.height; }
         }
     }
 }
