@@ -87,7 +87,7 @@ open /Applications/meatshell.app
 - [x] Full VT/ANSI terminal emulation (btop / htop / vim render correctly)
 - [x] Color emoji, including skin tones, flags, and ZWJ sequences
 - [x] Tabs (welcome page + multiple sessions)
-- [x] Session management: create / edit / delete / groups, local JSON, export / import
+- [x] Session management: create / edit / delete / groups, local JSON, export / import (including FinalShell connection files)
   - Config location: `%APPDATA%/meatshell/sessions.json` (Windows)
     / `~/.config/meatshell/sessions.json` (Linux)
     / `~/Library/Application Support/meatshell/sessions.json` (macOS)
