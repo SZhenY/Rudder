@@ -2226,6 +2226,12 @@ pub fn run() -> Result<()> {
                         let Some(win) = weak.upgrade() else {
                             return EventResult::Propagate;
                         };
+                        if !macos_terminal_wheel_can_target_terminal(win.get_interface_open()) {
+                            // Do not carry a partially accumulated settings gesture
+                            // into the terminal after the modal closes.
+                            macos_wheel_accum = 0.0;
+                            return EventResult::Propagate;
+                        }
                         let wheel_lines = match delta {
                             MouseScrollDelta::LineDelta(_, dy) => dy * 3.0,
                             MouseScrollDelta::PixelDelta(p) => {
@@ -2629,6 +2635,12 @@ fn handle_macos_terminal_wheel(
         win.invoke_terminal_scroll(hit.tab_id.into(), lines);
     }
     true
+}
+
+// The raw macOS wheel fallback runs before the usual Slint hit testing. Keep
+// modal-state routing explicit so it cannot target a terminal behind a dialog.
+fn macos_terminal_wheel_can_target_terminal(interface_open: bool) -> bool {
+    !interface_open
 }
 
 fn terminal_wheel_hit(

@@ -38,6 +38,12 @@ fn make_buf(
     }
 }
 
+#[test]
+fn settings_modal_yields_macos_wheel_to_its_own_scroll_view() {
+    assert!(macos_terminal_wheel_can_target_terminal(false));
+    assert!(!macos_terminal_wheel_can_target_terminal(true));
+}
+
 mod colors;
 mod protocol;
 mod selection;
