@@ -341,6 +341,11 @@ export component TerminalView inherits Rectangle {
     // Temporary on-device diagnostics for #312. Rust redacts printable text.
     callback diagnose-key-event(string, bool, bool, bool, bool);
     callback cycle-tab(bool /* reverse */);
+    // Ctrl+Shift+N (⌘⇧N on macOS) — open a new application window (#multi-window).
+    callback new-window-key();
+    // Font zoom: Ctrl+= / Ctrl+- / Ctrl+0 (⌘ on macOS). Direction:
+    // 1 = larger, -1 = smaller, 0 = reset to default.
+    callback zoom-key(int);
     callback terminal-resize(float, float);
     callback sftp-navigate(string);
     callback sftp-download(string);
@@ -996,6 +1001,30 @@ export component TerminalView inherits Rectangle {
                             && (event.text == "r" || event.text == "R"
                                 || event.text == "\u{0012}")) {
                         root.history-open = true;
+                        accept
+                    // ── New window: ⌘⇧N / Ctrl+Shift+N (#multi-window) ──
+                    // `control` is Cmd on macOS (Slint modifier swap, #158), so
+                    // this single condition gives ⌘⇧N there and Ctrl+Shift+N
+                    // elsewhere. Intercepted here — before send-key — so the
+                    // keystroke never reaches the remote shell.
+                    } else if (event.modifiers.control && event.modifiers.shift
+                            && (event.text == "n" || event.text == "N"
+                                || event.text == "\u{000e}")) {
+                        root.new-window-key();
+                        accept
+                    // ── Font zoom: Ctrl+= / Ctrl+- / Ctrl+0 (⌘ on macOS) ──
+                    // Adjusts the terminal font size (persisted like the
+                    // settings stepper); Ctrl+Shift+= types "+" on many
+                    // layouts and is accepted for zoom-in as well.
+                    } else if (event.modifiers.control
+                            && (event.text == "=" || event.text == "+")) {
+                        root.zoom-key(1);
+                        accept
+                    } else if (event.modifiers.control && event.text == "-") {
+                        root.zoom-key(-1);
+                        accept
+                    } else if (event.modifiers.control && event.text == "0") {
+                        root.zoom-key(0);
                         accept
                     // ── Copy: ⌘C (macOS, no Shift) / Ctrl+Shift+C ──
                     } else if (event.modifiers.control

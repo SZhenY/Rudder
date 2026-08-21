@@ -6,6 +6,12 @@
 //!   * Manage the tab list + per-tab `SessionHandle` map.
 //!   * Route Slint callbacks to the right domain module.
 mod auth_dialogs;
+pub(crate) mod core;
+#[cfg(target_os = "macos")]
+mod dock_menu;
+#[cfg(windows)]
+mod jump_list;
+pub mod launch;
 mod port_forward;
 mod quick_commands;
 mod resource_ui;
@@ -15,7 +21,9 @@ mod session_runtime;
 mod sftp_callbacks;
 mod sftp_ui;
 mod sidebar;
+mod single_instance;
 mod tab_callbacks;
+mod tab_transfer;
 mod terminal_ui;
 mod webdav;
 mod window;
@@ -31,6 +39,7 @@ use self::sftp_callbacks::*;
 use self::sftp_ui::*;
 use self::sidebar::*;
 use self::tab_callbacks::*;
+use self::tab_transfer::*;
 use self::terminal_ui::*;
 use self::webdav::*;
 use self::window::*;
@@ -143,6 +152,7 @@ use i_slint_backend_winit::WinitWindowAccessor;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tokio::runtime::Runtime;
 
+use crate::app::core::{AppCore, TabRoute, TabRoutes, WindowRegistry, WindowState};
 use crate::config::{
     is_reserved_session_group, AuthMethod, ConfigStore, OutputHighlightRule, Secret, Session,
     SessionKind,
@@ -190,6 +200,40 @@ fn tab_title_len(title: &str) -> i32 {
 
 fn should_block_close(exit_confirmed: bool, has_live_sessions: bool) -> bool {
     !exit_confirmed && has_live_sessions
+}
+
+/// Tear down one window's workers (SSH + SFTP) and hide its detachable
+/// monitor windows. Idempotent: repeated calls see empty maps. Also aborts
+/// every queued auth prompt (host key / credentials / MFA) owned by this
+/// window, answering reject/cancel so the blocked connection attempts fail
+/// cleanly instead of hanging on a dialog that will never show (#multi-window).
+fn teardown_window(
+    window_id: u64,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    sftp_handles: &SftpHandles,
+    proc_weak: &slint::Weak<ProcWindow>,
+    sys_weak: &slint::Weak<SystemInfoWindow>,
+) {
+    abort_window_prompts(window_id);
+    {
+        let mut sessions = handles.borrow_mut();
+        for handle in sessions.values() {
+            handle.close();
+        }
+        sessions.clear();
+    }
+    if let Ok(mut sftp) = sftp_handles.lock() {
+        for handle in sftp.values() {
+            handle.close();
+        }
+        sftp.clear();
+    }
+    if let Some(w) = proc_weak.upgrade() {
+        let _ = w.hide();
+    }
+    if let Some(w) = sys_weak.upgrade() {
+        let _ = w.hide();
+    }
 }
 
 /// Tab ids currently shown in a pane (`term.id == pane.active-id` in Slint).
@@ -345,6 +389,30 @@ fn do_tab_render_flush(
 /// Number of samples kept for the sparkline.
 const NET_HISTORY_LEN: usize = 60;
 
+/// Set once by `run()`; lets a platform entry point outside the Slint
+/// callback tree (the macOS Dock menu) open a window. Only ever invoked from
+/// the UI/main thread.
+#[cfg(target_os = "macos")]
+thread_local! {
+    static NEW_WINDOW_HOOK: RefCell<Option<Rc<dyn Fn()>>> = RefCell::new(None);
+}
+
+#[cfg(target_os = "macos")]
+fn set_new_window_hook(f: Rc<dyn Fn()>) {
+    NEW_WINDOW_HOOK.with(|h| *h.borrow_mut() = Some(f));
+}
+
+/// Open a new window from a platform entry point (macOS Dock menu action).
+/// Runs on the main/UI thread; a no-op until `run()` installs the hook.
+#[cfg(target_os = "macos")]
+pub(crate) fn request_new_window() {
+    NEW_WINDOW_HOOK.with(|h| {
+        if let Some(f) = h.borrow().as_ref() {
+            f();
+        }
+    });
+}
+
 /// Embed the app icon PNG into the binary and set it as the X11 window icon.
 ///
 /// On X11, the taskbar/dock icon for a running window comes from the
@@ -361,7 +429,7 @@ const NET_HISTORY_LEN: usize = 60;
 ///
 /// Windows gets its icon from the `.ico` embedded by winresource at link
 /// time; macOS from the app bundle — neither path needs runtime decoding.
-pub fn run() -> Result<()> {
+pub fn run(intent: crate::app::launch::LaunchIntent) -> Result<()> {
     // Load the renderer preference before creating any Slint window. Reuse the
     // same store for the rest of the app so startup does not read the config
     // twice merely to select a backend (#280).
@@ -380,12 +448,140 @@ pub fn run() -> Result<()> {
     #[cfg(target_os = "macos")]
     setup_macos_platform(config.renderer_mode());
 
+    // --- Single-instance coordination -------------------------------------
+    // A second `meatshell --new-window` forwards to us and exits; we never
+    // run two GUI instances for that entry point (Chrome-style). Plain
+    // launches pass forward=false and never forward: if the endpoint is
+    // taken they run as an independent second instance. IPC failures fall
+    // through to a normal launch rather than blocking the app.
+    let si_path = crate::app::single_instance::socket_path();
+    let instance = match crate::app::single_instance::acquire(&si_path, intent.new_window) {
+        Ok(i) => Some(i),
+        Err(e) => {
+            tracing::warn!("single-instance acquire failed: {e}");
+            None
+        }
+    };
+    if intent.new_window {
+        if let Some(crate::app::single_instance::Instance::Forwarded) = instance {
+            return Ok(());
+        }
+        // We are the primary (or IPC failed): fall through and open a window.
+    }
+
     // --- Runtime + store -------------------------------------------------
     let runtime = Arc::new(Runtime::new().context("failed to start tokio runtime")?);
     let store = Rc::new(RefCell::new(config));
     // Reachable from the Slint-thread event handler for recording terminal
     // commands into history (#113).
     HISTORY_STORE.with(|s| *s.borrow_mut() = Some(store.clone()));
+
+    let core = Rc::new(AppCore {
+        runtime,
+        store,
+        registry: Rc::new(WindowRegistry::default()),
+        window_states: Rc::new(RefCell::new(HashMap::new())),
+        tab_routes: Arc::new(Mutex::new(HashMap::new())),
+        first_window_done: Cell::new(false),
+    });
+
+    // IPC listener: forwarded "new-window" requests arrive on the listener
+    // thread, but open_window() must run on the Slint UI thread — and
+    // AppCore holds Rc state, so it cannot cross threads via
+    // invoke_from_event_loop either. Bridge the gap with an mpsc channel:
+    // this thread sends one () per request, and a repeating UI-thread timer
+    // (created after the first window below) drains the receiver and opens
+    // the windows.
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    if let Some(crate::app::single_instance::Instance::Primary { listen }) = instance {
+        std::thread::spawn(move || {
+            listen.spawn(move |msg| {
+                if msg == "new-window" {
+                    tracing::info!("single-instance: new-window request received");
+                    let _ = tx.send(());
+                }
+            });
+        });
+    }
+
+    // Set the Wayland app_id / X11 WM_CLASS *before* the window is created so
+    // the Linux desktop shell can match the running window to the installed
+    // `meatshell.desktop` entry and show our icon in the dock/taskbar.  (On
+    // Windows the icon comes from the embedded .ico, so this is a no-op there.)
+    let _ = slint::set_xdg_app_id("meatshell");
+
+    // Taskbar jump list ("新建窗口") on Windows: register before the first
+    // window shows so the entry is available immediately. Failure is
+    // warn-only and never blocks startup.
+    #[cfg(windows)]
+    crate::app::jump_list::register_new_window_task();
+
+    // macOS Dock menu ("新建窗口"): install the new-window hook first so a
+    // Dock click can never race ahead of it. The NSApplication patching
+    // itself happens after the first window below, because AppKit asks the
+    // winit delegate for the Dock menu and that delegate only exists once
+    // the backend has built a window. Failures are warn-only and never
+    // block startup (see dock_menu.rs).
+    #[cfg(target_os = "macos")]
+    {
+        let core = core.clone();
+        set_new_window_hook(Rc::new(move || {
+            if let Err(e) = open_window(core.clone(), true, None) {
+                tracing::warn!("failed to open new window: {e:#}");
+            }
+        }));
+    }
+
+    open_window(core.clone(), false, None)?;
+
+    #[cfg(target_os = "macos")]
+    crate::app::dock_menu::install_dock_menu();
+
+    // UI-thread drain for forwarded new-window requests: the IPC listener
+    // above sends one () per request; this repeating timer picks them up on
+    // the Slint thread where open_window() may run. Each message is an
+    // explicit user action ("新建窗口"), so every pending message opens its
+    // own cascaded window rather than coalescing the batch. `ipc_timer` is
+    // a plain local binding: Slint timers stop when dropped, and run()
+    // blocks on run_event_loop below, so this keeps it alive for exactly the
+    // event loop's lifetime — no leaking needed.
+    let ipc_timer = {
+        let core = core.clone();
+        let timer = slint::Timer::default();
+        timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(250),
+            move || {
+                while rx.try_recv().is_ok() {
+                    if let Err(e) = open_window(core.clone(), true, None) {
+                        tracing::warn!("failed to open forwarded window: {e:#}");
+                    }
+                }
+            },
+        );
+        timer
+    };
+
+    // Global loop: window.run() returns when *its* window closes, which is
+    // wrong once several windows share the loop.
+    slint::run_event_loop().context("event loop exited with error")?;
+    drop(ipc_timer);
+    Ok(())
+}
+
+/// Build and wire one application window. Called for the first window by
+/// `run()` and for every subsequent window by the new-window entry points.
+/// `at` pins the window to a physical screen position (tab detach); without
+/// it the window cascades from the newest one or centers.
+/// Returns the registry id used to unregister on close.
+fn open_window(
+    core: Rc<AppCore>,
+    cascade: bool,
+    at: Option<slint::PhysicalPosition>,
+) -> Result<u64> {
+    let runtime = core.runtime.clone();
+    let store = core.store.clone();
+    let registry = core.registry.clone();
 
     // Per-tab SSH handles (shell only; lives on Slint thread via Rc).
     let handles: Rc<RefCell<HashMap<String, SessionHandle>>> =
@@ -409,12 +605,12 @@ pub fn run() -> Result<()> {
     let last_term_size: Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((80, 24)));
 
     // --- Build window + models ------------------------------------------
-    // Set the Wayland app_id / X11 WM_CLASS *before* the window is created so
-    // the Linux desktop shell can match the running window to the installed
-    // `meatshell.desktop` entry and show our icon in the dock/taskbar.  (On
-    // Windows the icon comes from the embedded .ico, so this is a no-op there.)
-    let _ = slint::set_xdg_app_id("meatshell");
     let window = AppWindow::new().context("failed to build Slint window")?;
+    // Cascade origin must be captured *before* registering: once registered,
+    // registry.newest() is this window itself. Registration itself is deferred
+    // until after the last fallible construction below, so a failed monitor
+    // window never leaves a stale registry entry.
+    let cascade_origin = if cascade { registry.newest() } else { None };
     // Slint applies preferred-width/height while the native window is being
     // created. Do not treat those startup Resized events as user adjustments;
     // otherwise they overwrite the persisted size before restoration (#278).
@@ -469,6 +665,9 @@ pub fn run() -> Result<()> {
     proc_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
     proc_win.set_proc_list(ModelRc::from(proc_rows_model.clone()));
     let sys_win = SystemInfoWindow::new().context("failed to build system info window")?;
+    // Every fallible construction has now succeeded — register the window.
+    // (cascade_origin above was captured before this point, as required.)
+    let window_id = registry.register(window.as_weak());
     sys_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
     sys_win.set_metrics(ModelRc::from(sys_metrics_model.clone()));
     sys_win.set_nets(ModelRc::from(sys_net_rows_model.clone()));
@@ -1169,6 +1368,30 @@ pub fn run() -> Result<()> {
         });
     }
     {
+        // Font zoom shortcuts (Ctrl+= / Ctrl+- / Ctrl+0). direction:
+        // +1 larger, -1 smaller, 0 = reset to the 13px default. Reuses the
+        // settings stepper's persist path; the Theme.term-font-size change
+        // re-measures the cell grid and triggers the PTY resize on its own.
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_zoom_term_font(move |direction: i32| {
+            let next = {
+                let mut s = store.borrow_mut();
+                let next = if direction == 0 {
+                    13
+                } else {
+                    s.font_size() as i32 + direction
+                };
+                s.set_font_size(next.clamp(8, 32) as u32);
+                let _ = s.save();
+                s.font_size()
+            };
+            if let Some(w) = weak.upgrade() {
+                w.set_term_font_size(next as f32);
+            }
+        });
+    }
+    {
         let store = store.clone();
         window.on_persist_sftp_tree_width(move |width| {
             let mut s = store.borrow_mut();
@@ -1260,6 +1483,7 @@ pub fn run() -> Result<()> {
         let store = store.clone();
         let bufs_wp = bufs.clone();
         let proc_weak = proc_win.as_weak();
+        let registry = registry.clone();
         window.on_set_wallpaper(move |id: SharedString| {
             let id = id.to_string();
             let mut selected_builtin_theme = None;
@@ -1273,15 +1497,22 @@ pub fn run() -> Result<()> {
                     sync_proc_theme(&w, &p);
                 }
             }
-            let mut s = store.borrow_mut();
-            s.set_wallpaper(id);
-            // Choosing a built-in wallpaper applies its recommended palette once;
-            // persist that result so it too survives the next launch. A later
-            // manual theme toggle will overwrite this preference as expected.
-            if let Some(dark) = selected_builtin_theme {
-                s.set_theme_pref(if dark { "dark" } else { "light" }.to_string());
+            {
+                let mut s = store.borrow_mut();
+                s.set_wallpaper(id);
+                // Choosing a built-in wallpaper applies its recommended palette once;
+                // persist that result so it too survives the next launch. A later
+                // manual theme toggle will overwrite this preference as expected.
+                if let Some(dark) = selected_builtin_theme {
+                    s.set_theme_pref(if dark { "dark" } else { "light" }.to_string());
+                }
+                let _ = s.save();
             }
-            let _ = s.save();
+            // Only the theme flip needs cross-window propagation; the wallpaper
+            // image itself is not synced to other windows (YAGNI).
+            if selected_builtin_theme.is_some() {
+                registry.broadcast_config_changed();
+            }
         });
     }
     {
@@ -1313,6 +1544,25 @@ pub fn run() -> Result<()> {
     window.set_sessions(ModelRc::from(sessions_model.clone()));
     sync_sessions_to_model(&store.borrow(), &sessions_model);
     window.set_wsl_profiles(wsl_profile_model(&store.borrow()));
+    // Cross-window propagation: when another window persists sessions / theme /
+    // language it broadcasts; re-sync what this window shows. The listener only
+    // READS the store and updates this window's models (never saves), so a
+    // broadcast can never re-enter the broadcast path.
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        let bufs = bufs.clone();
+        registry.add_config_listener(window_id, Rc::new(move || {
+            let Some(w) = weak.upgrade() else { return };
+            // Rebuild the list with the window's current search filter.
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            // Re-apply the theme to the chrome AND every open terminal buffer.
+            apply_dark_mode(&w, &bufs, theme_pref_is_dark(&store.borrow()));
+            // Language translations are process-global; refresh our flag only.
+            w.set_lang_en(crate::i18n::is_en());
+        }));
+    }
     {
         let weak = window.as_weak();
         window.on_pick_wsl_directory(move || {
@@ -1327,38 +1577,47 @@ pub fn run() -> Result<()> {
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_add_wsl_profile(move |name, distribution, directory| {
-            let mut s = store.borrow_mut();
-            s.add_wsl_profile(
-                name.to_string(),
-                distribution.to_string(),
-                directory.to_string(),
-            );
-            let _ = s.save();
-            if let Some(w) = weak.upgrade() {
-                w.set_wsl_profiles(wsl_profile_model(&s));
-                sync_sessions_for_window(&weak, &s, &sessions_model);
+            {
+                let mut s = store.borrow_mut();
+                s.add_wsl_profile(
+                    name.to_string(),
+                    distribution.to_string(),
+                    directory.to_string(),
+                );
+                let _ = s.save();
+                if let Some(w) = weak.upgrade() {
+                    w.set_wsl_profiles(wsl_profile_model(&s));
+                    sync_sessions_for_window(&weak, &s, &sessions_model);
+                }
             }
+            registry.broadcast_config_changed();
         });
     }
     {
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_remove_wsl_profile(move |id| {
-            let mut s = store.borrow_mut();
-            s.remove_wsl_profile(id.as_str());
-            let _ = s.save();
-            if let Some(w) = weak.upgrade() {
-                w.set_wsl_profiles(wsl_profile_model(&s));
-                sync_sessions_for_window(&weak, &s, &sessions_model);
+            {
+                let mut s = store.borrow_mut();
+                s.remove_wsl_profile(id.as_str());
+                let _ = s.save();
+                if let Some(w) = weak.upgrade() {
+                    w.set_wsl_profiles(wsl_profile_model(&s));
+                    sync_sessions_for_window(&weak, &s, &sessions_model);
+                }
             }
+            registry.broadcast_config_changed();
         });
     }
     {
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_webdav_download(move || {
             let Some(w) = weak.upgrade() else { return };
             let enabled = w.get_webdav_enabled();
@@ -1394,6 +1653,7 @@ pub fn run() -> Result<()> {
             let msg = match res {
                 Ok((added, skipped)) => {
                     sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+                    registry.broadcast_config_changed();
                     format!(
                         "{} {}, {} {}",
                         t("已导入", "imported"),
@@ -1566,6 +1826,32 @@ pub fn run() -> Result<()> {
     let local_snap: LocalSnap = Arc::new(Mutex::new(SystemSnapshot::default()));
     let local_net_hist: NetHist = Arc::new(Mutex::new(vec![0.0; NET_HISTORY_LEN]));
 
+    // Expose this window's state to the rest of the process so tabs can be
+    // dragged out into a new window or merged into another one (#tab-detach).
+    core.window_states.borrow_mut().insert(
+        window_id,
+        WindowState {
+            weak: window.as_weak(),
+            handles: handles.clone(),
+            bufs: bufs.clone(),
+            gates: render_gates.clone(),
+            statuses: tab_statuses.clone(),
+            sftp_handles: sftp_handles.clone(),
+            sftp_last_cwd: sftp_last_cwd.clone(),
+            local_snap: local_snap.clone(),
+            net_hist: local_net_hist.clone(),
+            follow_cd: sftp_follow_cd.clone(),
+            layout: layout.clone(),
+            tabs_model: tabs_model.clone(),
+            terminals_model: terminals_model.clone(),
+            panes_model: panes_model.clone(),
+            splitters_model: splitters_model.clone(),
+            content_size: content_size.clone(),
+            proc_weak: proc_win.as_weak(),
+            sys_weak: sys_win.as_weak(),
+        },
+    );
+
     {
         let proc_weak = proc_win.as_weak();
         let handles = handles.clone();
@@ -1650,7 +1936,9 @@ pub fn run() -> Result<()> {
     // --- Wire callbacks --------------------------------------------------
     wire_session_callbacks(
         &window,
+        window_id,
         store.clone(),
+        registry.clone(),
         sessions_model.clone(),
         tabs_model.clone(),
         terminals_model.clone(),
@@ -1669,6 +1957,7 @@ pub fn run() -> Result<()> {
         local_snap.clone(),
         local_net_hist.clone(),
         sftp_follow_cd.clone(),
+        core.tab_routes.clone(),
     );
 
     // Recompute the sidebar whenever the active tab changes (fired from Slint's
@@ -1692,6 +1981,7 @@ pub fn run() -> Result<()> {
         let weak = window.as_weak();
         let store = store.clone();
         let tabs_model = tabs_model.clone();
+        let registry = registry.clone();
         window.on_set_language(move |code| {
             crate::i18n::set_language(&code.to_string());
             {
@@ -1699,6 +1989,7 @@ pub fn run() -> Result<()> {
                 s.set_language(crate::i18n::current_code().to_string());
                 let _ = s.save();
             }
+            registry.broadcast_config_changed();
             // Re-translate the welcome tab's dynamic title.
             for i in 0..tabs_model.row_count() {
                 if let Some(mut row) = tabs_model.row_data(i) {
@@ -1724,6 +2015,7 @@ pub fn run() -> Result<()> {
         let store = store.clone();
         let bufs_theme = bufs.clone();
         let proc_weak = proc_win.as_weak();
+        let registry = registry.clone();
         window.on_toggle_theme(move || {
             let Some(w) = weak.upgrade() else { return };
             let next_dark = !w.get_dark_mode();
@@ -1735,20 +2027,23 @@ pub fn run() -> Result<()> {
                 sync_proc_theme(&w, &p);
             }
             let pref = if next_dark { "dark" } else { "light" };
-            let mut s = store.borrow_mut();
-            s.set_theme_pref(pref.to_string());
-            let _ = s.save();
+            {
+                let mut s = store.borrow_mut();
+                s.set_theme_pref(pref.to_string());
+                let _ = s.save();
+            }
+            registry.broadcast_config_changed();
         });
     }
 
     // Host-key confirmation dialog (#109-5): the user trusts or rejects the
     // presented server key; the decision fans back out to the blocked SSH/SFTP
-    // handler(s) and the next queued prompt (if any) is shown.
+    // handler(s) and the next queued prompt for THIS window (if any) is shown.
     {
         let weak = window.as_weak();
         window.on_hostkey_accept(move || {
             if let Some(w) = weak.upgrade() {
-                resolve_front_hostkey(&w, true);
+                resolve_front_hostkey(&w, window_id, true);
             }
         });
     }
@@ -1756,7 +2051,7 @@ pub fn run() -> Result<()> {
         let weak = window.as_weak();
         window.on_hostkey_reject(move || {
             if let Some(w) = weak.upgrade() {
-                resolve_front_hostkey(&w, false);
+                resolve_front_hostkey(&w, window_id, false);
             }
         });
     }
@@ -1765,9 +2060,17 @@ pub fn run() -> Result<()> {
     // username/password (or cancels); the answer unblocks the SSH/SFTP auth.
     {
         let weak = window.as_weak();
+        let registry = registry.clone();
         window.on_cred_accept(move || {
             if let Some(w) = weak.upgrade() {
-                resolve_front_cred(&w, true);
+                let remember = w.get_cred_remember();
+                resolve_front_cred(&w, window_id, true);
+                // "Remember" persisted new credentials onto the saved session
+                // (auth_dialogs::persist_credentials); the registry is not
+                // reachable there, so broadcast from this owning callback.
+                if remember {
+                    registry.broadcast_config_changed();
+                }
             }
         });
     }
@@ -1775,7 +2078,7 @@ pub fn run() -> Result<()> {
         let weak = window.as_weak();
         window.on_cred_reject(move || {
             if let Some(w) = weak.upgrade() {
-                resolve_front_cred(&w, false);
+                resolve_front_cred(&w, window_id, false);
             }
         });
     }
@@ -1786,7 +2089,7 @@ pub fn run() -> Result<()> {
         let weak = window.as_weak();
         window.on_mfa_submit(move || {
             if let Some(w) = weak.upgrade() {
-                resolve_front_mfa(&w, true);
+                resolve_front_mfa(&w, window_id, true);
             }
         });
     }
@@ -1794,7 +2097,7 @@ pub fn run() -> Result<()> {
         let weak = window.as_weak();
         window.on_mfa_cancel(move || {
             if let Some(w) = weak.upgrade() {
-                resolve_front_mfa(&w, false);
+                resolve_front_mfa(&w, window_id, false);
             }
         });
     }
@@ -1890,8 +2193,14 @@ pub fn run() -> Result<()> {
     // Query the GitHub releases API on a background thread; if a newer version
     // exists, flip the banner on. Best-effort: any network/parse error is
     // silently ignored and the app keeps working on the current version.
-    // Skipped entirely when the user turned the check off (#184).
-    if store.borrow().update_check_enabled() {
+    // Skipped entirely when the user turned the check off (#184). Runs only
+    // for the first window of the process: the old `registry.count() == 1`
+    // guard re-fired the check whenever the count returned to 1 after a
+    // close-then-open. The flag is set regardless of the enabled setting, so
+    // a disabled check is never deferred to a later window either.
+    let first_window = !core.first_window_done.get();
+    core.first_window_done.set(true);
+    if first_window && store.borrow().update_check_enabled() {
         let weak = window.as_weak();
         std::thread::spawn(move || {
             let body =
@@ -2001,8 +2310,23 @@ pub fn run() -> Result<()> {
         window.set_about_libs(ModelRc::from(Rc::new(VecModel::from(libs))));
     }
 
+    // New-window entry points: the TabBar button and the Ctrl+Shift+N /
+    // ⌘⇧N shortcut both route here. Runs on the UI thread (Slint callback),
+    // so open_window can build the window directly. A failed open must not
+    // be silent — the click/keystroke already consumed (#multi-window).
+    {
+        let core = core.clone();
+        window.on_new_window_clicked(move || {
+            if let Err(e) = open_window(core.clone(), true, None) {
+                tracing::warn!("failed to open new window: {e:#}");
+            }
+        });
+    }
+
     wire_tab_callbacks(
         &window,
+        window_id,
+        core.clone(),
         tabs_model.clone(),
         terminals_model.clone(),
         layout.clone(),
@@ -2024,6 +2348,7 @@ pub fn run() -> Result<()> {
         store.clone(),
         ConnectCtx {
             weak: window.as_weak(),
+            window_id,
             runtime: runtime.clone(),
             handles: handles.clone(),
             sftp_handles: sftp_handles.clone(),
@@ -2036,6 +2361,7 @@ pub fn run() -> Result<()> {
             last_term_size: last_term_size.clone(),
             sftp_follow_cd: sftp_follow_cd.clone(),
             store: store.clone(),
+            tab_routes: core.tab_routes.clone(),
         },
     );
 
@@ -2120,9 +2446,14 @@ pub fn run() -> Result<()> {
         let sh = sftp_handles.clone();
         let wheel_bufs = bufs.clone();
         let close_handles = handles.clone();
+        let close_sftp_handles = sftp_handles.clone();
+        let ev_proc_weak = proc_win.as_weak();
+        let ev_sys_weak = sys_win.as_weak();
         let ev_store = store.clone();
         let ev_activity = activity.clone();
         let ev_exit_confirmed = exit_confirmed.clone();
+        let ev_registry = registry.clone();
+        let ev_core = core.clone();
         let ev_window_size_tracking_ready = window_size_tracking_ready.clone();
         let ev_pending_window_size_restore = pending_window_size_restore.clone();
         let mut last_cursor_logical: Option<(f32, f32)> = None;
@@ -2421,6 +2752,22 @@ pub fn run() -> Result<()> {
                         if let Some(win) = weak.upgrade() {
                             save_layout(&win, &ev_store);
                         }
+                        // The event is not prevented, so Slint will destroy this
+                        // window. Mirror the confirmed custom-close path: tear down
+                        // this window's workers and unregister it, quitting the
+                        // shared event loop if it was the last one — otherwise a
+                        // stale registry entry blocks the quit of a later window.
+                        teardown_window(
+                            window_id,
+                            &close_handles,
+                            &close_sftp_handles,
+                            &ev_proc_weak,
+                            &ev_sys_weak,
+                        );
+                        if ev_registry.unregister(window_id) {
+                            let _ = slint::quit_event_loop();
+                        }
+                        forget_window_state(&ev_core, window_id);
                     }
                     _ => {}
                 }
@@ -2436,6 +2783,8 @@ pub fn run() -> Result<()> {
         let close_handles = handles.clone();
         let close_sftp_handles = sftp_handles.clone();
         let close_exit_confirmed = exit_confirmed.clone();
+        let close_registry = registry.clone();
+        let close_core = core.clone();
         window.on_confirm_close_yes(move || {
             // Guard against a double click and against another close request
             // arriving from Windows Installer while shutdown is in progress.
@@ -2447,29 +2796,21 @@ pub fn run() -> Result<()> {
                 save_layout(&w, &cc_store);
                 let _ = w.hide();
             }
-            if let Some(w) = proc_weak.upgrade() {
-                let _ = w.hide();
-            }
-            if let Some(w) = sys_weak.upgrade() {
-                let _ = w.hide();
-            }
             // Ask every worker to stop before the runtime/event loop is torn
-            // down. Clearing the maps also makes any repeated close request see
-            // no live sessions and pass through immediately.
-            {
-                let mut sessions = close_handles.borrow_mut();
-                for handle in sessions.values() {
-                    handle.close();
-                }
-                sessions.clear();
+            // down, and hide the detachable monitor windows. Clearing the maps
+            // also makes any repeated close request see no live sessions and
+            // pass through immediately.
+            teardown_window(
+                window_id,
+                &close_handles,
+                &close_sftp_handles,
+                &proc_weak,
+                &sys_weak,
+            );
+            if close_registry.unregister(window_id) {
+                let _ = slint::quit_event_loop();
             }
-            if let Ok(mut sftp) = close_sftp_handles.lock() {
-                for handle in sftp.values() {
-                    handle.close();
-                }
-                sftp.clear();
-            }
-            let _ = slint::quit_event_loop();
+            forget_window_state(&close_core, window_id);
         });
     }
 
@@ -2500,8 +2841,13 @@ pub fn run() -> Result<()> {
     {
         let weak = window.as_weak();
         let close_handles = handles.clone();
+        let close_sftp_handles = sftp_handles.clone();
+        let wc_proc_weak = proc_win.as_weak();
+        let wc_sys_weak = sys_win.as_weak();
         let wc_store = store.clone();
         let wc_exit_confirmed = exit_confirmed.clone();
+        let wc_registry = registry.clone();
+        let wc_core = core.clone();
         window.on_win_close(move || {
             if let Some(w) = weak.upgrade() {
                 // Mirror the native-X behaviour: confirm if sessions are open.
@@ -2509,7 +2855,20 @@ pub fn run() -> Result<()> {
                 {
                     wc_exit_confirmed.set(true);
                     save_layout(&w, &wc_store);
-                    let _ = slint::quit_event_loop();
+                    // Tear down this window's workers and hide its monitor
+                    // windows; quit only if it was the last one.
+                    teardown_window(
+                        window_id,
+                        &close_handles,
+                        &close_sftp_handles,
+                        &wc_proc_weak,
+                        &wc_sys_weak,
+                    );
+                    let _ = w.hide();
+                    if wc_registry.unregister(window_id) {
+                        let _ = slint::quit_event_loop();
+                    }
+                    forget_window_state(&wc_core, window_id);
                 } else {
                     w.set_confirm_close_open(true);
                 }
@@ -2550,19 +2909,41 @@ pub fn run() -> Result<()> {
         });
     }
 
-    // Center the window on the primary monitor once it's shown (size is only
-    // known after the first frame, so defer via a single-shot timer).
+    // Position once shown (size is only known after the first frame). The
+    // first window centers on the primary monitor; later windows cascade
+    // ~40 px from the newest existing window instead of stacking exactly on
+    // top of it. The origin was captured above, before this window was
+    // registered (registry.newest() would return this window itself).
     {
         let weak = window.as_weak();
+        let origin = cascade_origin
+            .and_then(|w| w.upgrade())
+            .map(|w| w.window().position());
         slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
-            if let Some(w) = weak.upgrade() {
-                center_window(&w);
+            let Some(w) = weak.upgrade() else { return };
+            if let Some(pos) = at {
+                // Tab detach pinned the window under the cursor (#tab-detach).
+                w.window().set_position(pos);
+                return;
+            }
+            match origin {
+                Some(pos) => {
+                    w.window().set_position(slint::PhysicalPosition::new(
+                        pos.x + 40,
+                        pos.y + 40,
+                    ));
+                }
+                None => center_window(&w),
             }
         });
     }
 
-    window.run().context("event loop exited with error")?;
-    Ok(())
+    // The old entry point was window.run(), which shows the window before
+    // spinning the loop. run_event_loop() does not, so display it here —
+    // without this the app starts but no window ever appears (#multi-window).
+    window.show().context("failed to show window")?;
+
+    Ok(window_id)
 }
 
 /// Center the window on the primary monitor's work area (Windows).
@@ -2999,7 +3380,11 @@ fn sync_sessions_for_window(
 /// `host|port|username|password|name` is skipped. Dedup happens at the call site.
 fn wire_session_callbacks(
     window: &AppWindow,
+    // Registry id of `window`; connect-time prompts are tagged with it so
+    // their dialogs open (and abort on close) in this window (#multi-window).
+    window_id: u64,
     store: Rc<RefCell<ConfigStore>>,
+    registry: Rc<WindowRegistry<slint::Weak<AppWindow>>>,
     sessions_model: Rc<VecModel<SessionInfo>>,
     tabs_model: Rc<VecModel<TabInfo>>,
     terminals_model: Rc<VecModel<TerminalState>>,
@@ -3018,6 +3403,7 @@ fn wire_session_callbacks(
     local_snap: LocalSnap,
     local_net_hist: NetHist,
     sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
+    tab_routes: TabRoutes,
 ) {
     // Working set of port forwards (#56) for the session being created/edited.
     // The forward add/delete callbacks mutate it; saving reads it into
@@ -3098,6 +3484,7 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_import_ssh_config(move || {
             let hosts = crate::ssh::ssh_config::parse_default();
             let mut added = 0usize;
@@ -3146,6 +3533,9 @@ fn wire_session_callbacks(
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            if added > 0 {
+                registry.broadcast_config_changed();
+            }
             if let Some(w) = weak.upgrade() {
                 let hint = if added > 0 {
                     format!("{} {}", t("已导入", "imported"), added)
@@ -3186,6 +3576,7 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_batch_import_confirm(move |text: SharedString| {
             let parsed = parse_batch_import(text.as_str());
             let total = parsed.len();
@@ -3209,6 +3600,9 @@ fn wire_session_callbacks(
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            if added > 0 {
+                registry.broadcast_config_changed();
+            }
             if let Some(w) = weak.upgrade() {
                 let hint = if total == 0 {
                     t("没有可导入的连接", "nothing to import").to_string()
@@ -3227,6 +3621,7 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_import_sessions(move || {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("JSON", &["json"])
@@ -3237,6 +3632,7 @@ fn wire_session_callbacks(
                     let hint = match res {
                         Ok((added, skipped)) => {
                             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+                            registry.broadcast_config_changed();
                             format!(
                                 "{} {} / {} {}",
                                 t("已导入", "imported"),
@@ -3314,6 +3710,7 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_remove_session(move |id: SharedString| {
             {
                 let mut s = store.borrow_mut();
@@ -3323,6 +3720,7 @@ fn wire_session_callbacks(
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            registry.broadcast_config_changed();
             if let Some(w) = weak.upgrade() {
                 // Touch a property so the list re-renders reliably.
                 let _ = w.get_sessions();
@@ -3335,7 +3733,9 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_duplicate_session(move |id: SharedString| {
+            let mut duplicated = false;
             {
                 let mut s = store.borrow_mut();
                 if let Some(orig) = s.get(&id.to_string()).cloned() {
@@ -3347,9 +3747,13 @@ fn wire_session_callbacks(
                     if let Err(err) = s.save() {
                         tracing::warn!("failed to save config: {err:#}");
                     }
+                    duplicated = true;
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            if duplicated {
+                registry.broadcast_config_changed();
+            }
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3361,13 +3765,15 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_move_session(move |id: SharedString, group: SharedString| {
+            let mut moved = false;
             {
                 let mut s = store.borrow_mut();
                 if let Some(orig) = s.get(&id.to_string()).cloned() {
-                    let mut moved = orig;
+                    let mut target = orig;
                     // "default" is the display label for ungrouped → store empty.
-                    moved.group = if group.as_str().eq_ignore_ascii_case("default") {
+                    target.group = if group.as_str().eq_ignore_ascii_case("default") {
                         String::new()
                     } else if is_reserved_session_group(group.as_str().trim()) {
                         // `system` belongs exclusively to built-in local shells.
@@ -3375,13 +3781,17 @@ fn wire_session_callbacks(
                     } else {
                         group.to_string()
                     };
-                    s.upsert(moved);
+                    s.upsert(target);
                     if let Err(err) = s.save() {
                         tracing::warn!("failed to save config: {err:#}");
                     }
+                    moved = true;
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            if moved {
+                registry.broadcast_config_changed();
+            }
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3442,6 +3852,7 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_submit_group(move |orig: SharedString, name: SharedString| {
             let trimmed = name.trim();
             let error = {
@@ -3473,6 +3884,7 @@ fn wire_session_callbacks(
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            registry.broadcast_config_changed();
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3484,6 +3896,7 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         window.on_delete_group(move |name: SharedString| {
             {
                 let mut s = store.borrow_mut();
@@ -3493,6 +3906,7 @@ fn wire_session_callbacks(
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            registry.broadcast_config_changed();
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3505,6 +3919,7 @@ fn wire_session_callbacks(
         let store = store.clone();
         let sessions_model = sessions_model.clone();
         let edit_forwards = edit_forwards.clone();
+        let registry = registry.clone();
         window.on_session_dialog_submit(move |draft: SessionDraft| {
             let id = draft.id.to_string();
             let forwards = match validated_port_forwards(&edit_forwards.borrow()) {
@@ -3611,6 +4026,7 @@ fn wire_session_callbacks(
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            registry.broadcast_config_changed();
             if let Some(w) = weak.upgrade() {
                 w.set_dialog_open(false);
             }
@@ -3698,6 +4114,7 @@ fn wire_session_callbacks(
                                                 responder,
                                             } => enqueue_hostkey_prompt(
                                                 &w,
+                                                window_id,
                                                 host,
                                                 port,
                                                 key_type,
@@ -3714,6 +4131,7 @@ fn wire_session_callbacks(
                                                 responder,
                                             } => enqueue_cred_prompt(
                                                 &w,
+                                                window_id,
                                                 session_id,
                                                 host,
                                                 user,
@@ -3729,6 +4147,7 @@ fn wire_session_callbacks(
                                                 responder,
                                             } => enqueue_mfa_prompt(
                                                 &w,
+                                                window_id,
                                                 session_id,
                                                 host,
                                                 prompt,
@@ -3884,6 +4303,7 @@ fn wire_session_callbacks(
         let local_snap = local_snap.clone();
         let local_net_hist = local_net_hist.clone();
         let sftp_follow_cd = sftp_follow_cd.clone();
+        let tab_routes = tab_routes.clone();
         window.on_connect_session(move |id: SharedString| {
             let id = id.to_string();
             let session = if id.starts_with("system:") {
@@ -4048,6 +4468,7 @@ fn wire_session_callbacks(
             // Shared with in-place reconnect (#79) via start_session_in_tab.
             let ctx = ConnectCtx {
                 weak: weak.clone(),
+                window_id,
                 runtime: runtime.clone(),
                 handles: handles.clone(),
                 sftp_handles: sftp_handles.clone(),
@@ -4060,6 +4481,7 @@ fn wire_session_callbacks(
                 last_term_size: last_term_size.clone(),
                 sftp_follow_cd: sftp_follow_cd.clone(),
                 store: store.clone(),
+                tab_routes: tab_routes.clone(),
             };
             start_session_in_tab(&tab_id, session, &ctx);
         });

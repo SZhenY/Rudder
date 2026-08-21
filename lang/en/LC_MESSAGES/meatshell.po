@@ -536,3 +536,6 @@ msgstr "No matching sessions"
 
 msgid "Clear search"
 msgstr "Clear search"
+
+msgid "新建窗口"
+msgstr "New Window"
