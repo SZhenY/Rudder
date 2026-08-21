@@ -7,4 +7,4 @@ mod cli;
 #[path = "struct/mod.rs"]
 mod structs;
 
-pub(crate) use cli::{is_cli_command, run};
+pub(crate) use cli::run;

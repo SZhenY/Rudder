@@ -21,55 +21,74 @@ mod ui;
 mod wallpaper;
 mod webdav;
 
+enum StartMode {
+    Mcp,
+    Cli,
+    App,
+    Version,
+}
+
+impl StartMode {
+    fn detect(args: &[String]) -> Self {
+        match args.get(1).map(String::as_str) {
+            Some("mcp") if args.get(2).is_some_and(|arg| arg == "serve") => Self::Mcp,
+            Some("cli") => Self::Cli,
+            _ if args.iter().any(|arg| arg == "--version" || arg == "-V") => Self::Version,
+            _ => Self::App,
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    if mcp::is_serve_command(&args) {
-        return mcp::run_stdio();
-    }
-    if cli::is_cli_command(&args) {
-        return cli::run(&args);
-    }
 
-    if args.iter().any(|arg| arg == "--version" || arg == "-V") {
+    let mode = StartMode::detect(&args);
+    if matches!(mode, StartMode::Version) {
         println!("meatshell {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
 
-    // macOS defaults to Slint's CPU renderer. FemtoVG and Skia remain available
-    // in Settings -> Interface -> Rendering for users who prefer GPU rendering.
-    //
-    // History: 0.4.10 force-set SLINT_BACKEND=winit-skia to work around femtovg's
-    // CoreText font lookup failing on macOS 26 / Tahoe (all text vanished, #108).
-    // That fix shipped without on-device verification and turned out to *break* a
-    // different set of Macs (Apple Silicon M5 / 26.5): Skia couldn't resolve the
-    // "PingFang SC" UI font and all text vanished there instead (#129). Icons
-    // survived in both cases because Material Icons is an embedded font.
-    //
-    // Neither GPU renderer works for every macOS machine, so software rendering
-    // is the compatibility default. Users can select FemtoVG or Skia under
-    // Settings -> Interface -> Rendering. The
-    // SLINT_BACKEND=winit-skia diagnostic override remains available and takes
-    // precedence over the saved setting. The renderer-skia feature is compiled in
-    // on macOS (see Cargo.toml), so switching does not require a rebuild.
-
     init_tracing();
 
-    // ── IME policy ───────────────────────────────────────────────────────────
-    // NOTE: We deliberately DO **NOT** call `ImmDisableIME` here.
-    //
-    // An earlier version disabled the IME for the whole Slint event-loop thread
-    // to work around a vim `:q!` glitch (Chinese IMEs intercept letter keys and,
-    // on a Shift press, discard the in-flight pinyin).  But disabling the IME
-    // also makes 中文输入 completely impossible — there is no composition window
-    // at all, which is exactly the "无法输入任何中文" bug.
-    //
-    // Chinese input now flows through the hidden `ime-input` TextInput in
-    // terminal_view.slint: composition happens there, and committed text is
-    // forwarded to the PTY via the `edited` callback.  The vim/Shift side-effects
-    // are handled instead by the C0-marker + 3-layer Backspace filters in
-    // `app::on_send_key`, so we no longer need (and must not use) ImmDisableIME.
+    match mode {
+        StartMode::Mcp => mcp::run_stdio(),
+        StartMode::Cli => cli::run(&args),
+        StartMode::App => {
+            // macOS defaults to Slint's CPU renderer. FemtoVG and Skia remain available
+            // in Settings -> Interface -> Rendering for users who prefer GPU rendering.
+            //
+            // History: 0.4.10 force-set SLINT_BACKEND=winit-skia to work around femtovg's
+            // CoreText font lookup failing on macOS 26 / Tahoe (all text vanished, #108).
+            // That fix shipped without on-device verification and turned out to *break* a
+            // different set of Macs (Apple Silicon M5 / 26.5): Skia couldn't resolve the
+            // "PingFang SC" UI font and all text vanished there instead (#129). Icons
+            // survived in both cases because Material Icons is an embedded font.
+            //
+            // Neither GPU renderer works for every macOS machine, so software rendering
+            // is the compatibility default. Users can select FemtoVG or Skia under
+            // Settings -> Interface -> Rendering. The
+            // SLINT_BACKEND=winit-skia diagnostic override remains available and takes
+            // precedence over the saved setting. The renderer-skia feature is compiled in
+            // on macOS (see Cargo.toml), so switching does not require a rebuild.
 
-    app::run()
+            // ── IME policy ───────────────────────────────────────────────────────────
+            // NOTE: We deliberately DO **NOT** call `ImmDisableIME` here.
+            //
+            // An earlier version disabled the IME for the whole Slint event-loop thread
+            // to work around a vim `:q!` glitch (Chinese IMEs intercept letter keys and,
+            // on a Shift press, discard the in-flight pinyin).  But disabling the IME
+            // also makes 中文输入 completely impossible — there is no composition window
+            // at all, which is exactly the "无法输入任何中文" bug.
+            //
+            // Chinese input now flows through the hidden `ime-input` TextInput in
+            // terminal_view.slint: composition happens there, and committed text is
+            // forwarded to the PTY via the `edited` callback.  The vim/Shift side-effects
+            // are handled instead by the C0-marker + 3-layer Backspace filters in
+            // `app::on_send_key`, so we no longer need (and must not use) ImmDisableIME.
+            app::run()
+        }
+        StartMode::Version => unreachable!("handled above"),
+    }
 }
 
 /// Set up tracing: stderr (honours RUST_LOG, default info) **plus** a capped
@@ -118,4 +137,32 @@ fn init_tracing() {
         .with(stderr_layer)
         .with(file_layer)
         .init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_start_mode() {
+        let mcp = vec![
+            "meatshell".to_string(),
+            "mcp".to_string(),
+            "serve".to_string(),
+        ];
+        assert!(matches!(StartMode::detect(&mcp), StartMode::Mcp));
+
+        let cli = vec![
+            "meatshell".to_string(),
+            "cli".to_string(),
+            "sessions".to_string(),
+        ];
+        assert!(matches!(StartMode::detect(&cli), StartMode::Cli));
+
+        let version = vec!["meatshell".to_string(), "--version".to_string()];
+        assert!(matches!(StartMode::detect(&version), StartMode::Version));
+
+        let app = vec!["meatshell".to_string()];
+        assert!(matches!(StartMode::detect(&app), StartMode::App));
+    }
 }

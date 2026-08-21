@@ -802,13 +802,25 @@ export component SftpPanel inherits Rectangle {
                                             width: parent.width; height: parent.height;
                                         }
                                     }
-                                    Text {
-                                        text: entry.is-dir ? "📁 " + entry.name : "📄 " + entry.name;
-                                        color: entry.is-dir ? Theme.accent : Theme.text-primary;
-                                        font-size: Theme.fs-sm;
+
+                                    HorizontalLayout {
                                         horizontal-stretch: 1;
-                                        overflow: elide;
-                                        vertical-alignment: center;
+                                        spacing: 4px;
+                                        Text {
+                                            text: entry.is-dir ? "\u{E2C7}" : "\u{E24D}"; // folder / insert_drive_file
+                                            font-family: "Material Icons";
+                                            color: entry.is-dir ? Theme.accent : Theme.text-secondary;
+                                            font-size: Theme.fs-sm;
+                                            vertical-alignment: center;
+                                        }
+                                        Text {
+                                            text: entry.name;
+                                            color: entry.is-dir ? Theme.accent : Theme.text-primary;
+                                            font-size: Theme.fs-sm;
+                                            horizontal-stretch: 1;
+                                            overflow: elide;
+                                            vertical-alignment: center;
+                                        }
                                     }
                                     if root.show-size-col : Text {
                                         text: entry.is-dir ? "" : entry.size;

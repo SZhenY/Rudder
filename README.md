@@ -82,7 +82,7 @@ open /Applications/meatshell.app
 - [x] 完整 VT/ANSI 终端模拟（btop / htop / vim 全屏正常渲染）
 - [x] 彩色 emoji（支持肤色、旗帜及 ZWJ 组合序列）
 - [x] 多标签页（欢迎页 + 多个会话）
-- [x] 会话管理：新建 / 编辑 / 删除 / 分组，本地 JSON 持久化，导出 / 导入
+- [x] 会话管理：新建 / 编辑 / 删除 / 分组，本地 JSON 持久化，导出 / 导入（兼容 FinalShell 连接文件）
   - 配置位置：`%APPDATA%/meatshell/sessions.json`（Windows）
     / `~/.config/meatshell/sessions.json`（Linux）
     / `~/Library/Application Support/meatshell/sessions.json`（macOS）

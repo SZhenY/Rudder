@@ -310,6 +310,12 @@ export component TerminalView inherits Rectangle {
     property <bool> history-open: false;       // history dropdown visibility
     property <bool> history-autocomplete: false; // live suggestions from command input (#349)
     property <int> history-cursor: -1;         // ↑/↓ recall index (-1 = live input)
+    // The history dropdown is created by the key-press / click handlers while
+    // Slint is still dispatching the event. Focusing its search TextInput
+    // synchronously in `init` can re-enter the Windows IME/accessibility
+    // plumbing and read the popup's half-built layout, panicking with
+    // "Recursion detected" (#349 / #343-style). Defer focus to next tick.
+    property <bool> history-search-focus-pending: false;
     // Keyboard-driven selection in the open history dropdown (#140): ↑/↓ move it,
     // Enter runs history-view[history-selected].
     property <int> history-selected: 0;
@@ -1742,6 +1748,15 @@ export component TerminalView inherits Rectangle {
                         background: Theme.bg-root;
                         border-width: 1px;
                         border-color: hist-search.has-focus ? Theme.accent : Theme.border-subtle;
+                        // Defer focus to the next event-loop tick (see init below).
+                        history-search-focus-timer := Timer {
+                            interval: 0ms;
+                            running: root.history-search-focus-pending;
+                            triggered => {
+                                root.history-search-focus-pending = false;
+                                if (root.history-open) { hist-search.focus(); }
+                            }
+                        }
                         HorizontalLayout {
                             padding-left: 8px; padding-right: 8px; spacing: 4px;
                             Text { text: "\u{E8B6}"; font-family: "Material Icons";
@@ -1757,7 +1772,13 @@ export component TerminalView inherits Rectangle {
                                     font-size: Theme.fs-sm;
                                     single-line: true;
                                     // Auto-focus so Ctrl+R lands you typing (#140).
-                                    init => { self.focus(); }
+                                    // Defer to the next event-loop tick: focusing
+                                    // synchronously while the popup's first layout
+                                    // pass is still running re-enters the Windows
+                                    // IME/accessibility plumbing and reads the
+                                    // half-built layout, panicking with "Recursion
+                                    // detected" (#349 / #343).
+                                    init => { root.history-search-focus-pending = true; }
                                     edited => { root.search-history(self.text); root.history-selected = 0; }
                                     // ↑/↓ move the selection, Enter runs it, Esc
                                     // closes and returns focus to the terminal (#140).
