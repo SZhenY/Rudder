@@ -513,9 +513,27 @@ impl ConfigStore {
         &self.cache.sessions
     }
 
-    #[allow(dead_code)] // reserved for an upcoming reorder/drag-drop feature
-    pub fn sessions_mut(&mut self) -> &mut Vec<Session> {
-        &mut self.cache.sessions
+    /// Drag-to-reorder a saved session among its same-group siblings
+    /// (`dir < 0` = up). The stored Vec order is the display order, same
+    /// convention as quick commands. Returns whether the order changed.
+    pub fn reorder_session(&mut self, id: &str, dir: isize) -> bool {
+        let sessions = &mut self.cache.sessions;
+        let Some(idx) = sessions.iter().position(|s| s.id == id) else {
+            return false;
+        };
+        let group = sessions[idx].group.clone();
+        let target = if dir < 0 {
+            (0..idx).rev().find(|&i| sessions[i].group == group)
+        } else {
+            (idx + 1..sessions.len()).find(|&i| sessions[i].group == group)
+        };
+        match target {
+            Some(target) => {
+                sessions.swap(idx, target);
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn upsert(&mut self, mut session: Session) {
@@ -2087,5 +2105,34 @@ mod tests {
         assert!(!store.paste_confirm_enabled());
         assert!(!store.extra_paste_shortcuts_enabled());
         assert!(store.zen_mode());
+    }
+
+    #[test]
+    fn reorder_session_swaps_same_group_siblings_only() {
+        let mut store = temp_store();
+        let mk = |id: &str, group: &str| Session {
+            id: id.into(),
+            name: id.into(),
+            group: group.into(),
+            ..Session::new_empty()
+        };
+        store.cache.sessions = vec![mk("a", ""), mk("x", "ops"), mk("b", ""), mk("c", "")];
+
+        // Moving "c" up swaps it with the nearest ungrouped sibling ("b"),
+        // leaving the grouped session in between untouched.
+        assert!(store.reorder_session("c", -1));
+        assert_eq!(
+            store
+                .sessions()
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "x", "c", "b"]
+        );
+        // "a" is already the first ungrouped session; "x" is alone in its
+        // group; unknown ids are no-ops.
+        assert!(!store.reorder_session("a", -1));
+        assert!(!store.reorder_session("x", 1));
+        assert!(!store.reorder_session("nope", 1));
     }
 }

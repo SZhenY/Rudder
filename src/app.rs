@@ -1875,6 +1875,10 @@ fn open_window(
     let local_snap: LocalSnap = Arc::new(Mutex::new(SystemSnapshot::default()));
     let local_net_hist: NetHist = Arc::new(Mutex::new(vec![0.0; NET_HISTORY_LEN]));
 
+    // Per-tab display-name overrides set via "Rename session" (tab context
+    // menu). Display only — the saved session keeps its own name.
+    let tab_titles: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
+
     // Expose this window's state to the rest of the process so tabs can be
     // dragged out into a new window or merged into another one (#tab-detach).
     core.window_states.borrow_mut().insert(
@@ -2007,6 +2011,7 @@ fn open_window(
         local_net_hist.clone(),
         sftp_follow_cd.clone(),
         core.tab_routes.clone(),
+        tab_titles.clone(),
     );
 
     // Recompute the sidebar whenever the active tab changes (fired from Slint's
@@ -2387,6 +2392,7 @@ fn open_window(
         render_gates.clone(),
         sftp_handles.clone(),
         sftp_last_cwd.clone(),
+        tab_titles.clone(),
     );
     wire_sftp_callbacks(&window, sftp_handles.clone(), sftp_last_cwd.clone());
     wire_key_input(
@@ -3456,12 +3462,16 @@ fn wire_session_callbacks(
     local_net_hist: NetHist,
     sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
     tab_routes: TabRoutes,
+    tab_titles: Rc<RefCell<HashMap<String, String>>>,
 ) {
     // Working set of port forwards (#56) for the session being created/edited.
     // The forward add/delete callbacks mutate it; saving reads it into
     // Session.forwards; opening the dialog (new/edit) resets it.
     let edit_forwards: Rc<RefCell<Vec<PortFwd>>> =
         Rc::new(RefCell::new(vec![blank_forward_draft()]));
+    // on_connect_session moves the panes_model binding into its closure; the
+    // rename handler below needs its own handle, so clone up front.
+    let panes_model_rename = panes_model.clone();
 
     // Rebuild the session list as the user edits the Quick Connect search.
     {
@@ -3844,6 +3854,65 @@ fn wire_session_callbacks(
             if moved {
                 registry.broadcast_config_changed();
             }
+            if let Some(w) = weak.upgrade() {
+                let _ = w.get_sessions();
+            }
+        });
+    }
+
+    // Drag-to-reorder a host card among its same-group siblings. The stored
+    // Vec order is the display order (no alphabetical sort), so a swap plus
+    // re-sync is all it takes. Reordering while the list is filtered would map
+    // visible hops onto the wrong stored neighbours, so bail out then — the
+    // Slint side already disables the gesture while searching.
+    //
+    // Per-hop updates mutate the model IN PLACE (set_row_data): a full set_vec
+    // rebuild would recreate the rows and drop the dragging row's pointer grab,
+    // ending the drag after one hop. Saving + broadcasting are deferred to
+    // reorder-session-end (pointer release).
+    let sessions_dirty = Rc::new(std::cell::Cell::new(false));
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        let sessions_dirty = sessions_dirty.clone();
+        window.on_reorder_session(move |id: SharedString, dir: i32| {
+            if weak
+                .upgrade()
+                .map(|window| !window.get_host_search_query().trim().is_empty())
+                .unwrap_or(false)
+            {
+                return;
+            }
+            let moved = {
+                let mut s = store.borrow_mut();
+                s.reorder_session(id.as_str(), dir as isize)
+            };
+            if moved {
+                sessions_dirty.set(true);
+                let query = weak
+                    .upgrade()
+                    .map(|w| w.get_host_search_query().to_string())
+                    .unwrap_or_default();
+                refresh_session_rows_in_place(&store.borrow(), &sessions_model, &query);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
+        let sessions_dirty = sessions_dirty.clone();
+        window.on_reorder_session_end(move || {
+            if !sessions_dirty.replace(false) {
+                return;
+            }
+            if let Err(err) = store.borrow_mut().save() {
+                tracing::warn!("failed to save config: {err:#}");
+            }
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+            registry.broadcast_config_changed();
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -4566,6 +4635,100 @@ fn wire_session_callbacks(
             }
             if let Some(w) = weak.upgrade() {
                 w.invoke_connect_session(session_id.into());
+            }
+        });
+    }
+
+    // Rename session (tab context menu): open the dialog pre-filled with the
+    // tab's current title.
+    {
+        let weak = window.as_weak();
+        let tabs_model = tabs_model.clone();
+        window.on_tab_rename_request(move |tab_id: SharedString| {
+            let tab_id = tab_id.to_string();
+            if tab_id.is_empty() || tab_id == "welcome" {
+                return;
+            }
+            use slint::Model as _;
+            let title = (0..tabs_model.row_count())
+                .find_map(|i| {
+                    let row = tabs_model.row_data(i)?;
+                    (row.id.as_str() == tab_id).then(|| row.title.to_string())
+                })
+                .unwrap_or_default();
+            if let Some(w) = weak.upgrade() {
+                w.set_tab_rename_id(tab_id.into());
+                w.set_tab_rename_value(title.into());
+                w.set_tab_rename_open(true);
+            }
+        });
+    }
+
+    // Apply the new display name. An empty name clears the override and
+    // restores the saved session's name. Display-only: the config is untouched.
+    {
+        let weak = window.as_weak();
+        let tabs_model = tabs_model.clone();
+        let panes_model = panes_model_rename.clone();
+        let tab_statuses = tab_statuses.clone();
+        let tab_titles = tab_titles.clone();
+        let store = store.clone();
+        window.on_rename_tab(move |tab_id: SharedString, name: SharedString| {
+            use slint::Model as _;
+            if let Some(w) = weak.upgrade() {
+                w.set_tab_rename_open(false);
+            }
+            let tab_id = tab_id.to_string();
+            let name = name.trim().to_string();
+            let title = if name.is_empty() {
+                tab_titles.borrow_mut().remove(&tab_id);
+                let session_id = tab_statuses
+                    .lock()
+                    .unwrap()
+                    .get(&tab_id)
+                    .map(|s| s.session_id.clone())
+                    .unwrap_or_default();
+                // Two separate borrows: the builtin fallback must not run while
+                // the store lookup's RefCell borrow is still alive.
+                let saved = store.borrow().get(&session_id).map(|s| s.name.clone());
+                saved.or_else(|| {
+                    session_models::builtin_local_sessions(store.borrow().wsl_profiles())
+                        .into_iter()
+                        .find(|s| s.id == session_id)
+                        .map(|s| s.name)
+                })
+            } else {
+                tab_titles.borrow_mut().insert(tab_id.clone(), name.clone());
+                Some(name)
+            };
+            let Some(title) = title else {
+                return;
+            };
+            for i in 0..tabs_model.row_count() {
+                if let Some(mut row) = tabs_model.row_data(i) {
+                    if row.id.as_str() == tab_id {
+                        row.title_len = tab_title_len(&title);
+                        row.title = title.clone().into();
+                        tabs_model.set_row_data(i, row);
+                        break;
+                    }
+                }
+            }
+            // The tab strips render pane.tabs — per-pane snapshot sub-models
+            // built by refresh_panes — not tabs_model itself, so update them
+            // in place too.
+            for pi in 0..panes_model.row_count() {
+                if let Some(pane) = panes_model.row_data(pi) {
+                    for ti in 0..pane.tabs.row_count() {
+                        if let Some(mut tab) = pane.tabs.row_data(ti) {
+                            if tab.id.as_str() == tab_id {
+                                tab.title_len = tab_title_len(&title);
+                                tab.title = title.clone().into();
+                                pane.tabs.set_row_data(ti, tab);
+                            }
+                        }
+                    }
+                }
             }
         });
     }

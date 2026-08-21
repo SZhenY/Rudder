@@ -15,6 +15,7 @@ pub(super) fn wire_tab_callbacks(
     render_gates: RenderGates,
     sftp_handles: SftpHandles,
     sftp_last_cwd: SftpLastCwd,
+    tab_titles: Rc<RefCell<HashMap<String, String>>>,
 ) {
     // Ctrl+Tab / Ctrl+Shift+Tab cycle within the currently focused pane (#294).
     {
@@ -140,11 +141,13 @@ pub(super) fn wire_tab_callbacks(
         let sftp_last_cwd = sftp_last_cwd.clone();
         let panes_model = panes_model.clone();
         let splitters_model = splitters_model.clone();
+        let tab_titles = tab_titles.clone();
         window.on_pane_tab_closed(move |_pane_id: i32, id: SharedString| {
             let id = id.to_string();
             if id == "welcome" {
                 return;
             }
+            tab_titles.borrow_mut().remove(&id);
             if let Some(handle) = handles.borrow_mut().remove(&id) {
                 handle.close();
             }

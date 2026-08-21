@@ -765,6 +765,8 @@ export component AppWindow inherits Window {
     callback edit-session(string /* session-id */);
     callback duplicate-session(string /* session-id */);
     callback move-session(string /* session-id */, string /* group */);
+    callback reorder-session(string /* session-id */, int /* dir: -1 up, 1 down */);
+    callback reorder-session-end();
     callback toggle-group(string /* group */);
     callback remove-session(string /* session-id */);
     callback session-dialog-submit(SessionDraft);
@@ -795,6 +797,13 @@ export component AppWindow inherits Window {
     callback pane-merge(int /* pane-id */);
     // Open another connection to the same session as `tab-id` (a new tab).
     callback tab-duplicate(string /* tab-id */);
+    // Rename an open session's tab. Request pre-fills the dialog (Rust reads
+    // the current title); submit applies the new display name.
+    callback tab-rename-request(string /* tab-id */);
+    callback rename-tab(string /* tab-id */, string /* new-title */);
+    in-out property <bool> tab-rename-open: false;
+    in-out property <string> tab-rename-id: "";
+    in-out property <string> tab-rename-value: "";
     // Drag-to-split (v0.5): cursor moved / dropped while dragging `tab-id`, in
     // pane-area coordinates. Rust hit-tests the pane + edge zone.
     callback tab-drag-move(string /* tab-id */, length /* x */, length /* y */);
@@ -1259,6 +1268,8 @@ export component AppWindow inherits Window {
                     edit-session(id) => { root.edit-session(id); }
                     duplicate-session(id) => { root.duplicate-session(id); }
                     move-session(id, group) => { root.move-session(id, group); }
+                    reorder-session(id, dir) => { root.reorder-session(id, dir); }
+                    reorder-end => { root.reorder-session-end(); }
                     toggle-group(group) => { root.toggle-group(group); }
                     new-group => {
                         root.group-dialog-orig = "";
@@ -1579,6 +1590,7 @@ export component AppWindow inherits Window {
                         tab-split(id, dir) => { root.pane-split(pane.id, id, dir); }
                         merge-pane() => { root.pane-merge(pane.id); }
                         tab-duplicate(id) => { root.tab-duplicate(id); }
+                        tab-rename-request(id) => { root.tab-rename-request(id); }
                         tab-drag-move(id, ax, ay) => {
                             root.tab-drag-move(id,
                                 ax - pane-area.absolute-position.x,
@@ -1629,6 +1641,8 @@ export component AppWindow inherits Window {
                         edit-session(id) => { root.edit-session(id); }
                         duplicate-session(id) => { root.duplicate-session(id); }
                         move-session(id, group) => { root.move-session(id, group); }
+                        reorder-session(id, dir) => { root.reorder-session(id, dir); }
+                        reorder-end => { root.reorder-session-end(); }
                         toggle-group(group) => { root.toggle-group(group); }
                         new-group => {
                             root.group-dialog-orig = "";
@@ -2966,6 +2980,75 @@ export component AppWindow inherits Window {
                             if (root.group-dialog-error == "") {
                                 root.group-dialog-open = false;
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Rename-session dialog ----------------------------------------------
+    // Tab context menu → Rename: a display-name override for one open session.
+    // Submitting an empty name restores the saved session name.
+    if root.tab-rename-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000080;
+        TouchArea { clicked => { root.tab-rename-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 340px;
+            height: 196px;
+            background: Theme.popup-bg;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #000000a0;
+            TouchArea {}   // swallow inside clicks
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+                Text {
+                    text: root.lang-en ? "Rename session" : "重命名会话";
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-lg;
+                    font-weight: 700;
+                }
+                Text {
+                    text: @tr("Session name");
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                }
+                tr-input := LineEdit {
+                    text <=> root.tab-rename-value;
+                    font-family: Theme.ui-font-family; // CJK-capable (#54)
+                    placeholder-text: @tr("Session name");
+                    accepted => {
+                        root.rename-tab(root.tab-rename-id, root.tab-rename-value);
+                    }
+                }
+                Text {
+                    text: @tr("Leave empty to restore the default name");
+                    color: Theme.text-muted;
+                    font-size: Theme.fs-xs;
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Button {
+                        text: root.lang-en ? "Cancel" : "取消";
+                        clicked => { root.tab-rename-open = false; }
+                    }
+                    Button {
+                        text: root.lang-en ? "OK" : "确定";
+                        primary: true;
+                        clicked => {
+                            root.rename-tab(root.tab-rename-id, root.tab-rename-value);
                         }
                     }
                 }

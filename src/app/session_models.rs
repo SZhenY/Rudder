@@ -244,7 +244,7 @@ fn build_session_rows(
         });
     }
     for group in &display_groups {
-        let mut gs: Vec<&Session> = if group == "default" {
+        let gs: Vec<&Session> = if group == "default" {
             sessions
                 .iter()
                 .filter(|session| {
@@ -258,8 +258,9 @@ fn build_session_rows(
                 .filter(|session| &session.group == group && matches(session))
                 .collect()
         };
-        gs.sort_by_key(|s| s.name.to_lowercase());
-
+        // No alphabetical sort: the stored Vec order is the user's manual
+        // order, maintained by drag-to-reorder (same convention as quick
+        // commands). New sessions land at the end of their group.
         if gs.is_empty() && !searching {
             rows.push(blank(group));
         } else {
@@ -306,13 +307,38 @@ pub(super) fn sync_sessions_to_model_with_filter(
     ));
 }
 
+/// Same rows as `sync_sessions_to_model_with_filter`, but when the row count
+/// is unchanged the rows are written with `set_row_data` instead of `set_vec`:
+/// the `for` loop keeps its elements (and a drag's pointer grab) alive. Used
+/// for per-hop updates during drag-to-reorder.
+pub(super) fn refresh_session_rows_in_place(
+    store: &ConfigStore,
+    model: &VecModel<SessionInfo>,
+    query: &str,
+) {
+    use slint::Model as _;
+    let builtin_sessions = builtin_local_sessions(store.wsl_profiles());
+    let rows = build_session_rows(
+        store.sessions(),
+        store.groups(),
+        store.collapsed_session_groups(),
+        &builtin_sessions,
+        query,
+    );
+    if rows.len() == model.row_count() {
+        for (i, row) in rows.into_iter().enumerate() {
+            model.set_row_data(i, row);
+        }
+    } else {
+        model.set_vec(rows);
+    }
+}
+
 pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
     sync_sessions_to_model_with_filter(store, model, "");
 }
 
-pub(super) fn builtin_local_sessions(
-    wsl_profiles: &[crate::config::WslProfile],
-) -> Vec<Session> {
+pub(super) fn builtin_local_sessions(wsl_profiles: &[crate::config::WslProfile]) -> Vec<Session> {
     let mut out = Vec::new();
     #[cfg(windows)]
     {
