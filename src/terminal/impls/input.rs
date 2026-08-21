@@ -1,6 +1,3 @@
-#[cfg(target_os = "linux")]
-use std::sync::OnceLock;
-
 use crate::terminal::TermBuffers;
 #[cfg(any(target_os = "windows", test))]
 use super::state::CtrlKeySide;
@@ -110,23 +107,12 @@ pub(crate) fn should_drop_bare_ctrl_marker(
 
 #[cfg(target_os = "linux")]
 pub(crate) fn bare_ctrl_marker_workaround_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        let Ok(release) = std::fs::read_to_string("/etc/os-release") else {
-            return false;
-        };
-        release.lines().any(|line| {
-            let Some((key, value)) = line.split_once('=') else {
-                return false;
-            };
-            let value = value.trim_matches('"');
-            key == "ID" && value.eq_ignore_ascii_case("debian")
-                || key == "ID_LIKE"
-                    && value
-                        .split_ascii_whitespace()
-                        .any(|item| item.eq_ignore_ascii_case("debian"))
-        })
-    })
+    // Slint/winit can expose a physical Control press as U+0011 or U+0016 on
+    // Linux. This was first observed on Debian (#274) and is now confirmed on
+    // Fedora as well (#369), so it is a backend/platform behaviour rather than
+    // a distribution-specific quirk. The final letter event still generates
+    // genuine Ctrl+Q/Ctrl+V bytes through `key_to_pty_bytes`.
+    true
 }
 
 #[cfg(target_os = "macos")]

@@ -5,6 +5,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+- **修复 Fedora 等非 Debian Linux 桌面按下 Ctrl 即触发终端快捷键的问题（#369）。** Linux 下 Slint/winit 可能把裸 Control 按键上报为 `U+0011` 或 `U+0016`；过滤范围现已从 Debian 系扩展到所有 Linux 发行版，避免 nano 在只按 Ctrl 时误触发搜索或其他操作。真正的 Ctrl+Q、Ctrl+V、Ctrl+X 等组合键仍由最终字母事件生成；Windows 与 macOS 保持各自独立的输入适配。
+- **Fix bare Ctrl triggering terminal shortcuts on Fedora and other non-Debian Linux desktops (#369).** Slint/winit may report a physical Control press as `U+0011` or `U+0016` on Linux. Filtering now applies to every Linux distribution instead of only the Debian family, preventing nano and other terminal programs from reacting when Ctrl alone is pressed. Genuine Ctrl+Q, Ctrl+V, Ctrl+X, and similar chords still come from the final letter event, while Windows and macOS retain their separate input handling.
+
 - **新增 MCP 与 CLI 自动化入口。** `meatshell mcp serve` 通过本机 stdio 提供会话查询、SSH 命令执行、SFTP 目录浏览、有界文本读取以及文件上传/下载，并在“设置 → 界面 → MCP”中独立控制服务、保存凭据、任意命令及文件传输权限；密码、私钥和代理凭据不会出现在协议响应中。`meatshell cli` 复用同一核心能力，提供人类可读输出及 `--json`。
 - **Add MCP and CLI automation entry points.** `meatshell mcp serve` exposes session discovery, SSH command execution, SFTP directory listing, bounded text reads, and file uploads/downloads over local stdio, with separate service, saved-credential, arbitrary-command, and file-transfer controls under Settings → Interface → MCP. Passwords, private keys, and proxy credentials never appear in protocol responses. `meatshell cli` reuses the same core and supports both human-readable output and `--json`.
 

@@ -95,6 +95,8 @@ fn platform_bare_ctrl_markers_do_not_reach_nano() {
     assert!(!should_drop_bare_ctrl_marker("\u{0017}", true, true));
     assert!(!should_drop_bare_ctrl_marker("\u{0011}", true, false));
     assert!(!should_drop_bare_ctrl_marker("x", true, true));
+    assert_eq!(key_to_pty_bytes("q", true, false, false), vec![0x11]);
+    assert_eq!(key_to_pty_bytes("v", true, false, false), vec![0x16]);
     assert_eq!(key_to_pty_bytes("x", true, false, false), vec![0x18]);
 }
 
