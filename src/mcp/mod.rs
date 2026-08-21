@@ -7,4 +7,4 @@ mod server;
 #[path = "impls/tools.rs"]
 mod tools;
 
-pub(crate) use server::{is_serve_command, run_stdio};
+pub(crate) use server::run_stdio;

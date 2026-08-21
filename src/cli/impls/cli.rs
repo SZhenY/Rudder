@@ -7,10 +7,6 @@ async fn call_cli(name: &str, arguments: &Value) -> Result<Value> {
     crate::automation::call(name, arguments, crate::automation::Frontend::Cli).await
 }
 
-pub(crate) fn is_cli_command(args: &[String]) -> bool {
-    args.get(1).is_some_and(|value| value == "cli")
-}
-
 pub(crate) fn run(args: &[String]) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -234,11 +230,5 @@ mod tests {
         ];
         assert_eq!(option_value(&args, "--group").unwrap(), Some("prod"));
         assert_eq!(option_value(&args, "--json").unwrap(), None);
-    }
-
-    #[test]
-    fn detects_cli_prefix() {
-        assert!(is_cli_command(&["meatshell".into(), "cli".into()]));
-        assert!(!is_cli_command(&["meatshell".into(), "mcp".into()]));
     }
 }
