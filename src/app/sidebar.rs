@@ -197,6 +197,23 @@ pub(super) fn refresh_sidebar(
             vm.set_vec(tuple5_rows(&sys.filesystems));
         }
     };
+    let show_local_system_models = |win: &AppWindow| {
+        set_system_models(
+            win,
+            snap.cpu_percent,
+            snap.mem_percent,
+            snap.swap_percent,
+            format_mem(snap.mem_used_mib, snap.mem_total_mib).into(),
+            format_mem(snap.swap_used_mib, snap.swap_total_mib).into(),
+            vec![SysNetRow {
+                name: t("本机", "Local").into(),
+                up: format_bytes_per_sec(snap.net_tx_per_sec).into(),
+                down: format_bytes_per_sec(snap.net_rx_per_sec).into(),
+            }],
+            Vec::new(),
+            SystemDetails::default(),
+        );
+    };
     win.set_proc_available(false);
     win.set_system_info_available(false);
     set_procs(win, &[], "", "");
@@ -209,7 +226,30 @@ pub(super) fn refresh_sidebar(
     };
 
     match status {
-        // A live session tab → remote resources + remote NIC on top.
+        // Local shell tabs: keep the connection status line, but show the local
+        // machine's resources (their TabStatus carries no remote CPU/mem stats).
+        Some(st) if st.is_local => {
+            win.set_conn_state(if st.state == 1 {
+                1
+            } else if st.state == 2 {
+                2
+            } else {
+                0
+            });
+            win.set_connection_state(if st.state == 1 {
+                st.host.clone()
+            } else if st.state == 2 {
+                format!("{} {}", st.host, t("已断开", "disconnected"))
+            } else {
+                format!("{} {}", t("连接中", "Connecting"), st.host)
+            }
+            .into());
+            win.set_conn_host(conn_ip(&st.host).into());
+            show_local_res(win);
+            set_top_local(win);
+            show_local_system_models(win);
+        }
+        // A live remote session tab → remote resources + remote NIC on top.
         Some(st) if st.state == 1 => {
             win.set_conn_state(1);
             win.set_connection_state(st.host.clone().into());
@@ -293,21 +333,7 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host("".into());
             show_local_res(win);
             set_top_local(win);
-            set_system_models(
-                win,
-                snap.cpu_percent,
-                snap.mem_percent,
-                snap.swap_percent,
-                format_mem(snap.mem_used_mib, snap.mem_total_mib).into(),
-                format_mem(snap.swap_used_mib, snap.swap_total_mib).into(),
-                vec![SysNetRow {
-                    name: t("本机", "Local").into(),
-                    up: format_bytes_per_sec(snap.net_tx_per_sec).into(),
-                    down: format_bytes_per_sec(snap.net_rx_per_sec).into(),
-                }],
-                Vec::new(),
-                SystemDetails::default(),
-            );
+            show_local_system_models(win);
         }
     }
 }
