@@ -1553,28 +1553,44 @@ impl ConfigStore {
         Ok(count)
     }
 
-    /// Import sessions from a string produced by [`Self::export_json`]. New sessions
-    /// get fresh ids; duplicates (same host+user+port+kind) are skipped.
+    /// Import sessions from a MeatShell portable export or a FinalShell connection
+    /// export. New sessions get fresh ids; duplicates (same host+user+port+kind)
+    /// are skipped.
     /// Returns `(added, skipped)`. The store is saved if anything was added.
     pub fn import_json(&mut self, raw: &str) -> Result<(usize, usize)> {
-        let file: ExportFile =
-            serde_json::from_str(&raw).context("not a valid meatshell export file")?;
+        let (sessions, decrypt_meatshell_secrets) =
+            match serde_json::from_str::<ExportFile>(raw) {
+                Ok(file) => (file.sessions, true),
+                Err(meatshell_error) => (
+                    super::finalshell::parse_export(raw).with_context(|| {
+                        format!(
+                            "not a valid MeatShell or FinalShell export file; MeatShell parser: {meatshell_error}"
+                        )
+                    })?,
+                    false,
+                ),
+            };
 
         let mut added = 0usize;
         let mut skipped = 0usize;
-        for mut s in file.sessions {
+        for mut s in sessions {
             // Recover the plaintext password (cache stores plaintext). Accept an
             // export blob, our local enc:v1 blob, or a legacy plaintext value.
-            if let Some(plain) = Self::decrypt_export(s.password.as_str()) {
-                s.password = Secret::new(plain);
-            } else if let Some(plain) = Self::try_decrypt(&self.key, s.password.as_str()) {
-                s.password = Secret::new(plain);
-            }
-            if let Some(plain) = Self::decrypt_export(s.private_key_inline.as_str()) {
-                s.private_key_inline = Secret::new(plain);
-            } else if let Some(plain) = Self::try_decrypt(&self.key, s.private_key_inline.as_str())
-            {
-                s.private_key_inline = Secret::new(plain);
+            // FinalShell's parser has already decrypted its DES password, so avoid
+            // interpreting a coincidental `enc:*` plaintext prefix as ours.
+            if decrypt_meatshell_secrets {
+                if let Some(plain) = Self::decrypt_export(s.password.as_str()) {
+                    s.password = Secret::new(plain);
+                } else if let Some(plain) = Self::try_decrypt(&self.key, s.password.as_str()) {
+                    s.password = Secret::new(plain);
+                }
+                if let Some(plain) = Self::decrypt_export(s.private_key_inline.as_str()) {
+                    s.private_key_inline = Secret::new(plain);
+                } else if let Some(plain) =
+                    Self::try_decrypt(&self.key, s.private_key_inline.as_str())
+                {
+                    s.private_key_inline = Secret::new(plain);
+                }
             }
             let dup = self.cache.sessions.iter().any(|x| {
                 x.host == s.host && x.user == s.user && x.port == s.port && x.kind == s.kind
@@ -1593,7 +1609,7 @@ impl ConfigStore {
         Ok((added, skipped))
     }
 
-    /// Import sessions from a file produced by [`Self::export_to`].
+    /// Import sessions from a MeatShell or FinalShell JSON export file.
     pub fn import_from(&mut self, path: &Path) -> Result<(usize, usize)> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
@@ -2007,6 +2023,37 @@ mod tests {
         let _ = std::fs::remove_file(&export_path);
         let _ = std::fs::remove_file(&a.path);
         let _ = std::fs::remove_file(&b.path);
+    }
+
+    #[test]
+    fn imports_finalshell_export_and_reencrypts_password_at_rest() {
+        let mut store = temp_store();
+        let raw = r#"{
+            "conection_type": 100,
+            "name": "FinalShell host",
+            "host": "192.0.2.20",
+            "port": 22,
+            "user_name": "operator",
+            "password": "AwcLDRETFx1OXQgZJNatCplesw+x/P04",
+            "authentication_type": 1,
+            "terminal_encoding": "UTF-8"
+        }"#;
+
+        assert_eq!(store.import_json(raw).unwrap(), (1, 0));
+        let session = &store.cache.sessions[0];
+        assert_eq!(session.host, "192.0.2.20");
+        assert_eq!(session.user, "operator");
+        assert_eq!(session.password.as_str(), "meatshell-test");
+
+        let saved = std::fs::read_to_string(&store.path).unwrap();
+        assert!(!saved.contains("meatshell-test"));
+        let disk: ConfigFile = serde_json::from_str(&saved).unwrap();
+        assert!(disk.sessions[0]
+            .password
+            .as_str()
+            .starts_with(ConfigStore::ENC_PREFIX));
+
+        let _ = std::fs::remove_file(&store.path);
     }
 
     #[test]
