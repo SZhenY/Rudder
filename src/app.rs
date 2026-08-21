@@ -912,6 +912,17 @@ fn open_window(
         });
     }
 
+    // Toolbar toggle: hide/show the quick-command bar (persisted globally).
+    window.set_cmd_bar_hidden(store.borrow().cmd_bar_hidden());
+    {
+        let store = store.clone();
+        window.on_set_cmd_bar_hidden(move |hidden| {
+            let mut s = store.borrow_mut();
+            s.set_cmd_bar_hidden(hidden);
+            let _ = s.save();
+        });
+    }
+
     // Interface setting: always ask where to save on download (#87). Read live
     // by the download handler from the window property, so just set + persist.
     window.set_download_always_ask(store.borrow().download_always_ask());
@@ -1368,30 +1379,6 @@ fn open_window(
         });
     }
     {
-        // Font zoom shortcuts (Ctrl+= / Ctrl+- / Ctrl+0). direction:
-        // +1 larger, -1 smaller, 0 = reset to the 13px default. Reuses the
-        // settings stepper's persist path; the Theme.term-font-size change
-        // re-measures the cell grid and triggers the PTY resize on its own.
-        let weak = window.as_weak();
-        let store = store.clone();
-        window.on_zoom_term_font(move |direction: i32| {
-            let next = {
-                let mut s = store.borrow_mut();
-                let next = if direction == 0 {
-                    13
-                } else {
-                    s.font_size() as i32 + direction
-                };
-                s.set_font_size(next.clamp(8, 32) as u32);
-                let _ = s.save();
-                s.font_size()
-            };
-            if let Some(w) = weak.upgrade() {
-                w.set_term_font_size(next as f32);
-            }
-        });
-    }
-    {
         let store = store.clone();
         window.on_persist_sftp_tree_width(move |width| {
             let mut s = store.borrow_mut();
@@ -1789,6 +1776,68 @@ fn open_window(
         let terminals_model = terminals_model.clone();
         window.on_set_pane_sftp_collapsed(move |tab_id: SharedString, v: bool| {
             update_terminal_row(&terminals_model, &tab_id, |r| r.sftp_collapsed = v);
+        });
+    }
+    {
+        // Font zoom shortcuts. Ctrl+=/-/0 zooms one session: a per-tab px
+        // override; Ctrl+0 resets that session to the size chosen in
+        // Settings. Ctrl+Shift+=/-/0 zooms every session in this window
+        // (shared term-font-size, cleared per-tab overrides so it visibly
+        // applies to all); Ctrl+Shift+0 resets the window to the Settings
+        // size. Zoom never persists globally — the settings stepper owns
+        // that. Changing the size re-measures the cell grid and triggers the
+        // PTY resize on its own.
+        let weak = window.as_weak();
+        let store = store.clone();
+        let terminals_model = terminals_model.clone();
+        window.on_zoom_term_font(move |tab_id: SharedString, direction: i32, window_wide: bool| {
+            let Some(w) = weak.upgrade() else {
+                return;
+            };
+            let settings_size = store.borrow().font_size() as i32;
+            if window_wide {
+                let next = if direction == 0 {
+                    settings_size
+                } else {
+                    w.get_term_font_size() as i32 + direction
+                };
+                w.set_term_font_size(next.clamp(8, 32) as f32);
+                // Per-tab overrides would pin sessions at their old size and
+                // defeat "zoom everything", so drop them.
+                use slint::Model as _;
+                for row in terminals_model.iter() {
+                    if row.font_size > 0 {
+                        let id = row.id.to_string();
+                        update_terminal_row(&terminals_model, &id, |r| r.font_size = 0);
+                    }
+                }
+                return;
+            }
+            let tab_id = tab_id.to_string();
+            if tab_id.is_empty() || tab_id == "welcome" {
+                return;
+            }
+            use slint::Model as _;
+            let Some(row) = terminals_model
+                .iter()
+                .find(|r| r.id.to_string() == tab_id)
+            else {
+                return;
+            };
+            if direction == 0 {
+                // Back to the Settings size, regardless of the window base.
+                update_terminal_row(&terminals_model, &tab_id, |r| {
+                    r.font_size = settings_size.clamp(8, 32)
+                });
+                return;
+            }
+            let base = if row.font_size > 0 {
+                row.font_size
+            } else {
+                w.get_term_font_size() as i32
+            };
+            let next = (base + direction).clamp(8, 32);
+            update_terminal_row(&terminals_model, &tab_id, |r| r.font_size = next);
         });
     }
     {
@@ -2751,6 +2800,7 @@ fn open_window(
                         // No sessions → the window is about to close; persist layout.
                         if let Some(win) = weak.upgrade() {
                             save_layout(&win, &ev_store);
+                            clear_zen_on_close(&win, &ev_store);
                         }
                         // The event is not prevented, so Slint will destroy this
                         // window. Mirror the confirmed custom-close path: tear down
@@ -2794,6 +2844,7 @@ fn open_window(
             if let Some(w) = weak.upgrade() {
                 w.set_confirm_close_open(false);
                 save_layout(&w, &cc_store);
+                clear_zen_on_close(&w, &cc_store);
                 let _ = w.hide();
             }
             // Ask every worker to stop before the runtime/event loop is torn
@@ -2855,6 +2906,7 @@ fn open_window(
                 {
                     wc_exit_confirmed.set(true);
                     save_layout(&w, &wc_store);
+                    clear_zen_on_close(&w, &wc_store);
                     // Tear down this window's workers and hide its monitor
                     // windows; quit only if it was the last one.
                     teardown_window(
@@ -4402,6 +4454,7 @@ fn wire_session_callbacks(
                 sftp_sort_key: "".into(),
                 sftp_sort_dir: 0,
                 sftp_available: has_sftp,
+                font_size: 0,
                 tunnels: ModelRc::from(std::rc::Rc::new(VecModel::<TunnelInfo>::default())),
                 sftp_collapsed: !has_sftp || sftp_collapsed_default,
                 sftp_panel_height: sftp_h_default,
@@ -4558,6 +4611,19 @@ fn save_layout(win: &AppWindow, store: &Rc<RefCell<ConfigStore>>) {
     let _ = s.save();
 }
 
+/// Zen is a transient per-window state. Closing a window while it is on must
+/// not leak the persisted flag into the next window, which would open stuck in
+/// zen mode (#zen). Called on every confirmed-close path right after
+/// `save_layout`.
+pub(super) fn clear_zen_on_close(win: &AppWindow, store: &Rc<RefCell<ConfigStore>>) {
+    if !win.get_zen_mode() {
+        return;
+    }
+    let mut s = store.borrow_mut();
+    s.set_zen_mode(false);
+    let _ = s.save();
+}
+
 /// Every quick-command group name (used to start with all groups collapsed, #55):
 /// "default" when any ungrouped command exists, plus explicit quick-groups and any
 /// group referenced by a command.
@@ -4637,7 +4703,7 @@ fn refresh_panes(
                 h: p.h,
                 active_id: p.active.clone().into(),
                 focused: p.focused,
-                reserve_right: if top_right { 140.0 } else { 0.0 },
+                reserve_right: if top_right { 180.0 } else { 0.0 },
                 tabs: ModelRc::from(Rc::new(VecModel::from(tabs))),
             }
         })

@@ -810,6 +810,15 @@ impl ConfigStore {
         self.cache.sftp_no_follow_cd = !follow;
     }
 
+    /// Whether the quick-command bar under the terminal is hidden.
+    pub fn cmd_bar_hidden(&self) -> bool {
+        self.cache.hide_cmd_bar
+    }
+
+    pub fn set_cmd_bar_hidden(&mut self, hidden: bool) {
+        self.cache.hide_cmd_bar = hidden;
+    }
+
     /// Saved quick commands (#55).
     pub fn quick_commands(&self) -> &[QuickCommand] {
         &self.cache.quick_commands

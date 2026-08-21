@@ -71,6 +71,7 @@ export struct TerminalState {
     sftp-sort-key: string,      // ""|"name"|"size"|"modified" (#248)
     sftp-sort-dir: int,         // 0 default / 1 asc / -1 desc (#248)
     sftp-available: bool,       // false for local/serial/telnet sessions
+    font-size: int,             // per-session zoom override in px (0 = follow window)
     tunnels: [TunnelInfo],      // runtime SSH tunnels (#206)
     sftp-collapsed: bool,       // SFTP panel minimised — per session (#v0.5)
     sftp-panel-height: length,  // SFTP panel extent (bottom dock) — per session
@@ -500,7 +501,9 @@ export component AppWindow inherits Window {
     }
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
-    callback zoom-term-font(int);                  // Ctrl+=/-/0 zoom: +1 / -1 / reset
+    // Font zoom: Ctrl+=/-/0 → `tab-id`'s session only; Ctrl+Shift+=/-/0 →
+    // every session in this window (scope: false = session, true = window).
+    callback zoom-term-font(string /* tab-id */, int /* direction */, bool /* window-wide */);
     callback set-terminal-line-spacing(float);
     callback set-term-font-bold(bool);             // apply + persist bold terminal text
     callback set-term-cursor-style(string);        // apply + persist cursor shape (#275)
@@ -522,6 +525,11 @@ export component AppWindow inherits Window {
     // SFTP follows the terminal's cd; opt out in Interface settings.
     in-out property <bool> sftp-follow-cd: true;
     callback set-sftp-follow-cd(bool);             // apply + persist
+    // Hide the quick-command bar under the terminal; toolbar toggle persists it.
+    in-out property <bool> cmd-bar-hidden: false;
+    callback set-cmd-bar-hidden(bool);             // apply + persist
+    // Zen (focus) mode toggle shortcut: Ctrl+Alt+Z (⌘⌥Z on macOS).
+    callback toggle-zen-key();
     // Always ask where to save on each download (#87); default off.
     in-out property <bool> download-always-ask: false;
     callback set-download-always-ask(bool);        // apply + persist
@@ -810,7 +818,17 @@ export component AppWindow inherits Window {
     // Asks Rust to recompute the sidebar (status + resources) for whatever tab
     // is now active.  Fired on every active-tab change, UI- or code-driven.
     callback refresh-sidebar();
-    changed active-tab-id => { root.refresh-sidebar(); }
+    changed active-tab-id => {
+        root.refresh-sidebar();
+        // Closing the last session destroys the terminal's IME focus anchor
+        // and nothing else re-claims focus — with no focused item, Slint
+        // delivers keys nowhere, stranding the zen escape shortcut (and every
+        // window-level shortcut). Re-anchor on the shortcut scope whenever the
+        // welcome tab is active and no terminal remains.
+        if (root.active-tab-id == "welcome" && root.terminals.length == 0) {
+            shortcut-scope.focus();
+        }
+    }
 
     // Raw keystroke forwarding: Rust converts key+modifiers to PTY bytes.
     callback send-key(string /* tab-id */, string /* key */, bool /* ctrl */, bool /* alt */, bool /* shift */);
@@ -896,6 +914,19 @@ export component AppWindow inherits Window {
         image-fit: cover;
     }
 
+    // Zen (focus) mode keyboard toggle — same persist path as the Settings
+    // switch (#zen).
+    toggle-zen-key => {
+        root.zen-mode = !root.zen-mode;
+        root.set-zen-mode(root.zen-mode);
+        // Entering zen with no terminals can leave nothing focused (the
+        // welcome page may be hidden as a sidebar), which would strand the
+        // Ctrl+Alt+Z escape shortcut — anchor focus on the shortcut scope.
+        if (root.zen-mode && root.terminals.length == 0) {
+            shortcut-scope.focus();
+        }
+    }
+
     // Window-wide shortcut interceptor (#multi-window). Slint delivers a key
     // to the focused item first and only bubbles it up the ancestor chain when
     // it is rejected there; a Window itself cannot bind key-pressed. This
@@ -907,9 +938,27 @@ export component AppWindow inherits Window {
     // other widget. A focused terminal accepts ⌘⇧N / Ctrl+Shift+N on its own
     // (terminal_view.slint), which stops propagation, so the two never
     // double-fire.
-    FocusScope {
+    shortcut-scope := FocusScope {
         focus-on-click: false;
         focus-on-tab-navigation: false;
+        // A window restored into zen mode starts with nothing focused when no
+        // focusable widget is on screen (e.g. the welcome page is hidden as a
+        // sidebar and no terminal exists yet). Slint delivers keys only to the
+        // focused item, so the Ctrl+Alt+Z escape shortcut would be stranded in
+        // exactly that stuck state. Claim focus on the next event-loop turn —
+        // deferred like the welcome scope so AccessKit/winit aren't re-entered
+        // from `init` (#323); any real widget that takes focus later (welcome
+        // page, terminal IME anchor) simply overrides this.
+        property <bool> zen-focus-pending: false;
+        init => { shortcut-scope.zen-focus-pending = root.zen-mode && root.terminals.length == 0; }
+        Timer {
+            interval: 0ms;
+            running: shortcut-scope.zen-focus-pending;
+            triggered => {
+                shortcut-scope.zen-focus-pending = false;
+                shortcut-scope.focus();
+            }
+        }
         key-pressed(e) => {
             // New window: ⌘⇧N / Ctrl+Shift+N (#multi-window). On macOS Slint
             // maps `control` to Cmd (#158), so this single condition yields ⌘⇧N
@@ -920,17 +969,33 @@ export component AppWindow inherits Window {
                         || e.text == "\u{000e}")) {
                 root.new-window-clicked();
                 accept
-            // Font zoom: Ctrl+= / Ctrl+- / Ctrl+0 (⌘ on macOS). Same keys as
-            // the focused-terminal branch (terminal_view.slint); a focused
-            // terminal consumes them itself, so no double-fire.
-            } else if (e.modifiers.control && (e.text == "=" || e.text == "+")) {
-                root.zoom-term-font(1);
+            // Font zoom: Ctrl+= / Ctrl+- / Ctrl+0 zooms the active session;
+            // adding Alt zooms every session in this window (Alt, not Shift:
+            // Ctrl+Shift is the IME-switch hotkey on Chinese Windows). Same
+            // keys as the focused-terminal branch (terminal_view.slint); a
+            // focused terminal consumes them itself, so no double-fire.
+            // Ctrl+- arrives as \u{001f} (^_) on some backends.
+            } else if (e.modifiers.control && e.modifiers.alt
+                    && (e.text == "=" || e.text == "+" || e.text == "-"
+                        || e.text == "\u{001f}" || e.text == "0")) {
+                root.zoom-term-font(root.active-tab-id,
+                    e.text == "-" || e.text == "\u{001f}" ? -1
+                        : e.text == "0" ? 0 : 1, true);
                 accept
-            } else if (e.modifiers.control && e.text == "-") {
-                root.zoom-term-font(-1);
+            } else if (e.modifiers.control && (e.text == "=" || e.text == "+")) {
+                root.zoom-term-font(root.active-tab-id, 1, false);
+                accept
+            } else if (e.modifiers.control && (e.text == "-" || e.text == "\u{001f}")) {
+                root.zoom-term-font(root.active-tab-id, -1, false);
                 accept
             } else if (e.modifiers.control && e.text == "0") {
-                root.zoom-term-font(0);
+                root.zoom-term-font(root.active-tab-id, 0, false);
+                accept
+            // Zen (focus) mode: Ctrl+Alt+Z toggles, same as the terminal
+            // branch below (#zen).
+            } else if (e.modifiers.control && e.modifiers.alt
+                    && (e.text == "z" || e.text == "Z" || e.text == "\u{001a}")) {
+                root.toggle-zen-key();
                 accept
             } else {
                 reject
@@ -1627,11 +1692,12 @@ export component AppWindow inherits Window {
                         sftp-selected-count: term.sftp-selected-count;
                         sftp-sort-key: term.sftp-sort-key;
                         sftp-sort-dir: term.sftp-sort-dir;
-                        sftp-available: term.sftp-available && !root.zen-mode;
+                        sftp-available: term.sftp-available;
                         tunnels: term.tunnels;
                         quick-commands: root.quick-commands;
                         quick-sidebar-enabled: root.quick-commands-as-sidebar;
                         quick-panel-docked: root.quick-panel-open;
+                        cmd-bar-hidden: root.cmd-bar-hidden;
                         quick-external-command: root.quick-external-command;
                         quick-external-send-enter: root.quick-external-send-enter;
                         quick-external-sequence: root.quick-external-sequence;
@@ -1685,7 +1751,9 @@ export component AppWindow inherits Window {
                         }
                         cycle-tab(reverse) => { root.cycle-tab(reverse); }
                         new-window-key() => { root.new-window-clicked(); }
-                        zoom-key(direction) => { root.zoom-term-font(direction); }
+                        zoom-key(direction, window-wide) => { root.zoom-term-font(term.id, direction, window-wide); }
+                        zen-key() => { root.toggle-zen-key(); }
+                        term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : root.term-font-size / 1px;
                         terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
                         sftp-navigate(path) => { root.sftp-navigate(term.id, path); }
                         sftp-download(path) => { root.sftp-download(term.id, path); }
@@ -1978,6 +2046,15 @@ export component AppWindow inherits Window {
             ? (root.sync-input ? "Sync input: ON" : "Sync input")
             : (root.sync-input ? "会话同步：开" : "会话同步");
         clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
+    }
+    IconBtn {
+        x: root.width - 154px - root.toolbar-x-off; y: root.toolbar-y;
+        icon: "\u{E86F}";   // Material "code" — command bar
+        active: !root.cmd-bar-hidden;
+        tooltip: root.lang-en
+            ? (root.cmd-bar-hidden ? "Show command bar" : "Hide command bar")
+            : (root.cmd-bar-hidden ? "显示命令栏" : "隐藏命令栏");
+        clicked => { root.cmd-bar-hidden = !root.cmd-bar-hidden; root.set-cmd-bar-hidden(root.cmd-bar-hidden); }
     }
 
     // Frameless resize edges (#119): thin hit-zones that start an OS-level
@@ -3630,6 +3707,7 @@ export component AppWindow inherits Window {
                 Text { text: root.lang-en ? "Window" : "窗口";
                        color: Theme.text-muted; font-size: Theme.fs-xs; }
                 ShortcutRow { keys: root.is-mac ? "⌘⇧N" : "Ctrl+Shift+N"; desc: root.lang-en ? "New window" : "新建窗口"; }
+                ShortcutRow { keys: root.is-mac ? "⌘⌥Z" : "Ctrl+Alt+Z"; desc: root.lang-en ? "Toggle zen (focus) mode" : "切换专注模式"; }
 
                 Rectangle { height: 6px; }
                 Text { text: root.lang-en ? "Terminal" : "终端";
@@ -3638,9 +3716,12 @@ export component AppWindow inherits Window {
                 ShortcutRow { keys: root.is-mac ? "⌘V" : "Ctrl+V"; desc: root.lang-en ? "Paste" : "粘贴"; }
                 ShortcutRow { keys: root.is-mac ? "⌘F" : "Ctrl+F"; desc: root.lang-en ? "Find in terminal" : "查找"; }
                 ShortcutRow { keys: root.is-mac ? "⌘⇧R" : "Ctrl+Shift+R"; desc: root.lang-en ? "Jump to command history search" : "跳到命令历史搜索"; }
-                ShortcutRow { keys: root.is-mac ? "⌘=" : "Ctrl+="; desc: root.lang-en ? "Enlarge terminal font" : "放大终端字体"; }
-                ShortcutRow { keys: root.is-mac ? "⌘-" : "Ctrl+-"; desc: root.lang-en ? "Shrink terminal font" : "缩小终端字体"; }
-                ShortcutRow { keys: root.is-mac ? "⌘0" : "Ctrl+0"; desc: root.lang-en ? "Reset terminal font size" : "重置终端字体大小"; }
+                ShortcutRow { keys: root.is-mac ? "⌘=" : "Ctrl+="; desc: root.lang-en ? "Enlarge terminal font (this session)" : "放大终端字体（当前会话）"; }
+                ShortcutRow { keys: root.is-mac ? "⌘-" : "Ctrl+-"; desc: root.lang-en ? "Shrink terminal font (this session)" : "缩小终端字体（当前会话）"; }
+                ShortcutRow { keys: root.is-mac ? "⌘0" : "Ctrl+0"; desc: root.lang-en ? "Reset terminal font size (this session)" : "重置终端字体大小（当前会话）"; }
+                ShortcutRow { keys: root.is-mac ? "⌘⌥=" : "Ctrl+Alt+="; desc: root.lang-en ? "Enlarge terminal font (all sessions in window)" : "放大终端字体（本窗口所有会话）"; }
+                ShortcutRow { keys: root.is-mac ? "⌘⌥-" : "Ctrl+Alt+-"; desc: root.lang-en ? "Shrink terminal font (all sessions in window)" : "缩小终端字体（本窗口所有会话）"; }
+                ShortcutRow { keys: root.is-mac ? "⌘⌥0" : "Ctrl+Alt+0"; desc: root.lang-en ? "Reset terminal font size (all sessions in window)" : "重置终端字体大小（本窗口所有会话）"; }
                 ShortcutRow { keys: root.lang-en ? "Drag" : "鼠标拖动"; desc: root.lang-en ? "Select text" : "选择文本"; }
                 ShortcutRow { keys: root.lang-en ? "Wheel / Scrollbar" : "滚轮 / 滚动条"; desc: root.lang-en ? "Scroll history" : "滚动历史"; }
 

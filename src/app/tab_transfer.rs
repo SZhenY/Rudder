@@ -485,6 +485,7 @@ pub(super) fn close_window_now(core: &Rc<AppCore>, window_id: u64) {
     };
     if let Some(win) = st.weak.upgrade() {
         save_layout(&win, &core.store);
+        clear_zen_on_close(&win, &core.store);
         teardown_window(
             window_id,
             &st.handles,
