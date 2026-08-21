@@ -310,12 +310,14 @@ pub(super) fn sync_sessions_to_model_with_filter(
 /// Same rows as `sync_sessions_to_model_with_filter`, but when the row count
 /// is unchanged the rows are written with `set_row_data` instead of `set_vec`:
 /// the `for` loop keeps its elements (and a drag's pointer grab) alive. Used
-/// for per-hop updates during drag-to-reorder.
+/// for per-hop updates during drag-to-reorder. Returns false when the row
+/// count changed and a full `set_vec` rebuild was required — that recreates
+/// the rows and drops the dragging row's pointer grab.
 pub(super) fn refresh_session_rows_in_place(
     store: &ConfigStore,
     model: &VecModel<SessionInfo>,
     query: &str,
-) {
+) -> bool {
     use slint::Model as _;
     let builtin_sessions = builtin_local_sessions(store.wsl_profiles());
     let rows = build_session_rows(
@@ -329,8 +331,10 @@ pub(super) fn refresh_session_rows_in_place(
         for (i, row) in rows.into_iter().enumerate() {
             model.set_row_data(i, row);
         }
+        true
     } else {
         model.set_vec(rows);
+        false
     }
 }
 

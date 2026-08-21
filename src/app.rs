@@ -3875,6 +3875,7 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let sessions_model = sessions_model.clone();
+        let registry = registry.clone();
         let sessions_dirty = sessions_dirty.clone();
         window.on_reorder_session(move |id: SharedString, dir: i32| {
             if weak
@@ -3894,7 +3895,22 @@ fn wire_session_callbacks(
                     .upgrade()
                     .map(|w| w.get_host_search_query().to_string())
                     .unwrap_or_default();
-                refresh_session_rows_in_place(&store.borrow(), &sessions_model, &query);
+                let in_place = refresh_session_rows_in_place(&store.borrow(), &sessions_model, &query);
+                if !in_place {
+                    // The hop changed the row count (e.g. a cross-group hop
+                    // emptied the ungrouped section): the set_vec rebuild
+                    // dropped the dragging row's pointer grab, so the
+                    // release's reorder-end may never arrive — finalise now.
+                    sessions_dirty.set(false);
+                    if let Err(err) = store.borrow_mut().save() {
+                        tracing::warn!("failed to save config: {err:#}");
+                    }
+                    sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
+                    registry.broadcast_config_changed();
+                    if let Some(w) = weak.upgrade() {
+                        let _ = w.get_sessions();
+                    }
+                }
             }
         });
     }

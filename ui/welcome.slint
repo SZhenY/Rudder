@@ -44,6 +44,10 @@ component SessionRow inherits Rectangle {
     // under the grab on every hop.
     in property <bool> drag-target: false;
     in property <length> drag-dy: 0px;
+    // List-level drag state, mirrored here so a press can detect a stale
+    // drag (the grab was lost when a hop changed the row count and rebuilt
+    // the model) and clear it instead of leaving the card lifted.
+    in property <bool> list-dragging: false;
     property <bool> system-row: root.session.builtin;
     // Local gesture state: this instance received the press and drives the
     // drag (it keeps the pointer grab across in-place model updates).
@@ -71,6 +75,12 @@ component SessionRow inherits Rectangle {
                 ctx-menu.show();
             } else if (e.button == PointerEventButton.left) {
                 if (e.kind == PointerEventKind.down) {
+                    // A press while the list still thinks a drag is running
+                    // means that drag's pointer grab was destroyed by a
+                    // row-count-changing hop; end it before starting fresh.
+                    if (root.list-dragging) {
+                        root.drag-end();
+                    }
                     root.pressing = true;
                     // Reset any stale drag (e.g. released outside the row).
                     root.grab-dragging = false;
@@ -753,6 +763,7 @@ export component Welcome inherits Rectangle {
                             reorder-enabled: root.search-query == "" && !session.builtin;
                             drag-target: root.list-dragging && root.drag-id == session.id;
                             drag-dy: root.drag-dy;
+                            list-dragging: root.list-dragging;
                             connect => { root.connect-session(session.id); }
                             edit => { root.edit-session(session.id); }
                             duplicate => { root.duplicate-session(session.id); }
