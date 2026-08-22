@@ -1,7 +1,7 @@
 #[path = "impls/sftp.rs"]
-mod sftp;
+mod imp;
 #[path = "struct/transfer.rs"]
 mod transfer;
 
-pub(crate) use sftp::*;
+pub(crate) use imp::*;
 pub(crate) use transfer::*;

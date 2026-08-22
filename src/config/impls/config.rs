@@ -28,10 +28,10 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chacha20poly1305::{
-    aead::{Aead, AeadCore, KeyInit},
     ChaCha20Poly1305,
+    aead::{Aead, AeadCore, KeyInit},
 };
 use directories::ProjectDirs;
 use rand::rngs::OsRng;
@@ -63,12 +63,12 @@ pub fn data_dir() -> PathBuf {
 /// (#log-dir).
 pub fn log_dir() -> PathBuf {
     // Portable: <exe_dir>/log, sibling of the portable config/ folder.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            let log = parent.join("log");
-            if fs::create_dir_all(&log).is_ok() && dir_is_writable(&log) {
-                return log;
-            }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        let log = parent.join("log");
+        if fs::create_dir_all(&log).is_ok() && dir_is_writable(&log) {
+            return log;
         }
     }
     // Read-only exe dir → put logs in their own subdir under the per-user data
@@ -113,13 +113,14 @@ fn dir_is_writable(dir: &Path) -> bool {
 /// Files), at the cost of persistence.
 #[cfg(target_os = "windows")]
 fn resolve_data_dir() -> PathBuf {
-    if let Some(portable) = portable_data_dir() {
-        if fs::create_dir_all(&portable).is_ok() && dir_is_writable(&portable) {
-            if let Some(legacy) = legacy_data_dir().filter(|l| l != &portable) {
-                migrate_legacy(&legacy, &portable);
-            }
-            return portable;
+    if let Some(portable) = portable_data_dir()
+        && fs::create_dir_all(&portable).is_ok()
+        && dir_is_writable(&portable)
+    {
+        if let Some(legacy) = legacy_data_dir().filter(|l| l != &portable) {
+            migrate_legacy(&legacy, &portable);
         }
+        return portable;
     }
 
     // Read-only exe dir → temp dir, so the app still launches. Data is lost on
@@ -982,7 +983,7 @@ impl ConfigStore {
 
         let mut key = [0u8; 32];
         OsRng.fill_bytes(&mut key);
-        fs::write(&key_path, &key)
+        fs::write(&key_path, key)
             .with_context(|| format!("failed to write {}", key_path.display()))?;
         #[cfg(unix)]
         {
@@ -1071,10 +1072,8 @@ impl ConfigStore {
         };
         // Persist the migration so it runs exactly once (and so a later opt-out —
         // e.g. turning the welcome sidebar back off — isn't reverted next launch).
-        if migrated {
-            if let Err(e) = store.save() {
-                tracing::warn!("failed to persist default-layout migration: {e:#}");
-            }
+        if migrated && let Err(e) = store.save() {
+            tracing::warn!("failed to persist default-layout migration: {e:#}");
         }
         Ok(store)
     }
@@ -1568,11 +1567,7 @@ impl ConfigStore {
     /// stored value is unset/zero (e.g. a config created via `Default`).
     pub fn sidebar_width(&self) -> f32 {
         let w = self.cache.sidebar_width;
-        if w <= 0.0 {
-            default_sidebar_width()
-        } else {
-            w
-        }
+        if w <= 0.0 { default_sidebar_width() } else { w }
     }
 
     pub fn set_sidebar_width(&mut self, v: f32) {
@@ -1618,11 +1613,7 @@ impl ConfigStore {
     }
     pub fn welcome_sidebar_width(&self) -> f32 {
         let w = self.cache.welcome_sidebar_width;
-        if w <= 0.0 {
-            240.0
-        } else {
-            w
-        }
+        if w <= 0.0 { 240.0 } else { w }
     }
     pub fn set_welcome_sidebar_width(&mut self, v: f32) {
         self.cache.welcome_sidebar_width = v;
@@ -1675,22 +1666,14 @@ impl ConfigStore {
     }
     pub fn sftp_panel_width(&self) -> f32 {
         let w = self.cache.sftp_panel_width;
-        if w <= 0.0 {
-            default_sftp_width()
-        } else {
-            w
-        }
+        if w <= 0.0 { default_sftp_width() } else { w }
     }
     pub fn set_sftp_panel_width(&mut self, v: f32) {
         self.cache.sftp_panel_width = v;
     }
     pub fn sftp_panel_height(&self) -> f32 {
         let h = self.cache.sftp_panel_height;
-        if h <= 0.0 {
-            default_sftp_height()
-        } else {
-            h
-        }
+        if h <= 0.0 { default_sftp_height() } else { h }
     }
     pub fn set_sftp_panel_height(&mut self, v: f32) {
         self.cache.sftp_panel_height = v;
@@ -2086,7 +2069,7 @@ impl ConfigStore {
     /// Returns `(added, skipped)`. The store is saved if anything was added.
     pub fn import_json(&mut self, raw: &str) -> Result<(usize, usize)> {
         let file: ExportFile =
-            serde_json::from_str(&raw).context("not a valid Rudder export file")?;
+            serde_json::from_str(raw).context("not a valid Rudder export file")?;
 
         let mut added = 0usize;
         let mut skipped = 0usize;
@@ -2211,11 +2194,13 @@ mod tests {
         assert!(collapsed.iter().any(|group| group == "system"));
 
         store.set_session_group_collapsed("production", true);
-        assert!(store
-            .collapsed_session_groups()
-            .unwrap()
-            .iter()
-            .any(|group| group == "production"));
+        assert!(
+            store
+                .collapsed_session_groups()
+                .unwrap()
+                .iter()
+                .any(|group| group == "production")
+        );
     }
 
     #[test]
@@ -2227,7 +2212,12 @@ mod tests {
         default_session.group = "Default".into();
         let mut cfg = ConfigFile {
             sessions: vec![system_session, default_session],
-            groups: vec!["system".into(), "System".into(), "default".into(), "prod".into()],
+            groups: vec![
+                "system".into(),
+                "System".into(),
+                "default".into(),
+                "prod".into(),
+            ],
             collapsed_session_groups: Some(vec!["system".into(), "prod".into()]),
             ..ConfigFile::default()
         };

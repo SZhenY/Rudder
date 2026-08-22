@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
 /// bastion disconnect reason — without setting RUST_LOG (#86).
 fn init_tracing() {
     use tracing_subscriber::prelude::*;
-    use tracing_subscriber::{fmt, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt};
 
     // Third-party noise routed through `log` → tracing: ICU4X data-error warnings
     // (icu_provider dependency) and fontdb's "malformed font" warning for fonts it

@@ -17,22 +17,22 @@ use std::time::{Duration, Instant};
 
 use uuid::Uuid;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
+use russh::Disconnect;
 use russh::client::{self, Handler};
 use russh::keys::key::PrivateKeyWithHashAlg;
-use russh::Disconnect;
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::{RawSftpSession, SftpSession};
 use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
+use super::transfer::{SftpCommand, SftpHandle};
 use crate::config::{AuthMethod, Session};
 use crate::i18n::t;
-use crate::ssh::{format_mtime, format_size, RemoteEntry, RemoteTreeNode, SessionEvent};
-use super::transfer::{SftpCommand, SftpHandle};
+use crate::ssh::{RemoteEntry, RemoteTreeNode, SessionEvent, format_mtime, format_size};
 
 impl SftpHandle {
     pub fn list_dir(&self, path: String) {
@@ -206,11 +206,9 @@ fn build_tree_nodes(
         expanded: is_expanded,
         has_children,
     });
-    if is_expanded {
-        if let Some(ch) = children {
-            for (_, child_path) in ch {
-                build_tree_nodes(child_path, depth + 1, expanded, tree_dirs, nodes);
-            }
+    if is_expanded && let Some(ch) = children {
+        for (_, child_path) in ch {
+            build_tree_nodes(child_path, depth + 1, expanded, tree_dirs, nodes);
         }
     }
 }
@@ -686,16 +684,16 @@ async fn run_sftp(
                                 )));
                             }
                             Err(e) => {
-                                emit_transfer(
-                                    &events,
-                                    &id,
-                                    &filename,
-                                    false,
-                                    0,
-                                    0,
-                                    2,
-                                    &e.to_string(),
-                                );
+                                emit_transfer(TransferEmit {
+                                    events: &events,
+                                    id: &id,
+                                    name: &filename,
+                                    is_upload: false,
+                                    transferred: 0,
+                                    total: 0,
+                                    state: 2,
+                                    msg: &e.to_string(),
+                                });
                                 let _ = events.send(SessionEvent::SftpStatus(format!(
                                     "{}: {e}",
                                     t("下载失败", "Download failed")
@@ -747,7 +745,16 @@ async fn run_sftp(
                     // big selection isn't a silent wait while tar runs (#100). The
                     // download then reuses this same id, so the row turns into the
                     // live progress bar once bytes start flowing.
-                    emit_transfer(&events, &id, &arc_name, false, 0, 0, 3, "");
+                    emit_transfer(TransferEmit {
+                        events: &events,
+                        id: &id,
+                        name: &arc_name,
+                        is_upload: false,
+                        transferred: 0,
+                        total: 0,
+                        state: 3,
+                        msg: "",
+                    });
                     // Plain tar (no gzip): the user prefers speed over a smaller file.
                     // Server-supplied names are untrusted → quote every argument.
                     let mut cmd =
@@ -785,7 +792,16 @@ async fn run_sftp(
                             )));
                         }
                         Err(e) => {
-                            emit_transfer(&events, &id, &arc_name, false, 0, 0, 2, &e.to_string());
+                            emit_transfer(TransferEmit {
+                                events: &events,
+                                id: &id,
+                                name: &arc_name,
+                                is_upload: false,
+                                transferred: 0,
+                                total: 0,
+                                state: 2,
+                                msg: &e.to_string(),
+                            });
                             let _ = events.send(SessionEvent::SftpStatus(format!(
                                 "{}: {e}",
                                 t("下载失败", "Download failed")
@@ -931,16 +947,16 @@ async fn run_sftp(
                                 )));
                             }
                             Err(e) => {
-                                emit_transfer(
-                                    &events,
-                                    &id,
-                                    &filename,
-                                    true,
-                                    0,
-                                    0,
-                                    2,
-                                    &e.to_string(),
-                                );
+                                emit_transfer(TransferEmit {
+                                    events: &events,
+                                    id: &id,
+                                    name: &filename,
+                                    is_upload: true,
+                                    transferred: 0,
+                                    total: 0,
+                                    state: 2,
+                                    msg: &e.to_string(),
+                                });
                                 let _ = events.send(SessionEvent::SftpStatus(format!(
                                     "{}: {e}",
                                     t("上传失败", "Upload failed")
@@ -1289,12 +1305,9 @@ fn validate_editor_text(bytes: Vec<u8>) -> std::result::Result<String, EditorTex
     if bytes.len() > MAX_BUILTIN_EDITOR_BYTES {
         return Err(EditorTextRejection::TooLarge);
     }
-    if bytes
-        .iter()
-        .any(|&byte| {
-            (byte < 0x20 && byte != b'\t' && byte != b'\n' && byte != b'\r') || byte == 0x7f
-        })
-    {
+    if bytes.iter().any(|&byte| {
+        (byte < 0x20 && byte != b'\t' && byte != b'\n' && byte != b'\r') || byte == 0x7f
+    }) {
         return Err(EditorTextRejection::Binary);
     }
 
@@ -1714,17 +1727,30 @@ async fn list_dirs_only_impl(sftp: &SftpSession, path: &str) -> Result<Vec<(Stri
         .collect())
 }
 
-/// Emit a transfer-progress event.
-fn emit_transfer(
-    events: &UnboundedSender<SessionEvent>,
-    id: &str,
-    name: &str,
+/// Bundled arguments for `emit_transfer` (clippy::too_many_arguments).
+struct TransferEmit<'a> {
+    events: &'a UnboundedSender<SessionEvent>,
+    id: &'a str,
+    name: &'a str,
     is_upload: bool,
     transferred: u64,
     total: u64,
     state: u8,
-    msg: &str,
-) {
+    msg: &'a str,
+}
+
+/// Emit a transfer-progress event.
+fn emit_transfer(t: TransferEmit) {
+    let TransferEmit {
+        events,
+        id,
+        name,
+        is_upload,
+        transferred,
+        total,
+        state,
+        msg,
+    } = t;
     let _ = events.send(SessionEvent::SftpTransfer {
         id: id.to_string(),
         name: name.to_string(),
@@ -1787,7 +1813,16 @@ async fn download_impl(
         .await
         .with_context(|| format!("create local {local}"))?;
 
-    emit_transfer(events, id, name, false, 0, total, 0, "");
+    emit_transfer(TransferEmit {
+        events,
+        id,
+        name,
+        is_upload: false,
+        transferred: 0,
+        total,
+        state: 0,
+        msg: "",
+    });
 
     let mut done: u64 = 0;
     let mut last = Instant::now();
@@ -1845,7 +1880,16 @@ async fn download_impl(
                     }
                     if last.elapsed() >= Duration::from_millis(150) {
                         last = Instant::now();
-                        emit_transfer(events, id, name, false, done, total, 0, "");
+                        emit_transfer(TransferEmit {
+                            events,
+                            id,
+                            name,
+                            is_upload: false,
+                            transferred: done,
+                            total,
+                            state: 0,
+                            msg: "",
+                        });
                     }
                 }
                 Some(Err(e)) => err = Some(e),
@@ -1876,7 +1920,16 @@ async fn download_impl(
                     done += d.data.len() as u64;
                     if last.elapsed() >= Duration::from_millis(150) {
                         last = Instant::now();
-                        emit_transfer(events, id, name, false, done, done, 0, "");
+                        emit_transfer(TransferEmit {
+                            events,
+                            id,
+                            name,
+                            is_upload: false,
+                            transferred: done,
+                            total: done,
+                            state: 0,
+                            msg: "",
+                        });
                     }
                 }
                 Err(SftpError::Status(s)) if s.status_code == StatusCode::Eof => break,
@@ -1898,20 +1951,29 @@ async fn download_impl(
     if cancelled {
         drop(local_file);
         let _ = tokio::fs::remove_file(local).await;
-        emit_transfer(
+        emit_transfer(TransferEmit {
             events,
             id,
             name,
-            false,
-            done,
+            is_upload: false,
+            transferred: done,
             total,
-            4,
-            t("已取消", "Cancelled"),
-        );
+            state: 4,
+            msg: t("已取消", "Cancelled"),
+        });
         return Ok(false);
     }
     local_file.flush().await.context("flush local file")?;
-    emit_transfer(events, id, name, false, done, total.max(done), 1, "");
+    emit_transfer(TransferEmit {
+        events,
+        id,
+        name,
+        is_upload: false,
+        transferred: done,
+        total: total.max(done),
+        state: 1,
+        msg: "",
+    });
     Ok(true)
 }
 
@@ -2087,7 +2149,16 @@ async fn upload_pipelined(
         .with_context(|| format!("create remote {remote}"))?
         .handle;
 
-    emit_transfer(events, id, name, true, 0, total, 0, "");
+    emit_transfer(TransferEmit {
+        events,
+        id,
+        name,
+        is_upload: true,
+        transferred: 0,
+        total,
+        state: 0,
+        msg: "",
+    });
 
     let mut offset: u64 = 0;
     let mut done: u64 = 0;
@@ -2126,7 +2197,16 @@ async fn upload_pipelined(
                 done += n;
                 if last.elapsed() >= Duration::from_millis(150) {
                     last = Instant::now();
-                    emit_transfer(events, id, name, true, done, total, 0, "");
+                    emit_transfer(TransferEmit {
+                        events,
+                        id,
+                        name,
+                        is_upload: true,
+                        transferred: done,
+                        total,
+                        state: 0,
+                        msg: "",
+                    });
                 }
             }
             Some(Err(e)) => {
@@ -2149,19 +2229,28 @@ async fn upload_pipelined(
     if cancelled {
         // Remove the half-written remote file on cancel (#100).
         let _ = raw.remove(remote).await;
-        emit_transfer(
+        emit_transfer(TransferEmit {
             events,
             id,
             name,
-            true,
-            done,
+            is_upload: true,
+            transferred: done,
             total,
-            4,
-            t("已取消", "Cancelled"),
-        );
+            state: 4,
+            msg: t("已取消", "Cancelled"),
+        });
         return Ok(false);
     }
-    emit_transfer(events, id, name, true, done, total.max(done), 1, "");
+    emit_transfer(TransferEmit {
+        events,
+        id,
+        name,
+        is_upload: true,
+        transferred: done,
+        total: total.max(done),
+        state: 1,
+        msg: "",
+    });
     Ok(true)
 }
 
@@ -2219,8 +2308,8 @@ const _: fn() = || {
 #[cfg(test)]
 mod sanitize_tests {
     use super::{
-        sanitize_filename, validate_editor_text, EditorTextRejection,
-        MAX_BUILTIN_EDITOR_BYTES, MAX_BUILTIN_EDITOR_LINES, MAX_BUILTIN_EDITOR_LINE_BYTES,
+        EditorTextRejection, MAX_BUILTIN_EDITOR_BYTES, MAX_BUILTIN_EDITOR_LINE_BYTES,
+        MAX_BUILTIN_EDITOR_LINES, sanitize_filename, validate_editor_text,
     };
 
     #[test]

@@ -28,7 +28,11 @@ pub(super) fn refresh_sidebar(
         win.set_net_selected("".into());
         win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
         // Non-connected tabs show the local machine's filesystems.
-        win.set_disks(disk_model(&snap.disks, &mount_filter(), hide_special_partitions()));
+        win.set_disks(disk_model(
+            &snap.disks,
+            &mount_filter(),
+            hide_special_partitions(),
+        ));
     };
     let show_local_res = |win: &AppWindow| {
         win.set_resource_title(t("本机资源", "Local resources").into());
@@ -60,94 +64,93 @@ pub(super) fn refresh_sidebar(
             vm.set_vec(proc_rows(procs, current_user, tab_id));
         }
     };
-    let set_system_models =
-        |win: &AppWindow,
-         cpu: f32,
-         mem: f32,
-         swap: f32,
-         mem_detail: SharedString,
-         swap_detail: SharedString,
-         nets: Vec<SysNetRow>,
-         disks: Vec<DiskInfo>,
-         sys: SystemDetails| {
-            if let Some(vm) = win
-                .get_sys_metrics()
-                .as_any()
-                .downcast_ref::<VecModel<SysMetricRow>>()
-            {
-                vm.set_vec(metric_rows(cpu, mem, swap, mem_detail, swap_detail));
-            }
-            if let Some(vm) = win
-                .get_sys_net_rows()
-                .as_any()
-                .downcast_ref::<VecModel<SysNetRow>>()
-            {
-                vm.set_vec(nets);
-            }
-            if let Some(vm) = win
-                .get_sys_disks()
-                .as_any()
-                .downcast_ref::<VecModel<DiskInfo>>()
-            {
-                vm.set_vec(disks);
-            }
-            if let Some(vm) = win
-                .get_sys_overview_rows()
-                .as_any()
-                .downcast_ref::<VecModel<SysInfoRow>>()
-            {
-                vm.set_vec(pairs_to_overview_rows(&sys.overview));
-            }
-            if let Some(vm) = win
-                .get_sys_cpu_info_rows()
-                .as_any()
-                .downcast_ref::<VecModel<SysInfoRow>>()
-            {
-                vm.set_vec(pairs_to_one_row(&sys.cpu_info));
-            }
-            if let Some(vm) = win
-                .get_sys_gpu_info_rows()
-                .as_any()
-                .downcast_ref::<VecModel<SysInfoRow>>()
-            {
-                vm.set_vec(pairs_to_rows(&sys.gpu_info, 4));
-            }
-            if let Some(vm) = win
-                .get_sys_cpu_usage_rows()
-                .as_any()
-                .downcast_ref::<VecModel<SysInfoRow>>()
-            {
-                vm.set_vec(cpu_usage_detail_rows(&sys.cpu_usage));
-            }
-            if let Some(vm) = win
-                .get_sys_memory_rows()
-                .as_any()
-                .downcast_ref::<VecModel<SysInfoRow>>()
-            {
-                vm.set_vec(pairs_to_one_row(&sys.memory));
-            }
-            if let Some(vm) = win
-                .get_sys_swap_rows()
-                .as_any()
-                .downcast_ref::<VecModel<SysInfoRow>>()
-            {
-                vm.set_vec(pairs_to_one_row(&sys.swap));
-            }
-            if let Some(vm) = win
-                .get_sys_network_rows()
-                .as_any()
-                .downcast_ref::<VecModel<SysInfoRow>>()
-            {
-                vm.set_vec(tuple5_rows(&sys.networks));
-            }
-            if let Some(vm) = win
-                .get_sys_filesystem_rows()
-                .as_any()
-                .downcast_ref::<VecModel<SysInfoRow>>()
-            {
-                vm.set_vec(tuple5_rows(&sys.filesystems));
-            }
-        };
+    let set_system_models = |win: &AppWindow,
+                             cpu: f32,
+                             mem: f32,
+                             swap: f32,
+                             mem_detail: SharedString,
+                             swap_detail: SharedString,
+                             nets: Vec<SysNetRow>,
+                             disks: Vec<DiskInfo>,
+                             sys: SystemDetails| {
+        if let Some(vm) = win
+            .get_sys_metrics()
+            .as_any()
+            .downcast_ref::<VecModel<SysMetricRow>>()
+        {
+            vm.set_vec(metric_rows(cpu, mem, swap, mem_detail, swap_detail));
+        }
+        if let Some(vm) = win
+            .get_sys_net_rows()
+            .as_any()
+            .downcast_ref::<VecModel<SysNetRow>>()
+        {
+            vm.set_vec(nets);
+        }
+        if let Some(vm) = win
+            .get_sys_disks()
+            .as_any()
+            .downcast_ref::<VecModel<DiskInfo>>()
+        {
+            vm.set_vec(disks);
+        }
+        if let Some(vm) = win
+            .get_sys_overview_rows()
+            .as_any()
+            .downcast_ref::<VecModel<SysInfoRow>>()
+        {
+            vm.set_vec(pairs_to_overview_rows(&sys.overview));
+        }
+        if let Some(vm) = win
+            .get_sys_cpu_info_rows()
+            .as_any()
+            .downcast_ref::<VecModel<SysInfoRow>>()
+        {
+            vm.set_vec(pairs_to_one_row(&sys.cpu_info));
+        }
+        if let Some(vm) = win
+            .get_sys_gpu_info_rows()
+            .as_any()
+            .downcast_ref::<VecModel<SysInfoRow>>()
+        {
+            vm.set_vec(pairs_to_rows(&sys.gpu_info, 4));
+        }
+        if let Some(vm) = win
+            .get_sys_cpu_usage_rows()
+            .as_any()
+            .downcast_ref::<VecModel<SysInfoRow>>()
+        {
+            vm.set_vec(cpu_usage_detail_rows(&sys.cpu_usage));
+        }
+        if let Some(vm) = win
+            .get_sys_memory_rows()
+            .as_any()
+            .downcast_ref::<VecModel<SysInfoRow>>()
+        {
+            vm.set_vec(pairs_to_one_row(&sys.memory));
+        }
+        if let Some(vm) = win
+            .get_sys_swap_rows()
+            .as_any()
+            .downcast_ref::<VecModel<SysInfoRow>>()
+        {
+            vm.set_vec(pairs_to_one_row(&sys.swap));
+        }
+        if let Some(vm) = win
+            .get_sys_network_rows()
+            .as_any()
+            .downcast_ref::<VecModel<SysInfoRow>>()
+        {
+            vm.set_vec(tuple5_rows(&sys.networks));
+        }
+        if let Some(vm) = win
+            .get_sys_filesystem_rows()
+            .as_any()
+            .downcast_ref::<VecModel<SysInfoRow>>()
+        {
+            vm.set_vec(tuple5_rows(&sys.filesystems));
+        }
+    };
     win.set_proc_available(false);
     win.set_system_info_available(false);
     set_procs(win, &[], "", "");
@@ -181,7 +184,11 @@ pub(super) fn refresh_sidebar(
             win.set_net_selected(name.into());
             let ifaces: Vec<SharedString> = st.net.iter().map(|e| e.0.clone().into()).collect();
             win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::from(ifaces))));
-            win.set_disks(disk_model(&st.disks, &mount_filter(), hide_special_partitions()));
+            win.set_disks(disk_model(
+                &st.disks,
+                &mount_filter(),
+                hide_special_partitions(),
+            ));
             win.set_proc_available(true);
             win.set_system_info_available(true);
             set_procs(win, &st.procs, &st.user, &active);

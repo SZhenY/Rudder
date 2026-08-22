@@ -63,8 +63,7 @@ pub(super) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                 return;
             }
             tokio::task::yield_now().await;
-            let sftp_handle =
-                spawn_sftp(sftp_task_runtime.handle(), session, jump, sftp_tx);
+            let sftp_handle = spawn_sftp(sftp_task_runtime.handle(), session, jump, sftp_tx);
             if let Ok(mut handles) = sftp_handles.lock() {
                 handles.insert(sftp_tab_id, sftp_handle);
             }
@@ -157,10 +156,10 @@ pub(super) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                             let tid = tab_id_pump.clone();
                             cwd_debounce = Some(rt_pump.spawn(async move {
                                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                                if let Ok(handles) = sftp_h.lock() {
-                                    if let Some(h) = handles.get(&tid) {
-                                        h.list_dir(cwd_spawn);
-                                    }
+                                if let Ok(handles) = sftp_h.lock()
+                                    && let Some(h) = handles.get(&tid)
+                                {
+                                    h.list_dir(cwd_spawn);
                                 }
                             }));
                             ui_batch.push(SessionEvent::CwdChanged(cwd));
@@ -200,8 +199,7 @@ pub(super) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                         _ => 0,
                     })
                     .sum();
-                let has_immediate_ui_events =
-                    ui_batch.iter().any(event_requires_immediate_ui);
+                let has_immediate_ui_events = ui_batch.iter().any(event_requires_immediate_ui);
                 let mut dirty_since_request = false;
                 let mut ui_only: Vec<SessionEvent> = Vec::with_capacity(ui_batch.len());
                 for evt in ui_batch {
@@ -270,7 +268,16 @@ pub(super) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                     if let Some(win) = weak_evt.upgrade() {
                         for evt in ui_only {
                             apply_session_event_to_window(
-                                &win, &tid, evt, &bufs_evt, &gates_evt, &st_evt, &lc_evt, &nh_evt,
+                                &win,
+                                &tid,
+                                evt,
+                                &SessionResources {
+                                    bufs: &bufs_evt,
+                                    gates: &gates_evt,
+                                    statuses: &st_evt,
+                                    local: &lc_evt,
+                                    local_net_hist: &nh_evt,
+                                },
                             );
                         }
                     }
@@ -303,7 +310,7 @@ pub(super) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                         Err(_) => break,
                     }
                 }
-                let ui_batch: Vec<SessionEvent> = drained.drain(..).collect();
+                let ui_batch: Vec<SessionEvent> = std::mem::take(&mut drained);
                 if ui_batch.is_empty() {
                     continue;
                 }
@@ -318,7 +325,16 @@ pub(super) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                     if let Some(win) = weak_s.upgrade() {
                         for sftp_evt in ui_batch {
                             apply_session_event_to_window(
-                                &win, &tid, sftp_evt, &bufs_s, &gates_s, &st_s, &lc_s, &nh_s,
+                                &win,
+                                &tid,
+                                sftp_evt,
+                                &SessionResources {
+                                    bufs: &bufs_s,
+                                    gates: &gates_s,
+                                    statuses: &st_s,
+                                    local: &lc_s,
+                                    local_net_hist: &nh_s,
+                                },
                             );
                         }
                     }

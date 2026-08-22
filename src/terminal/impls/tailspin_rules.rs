@@ -92,7 +92,11 @@ static BUILTIN_RULES: LazyLock<Vec<CompiledOutputRule>> = LazyLock::new(|| {
         // Prompt current-directory path: `user@host:/path` or `user@host:~`.
         // Anchored on `@host:` so it only fires inside a shell prompt.
         // (magenta)
-        (r"@[A-Za-z0-9._\-]+:(?:~|/[\w.\-]+(?:/[\w.\-]+)*)", 13, false),
+        (
+            r"@[A-Za-z0-9._\-]+:(?:~|/[\w.\-]+(?:/[\w.\-]+)*)",
+            13,
+            false,
+        ),
         // Plain absolute path / mount point: `/dev`, `/run`, `/dev/mmcblk0p2`,
         // and the bare root `/` in `df`/`mount` output.  `=` covers `key=/path`.
         // (cyan)
@@ -118,11 +122,7 @@ static BUILTIN_RULES: LazyLock<Vec<CompiledOutputRule>> = LazyLock::new(|| {
             10,
             true,
         ),
-        (
-            r"\b(?:info|debug|trace|notice|verbose)\b",
-            14,
-            true,
-        ),
+        (r"\b(?:info|debug|trace|notice|verbose)\b", 14, true),
     ];
 
     RULES

@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(target_os = "linux")]
 pub(super) fn set_window_icon(window: &AppWindow) {
     use i_slint_backend_winit::winit::window::Icon;
     const ICON_PNG: &[u8] = include_bytes!("../../assets/icon@512.png");
@@ -20,8 +21,12 @@ pub(super) fn set_window_icon(window: &AppWindow) {
 pub(super) fn apply_window_chrome(window: &slint::Window) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     window.with_winit_window(|ww| {
-        let Ok(handle) = ww.window_handle() else { return };
-        let RawWindowHandle::Win32(h) = handle.as_raw() else { return };
+        let Ok(handle) = ww.window_handle() else {
+            return;
+        };
+        let RawWindowHandle::Win32(h) = handle.as_raw() else {
+            return;
+        };
         let hwnd = h.hwnd.get();
 
         #[link(name = "dwmapi")]
@@ -44,9 +49,7 @@ pub(super) fn apply_window_chrome(window: &slint::Window) {
                 (&pref as *const u32).cast(),
                 4,
             );
-            tracing::debug!(
-                "window chrome applied: hwnd={hwnd:#x} corner_hr={corner_hr:#x}"
-            );
+            tracing::debug!("window chrome applied: hwnd={hwnd:#x} corner_hr={corner_hr:#x}");
         }
     });
 }
@@ -89,9 +92,7 @@ pub(super) fn setup_windows_platform(renderer_mode: &str) {
     );
     let backend = builder
         .with_window_attributes_hook(|attrs| {
-            attrs
-                .with_transparent(false)
-                .with_undecorated_shadow(false)
+            attrs.with_transparent(false).with_undecorated_shadow(false)
         })
         .build();
 

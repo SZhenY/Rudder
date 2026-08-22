@@ -1,7 +1,7 @@
 use crate::terminal::{
+    BuiltScreen, CsiState, HistSpan, Line, OverlineRange, RAW_CAP, RenderedLine, TermBuffer,
     build_line, build_row, cursor_pos, highlight_plain_output, is_alt, process_bytes,
-    refresh_overlines, render_term_span, resize_term, term_size, BuiltScreen, CsiState, HistSpan,
-    Line, OverlineRange, RenderedLine, TermBuffer, RAW_CAP,
+    refresh_overlines, render_term_span, resize_term, term_size,
 };
 use crate::ui::TermMatch;
 use crate::ui::TermSpan;
@@ -84,7 +84,10 @@ impl TermBuffer {
         let q = query.to_lowercase();
         let (rows, cols) = term_size(&self.term);
         let rows = rows as usize;
-        let hist_len = self.term.total_lines().saturating_sub(self.term.screen_lines());
+        let hist_len = self
+            .term
+            .total_lines()
+            .saturating_sub(self.term.screen_lines());
         let combined_len = hist_len + rows;
 
         // Search scrollback first (newest → oldest), then live rows.
@@ -177,7 +180,11 @@ impl TermBuffer {
                                 TerminalQuery::CursorPosition { private } => {
                                     let point = self.term.grid().cursor.point;
                                     let response = if private {
-                                        format!("\x1b[?{};{}R", point.line.0 + 1, point.column.0 + 1)
+                                        format!(
+                                            "\x1b[?{};{}R",
+                                            point.line.0 + 1,
+                                            point.column.0 + 1
+                                        )
                                     } else {
                                         format!("\x1b[{};{}R", point.line.0 + 1, point.column.0 + 1)
                                     };
@@ -242,11 +249,9 @@ impl TermBuffer {
         // with the mutable borrow held by the damage iterator.
         let display_offset = self.term.grid().display_offset();
         let curr: Vec<Line> = match self.term.damage() {
-            TermDamage::Full => {
-                (0..rows)
-                    .map(|r| build_row(&self.term, r, cols, &self.overline_ranges))
-                    .collect()
-            }
+            TermDamage::Full => (0..rows)
+                .map(|r| build_row(&self.term, r, cols, &self.overline_ranges))
+                .collect(),
             TermDamage::Partial(damaged_lines) => {
                 let damaged_rows: Vec<usize> = damaged_lines
                     .map(|b| b.line.saturating_sub(display_offset))
@@ -288,7 +293,11 @@ impl TermBuffer {
         let mut feed_from = 0usize;
         for (start, end) in seqs {
             if start > feed_from {
-                process_bytes(&mut self.processor, &mut self.term, &bytes[feed_from..start]);
+                process_bytes(
+                    &mut self.processor,
+                    &mut self.term,
+                    &bytes[feed_from..start],
+                );
             }
             let (row, col) = cursor_pos(&self.term);
             self.apply_sgr(&bytes[start..end], row as i32, col as i32);
@@ -316,7 +325,11 @@ impl TermBuffer {
     /// sequence to the parser.
     fn apply_sgr(&mut self, seq: &[u8], row: i32, col: i32) {
         // seq = ESC [ params m
-        let params = if seq.len() >= 3 { &seq[2..seq.len() - 1] } else { &seq[..0] };
+        let params = if seq.len() >= 3 {
+            &seq[2..seq.len() - 1]
+        } else {
+            &seq[..0]
+        };
         let mut has_53 = false;
         let mut has_reset = false;
         // Drop the overline parameter and rewrite 21 → 4:2 (vte parses 21 as
@@ -333,9 +346,8 @@ impl TermBuffer {
             // dropped/rewritten parameter → alacritty ignores it → the cell
             // keeps its previous background (transparent) and the swatch
             // renders as the theme background (#cube53-regression).
-            let is_color_index = i >= 2
-                && split[i - 1] == b"5"
-                && (split[i - 2] == b"38" || split[i - 2] == b"48");
+            let is_color_index =
+                i >= 2 && split[i - 1] == b"5" && (split[i - 2] == b"38" || split[i - 2] == b"48");
             let is_21 = !is_color_index && *part == b"21";
             let is_53 = !is_color_index && *part == b"53";
             let is_reset = !is_color_index && matches!(*part, b"0" | b"22" | b"24" | b"29");
@@ -414,7 +426,8 @@ impl TermBuffer {
             // Hard cap: stale ranges from scrolling can accumulate.
             const MAX_RANGES: usize = 512;
             if self.overline_ranges.len() > MAX_RANGES {
-                self.overline_ranges.drain(..self.overline_ranges.len() - MAX_RANGES);
+                self.overline_ranges
+                    .drain(..self.overline_ranges.len() - MAX_RANGES);
             }
         }
         self.overline_active = false;
@@ -521,7 +534,12 @@ impl TermBuffer {
                 // the cap), and stale flags must not stick.
                 let line_spans: Vec<_> = if let Some(ref cached) = self.rendered[r as usize] {
                     if cached.plain_key == display {
-                        let runs = refresh_overlines(&cached.runs, &self.overline_ranges, &self.term, r as i32);
+                        let runs = refresh_overlines(
+                            &cached.runs,
+                            &self.overline_ranges,
+                            &self.term,
+                            r as i32,
+                        );
                         runs.iter()
                             .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
                             .collect()
@@ -539,18 +557,21 @@ impl TermBuffer {
                 displayed.push(display);
             }
             self.displayed_text = displayed;
-            let rows_used = if alt {
-                rows as i32
-            } else {
-                last_content + 1
-            };
+            let rows_used = if alt { rows as i32 } else { last_content + 1 };
             return BuiltScreen {
                 spans,
                 cursor_row: cur_row as i32,
                 cursor_col: cur_col as i32,
                 rows_used,
                 is_alt: alt,
-                scroll_max: if alt { 0 } else { (self.term.total_lines().saturating_sub(self.term.screen_lines())) as i32 },
+                scroll_max: if alt {
+                    0
+                } else {
+                    (self
+                        .term
+                        .total_lines()
+                        .saturating_sub(self.term.screen_lines())) as i32
+                },
                 scroll_offset: 0,
             };
         }
@@ -559,7 +580,10 @@ impl TermBuffer {
         //     grid via negative Line indices.  No separate rendered history —
         //     build_line() lazily converts raw Cells as needed, and the
         //     is_clear() fast path skips empty rows entirely.
-        let hist_len = self.term.total_lines().saturating_sub(self.term.screen_lines());
+        let hist_len = self
+            .term
+            .total_lines()
+            .saturating_sub(self.term.screen_lines());
         let win = rows as usize;
         let vo = self.view_offset;
         let mut spans = Vec::with_capacity(win * 6);
@@ -569,7 +593,8 @@ impl TermBuffer {
             let (plain, runs, _wrapped) =
                 build_line(&self.term, grid_line, cols, &self.overline_ranges);
             let display = plain.trim_end().to_string();
-            let hr = highlight_plain_output(runs, self.output_highlight, &self.custom_highlight_rules);
+            let hr =
+                highlight_plain_output(runs, self.output_highlight, &self.custom_highlight_rules);
             for hs in &hr {
                 spans.extend(render_term_span(hs, d as i32, self.is_dark));
             }
@@ -601,7 +626,11 @@ impl TermBuffer {
         let runs = if alt {
             runs.to_vec()
         } else {
-            highlight_plain_output(runs.to_vec(), self.output_highlight, &self.custom_highlight_rules)
+            highlight_plain_output(
+                runs.to_vec(),
+                self.output_highlight,
+                &self.custom_highlight_rules,
+            )
         };
         let spans: Vec<_> = runs
             .iter()
@@ -613,7 +642,6 @@ impl TermBuffer {
         });
         spans
     }
-
 }
 
 /// Scan `bytes` for every complete `ESC [ … final` CSI sequence, returning
@@ -658,8 +686,8 @@ fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
 mod tests {
     use super::*;
     use crate::terminal::{
-        build_line, build_row, cell_attrs, new_term, CsiState, OutputHighlightPreset, TermColor,
-        UnderlineStyle,
+        CsiState, OutputHighlightPreset, TermColor, UnderlineStyle, build_line, build_row,
+        cell_attrs, new_term,
     };
 
     fn make_buffer() -> TermBuffer {
@@ -710,7 +738,11 @@ mod tests {
         // 31;53 → red + overline; the 31 must reach the parser.
         buf.ingest(b"\x1b[31;53mX");
         let attr = cell_attrs(&buf.term, 0, 0);
-        assert_eq!(attr.fg, TermColor::Idx(1), "SGR 31 must survive the 53 rewrite");
+        assert_eq!(
+            attr.fg,
+            TermColor::Idx(1),
+            "SGR 31 must survive the 53 rewrite"
+        );
         assert_eq!(buf.overline_ranges.len(), 0, "range still open until reset");
         assert!(buf.overline_active);
     }
@@ -720,7 +752,13 @@ mod tests {
         let mut buf = make_buffer();
         buf.ingest(b"\x1b[53mAA\x1b[31mBB");
         assert_eq!(buf.overline_ranges.len(), 1);
-        assert_eq!((buf.overline_ranges[0].col_start, buf.overline_ranges[0].col_end), (0, 2));
+        assert_eq!(
+            (
+                buf.overline_ranges[0].col_start,
+                buf.overline_ranges[0].col_end
+            ),
+            (0, 2)
+        );
         let (_plain, runs, _) = build_row(&buf.term, 0, 40, &buf.overline_ranges);
         assert!(runs[0].overline, "AA is overlined");
         assert!(!runs[1].overline, "BB is not");
@@ -734,13 +772,19 @@ mod tests {
         let mut buf = make_buffer();
         buf.ingest(b"\x1b[5");
         assert!(!buf.overline_active, "incomplete sequence must not act yet");
-        assert!(!buf.sgr_buf.is_empty(), "unterminated CSI tail must be buffered");
+        assert!(
+            !buf.sgr_buf.is_empty(),
+            "unterminated CSI tail must be buffered"
+        );
         buf.ingest(b"3mOVER\x1b[0m");
         assert_eq!(buf.overline_ranges.len(), 1);
         let r = buf.overline_ranges[0];
         assert_eq!((r.abs, r.col_start, r.col_end), (0, 0, 4));
         let (_plain, runs, _) = build_row(&buf.term, 0, 40, &buf.overline_ranges);
-        assert!(runs[0].overline, "overline must survive a split SGR sequence");
+        assert!(
+            runs[0].overline,
+            "overline must survive a split SGR sequence"
+        );
     }
 
     #[test]
@@ -761,7 +805,11 @@ mod tests {
             .filter(|s| s.overline)
             .map(|s| (s.col, s.cells))
             .collect();
-        assert_eq!(overlined, vec![(3, 2)], "cache hit must pick up the new range");
+        assert_eq!(
+            overlined,
+            vec![(3, 2)],
+            "cache hit must pick up the new range"
+        );
     }
 
     #[test]
@@ -777,7 +825,11 @@ mod tests {
             .filter(|r| r.overline)
             .map(|r| (r.text.as_str(), r.cells))
             .collect();
-        assert_eq!(overlined, vec![("XX", 2)], "only the SGR-53 range is overlined");
+        assert_eq!(
+            overlined,
+            vec![("XX", 2)],
+            "only the SGR-53 range is overlined"
+        );
         let total_cells: i32 = runs.iter().map(|r| r.cells).sum();
         assert_eq!(total_cells, 40, "split must keep the row's column coverage");
     }
@@ -872,7 +924,10 @@ mod tests {
             .iter()
             .find(|s| s.row == 39 && s.text.as_str().contains("示"))
             .expect("scrolled view must contain the overline row");
-        assert!(scrolled.overline, "overline must render in the scrolled view");
+        assert!(
+            scrolled.overline,
+            "overline must render in the scrolled view"
+        );
     }
 
     #[test]
@@ -901,18 +956,24 @@ mod tests {
         // so the 6th content line is at grid line -6.
         let (plain, runs, _) = build_line(&buf.term, GridLine(-6), 40, &buf.overline_ranges);
         assert_eq!(plain.trim_end(), "line-05                               OV");
-        assert!(runs.iter().any(|r| r.overline), "overline must survive scrolling");
+        assert!(
+            runs.iter().any(|r| r.overline),
+            "overline must survive scrolling"
+        );
         // And the same line rendered at its live position pre-scroll matches
         // the absolute anchor: a fresh identical line without overline must
         // NOT be flagged at the same relative row.
         let (_, runs2, _) = build_line(&buf.term, GridLine(-5), 40, &buf.overline_ranges);
-        assert!(!runs2.iter().any(|r| r.overline), "neighbouring line must not be overlined");
+        assert!(
+            !runs2.iter().any(|r| r.overline),
+            "neighbouring line must not be overlined"
+        );
     }
 }
 #[cfg(test)]
 mod real_file_overline_verify {
     use super::*;
-    use crate::terminal::{build_line, new_term, CsiState, OutputHighlightPreset};
+    use crate::terminal::{CsiState, OutputHighlightPreset, build_line, new_term};
     use std::collections::VecDeque;
 
     #[test]
@@ -948,7 +1009,11 @@ mod real_file_overline_verify {
         for chunk in data.chunks(4096) {
             buf.ingest(chunk);
         }
-        eprintln!("history={} ranges={:?}", buf.term.grid().history_size(), buf.overline_ranges);
+        eprintln!(
+            "history={} ranges={:?}",
+            buf.term.grid().history_size(),
+            buf.overline_ranges
+        );
         // Find the overline row: scan scrollback for the [4] Overline line.
         let hist = buf.term.grid().history_size();
         let mut found = None;
@@ -962,14 +1027,17 @@ mod real_file_overline_verify {
         }
         let (line_no, plain, overlined) = found.expect("overline row must be in scrollback");
         eprintln!("overline row at grid line {line_no}: {plain:?} overlined={overlined}");
-        assert!(overlined, "overline must survive in the real-file scrollback scenario");
+        assert!(
+            overlined,
+            "overline must survive in the real-file scrollback scenario"
+        );
     }
 }
 
 #[cfg(test)]
 mod render_path_cube_tests {
     use super::*;
-    use crate::terminal::{build_row, new_term, OutputHighlightPreset, TermColor, UnderlineStyle};
+    use crate::terminal::{OutputHighlightPreset, TermColor, UnderlineStyle, build_row, new_term};
 
     fn make_buffer() -> TermBuffer {
         let (term, processor) = new_term(10, 40, 100);
@@ -1042,25 +1110,47 @@ mod render_path_cube_tests {
         let mut buf = make_buffer();
         buf.ingest(b"\x1b[48;5;53mX\x1b[0m");
         let (_plain, runs, _) = build_row(&buf.term, 0, 40, &[]);
-        assert!(matches!(runs[0].bg, TermColor::Idx(53)), "48;5;53 bg must be Idx(53)");
+        assert!(
+            matches!(runs[0].bg, TermColor::Idx(53)),
+            "48;5;53 bg must be Idx(53)"
+        );
         // Foreground 38;5;53 likewise.
         let mut buf = make_buffer();
         buf.ingest(b"\x1b[38;5;53mX\x1b[0m");
         let (_plain, runs, _) = build_row(&buf.term, 0, 40, &[]);
-        assert!(matches!(runs[0].fg, TermColor::Idx(53)), "38;5;53 fg must be Idx(53)");
+        assert!(
+            matches!(runs[0].fg, TermColor::Idx(53)),
+            "38;5;53 fg must be Idx(53)"
+        );
         // 48;5;21 must NOT be rewritten into double underline (4:2).
         let mut buf = make_buffer();
         buf.ingest(b"\x1b[48;5;21mX\x1b[0m");
         let (_plain, runs, _) = build_row(&buf.term, 0, 40, &[]);
-        assert!(matches!(runs[0].bg, TermColor::Idx(21)), "48;5;21 bg must be Idx(21)");
-        assert_eq!(runs[0].underline, UnderlineStyle::None, "no double underline from 256-colour 21");
+        assert!(
+            matches!(runs[0].bg, TermColor::Idx(21)),
+            "48;5;21 bg must be Idx(21)"
+        );
+        assert_eq!(
+            runs[0].underline,
+            UnderlineStyle::None,
+            "no double underline from 256-colour 21"
+        );
         // A *standalone* SGR 53 still opens the overline range.
         let mut buf = make_buffer();
         buf.ingest(b"\x1b[53mOVERLINE\x1b[0m");
         assert_eq!(buf.overline_ranges.len(), 1);
-        assert_eq!((buf.overline_ranges[0].col_start, buf.overline_ranges[0].col_end), (0, 8));
+        assert_eq!(
+            (
+                buf.overline_ranges[0].col_start,
+                buf.overline_ranges[0].col_end
+            ),
+            (0, 8)
+        );
         // And the existing overline cells still render overlined.
         let (_plain, runs, _) = build_row(&buf.term, 0, 40, &buf.overline_ranges);
-        assert!(runs[0].overline, "standalone 53m must still produce overline");
+        assert!(
+            runs[0].overline,
+            "standalone 53m must still produce overline"
+        );
     }
 }

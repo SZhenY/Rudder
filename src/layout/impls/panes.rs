@@ -9,7 +9,15 @@
 //! plain lists the UI renders directly with `for`. Any structural change (split,
 //! close, move a tab, drag a splitter) mutates the tree and re-flattens.
 
-use super::layout::{Dir, Layout, Leaf, Node, PaneRect, SplitterRect};
+use super::imp::{Dir, Layout, Leaf, Node, PaneRect, SplitterRect};
+
+/// Axis-aligned geometry for a node during layout flattening.
+struct Rect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
 
 /// Visible thickness of a splitter handle, in px.
 pub const SPLITTER: f32 = 6.0;
@@ -43,10 +51,7 @@ impl Layout {
         let mut splits = Vec::new();
         layout_node(
             &self.root,
-            x,
-            y,
-            w,
-            h,
+            Rect { x, y, w, h },
             self.focused,
             &mut panes,
             &mut splits,
@@ -123,12 +128,12 @@ impl Layout {
         put_node(&mut self.root, leaf_id, replacement);
         // Remove the tab from its original pane (unless it WAS the target's only
         // content that we just wrapped — detach handles that uniformly).
-        if from != new_id {
-            if let Some(src) = self.leaf_mut(from) {
-                src.tabs.retain(|t| t != tab_id);
-                if src.active == tab_id {
-                    src.active = src.tabs.last().cloned().unwrap_or_default();
-                }
+        if from != new_id
+            && let Some(src) = self.leaf_mut(from)
+        {
+            src.tabs.retain(|t| t != tab_id);
+            if src.active == tab_id {
+                src.active = src.tabs.last().cloned().unwrap_or_default();
             }
         }
         self.focused = new_id;
@@ -243,14 +248,12 @@ impl Layout {
 
 fn layout_node(
     node: &Node,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    rect: Rect,
     focused: u64,
     panes: &mut Vec<PaneRect>,
     splits: &mut Vec<SplitterRect>,
 ) {
+    let Rect { x, y, w, h } = rect;
     match node {
         Node::Leaf(l) => panes.push(PaneRect {
             id: l.id,
@@ -274,7 +277,7 @@ fn layout_node(
                 Dir::Horizontal => {
                     let fw = (w - SPLITTER).max(0.0) * ratio;
                     let sw = (w - SPLITTER).max(0.0) - fw;
-                    layout_node(first, x, y, fw, h, focused, panes, splits);
+                    layout_node(first, Rect { x, y, w: fw, h }, focused, panes, splits);
                     splits.push(SplitterRect {
                         split_id: *id,
                         x: x + fw,
@@ -285,13 +288,24 @@ fn layout_node(
                         axis_start: x,
                         axis_len: w,
                     });
-                    layout_node(second, x + fw + SPLITTER, y, sw, h, focused, panes, splits);
+                    layout_node(
+                        second,
+                        Rect {
+                            x: x + fw + SPLITTER,
+                            y,
+                            w: sw,
+                            h,
+                        },
+                        focused,
+                        panes,
+                        splits,
+                    );
                     let _ = half;
                 }
                 Dir::Vertical => {
                     let fh = (h - SPLITTER).max(0.0) * ratio;
                     let sh = (h - SPLITTER).max(0.0) - fh;
-                    layout_node(first, x, y, w, fh, focused, panes, splits);
+                    layout_node(first, Rect { x, y, w, h: fh }, focused, panes, splits);
                     splits.push(SplitterRect {
                         split_id: *id,
                         x,
@@ -302,7 +316,18 @@ fn layout_node(
                         axis_start: y,
                         axis_len: h,
                     });
-                    layout_node(second, x, y + fh + SPLITTER, w, sh, focused, panes, splits);
+                    layout_node(
+                        second,
+                        Rect {
+                            x,
+                            y: y + fh + SPLITTER,
+                            w,
+                            h: sh,
+                        },
+                        focused,
+                        panes,
+                        splits,
+                    );
                 }
             }
         }

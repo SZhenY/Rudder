@@ -1,7 +1,9 @@
+use crate::terminal::{
+    CompiledOutputRule, HistSpan, OutputHighlightPreset, TermColor, builtin_rules,
+};
+use crate::ui::TermSpan;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use crate::terminal::{builtin_rules, CompiledOutputRule, HistSpan, OutputHighlightPreset, TermColor};
-use crate::ui::TermSpan;
 
 /// Highlight the first recognisable log-level token in each otherwise unstyled
 /// terminal run. Uppercase standalone levels cover conventional text logs;
@@ -195,7 +197,7 @@ pub(crate) fn log_level_marker(text: &str, max_chars: usize) -> Option<(usize, u
                 continue;
             }
             let candidate = (start, start + word.len(), colour);
-            if best.map_or(true, |current| start < current.0) {
+            if best.is_none_or(|current| start < current.0) {
                 best = Some(candidate);
             }
             break;
@@ -293,7 +295,7 @@ fn devops_marker(text: &str, max_chars: usize) -> Option<(usize, usize, u8)> {
                 continue;
             }
             let candidate = (start, start + word.len(), colour);
-            if best.map_or(true, |current| start < current.0) {
+            if best.is_none_or(|current| start < current.0) {
                 best = Some(candidate);
             }
             break;
@@ -346,8 +348,8 @@ fn ascii_word_boundary(bytes: &[u8], start: usize, end: usize) -> bool {
     let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
     bytes
         .get(start.wrapping_sub(1))
-        .map_or(true, |b| !is_word(*b))
-        && bytes.get(end).map_or(true, |b| !is_word(*b))
+        .is_none_or(|b| !is_word(*b))
+        && bytes.get(end).is_none_or(|b| !is_word(*b))
 }
 
 thread_local! {
@@ -473,8 +475,8 @@ pub(crate) fn render_term_span(span: &HistSpan, row: i32, is_dark: bool) -> Vec<
                 let plain_cjk = contains_cjk(&plain);
                 result.push(TermSpan {
                     text: std::mem::take(&mut plain).into(),
-                    fg: fg.clone(),
-                    bg: bg.clone(),
+                    fg,
+                    bg,
                     bold: span.bold,
                     dim: span.dim,
                     italic: span.italic,
@@ -493,8 +495,8 @@ pub(crate) fn render_term_span(span: &HistSpan, row: i32, is_dark: bool) -> Vec<
             }
             result.push(TermSpan {
                 text: "".into(),
-                fg: fg.clone(),
-                bg: bg.clone(),
+                fg,
+                bg,
                 bold: span.bold,
                 dim: span.dim,
                 italic: span.italic,
@@ -610,7 +612,10 @@ mod color_emoji_tests {
         // be lightened like true-colour RGB backgrounds, or it reads as a
         // near-black block (matches how [2] of the char test suite renders).
         let (r, g, b) = idx_to_rgb_bg(17, false);
-        assert!(r > 100 && b > 100, "cube colour must be lightened on light theme: ({r},{g},{b})");
+        assert!(
+            r > 100 && b > 100,
+            "cube colour must be lightened on light theme: ({r},{g},{b})"
+        );
         // Dark mode keeps the exact xterm cube value.
         assert_eq!(idx_to_rgb_bg(17, true), (0, 0, 95));
     }
@@ -634,7 +639,11 @@ mod color_emoji_tests {
         assert_eq!((c91.red(), c91.green(), c91.blue()), (135, 0, 175));
 
         let c16 = vt_bg_to_slint(TermColor::Idx(16), true); // (0,0,0)
-        assert_eq!((c16.red(), c16.green(), c16.blue()), (0, 0, 0), "true black stays black");
+        assert_eq!(
+            (c16.red(), c16.green(), c16.blue()),
+            (0, 0, 0),
+            "true black stays black"
+        );
 
         let g232 = vt_bg_to_slint(TermColor::Idx(232), true); // (8,8,8)
         assert_eq!((g232.red(), g232.green(), g232.blue()), (8, 8, 8));
@@ -654,12 +663,19 @@ mod color_emoji_tests {
         span.dim = true;
         let spans = render_term_span(&span, 0, true);
         let alpha = spans[0].fg.alpha();
-        assert!(alpha > 0 && alpha < 255, "SGR 2 dim → partially transparent fg (got {alpha})");
+        assert!(
+            alpha > 0 && alpha < 255,
+            "SGR 2 dim → partially transparent fg (got {alpha})"
+        );
 
         let mut span = run("text", 4);
         span.hidden = true;
         let spans = render_term_span(&span, 0, true);
-        assert_eq!(spans[0].fg.alpha(), 0, "SGR 8 conceal → fully transparent fg");
+        assert_eq!(
+            spans[0].fg.alpha(),
+            0,
+            "SGR 8 conceal → fully transparent fg"
+        );
     }
 
     #[test]
@@ -988,13 +1004,7 @@ fn idx_to_rgb(i: u8, bold: bool, is_dark: bool) -> (u8, u8, u8) {
         0..=15 => palette[i as usize],
         16..=231 => {
             let n = i - 16;
-            let to = |v: u8| -> u8 {
-                if v == 0 {
-                    0
-                } else {
-                    55 + v * 40
-                }
-            };
+            let to = |v: u8| -> u8 { if v == 0 { 0 } else { 55 + v * 40 } };
             (to(n / 36), to((n % 36) / 6), to(n % 6))
         }
         _ => {
@@ -1025,7 +1035,7 @@ fn idx_to_rgb_bg(i: u8, is_dark: bool) -> (u8, u8, u8) {
 #[cfg(test)]
 mod real_file_cube_tests {
     use super::*;
-    use crate::terminal::{build_line, new_term, process_bytes, term_size, TermColor};
+    use crate::terminal::{TermColor, build_line, new_term, process_bytes, term_size};
     use alacritty_terminal::grid::Dimensions;
     use alacritty_terminal::index::Line as GridLine;
 

@@ -42,8 +42,7 @@ fn main() {
 /// (all resolved deps, not just direct ones), and write them into a
 /// generated Rust source file that the app includes at compile time.
 fn generate_dep_versions() {
-    let manifest_dir =
-        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let lock_path = std::path::Path::new(&manifest_dir).join("Cargo.lock");
     println!("cargo:rerun-if-changed={}", lock_path.display());
 

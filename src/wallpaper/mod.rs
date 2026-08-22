@@ -1,4 +1,4 @@
 #[path = "impls/wallpaper.rs"]
-mod wallpaper;
+mod imp;
 
-pub(crate) use wallpaper::*;
+pub(crate) use imp::*;

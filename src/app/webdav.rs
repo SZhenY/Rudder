@@ -75,7 +75,7 @@ pub(super) fn webdav_auth_header(username: &str, password: &str) -> Option<Strin
     if username.is_empty() && password.is_empty() {
         return None;
     }
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
     Some(format!(
         "Basic {}",
         STANDARD.encode(format!("{username}:{password}"))
@@ -182,7 +182,11 @@ pub(super) fn webdav_dir_missing_or_no_create_error() -> anyhow::Error {
     )
 }
 
-pub(super) fn webdav_dir_exists(agent: &ureq::Agent, url: &str, auth: Option<&str>) -> Result<bool> {
+pub(super) fn webdav_dir_exists(
+    agent: &ureq::Agent,
+    url: &str,
+    auth: Option<&str>,
+) -> Result<bool> {
     let req = webdav_auth_req(agent.request("PROPFIND", url).set("Depth", "0"), auth);
     match req.call() {
         Ok(_) => Ok(true),
@@ -198,7 +202,7 @@ pub(super) fn webdav_create_dir(agent: &ureq::Agent, url: &str, auth: Option<&st
     let req = webdav_auth_req(agent.request("MKCOL", url), auth);
     match req.call() {
         Ok(_) => Ok(()),
-        Err(ureq::Error::Status(status, _)) if status == 405 => Ok(()),
+        Err(ureq::Error::Status(405, _)) => Ok(()),
         Err(ureq::Error::Status(status, _))
             if status == 401 || status == 403 || status == 404 || status == 409 =>
         {
@@ -208,7 +212,11 @@ pub(super) fn webdav_create_dir(agent: &ureq::Agent, url: &str, auth: Option<&st
     }
 }
 
-pub(super) fn webdav_ensure_parent_dirs(agent: &ureq::Agent, url: &str, auth: Option<&str>) -> Result<()> {
+pub(super) fn webdav_ensure_parent_dirs(
+    agent: &ureq::Agent,
+    url: &str,
+    auth: Option<&str>,
+) -> Result<()> {
     for dir in webdav_parent_dirs(url) {
         if !webdav_dir_exists(agent, &dir, auth)? {
             webdav_create_dir(agent, &dir, auth)?;

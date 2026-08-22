@@ -69,11 +69,7 @@ pub(super) fn sort_sftp_entries(entries: &mut [SftpEntry], key: &str, dir: i32) 
                 .then_with(|| default_cmp(a, b)),
             _ => name_cmp(a, b).then_with(|| default_cmp(a, b)),
         };
-        if dir < 0 {
-            ord.reverse()
-        } else {
-            ord
-        }
+        if dir < 0 { ord.reverse() } else { ord }
     });
 }
 
@@ -132,7 +128,10 @@ pub(super) fn natural_ascii_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     ab.len().cmp(&bb.len())
 }
 
-pub(super) fn collect_sftp_selected(terminals: &VecModel<TerminalState>, tab_id: &str) -> Vec<String> {
+pub(super) fn collect_sftp_selected(
+    terminals: &VecModel<TerminalState>,
+    tab_id: &str,
+) -> Vec<String> {
     let mut paths = Vec::new();
     for ti in 0..terminals.row_count() {
         let Some(row) = terminals.row_data(ti) else {
@@ -147,10 +146,10 @@ pub(super) fn collect_sftp_selected(terminals: &VecModel<TerminalState>, tab_id:
             .downcast_ref::<VecModel<SftpEntry>>()
         {
             for ei in 0..em.row_count() {
-                if let Some(e) = em.row_data(ei) {
-                    if e.selected {
-                        paths.push(e.full_path.to_string());
-                    }
+                if let Some(e) = em.row_data(ei)
+                    && e.selected
+                {
+                    paths.push(e.full_path.to_string());
                 }
             }
         }
@@ -173,11 +172,11 @@ pub(super) fn clear_sftp_selection(terminals: &VecModel<TerminalState>, tab_id: 
             .downcast_ref::<VecModel<SftpEntry>>()
         {
             for ei in 0..em.row_count() {
-                if let Some(mut e) = em.row_data(ei) {
-                    if e.selected {
-                        e.selected = false;
-                        em.set_row_data(ei, e);
-                    }
+                if let Some(mut e) = em.row_data(ei)
+                    && e.selected
+                {
+                    e.selected = false;
+                    em.set_row_data(ei, e);
                 }
             }
         }

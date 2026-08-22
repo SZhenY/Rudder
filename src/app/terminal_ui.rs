@@ -46,16 +46,29 @@ pub(super) fn validate_output_highlight_rule(
     case_sensitive: bool,
 ) -> std::result::Result<(), String> {
     if pattern.is_empty() {
-        return Err(t("请输入关键词或正则表达式", "Enter a keyword or regular expression").into());
+        return Err(t(
+            "请输入关键词或正则表达式",
+            "Enter a keyword or regular expression",
+        )
+        .into());
     }
     if pattern.chars().count() > 512 {
-        return Err(t("规则不能超过 512 个字符", "Rules cannot exceed 512 characters").into());
+        return Err(t(
+            "规则不能超过 512 个字符",
+            "Rules cannot exceed 512 characters",
+        )
+        .into());
     }
     if is_regex {
         regex::RegexBuilder::new(pattern)
             .case_insensitive(!case_sensitive)
             .build()
-            .map_err(|error| format!("{}: {error}", t("无效的正则表达式", "Invalid regular expression")))?;
+            .map_err(|error| {
+                format!(
+                    "{}: {error}",
+                    t("无效的正则表达式", "Invalid regular expression")
+                )
+            })?;
     }
     Ok(())
 }
@@ -289,10 +302,10 @@ pub(super) fn apply_wallpaper(
 }
 
 pub(super) fn selected_iface(st: &TabStatus) -> (String, u64, u64) {
-    if !st.selected_iface.is_empty() {
-        if let Some(e) = st.net.iter().find(|e| e.0 == st.selected_iface) {
-            return e.clone();
-        }
+    if !st.selected_iface.is_empty()
+        && let Some(e) = st.net.iter().find(|e| e.0 == st.selected_iface)
+    {
+        return e.clone();
     }
     st.net.first().cloned().unwrap_or_default()
 }

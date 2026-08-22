@@ -1,5 +1,5 @@
 #[path = "impls/session.rs"]
-mod session;
+mod imp;
 #[path = "struct/prompts.rs"]
 mod prompts;
 

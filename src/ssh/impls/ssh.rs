@@ -7,11 +7,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use russh::client::{self, Handle, Handler, Msg};
 use russh::keys::key::PrivateKeyWithHashAlg;
-use russh::keys::{decode_secret_key, load_secret_key, PrivateKey};
+use russh::keys::{PrivateKey, decode_secret_key, load_secret_key};
 use russh::{Channel, ChannelId, ChannelMsg, Disconnect};
 use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -321,11 +321,11 @@ fn accumulate_late_echo(buf: &mut String, chunk: &str) -> (String, bool) {
         // fallback keeps an unresponsive shell from freezing the terminal —
         // and discards the wrapped remainder whole, never cutting at a line
         // end (which would leak the other rows of the echo).
-        if buf.len() >= ECHO_BUF_CAP {
-            if let Some(p) = buf.find(PROMPT_SETUP_PREFIX) {
-                discard_prompt_setup_tail(buf, p);
-                return (std::mem::take(buf), true);
-            }
+        if buf.len() >= ECHO_BUF_CAP
+            && let Some(p) = buf.find(PROMPT_SETUP_PREFIX)
+        {
+            discard_prompt_setup_tail(buf, p);
+            return (std::mem::take(buf), true);
         }
         return (String::new(), false);
     }
@@ -380,18 +380,18 @@ fn extract_osc7_end(text: &str) -> Option<(String, usize)> {
         if end >= bytes.len() {
             break;
         }
-        if let Ok(content) = std::str::from_utf8(&bytes[osc_start..end]) {
-            if let Some(rest) = content.strip_prefix("7;file://") {
-                // rest = "hostname/path" or "/path" (empty hostname)
-                let path = if rest.starts_with('/') {
-                    rest.to_string()
-                } else if let Some(slash) = rest.find('/') {
-                    rest[slash..].to_string()
-                } else {
-                    "/".to_string()
-                };
-                return Some((url_decode(&path), end + term_len));
-            }
+        if let Ok(content) = std::str::from_utf8(&bytes[osc_start..end])
+            && let Some(rest) = content.strip_prefix("7;file://")
+        {
+            // rest = "hostname/path" or "/path" (empty hostname)
+            let path = if rest.starts_with('/') {
+                rest.to_string()
+            } else if let Some(slash) = rest.find('/') {
+                rest[slash..].to_string()
+            } else {
+                "/".to_string()
+            };
+            return Some((url_decode(&path), end + term_len));
         }
         i = end + term_len.max(1);
     }
@@ -430,10 +430,10 @@ pub fn extract_osc_command(text: &str) -> Option<(String, std::ops::Range<usize>
         if end >= bytes.len() {
             break; // incomplete — leave it for the next chunk
         }
-        if let Ok(content) = std::str::from_utf8(&bytes[osc_start..end]) {
-            if let Some(cmd) = content.strip_prefix("697;") {
-                return Some((cmd.to_string(), seq_start..end + term_len));
-            }
+        if let Ok(content) = std::str::from_utf8(&bytes[osc_start..end])
+            && let Some(cmd) = content.strip_prefix("697;")
+        {
+            return Some((cmd.to_string(), seq_start..end + term_len));
         }
         i = end + term_len;
     }
@@ -518,10 +518,10 @@ impl HostKeyResponder {
 
     /// Deliver the user's decision (`true` = trust). Idempotent.
     pub fn respond(&self, accept: bool) {
-        if let Ok(mut guard) = self.0.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(accept);
-            }
+        if let Ok(mut guard) = self.0.lock()
+            && let Some(tx) = guard.take()
+        {
+            let _ = tx.send(accept);
         }
     }
 }
@@ -550,10 +550,10 @@ impl CredentialResponder {
 
     /// Deliver the user's answer (`None` = cancelled). Idempotent.
     pub fn respond(&self, reply: Option<CredentialReply>) {
-        if let Ok(mut guard) = self.0.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(reply);
-            }
+        if let Ok(mut guard) = self.0.lock()
+            && let Some(tx) = guard.take()
+        {
+            let _ = tx.send(reply);
         }
     }
 }
@@ -579,10 +579,10 @@ impl MfaResponder {
 
     /// Deliver the user's answer (`None` = cancelled). Idempotent.
     pub fn respond(&self, reply: Option<String>) {
-        if let Ok(mut guard) = self.0.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(reply);
-            }
+        if let Ok(mut guard) = self.0.lock()
+            && let Some(tx) = guard.take()
+        {
+            let _ = tx.send(reply);
         }
     }
 }
@@ -697,7 +697,9 @@ pub enum SessionEvent {
         /// Detailed system information for the detached system-info window.
         /// Detailed data is present only for the separately delayed one-shot
         /// system-information probe; lightweight resource samples leave it None.
-        sys: Option<SystemDetails>,
+        /// Boxed to keep the enum's stack/heap footprint small
+        /// (clippy::large_enum_variant).
+        sys: Box<Option<SystemDetails>>,
     },
 
     /// Effective user and top-process snapshot from the dedicated lightweight
@@ -1363,13 +1365,13 @@ where
     {
         AuthResult::Success => {}
         AuthResult::Cancelled => {
-            return Err(anyhow!(t("跳板机登录已取消", "jump host login cancelled")))
+            return Err(anyhow!(t("跳板机登录已取消", "jump host login cancelled")));
         }
         AuthResult::Failed => {
             return Err(anyhow!(t(
                 "跳板机认证失败",
                 "jump host authentication failed"
-            )))
+            )));
         }
     }
     let channel = jhandle
@@ -2026,7 +2028,7 @@ async fn run_session(
                                     let _ = events.send(SessionEvent::Output(format!(
                                         "\r\n[rudder] {}: {e}\r\n",
                                         t("ZMODEM 接收失败,已取消", "ZMODEM receive failed; cancelled")
-                                    ).into()));
+                                    )));
                                 }
                             }
                             continue;
@@ -2474,23 +2476,23 @@ fn parse_monitor_block(
         }
         match section {
             Section::Df => {
-                if disks.len() < MAX_MON_ENTRIES {
-                    if let Some((mount, avail, total)) = parse_df_line(line) {
-                        // Set-style dedup: skip a filesystem whose (total, available)
-                        // we've already added — collapses the dozens of identical
-                        // Docker overlay mounts a NAS reports down to one row (#38).
-                        if seen_fs.insert((total, avail)) {
-                            disks.push((mount, avail, total));
-                        }
+                if disks.len() < MAX_MON_ENTRIES
+                    && let Some((mount, avail, total)) = parse_df_line(line)
+                {
+                    // Set-style dedup: skip a filesystem whose (total, available)
+                    // we've already added — collapses the dozens of identical
+                    // Docker overlay mounts a NAS reports down to one row (#38).
+                    if seen_fs.insert((total, avail)) {
+                        disks.push((mount, avail, total));
                     }
                 }
                 continue;
             }
             Section::Ps => {
-                if procs.len() < MAX_MON_ENTRIES {
-                    if let Some(p) = parse_ps_line(line) {
-                        procs.push(p);
-                    }
+                if procs.len() < MAX_MON_ENTRIES
+                    && let Some(p) = parse_ps_line(line)
+                {
+                    procs.push(p);
                 }
                 continue;
             }
@@ -2534,10 +2536,10 @@ fn parse_monitor_block(
             swap_total = parse_meminfo_kib(v);
         } else if let Some(v) = line.strip_prefix("SwapFree:") {
             swap_free = parse_meminfo_kib(v);
-        } else if net_now.len() < MAX_MON_ENTRIES {
-            if let Some((iface, counters)) = parse_net_dev_line(line) {
-                net_now.push((iface, counters.0, counters.1));
-            }
+        } else if net_now.len() < MAX_MON_ENTRIES
+            && let Some((iface, counters)) = parse_net_dev_line(line)
+        {
+            net_now.push((iface, counters.0, counters.1));
         }
     }
 
@@ -2560,7 +2562,7 @@ fn parse_monitor_block(
         }
         *prev_net_at = now;
         // Show busiest first so the default-selected NIC is the active one.
-        net.sort_by(|a, b| (b.1 + b.2).cmp(&(a.1 + a.2)));
+        net.sort_by_key(|a| std::cmp::Reverse(a.1 + a.2));
     }
 
     let cpu_percent = if have_cpu {
@@ -2588,18 +2590,18 @@ fn parse_monitor_block(
     }
 
     let sys = (!sys_kv.is_empty()).then(|| {
-        build_system_details(
-            &sys_kv,
-            &cpu_nums,
+        build_system_details(SystemDetailsInput {
+            sys: &sys_kv,
+            cpu_nums: &cpu_nums,
             mem_total,
             mem_avail,
             mem_buffers,
             mem_cached,
             swap_total,
             swap_free,
-            &net_counters,
-            &disks,
-        )
+            net_counters: &net_counters,
+            disks: &disks,
+        })
     });
 
     Some(SessionEvent::ResourceStats {
@@ -2612,7 +2614,7 @@ fn parse_monitor_block(
         disks,
         current_user,
         procs,
-        sys,
+        sys: Box::new(sys),
     })
 }
 
@@ -2662,18 +2664,32 @@ fn cpu_usage_rows(nums: &[u64]) -> Vec<(String, String)> {
         .collect()
 }
 
-fn build_system_details(
-    sys: &std::collections::HashMap<String, String>,
-    cpu_nums: &[u64],
+struct SystemDetailsInput<'a> {
+    sys: &'a std::collections::HashMap<String, String>,
+    cpu_nums: &'a [u64],
     mem_total: u64,
     mem_avail: u64,
     mem_buffers: u64,
     mem_cached: u64,
     swap_total: u64,
     swap_free: u64,
-    net_counters: &[(String, u64, u64)],
-    disks: &[(String, u64, u64)],
-) -> SystemDetails {
+    net_counters: &'a [(String, u64, u64)],
+    disks: &'a [(String, u64, u64)],
+}
+
+fn build_system_details(input: SystemDetailsInput) -> SystemDetails {
+    let SystemDetailsInput {
+        sys,
+        cpu_nums,
+        mem_total,
+        mem_avail,
+        mem_buffers,
+        mem_cached,
+        swap_total,
+        swap_free,
+        net_counters,
+        disks,
+    } = input;
     let mem_used = mem_total.saturating_sub(mem_avail);
     let swap_used = swap_total.saturating_sub(swap_free);
     let cpu_model = sys_value(sys, "CPU_MODEL");
@@ -3108,10 +3124,10 @@ fn _assert_handle_send() {
 #[cfg(test)]
 mod prompt_setup_echo_tests {
     use super::{
-        accumulate_late_echo, discard_prompt_setup_tail, final_setup_guard,
-        prompt_setup_echo_end, prompt_setup_supported, release_after_window_expiry,
-        strip_late_prompt_setup_echo, strip_prompt_setup_echo, PROMPT_BODY,
-        PROMPT_SETUP_HISTORY_MARKER, PROMPT_SETUP_PREFIX,
+        PROMPT_BODY, PROMPT_SETUP_HISTORY_MARKER, PROMPT_SETUP_PREFIX, accumulate_late_echo,
+        discard_prompt_setup_tail, final_setup_guard, prompt_setup_echo_end,
+        prompt_setup_supported, release_after_window_expiry, strip_late_prompt_setup_echo,
+        strip_prompt_setup_echo,
     };
 
     #[test]
@@ -3189,7 +3205,11 @@ mod prompt_setup_echo_tests {
         let third = echoed.len() / 3;
         let mut out = String::new();
         let mut pending = true;
-        for part in [&echoed[..third], &echoed[third..2 * third], &echoed[2 * third..]] {
+        for part in [
+            &echoed[..third],
+            &echoed[third..2 * third],
+            &echoed[2 * third..],
+        ] {
             if !pending {
                 // Once the accumulator reports done, the caller (see the
                 // late-echo handling in the session loop) stops routing
@@ -3238,10 +3258,8 @@ mod prompt_setup_echo_tests {
         assert!(!done1);
         assert!(!buf.is_empty());
         // Suffix + OSC 7 + prompt arrive: strip the whole span.
-        let (t2, done2) = accumulate_late_echo(
-            &mut buf,
-            "'\r\n\u{1b}]7;file://host/root\u{07}prompt",
-        );
+        let (t2, done2) =
+            accumulate_late_echo(&mut buf, "'\r\n\u{1b}]7;file://host/root\u{07}prompt");
         assert!(done2);
         assert!(!t2.contains(PROMPT_SETUP_PREFIX));
         assert!(t2.contains("prompt"));
@@ -3297,9 +3315,15 @@ mod prompt_setup_echo_tests {
         );
         let mut buf = String::new();
         let release = release_after_window_expiry(&mut buf, &wrapped);
-        assert!(!release.contains(PROMPT_SETUP_PREFIX), "wrapped echo must not leak");
+        assert!(
+            !release.contains(PROMPT_SETUP_PREFIX),
+            "wrapped echo must not leak"
+        );
         assert!(release.contains("banner"), "pre-echo text survives");
-        assert_eq!(release.find("\r\x1b[2K"), Some(release.len() - "\r\x1b[2K".len()));
+        assert_eq!(
+            release.find("\r\x1b[2K"),
+            Some(release.len() - "\r\x1b[2K".len())
+        );
     }
 
     #[test]
@@ -3328,10 +3352,7 @@ mod prompt_setup_echo_tests {
     fn discard_tail_clears_from_line_start() {
         // The discard starts at the beginning of the line the prefix sits on,
         // so a prompt/banner already on that line is wiped along with it.
-        let mut text = format!(
-            "➜  ~  {} && eval 'incomplete",
-            PROMPT_SETUP_PREFIX
-        );
+        let mut text = format!("➜  ~  {} && eval 'incomplete", PROMPT_SETUP_PREFIX);
         let p = text.find(PROMPT_SETUP_PREFIX).unwrap();
         discard_prompt_setup_tail(&mut text, p);
         assert_eq!(text, "\r\x1b[2K");
@@ -3396,14 +3417,8 @@ mod prompt_setup_echo_tests {
         let lines = crate::terminal::vt_adapter::grid_to_lines(&term);
         // grid_to_lines trims trailing blanks (grid padding vs content spaces
         // can't be distinguished), so compare trimmed.
-        assert_eq!(
-            lines.first().map(|s| s.trim_end()),
-            Some(prompt.trim_end())
-        );
-        assert_eq!(
-            crate::terminal::cursor_pos(&term),
-            (0, prompt.len() as u16)
-        );
+        assert_eq!(lines.first().map(|s| s.trim_end()), Some(prompt.trim_end()));
+        assert_eq!(crate::terminal::cursor_pos(&term), (0, prompt.len() as u16));
     }
 }
 
@@ -3523,10 +3538,11 @@ mod monitor_hardening_tests {
         match event {
             super::SessionEvent::ResourceStats { sys, .. } => {
                 let sys = sys.expect("delayed sample should include details");
-                assert!(sys
-                    .overview
-                    .iter()
-                    .any(|(_, value)| value == "Debian GNU/Linux 12"));
+                assert!(
+                    sys.overview
+                        .iter()
+                        .any(|(_, value)| value == "Debian GNU/Linux 12")
+                );
             }
             other => panic!("unexpected event: {other:?}"),
         }

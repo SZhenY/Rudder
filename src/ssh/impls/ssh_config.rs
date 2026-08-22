@@ -152,17 +152,17 @@ pub fn parse_str(text: &str, home: &Path) -> Vec<ImportedHost> {
                 }
             }
             "port" => {
-                if let Some(h) = cur.as_mut() {
-                    if let Ok(p) = val.parse::<u16>() {
-                        h.port = p;
-                    }
+                if let Some(h) = cur.as_mut()
+                    && let Ok(p) = val.parse::<u16>()
+                {
+                    h.port = p;
                 }
             }
             "identityfile" => {
-                if let Some(h) = cur.as_mut() {
-                    if h.identity_file.is_empty() {
-                        h.identity_file = expand_tilde(&val, home);
-                    }
+                if let Some(h) = cur.as_mut()
+                    && h.identity_file.is_empty()
+                {
+                    h.identity_file = expand_tilde(&val, home);
                 }
             }
             _ => {}

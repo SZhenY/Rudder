@@ -5,8 +5,8 @@ use alacritty_terminal::term::cell::Flags;
 use unicode_width::UnicodeWidthChar;
 
 use crate::terminal::{
-    attr_from_cell, cell_attrs, is_wide_continuation, row_wrapped, ATerm, CellAttr, HistSpan,
-    Line as TermLine, OverlineRange, TermColor,
+    ATerm, CellAttr, HistSpan, Line as TermLine, OverlineRange, TermColor, attr_from_cell,
+    cell_attrs, is_wide_continuation, row_wrapped,
 };
 
 /// Small window of retained bytes for split-ESC[3J detection (no longer
@@ -122,7 +122,14 @@ fn split_span_overlines(
     out
 }
 
-fn span_slice(span: &HistSpan, chars: &[char], cs: usize, ce: usize, col: i32, overline: bool) -> HistSpan {
+fn span_slice(
+    span: &HistSpan,
+    chars: &[char],
+    cs: usize,
+    ce: usize,
+    col: i32,
+    overline: bool,
+) -> HistSpan {
     HistSpan {
         text: chars[cs..ce].iter().collect(),
         fg: span.fg,
@@ -207,7 +214,15 @@ pub(crate) fn build_row(
             let advance = skip_tab_filler(term, row, column + 1, next_col, columns);
             let cells = next_col - col_i;
             if !is_invisible_default_blank(&text, &attr) {
-                runs.extend(make_span(attr, text, column as i32, cells, term, row as i32, overlines));
+                runs.extend(make_span(
+                    attr,
+                    text,
+                    column as i32,
+                    cells,
+                    term,
+                    row as i32,
+                    overlines,
+                ));
             }
             column = advance;
             continue;
@@ -216,7 +231,15 @@ pub(crate) fn build_row(
         if attr.wide {
             let text = attr.contents.clone();
             plain.push_str(&text);
-            runs.extend(make_span(attr, text, column as i32, 2, term, row as i32, overlines));
+            runs.extend(make_span(
+                attr,
+                text,
+                column as i32,
+                2,
+                term,
+                row as i32,
+                overlines,
+            ));
             column += 2;
             continue;
         }
@@ -334,7 +357,10 @@ pub(crate) fn build_line(
                 line,
                 column: Column(column as usize),
             };
-            if term.grid()[spacer_pt].flags.contains(Flags::WIDE_CHAR_SPACER) {
+            if term.grid()[spacer_pt]
+                .flags
+                .contains(Flags::WIDE_CHAR_SPACER)
+            {
                 column += 1;
                 continue;
             }
@@ -365,7 +391,15 @@ pub(crate) fn build_line(
             }
             let cells = next_col - col_i;
             if !is_invisible_default_blank(&text, &attr) {
-                runs.extend(make_span(attr, text, column as i32, cells, term, line.0, overlines));
+                runs.extend(make_span(
+                    attr,
+                    text,
+                    column as i32,
+                    cells,
+                    term,
+                    line.0,
+                    overlines,
+                ));
             }
             column = advance;
             continue;
@@ -374,7 +408,15 @@ pub(crate) fn build_line(
         if attr.wide {
             let text = attr.contents.clone();
             plain.push_str(&text);
-            runs.extend(make_span(attr, text, column as i32, 2, term, line.0, overlines));
+            runs.extend(make_span(
+                attr,
+                text,
+                column as i32,
+                2,
+                term,
+                line.0,
+                overlines,
+            ));
             column += 2;
             continue;
         }
@@ -428,7 +470,7 @@ pub(crate) fn build_line(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::terminal::{new_term, process_bytes, UnderlineStyle};
+    use crate::terminal::{UnderlineStyle, new_term, process_bytes};
 
     #[test]
     fn tab_expands_to_next_stop() {
@@ -445,7 +487,10 @@ mod tests {
         // The space filler is invisible (default bg), so only the two text
         // runs survive; the trailing blanks after '2' merge into its run.
         assert_eq!(runs.len(), 2, "runs: '1' @0 and '2' @8");
-        assert_eq!((runs[0].text.as_str(), runs[0].col, runs[0].cells), ("1", 0, 1));
+        assert_eq!(
+            (runs[0].text.as_str(), runs[0].col, runs[0].cells),
+            ("1", 0, 1)
+        );
         assert_eq!((runs[1].col, runs[1].cells), (8, 32));
         assert!(runs[1].text.starts_with('2'));
         assert!(runs[1].text[1..].chars().all(|c| c == ' '));
@@ -478,13 +523,21 @@ mod tests {
     #[test]
     fn overline_ranges_are_applied_to_spans() {
         // Fresh term: display_offset is 0, so abs == row.
-        let range = OverlineRange { abs: 0, col_start: 2, col_end: 5 };
+        let range = OverlineRange {
+            abs: 0,
+            col_start: 2,
+            col_end: 5,
+        };
         let (mut term, mut proc) = new_term(5, 40, 100);
         process_bytes(&mut proc, &mut term, b"abcdef");
         let (_, runs, _) = build_row(&term, 0, 40, &[range]);
         // The merged run (cols 0..6) must be split at the range edges so the
         // decoration covers only cols 2..5: [ab] [cde] [f].
-        assert_eq!(runs.len(), 3, "overline must clip the run, not flag it whole");
+        assert_eq!(
+            runs.len(),
+            3,
+            "overline must clip the run, not flag it whole"
+        );
         assert_eq!((runs[0].text.as_str(), runs[0].overline), ("ab", false));
         assert_eq!((runs[1].text.as_str(), runs[1].overline), ("cde", true));
         // The tail run carries the trailing blanks merged into the row.
@@ -500,7 +553,11 @@ mod tests {
     fn overline_full_coverage_flags_whole_span() {
         // Range covering the whole merged run (text + trailing blanks) →
         // single flagged run, no split.
-        let range = OverlineRange { abs: 0, col_start: 0, col_end: 40 };
+        let range = OverlineRange {
+            abs: 0,
+            col_start: 0,
+            col_end: 40,
+        };
         let (mut term, mut proc) = new_term(5, 40, 100);
         process_bytes(&mut proc, &mut term, b"abcdef");
         let (_, runs, _) = build_row(&term, 0, 40, &[range]);
@@ -510,7 +567,11 @@ mod tests {
 
     #[test]
     fn overline_range_outside_row_is_ignored() {
-        let range = OverlineRange { abs: 1, col_start: 0, col_end: 6 };
+        let range = OverlineRange {
+            abs: 1,
+            col_start: 0,
+            col_end: 6,
+        };
         let (mut term, mut proc) = new_term(5, 40, 100);
         process_bytes(&mut proc, &mut term, b"abcdef");
         let (_, runs, _) = build_row(&term, 0, 40, &[range]);

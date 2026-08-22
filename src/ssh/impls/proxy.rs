@@ -12,7 +12,7 @@
 //! The proxy is taken from the per-session setting, falling back to the standard
 //! `ALL_PROXY` / `all_proxy` environment variable.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -57,10 +57,10 @@ pub fn resolve(session_proxy: &str) -> Option<ProxyConfig> {
         return parse(s);
     }
     for var in ["ALL_PROXY", "all_proxy"] {
-        if let Ok(v) = std::env::var(var) {
-            if !v.trim().is_empty() {
-                return parse(v.trim());
-            }
+        if let Ok(v) = std::env::var(var)
+            && !v.trim().is_empty()
+        {
+            return parse(v.trim());
         }
     }
     None

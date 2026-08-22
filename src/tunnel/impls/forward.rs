@@ -9,9 +9,9 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
-use russh::client::{Handle, Msg};
 use russh::Channel;
-use tokio::io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt};
+use russh::client::{Handle, Msg};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;

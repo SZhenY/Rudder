@@ -49,13 +49,11 @@ pub(crate) fn scan_font_files(dir: &Path) -> Vec<PathBuf> {
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| {
-            p.extension()
-                .and_then(|x| x.to_str())
-                .is_some_and(|x| {
-                    ["ttf", "otf", "ttc", "otc"]
-                        .iter()
-                        .any(|ext| x.eq_ignore_ascii_case(ext))
-                })
+            p.extension().and_then(|x| x.to_str()).is_some_and(|x| {
+                ["ttf", "otf", "ttc", "otc"]
+                    .iter()
+                    .any(|ext| x.eq_ignore_ascii_case(ext))
+            })
         })
         .collect();
     files.sort();
@@ -145,8 +143,7 @@ mod tests {
 
     fn temp_dir_with_font() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
-        let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("ui/fonts/JetBrainsMono-Regular.ttf");
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/fonts/JetBrainsMono-Regular.ttf");
         let dst = dir.path().join("JetBrainsMono-Regular.ttf");
         std::fs::copy(&src, &dst).unwrap();
         (dir, dst)

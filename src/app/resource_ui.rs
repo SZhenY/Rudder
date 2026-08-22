@@ -14,12 +14,16 @@ pub(super) fn normalized_model(buf: &[f32]) -> ModelRc<f32> {
     ModelRc::from(Rc::new(VecModel::from(scaled)))
 }
 
-pub(super) fn disk_rows(disks: &[(String, u64, u64)], mount_filter: &str, hide_special: bool) -> Vec<DiskInfo> {
+pub(super) fn disk_rows(
+    disks: &[(String, u64, u64)],
+    mount_filter: &str,
+    hide_special: bool,
+) -> Vec<DiskInfo> {
     let filters: Vec<&str> = if mount_filter.is_empty() {
         vec![]
     } else {
         mount_filter
-            .split(|c: char| c == ' ' || c == ',' || c == ';')
+            .split([' ', ',', ';'])
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .collect()
@@ -34,7 +38,7 @@ pub(super) fn disk_rows(disks: &[(String, u64, u64)], mount_filter: &str, hide_s
             if filters.is_empty() {
                 true
             } else {
-                filters.iter().any(|f| mount.as_str() == *f)
+                filters.contains(&mount.as_str())
             }
         })
         .map(|(mount, avail, total)| {
@@ -53,8 +57,16 @@ pub(super) fn disk_rows(disks: &[(String, u64, u64)], mount_filter: &str, hide_s
         .collect()
 }
 
-pub(super) fn disk_model(disks: &[(String, u64, u64)], mount_filter: &str, hide_special: bool) -> ModelRc<DiskInfo> {
-    ModelRc::from(Rc::new(VecModel::from(disk_rows(disks, mount_filter, hide_special))))
+pub(super) fn disk_model(
+    disks: &[(String, u64, u64)],
+    mount_filter: &str,
+    hide_special: bool,
+) -> ModelRc<DiskInfo> {
+    ModelRc::from(Rc::new(VecModel::from(disk_rows(
+        disks,
+        mount_filter,
+        hide_special,
+    ))))
 }
 
 pub(super) fn set_process_action_error(weak: &slint::Weak<ProcWindow>, message: &str) {
@@ -160,7 +172,11 @@ pub(super) fn pairs_to_one_row(pairs: &[(String, String)]) -> Vec<SysInfoRow> {
 pub(super) fn pairs_to_rows(pairs: &[(String, String)], width: usize) -> Vec<SysInfoRow> {
     pairs
         .chunks(width)
-        .filter(|chunk| chunk.iter().any(|(_, v)| !v.trim().is_empty() && v.trim() != "-"))
+        .filter(|chunk| {
+            chunk
+                .iter()
+                .any(|(_, v)| !v.trim().is_empty() && v.trim() != "-")
+        })
         .map(|chunk| {
             let value = |idx: usize| {
                 chunk

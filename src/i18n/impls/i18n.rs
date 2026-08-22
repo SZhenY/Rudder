@@ -43,11 +43,7 @@ pub fn apply_to_slint() {
 
 /// Current language code, for persisting to config (`"zh"` / `"en"`).
 pub fn current_code() -> &'static str {
-    if is_en() {
-        "en"
-    } else {
-        "zh"
-    }
+    if is_en() { "en" } else { "zh" }
 }
 
 pub fn is_en() -> bool {
@@ -56,9 +52,5 @@ pub fn is_en() -> bool {
 
 /// Pick the variant for the current language: `zh` is Chinese, `en` is English.
 pub fn t(zh: &'static str, en: &'static str) -> &'static str {
-    if is_en() {
-        en
-    } else {
-        zh
-    }
+    if is_en() { en } else { zh }
 }

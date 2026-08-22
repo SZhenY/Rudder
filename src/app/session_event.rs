@@ -1,15 +1,26 @@
 use super::*;
 
-pub(super) fn apply_session_event_to_window(
+pub(crate) struct SessionResources<'a> {
+    pub(crate) bufs: &'a TermBuffers,
+    pub(crate) gates: &'a RenderGates,
+    pub(crate) statuses: &'a TabStatuses,
+    pub(crate) local: &'a LocalSnap,
+    pub(crate) local_net_hist: &'a NetHist,
+}
+
+pub(super) fn apply_session_event_to_window<'a>(
     win: &AppWindow,
     tab_id: &str,
     event: SessionEvent,
-    bufs: &TermBuffers,
-    gates: &RenderGates,
-    statuses: &TabStatuses,
-    local: &LocalSnap,
-    local_net_hist: &NetHist,
+    res: &'a SessionResources<'a>,
 ) {
+    let SessionResources {
+        bufs,
+        gates,
+        statuses,
+        local,
+        local_net_hist,
+    } = res;
     let tabs_rc = win.get_tabs();
     let terminals_rc = win.get_terminals();
     // `ModelRc::as_any` lets us downcast to the concrete `VecModel<T>`.
@@ -24,23 +35,23 @@ pub(super) fn apply_session_event_to_window(
 
     let update_terminal = |mutator: &dyn Fn(&mut TerminalState)| {
         for i in 0..terminals.row_count() {
-            if let Some(mut row) = terminals.row_data(i) {
-                if row.id.as_str() == tab_id {
-                    mutator(&mut row);
-                    terminals.set_row_data(i, row);
-                    break;
-                }
+            if let Some(mut row) = terminals.row_data(i)
+                && row.id.as_str() == tab_id
+            {
+                mutator(&mut row);
+                terminals.set_row_data(i, row);
+                break;
             }
         }
     };
     let update_tab = |mutator: &dyn Fn(&mut TabInfo)| {
         for i in 0..tabs.row_count() {
-            if let Some(mut row) = tabs.row_data(i) {
-                if row.id.as_str() == tab_id {
-                    mutator(&mut row);
-                    tabs.set_row_data(i, row);
-                    break;
-                }
+            if let Some(mut row) = tabs.row_data(i)
+                && row.id.as_str() == tab_id
+            {
+                mutator(&mut row);
+                tabs.set_row_data(i, row);
+                break;
             }
         }
         // The per-pane tab strips (v0.5 split panes) render snapshots copied from
@@ -57,12 +68,12 @@ pub(super) fn apply_session_event_to_window(
                     continue;
                 };
                 for ti in 0..tm.row_count() {
-                    if let Some(mut row) = tm.row_data(ti) {
-                        if row.id.as_str() == tab_id {
-                            mutator(&mut row);
-                            tm.set_row_data(ti, row);
-                            break;
-                        }
+                    if let Some(mut row) = tm.row_data(ti)
+                        && row.id.as_str() == tab_id
+                    {
+                        mutator(&mut row);
+                        tm.set_row_data(ti, row);
+                        break;
                     }
                 }
             }
@@ -102,11 +113,13 @@ pub(super) fn apply_session_event_to_window(
                         "Disconnected — press Enter to reconnect"
                     )
                 )),
-                bufs,
-                gates,
-                statuses,
-                local,
-                local_net_hist,
+                &SessionResources {
+                    bufs,
+                    gates,
+                    statuses,
+                    local,
+                    local_net_hist,
+                },
             );
             update_tab(&|t| t.connected = false);
             update_terminal(&|t| {
@@ -139,7 +152,7 @@ pub(super) fn apply_session_event_to_window(
                 st.swap_total_kib = swap_total_kib;
                 st.net = net;
                 st.disks = disks;
-                if let Some(sys) = sys {
+                if let Some(sys) = *sys {
                     st.sys = sys;
                 }
                 // A sample means the channel is alive → treat as connected.
@@ -275,11 +288,13 @@ pub(super) fn apply_session_event_to_window(
                         name,
                         error
                     )),
-                    bufs,
-                    gates,
-                    statuses,
-                    local,
-                    local_net_hist,
+                    &SessionResources {
+                        bufs,
+                        gates,
+                        statuses,
+                        local,
+                        local_net_hist,
+                    },
                 );
                 update_terminal(&|t| t.sftp_status = error.clone().into());
             }
@@ -351,11 +366,11 @@ pub(super) fn apply_session_event_to_window(
             {
                 let mut found = None;
                 for i in 0..model.row_count() {
-                    if let Some(row) = model.row_data(i) {
-                        if row.id.as_str() == id.as_str() {
-                            found = Some(i);
-                            break;
-                        }
+                    if let Some(row) = model.row_data(i)
+                        && row.id.as_str() == id.as_str()
+                    {
+                        found = Some(i);
+                        break;
                     }
                 }
                 match found {

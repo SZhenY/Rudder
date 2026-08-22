@@ -5,6 +5,20 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.6.14] - 2026-08-22
+
+### 清理 / Cleanup
+
+- **移除死代码与冗余注释 / Remove dead code and redundant comments**: 删除 app.rs 中 3 个未使用的测试模块（process_row_tests、port_forward_draft_tests、history_view_tests）；删除冗余函数 is_special_partition；简化 handle_file_drop、mount_filter / hide_special_partitions；清理 terminal/*、config/impls、ssh/impls、resource 等模块中的死代码与冗余注释，提升代码可读性
+- **模块声明整理 / Module declaration cleanup**: 7 个 `mod.rs` 内层同名模块 `mod X` 重命名为 `mod imp`，re-export 同步改为 `imp::*`，消除命名重复（module_inception）
+
+### 优化 / Optimizations
+
+- **消除 14 项 clippy 警告 / Clear 14 clippy lints**（cargo clippy --release 现已 0 警告 0 错误）：
+  - `module_inception` ×7：config / i18n / layout / session / sftp / ssh / wallpaper 的 `mod X` → `mod imp`
+  - `large_enum_variant` ×1：`SessionEvent::ResourceStats` 的 `sys` 字段由 `Option<SystemDetails>` 改为 `Box<Option<SystemDetails>>`
+  - `too_many_arguments` ×6：将超参函数改为参数结构体化 —— `wire_session_callbacks`(20参)→`SessionWireCtx`、`wire_tab_callbacks`(12参)→`TabWireCtx`、`apply_session_event_to_window`(8参)→`SessionResources`、`layout_node`(8参)→`Rect`、`build_system_details`(10参)→`SystemDetailsInput`、`emit_transfer`(8参)→`TransferEmit`（含 13 处调用点改造）
+
 ### 开发 / Dev
 
 - **合入上游结构性重构 (5d4e957) / Upstream structural refactor integration**: 有机整合 meatshell 提交 `5d4e957`（"refactor: split app and shared types into domain modules"）。经逐条核查，该提交为 100% 纯结构性重构、零逻辑变更，故按 Rudder 自身结构选择性合入而非盲搬：
@@ -104,8 +118,6 @@ All notable changes are documented here. 本文件记录所有重要变更。
 ### 测试 / Tests
 
 - 回归测试 125 → **163**(新增 38 项:16 色映射、样式 flags、tab 展开、上划线区间/裁剪/滚动存活/缓存刷新、跨 chunk SGR、final guard、字体扫描/家族名解析/目录断言)
-
-## [Unreleased]
 
 ## [0.6.10-beta2] - 2026-08-08
 

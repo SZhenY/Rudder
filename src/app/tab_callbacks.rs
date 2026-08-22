@@ -1,19 +1,20 @@
 use super::*;
 
-pub(super) fn wire_tab_callbacks(
-    window: &AppWindow,
-    tabs_model: Rc<VecModel<TabInfo>>,
-    terminals_model: Rc<VecModel<TerminalState>>,
-    layout: Rc<RefCell<crate::layout::Layout>>,
-    content_size: Rc<std::cell::Cell<(f32, f32)>>,
-    panes_model: Rc<VecModel<PaneInfo>>,
-    splitters_model: Rc<VecModel<SplitterInfo>>,
-    handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
-    bufs: TermBuffers,
-    render_gates: RenderGates,
-    sftp_handles: SftpHandles,
-    sftp_last_cwd: SftpLastCwd,
-) {
+pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
+    let TabWireCtx {
+        window,
+        tabs_model,
+        terminals_model,
+        layout,
+        content_size,
+        panes_model,
+        splitters_model,
+        handles,
+        bufs,
+        render_gates,
+        sftp_handles,
+        sftp_last_cwd,
+    } = ctx;
     // Ctrl+Tab / Ctrl+Shift+Tab cycle within the currently focused pane (#294).
     {
         let weak = window.as_weak();
@@ -57,10 +58,10 @@ pub(super) fn wire_tab_callbacks(
             {
                 let mut lay = layout.borrow_mut();
                 lay.focused = pane_id as u64;
-                if let Some(l) = lay.leaf_mut(pane_id as u64) {
-                    if l.tabs.iter().any(|t| t == &id) {
-                        l.active = id.clone();
-                    }
+                if let Some(l) = lay.leaf_mut(pane_id as u64)
+                    && l.tabs.iter().any(|t| t == &id)
+                {
+                    l.active = id.clone();
                 }
             }
             if let Some(w) = weak.upgrade() {

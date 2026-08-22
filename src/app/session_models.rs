@@ -129,9 +129,7 @@ pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<Sessi
         .chain(
             sessions
                 .iter()
-                .filter(|s| {
-                    !s.group.is_empty() && !is_reserved_session_group(s.group.trim())
-                })
+                .filter(|s| !s.group.is_empty() && !is_reserved_session_group(s.group.trim()))
                 .map(|s| s.group.clone()),
         )
         .collect();
@@ -180,9 +178,7 @@ pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<Sessi
         let mut gs: Vec<&Session> = if group == "default" {
             sessions
                 .iter()
-                .filter(|s| {
-                    s.group.is_empty() || is_reserved_session_group(s.group.trim())
-                })
+                .filter(|s| s.group.is_empty() || is_reserved_session_group(s.group.trim()))
                 .collect()
         } else {
             sessions.iter().filter(|s| &s.group == group).collect()
@@ -224,7 +220,11 @@ pub(super) fn builtin_local_sessions() -> Vec<Session> {
     let mut out = Vec::new();
     #[cfg(windows)]
     {
-        out.push(builtin_local_session("system:powershell", "PowerShell", "powershell"));
+        out.push(builtin_local_session(
+            "system:powershell",
+            "PowerShell",
+            "powershell",
+        ));
         out.push(builtin_local_session("system:cmd", "CMD", "cmd"));
         if wsl_available() {
             out.push(builtin_local_session("system:wsl", "WSL", "wsl"));
@@ -296,7 +296,7 @@ pub(super) fn session_from_draft(
     } else {
         draft.private_key_path.to_string().replace('\\', "/")
     };
-    let kind = SessionKind::from_str(&draft.kind.to_string());
+    let kind = SessionKind::from_str(draft.kind.as_ref());
     let auto_name = match kind {
         SessionKind::Serial => format!("{} @{}", draft.serial_port, draft.baud_rate),
         _ if draft.user.trim().is_empty() => draft.host.to_string(),
@@ -318,7 +318,7 @@ pub(super) fn session_from_draft(
             draft.port as u16
         },
         user: draft.user.to_string(),
-        auth: AuthMethod::from_str(&draft.auth.to_string()),
+        auth: AuthMethod::from_str(draft.auth.as_ref()),
         password,
         private_key_path,
         private_key_inline,

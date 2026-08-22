@@ -14,8 +14,8 @@ impl SystemSampler {
         let mut sys = System::new_all();
         sys.refresh_all();
         let nets = Networks::new_with_refreshed_list();
-        let last_rx_total = nets.iter().map(|(_, d)| d.total_received()).sum();
-        let last_tx_total = nets.iter().map(|(_, d)| d.total_transmitted()).sum();
+        let last_rx_total = nets.values().map(|d| d.total_received()).sum();
+        let last_tx_total = nets.values().map(|d| d.total_transmitted()).sum();
         let disks = Disks::new_with_refreshed_list();
         Self {
             sys,
@@ -56,8 +56,8 @@ impl SystemSampler {
         };
 
         // RX / TX bytes/sec from the delta across the iface list.
-        let rx_total: u64 = self.nets.iter().map(|(_, d)| d.total_received()).sum();
-        let tx_total: u64 = self.nets.iter().map(|(_, d)| d.total_transmitted()).sum();
+        let rx_total: u64 = self.nets.values().map(|d| d.total_received()).sum();
+        let tx_total: u64 = self.nets.values().map(|d| d.total_transmitted()).sum();
         let now = std::time::Instant::now();
         let elapsed = now
             .duration_since(self.last_instant)

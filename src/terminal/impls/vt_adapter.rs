@@ -199,12 +199,12 @@ pub(crate) fn row_wrapped(term: &ATerm, row: u16) -> bool {
 /// Before feeding, intercept OSC 52 clipboard writes for the `osc52_clipboard` feature.
 pub(crate) fn process_bytes(processor: &mut Processor, term: &mut ATerm, bytes: &[u8]) {
     // OSC 52 clipboard interception — only when enabled by the user.
-    if OSC52_ENABLED.load(Ordering::Relaxed) {
-        if let Some(data) = osc52_extract(bytes) {
-            std::thread::spawn(move || {
-                let _ = arboard::Clipboard::new().and_then(|mut c| c.set_text(data));
-            });
-        }
+    if OSC52_ENABLED.load(Ordering::Relaxed)
+        && let Some(data) = osc52_extract(bytes)
+    {
+        std::thread::spawn(move || {
+            let _ = arboard::Clipboard::new().and_then(|mut c| c.set_text(data));
+        });
     }
     processor.advance(term, bytes);
 }

@@ -194,22 +194,22 @@ pub(crate) fn key_to_pty_bytes(key: &str, ctrl: bool, alt: bool, app_cursor: boo
                 return vec![codepoint as u8];
             }
         }
-        if let Some(character) = key.chars().next() {
-            if key.chars().count() == 1 {
-                let upper = character.to_ascii_uppercase() as u8;
-                let control = match upper {
-                    b'A'..=b'Z' => Some(upper - b'A' + 1),
-                    b'[' => Some(0x1b),
-                    b'\\' => Some(0x1c),
-                    b']' => Some(0x1d),
-                    b'^' => Some(0x1e),
-                    b'_' => Some(0x1f),
-                    b'@' => Some(0x00),
-                    _ => None,
-                };
-                if let Some(byte) = control {
-                    return vec![byte];
-                }
+        if let Some(character) = key.chars().next()
+            && key.chars().count() == 1
+        {
+            let upper = character.to_ascii_uppercase() as u8;
+            let control = match upper {
+                b'A'..=b'Z' => Some(upper - b'A' + 1),
+                b'[' => Some(0x1b),
+                b'\\' => Some(0x1c),
+                b']' => Some(0x1d),
+                b'^' => Some(0x1e),
+                b'_' => Some(0x1f),
+                b'@' => Some(0x00),
+                _ => None,
+            };
+            if let Some(byte) = control {
+                return vec![byte];
             }
         }
     }

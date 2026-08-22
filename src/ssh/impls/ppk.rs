@@ -5,10 +5,10 @@
 //! No converted private key is ever written to disk.
 
 use aes::Aes256;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use argon2::{Algorithm as ArgonAlgorithm, Argon2, Params, Version};
 use base64::Engine;
-use cbc::cipher::{block_padding::NoPadding, BlockDecryptMut, KeyIvInit};
+use cbc::cipher::{BlockDecryptMut, KeyIvInit, block_padding::NoPadding};
 use hmac::{Hmac, Mac};
 use russh::keys::PrivateKey;
 use sha1::{Digest as _, Sha1};
@@ -191,7 +191,7 @@ fn decrypt_private_blob(ppk: &mut Ppk, passphrase: &str) -> Result<()> {
     if passphrase.is_empty() {
         bail!("this PuTTY private key is encrypted; enter its passphrase");
     }
-    if ppk.private.is_empty() || ppk.private.len() % 16 != 0 {
+    if ppk.private.is_empty() || !ppk.private.len().is_multiple_of(16) {
         bail!("invalid encrypted PPK private-data length");
     }
 
@@ -471,7 +471,7 @@ fn push_string(out: &mut Vec<u8>, value: &[u8]) -> Result<()> {
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>> {
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         bail!("hex value has odd length");
     }
     value
@@ -543,9 +543,11 @@ mod tests {
     #[test]
     fn rejects_unsupported_version() {
         let changed = PPK_V2_RSA.replacen("File-2", "File-4", 1);
-        assert!(decode_ppk(changed.as_bytes(), "")
-            .unwrap_err()
-            .to_string()
-            .contains("version 4"));
+        assert!(
+            decode_ppk(changed.as_bytes(), "")
+                .unwrap_err()
+                .to_string()
+                .contains("version 4")
+        );
     }
 }

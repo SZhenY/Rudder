@@ -186,7 +186,7 @@ fn local_program(kind: &str) -> (String, Vec<String>) {
         #[cfg(windows)]
         "wsl" => ("wsl.exe".to_string(), Vec::new()),
         #[cfg(windows)]
-        "powershell" | _ => (
+        _ => (
             "powershell.exe".to_string(),
             vec![
                 "-NoLogo".to_string(),
