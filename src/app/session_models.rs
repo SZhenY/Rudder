@@ -256,6 +256,7 @@ pub(super) fn builtin_local_session(id: &str, name: impl Into<String>, host: &st
     s
 }
 
+#[cfg(windows)]
 pub(super) fn wsl_available() -> bool {
     use std::os::windows::process::CommandExt;
 

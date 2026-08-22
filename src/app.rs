@@ -3080,7 +3080,6 @@ pub struct TabWireCtx<'a> {
     sftp_last_cwd: SftpLastCwd,
 }
 
-#[cfg(windows)]
 /// Bundled handles/state threaded into [`wire_session_callbacks`]
 /// (clippy::too_many_arguments).
 struct SessionWireCtx<'a> {
@@ -3106,7 +3105,6 @@ struct SessionWireCtx<'a> {
     sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
 }
 
-#[cfg(windows)]
 /// Build the effective session represented by the dialog. When editing, blank
 /// secret fields retain their saved values because real passwords and pasted
 /// private keys are deliberately never echoed back into the UI (#10, #276).
