@@ -26,11 +26,12 @@ component SessionRow inherits Rectangle {
     callback move-to-group(string);
     callback remove();
     // Drag-to-reorder: direction -1 = up, 1 = down. Emitted once per row-hop.
-    callback reorder(int);
+    callback reorder(int) -> bool;
     // Drag lifecycle, owned by the Welcome list: start publishes the dragged
-    // id, move streams the pointer-follow offset, end persists the order.
+    // id, end persists the order. The card never follows the pointer — hops
+    // swap rows instantly, so overlapping neighbours / group headers cannot
+    // happen at all.
     callback drag-start();
-    callback drag-move(length);
     callback drag-end();
     // Full session list — group-header is non-empty once per group, so the
     // "move to group" submenu can iterate it to list each group exactly once.
@@ -39,11 +40,10 @@ component SessionRow inherits Rectangle {
     // stored order) and never on built-in system rows.
     in property <bool> reorder-enabled: false;
     // Shared list-level drag state (see Welcome): which session is being
-    // dragged and its offset. The lifted card follows the dragged session's
-    // DATA, not the component holding the pointer grab — rows swap contents
-    // under the grab on every hop.
+    // dragged. The lifted card follows the dragged session's DATA, not the
+    // component holding the pointer grab — rows swap contents under the grab
+    // on every hop.
     in property <bool> drag-target: false;
-    in property <length> drag-dy: 0px;
     // List-level drag state, mirrored here so a press can detect a stale
     // drag (the grab was lost when a hop changed the row count and rebuilt
     // the model) and clear it instead of leaving the card lifted.
@@ -97,6 +97,14 @@ component SessionRow inherits Rectangle {
                     }
                     root.pressing = false;
                     root.grab-dragging = false;
+                } else if (e.kind == PointerEventKind.cancel) {
+                    // System-cancelled grab (e.g. compositor takeover): treat
+                    // as a release but never as a connect click.
+                    if (root.grab-dragging) {
+                        root.drag-end();
+                    }
+                    root.pressing = false;
+                    root.grab-dragging = false;
                 }
             }
         }
@@ -114,20 +122,18 @@ component SessionRow inherits Rectangle {
                 // Swap at the neighbour's midpoint, then shift the anchor by a
                 // full slot (row + 2px spacing) — NOT back to the cursor — so
                 // overshoot carries over and the drag stays glued to the
-                // pointer across consecutive hops.
+                // pointer across consecutive hops. Only advance the anchor
+                // when the swap happened: at list boundaries reorder fails,
+                // and advancing anyway would drift the anchor out of sync.
                 if (touch.mouse-y - root.grab-y > (root.height + 2px) / 2) {
-                    root.grab-y = root.grab-y + root.height + 2px;
-                    root.reorder(1);
+                    if (root.reorder(1)) {
+                        root.grab-y = root.grab-y + root.height + 2px;
+                    }
                 } else if (root.grab-y - touch.mouse-y > (root.height + 2px) / 2) {
-                    root.grab-y = root.grab-y - root.height - 2px;
-                    root.reorder(-1);
+                    if (root.reorder(-1)) {
+                        root.grab-y = root.grab-y - root.height - 2px;
+                    }
                 }
-                // Stream the pointer-follow offset to the list, which applies
-                // it to whichever row currently renders the dragged session.
-                // No animation — animating a pointer-following value always
-                // lags the cursor.
-                root.drag-move(clamp(touch.mouse-y - root.grab-y,
-                    -root.height, root.height));
             }
         }
     }
@@ -240,11 +246,11 @@ component SessionRow inherits Rectangle {
     }
 
     // Row content — wrapped in a card so the dragged row can lift (shadow +
-    // pointer-following offset) while the grabbing TouchArea keeps its grab.
+    // highlight) while the grabbing TouchArea keeps its grab. The card stays
+    // in its slot: row swaps alone convey the reorder.
     card := Rectangle {
         width: parent.width;
         height: parent.height;
-        y: root.drag-target ? root.drag-dy : 0px;
         border-radius: Theme.radius-sm;
         background: root.drag-target ? Theme.bg-elevated
             : (touch.has-hover ? Theme.bg-hover : transparent);
@@ -352,16 +358,28 @@ export component Welcome inherits Rectangle {
     callback duplicate-session(string);
     callback move-session(string /* id */, string /* group */);
     // Drag-to-reorder a host card among its same-group siblings (dir: -1/1).
-    callback reorder-session(string /* id */, int /* dir */);
+    // Returns true when the card actually moved.
+    callback reorder-session(string /* id */, int /* dir */) -> bool;
     // Drag finished (pointer released) → persist the new order.
     callback reorder-end();
-    // List-level drag-to-reorder state: which session is being dragged and its
-    // pointer-follow offset. Kept at list level because hops swap row data
-    // under the pointer grab — the lifted card must follow the dragged
-    // session's data, not the component that owns the grab.
+    // Bumped by Rust whenever the sessions model is rebuilt wholesale; that
+    // destroys the dragging row's pointer grab, so end the drag cleanly
+    // instead of leaving the lifted card stuck (its grab is already gone —
+    // no release event will ever arrive).
+    in property <int> sessions-revision: 0;
+    changed sessions-revision => {
+        if (root.list-dragging) {
+            root.list-dragging = false;
+            root.drag-id = "";
+            root.reorder-end();
+        }
+    }
+    // List-level drag-to-reorder state: which session is being dragged.
+    // Kept at list level because hops swap row data under the pointer grab —
+    // the lifted card must follow the dragged session's data, not the
+    // component that owns the grab.
     property <string> drag-id;
     property <bool> list-dragging: false;
-    property <length> drag-dy: 0px;
     callback toggle-group(string /* group */);
     callback new-group();
     callback edit-group(string /* current-name */);
@@ -760,21 +778,20 @@ export component Welcome inherits Rectangle {
                             all-sessions: root.sessions;
                             // Drag-reorder is meaningless while the list is a
                             // filtered subset, and system rows can't move.
+                            // (Whitespace-only queries never reach here: the
+                            // search handler normalizes them to "".)
                             reorder-enabled: root.search-query == "" && !session.builtin;
                             drag-target: root.list-dragging && root.drag-id == session.id;
-                            drag-dy: root.drag-dy;
                             list-dragging: root.list-dragging;
                             connect => { root.connect-session(session.id); }
                             edit => { root.edit-session(session.id); }
                             duplicate => { root.duplicate-session(session.id); }
                             move-to-group(g) => { root.move-session(session.id, g); }
-                            reorder(dir) => { root.reorder-session(root.drag-id, dir); }
+                            reorder(dir) => { return root.reorder-session(root.drag-id, dir); }
                             drag-start => { root.drag-id = session.id; root.list-dragging = true; }
-                            drag-move(dy) => { root.drag-dy = dy; }
                             drag-end => {
                                 root.list-dragging = false;
                                 root.drag-id = "";
-                                root.drag-dy = 0px;
                                 root.reorder-end();
                             }
                             remove => { root.remove-session(session.id); }

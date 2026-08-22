@@ -693,6 +693,11 @@ export component AppWindow inherits Window {
 
     // --- Session list ------------------------------------------------------
     in property <[SessionInfo]> sessions;
+    // Bumped by Rust whenever the sessions model is rebuilt wholesale
+    // (set_vec). A rebuild destroys the dragging row's pointer grab, so
+    // Welcome watches this to clear its shared drag state instead of
+    // leaving a card lifted forever.
+    in property <int> sessions-revision: 0;
     in-out property <string> host-search-query;
     callback host-search-changed(string);
 
@@ -765,7 +770,7 @@ export component AppWindow inherits Window {
     callback edit-session(string /* session-id */);
     callback duplicate-session(string /* session-id */);
     callback move-session(string /* session-id */, string /* group */);
-    callback reorder-session(string /* session-id */, int /* dir: -1 up, 1 down */);
+    callback reorder-session(string /* session-id */, int /* dir: -1 up, 1 down */) -> bool;
     callback reorder-session-end();
     callback toggle-group(string /* group */);
     callback remove-session(string /* session-id */);
@@ -1238,6 +1243,7 @@ export component AppWindow inherits Window {
                     sessions: root.sessions;
                     import-hint: root.ssh-import-hint;
                     search-query <=> root.host-search-query;
+                    sessions-revision: root.sessions-revision;
                     search-changed(query) => { root.host-search-changed(query); }
                     collapse => {
                         root.welcome-collapsed = true;
@@ -1268,7 +1274,7 @@ export component AppWindow inherits Window {
                     edit-session(id) => { root.edit-session(id); }
                     duplicate-session(id) => { root.duplicate-session(id); }
                     move-session(id, group) => { root.move-session(id, group); }
-                    reorder-session(id, dir) => { root.reorder-session(id, dir); }
+                    reorder-session(id, dir) => { return root.reorder-session(id, dir); }
                     reorder-end => { root.reorder-session-end(); }
                     toggle-group(group) => { root.toggle-group(group); }
                     new-group => {
@@ -1634,6 +1640,7 @@ export component AppWindow inherits Window {
                         sessions: root.sessions;
                         import-hint: root.ssh-import-hint;
                         search-query <=> root.host-search-query;
+                        sessions-revision: root.sessions-revision;
                         search-changed(query) => { root.host-search-changed(query); }
                         new-session => { root.new-session-clicked(); }
                         import-ssh-config => { root.import-ssh-config(); }
@@ -1641,7 +1648,7 @@ export component AppWindow inherits Window {
                         edit-session(id) => { root.edit-session(id); }
                         duplicate-session(id) => { root.duplicate-session(id); }
                         move-session(id, group) => { root.move-session(id, group); }
-                        reorder-session(id, dir) => { root.reorder-session(id, dir); }
+                        reorder-session(id, dir) => { return root.reorder-session(id, dir); }
                         reorder-end => { root.reorder-session-end(); }
                         toggle-group(group) => { root.toggle-group(group); }
                         new-group => {
@@ -3027,6 +3034,8 @@ export component AppWindow inherits Window {
                     text <=> root.tab-rename-value;
                     font-family: Theme.ui-font-family; // CJK-capable (#54)
                     placeholder-text: @tr("Session name");
+                    // Focus the text the moment the dialog opens.
+                    init => { tr-input.focus(); }
                     accepted => {
                         root.rename-tab(root.tab-rename-id, root.tab-rename-value);
                     }

@@ -66,21 +66,7 @@ pub(super) fn parse_batch_import(text: &str) -> Vec<Session> {
 /// dropdown (#179). Ungrouped ("") is excluded; the dialog leaves the field blank
 /// for that case.
 pub(super) fn session_groups_model(store: &ConfigStore) -> ModelRc<SharedString> {
-    let sessions = store.sessions();
-    let mut named: Vec<String> = store
-        .groups()
-        .iter()
-        .filter(|group| !is_reserved_session_group(group.trim()))
-        .cloned()
-        .chain(
-            sessions
-                .iter()
-                .filter(|s| !s.group.is_empty() && !is_reserved_session_group(s.group.trim()))
-                .map(|s| s.group.clone()),
-        )
-        .collect();
-    named.sort_by_key(|g| g.to_lowercase());
-    named.dedup();
+    let named = named_display_groups(store.groups(), store.sessions());
     ModelRc::from(Rc::new(VecModel::from(
         named
             .into_iter()
@@ -183,20 +169,7 @@ fn build_session_rows(
             .map(|session| session.group.clone())
             .collect()
     } else {
-        explicit_groups
-            .iter()
-            .filter(|group| !is_reserved_session_group(group.trim()))
-            .cloned()
-            .chain(
-                sessions
-                    .iter()
-                    .filter(|session| {
-                        !session.group.is_empty()
-                            && !is_reserved_session_group(session.group.trim())
-                    })
-                    .map(|session| session.group.clone()),
-            )
-            .collect()
+        named_display_groups(explicit_groups, sessions)
     };
     named.sort_by_key(|g| g.to_lowercase());
     named.dedup();

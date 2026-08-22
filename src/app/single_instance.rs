@@ -132,7 +132,14 @@ fn forward_tcp(port: u16) -> std::io::Result<Instance> {
     let mut stream = connect_tcp(port)?;
     stream.write_all(format!("{MSG_NEW_WINDOW}\n").as_bytes())?;
     stream.flush()?;
-    Ok(Instance::Forwarded)
+    // Whoever holds the port must ack: a stale port file can point at an
+    // unrelated listener, and treating that as Forwarded would exit without
+    // any window ever opening.
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    match BufReader::new(&stream).lines().next() {
+        Some(Ok(line)) if line == "ack" => Ok(Instance::Forwarded),
+        _ => Err(std::io::Error::other("no ack from single-instance primary")),
+    }
 }
 
 #[cfg(windows)]
@@ -163,14 +170,19 @@ pub struct Listener {
 
 impl Listener {
     /// Blocks forever, invoking `on_msg` for every complete line received.
-    /// Spawn this on its own thread.
+    /// Spawn this on its own thread. Every accepted line is acked before
+    /// dispatch so forwarders can verify they reached the real primary —
+    /// on Windows the port file may stale and point at an unrelated
+    /// listener, which would never ack.
     pub fn spawn<F: FnMut(String) + Send + 'static>(self, mut on_msg: F) {
-        for stream in self.listener.incoming().flatten() {
+        for mut stream in self.listener.incoming().flatten() {
             // One silent client must not wedge every later forward: bound
             // the wait for the first line and skip the connection if it
             // times out.
             let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-            if let Some(Ok(line)) = BufReader::new(stream).lines().next() {
+            if let Some(Ok(line)) = BufReader::new(&stream).lines().next() {
+                let _ = stream.write_all(b"ack\n");
+                let _ = stream.flush();
                 on_msg(line);
             }
         }

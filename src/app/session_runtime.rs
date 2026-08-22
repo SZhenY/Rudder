@@ -84,16 +84,31 @@ pub(super) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
         let sftp_runtime = ctx.runtime.clone();
         let sftp_task_runtime = sftp_runtime.clone();
-        let sftp_handles = ctx.sftp_handles.clone();
+        // Read the handle map through the route at insertion time: if the tab
+        // is dragged to another window while we connect, the route already
+        // points at the destination and the handle must land there.
+        let sftp_route = route.clone();
         let sftp_tab_id = tab_id.to_string();
         sftp_runtime.spawn(async move {
-            if ready_rx.await.is_err() {
+            // The interactive PTY may never report Connected (stalled
+            // handshake); bound the wait so this bootstrap task cannot
+            // outlive the tab forever.
+            if !matches!(
+                tokio::time::timeout(std::time::Duration::from_secs(30), ready_rx).await,
+                Ok(Ok(()))
+            ) {
                 return;
             }
             tokio::task::yield_now().await;
             let sftp_handle = spawn_sftp(sftp_task_runtime.handle(), session, jump, sftp_tx);
-            if let Ok(mut handles) = sftp_handles.lock() {
-                handles.insert(sftp_tab_id, sftp_handle);
+            let handles = sftp_route
+                .lock()
+                .ok()
+                .map(|r| r.sftp_handles.clone());
+            if let Some(handles) = handles {
+                if let Ok(mut handles) = handles.lock() {
+                    handles.insert(sftp_tab_id, sftp_handle);
+                }
             }
         });
         (Some(sftp_rx), Some(ready_tx))

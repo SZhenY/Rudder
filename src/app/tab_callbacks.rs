@@ -142,6 +142,7 @@ pub(super) fn wire_tab_callbacks(
         let panes_model = panes_model.clone();
         let splitters_model = splitters_model.clone();
         let tab_titles = tab_titles.clone();
+        let tab_routes = core.tab_routes.clone();
         window.on_pane_tab_closed(move |_pane_id: i32, id: SharedString| {
             let id = id.to_string();
             if id == "welcome" {
@@ -159,6 +160,9 @@ pub(super) fn wire_tab_callbacks(
                 gate.close();
             }
             bufs.lock().unwrap().remove(&id);
+            if let Ok(mut routes) = tab_routes.lock() {
+                routes.remove(&id);
+            }
 
             // Remove from tabs + terminals models.
             let mut idx = None;

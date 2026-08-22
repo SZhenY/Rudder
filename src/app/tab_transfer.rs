@@ -17,6 +17,23 @@
 
 use super::*;
 
+/// Move one tab's entry from the source window's per-tab map into the
+/// destination's during a detach/merge. Poisoned locks are skipped, matching
+/// every other lock site in this module.
+fn move_locked_entry<V>(
+    src: &Arc<Mutex<HashMap<String, V>>>,
+    dst: &Arc<Mutex<HashMap<String, V>>>,
+    tab_id: &str,
+) {
+    if let Ok(mut m) = src.lock() {
+        if let Some(v) = m.remove(tab_id) {
+            if let Ok(mut d) = dst.lock() {
+                d.insert(tab_id.to_string(), v);
+            }
+        }
+    }
+}
+
 /// One window's rectangle in global logical coordinates.
 struct WinGeo {
     x: f32,
@@ -393,37 +410,11 @@ pub(super) fn move_tab_between_windows(
     if let Some(h) = src.handles.borrow_mut().remove(tab_id) {
         dst.handles.borrow_mut().insert(tab_id.to_string(), h);
     }
-    if let Ok(mut m) = src.bufs.lock() {
-        if let Some(v) = m.remove(tab_id) {
-            if let Ok(mut d) = dst.bufs.lock() {
-                d.insert(tab_id.to_string(), v);
-            }
-        }
-    }
-    if let Ok(mut m) = src.gates.lock() {
-        if let Some(v) = m.remove(tab_id) {
-            if let Ok(mut d) = dst.gates.lock() {
-                d.insert(tab_id.to_string(), v);
-            }
-        }
-    }
-    if let Ok(mut m) = src.statuses.lock() {
-        if let Some(v) = m.remove(tab_id) {
-            if let Ok(mut d) = dst.statuses.lock() {
-                d.insert(tab_id.to_string(), v);
-            }
-        }
-    }
-    if let Ok(mut m) = src.sftp_handles.lock() {
-        if let Some(v) = m.remove(tab_id) {
-            if let Ok(mut d) = dst.sftp_handles.lock() {
-                d.insert(tab_id.to_string(), v);
-            }
-        }
-    }
-    if let Ok(mut m) = src.sftp_last_cwd.lock() {
-        m.remove(tab_id);
-    }
+    move_locked_entry(&src.bufs, &dst.bufs, tab_id);
+    move_locked_entry(&src.gates, &dst.gates, tab_id);
+    move_locked_entry(&src.statuses, &dst.statuses, tab_id);
+    move_locked_entry(&src.sftp_handles, &dst.sftp_handles, tab_id);
+    move_locked_entry(&src.sftp_last_cwd, &dst.sftp_last_cwd, tab_id);
 
     // Retarget the running pumps at the new window.
     if let Ok(routes) = core.tab_routes.lock() {
@@ -503,7 +494,13 @@ pub(super) fn close_window_now(core: &Rc<AppCore>, window_id: u64) {
 
 /// Drop a closed window's shared state and any routes still pointing at it.
 pub(super) fn forget_window_state(core: &Rc<AppCore>, window_id: u64) {
-    core.window_states.borrow_mut().remove(&window_id);
+    if let Some(st) = core.window_states.borrow_mut().remove(&window_id) {
+        // Deterministic teardown: stop this window's repeated timers and hide
+        // its monitor windows now rather than relying on the handle drops.
+        st.timers.borrow_mut().clear();
+        let _ = st.proc_win.hide();
+        let _ = st.sys_win.hide();
+    }
     if let Ok(mut routes) = core.tab_routes.lock() {
         routes.retain(|_, route| {
             route

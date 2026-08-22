@@ -314,6 +314,31 @@ pub(crate) fn is_reserved_session_group(name: &str) -> bool {
     name.eq_ignore_ascii_case("default") || name.eq_ignore_ascii_case("system")
 }
 
+/// Named display groups: explicit folders ∪ the groups sessions are filed
+/// under, with reserved names and ungrouped excluded, de-duplicated and
+/// sorted case-insensitively. The single source of truth for group display
+/// order — shared by the welcome list, drag-reorder target finding and the
+/// group dropdown; if these ever drift, drop targets and rendered rows
+/// disagree (#41).
+pub(crate) fn named_display_groups(explicit: &[String], sessions: &[Session]) -> Vec<String> {
+    let mut named: Vec<String> = explicit
+        .iter()
+        .filter(|group| !is_reserved_session_group(group.trim()))
+        .cloned()
+        .chain(
+            sessions
+                .iter()
+                .filter(|session| {
+                    !session.group.is_empty() && !is_reserved_session_group(session.group.trim())
+                })
+                .map(|session| session.group.clone()),
+        )
+        .collect();
+    named.sort_by_key(|group| group.to_lowercase());
+    named.dedup();
+    named
+}
+
 /// Repair configurations created before #316/#324, when the Move-to menu exposed
 /// the built-in `system` group as a destination for saved server sessions.
 fn normalize_reserved_session_groups(cfg: &mut ConfigFile) -> bool {
@@ -573,23 +598,10 @@ impl ConfigStore {
         {
             display.push("default".to_string());
         }
-        let mut named: Vec<String> = self
-            .cache
-            .groups
-            .iter()
-            .filter(|g| !is_reserved_session_group(g.trim()))
-            .cloned()
-            .chain(
-                self.cache
-                    .sessions
-                    .iter()
-                    .map(display_group)
-                    .filter(|g| g != "default"),
-            )
-            .collect();
-        named.sort_by_key(|g| g.to_lowercase());
-        named.dedup();
-        display.extend(named);
+        display.extend(named_display_groups(
+            &self.cache.groups,
+            &self.cache.sessions,
+        ));
 
         let Some(pos) = display.iter().position(|g| g == &group) else {
             return false;
@@ -632,12 +644,14 @@ impl ConfigStore {
 
         // A named source group that just lost its last member would vanish
         // from the list (changing the row count mid-drag, which drops the
-        // dragging row's pointer grab); keep it as an empty folder.
+        // dragging row's pointer grab); keep it as an empty folder. Register
+        // it in `groups` directly rather than via add_group: the folder was
+        // visibly expanded during the drag, and add_group would collapse it.
         if group != "default"
             && !self.cache.sessions.iter().any(|s| s.group == source_group)
             && !self.cache.groups.iter().any(|g| g == &source_group)
         {
-            self.add_group(source_group);
+            self.cache.groups.push(source_group);
         }
         true
     }

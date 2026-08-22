@@ -62,7 +62,17 @@ pub struct WindowState {
     pub terminals_model: Rc<slint::VecModel<TerminalState>>,
     pub panes_model: Rc<slint::VecModel<PaneInfo>>,
     pub splitters_model: Rc<slint::VecModel<SplitterInfo>>,
+    /// Repeated Slint timers owned by this window (e.g. the 1 Hz system
+    /// sampler). Dropping the state on close drops these, which stops them —
+    /// otherwise they keep firing for the whole process lifetime.
+    pub timers: Rc<RefCell<Vec<slint::Timer>>>,
     pub content_size: Rc<Cell<(f32, f32)>>,
+    /// Strong handles: both windows start hidden, and the Slint backend only
+    /// keeps a component alive while its window is visible — without these
+    /// they'd be destroyed as soon as `open_window` returns. Released when
+    /// `forget_window_state` drops this entry on close.
+    pub proc_win: Rc<ProcWindow>,
+    pub sys_win: Rc<SystemInfoWindow>,
     pub proc_weak: slint::Weak<ProcWindow>,
     pub sys_weak: slint::Weak<SystemInfoWindow>,
 }

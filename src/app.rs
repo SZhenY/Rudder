@@ -154,8 +154,8 @@ use tokio::runtime::Runtime;
 
 use crate::app::core::{AppCore, TabRoute, TabRoutes, WindowRegistry, WindowState};
 use crate::config::{
-    is_reserved_session_group, AuthMethod, ConfigStore, OutputHighlightRule, Secret, Session,
-    SessionKind,
+    is_reserved_session_group, named_display_groups, AuthMethod, ConfigStore,
+    OutputHighlightRule, Secret, Session, SessionKind,
 };
 use crate::i18n::t;
 use crate::layout::{LogicalRect, TerminalWheelHit};
@@ -397,6 +397,15 @@ thread_local! {
     static NEW_WINDOW_HOOK: RefCell<Option<Rc<dyn Fn()>>> = RefCell::new(None);
 }
 
+// UI-thread handle to the process core, published by `run()` before the
+// event loop starts. Cross-thread callers (the single-instance IPC
+// listener) run a capture-less closure via `invoke_from_event_loop` and
+// fetch the non-Send `Rc<AppCore>` from here instead of moving it across
+// threads.
+thread_local! {
+    static NEW_WINDOW_CORE: RefCell<Option<Rc<AppCore>>> = const { RefCell::new(None) };
+}
+
 #[cfg(target_os = "macos")]
 fn set_new_window_hook(f: Rc<dyn Fn()>) {
     NEW_WINDOW_HOOK.with(|h| *h.borrow_mut() = Some(f));
@@ -487,18 +496,57 @@ pub fn run(intent: crate::app::launch::LaunchIntent) -> Result<()> {
 
     // IPC listener: forwarded "new-window" requests arrive on the listener
     // thread, but open_window() must run on the Slint UI thread — and
-    // AppCore holds Rc state, so it cannot cross threads via
-    // invoke_from_event_loop either. Bridge the gap with an mpsc channel:
-    // this thread sends one () per request, and a repeating UI-thread timer
-    // (created after the first window below) drains the receiver and opens
-    // the windows.
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    // AppCore holds Rc state, so it cannot be captured by the
+    // invoke_from_event_loop closure. The closure therefore captures nothing
+    // and fetches the core from a UI-thread-local set just before the event
+    // loop starts; until then (early startup) the listener retries briefly so
+    // no request is lost.
     if let Some(crate::app::single_instance::Instance::Primary { listen }) = instance {
         std::thread::spawn(move || {
             listen.spawn(move |msg| {
                 if msg == "new-window" {
                     tracing::info!("single-instance: new-window request received");
-                    let _ = tx.send(());
+                    // invoke_from_event_loop fails forever once the event
+                    // loop is gone (app quitting) — retry only briefly so
+                    // this listener callback cannot spin indefinitely.
+                    let deadline =
+                        std::time::Instant::now() + std::time::Duration::from_secs(10);
+                    while slint::invoke_from_event_loop(|| {
+                        NEW_WINDOW_CORE.with(|c| {
+                            if let Some(core) = c.borrow().clone() {
+                                match open_window(core.clone(), true, None) {
+                                    Ok(window_id) => {
+                                        // The request came from an OS entry
+                                        // point while we may be in the
+                                        // background — bring the new window
+                                        // to the front (best effort).
+                                        if let Some(st) =
+                                            core.window_states.borrow().get(&window_id)
+                                        {
+                                            if let Some(w) = st.weak.upgrade() {
+                                                raise_to_front(&w);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("failed to open forwarded window: {e:#}")
+                                    }
+                                }
+                            }
+                        });
+                    })
+                    .is_err()
+                    {
+                        if std::time::Instant::now() >= deadline {
+                            tracing::warn!(
+                                "single-instance: event loop unreachable, dropping new-window request"
+                            );
+                            break;
+                        }
+                        // The event loop provider appears after startup begins;
+                        // retry instead of dropping an explicit user action.
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
                 }
             });
         });
@@ -526,8 +574,15 @@ pub fn run(intent: crate::app::launch::LaunchIntent) -> Result<()> {
     {
         let core = core.clone();
         set_new_window_hook(Rc::new(move || {
-            if let Err(e) = open_window(core.clone(), true, None) {
-                tracing::warn!("failed to open new window: {e:#}");
+            match open_window(core.clone(), true, None) {
+                Ok(window_id) => {
+                    if let Some(st) = core.window_states.borrow().get(&window_id) {
+                        if let Some(w) = st.weak.upgrade() {
+                            raise_to_front(&w);
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!("failed to open new window: {e:#}"),
             }
         }));
     }
@@ -537,36 +592,34 @@ pub fn run(intent: crate::app::launch::LaunchIntent) -> Result<()> {
     #[cfg(target_os = "macos")]
     crate::app::dock_menu::install_dock_menu();
 
-    // UI-thread drain for forwarded new-window requests: the IPC listener
-    // above sends one () per request; this repeating timer picks them up on
-    // the Slint thread where open_window() may run. Each message is an
-    // explicit user action ("新建窗口"), so every pending message opens its
-    // own cascaded window rather than coalescing the batch. `ipc_timer` is
-    // a plain local binding: Slint timers stop when dropped, and run()
-    // blocks on run_event_loop below, so this keeps it alive for exactly the
-    // event loop's lifetime — no leaking needed.
-    let ipc_timer = {
-        let core = core.clone();
-        let timer = slint::Timer::default();
-        timer.start(
-            slint::TimerMode::Repeated,
-            std::time::Duration::from_millis(250),
-            move || {
-                while rx.try_recv().is_ok() {
-                    if let Err(e) = open_window(core.clone(), true, None) {
-                        tracing::warn!("failed to open forwarded window: {e:#}");
-                    }
-                }
-            },
-        );
-        timer
-    };
+    // Publish the core to the UI thread so the IPC listener's
+    // invoke_from_event_loop closures can open windows without capturing the
+    // non-Send Rc<AppCore> (see the listener above).
+    NEW_WINDOW_CORE.with(|c| *c.borrow_mut() = Some(core.clone()));
 
     // Global loop: window.run() returns when *its* window closes, which is
     // wrong once several windows share the loop.
-    slint::run_event_loop().context("event loop exited with error")?;
-    drop(ipc_timer);
-    Ok(())
+    let loop_result = slint::run_event_loop();
+    if let Err(e) = &loop_result {
+        tracing::warn!(
+            "event loop exited with error ({e:#}); running bounded shutdown anyway"
+        );
+    }
+    // Bound the shutdown instead of relying on Rust's drop glue: tokio's
+    // Runtime Drop waits indefinitely for tasks that never finished
+    // (telnet/local/sftp pumps, spawn_blocking helpers) — the observed
+    // windowless lingering process on Windows 11. Take ownership of the
+    // runtime when all holders have gone, give stragglers two seconds, then
+    // hard-exit unconditionally. The event-loop error path goes through here
+    // too: propagating with `?` would hand the runtime to the TLS destructor
+    // chain, where a wedged blocking thread could hang the process forever.
+    NEW_WINDOW_CORE.with(|c| *c.borrow_mut() = None);
+    if let Ok(core_owned) = Rc::try_unwrap(core) {
+        if let Ok(runtime) = Arc::try_unwrap(core_owned.runtime) {
+            runtime.shutdown_timeout(std::time::Duration::from_secs(2));
+        }
+    }
+    std::process::exit(0);
 }
 
 /// Build and wire one application window. Called for the first window by
@@ -661,10 +714,10 @@ fn open_window(
     window.set_sys_swap_rows(ModelRc::from(sys_swap_model.clone()));
     window.set_sys_network_rows(ModelRc::from(sys_network_model.clone()));
     window.set_sys_filesystem_rows(ModelRc::from(sys_filesystem_model.clone()));
-    let proc_win = ProcWindow::new().context("failed to build process window")?;
+    let proc_win = Rc::new(ProcWindow::new().context("failed to build process window")?);
     proc_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
     proc_win.set_proc_list(ModelRc::from(proc_rows_model.clone()));
-    let sys_win = SystemInfoWindow::new().context("failed to build system info window")?;
+    let sys_win = Rc::new(SystemInfoWindow::new().context("failed to build system info window")?);
     // Every fallible construction has now succeeded — register the window.
     // (cascade_origin above was captured before this point, as required.)
     let window_id = registry.register(window.as_weak());
@@ -916,10 +969,13 @@ fn open_window(
     window.set_cmd_bar_hidden(store.borrow().cmd_bar_hidden());
     {
         let store = store.clone();
+        let registry = registry.clone();
         window.on_set_cmd_bar_hidden(move |hidden| {
             let mut s = store.borrow_mut();
             s.set_cmd_bar_hidden(hidden);
             let _ = s.save();
+            drop(s);
+            registry.broadcast_config_changed();
         });
     }
 
@@ -1367,6 +1423,7 @@ fn open_window(
     {
         let weak = window.as_weak();
         let store = store.clone();
+        let registry = registry.clone();
         window.on_set_term_font_size(move |size: i32| {
             {
                 let mut s = store.borrow_mut();
@@ -1376,6 +1433,7 @@ fn open_window(
             if let Some(w) = weak.upgrade() {
                 w.set_term_font_size(size as f32);
             }
+            registry.broadcast_config_changed();
         });
     }
     {
@@ -1548,6 +1606,10 @@ fn open_window(
             apply_dark_mode(&w, &bufs, theme_pref_is_dark(&store.borrow()));
             // Language translations are process-global; refresh our flag only.
             w.set_lang_en(crate::i18n::is_en());
+            // Command-bar visibility is a global preference.
+            w.set_cmd_bar_hidden(store.borrow().cmd_bar_hidden());
+            // Persisted terminal font size (settings stepper) is global too.
+            w.set_term_font_size(store.borrow().font_size() as f32);
         }));
     }
     {
@@ -1879,6 +1941,10 @@ fn open_window(
     // menu). Display only — the saved session keeps its own name.
     let tab_titles: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
 
+    // Repeated timers created below (system sampler). Parked in WindowState
+    // so closing the window stops them instead of leaking.
+    let window_timers: Rc<RefCell<Vec<slint::Timer>>> = Rc::new(RefCell::new(Vec::new()));
+
     // Expose this window's state to the rest of the process so tabs can be
     // dragged out into a new window or merged into another one (#tab-detach).
     core.window_states.borrow_mut().insert(
@@ -1899,7 +1965,10 @@ fn open_window(
             terminals_model: terminals_model.clone(),
             panes_model: panes_model.clone(),
             splitters_model: splitters_model.clone(),
+            timers: window_timers.clone(),
             content_size: content_size.clone(),
+            proc_win: proc_win.clone(),
+            sys_win: sys_win.clone(),
             proc_weak: proc_win.as_weak(),
             sys_weak: sys_win.as_weak(),
         },
@@ -2487,10 +2556,10 @@ fn open_window(
             }
         },
     );
-    // Keep the timer alive for the entire event loop by parking it on a
-    // leaked Box. Slint timers drop themselves on Drop, and we don't want
-    // that here.
-    Box::leak(Box::new(timer));
+    // Keep the timer alive as long as this window exists: it lives in the
+    // WindowState timers vec, which forget_window_state drops on close
+    // (Slint timers stop when dropped) — no leaking needed.
+    window_timers.borrow_mut().push(timer);
 
     // OS file drag-and-drop → upload to the active session's SFTP directory,
     // but only when the file is dropped over the file-list area.
@@ -3043,6 +3112,18 @@ fn center_window(win: &AppWindow) {
 #[cfg(not(windows))]
 fn center_window(_win: &AppWindow) {}
 
+/// Bring a window to the front and give it keyboard focus: un-minimize it
+/// and ask the OS for focus. Used when an OS entry point (taskbar jump list,
+/// Dock menu, desktop action) opens a window while the app is sitting in the
+/// background. Best effort — strict environments (Wayland, the Windows
+/// foreground lock) may degrade to a taskbar flash.
+fn raise_to_front(win: &AppWindow) {
+    let _ = win.window().with_winit_window(|w| {
+        w.set_minimized(false);
+        w.focus_window();
+    });
+}
+
 /// The active terminal tab's current SFTP directory ("" if unknown).
 fn active_sftp_path(win: &AppWindow, tab_id: &str) -> String {
     let model = win.get_terminals();
@@ -3094,16 +3175,15 @@ fn terminal_wheel_hit(
     let mut term_w = term.w;
     let mut term_h = term.h;
 
-    // Zen mode removes the status strip and command bar as well as all docks.
+    // Zen mode removes only the 24px status strip; docks and the command bar
+    // stay on screen.
     if !win.get_zen_mode() {
         term_y += 24.0;
         term_h = (term_h - 24.0).max(0.0);
     }
 
     let sftp_dock = win.get_sftp_dock().to_string();
-    let sftp_take = if win.get_zen_mode() {
-        0.0
-    } else if term_state.sftp_collapsed {
+    let sftp_take = if term_state.sftp_collapsed {
         36.0
     } else if sftp_dock == "left" || sftp_dock == "right" {
         term_state.sftp_panel_width + 4.0
@@ -3119,9 +3199,10 @@ fn terminal_wheel_hit(
         sftp_take,
     );
 
-    // Leave the command bar to TextInput/history handling; wheel fallback is for
-    // terminal output only.
-    if !win.get_zen_mode() {
+    // Leave the command bar to TextInput/history handling; wheel fallback is
+    // for terminal output only. The bar is present in every mode unless the
+    // toolbar toggle hid it.
+    if !win.get_cmd_bar_hidden() {
         term_h = (term_h - 34.0).max(0.0);
     }
     if !contains_logical(
@@ -3288,21 +3369,20 @@ fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, LogicalRect, 
 }
 
 fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect> {
-    if win.get_zen_mode() {
-        return None;
-    }
     let (_active, term, term_state) = active_terminal_panel_rects(win)?;
     if term_state.sftp_collapsed {
         return None;
     }
 
-    // TerminalView starts with a 24px connection-status line; SFTP docks inside
-    // the remaining dock-region. This mirrors ui/terminal_view.slint.
+    // TerminalView starts with a 24px connection-status line (hidden in zen
+    // mode); SFTP docks inside the remaining dock-region. This mirrors
+    // ui/terminal_view.slint.
+    let strip = if win.get_zen_mode() { 0.0 } else { 24.0 };
     let dock_region = LogicalRect {
         x: term.x,
-        y: term.y + 24.0,
+        y: term.y + strip,
         w: term.w,
-        h: (term.h - 24.0).max(0.0),
+        h: (term.h - strip).max(0.0),
     };
     let dock = win.get_sftp_dock().to_string();
     let mut panel = LogicalRect {
@@ -3425,11 +3505,16 @@ fn sync_sessions_for_window(
     store: &ConfigStore,
     model: &VecModel<SessionInfo>,
 ) {
-    let query = window
-        .upgrade()
-        .map(|window| window.get_host_search_query().to_string())
-        .unwrap_or_default();
-    sync_sessions_to_model_with_filter(store, model, &query);
+    let Some(window) = window.upgrade() else { return };
+    let query = window.get_host_search_query().to_string();
+    // Prefer in-place row updates: they keep the list's scroll position and
+    // any running drag alive and skip the reallocation. A full set_vec
+    // rebuild — which destroys the dragging row's pointer grab — happens
+    // only when the row count changed, and the revision bump tells Welcome
+    // to clear its stale drag state in exactly that case.
+    if !refresh_session_rows_in_place(store, model, &query) {
+        window.set_sessions_revision(window.get_sessions_revision() + 1);
+    }
 }
 
 /// Parse the batch-import textarea (#150). Each non-empty, non-`#` line is
@@ -3883,7 +3968,7 @@ fn wire_session_callbacks(
                 .map(|window| !window.get_host_search_query().trim().is_empty())
                 .unwrap_or(false)
             {
-                return;
+                return false;
             }
             let moved = {
                 let mut s = store.borrow_mut();
@@ -3912,6 +3997,7 @@ fn wire_session_callbacks(
                     }
                 }
             }
+            moved
         });
     }
     {
