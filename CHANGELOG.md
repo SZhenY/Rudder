@@ -15,6 +15,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **降低键盘输入后的字符回显延迟（合入上游 `5bdf46c`）。** 检测到真实按键发送后，对应会话在 180 ms 交互窗口内把终端刷新间隔从约 33 ms 降至约 8 ms，本地 CMD/PowerShell/WSL 与低延迟 SSH 会话的逐字输入更跟手；停止输入自动恢复原限速，滚屏阅读仍用低频刷新。
+- **Reduce character-echo latency after keyboard input (upstream `5bdf46c`).** After a real key is sent the session temporarily lowers its render interval from ~33 ms to ~8 ms for a 180 ms window, falling back automatically when typing stops; scrolled-back views keep their lower refresh rate.
+
 - **运行状态页挂载点容量单位支持 TB/PB（合入上游 `7602a6d`）。** `format_size` 改为循环除 1024 的通用换算，覆盖 B→PB 全部主流单位；TB 及以上保留两位小数。
 - **Mount-point sizes on the status page now support TB/PB units (upstream `7602a6d`).** `format_size` uses a generic divide-by-1024 loop covering B through PB; two decimal places for TB and above.
 

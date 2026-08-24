@@ -50,6 +50,11 @@ pub(crate) struct TermBuffer {
     /// it — otherwise `ESC [ 5` + `3 m` across two chunks silently loses the
     /// overline (SGR 53) or double-underline (21) attribute.
     pub(crate) sgr_buf: Vec<u8>,
+    /// Echo produced shortly after a physical keypress should feel immediate.
+    /// While `now < interactive_echo_until`, the tab's render throttle drops
+    /// from ~30 Hz to ~120 Hz; it falls back automatically once typing stops
+    /// so firehose output keeps its CPU protection.
+    pub(crate) interactive_echo_until: std::time::Instant,
 }
 
 /// Cached rendering for one live-screen row.  Stores raw HistSpan runs (our

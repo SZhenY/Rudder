@@ -30,6 +30,12 @@ const PACED_QUEUE_EVENT_LIMIT: usize = 256;
 
 /// Max UI renders per second for a tab under sustained output (#209).
 const RENDER_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(33);
+/// Echo produced shortly after a physical keypress should feel immediate. This
+/// temporary 120 Hz ceiling is still coalesced, then falls back to 30 Hz once
+/// the user stops typing so firehose output keeps its existing CPU protection.
+const INTERACTIVE_RENDER_MIN_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(8);
+const INTERACTIVE_ECHO_WINDOW: std::time::Duration = std::time::Duration::from_millis(180);
 
 fn term_buf(bufs: &TermBuffers, tab_id: &str) -> Option<TermBufferHandle> {
     bufs.lock().unwrap().get(tab_id).cloned()
@@ -329,7 +335,18 @@ fn run_coalesced_tab_render(
     bufs: &TermBuffers,
     gate: Arc<TabRenderGate>,
 ) {
-    let delay = gate.flush_delay(RENDER_MIN_INTERVAL);
+    // Interactive typing short-circuits the firehose throttle: while the echo
+    // window is open, render at 120 Hz so keystrokes feel immediate.
+    let interactive = with_term_buf(bufs, tab_id, |b| {
+        std::time::Instant::now() < b.interactive_echo_until
+    })
+    .unwrap_or(false);
+    let interval = if interactive {
+        INTERACTIVE_RENDER_MIN_INTERVAL
+    } else {
+        RENDER_MIN_INTERVAL
+    };
+    let delay = gate.flush_delay(interval);
 
     let weak2 = weak.clone();
     let tid = tab_id.to_string();
@@ -4110,6 +4127,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     overline_start: None,
                     overline_ranges: Vec::new(),
                     sgr_buf: Vec::new(),
+                    interactive_echo_until: std::time::Instant::now(),
                 })),
             );
             render_gates.lock().unwrap().insert(
@@ -5256,10 +5274,18 @@ fn wire_key_input(
                 let h = handles.borrow();
                 if sync_input.load(std::sync::atomic::Ordering::Relaxed) {
                     // Broadcast the same bytes to every online session (#78 pt.4).
-                    for handle in h.values() {
+                    for (target_id, handle) in h.iter() {
+                        if let Some(buffer) = term_buf(&bufs, target_id) {
+                            buffer.lock().unwrap().interactive_echo_until =
+                                std::time::Instant::now() + INTERACTIVE_ECHO_WINDOW;
+                        }
                         handle.send_raw(bytes.clone());
                     }
                 } else if let Some(handle) = h.get(tab_id.as_str()) {
+                    if let Some(buffer) = term_buf(&bufs, tab_id.as_str()) {
+                        buffer.lock().unwrap().interactive_echo_until =
+                            std::time::Instant::now() + INTERACTIVE_ECHO_WINDOW;
+                    }
                     handle.send_raw(bytes);
                 }
             }

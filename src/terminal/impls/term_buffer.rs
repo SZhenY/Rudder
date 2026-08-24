@@ -710,6 +710,7 @@ mod tests {
             overline_start: None,
             overline_ranges: Vec::new(),
             sgr_buf: Vec::new(),
+            interactive_echo_until: std::time::Instant::now(),
         }
     }
 
@@ -892,6 +893,7 @@ mod tests {
             overline_start: None,
             overline_ranges: Vec::new(),
             sgr_buf: Vec::new(),
+            interactive_echo_until: std::time::Instant::now(),
         };
         let mut input = Vec::new();
         for i in 0..60 {
@@ -1004,6 +1006,7 @@ mod real_file_overline_verify {
             overline_start: None,
             overline_ranges: Vec::new(),
             sgr_buf: Vec::new(),
+            interactive_echo_until: std::time::Instant::now(),
         };
         // Feed in realistic 4 KiB chunks (cat / SSH behaviour).
         for chunk in data.chunks(4096) {
@@ -1059,6 +1062,7 @@ mod render_path_cube_tests {
             overline_start: None,
             overline_ranges: Vec::new(),
             sgr_buf: Vec::new(),
+            interactive_echo_until: std::time::Instant::now(),
         }
     }
 
