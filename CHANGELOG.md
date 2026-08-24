@@ -7,6 +7,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 新增 / Added
 
+- **优化侧栏快速连接的服务器信息显示（#339，合入上游 `c8832de`）。** 窄侧栏中的会话行改为两行紧凑布局，首行名称、次行始终显示 `用户@主机:端口`，避免固定宽度列裁掉 IP 地址；完整欢迎页保留原分栏布局。
+- **Improve server details in the Quick Connect sidebar (#339, upstream `c8832de`).** Session rows in the narrow sidebar use a compact two-line layout — name first, `user@host:port` always visible beneath — while the full Welcome page keeps its column layout.
+
 - **支持双击标签复制连接（#340，合入上游 `790365d`）。** 双击任意终端会话标签会创建一条独立的新连接，与右键"复制连接"一致；欢迎页标签不会被复制，现有单击选择和拖动排序/分屏行为保持不变。
 - **Support duplicating connections by double-clicking tabs (#340, upstream `790365d`).** Double-clicking any terminal session tab now opens an independent duplicate connection, matching the context-menu action. The Welcome tab is excluded; single-click selection and drag reorder/split behavior remain unchanged.
 

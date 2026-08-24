@@ -19,6 +19,7 @@ export struct SessionInfo {
 // --- SessionRow ------------------------------------------------------------
 component SessionRow inherits Rectangle {
     in property <SessionInfo> session;
+    in property <bool> compact;
     callback connect();
     callback edit();
     callback duplicate();
@@ -29,7 +30,7 @@ component SessionRow inherits Rectangle {
     in property <[SessionInfo]> all-sessions;
     property <bool> system-row: root.session.builtin;
 
-    height: 36px;
+    height: root.compact ? 44px : 36px;
     border-radius: Theme.radius-sm;
     background: touch.has-hover ? Theme.bg-hover : transparent;
     animate background { duration: 120ms; }
@@ -161,7 +162,7 @@ component SessionRow inherits Rectangle {
     HorizontalLayout {
         padding-left: 10px;
         padding-right: 10px;
-        spacing: 12px;
+        spacing: root.compact ? 8px : 12px;
 
         Rectangle {
             width: 18px; height: 18px;
@@ -178,7 +179,28 @@ component SessionRow inherits Rectangle {
             }
         }
 
-        Text {
+        // Compact (sidebar) mode: two-line row so user@host:port stays visible
+        // instead of being clipped by the fixed-width columns (#339).
+        if root.compact : VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 1px;
+            Text {
+                text: session.name;
+                color: Theme.text-primary;
+                font-size: Theme.fs-sm;
+                overflow: elide;
+            }
+            Text {
+                text: session.builtin ? session.host
+                    : (session.user != "" ? session.user + "@" : "")
+                        + (session.port > 0 ? session.host + ":" + session.port : session.host);
+                color: Theme.text-muted;
+                font-size: Theme.fs-xs;
+                overflow: elide;
+            }
+        }
+        if !root.compact : Text {
             text: session.name;
             color: Theme.text-primary;
             font-size: Theme.fs-md;
@@ -186,7 +208,7 @@ component SessionRow inherits Rectangle {
             width: 180px;
             overflow: elide;
         }
-        Text {
+        if !root.compact : Text {
             text: session.port > 0 ? session.host + ":" + session.port : session.host;
             color: Theme.text-secondary;
             font-size: Theme.fs-sm;
@@ -194,7 +216,7 @@ component SessionRow inherits Rectangle {
             width: 180px;
             overflow: elide;
         }
-        Text {
+        if !root.compact : Text {
             text: session.user;
             color: Theme.text-secondary;
             font-size: Theme.fs-sm;
@@ -502,6 +524,7 @@ export component Welcome inherits Rectangle {
                         }
                         if session.id != "" && !session.collapsed : SessionRow {
                             session: session;
+                            compact: root.compact;
                             all-sessions: root.sessions;
                             connect => { root.connect-session(session.id); }
                             edit => { root.edit-session(session.id); }
