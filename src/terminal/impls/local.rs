@@ -172,6 +172,10 @@ async fn run_local(
     Ok(())
 }
 
+#[cfg(windows)]
+const WSL_LOGIN_SHELL: &str = "shell=$(getent passwd \"$(id -un)\" 2>/dev/null | cut -d: -f7); \
+     [ -x \"$shell\" ] || shell=${SHELL:-/bin/sh}; exec \"$shell\" -l";
+
 fn local_program(kind: &str) -> (String, Vec<String>) {
     match kind {
         #[cfg(windows)]
@@ -184,7 +188,20 @@ fn local_program(kind: &str) -> (String, Vec<String>) {
             ],
         ),
         #[cfg(windows)]
-        "wsl" => ("wsl.exe".to_string(), Vec::new()),
+        // Do not rely on wsl.exe's implicit shell launch. In particular, Arch
+        // WSL installations whose passwd login shell is fish can open a PTY
+        // without ever presenting an interactive prompt (#352). Resolve the
+        // current Linux user's configured shell inside the distribution, then
+        // replace the temporary POSIX shell with it in login mode.
+        "wsl" => (
+            "wsl.exe".to_string(),
+            vec![
+                "--exec".to_string(),
+                "/bin/sh".to_string(),
+                "-lc".to_string(),
+                WSL_LOGIN_SHELL.to_string(),
+            ],
+        ),
         #[cfg(windows)]
         _ => (
             "powershell.exe".to_string(),
@@ -205,7 +222,7 @@ fn local_program(kind: &str) -> (String, Vec<String>) {
 
 #[cfg(test)]
 mod tests {
-    use super::local_program;
+    use super::{local_program, WSL_LOGIN_SHELL};
 
     #[cfg(windows)]
     #[test]
@@ -216,5 +233,23 @@ mod tests {
 
         let (_, cmd_args) = local_program("cmd");
         assert!(cmd_args.iter().any(|arg| arg.contains("chcp 65001")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wsl_explicitly_starts_the_passwd_login_shell() {
+        let (program, args) = local_program("wsl");
+        assert_eq!(program, "wsl.exe");
+        assert_eq!(
+            args,
+            [
+                "--exec",
+                "/bin/sh",
+                "-lc",
+                WSL_LOGIN_SHELL,
+            ]
+        );
+        assert!(WSL_LOGIN_SHELL.contains("getent passwd"));
+        assert!(WSL_LOGIN_SHELL.contains("exec \"$shell\" -l"));
     }
 }

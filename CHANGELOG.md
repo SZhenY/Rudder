@@ -7,6 +7,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **修复 WSL 发行版默认 Shell 为 fish 时终端无输出的问题（#352，合入上游 `3cf53ee`）。** 现在在发行版内读取 passwd 登录 Shell 并以登录模式显式启动，不再依赖 wsl.exe 的隐式选择；解析失败时回退 `SHELL` 或 `/bin/sh`。
+- **Fix blank terminal when the WSL default shell is fish (#352, upstream `3cf53ee`).** The login shell is now resolved from passwd inside the distribution and launched explicitly in login mode instead of relying on implicit `wsl.exe` selection, falling back to `SHELL` or `/bin/sh`.
+
 - **修复 Fedora 等非 Debian Linux 桌面按下 Ctrl 即触发终端快捷键的问题（#369，合入上游 `67203f4`）。** Linux 下 Slint/winit 可能把裸 Control 上报为 `U+0011`/`U+0016`；过滤范围从 Debian 系扩展到所有 Linux 发行版。真正的 Ctrl+Q/V/X 仍由最终字母事件生成。
 - **Fix bare Ctrl triggering terminal shortcuts on Fedora and other non-Debian Linux desktops (#369, upstream `67203f4`).** Slint/winit may report a physical Control press as `U+0011`/`U+0016`; filtering now applies to every Linux distribution. Genuine Ctrl+Q/V/X chords still come from the final letter event.
 
