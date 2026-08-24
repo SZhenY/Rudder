@@ -7,6 +7,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **修复 Fedora 等非 Debian Linux 桌面按下 Ctrl 即触发终端快捷键的问题（#369，合入上游 `67203f4`）。** Linux 下 Slint/winit 可能把裸 Control 上报为 `U+0011`/`U+0016`；过滤范围从 Debian 系扩展到所有 Linux 发行版。真正的 Ctrl+Q/V/X 仍由最终字母事件生成。
+- **Fix bare Ctrl triggering terminal shortcuts on Fedora and other non-Debian Linux desktops (#369, upstream `67203f4`).** Slint/winit may report a physical Control press as `U+0011`/`U+0016`; filtering now applies to every Linux distribution. Genuine Ctrl+Q/V/X chords still come from the final letter event.
+
 - **修复 macOS 设置弹窗滚轮事件穿透到终端的问题（合入上游 `a8c4cf1`）。** 原生滚轮回退路径在 Slint 命中测试之前运行，现在设置弹窗打开时不再把部分累积的滚动手势带入其背后的终端。
 - **Fix settings wheel events leaking into the macOS terminal (upstream `a8c4cf1`).** The raw wheel fallback runs before Slint hit testing; when the settings modal is open the accumulated gesture is now reset instead of targeting a terminal behind the dialog.
 

@@ -6222,6 +6222,10 @@ mod key_tests {
         // Other platforms retain their existing direct-C0 behaviour.
         assert!(!should_drop_bare_ctrl_marker("\u{0011}", true, false));
         assert!(!should_drop_bare_ctrl_marker("x", true, true));
+        // Genuine Ctrl+Q/Ctrl+V chords still encode from the final letter
+        // event (#369).
+        assert_eq!(key_to_pty_bytes("q", true, false, false), vec![0x11]);
+        assert_eq!(key_to_pty_bytes("v", true, false, false), vec![0x16]);
         // The following Ctrl+X must still become CAN (0x18), which nano uses
         // for Exit.
         assert_eq!(key_to_pty_bytes("x", true, false, false), vec![0x18]);
