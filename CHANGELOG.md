@@ -15,6 +15,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **防止不同服务器的同名文件在外部编辑时互相覆盖（#318，合入上游 `4f8176f`）。** 外部打开/编辑使用按连接隔离的临时目录（临时目录名含主机与端口），本地文件名加入服务器地址；编辑监视器通过新增的 `UploadEdited` 命令把修改上传到原始远端完整路径，不再从带前缀的临时文件名推导目标。
+- **Prevent same-named files from different servers colliding during external editing (#318, upstream `4f8176f`).** External open/edit now uses a connection-isolated temp directory and includes the server address in the local filename; the edit watcher uploads via a new `UploadEdited` command targeting the exact original remote path.
+
 - **降低键盘输入后的字符回显延迟（合入上游 `5bdf46c`）。** 检测到真实按键发送后，对应会话在 180 ms 交互窗口内把终端刷新间隔从约 33 ms 降至约 8 ms，本地 CMD/PowerShell/WSL 与低延迟 SSH 会话的逐字输入更跟手；停止输入自动恢复原限速，滚屏阅读仍用低频刷新。
 - **Reduce character-echo latency after keyboard input (upstream `5bdf46c`).** After a real key is sent the session temporarily lowers its render interval from ~33 ms to ~8 ms for a 180 ms window, falling back automatically when typing stops; scrolled-back views keep their lower refresh rate.
 

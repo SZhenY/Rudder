@@ -35,6 +35,11 @@ pub enum SftpCommand {
         remote_dir: String,
         cleanup_after: Option<PathBuf>,
     },
+    /// Re-upload an externally edited temp copy to its exact original remote
+    /// path (#318). Unlike `Upload`, the destination is the full remote file
+    /// path rather than a directory, so the watcher cannot derive a wrong
+    /// target from a prefixed temp filename.
+    UploadEdited { local: PathBuf, remote: String },
     /// Copy remote entries from this session into another SFTP session.
     CopyTo {
         remotes: Vec<String>,
