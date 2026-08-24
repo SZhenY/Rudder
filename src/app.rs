@@ -2114,7 +2114,9 @@ pub fn run() -> Result<()> {
     // OS file drag-and-drop → upload to the active session's SFTP directory,
     // but only when the file is dropped over the file-list area.
     {
-        use i_slint_backend_winit::winit::event::{MouseScrollDelta, WindowEvent as WEvent};
+        use i_slint_backend_winit::winit::event::{
+            MouseScrollDelta, TouchPhase, WindowEvent as WEvent,
+        };
         use i_slint_backend_winit::EventResult;
         let weak = window.as_weak();
         let sh = sftp_handles.clone();
@@ -2219,7 +2221,7 @@ pub fn run() -> Result<()> {
                             last_cursor_logical = Some((p.x as f32, p.y as f32));
                         }
                     }
-                    WEvent::MouseWheel { delta, .. } if cfg!(target_os = "macos") => {
+                    WEvent::MouseWheel { delta, phase, .. } if cfg!(target_os = "macos") => {
                         let Some((x, y)) = last_cursor_logical else {
                             return EventResult::Propagate;
                         };
@@ -2232,6 +2234,7 @@ pub fn run() -> Result<()> {
                             macos_wheel_accum = 0.0;
                             return EventResult::Propagate;
                         }
+                        let hit = terminal_wheel_hit(&win, &wheel_bufs, x, y);
                         let wheel_lines = match delta {
                             MouseScrollDelta::LineDelta(_, dy) => dy * 3.0,
                             MouseScrollDelta::PixelDelta(p) => {
@@ -2240,17 +2243,57 @@ pub fn run() -> Result<()> {
                                 p.y as f32 / 18.0
                             }
                         };
-                        if wheel_lines.abs() < f32::EPSILON {
-                            return EventResult::Propagate;
-                        }
-                        macos_wheel_accum += wheel_lines;
-                        let whole = macos_wheel_accum.trunc() as i32;
-                        if whole == 0 {
-                            return EventResult::Propagate;
-                        }
-                        macos_wheel_accum -= whole as f32;
-                        if handle_macos_terminal_wheel(&win, &wheel_bufs, x, y, whole) {
-                            return EventResult::PreventDefault;
+                        match hit {
+                            Some(hit) => {
+                                if hit.is_alt {
+                                    // PTY forwarding needs whole-notch steps:
+                                    // bank fractional frames locally and send one
+                                    // arrow burst per crossed notch.
+                                    macos_wheel_accum += wheel_lines;
+                                    let whole = macos_wheel_accum.trunc() as i32;
+                                    if whole != 0 {
+                                        macos_wheel_accum -= whole as f32;
+                                        win.invoke_terminal_wheel(
+                                            hit.tab_id.into(),
+                                            whole.signum(),
+                                            hit.col,
+                                            hit.row,
+                                        );
+                                    }
+                                } else {
+                                    // Normal scrollback: forward the raw
+                                    // fraction. TermBuffer.scroll_accum banks
+                                    // the sub-line remainder so a decaying
+                                    // macOS momentum tail glides to a stop
+                                    // instead of stepping fixed amounts.
+                                    win.invoke_terminal_scroll(hit.tab_id.into(), wheel_lines);
+                                }
+                                // A finished gesture must not leave its sub-line
+                                // remainder behind to be tipped over by an
+                                // unrelated touch later on.
+                                if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+                                    macos_wheel_accum = 0.0;
+                                }
+                                // Claim every frame above the terminal — including
+                                // zero and sub-line ones. Precise devices (trackpad,
+                                // Magic Mouse) emit tiny PixelDelta frames, and mere
+                                // finger contact on a Magic Mouse produces jitter
+                                // frames without any real gesture. Letting those
+                                // propagate would hand wheel events to the Slint
+                                // TouchArea scroll-event path as well, double-
+                                // feeding the same accumulator. Regular mice send
+                                // LineDelta notches that always cross a whole line,
+                                // which is why they never showed the problem.
+                                //
+                                // NOTE: arms of the outer `match event` below
+                                // are statement position (the closure ends with
+                                // its own `EventResult::Propagate`), so claim /
+                                // pass decisions here must use explicit returns.
+                                return EventResult::PreventDefault;
+                            }
+                            // Outside the terminal, native Slint scrolling
+                            // (sidebars, dialogs) keeps working as before.
+                            None => return EventResult::Propagate,
                         }
                     }
                     WEvent::Focused(f) => {
@@ -2617,24 +2660,6 @@ fn active_sftp_path(win: &AppWindow, tab_id: &str) -> String {
         }
     }
     String::new()
-}
-
-fn handle_macos_terminal_wheel(
-    win: &AppWindow,
-    bufs: &TermBuffers,
-    x: f32,
-    y: f32,
-    lines: i32,
-) -> bool {
-    let Some(hit) = terminal_wheel_hit(win, bufs, x, y) else {
-        return false;
-    };
-    if hit.is_alt {
-        win.invoke_terminal_wheel(hit.tab_id.into(), lines.signum(), hit.col, hit.row);
-    } else {
-        win.invoke_terminal_scroll(hit.tab_id.into(), lines);
-    }
-    true
 }
 
 // The raw macOS wheel fallback runs before the usual Slint hit testing. Keep
@@ -4018,6 +4043,7 @@ fn wire_session_callbacks(
                     history: VecDeque::new(),
                     prev: Vec::new(),
                     view_offset: 0,
+                    scroll_accum: 0.0,
                     displayed_text: Vec::new(),
                     csi_state: CsiState::Normal,
                     csi_pending: Vec::new(),
@@ -5333,17 +5359,46 @@ fn wire_key_input(
     {
         let bufs_scroll = bufs.clone();
         let weak = window.as_weak();
-        window.on_terminal_scroll(move |tab_id: SharedString, delta: i32| {
+        window.on_terminal_scroll(move |tab_id: SharedString, delta: f32| {
             let tid = tab_id.to_string();
-            with_term_buf(&bufs_scroll, &tid, |buf| {
+            let changed = with_term_buf(&bufs_scroll, &tid, |buf| {
                 // Scroll within our own session scrollback (history lines above
                 // the live screen).  Offset 0 = live bottom.
+                //
+                // `delta` is fractional lines (wheel pixels / cell height). The
+                // integer part moves the offset; the fraction stays banked in
+                // `scroll_accum` so a decaying macOS momentum tail converges to
+                // a stop instead of repeating full-line steps. Cap each event
+                // so a stray huge pixel delta can't teleport the view.
                 let max_off = buf.history.len() as i64;
+                buf.scroll_accum += delta.clamp(-24.0, 24.0);
+                let whole = buf.scroll_accum.trunc();
+                if whole != 0.0 {
+                    buf.scroll_accum -= whole;
+                }
                 let cur = buf.view_offset as i64;
-                buf.view_offset = (cur + delta as i64).clamp(0, max_off) as usize;
+                let raw_new = cur + whole as i64;
+                let new_off = raw_new.clamp(0, max_off);
+                // Only a step that was actually CLIPPED by a boundary drops the
+                // banked remainder (stale fractions must not fire after a
+                // direction flip or fresh output). Resting AT a boundary must
+                // keep banking: clearing whenever `new_off` merely equals a
+                // boundary wiped the accumulation every tick and made slow
+                // scrolling dead until it was fast enough to cross a whole line
+                // per event.
+                if new_off != raw_new {
+                    buf.scroll_accum = 0.0;
+                }
+                let changed = new_off != cur;
+                buf.view_offset = new_off as usize;
+                changed
             });
-            if let Some(win) = weak.upgrade() {
-                rebuild_tab_display(&win, &bufs_scroll, &tid);
+            // Scrolling at a boundary (or an empty scrollback) leaves the offset
+            // unchanged; skip the full rebuild since the screen is identical.
+            if changed == Some(true) {
+                if let Some(win) = weak.upgrade() {
+                    rebuild_tab_display(&win, &bufs_scroll, &tid);
+                }
             }
         });
     }
@@ -5405,12 +5460,19 @@ fn wire_key_input(
         let weak = window.as_weak();
         window.on_terminal_scroll_to(move |tab_id: SharedString, offset: i32| {
             let tid = tab_id.to_string();
-            with_term_buf(&bufs_scroll, &tid, |buf| {
+            let changed = with_term_buf(&bufs_scroll, &tid, |buf| {
                 let max_off = buf.history.len() as i64;
-                buf.view_offset = (offset as i64).clamp(0, max_off) as usize;
+                let new_off = (offset as i64).clamp(0, max_off);
+                let changed = new_off != buf.view_offset as i64;
+                buf.view_offset = new_off as usize;
+                changed
             });
-            if let Some(win) = weak.upgrade() {
-                rebuild_tab_display(&win, &bufs_scroll, &tid);
+            // Same guard as on_terminal_scroll: an unchanged clamped offset
+            // must not pay for a full grid rebuild.
+            if changed == Some(true) {
+                if let Some(win) = weak.upgrade() {
+                    rebuild_tab_display(&win, &bufs_scroll, &tid);
+                }
             }
         });
     }
