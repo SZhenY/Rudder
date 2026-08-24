@@ -7,6 +7,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **修复 macOS 设置弹窗滚轮事件穿透到终端的问题（合入上游 `a8c4cf1`）。** 原生滚轮回退路径在 Slint 命中测试之前运行，现在设置弹窗打开时不再把部分累积的滚动手势带入其背后的终端。
+- **Fix settings wheel events leaking into the macOS terminal (upstream `a8c4cf1`).** The raw wheel fallback runs before Slint hit testing; when the settings modal is open the accumulated gesture is now reset instead of targeting a terminal behind the dialog.
+
 - **修复 macOS 使用 `Ctrl+Space` 切换输入法时误删字符（#348，合入上游 `ea45029`）。** 部分 macOS 输入法会把裸 Control 错误上报为 `U+0008`；该标记现在仅在 macOS 输入边界被过滤，不再作为 Backspace 发送到终端。Windows、Linux 及真正由最终字母事件生成的 Ctrl+H 不受影响。
 - **Fix character deletion when switching macOS input methods with `Ctrl+Space` (#348, upstream `ea45029`).** Some macOS input methods report bare Control as `U+0008`; that marker is now filtered only at the macOS input boundary instead of being sent as Backspace. Windows, Linux, and genuine Ctrl+H generated from the final letter event remain unchanged.
 
