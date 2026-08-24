@@ -413,6 +413,7 @@ export component TerminalView inherits Rectangle {
         if (root.active) {
             if (root.quick-external-send-enter) {
                 root.run-command(root.quick-external-command, root.send-to-all);
+                root.focus-pending = true;
             } else {
                 cmd-input.text = root.quick-external-command;
                 cmd-input.focus();
@@ -1301,12 +1302,14 @@ export component TerminalView inherits Rectangle {
                             root.run-command(self.text, root.send-to-all);
                             self.text = "";
                             root.history-cursor = -1;
+                            root.focus-pending = true;
                         }
                         key-pressed(e) => {
                             if (e.text == Key.Return && !e.modifiers.shift) {
                                 root.run-command(self.text, root.send-to-all);
                                 self.text = "";
                                 root.history-cursor = -1;
+                                root.focus-pending = true;
                                 accept
                             // ⌘R / Ctrl+R opens the searchable history dropdown and
                             // focuses its search box — full keyboard history recall
@@ -1423,6 +1426,7 @@ export component TerminalView inherits Rectangle {
                             root.run-command(cmd-input.text, root.send-to-all);
                             cmd-input.text = "";
                             root.history-cursor = -1;
+                            root.focus-pending = true;
                         }
                     }
                     send-row := HorizontalLayout {
@@ -1538,6 +1542,7 @@ export component TerminalView inherits Rectangle {
                                         if (q.send-enter) {
                                             // Send + execute (trailing Return).
                                             root.run-command(q.command, root.send-to-all);
+                                            root.focus-pending = true;
                                         } else {
                                             // Only fill the input box so it can be
                                             // tweaked before sending (B站 suggestion).
@@ -1730,6 +1735,7 @@ export component TerminalView inherits Rectangle {
                                         clicked => {
                                             root.run-command(h, root.send-to-all);
                                             root.history-open = false;
+                                            root.focus-pending = true;
                                         }
                                     }
                                     Text { text: "\u{E037}"; font-family: "Material Icons";
@@ -1818,7 +1824,7 @@ export component TerminalView inherits Rectangle {
                                                     && root.history-selected < root.history-view.length) {
                                                 root.run-command(root.history-view[root.history-selected], root.send-to-all);
                                                 root.history-open = false;
-                                                ime-input.focus();
+                                                root.focus-pending = true;
                                             }
                                             accept
                                         } else {

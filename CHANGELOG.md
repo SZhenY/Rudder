@@ -15,6 +15,13 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **修复通过命令栏启动 `top`、`iftop` 等程序后 `q` 难以退出的问题（#345，合入上游 `22a8cc9` 的焦点部分）。** 命令框、快捷命令和历史记录的所有"立即执行"入口现在在发送命令后把键盘焦点安全地交还终端（复用 `focus-pending` 延迟聚焦机制），后续 `q`、方向键等交互按键直接到达远端 TUI；仅填充不执行的入口仍保留输入框焦点。
+- **Fix `q` not exiting `top`/`iftop` launched from the command bar (#345, focus half of upstream `22a8cc9`).** Every immediate-execution path now returns keyboard focus to the terminal via the existing deferred-focus mechanism; fill-only entries keep input focus.
+
+### 跳过说明 / Skipped
+
+- 上游 `22a8cc9` 同时把"确认多行粘贴 / 额外粘贴快捷键"两个设置移入新的"输入"页——这两个设置项本身是上游特性，Rudder 未引入（粘贴确认对话框为自研 #271、恒开启），故该部分不合入。
+
 - **修复 Windows 右键打开终端查找时闪退的问题（#343，合入上游 `a30ebfc`）。** 查找输入框延迟到弹窗事件分发与首轮布局完成后再聚焦，避免 Windows 的 IME/无障碍焦点处理重入 Slint 运行时；`Ctrl+F` 与右键"查找"仍会自动聚焦。
 - **Fix the Windows crash when opening terminal Find from the context menu (#343, upstream `a30ebfc`).** The find input now defers focusing until popup event dispatch and the first layout pass finish; Ctrl+F and right-click → Find still auto-focus.
 
