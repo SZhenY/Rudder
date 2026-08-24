@@ -6215,6 +6215,18 @@ mod key_tests {
         assert_eq!(key_to_pty_bytes("x", true, false, false), vec![0x18]);
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_ime_bare_ctrl_backspace_marker_is_filtered() {
+        // #348: macOS IMEs may report bare Control as U+0008; it must not be
+        // sent as Backspace. A genuine Ctrl+H still arrives through the final
+        // printable letter and is encoded at the PTY boundary.
+        assert!(should_drop_bare_ctrl_marker("\u{0008}", true, true));
+        assert!(!should_drop_bare_ctrl_marker("\u{0008}", true, false));
+        assert!(!should_drop_bare_ctrl_marker("\u{0008}", false, true));
+        assert_eq!(key_to_pty_bytes("h", true, false, false), vec![0x08]);
+    }
+
     #[test]
     fn alt_letter_still_sends_esc_prefix() {
         // Alt+a (a real Meta combo) must still send ESC + 'a'.

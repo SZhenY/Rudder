@@ -7,6 +7,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **修复 macOS 使用 `Ctrl+Space` 切换输入法时误删字符（#348，合入上游 `ea45029`）。** 部分 macOS 输入法会把裸 Control 错误上报为 `U+0008`；该标记现在仅在 macOS 输入边界被过滤，不再作为 Backspace 发送到终端。Windows、Linux 及真正由最终字母事件生成的 Ctrl+H 不受影响。
+- **Fix character deletion when switching macOS input methods with `Ctrl+Space` (#348, upstream `ea45029`).** Some macOS input methods report bare Control as `U+0008`; that marker is now filtered only at the macOS input boundary instead of being sent as Backspace. Windows, Linux, and genuine Ctrl+H generated from the final letter event remain unchanged.
+
 - **修复 macOS 无法在文件选择器中选择无扩展名 OpenSSH 私钥的问题（#325，合入上游 `bb34bbf`）。** macOS 的私钥浏览器不再按扩展名过滤，可直接选择 `~/.ssh/id_ed25519`、`id_rsa` 等标准私钥；Windows 和 Linux 保持原有文件过滤行为。
 - **Fix selecting extensionless OpenSSH private keys on macOS (#325, upstream `bb34bbf`).** The macOS private-key picker no longer filters by extension, allowing standard files such as `~/.ssh/id_ed25519` and `id_rsa` to be selected directly. Windows and Linux retain their existing file filters.
 

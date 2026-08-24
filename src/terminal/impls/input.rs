@@ -102,12 +102,25 @@ pub(crate) fn windows_process_ctrl_release(
 }
 
 pub(crate) fn should_drop_bare_ctrl_marker(key: &str, ctrl: bool, workaround: bool) -> bool {
-    workaround
-        && ctrl
-        && matches!(
-            key.chars().collect::<Vec<_>>().as_slice(),
-            ['\u{0011}'] | ['\u{0016}']
-        )
+    if !workaround || !ctrl {
+        return false;
+    }
+    let marker = key.chars().collect::<Vec<_>>();
+    // Slint on Debian-family desktops emits these bare Ctrl modifier markers
+    // before the actual Ctrl+letter event (#274).
+    if marker.as_slice() == ['\u{0011}'] || marker.as_slice() == ['\u{0016}'] {
+        return true;
+    }
+    // macOS IME combinations may report bare physical Control as other C0
+    // bytes: U+0017 opens nano search before Ctrl+X (#312), while U+0008 is
+    // encoded as Backspace and deletes the preceding character during
+    // Ctrl+Space input-method switching (#348). Genuine chords still arrive
+    // through the final printable letter, so filtering these markers is safe.
+    #[cfg(target_os = "macos")]
+    if marker.as_slice() == ['\u{0017}'] || marker.as_slice() == ['\u{0008}'] {
+        return true;
+    }
+    false
 }
 
 #[cfg(target_os = "linux")]
