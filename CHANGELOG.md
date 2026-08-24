@@ -15,6 +15,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **彻底修复欢迎页侧栏切换闪退（#323 后续，合入上游 `9d9de68` + `b24deb6`）。** 双向绑定属性的变更、配置保存与分屏刷新整体延迟到 Switch 回调返回之后执行，避免 Windows 下同步销毁 Switch 自身的组件树；普通欢迎页的焦点获取也延迟到下一轮事件循环，规避 Windows AccessKit 构建无障碍树时重入 Slint/winit 触发 `RefCell already borrowed`。Ctrl+Tab 标签循环能力保留。
+- **Fully fix the welcome sidebar toggle crash (#323 follow-ups, upstream `9d9de68` + `b24deb6`).** The bound-property update, persistence, and pane refresh are all deferred until after the Switch callback returns; welcome-page focus acquisition is likewise deferred, preventing AccessKit re-entry. Ctrl+Tab cycling is preserved.
+
 - **修复通过命令栏启动 `top`、`iftop` 等程序后 `q` 难以退出的问题（#345，合入上游 `22a8cc9` 的焦点部分）。** 命令框、快捷命令和历史记录的所有"立即执行"入口现在在发送命令后把键盘焦点安全地交还终端（复用 `focus-pending` 延迟聚焦机制），后续 `q`、方向键等交互按键直接到达远端 TUI；仅填充不执行的入口仍保留输入框焦点。
 - **Fix `q` not exiting `top`/`iftop` launched from the command bar (#345, focus half of upstream `22a8cc9`).** Every immediate-execution path now returns keyboard focus to the terminal via the existing deferred-focus mechanism; fill-only entries keep input focus.
 

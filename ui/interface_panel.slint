@@ -1307,7 +1307,10 @@ export component InterfacePanel inherits Rectangle {
                     show-divider: false;
                     Switch {
                         on: root.welcome-as-sidebar;
-                        toggled(v) => { root.welcome-as-sidebar = v; root.set-welcome-as-sidebar(v); }
+                        // Applying this binding destroys/recreates the Welcome
+                        // subtree. Rust defers that work until this Switch
+                        // callback has returned, so do not mutate it here (#323).
+                        toggled(v) => { root.set-welcome-as-sidebar(v); }
                     }
                 }
             }

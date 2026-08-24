@@ -278,9 +278,21 @@ export component Welcome inherits Rectangle {
     // The regular welcome page is itself a tab. When Ctrl+Tab wraps from the
     // last terminal to this page, keep the shortcut chain alive so the next
     // press can continue to the first terminal (#294). The compact welcome
-    // sidebar must never take focus away from an active terminal.
-    if !root.compact : FocusScope {
-        init => { self.focus(); }
+    // sidebar must never take focus away from an active terminal. Windows
+    // AccessKit may instantiate this conditional scope while walking the
+    // accessibility tree, so defer focus to the next event-loop turn instead of
+    // re-entering Slint's winit adapter from `init` (#323).
+    if !root.compact : welcome-key-scope := FocusScope {
+        property <bool> focus-pending: false;
+        init => { self.focus-pending = true; }
+        Timer {
+            interval: 0ms;
+            running: welcome-key-scope.focus-pending;
+            triggered => {
+                welcome-key-scope.focus-pending = false;
+                welcome-key-scope.focus();
+            }
+        }
         key-pressed(event) => {
             if ((Theme.is-mac ? event.modifiers.meta : event.modifiers.control)
                     && (event.text == Key.Tab || event.text == Key.Backtab)) {
