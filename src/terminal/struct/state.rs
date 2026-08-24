@@ -25,6 +25,11 @@ pub(crate) struct TermBuffer {
     pub(crate) history: VecDeque<Line>,
     pub(crate) prev: Vec<Line>,
     pub(crate) view_offset: usize,
+    /// Fractional scrollback rows not yet applied. Wheel deltas arrive as
+    /// pixel fractions of a row (trackpad + macOS momentum decay); keeping
+    /// the remainder here lets the momentum tail glide to a stop instead of
+    /// stepping a fixed amount per event.
+    pub(crate) scroll_accum: f32,
     pub(crate) displayed_text: Vec<String>,
     pub(crate) csi_state: CsiState,
     pub(crate) csi_pending: Vec<u8>,

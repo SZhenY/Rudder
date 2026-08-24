@@ -31,6 +31,7 @@ fn make_buf(
         history: history.iter().map(|s| hist_line(s)).collect(),
         prev: Vec::new(),
         view_offset,
+        scroll_accum: 0.0,
         displayed_text: Vec::new(),
         csi_state: CsiState::Normal,
         csi_pending: Vec::new(),

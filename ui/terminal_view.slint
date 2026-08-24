@@ -372,7 +372,7 @@ export component TerminalView inherits Rectangle {
     callback copy-terminal-text();
     callback clear-terminal();              // wipe this session's screen buffer
     callback find-query-changed(string);    // recompute search highlights
-    callback terminal-scroll(int);          // scroll history by N lines (+ = up)
+    callback terminal-scroll(float);         // scroll history by fractional lines (+ = up); Rust keeps the sub-line remainder so momentum decays smoothly
     // Wheel inside an alt-screen app (tmux/less/vim): forward to the program so it
     // scrolls, instead of doing nothing (#170). dir = +1 up / -1 down; col/row =
     // mouse cell. Rust sends a mouse-wheel event if the app tracks the mouse, else
@@ -733,7 +733,13 @@ export component TerminalView inherits Rectangle {
                                 } else {
                                     // Normal screen: scroll our own scrollback history
                                     // (~3 lines per notch).
-                                    root.terminal-scroll(ev.delta-y > 0 ? 3 : -3);
+                                    // Raw pixel delta → fractional lines. The
+                                    // magnitude matters: macOS momentum events
+                                    // decay to sub-pixel steps, and quantizing
+                                    // each to a fixed ±3 lines turned the tail
+                                    // into an exaggerated staircase with a hard
+                                    // stop. Rust accumulates the fractions.
+                                    root.terminal-scroll(ev.delta-y / root.cell-h);
                                 }
                                 accept
                             }
@@ -883,7 +889,13 @@ export component TerminalView inherits Rectangle {
                                         floor(self.mouse-x / root.cell-w),
                                         floor(self.mouse-y / root.cell-h));
                                 } else {
-                                    root.terminal-scroll(ev.delta-y > 0 ? 3 : -3);
+                                    // Raw pixel delta → fractional lines. The
+                                    // magnitude matters: macOS momentum events
+                                    // decay to sub-pixel steps, and quantizing
+                                    // each to a fixed ±3 lines turned the tail
+                                    // into an exaggerated staircase with a hard
+                                    // stop. Rust accumulates the fractions.
+                                    root.terminal-scroll(ev.delta-y / root.cell-h);
                                 }
                                 accept
                             }

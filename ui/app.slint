@@ -869,7 +869,7 @@ export component AppWindow inherits Window {
     // Recompute search highlights for a session's visible screen.
     callback find-query-changed(string /* tab-id */, string /* query */);
     // Scroll a session's scrollback history by N lines (+ = up/older).
-    callback terminal-scroll(string /* tab-id */, int /* delta-lines */);
+    callback terminal-scroll(string /* tab-id */, float /* delta-lines (fractional, momentum-aware) */);
     // Wheel forwarded to an alt-screen program (#170): tab-id, dir (+1 up/-1 down), col, row.
     callback terminal-wheel(string, int, int, int);
     callback terminal-scroll-to(string /* tab-id */, int /* offset */); // scrollbar drag (#103)
