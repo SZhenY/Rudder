@@ -15,6 +15,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **修复 Windows 右键打开终端查找时闪退的问题（#343，合入上游 `a30ebfc`）。** 查找输入框延迟到弹窗事件分发与首轮布局完成后再聚焦，避免 Windows 的 IME/无障碍焦点处理重入 Slint 运行时；`Ctrl+F` 与右键"查找"仍会自动聚焦。
+- **Fix the Windows crash when opening terminal Find from the context menu (#343, upstream `a30ebfc`).** The find input now defers focusing until popup event dispatch and the first layout pass finish; Ctrl+F and right-click → Find still auto-focus.
+
 - **防止不同服务器的同名文件在外部编辑时互相覆盖（#318，合入上游 `4f8176f`）。** 外部打开/编辑使用按连接隔离的临时目录（临时目录名含主机与端口），本地文件名加入服务器地址；编辑监视器通过新增的 `UploadEdited` 命令把修改上传到原始远端完整路径，不再从带前缀的临时文件名推导目标。
 - **Prevent same-named files from different servers colliding during external editing (#318, upstream `4f8176f`).** External open/edit now uses a connection-isolated temp directory and includes the server address in the local filename; the edit watcher uploads via a new `UploadEdited` command targeting the exact original remote path.
 

@@ -395,6 +395,10 @@ export component TerminalView inherits Rectangle {
     property <length> ctx-x;
     property <length> ctx-y;
     property <bool> find-active: false;
+    // A context-menu click creates the conditional find bar while Slint is
+    // still dispatching the popup event. Focusing its TextInput synchronously
+    // can re-enter the Windows IME/accessibility plumbing and panic (#343).
+    property <bool> find-focus-pending: false;
     property <bool> selecting: false;
     // Auto-scroll direction while drag-selecting past the visible edge.
     // 0 = none, -1 = above top (scroll to older), +1 = below bottom (newer).
@@ -1158,6 +1162,17 @@ export component TerminalView inherits Rectangle {
                 border-color: Theme.border-strong;
                 border-radius: Theme.radius-sm;
 
+                // Let the popup click and the conditional component's first
+                // layout pass finish before asking the platform for focus.
+                find-focus-timer := Timer {
+                    interval: 0ms;
+                    running: root.find-focus-pending;
+                    triggered => {
+                        root.find-focus-pending = false;
+                        if (root.find-active) { find-input.focus(); }
+                    }
+                }
+
                 HorizontalLayout {
                     padding: 6px;
                     spacing: 6px;
@@ -1181,8 +1196,10 @@ export component TerminalView inherits Rectangle {
                             font-size: Theme.fs-md;
                             vertical-alignment: center;
                             single-line: true;
-                            // Grab focus as soon as the bar appears.
-                            init => { self.focus(); }
+                            // Defer focus until popup event dispatch and layout
+                            // have completed; synchronous focus crashes on
+                            // Windows when opened from right-click (#343).
+                            init => { root.find-focus-pending = true; }
                             edited => { root.find-query-changed(self.text); }
                             key-pressed(e) => {
                                 if (e.text == "\u{001b}") {       // Esc closes find
