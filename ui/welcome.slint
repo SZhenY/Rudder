@@ -43,7 +43,12 @@ component SessionRow inherits Rectangle {
         mouse-cursor: pointer;
         clicked => { root.connect(); }
         pointer-event(e) => {
-            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+            // Built-in PowerShell/CMD/WSL rows have no edit/move/delete actions.
+            // All menu items are conditional on !system-row, so opening the
+            // popup for them only produces an empty rectangle (#336).
+            if (!root.system-row
+                    && e.kind == PointerEventKind.down
+                    && e.button == PointerEventButton.right) {
                 ctx-x = self.mouse-x;
                 ctx-y = self.mouse-y;
                 ctx-menu.show();
