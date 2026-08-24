@@ -5334,15 +5334,22 @@ fn wire_key_input(
         let weak = window.as_weak();
         window.on_terminal_scroll(move |tab_id: SharedString, delta: i32| {
             let tid = tab_id.to_string();
-            with_term_buf(&bufs_scroll, &tid, |buf| {
+            let changed = with_term_buf(&bufs_scroll, &tid, |buf| {
                 // Scroll within our own session scrollback (history lines above
                 // the live screen).  Offset 0 = live bottom.
                 let max_off = buf.history.len() as i64;
                 let cur = buf.view_offset as i64;
-                buf.view_offset = (cur + delta as i64).clamp(0, max_off) as usize;
+                let new_off = (cur + delta as i64).clamp(0, max_off);
+                let changed = new_off != cur;
+                buf.view_offset = new_off as usize;
+                changed
             });
-            if let Some(win) = weak.upgrade() {
-                rebuild_tab_display(&win, &bufs_scroll, &tid);
+            // Scrolling at a boundary (or an empty scrollback) leaves the offset
+            // unchanged; skip the full rebuild since the screen is identical.
+            if changed == Some(true) {
+                if let Some(win) = weak.upgrade() {
+                    rebuild_tab_display(&win, &bufs_scroll, &tid);
+                }
             }
         });
     }
@@ -5404,12 +5411,19 @@ fn wire_key_input(
         let weak = window.as_weak();
         window.on_terminal_scroll_to(move |tab_id: SharedString, offset: i32| {
             let tid = tab_id.to_string();
-            with_term_buf(&bufs_scroll, &tid, |buf| {
+            let changed = with_term_buf(&bufs_scroll, &tid, |buf| {
                 let max_off = buf.history.len() as i64;
-                buf.view_offset = (offset as i64).clamp(0, max_off) as usize;
+                let new_off = (offset as i64).clamp(0, max_off);
+                let changed = new_off != buf.view_offset as i64;
+                buf.view_offset = new_off as usize;
+                changed
             });
-            if let Some(win) = weak.upgrade() {
-                rebuild_tab_display(&win, &bufs_scroll, &tid);
+            // Same guard as on_terminal_scroll: an unchanged clamped offset
+            // must not pay for a full grid rebuild.
+            if changed == Some(true) {
+                if let Some(win) = weak.upgrade() {
+                    rebuild_tab_display(&win, &bufs_scroll, &tid);
+                }
             }
         });
     }
