@@ -36,7 +36,7 @@ impl StartMode {
             _ if args.iter().any(|arg| arg == "--version" || arg == "-V") => Self::Version,
             _ => Self::App,
         }
-    }
+    } 
 }
 
 fn main() -> anyhow::Result<()> {

@@ -3,7 +3,7 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
-## [Unreleased]
+## [0.6.15] - 2026-08-24
 
 - **修复 Fedora 等非 Debian Linux 桌面按下 Ctrl 即触发终端快捷键的问题（#369）。** Linux 下 Slint/winit 可能把裸 Control 按键上报为 `U+0011` 或 `U+0016`；过滤范围现已从 Debian 系扩展到所有 Linux 发行版，避免 nano 在只按 Ctrl 时误触发搜索或其他操作。真正的 Ctrl+Q、Ctrl+V、Ctrl+X 等组合键仍由最终字母事件生成；Windows 与 macOS 保持各自独立的输入适配。
 - **Fix bare Ctrl triggering terminal shortcuts on Fedora and other non-Debian Linux desktops (#369).** Slint/winit may report a physical Control press as `U+0011` or `U+0016` on Linux. Filtering now applies to every Linux distribution instead of only the Debian family, preventing nano and other terminal programs from reacting when Ctrl alone is pressed. Genuine Ctrl+Q, Ctrl+V, Ctrl+X, and similar chords still come from the final letter event, while Windows and macOS retain their separate input handling.
