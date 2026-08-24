@@ -7,6 +7,24 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 新增 / Added
 
+- **支持导入 SSH config 的 Include 指令（#341，合入上游 `3ad25cb`）。** 递归展开 `~/.ssh/config` 的 Include（相对路径、波浪号与 glob），带循环引用与深度上限防护；导入器仍只提取会话所需的少量字段。
+- **Support SSH config `Include` directives when importing (#341, upstream `3ad25cb`).** Includes are expanded recursively (relative paths, tilde, glob) with cycle and depth guards; the importer still only extracts the few fields a session needs.
+
+- **命令栏输入时自动展示匹配的历史命令提示（#349，合入上游 `087ff59`）。** 输入即过滤历史，↑/↓ 在候选间选择、Tab 补全、Esc 关闭；Ctrl+R 的完整历史搜索保留。
+- **Show matching command-history suggestions while typing in the command bar (#349, upstream `087ff59`).** Live filtering with ↑/↓ selection, Tab completion and Esc dismissal; the full Ctrl+R history search is retained.
+
+- **快捷命令管理对话框支持组内排序与完整 GUI 管理（#310，合入上游 `f7b49cf` + `aedc859`）。** 管理列表新增上移/下移并持久化同组顺序；命令输入框改为多行可滚动编辑，对话框右下角可拖拽调整大小（运行期间保持）。
+- **In-group reordering and full GUI management for quick commands (#310, upstream `f7b49cf` + `aedc859`).** The manager gains move-up/down actions that persist per-group order; the command field becomes a multi-line scrolling editor and the dialog is drag-resizable for the session.
+
+- **WSL 支持多配置启动项与默认启动目录（合入上游 `a64097e`）。** 设置 → WSL 页可添加多个启动项（名称、发行版可选、启动目录），欢迎页按配置展开独立入口；发行版留空用 Windows 默认，`~` 打开所选用户主目录。Rudder #352 的显式登录 Shell 启动方式保留，不回退 Arch/fish 修复。
+- **Multiple WSL profiles with startup directories (upstream `a64097e`, adapted).** A new Interface → WSL page manages launch entries (name, optional distribution, startup directory) that expand into separate Welcome-page entries. Rudder's #352 explicit login-shell launch is preserved on top of `--distribution/--cd`.
+
+- **标签栏新增「全部会话」下拉菜单，侧栏隐藏时自动暂停资源监控（合入上游 `b17da25`）。** 标签栏右缘常驻下拉入口，拥挤时也能快速切换任意会话；折叠侧栏后 SSH 会话的资源/进程监控通道被关闭（远端轮询停止），恢复可见时自动重开，系统采样定时器同步跳过刷新。
+- **All-tabs dropdown menu; resource monitoring pauses while hidden (upstream `b17da25`).** A stable right-edge entry point lists every open session; collapsing the sidebar closes each SSH session's monitor channels (remote polling stops entirely) and they reopen when the sidebar returns. Upstream's zen-mode coupling does not apply to Rudder.
+
+- **支持导入 FinalShell 连接导出（合入上游 `8a81341`）。** 导入向导同时识别 Rudder 与 FinalShell 的 JSON 导出：自动解析其基于 java.util.Random + MD5 派生 DES 密钥的密码加密（GBK 回退），导入后密码照常加密落盘；仅支持 SSH + 密码认证类型。
+- **Import FinalShell connection exports (upstream `8a81341`).** The importer accepts both Rudder and FinalShell JSON exports: FinalShell's java.util.Random/MD5-derived DES passwords are decrypted (GBK fallback) and re-encrypted at rest like any other session. SSH + password auth types only.
+
 - **优化侧栏快速连接的服务器信息显示（#339，合入上游 `c8832de`）。** 窄侧栏中的会话行改为两行紧凑布局，首行名称、次行始终显示 `用户@主机:端口`，避免固定宽度列裁掉 IP 地址；完整欢迎页保留原分栏布局。
 - **Improve server details in the Quick Connect sidebar (#339, upstream `c8832de`).** Session rows in the narrow sidebar use a compact two-line layout — name first, `user@host:port` always visible beneath — while the full Welcome page keeps its column layout.
 
@@ -14,6 +32,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Support duplicating connections by double-clicking tabs (#340, upstream `790365d`).** Double-clicking any terminal session tab now opens an independent duplicate connection, matching the context-menu action. The Welcome tab is excluded; single-click selection and drag reorder/split behavior remain unchanged.
 
 ### 修复 / Fixed
+
+- **修复内置 PowerShell/CMD/WSL 行右键弹出空白菜单的问题（#336，合入上游 `17110e5`）。** 这些内置会话没有编辑/移动/删除动作，此前右键会弹出一个空白矩形（看似输入框）；现在对 system-row 不再弹出菜单。
+- **Fix the empty context menu popping up on built-in PowerShell/CMD/WSL rows (#336, upstream `17110e5`).** Built-in rows have no edit/move/delete actions, so right-clicking used to open a blank rectangle; the popup is now suppressed for them.
 
 - **彻底修复欢迎页侧栏切换闪退（#323 后续，合入上游 `9d9de68` + `b24deb6`）。** 双向绑定属性的变更、配置保存与分屏刷新整体延迟到 Switch 回调返回之后执行，避免 Windows 下同步销毁 Switch 自身的组件树；普通欢迎页的焦点获取也延迟到下一轮事件循环，规避 Windows AccessKit 构建无障碍树时重入 Slint/winit 触发 `RefCell already borrowed`。Ctrl+Tab 标签循环能力保留。
 - **Fully fix the welcome sidebar toggle crash (#323 follow-ups, upstream `9d9de68` + `b24deb6`).** The bound-property update, persistence, and pane refresh are all deferred until after the Switch callback returns; welcome-page focus acquisition is likewise deferred, preventing AccessKit re-entry. Ctrl+Tab cycling is preserved.
