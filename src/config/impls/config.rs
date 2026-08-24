@@ -519,6 +519,13 @@ pub struct Session {
     #[serde(default)]
     pub kind: SessionKind,
 
+    /// WSL distribution and startup directory for generated local sessions.
+    /// The directory defaults to the selected distribution user's home (`~`).
+    #[serde(default)]
+    pub local_distribution: String,
+    #[serde(default)]
+    pub local_working_dir: String,
+
     // --- Serial-only fields (ignored unless kind == Serial) -----------------
     /// Serial device path, e.g. "COM3" (Windows) or "/dev/ttyUSB0" (Linux).
     #[serde(default)]
@@ -591,6 +598,8 @@ impl Session {
             last_used: None,
             group: String::new(),
             kind: SessionKind::Ssh,
+            local_distribution: String::new(),
+            local_working_dir: String::new(),
             serial_port: String::new(),
             baud_rate: default_baud(),
             data_bits: default_data_bits(),
@@ -652,11 +661,31 @@ fn normalize_highlight_color(color: &str) -> &'static str {
     }
 }
 
+/// A user-managed WSL launch entry (#310 follow-up, upstream a64097e). An empty
+/// list keeps the implicit default WSL entry for backwards compatibility.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WslProfile {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub distribution: String,
+    #[serde(default = "default_wsl_home")]
+    pub directory: String,
+}
+
+fn default_wsl_home() -> String {
+    "~".to_string()
+}
+
 /// On-disk layout. Keep additive to ease forward-compat.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConfigFile {
     #[serde(default)]
     pub sessions: Vec<Session>,
+    /// User-managed WSL launch entries. An empty list keeps the implicit
+    /// default WSL entry for backwards compatibility.
+    #[serde(default)]
+    pub wsl_profiles: Vec<WslProfile>,
     /// Preset SFTP download directory. Empty = ask each time.
     #[serde(default)]
     pub download_dir: String,
@@ -1403,6 +1432,31 @@ impl ConfigStore {
 
     pub fn set_quick_commands(&mut self, cmds: Vec<QuickCommand>) {
         self.cache.quick_commands = cmds;
+    }
+
+    /// User-managed WSL launch entries (#310 follow-up).
+    pub fn wsl_profiles(&self) -> &[WslProfile] {
+        &self.cache.wsl_profiles
+    }
+
+    pub fn add_wsl_profile(&mut self, name: String, distribution: String, directory: String) {
+        let name = name.trim();
+        if name.is_empty() {
+            return;
+        }
+        self.cache.wsl_profiles.push(WslProfile {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            distribution: distribution.trim().to_string(),
+            directory: match directory.trim() {
+                "" => "~".to_string(),
+                value => value.to_string(),
+            },
+        });
+    }
+
+    pub fn remove_wsl_profile(&mut self, id: &str) {
+        self.cache.wsl_profiles.retain(|profile| profile.id != id);
     }
 
     pub fn quick_panel_open(&self) -> bool {

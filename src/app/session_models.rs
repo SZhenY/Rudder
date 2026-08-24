@@ -1,5 +1,19 @@
 use super::*;
 
+pub(super) fn wsl_profile_model(store: &ConfigStore) -> ModelRc<WslProfileInfo> {
+    let rows = store
+        .wsl_profiles()
+        .iter()
+        .map(|profile| WslProfileInfo {
+            id: profile.id.clone().into(),
+            name: profile.name.clone().into(),
+            distribution: profile.distribution.clone().into(),
+            directory: profile.directory.clone().into(),
+        })
+        .collect::<Vec<_>>();
+    ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
 pub(super) fn parse_batch_import(text: &str) -> Vec<Session> {
     let mut out = Vec::new();
     for raw in text.lines() {
@@ -159,7 +173,7 @@ pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<Sessi
     };
 
     let mut rows: Vec<SessionInfo> = Vec::new();
-    for (i, s) in builtin_local_sessions().iter().enumerate() {
+    for (i, s) in builtin_local_sessions(store.wsl_profiles()).iter().enumerate() {
         rows.push(SessionInfo {
             id: s.id.clone().into(),
             name: s.name.clone().into(),
@@ -216,7 +230,11 @@ pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<Sessi
     model.set_vec(rows);
 }
 
-pub(super) fn builtin_local_sessions() -> Vec<Session> {
+pub(super) fn builtin_local_sessions(wsl_profiles: &[crate::config::WslProfile]) -> Vec<Session> {
+    // The parameter is only consumed by the Windows branch; keep non-Windows
+    // builds warning-free without gating the signature itself.
+    #[cfg(not(windows))]
+    let _ = wsl_profiles;
     let mut out = Vec::new();
     #[cfg(windows)]
     {
@@ -227,7 +245,26 @@ pub(super) fn builtin_local_sessions() -> Vec<Session> {
         ));
         out.push(builtin_local_session("system:cmd", "CMD", "cmd"));
         if wsl_available() {
-            out.push(builtin_local_session("system:wsl", "WSL", "wsl"));
+            if wsl_profiles.is_empty() {
+                let mut session = builtin_local_session("system:wsl", "WSL", "wsl");
+                session.local_working_dir = "~".to_string();
+                out.push(session);
+            } else {
+                for profile in wsl_profiles {
+                    let mut session = builtin_local_session(
+                        &format!("system:wsl:{}", profile.id),
+                        profile.name.clone(),
+                        "wsl",
+                    );
+                    session.local_distribution = profile.distribution.clone();
+                    session.local_working_dir = if profile.directory.trim().is_empty() {
+                        "~".to_string()
+                    } else {
+                        profile.directory.clone()
+                    };
+                    out.push(session);
+                }
+            }
         }
     }
     #[cfg(not(windows))]
@@ -327,6 +364,8 @@ pub(super) fn session_from_draft(
         last_used: None,
         group: draft.group.to_string(),
         kind,
+        local_distribution: String::new(),
+        local_working_dir: String::new(),
         serial_port: draft.serial_port.to_string(),
         baud_rate: if draft.baud_rate <= 0 {
             115_200

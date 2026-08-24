@@ -33,12 +33,12 @@ import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "ter
 import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
-import { InterfacePanel, OutputRuleItem } from "interface_panel.slint";
+import { InterfacePanel, OutputRuleItem, WslProfileInfo } from "interface_panel.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
 export { ProcWindow, SystemInfoWindow }
 import { ComboBox, SpinBox, LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 
-export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd }
+export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, WslProfileInfo }
 
 // --- TerminalState ---------------------------------------------------------
 // Per-terminal view-model exposed to Rust. A TabInfo has the metadata; the
@@ -536,6 +536,12 @@ export component AppWindow inherits Window {
     callback set-welcome-as-sidebar(bool);         // apply + persist
     in-out property <bool> update-check-enabled: true;   // startup new-version check (#184)
     callback set-update-check-enabled(bool);       // apply + persist
+    // WSL profiles (upstream a64097e): managed in Interface → WSL.
+    in property <[WslProfileInfo]> wsl-profiles;
+    in-out property <string> wsl-new-directory: "~";
+    callback add-wsl-profile(string, string, string);
+    callback remove-wsl-profile(string);
+    callback pick-wsl-directory();
     // Drag-resizable width of that welcome sidebar (logical px), persisted.
     in-out property <length> welcome-sidebar-width: 240px;
     callback persist-welcome-sidebar-width(float);
@@ -4099,6 +4105,8 @@ export component AppWindow inherits Window {
                     wallpaper-overlay <=> root.wallpaper-overlay;
                     current-wallpaper: root.current-wallpaper;
                     custom-wallpaper-name: root.custom-wallpaper-name;
+                    wsl-profiles: root.wsl-profiles;
+                    wsl-new-directory <=> root.wsl-new-directory;
                     set-wallpaper(v) => { root.set-wallpaper(v); }
                     pick-wallpaper-file() => { root.pick-wallpaper-file(); }
                     set-term-font(v) => { root.set-term-font(v); }
@@ -4148,6 +4156,9 @@ export component AppWindow inherits Window {
                         root.set-quick-commands-as-sidebar(v);
                     }
                     set-update-check-enabled(v) => { root.set-update-check-enabled(v); }
+                    add-wsl-profile(name, distribution, directory) => { root.add-wsl-profile(name, distribution, directory); }
+                    remove-wsl-profile(id) => { root.remove-wsl-profile(id); }
+                    pick-wsl-directory => { root.pick-wsl-directory(); }
                     persist-wallpaper-overlay(v) => { root.persist-wallpaper-overlay(v); }
                 }
             }

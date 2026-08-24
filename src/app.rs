@@ -1442,6 +1442,49 @@ pub fn run() -> Result<()> {
     let sessions_model: Rc<VecModel<SessionInfo>> = Rc::new(VecModel::default());
     window.set_sessions(ModelRc::from(sessions_model.clone()));
     sync_sessions_to_model(&store.borrow(), &sessions_model);
+    window.set_wsl_profiles(wsl_profile_model(&store.borrow()));
+    {
+        let weak = window.as_weak();
+        window.on_pick_wsl_directory(move || {
+            if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                if let Some(w) = weak.upgrade() {
+                    w.set_wsl_new_directory(folder.to_string_lossy().to_string().into());
+                }
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_add_wsl_profile(move |name, distribution, directory| {
+            let mut s = store.borrow_mut();
+            s.add_wsl_profile(
+                name.to_string(),
+                distribution.to_string(),
+                directory.to_string(),
+            );
+            let _ = s.save();
+            if let Some(w) = weak.upgrade() {
+                w.set_wsl_profiles(wsl_profile_model(&s));
+                sync_sessions_to_model(&s, &sessions_model);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_remove_wsl_profile(move |id| {
+            let mut s = store.borrow_mut();
+            s.remove_wsl_profile(id.as_str());
+            let _ = s.save();
+            if let Some(w) = weak.upgrade() {
+                w.set_wsl_profiles(wsl_profile_model(&s));
+                sync_sessions_to_model(&s, &sessions_model);
+            }
+        });
+    }
     {
         let weak = window.as_weak();
         let store = store.clone();
@@ -3698,6 +3741,8 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                 last_used: None,
                 group: draft.group.to_string(),
                 kind,
+                local_distribution: String::new(),
+                local_working_dir: String::new(),
                 serial_port: draft.serial_port.to_string(),
                 baud_rate: if draft.baud_rate <= 0 {
                     115_200
@@ -3997,7 +4042,10 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
         window.on_connect_session(move |id: SharedString| {
             let id = id.to_string();
             let session = if id.starts_with("system:") {
-                match builtin_local_sessions().into_iter().find(|s| s.id == id) {
+                match builtin_local_sessions(store.borrow().wsl_profiles())
+                    .into_iter()
+                    .find(|s| s.id == id)
+                {
                     Some(s) => s,
                     None => return,
                 }
