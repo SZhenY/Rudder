@@ -15,6 +15,7 @@ component SingleTab inherits Rectangle {
     in property <bool> active;
     callback selected();
     callback closed();
+    callback duplicated();
     // Drag-to-reorder (v0.5): emitted while dragging when the tab should hop one
     // slot left (-1) or right (+1). The model reorders and the tab follows.
     callback reorder(int /* dir */);
@@ -91,6 +92,12 @@ component SingleTab inherits Rectangle {
                     }
                 }
             }
+        }
+        // Double-click duplicates the connection (#340); the Welcome tab has
+        // nothing to duplicate. Single-click selection and drag behavior above
+        // are unaffected.
+        double-clicked => {
+            if (info.kind != "welcome") { root.duplicated(); }
         }
     }
 
@@ -216,6 +223,7 @@ export component TabBar inherits Rectangle {
                     active: tab.id == root.active-id;
                     selected => { root.tab-selected(tab.id); }
                     closed => { root.tab-closed(tab.id); }
+                    duplicated => { root.tab-duplicate(tab.id); }
                     reorder(dir) => { root.tab-reorder(i, dir); }
                     context-requested(ax, ay) => {
                         root.menu-target = tab.id;

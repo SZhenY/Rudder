@@ -5,6 +5,11 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- **支持双击标签复制连接（#340，合入上游 `790365d`）。** 双击任意终端会话标签会创建一条独立的新连接，与右键"复制连接"一致；欢迎页标签不会被复制，现有单击选择和拖动排序/分屏行为保持不变。
+- **Support duplicating connections by double-clicking tabs (#340, upstream `790365d`).** Double-clicking any terminal session tab now opens an independent duplicate connection, matching the context-menu action. The Welcome tab is excluded; single-click selection and drag reorder/split behavior remain unchanged.
+
 ### 修复 / Fixed
 
 - **修复 WSL 发行版默认 Shell 为 fish 时终端无输出的问题（#352，合入上游 `3cf53ee`）。** 现在在发行版内读取 passwd 登录 Shell 并以登录模式显式启动，不再依赖 wsl.exe 的隐式选择；解析失败时回退 `SHELL` 或 `/bin/sh`。
