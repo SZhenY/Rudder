@@ -818,7 +818,17 @@ export component TerminalView inherits Rectangle {
                             // Blink while focused; show solid (no repaint) when the
                             // window is unfocused so the cursor neither vanishes nor
                             // keeps the window repainting (#127).
-                            visible: ime-input.has-focus
+                            //
+                            // Also require an actual live cursor (cursor-row >= 0):
+                            // scrolled-back renders report -1 ("no live cursor").
+                            // Block/bar styles then sit a full cell above the grid,
+                            // where scroll-clip's clip hides them — but the
+                            // UNDERLINE style offsets its dash to the bottom of
+                            // that row, which lands back INSIDE the clip as a
+                            // blinking horizontal dash at column 0 of the first
+                            // row. Gate on the row instead of trusting clipping.
+                            visible: root.cursor-row >= 0
+                                && ime-input.has-focus
                                 && (key-capture.cursor-blink || !Theme.window-focused);
                         }
 
@@ -958,8 +968,22 @@ export component TerminalView inherits Rectangle {
                 // participating in layout or exposing a second I-beam hit area.
                 // Following the VT cursor also places native IME candidate UI near
                 // the actual insertion point.
-                x: 10px + max(0, root.cursor-col) * root.cell-w;
-                y: 8px + max(0, root.cursor-row) * root.cell-h;
+                // While scrolled back through history the live cursor is hidden
+                // (cursor-row < 0): park the anchor far off-window then, never
+                // clamp it with max(0, …). Clamping pinned this focused TextInput
+                // onto the terminal's top-left cell, and since a hovered TextInput
+                // forces the I-beam pointer (i-slint-core items/text.rs), wheel-
+                // scrolling flickered the mouse cursor between arrow and text as
+                // frames re-hit-tested under it. The park offset must dwarf any
+                // parent origin: key-capture sits ~24-48px from the window top, so
+                // a small offset like -32px still landed on the visible terminal's
+                // top-left corner.
+                x: root.cursor-row >= 0
+                    ? 10px + max(0, root.cursor-col) * root.cell-w
+                    : -1000px;
+                y: root.cursor-row >= 0
+                    ? 8px + root.cursor-row * root.cell-h
+                    : -1000px;
                 width: 1px;
                 height: 1px;
                 opacity: 0;
