@@ -15,6 +15,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **修复系统信息弹窗表格列对齐与长内容截断的问题（合入上游 `3ffe1c9`）。** 单元格改按行宽固定比例定位，所有表格逐列对齐；长内容（挂载点路径、CPU 明细、宽表头）自动按字符换行，行高自适应，不再以省略号截断。
+- **Align system-info table columns and wrap long cell content (upstream `3ffe1c9`).** Cells are placed at fixed fractions of the row width so columns align across all tables; overlong content wraps onto a second line with content-sized row heights instead of being elided.
+
 - **修复 SFTP 文件列表名称左侧图标不显示的问题（合入上游 `d268a3f`）。** 条目行改用 Material Icons 独立图标列（folder / insert_drive_file）替代内嵌 emoji，避免字体回退导致图标缺失；目录/文件配色保持不变。
 - **Fix missing icons next to SFTP file/folder names (upstream `d268a3f`).** Entry rows now use a dedicated Material Icons glyph column instead of inline emoji, avoiding font-fallback icon loss; dir/file coloring unchanged.
 
