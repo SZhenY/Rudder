@@ -15,6 +15,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **修复 SFTP 文件列表名称左侧图标不显示的问题（合入上游 `d268a3f`）。** 条目行改用 Material Icons 独立图标列（folder / insert_drive_file）替代内嵌 emoji，避免字体回退导致图标缺失；目录/文件配色保持不变。
+- **Fix missing icons next to SFTP file/folder names (upstream `d268a3f`).** Entry rows now use a dedicated Material Icons glyph column instead of inline emoji, avoiding font-fallback icon loss; dir/file coloring unchanged.
+
 - **修复 WSL 发行版默认 Shell 为 fish 时终端无输出的问题（#352，合入上游 `3cf53ee`）。** 现在在发行版内读取 passwd 登录 Shell 并以登录模式显式启动，不再依赖 wsl.exe 的隐式选择；解析失败时回退 `SHELL` 或 `/bin/sh`。
 - **Fix blank terminal when the WSL default shell is fish (#352, upstream `3cf53ee`).** The login shell is now resolved from passwd inside the distribution and launched explicitly in login mode instead of relying on implicit `wsl.exe` selection, falling back to `SHELL` or `/bin/sh`.
 
