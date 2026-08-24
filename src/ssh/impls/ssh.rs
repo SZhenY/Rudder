@@ -66,14 +66,20 @@ pub(crate) fn load_session_private_key(session: &Session, pass: &str) -> Result<
 
 /// Format a byte count as a human-readable string.
 pub fn format_size(bytes: u64) -> String {
-    if bytes < 1_024 {
-        format!("{} B", bytes)
-    } else if bytes < 1_024 * 1_024 {
-        format!("{:.1} KB", bytes as f64 / 1_024.0)
-    } else if bytes < 1_024 * 1_024 * 1_024 {
-        format!("{:.1} MB", bytes as f64 / (1_024.0 * 1_024.0))
+    const UNIT: f64 = 1024.0;
+    const UNITS: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
+    let mut value = bytes as f64;
+    let mut idx = 0;
+    while value >= UNIT && idx < UNITS.len() - 1 {
+        value /= UNIT;
+        idx += 1;
+    }
+    if idx == 0 {
+        format!("{} {}", bytes, UNITS[0])
+    } else if idx >= 4 {
+        format!("{:.2} {}", value, UNITS[idx])
     } else {
-        format!("{:.2} GB", bytes as f64 / (1_024.0 * 1_024.0 * 1_024.0))
+        format!("{:.1} {}", value, UNITS[idx])
     }
 }
 
