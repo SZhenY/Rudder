@@ -5,6 +5,11 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 修复 / Fixed
+
+- **修复 macOS 无法在文件选择器中选择无扩展名 OpenSSH 私钥的问题（#325，合入上游 `bb34bbf`）。** macOS 的私钥浏览器不再按扩展名过滤，可直接选择 `~/.ssh/id_ed25519`、`id_rsa` 等标准私钥；Windows 和 Linux 保持原有文件过滤行为。
+- **Fix selecting extensionless OpenSSH private keys on macOS (#325, upstream `bb34bbf`).** The macOS private-key picker no longer filters by extension, allowing standard files such as `~/.ssh/id_ed25519` and `id_rsa` to be selected directly. Windows and Linux retain their existing file filters.
+
 ## [0.6.14] - 2026-08-22
 
 ### 清理 / Cleanup
