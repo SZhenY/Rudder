@@ -143,6 +143,73 @@ jobs:
           mv meatshell*.AppImage "meatshell-${VERSION}-linux-x86_64.AppImage"
           echo "APPIMAGE=meatshell-${VERSION}-linux-x86_64.AppImage" >> "$GITHUB_ENV"
 
+      - name: Build Debian package
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          VERSION_NUM="${VERSION#v}"
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-gnu) DEB_ARCH=amd64 ;;
+            aarch64-unknown-linux-gnu) DEB_ARCH=arm64 ;;
+            *) echo "Unsupported Debian architecture: ${{ matrix.target }}"; exit 1 ;;
+          esac
+
+          ROOT="deb-root"
+          install -Dm755 "target/${{ matrix.target }}/release/meatshell" "$ROOT/usr/bin/meatshell"
+          install -Dm644 assets/meatshell.desktop "$ROOT/usr/share/applications/meatshell.desktop"
+          install -Dm644 assets/icon@512.png "$ROOT/usr/share/icons/hicolor/512x512/apps/meatshell.png"
+          install -Dm644 THIRD_PARTY_NOTICES.md "$ROOT/usr/share/doc/meatshell/THIRD_PARTY_NOTICES.md"
+          install -d "$ROOT/DEBIAN"
+
+          DEPENDS="$(dpkg-shlibdeps -O -e"$ROOT/usr/bin/meatshell" | sed -n 's/^shlibs:Depends=//p')"
+          test -n "$DEPENDS"
+          cat > "$ROOT/DEBIAN/control" <<EOF
+          Package: meatshell
+          Version: ${VERSION_NUM}
+          Section: net
+          Priority: optional
+          Architecture: ${DEB_ARCH}
+          Maintainer: MeatShell contributors
+          Depends: ${DEPENDS}
+          Homepage: https://github.com/yituorou/meatshell
+          Description: Lightweight SSH, SFTP, and terminal client
+           MeatShell is a cross-platform terminal client written in Rust and Slint.
+          EOF
+
+          DEB="meatshell-${VERSION}-linux-${DEB_ARCH}.deb"
+          dpkg-deb --root-owner-group --build "$ROOT" "$DEB"
+          dpkg-deb --info "$DEB"
+          echo "DEB=$DEB" >> "$GITHUB_ENV"
+
+      - name: Install Flatpak build tools
+        if: matrix.name == 'linux-x86_64'
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub \
+            org.freedesktop.Platform//25.08 \
+            org.freedesktop.Sdk//25.08
+
+      - name: Build Flatpak bundle
+        if: matrix.name == 'linux-x86_64'
+        shell: bash
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          flatpak-builder --user --force-clean \
+            --repo=flatpak-repo \
+            flatpak-build \
+            packaging/flatpak/io.github.yituorou.meatshell.yml
+          FLATPAK="meatshell-${VERSION}-linux-x86_64.flatpak"
+          flatpak build-bundle \
+            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            flatpak-repo "$FLATPAK" io.github.yituorou.meatshell stable
+          echo "FLATPAK=$FLATPAK" >> "$GITHUB_ENV"
+
       - name: Package
         shell: bash
         run: |
@@ -243,6 +310,20 @@ jobs:
           name: linux-x86_64-appimage
           path: ${{ env.APPIMAGE }}
 
+      - name: Upload Debian package artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-deb
+          path: ${{ env.DEB }}
+
+      - name: Upload Flatpak artifact
+        if: matrix.name == 'linux-x86_64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64-flatpak
+          path: ${{ env.FLATPAK }}
+
       - name: Upload MSI artifact
         if: matrix.name == 'windows-x86_64' && env.MSI != ''
         uses: actions/upload-artifact@v4
@@ -262,6 +343,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.APPIMAGE }}
+          fail_on_unmatched_files: true
+
+      - name: Attach Debian package to GitHub Release
+        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.DEB }}
+          fail_on_unmatched_files: true
+
+      - name: Attach Flatpak to GitHub Release
+        if: matrix.name == 'linux-x86_64' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.FLATPAK }}
           fail_on_unmatched_files: true
 
       - name: Attach MSI to GitHub Release

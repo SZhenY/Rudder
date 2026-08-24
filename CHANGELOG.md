@@ -3,6 +3,11 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [Unreleased]
+
+- **新增 Debian 与 Flatpak 安装包。** 发布流水线现在为 Linux x86_64 和 ARM64 生成 `.deb`，并为 x86_64 生成可直接安装的 Flatpak bundle；这些安装包会作为工作流产物保存，并在标签发版时自动附加到 GitHub Release。现有 tar.gz 与 AppImage 保持不变。
+- **Add Debian and Flatpak packages.** The release workflow now builds `.deb` packages for Linux x86_64 and ARM64 and an installable Flatpak bundle for x86_64. They are retained as workflow artifacts and automatically attached to tagged GitHub Releases, alongside the existing tar.gz and AppImage assets.
+
 ## [0.6.15] - 2026-08-24
 
 - **修复 Fedora 等非 Debian Linux 桌面按下 Ctrl 即触发终端快捷键的问题（#369）。** Linux 下 Slint/winit 可能把裸 Control 按键上报为 `U+0011` 或 `U+0016`；过滤范围现已从 Debian 系扩展到所有 Linux 发行版，避免 nano 在只按 Ctrl 时误触发搜索或其他操作。真正的 Ctrl+Q、Ctrl+V、Ctrl+X 等组合键仍由最终字母事件生成；Windows 与 macOS 保持各自独立的输入适配。
