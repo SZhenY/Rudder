@@ -15,6 +15,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **运行状态页挂载点容量单位支持 TB/PB（合入上游 `7602a6d`）。** `format_size` 改为循环除 1024 的通用换算，覆盖 B→PB 全部主流单位；TB 及以上保留两位小数。
+- **Mount-point sizes on the status page now support TB/PB units (upstream `7602a6d`).** `format_size` uses a generic divide-by-1024 loop covering B through PB; two decimal places for TB and above.
+
 - **修复系统信息弹窗表格列对齐与长内容截断的问题（合入上游 `3ffe1c9`）。** 单元格改按行宽固定比例定位，所有表格逐列对齐；长内容（挂载点路径、CPU 明细、宽表头）自动按字符换行，行高自适应，不再以省略号截断。
 - **Align system-info table columns and wrap long cell content (upstream `3ffe1c9`).** Cells are placed at fixed fractions of the row width so columns align across all tables; overlong content wraps onto a second line with content-sized row heights instead of being elided.
 
