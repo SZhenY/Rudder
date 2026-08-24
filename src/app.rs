@@ -963,10 +963,17 @@ pub fn run() -> Result<()> {
     }
     {
         let store = store.clone();
+        let handles = handles.clone();
+        let weak = window.as_weak();
         window.on_set_sidebar_collapsed(move |v| {
             let mut s = store.borrow_mut();
             s.set_sidebar_collapsed(v);
             let _ = s.save();
+            // Pause resource monitoring for every live session while the
+            // sidebar is hidden; resume when it comes back (upstream b17da25).
+            for handle in handles.borrow().values() {
+                handle.set_resource_monitoring(!v);
+            }
         });
     }
     {
@@ -2253,6 +2260,11 @@ pub fn run() -> Result<()> {
         move || {
             // Skip the (non-trivial) sysinfo refresh + sidebar repaint when no one
             // is looking, and back off to ~5 s when the window is in the background.
+            // A collapsed sidebar hides the graphs entirely, so skip too
+            // (upstream b17da25).
+            if weak.upgrade().map(|w| w.get_sidebar_collapsed()).unwrap_or(false) {
+                return;
+            }
             match tick_activity.get() {
                 WinActivity::Hidden => return,
                 WinActivity::Background => {

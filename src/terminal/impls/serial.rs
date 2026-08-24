@@ -194,7 +194,9 @@ async fn run_serial(
             }
             // A serial line has no window size; nothing to propagate.
             SessionCommand::Resize(_, _) => {}
-            SessionCommand::AddTunnel { .. } | SessionCommand::StopTunnel(_) => {}
+            SessionCommand::AddTunnel { .. }
+            | SessionCommand::StopTunnel(_)
+            | SessionCommand::SetResourceMonitoring(_) => {}
             SessionCommand::KillProcess { reply, .. } => {
                 let _ = reply.send(crate::ssh::ProcessKillResult {
                     success: false,

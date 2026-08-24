@@ -46,6 +46,15 @@ pub(super) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         ),
     };
     let terminal_reply_tx = handle.commands.clone();
+    // Start with monitoring paused when the sidebar is hidden; the sidebar
+    // collapse handler flips it back once the panel is visible again
+    // (upstream b17da25).
+    let monitoring_enabled = ctx
+        .weak
+        .upgrade()
+        .map(|window| !window.get_sidebar_collapsed())
+        .unwrap_or(true);
+    handle.set_resource_monitoring(monitoring_enabled);
     ctx.handles.borrow_mut().insert(tab_id.to_string(), handle);
 
     // Separate SFTP connection for the same session (SSH only). It waits for

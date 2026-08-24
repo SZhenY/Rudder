@@ -485,6 +485,8 @@ pub enum SessionCommand {
     RawInput(Vec<u8>),
     /// Notify the remote PTY of a terminal resize.
     Resize(u32, u32),
+    /// Start or pause periodic local/remote resource monitoring for this session.
+    SetResourceMonitoring(bool),
     /// Start a runtime-only SSH tunnel for this connected session (#206).
     AddTunnel {
         id: String,
@@ -776,6 +778,12 @@ impl SessionHandle {
 
     pub fn resize(&self, cols: u32, rows: u32) {
         let _ = self.commands.send(SessionCommand::Resize(cols, rows));
+    }
+
+    pub fn set_resource_monitoring(&self, enabled: bool) {
+        let _ = self
+            .commands
+            .send(SessionCommand::SetResourceMonitoring(enabled));
     }
 
     pub fn add_tunnel(&self, id: String, forward: PortForward) {
@@ -1848,6 +1856,10 @@ async fn run_session(
     let mut mon_start_pending = true;
     let mut proc_start_pending = true;
     let mut sys_start_pending = true;
+    // Resource monitoring pauses while the sidebar is hidden (upstream b17da25):
+    // the channels are closed and reopened on demand so a hidden session stops
+    // polling /proc entirely.
+    let mut resource_monitoring = true;
     let mut first_terminal_output = true;
     // Local (-L) and dynamic (-D) listen client-side; their tasks are aborted
     // on session exit.
@@ -1870,7 +1882,12 @@ async fn run_session(
         tokio::select! {
             ready = &mut mon_ready_rx, if mon_start_pending => {
                 mon_start_pending = false;
-                mon_channel = ready.unwrap_or(None);
+                let ready_channel = ready.unwrap_or(None);
+                if resource_monitoring {
+                    mon_channel = ready_channel;
+                } else if let Some(channel) = ready_channel {
+                    let _ = channel.close().await;
+                }
                 tracing::debug!(
                     "[SESSION_START] id={} stage=resources-started elapsed_ms={}",
                     session.id,
@@ -1879,7 +1896,12 @@ async fn run_session(
             }
             ready = &mut proc_ready_rx, if proc_start_pending => {
                 proc_start_pending = false;
-                proc_channel = ready.unwrap_or(None);
+                let ready_channel = ready.unwrap_or(None);
+                if resource_monitoring {
+                    proc_channel = ready_channel;
+                } else if let Some(channel) = ready_channel {
+                    let _ = channel.close().await;
+                }
                 tracing::debug!(
                     "[SESSION_START] id={} stage=process-monitor-started elapsed_ms={}",
                     session.id,
@@ -1908,6 +1930,47 @@ async fn run_session(
                     }
                     Some(SessionCommand::Resize(cols, rows)) => {
                         let _ = channel.window_change(cols, rows, 0, 0).await;
+                    }
+                    Some(SessionCommand::SetResourceMonitoring(enabled)) => {
+                        if enabled == resource_monitoring || session.disable_shell_integration {
+                            continue;
+                        }
+                        resource_monitoring = enabled;
+                        if !enabled {
+                            // Pause: drop both monitor channels so the remote
+                            // polling loops terminate.
+                            if let Some(monitor) = mon_channel.take() {
+                                let _ = monitor.close().await;
+                            }
+                            if let Some(processes) = proc_channel.take() {
+                                let _ = processes.close().await;
+                            }
+                            mon_buf.clear();
+                            proc_buf.clear();
+                        } else {
+                            // Resume: reopen fresh exec channels for both monitors.
+                            match handle.channel_open_session().await {
+                                Ok(monitor) => {
+                                    if monitor.exec(true, MON_CMD).await.is_ok() {
+                                        mon_channel = Some(monitor);
+                                    }
+                                }
+                                Err(error) => tracing::warn!("monitor resume failed: {error}"),
+                            }
+                            match handle.channel_open_session().await {
+                                Ok(processes) => {
+                                    if processes.exec(true, PROC_CMD).await.is_ok() {
+                                        proc_channel = Some(processes);
+                                    }
+                                }
+                                Err(error) => {
+                                    tracing::warn!("process monitor resume failed: {error}")
+                                }
+                            }
+                            prev_cpu = None;
+                            prev_net.clear();
+                            prev_net_at = std::time::Instant::now();
+                        }
                     }
                     Some(SessionCommand::AddTunnel { id, forward }) => {
                         if forward.kind == "local" || forward.kind == "dynamic" {
