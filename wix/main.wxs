@@ -10,7 +10,8 @@
   restores the previous location before that page is shown, including v0.6.5
   installations whose ARP InstallLocation value was left blank.
 -->
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
     <Product
         Id="*"
         Name="meatshell"
@@ -37,6 +38,25 @@
 
         <Media Id="1" Cabinet="media1.cab" EmbedCab="yes" DiskPrompt="CD-ROM #1"/>
         <Property Id="DiskPrompt" Value="meatshell Installation"/>
+
+        <!--
+          A stdio MCP client can keep `meatshell.exe mcp serve` alive after the
+          GUI has closed. Windows cannot replace a running executable during a
+          major upgrade, so give the user an explicit Abort/Retry/Ignore prompt.
+          Retry lets them close the MCP host cleanly; Ignore closes ordinary GUI
+          windows first and, after the timeout, terminates a windowless MCP copy.
+          This is intentionally upgrade-only: a first install has no old binary.
+        -->
+        <util:CloseApplication
+            Id="CloseRunningMeatShellForUpgrade"
+            Target="meatshell.exe"
+            Description="MeatShell or its MCP server is still running. Close MeatShell and any MCP client using it, then click Retry. Choose Ignore to close it automatically."
+            PromptToContinue="yes"
+            CloseMessage="yes"
+            ElevatedCloseMessage="yes"
+            Timeout="10"
+            TerminateProcess="0"
+            RebootPrompt="no">WIX_UPGRADE_DETECTED</util:CloseApplication>
 
         <Icon Id="ProductICO" SourceFile="assets\meatshell.ico"/>
         <Property Id="ARPPRODUCTICON" Value="ProductICO"/>

@@ -3,10 +3,13 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
-## [Unreleased]
+## [0.6.16] - 2026-08-24
 
 - **新增 Debian 与 Flatpak 安装包。** 发布流水线现在为 Linux x86_64 和 ARM64 生成 `.deb`，并为 x86_64 生成可直接安装的 Flatpak bundle；这些安装包会作为工作流产物保存，并在标签发版时自动附加到 GitHub Release。现有 tar.gz 与 AppImage 保持不变。
 - **Add Debian and Flatpak packages.** The release workflow now builds `.deb` packages for Linux x86_64 and ARM64 and an installable Flatpak bundle for x86_64. They are retained as workflow artifacts and automatically attached to tagged GitHub Releases, alongside the existing tar.gz and AppImage assets.
+
+- **修复 Linux 安装包流水线并改善 Windows 占用升级。** DEB 构建现在为 `dpkg-shlibdeps` 提供所需的软件包元数据，避免 amd64 与 ARM64 任务以代码 25 退出；Windows MSI 升级检测到 MeatShell 或无窗口 MCP 服务仍在运行时会提示用户关闭，必要时经用户确认后结束旧进程，避免 `meatshell.exe` 被占用而无法替换。
+- **Fix Linux package CI and Windows in-use upgrades.** DEB builds now provide the package metadata required by `dpkg-shlibdeps`, preventing exit code 25 on amd64 and ARM64. During a Windows MSI upgrade, a running MeatShell or windowless MCP server now produces a close/retry prompt and can be terminated after explicit user confirmation so the installer can replace `meatshell.exe`.
 
 ## [0.6.15] - 2026-08-24
 

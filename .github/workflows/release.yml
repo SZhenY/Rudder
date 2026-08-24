@@ -163,6 +163,22 @@ jobs:
           install -Dm644 THIRD_PARTY_NOTICES.md "$ROOT/usr/share/doc/meatshell/THIRD_PARTY_NOTICES.md"
           install -d "$ROOT/DEBIAN"
 
+          # dpkg-shlibdeps expects source-package metadata in debian/control,
+          # even when -O prints the generated dependency variable to stdout.
+          # Without this file it exits with code 25 on both Linux runners.
+          install -d debian
+          cat > debian/control <<'EOF'
+          Source: meatshell
+          Section: net
+          Priority: optional
+          Maintainer: MeatShell contributors
+          Standards-Version: 4.6.2
+
+          Package: meatshell
+          Architecture: any
+          Depends: ${shlibs:Depends}
+          Description: Lightweight SSH, SFTP, and terminal client
+          EOF
           DEPENDS="$(dpkg-shlibdeps -O -e"$ROOT/usr/bin/meatshell" | sed -n 's/^shlibs:Depends=//p')"
           test -n "$DEPENDS"
           cat > "$ROOT/DEBIAN/control" <<EOF
