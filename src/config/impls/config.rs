@@ -743,6 +743,10 @@ pub struct ConfigFile {
     /// output highlighter enabled by default.
     #[serde(default)]
     pub output_highlight_disabled: bool,
+    /// Stored inverted so complete JSON lines are formatted and syntax-coloured
+    /// by default while still allowing users to preserve byte-for-byte display.
+    #[serde(default)]
+    pub json_format_disabled: bool,
     /// Built-in output highlight preset: "builtin" (Rudder rules, default), "log", or "devops".
     #[serde(default)]
     pub output_highlight_preset: String,
@@ -1361,6 +1365,16 @@ impl ConfigStore {
 
     pub fn set_output_highlight_enabled(&mut self, enabled: bool) {
         self.cache.output_highlight_disabled = !enabled;
+    }
+
+    /// Whether complete JSON lines are pretty-printed and syntax-coloured
+    /// (#338). Stored inverted so formatting is on by default.
+    pub fn json_format_output(&self) -> bool {
+        !self.cache.json_format_disabled
+    }
+
+    pub fn set_json_format_output(&mut self, enabled: bool) {
+        self.cache.json_format_disabled = !enabled;
     }
 
     /// Selected built-in rule set. The default is the Rudder built-in

@@ -9,6 +9,8 @@ pub(crate) mod local;
 mod output_highlight;
 #[path = "impls/encoding.rs"]
 mod encoding;
+#[path = "impls/json_output.rs"]
+mod json_output;
 #[path = "impls/presentation.rs"]
 mod presentation;
 #[path = "impls/render.rs"]
@@ -40,6 +42,7 @@ pub(crate) use input::{
     terminal_uses_bracketed_paste,
 };
 pub(crate) use encoding::TerminalEncoding;
+pub(crate) use json_output::format_json_output;
 pub(crate) use output_highlight::compile_output_rules;
 pub(crate) use presentation::{highlight_plain_output, render_term_span};
 #[cfg(test)]

@@ -115,6 +115,13 @@ impl TermBuffer {
     /// The returned bytes are terminal-query replies (DSR/CPR/DA1) that must
     /// be written back to the PTY immediately (#328).
     pub(crate) fn ingest(&mut self, input: &[u8]) -> Vec<u8> {
+        // Pretty-print + colour complete JSON lines before any other handling
+        // so the grid, raw replay stream, and query scanner all see the same
+        // bytes (#338).
+        let formatted = self
+            .json_format_output
+            .then(|| crate::terminal::format_json_output(input));
+        let input = formatted.as_deref().unwrap_or(input);
         let replies = self.detect_terminal_queries(input);
         // Rewrite HVP (`ESC [ … f`) → CUP (`ESC [ … H`) so vt100 (which only
         // implements `H`) honours btop/htop's absolute cursor positioning.
@@ -711,6 +718,7 @@ mod tests {
             overline_ranges: Vec::new(),
             sgr_buf: Vec::new(),
             interactive_echo_until: std::time::Instant::now(),
+            json_format_output: false,
         }
     }
 
@@ -894,6 +902,7 @@ mod tests {
             overline_ranges: Vec::new(),
             sgr_buf: Vec::new(),
             interactive_echo_until: std::time::Instant::now(),
+            json_format_output: false,
         };
         let mut input = Vec::new();
         for i in 0..60 {
@@ -1007,6 +1016,7 @@ mod real_file_overline_verify {
             overline_ranges: Vec::new(),
             sgr_buf: Vec::new(),
             interactive_echo_until: std::time::Instant::now(),
+            json_format_output: false,
         };
         // Feed in realistic 4 KiB chunks (cat / SSH behaviour).
         for chunk in data.chunks(4096) {
@@ -1063,6 +1073,7 @@ mod render_path_cube_tests {
             overline_ranges: Vec::new(),
             sgr_buf: Vec::new(),
             interactive_echo_until: std::time::Instant::now(),
+            json_format_output: false,
         }
     }
 

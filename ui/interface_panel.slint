@@ -375,6 +375,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <string> term-cursor-color-hex: "#D4D4D4";
     in property <color> term-cursor-color: #D4D4D4;
     in-out property <bool> output-highlight-enabled;
+    in-out property <bool> json-format-output: true;
     in-out property <string> output-highlight-preset;
     in property <[OutputRuleItem]> output-highlight-rules;
     in-out property <string> output-highlight-rule-status;
@@ -428,6 +429,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> osc52-clipboard: true;
     callback set-osc52-clipboard(bool);
     callback set-output-highlight(bool, string);
+    callback set-json-format-output(bool);
     callback add-output-highlight-rule(string, bool, bool, bool, string) -> bool;
     callback remove-output-highlight-rule(int);
     callback set-output-highlight-rule-enabled(int, bool);
@@ -678,6 +680,19 @@ export component InterfacePanel inherits Rectangle {
                         toggled(v) => {
                             root.output-highlight-enabled = v;
                             root.set-output-highlight(v, root.output-highlight-preset);
+                        }
+                    }
+                }
+                SettingRow {
+                    label: root.lang-en ? "Format and colour JSON lines" : "格式化并着色 JSON 行";
+                    desc: root.lang-en
+                        ? "Pretty-prints complete single-line JSON output with per-token colours; prompts and partial JSON stay untouched."
+                        : "把完整的单行 JSON 输出美化缩进并按令牌着色；提示符与不完整 JSON 保持原样。";
+                    Switch {
+                        on: root.json-format-output;
+                        toggled(v) => {
+                            root.json-format-output = v;
+                            root.set-json-format-output(v);
                         }
                     }
                 }

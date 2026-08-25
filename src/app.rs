@@ -738,6 +738,7 @@ pub fn run() -> Result<()> {
         window.set_output_highlight_enabled(s.output_highlight_enabled());
         window.set_output_highlight_preset(s.output_highlight_preset().into());
         window.set_output_highlight_rules(output_highlight_rule_model(&s));
+        window.set_json_format_output(s.json_format_output());
         window.set_ui_scale(s.ui_scale() as f32 / 100.0); // global UI zoom (#100)
         window.set_panel_font(s.panel_font() as f32 / 100.0); // settings-panel font scale
         window.set_renderer_mode(s.renderer_mode().into());
@@ -1253,6 +1254,21 @@ pub fn run() -> Result<()> {
             }
             if let Some(w) = weak.upgrade() {
                 apply_output_highlight(&w, &bufs, enabled, &preset);
+            }
+        });
+    }
+    {
+        let store = store.clone();
+        let bufs = bufs.clone();
+        window.on_set_json_format_output(move |enabled| {
+            {
+                let mut s = store.borrow_mut();
+                s.set_json_format_output(enabled);
+                let _ = s.save();
+            }
+            // Flip live buffers so the change applies without reconnecting.
+            for buffer in bufs.lock().unwrap().values() {
+                buffer.lock().unwrap().json_format_output = enabled;
             }
         });
     }
@@ -4193,6 +4209,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     overline_ranges: Vec::new(),
                     sgr_buf: Vec::new(),
                     interactive_echo_until: std::time::Instant::now(),
+                    json_format_output: store.borrow().json_format_output(),
                 })),
             );
             render_gates.lock().unwrap().insert(

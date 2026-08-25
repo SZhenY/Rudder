@@ -55,6 +55,10 @@ pub(crate) struct TermBuffer {
     /// from ~30 Hz to ~120 Hz; it falls back automatically once typing stops
     /// so firehose output keeps its CPU protection.
     pub(crate) interactive_echo_until: std::time::Instant,
+    /// Per-tab switch for pretty-printing + colouring complete JSON lines
+    /// (#338). Seeded from the global setting when the buffer is created and
+    /// flipped live by the settings toggle.
+    pub(crate) json_format_output: bool,
 }
 
 /// Cached rendering for one live-screen row.  Stores raw HistSpan runs (our
