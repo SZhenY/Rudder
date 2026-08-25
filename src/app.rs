@@ -1463,7 +1463,8 @@ pub fn run() -> Result<()> {
 
     let sessions_model: Rc<VecModel<SessionInfo>> = Rc::new(VecModel::default());
     window.set_sessions(ModelRc::from(sessions_model.clone()));
-    sync_sessions_to_model(&store.borrow(), &sessions_model);
+    let init_weak = window.as_weak();
+    sync_sessions_for_window(&init_weak, &store.borrow(), &sessions_model);
     window.set_wsl_profiles(wsl_profile_model(&store.borrow()));
     {
         let weak = window.as_weak();
@@ -1545,7 +1546,7 @@ pub fn run() -> Result<()> {
             .and_then(|json| store.borrow_mut().import_json(&json));
             let msg = match res {
                 Ok((added, skipped)) => {
-                    sync_sessions_to_model(&store.borrow(), &sessions_model);
+                    sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
                     format!(
                         "{} {}, {} {}",
                         t("已导入", "imported"),
@@ -3207,6 +3208,21 @@ struct SessionWireCtx<'a> {
     sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// Re-sync the session list honouring the current Quick Connect search box
+/// contents (upstream 547b588). All mutation paths funnel through this so the
+/// filtered view stays live.
+fn sync_sessions_for_window(
+    window: &slint::Weak<AppWindow>,
+    store: &ConfigStore,
+    model: &VecModel<SessionInfo>,
+) {
+    let query = window
+        .upgrade()
+        .map(|window| window.get_host_search_query().to_string())
+        .unwrap_or_default();
+    sync_sessions_to_model_with_filter(store, model, &query);
+}
+
 /// Build the effective session represented by the dialog. When editing, blank
 /// secret fields retain their saved values because real passwords and pasted
 /// private keys are deliberately never echoed back into the UI (#10, #276).
@@ -3238,6 +3254,28 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
     // Session.forwards; opening the dialog (new/edit) resets it.
     let edit_forwards: Rc<RefCell<Vec<PortFwd>>> =
         Rc::new(RefCell::new(vec![blank_forward_draft()]));
+
+    // Rebuild the session list as the user edits the Quick Connect search.
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        let sessions_model = sessions_model.clone();
+        window.on_host_search_changed(move |query| {
+            if let Some(window) = weak.upgrade() {
+                let query = if query.trim().is_empty() {
+                    SharedString::new()
+                } else {
+                    query
+                };
+                window.set_host_search_query(query.clone());
+                sync_sessions_to_model_with_filter(
+                    &store.borrow(),
+                    &sessions_model,
+                    query.as_str(),
+                );
+            }
+        });
+    }
 
     // New session -> open dialog with blank draft.
     let weak = window.as_weak();
@@ -3337,7 +3375,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     let _ = s.save();
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let hint = if added > 0 {
                     format!("{} {}", t("已导入", "imported"), added)
@@ -3400,7 +3438,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     let _ = s.save();
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let hint = if total == 0 {
                     t("没有可导入的连接", "nothing to import").to_string()
@@ -3428,7 +3466,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                 if let Some(w) = weak.upgrade() {
                     let hint = match res {
                         Ok((added, skipped)) => {
-                            sync_sessions_to_model(&store.borrow(), &sessions_model);
+                            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
                             format!(
                                 "{} {} / {} {}",
                                 t("已导入", "imported"),
@@ -3514,7 +3552,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     tracing::warn!("failed to save config: {err:#}");
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 // Touch a property so the list re-renders reliably.
                 let _ = w.get_sessions();
@@ -3541,7 +3579,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     }
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3573,7 +3611,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     }
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3588,6 +3626,15 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
         let store = store.clone();
         let sessions_model = sessions_model.clone();
         window.on_toggle_group(move |group: SharedString| {
+            // While a search filter is active the list shows only matches with
+            // groups force-expanded; toggling would corrupt that view (#264).
+            if weak
+                .upgrade()
+                .map(|window| !window.get_host_search_query().trim().is_empty())
+                .unwrap_or(false)
+            {
+                return;
+            }
             use slint::Model as _;
             let target = group.to_string();
             let n = sessions_model.row_count();
@@ -3657,7 +3704,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     tracing::warn!("failed to save config: {err:#}");
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3677,7 +3724,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     tracing::warn!("failed to save config: {err:#}");
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 let _ = w.get_sessions();
             }
@@ -3795,7 +3842,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     tracing::warn!("failed to save config: {err:#}");
                 }
             }
-            sync_sessions_to_model(&store.borrow(), &sessions_model);
+            sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
             if let Some(w) = weak.upgrade() {
                 w.set_dialog_open(false);
             }

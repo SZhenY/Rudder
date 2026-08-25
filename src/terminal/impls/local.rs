@@ -236,7 +236,9 @@ fn local_program(session: &Session) -> (String, Vec<String>) {
     }
 }
 
-#[cfg(test)]
+// WSL_LOGIN_SHELL and the wsl branch only exist on Windows, so the tests are
+// Windows-only as well (upstream 547b588 gates the whole module the same way).
+#[cfg(all(test, windows))]
 mod tests {
     use super::{local_program, WSL_LOGIN_SHELL};
     use crate::config::Session;
