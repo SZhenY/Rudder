@@ -7,6 +7,15 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 新增 / Added
 
+- **SSH 终端支持多字符集（#338，合入上游 `7742c80`）。** 会话高级设置新增终端编码选择（UTF-8/GBK/Big5/Shift_JIS/EUC-KR/Windows-1252）：出站按键按会话编码转码，入站输出用有状态解码器还原（跨数据包的多字节字符正确拼接）；FinalShell 导入的编码设置随之生效。
+- **Per-session character encoding for SSH terminals (#338, upstream `7742c80`).** Advanced settings gain an encoding selector; keystrokes are re-encoded outbound and the stream is decoded inbound with a stateful codec that survives packet splits. FinalShell-imported encodings now apply.
+
+- **完整的单行 JSON 输出自动美化与着色（合入上游 `39cd57c`）。** 仅当整行可解析为对象/数组时重排缩进并按令牌着色（键青、字符串绿、数字洋红、布尔黄、null 灰）；提示符、部分 JSON 与非 SGR 控制序列逐字节保留。设置 → 输出高亮可关闭，切换即时作用于所有标签。
+- **Automatic pretty-printing and colouring of complete JSON lines (upstream `39cd57c`).** Only whole-line parseable objects/arrays are re-indented and token-coloured; prompts, partial JSON and non-SGR controls are preserved. Toggle under Interface → Output highlighting, applied to live tabs instantly.
+
+- **快速连接支持按名称/主机搜索（重做 #264，合入上游 `547b588`）。** 搜索框实时过滤保存会话、内置本地与 WSL 会话（忽略大小写与首尾空白），匹配分组临时展开、清空即恢复；新增清除按钮、无结果提示与可访问标签。
+- **Quick Connect host search by name or host (rework of #264, upstream `547b588`).** A live search box filters saved, built-in and WSL sessions case-insensitively, force-expanding matching groups until cleared; clear button, empty-result hint and accessible labels included.
+
 - **支持导入 SSH config 的 Include 指令（#341，合入上游 `3ad25cb`）。** 递归展开 `~/.ssh/config` 的 Include（相对路径、波浪号与 glob），带循环引用与深度上限防护；导入器仍只提取会话所需的少量字段。
 - **Support SSH config `Include` directives when importing (#341, upstream `3ad25cb`).** Includes are expanded recursively (relative paths, tilde, glob) with cycle and depth guards; the importer still only extracts the few fields a session needs.
 
@@ -32,6 +41,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Support duplicating connections by double-clicking tabs (#340, upstream `790365d`).** Double-clicking any terminal session tab now opens an independent duplicate connection, matching the context-menu action. The Welcome tab is excluded; single-click selection and drag reorder/split behavior remain unchanged.
 
 ### 修复 / Fixed
+
+- **修复 SSH 辅助通道导致严格服务器断开主连接的问题（#264 后续，合入上游 `547b588`）。** 资源/进程/系统信息监控通道改为在会话主循环内串行开启（错峰 750ms/1500ms/2500ms），每个通道 3 秒超时、失败不阻塞后续阶段——不再在独立任务里并发抢开通道，避免部分 SSH 服务器在首条监控通道开启瞬间关闭主 PTY。
+- **Fix strict SSH servers dropping the primary connection during auxiliary channel startup (#264 follow-up, upstream `547b588`).** Monitor channels now open serially from the session pump (750/1500/2500 ms staggered, 3 s timeout each, failures non-blocking) instead of from detached concurrent tasks.
 
 - **修复内置 PowerShell/CMD/WSL 行右键弹出空白菜单的问题（#336，合入上游 `17110e5`）。** 这些内置会话没有编辑/移动/删除动作，此前右键会弹出一个空白矩形（看似输入框）；现在对 system-row 不再弹出菜单。
 - **Fix the empty context menu popping up on built-in PowerShell/CMD/WSL rows (#336, upstream `17110e5`).** Built-in rows have no edit/move/delete actions, so right-clicking used to open a blank rectangle; the popup is now suppressed for them.
