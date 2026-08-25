@@ -964,7 +964,6 @@ pub fn run() -> Result<()> {
     {
         let store = store.clone();
         let handles = handles.clone();
-        let weak = window.as_weak();
         window.on_set_sidebar_collapsed(move |v| {
             let mut s = store.borrow_mut();
             s.set_sidebar_collapsed(v);
@@ -1453,10 +1452,10 @@ pub fn run() -> Result<()> {
     {
         let weak = window.as_weak();
         window.on_pick_wsl_directory(move || {
-            if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-                if let Some(w) = weak.upgrade() {
-                    w.set_wsl_new_directory(folder.to_string_lossy().to_string().into());
-                }
+            if let Some(folder) = rfd::FileDialog::new().pick_folder()
+                && let Some(w) = weak.upgrade()
+            {
+                w.set_wsl_new_directory(folder.to_string_lossy().to_string().into());
             }
         });
     }
@@ -5026,10 +5025,10 @@ fn wire_key_input(
                 }
                 changed
             };
-            if changed {
-                if let Some(w) = weak.upgrade() {
-                    w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
-                }
+            if changed
+                && let Some(w) = weak.upgrade()
+            {
+                w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
             }
         });
     }
