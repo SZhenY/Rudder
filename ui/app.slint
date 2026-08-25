@@ -709,6 +709,7 @@ export component AppWindow inherits Window {
     in-out property <string> dialog-stop-bits: "1";
     in-out property <string> dialog-parity: "none";
     in-out property <string> dialog-flow: "none";
+    in-out property <string> dialog-encoding: "UTF-8";
     in-out property <bool> dialog-disable-shell-integration: false;
     in-out property <string> dialog-note;
     in-out property <string> dialog-test-status;
@@ -3658,6 +3659,7 @@ export component AppWindow inherits Window {
         draft-stop-bits <=> root.dialog-stop-bits;
         draft-parity <=> root.dialog-parity;
         draft-flow <=> root.dialog-flow;
+        draft-encoding <=> root.dialog-encoding;
         draft-disable-shell-integration <=> root.dialog-disable-shell-integration;
         draft-note <=> root.dialog-note;
         test-status <=> root.dialog-test-status;

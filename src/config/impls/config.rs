@@ -454,6 +454,9 @@ fn default_quick_panel_height() -> f32 {
 fn default_flow() -> String {
     "none".to_string()
 }
+fn default_encoding() -> String {
+    "UTF-8".to_string()
+}
 
 /// How a session authenticates.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -543,6 +546,11 @@ pub struct Session {
     #[serde(default = "default_flow")]
     pub flow_control: String,
 
+    /// Character encoding used by the interactive terminal stream (#338).
+    /// UTF-8 remains the default for existing and newly created sessions.
+    #[serde(default = "default_encoding")]
+    pub encoding: String,
+
     // --- SSH port forwarding / tunnels (#56) --------------------------------
     /// Tunnels established automatically when this SSH session connects.
     #[serde(default)]
@@ -606,6 +614,7 @@ impl Session {
             stop_bits: default_stop_bits(),
             parity: default_parity(),
             flow_control: default_flow(),
+            encoding: default_encoding(),
             forwards: Vec::new(),
             disable_shell_integration: false,
             note: String::new(),

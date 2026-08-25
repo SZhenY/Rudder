@@ -7,6 +7,8 @@ mod input;
 pub(crate) mod local;
 #[path = "impls/output_highlight.rs"]
 mod output_highlight;
+#[path = "impls/encoding.rs"]
+mod encoding;
 #[path = "impls/presentation.rs"]
 mod presentation;
 #[path = "impls/render.rs"]
@@ -37,6 +39,7 @@ pub(crate) use input::{
     key_to_pty_bytes, paste_requires_large_review, should_drop_bare_ctrl_marker,
     terminal_uses_bracketed_paste,
 };
+pub(crate) use encoding::TerminalEncoding;
 pub(crate) use output_highlight::compile_output_rules;
 pub(crate) use presentation::{highlight_plain_output, render_term_span};
 #[cfg(test)]

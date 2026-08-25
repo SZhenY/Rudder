@@ -3261,6 +3261,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
             w.set_dialog_stop_bits("1".into());
             w.set_dialog_parity("none".into());
             w.set_dialog_flow("none".into());
+            w.set_dialog_encoding("UTF-8".into());
             w.set_dialog_disable_shell_integration(false);
             w.set_dialog_note("".into());
             w.set_dialog_editing(false);
@@ -3475,6 +3476,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                 w.set_dialog_stop_bits(session.stop_bits.to_string().into());
                 w.set_dialog_parity(session.parity.clone().into());
                 w.set_dialog_flow(session.flow_control.clone().into());
+                w.set_dialog_encoding(session.encoding.clone().into());
                 w.set_dialog_disable_shell_integration(session.disable_shell_integration);
                 w.set_dialog_note(session.note.clone().into());
                 w.set_dialog_editing(true);
@@ -3764,6 +3766,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                 stop_bits: draft.stop_bits as u8,
                 parity: draft.parity.to_string(),
                 flow_control: draft.flow_control.to_string(),
+                encoding: draft.encoding.to_string(),
                 forwards,
                 disable_shell_integration: draft.disable_shell_integration,
                 note: draft.note.to_string(),

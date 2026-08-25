@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { ComboBox } from "std-widgets.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 
 // One SSH port-forward row shown in the session dialog (#56). `summary` is a
@@ -33,6 +34,7 @@ export struct SessionDraft {
     stop-bits: int,
     parity: string,        // "none" | "odd" | "even"
     flow-control: string,  // "none" | "hardware" | "software"
+    encoding: string,      // terminal charset label, e.g. "UTF-8" / "GBK" (#338)
     // Skip the POSIX shell-integration setup (cwd-follow hook + monitor) for
     // Windows / pwsh servers where it breaks the shell (#140).
     disable-shell-integration: bool,
@@ -413,6 +415,7 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-stop-bits: "1";
     in-out property <string> draft-parity: "none";
     in-out property <string> draft-flow: "none";
+    in-out property <string> draft-encoding: "UTF-8";
     in-out property <bool> draft-disable-shell-integration: false;
     in-out property <string> draft-note;
     in-out property <string> test-status;
@@ -862,7 +865,7 @@ export component SessionDialog inherits Rectangle {
                 HorizontalLayout {
                     spacing: 4px;
                     Text {
-                        text: @tr("Advanced (proxy, tunnels)");
+                        text: @tr("Advanced (encoding, proxy, tunnels)");
                         color: adv-ta.has-hover ? Theme.text-primary : Theme.text-secondary;
                         font-size: Theme.fs-sm;
                         vertical-alignment: center;
@@ -876,6 +879,27 @@ export component SessionDialog inherits Rectangle {
                     }
                     Rectangle { horizontal-stretch: 1; }
                 }
+            }
+
+            // ── Terminal character encoding (SSH only) (#338) ───────────────
+            if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
+                spacing: 4px;
+                Text {
+                    text: @tr("Terminal character encoding");
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                }
+                ComboBox {
+                    model: ["UTF-8", "GBK", "Big5", "Shift_JIS", "EUC-KR", "Windows-1252"];
+                    current-value: root.draft-encoding;
+                    selected(value) => { root.draft-encoding = value; }
+                }
+                Text {
+                    text: @tr("Use GBK for servers configured for GB2312 or GBK output.");
+                    color: Theme.text-muted;
+                    font-size: Theme.fs-xs;
+                }
+                Rectangle { height: 6px; }
             }
 
             // ── Optional outbound proxy (SSH / Telnet only) ─────────────────
@@ -1024,6 +1048,7 @@ export component SessionDialog inherits Rectangle {
                             stop-bits: root.draft-stop-bits.to-float(),
                             parity: root.draft-parity,
                             flow-control: root.draft-flow,
+                            encoding: root.draft-encoding,
                             disable-shell-integration: root.draft-disable-shell-integration,
                             note: root.draft-note,
                             jump-session-id: (root.draft-jump-index > 0 && root.draft-jump-index < root.jump-ids.length)
@@ -1075,6 +1100,7 @@ export component SessionDialog inherits Rectangle {
                             stop-bits: root.draft-stop-bits.to-float(),
                             parity: root.draft-parity,
                             flow-control: root.draft-flow,
+                            encoding: root.draft-encoding,
                             disable-shell-integration: root.draft-disable-shell-integration,
                             note: root.draft-note,
                             jump-session-id: (root.draft-jump-index > 0 && root.draft-jump-index < root.jump-ids.length)

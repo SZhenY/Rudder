@@ -108,10 +108,12 @@ impl FinalShellConnection {
             "" => host.clone(),
             name => name.to_string(),
         };
-        // Per-session terminal encoding arrives with the multi-charset work
-        // (upstream 7742c80); until then the parsed value is intentionally
-        // ignored and every session uses the global encoding setting.
-        let _ = self.terminal_encoding.trim();
+        // Carry FinalShell's per-session encoding through (#338); empty or
+        // unknown labels fall back to UTF-8 inside TerminalEncoding::new.
+        let encoding = match self.terminal_encoding.trim() {
+            "" => "UTF-8".to_string(),
+            encoding => encoding.to_string(),
+        };
 
         Ok(Session {
             name,
@@ -121,6 +123,7 @@ impl FinalShellConnection {
             auth: AuthMethod::Password,
             password,
             kind: SessionKind::Ssh,
+            encoding,
             note: self.description,
             ..Session::new_empty()
         })

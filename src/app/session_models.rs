@@ -376,6 +376,7 @@ pub(super) fn session_from_draft(
         stop_bits: draft.stop_bits as u8,
         parity: draft.parity.to_string(),
         flow_control: draft.flow_control.to_string(),
+        encoding: draft.encoding.to_string(),
         forwards,
         disable_shell_integration: draft.disable_shell_integration,
         note: draft.note.to_string(),
