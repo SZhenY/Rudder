@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.6.15] - 2026-08-25
+
 ### 新增 / Added
 
 - **SSH 终端支持多字符集（#338，合入上游 `7742c80`）。** 会话高级设置新增终端编码选择（UTF-8/GBK/Big5/Shift_JIS/EUC-KR/Windows-1252）：出站按键按会话编码转码，入站输出用有状态解码器还原（跨数据包的多字节字符正确拼接）；FinalShell 导入的编码设置随之生效。
