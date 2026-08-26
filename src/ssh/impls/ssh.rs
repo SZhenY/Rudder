@@ -67,7 +67,7 @@ pub(crate) fn load_session_private_key(session: &Session, pass: &str) -> Result<
 /// Format a byte count as a human-readable string.
 pub fn format_size(bytes: u64) -> String {
     const UNIT: f64 = 1024.0;
-    const UNITS: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
+    const UNITS: [&str; 7] = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
     let mut value = bytes as f64;
     let mut idx = 0;
     while value >= UNIT && idx < UNITS.len() - 1 {
@@ -80,6 +80,25 @@ pub fn format_size(bytes: u64) -> String {
         format!("{:.2} {}", value, UNITS[idx])
     } else {
         format!("{:.1} {}", value, UNITS[idx])
+    }
+}
+
+#[cfg(test)]
+mod size_format_tests {
+    use super::format_size;
+
+    #[test]
+    fn formats_large_storage_units_through_exabytes() {
+        const GIB: u64 = 1024_u64.pow(3);
+        const TIB: u64 = 1024_u64.pow(4);
+        const PIB: u64 = 1024_u64.pow(5);
+        const EIB: u64 = 1024_u64.pow(6);
+
+        assert_eq!(format_size(GIB), "1.0 GB");
+        assert_eq!(format_size(TIB), "1.00 TB");
+        assert_eq!(format_size(PIB), "1.00 PB");
+        assert_eq!(format_size(EIB), "1.00 EB");
+        assert_eq!(format_size(u64::MAX), "16.00 EB");
     }
 }
 
