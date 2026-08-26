@@ -39,6 +39,9 @@ export component ConfirmDialog inherits Rectangle {
     in property <string> message;
     in property <string> detail;                  // optional, e.g. the file path
     in property <string> confirm-label: @tr("Confirm");
+    // Opt in per call site: destructive confirmations must not become
+    // keyboard-confirmable merely because they share this component.
+    in property <bool> confirm-on-enter: false;
     // Long AI prompts and other large multi-line pastes need a review surface
     // comparable to the system-information window, with fixed footer actions.
     in property <bool> large-detail: false;
@@ -54,6 +57,25 @@ export component ConfirmDialog inherits Rectangle {
 
     visible: is-open && !covered;
     background: #000000aa;
+
+    confirm-key-scope := FocusScope {
+        focus-on-click: false;
+        focus-on-tab-navigation: false;
+        property <bool> active: root.visible && root.confirm-on-enter;
+        changed active => {
+            if (self.active) {
+                self.focus();
+            }
+        }
+        key-pressed(event) => {
+            if (root.confirm-on-enter && event.text == Key.Return) {
+                root.confirm();
+                accept
+            } else {
+                reject
+            }
+        }
+    }
 
     // Backdrop click cancels — unless disabled for a must-decide prompt.
     TouchArea {

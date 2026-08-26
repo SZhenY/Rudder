@@ -2413,6 +2413,18 @@ export component AppWindow inherits Window {
                             editor-viewport := Rectangle {
                                 horizontal-stretch: 1;
                                 clip: true;
+                                // TextInput owns the pointer grab while selecting
+                                // and ignores wheel events. Catch the rejected
+                                // wheel behind it and scroll the editor (#388).
+                                editor-wheel := TouchArea {
+                                    scroll-event(event) => {
+                                        ed-scroll.viewport-y = clamp(
+                                            ed-scroll.viewport-y + event.delta-y,
+                                            min(0px, ed-scroll.visible-height - ed-scroll.viewport-height),
+                                            0px);
+                                        accept
+                                    }
+                                }
                                 ed-scroll := ScrollView {
                                     viewport-width: self.visible-width;
                                     viewport-height: max(self.visible-height, edit-input.preferred-height + 16px);
@@ -2428,6 +2440,23 @@ export component AppWindow inherits Window {
                                         color: Theme.text-primary;
                                         font-family: Theme.ui-font-family;
                                         font-size: Theme.fs-md;
+                                        page-height: ed-scroll.visible-height;
+                                        cursor-position-changed(position) => {
+                                            // Keep a keyboard/drag selection endpoint
+                                            // visible. During a pointer grab this also
+                                            // advances the viewport as the mouse moves
+                                            // beyond its top or bottom edge (#388).
+                                            let cursor-y = position.y + self.y + ed-scroll.viewport-y;
+                                            if (cursor-y < 12px) {
+                                                ed-scroll.viewport-y = min(0px,
+                                                    ed-scroll.viewport-y + 12px - cursor-y);
+                                            } else if (cursor-y > ed-scroll.visible-height - 12px) {
+                                                ed-scroll.viewport-y = max(
+                                                    min(0px, ed-scroll.visible-height - ed-scroll.viewport-height),
+                                                    ed-scroll.viewport-y
+                                                        - (cursor-y - ed-scroll.visible-height + 12px));
+                                            }
+                                        }
                                         edited => {
                                             root.editor-dirty = true;
                                             root.editor-recount(root.editor-content);
@@ -4042,14 +4071,15 @@ export component AppWindow inherits Window {
     }
 
     // Multi-line paste can execute several shell commands at once. Keep the
-    // prompt explicit and require a button click; clicking the backdrop never
-    // accepts the paste (#262).
+    // prompt explicit; clicking the backdrop never accepts the paste (#262),
+    // while Enter provides the expected keyboard confirmation (#392).
     ConfirmDialog {
         width: parent.width;
         height: parent.height;
         is-open <=> root.paste-confirm-open;
         covered: root.confirm-close-open;
         dismiss-on-backdrop: false;
+        confirm-on-enter: true;
         title: root.lang-en ? "Confirm multi-line paste" : "确认多行粘贴";
         message: root.lang-en
             ? "The clipboard contains line breaks and may execute multiple commands. Review it before pasting."
