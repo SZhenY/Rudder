@@ -4461,19 +4461,11 @@ fn wire_session_callbacks(
     {
         let weak = window.as_weak();
         window.on_session_dialog_pick_key(move || {
-            let mut dialog = rfd::FileDialog::new()
-                .set_title(t("选择私钥文件", "Choose private key file"));
-            // OpenSSH's standard macOS key names (id_ed25519, id_rsa, …) have
-            // no extension. A native macOS extension filter makes those files
-            // visible but disabled, so leave the picker unfiltered there (#325).
-            // Other platforms retain the narrower existing filter.
-            #[cfg(not(target_os = "macos"))]
-            {
-                dialog = dialog.add_filter(
-                    t("SSH 私钥", "SSH private keys"),
-                    &["ppk", "pem", "key"],
-                );
-            }
+            let mut dialog =
+                rfd::FileDialog::new().set_title(t("选择私钥文件", "Choose private key file"));
+            // OpenSSH's standard key names (id_ed25519, id_rsa, …) usually
+            // have no extension. Extension filters hide or disable those files
+            // in native pickers, so show every file on every platform (#393).
             // Start in ~/.ssh if it exists.
             if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().join(".ssh")) {
                 if home.is_dir() {
