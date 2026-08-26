@@ -394,8 +394,29 @@ jobs:
       - name: Install cargo-apk
         run: cargo install cargo-apk --locked
 
+      # The Android client is an explicitly experimental sideload build. Give
+      # each CI run an ephemeral Beta certificate so release optimisation can
+      # stay enabled without committing a private signing key to the repo.
+      - name: Generate ephemeral Beta signing key
+        shell: bash
+        run: |
+          set -eu
+          keytool -genkeypair \
+            -keystore "$RUNNER_TEMP/meatshell-beta.keystore" \
+            -storepass android \
+            -keypass android \
+            -alias meatshell-beta \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=MeatShell Beta, O=MeatShell, C=CN" \
+            -noprompt
+
       - name: Build Android Beta APK
         shell: bash
+        env:
+          CARGO_APK_RELEASE_KEYSTORE: ${{ runner.temp }}/meatshell-beta.keystore
+          CARGO_APK_RELEASE_KEYSTORE_PASSWORD: android
         run: |
           set -eu
           cargo apk build \
