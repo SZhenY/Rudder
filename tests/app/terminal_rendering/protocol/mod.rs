@@ -92,3 +92,24 @@ fn incoming_output_keeps_a_scrolled_view_anchored() {
     assert_eq!(buffer.view_offset, old_offset + 1);
     assert_eq!(buffer.displayed_text, before);
 }
+
+#[test]
+fn long_unbroken_output_is_captured_before_it_wraps_off_screen() {
+    let mut buffer = make_buf(3, 10, &[], &[], 0);
+    let output = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+    let _ = buffer.ingest(output);
+    buffer.render();
+
+    assert!(
+        !buffer.history.is_empty(),
+        "wrapped rows must enter scrollback even without newline bytes"
+    );
+    let rendered = buffer
+        .history
+        .iter()
+        .map(|line| line.0.as_str())
+        .chain(buffer.displayed_text.iter().map(String::as_str))
+        .collect::<String>();
+    assert_eq!(rendered, String::from_utf8_lossy(output));
+}

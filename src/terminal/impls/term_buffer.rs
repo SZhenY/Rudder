@@ -411,23 +411,36 @@ impl TermBuffer {
         self.feed_batched(bytes);
     }
 
-    /// Feed a (already HVP-rewritten) byte slice to vt100 in newline-bounded
-    /// batches, capturing scrolled-off lines into history after each (see the
-    /// `ingest` doc comment). Does NOT touch `self.raw`, so it is reused by both
-    /// live ingest and resize-reflow replay.
+    /// Feed a (already HVP-rewritten) byte slice to vt100 in bounded batches,
+    /// capturing scrolled-off lines into history after each (see the `ingest`
+    /// doc comment). Besides newlines, bound the approximate display width:
+    /// one very long physical line can wrap through many screens without ever
+    /// containing `\n` (#385). Does NOT touch `self.raw`, so it is reused by
+    /// both live ingest and resize-reflow replay.
     fn feed_batched(&mut self, bytes: &[u8]) {
-        let rows = self.parser.screen().size().0 as usize;
+        let (rows, cols) = self.parser.screen().size();
+        let rows = rows as usize;
         let batch_lines = (rows / 2).max(1);
+        let cell_budget = batch_lines.saturating_mul(cols as usize).max(1);
         let mut start = 0usize;
         let mut nl = 0usize;
+        let mut cells = 0usize;
         for i in 0..bytes.len() {
             if bytes[i] == b'\n' {
                 nl += 1;
-                if nl >= batch_lines {
-                    self.ingest_chunk(&bytes[start..=i]);
-                    start = i + 1;
-                    nl = 0;
-                }
+            } else if bytes[i] == b'\t' {
+                // A tab can advance up to eight terminal cells.
+                cells = cells.saturating_add(8);
+            } else if bytes[i] >= 0x20 && bytes[i] & 0xc0 != 0x80 {
+                // Count ASCII and UTF-8 leading bytes. Wide Unicode occupies at
+                // most two cells, and the half-screen budget leaves that margin.
+                cells = cells.saturating_add(1);
+            }
+            if nl >= batch_lines || cells >= cell_budget {
+                self.ingest_chunk(&bytes[start..=i]);
+                start = i + 1;
+                nl = 0;
+                cells = 0;
             }
         }
         if start < bytes.len() {
