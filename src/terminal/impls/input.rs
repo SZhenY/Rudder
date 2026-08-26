@@ -105,6 +105,13 @@ pub(crate) fn should_drop_bare_ctrl_marker(
         )
 }
 
+/// Slint/winit may deliver Ctrl+C either as ETX with `ctrl=true` or as the
+/// already-translated ETX byte after the modifier flag has been cleared.
+/// In both forms it is a real terminal interrupt and must reach the PTY.
+pub(crate) fn is_terminal_interrupt(key: &str) -> bool {
+    key == "\u{0003}"
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) fn bare_ctrl_marker_workaround_enabled() -> bool {
     // Slint/winit can expose a physical Control press as U+0011 or U+0016 on

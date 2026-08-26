@@ -32,7 +32,8 @@ pub(crate) use input::c0_letter_key_down;
 pub(crate) use input::normalize_pasted_newlines;
 pub(crate) use input::{
     bare_ctrl_marker_workaround_enabled, encode_command_bar_input, encode_pasted_text,
-    key_to_pty_bytes, paste_requires_large_review, should_drop_bare_ctrl_marker,
+    is_terminal_interrupt, key_to_pty_bytes, paste_requires_large_review,
+    should_drop_bare_ctrl_marker,
     terminal_uses_bracketed_paste,
 };
 pub(crate) use encoding::TerminalEncoding;

@@ -84,6 +84,15 @@ fn bare_modifier_codes_are_dropped() {
 
 #[test]
 fn ctrl_letter_c0_still_passes() {
+    assert!(is_terminal_interrupt("\u{0003}"));
+    assert!(!is_terminal_interrupt("c"));
+    assert_eq!(key_to_pty_bytes("\u{0003}", true, false, false), vec![0x03]);
+    // Some Linux backends have already translated Ctrl+C to ETX by the time
+    // the modifier snapshot is taken, so ctrl=false must still preserve it.
+    assert_eq!(
+        key_to_pty_bytes("\u{0003}", false, false, false),
+        vec![0x03]
+    );
     assert_eq!(key_to_pty_bytes("\u{0012}", true, false, false), vec![0x12]);
     assert_eq!(key_to_pty_bytes("\u{0018}", true, false, false), vec![0x18]);
 }
