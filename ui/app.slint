@@ -664,6 +664,9 @@ export component AppWindow inherits Window {
     in-out property <string> editor-content;  // text, two-way with the input
     in-out property <bool> editor-readonly;   // view = true, edit = false
     in-out property <bool> editor-dirty: false; // edited since load
+    // Opening the dynamic editor and focusing its TextInput in the same event
+    // can re-enter Windows AccessKit while it is registering the new item tree.
+    property <bool> editor-focus-pending: false;
     in-out property <string> editor-line-numbers; // newline-joined "1..N" from Rust (#81)
     in-out property <string> editor-find-query;
     in-out property <string> editor-replace-text;
@@ -2470,8 +2473,18 @@ export component AppWindow inherits Window {
                     }
                 }
             }
-            // Focus the text the moment the editor opens.
-            init => { edit-input.focus(); }
+            // Defer focus until the next UI turn. Focusing directly from init
+            // re-enters Slint's Windows accessibility adapter and can panic
+            // with "RefCell already borrowed" (#386).
+            init => { root.editor-focus-pending = true; }
+            editor-focus-timer := Timer {
+                interval: 0ms;
+                running: root.editor-focus-pending;
+                triggered => {
+                    root.editor-focus-pending = false;
+                    edit-input.focus();
+                }
+            }
         }
     }
 
