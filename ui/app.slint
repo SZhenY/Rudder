@@ -2386,10 +2386,9 @@ export component AppWindow inherits Window {
                     Rectangle { height: 1px; background: Theme.border-subtle; }
 
                     // Text area: a line-number gutter on the left + the editor.
-                    // word-wrap is OFF so one logical line == one display line and
-                    // the numbers line up (long lines scroll horizontally); the
-                    // gutter is pinned horizontally but tracks the editor's
-                    // vertical scroll via ed-scroll.viewport-y (#81).
+                    // Wrap long lines to the visible editor width so text and
+                    // selection painting cannot overflow to the right (#387).
+                    // The gutter stays pinned and follows vertical scrolling.
                     Rectangle {
                         vertical-stretch: 1;
                         background: Theme.bg-root;
@@ -2411,26 +2410,30 @@ export component AppWindow inherits Window {
                                 }
                             }
                             Rectangle { width: 1px; background: Theme.border-subtle; }
-                            ed-scroll := ScrollView {
-                                viewport-width: max(self.visible-width, edit-input.preferred-width + 16px);
-                                viewport-height: max(self.visible-height, edit-input.preferred-height + 16px);
-                                edit-input := TextInput {
-                                    x: 8px;
-                                    y: 8px;
-                                    width: max(parent.visible-width - 16px, self.preferred-width);
-                                    height: self.preferred-height;
-                                    text <=> root.editor-content;
-                                    read-only: root.editor-readonly;
-                                    single-line: false;
-                                    wrap: no-wrap;
-                                    color: Theme.text-primary;
-                                    font-family: Theme.ui-font-family;
-                                    font-size: Theme.fs-md;
-                                    edited => {
-                                        root.editor-dirty = true;
-                                        root.editor-recount(root.editor-content);
-                                        root.editor-match-count = root.editor-count-matches(
-                                            root.editor-content, root.editor-find-query);
+                            editor-viewport := Rectangle {
+                                horizontal-stretch: 1;
+                                clip: true;
+                                ed-scroll := ScrollView {
+                                    viewport-width: self.visible-width;
+                                    viewport-height: max(self.visible-height, edit-input.preferred-height + 16px);
+                                    edit-input := TextInput {
+                                        x: 8px;
+                                        y: 8px;
+                                        width: max(1px, ed-scroll.visible-width - 16px);
+                                        height: max(ed-scroll.visible-height - 16px, self.preferred-height);
+                                        text <=> root.editor-content;
+                                        read-only: root.editor-readonly;
+                                        single-line: false;
+                                        wrap: char-wrap;
+                                        color: Theme.text-primary;
+                                        font-family: Theme.ui-font-family;
+                                        font-size: Theme.fs-md;
+                                        edited => {
+                                            root.editor-dirty = true;
+                                            root.editor-recount(root.editor-content);
+                                            root.editor-match-count = root.editor-count-matches(
+                                                root.editor-content, root.editor-find-query);
+                                        }
                                     }
                                 }
                             }
