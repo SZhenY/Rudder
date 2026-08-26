@@ -400,7 +400,6 @@ jobs:
           set -eu
           cargo apk build \
             --manifest-path android/Cargo.toml \
-            --locked \
             --release \
             --target aarch64-linux-android \
             --lib
