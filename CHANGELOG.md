@@ -3,6 +3,14 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [0.7.0] - 2026-08-27
+
+- **新增 Android Beta 安装包。** 发布流水线现在构建 ARM64 APK，以 `-beta.apk` 后缀作为工作流产物并自动附加到 GitHub Release。首个实验版提供密码认证、交互式 SSH Shell 和每次连接前的服务器 SHA-256 密钥指纹确认；桌面版的构建与功能保持不变。
+- **Add an Android Beta package.** The release workflow now builds an ARM64 APK, stores it as a `-beta.apk` workflow artifact, and attaches it to tagged GitHub Releases. This first experimental build provides password authentication, an interactive SSH shell, and per-connection SHA-256 server-key confirmation; desktop builds and features remain unchanged.
+
+- **修复 SSH 私钥选择器与多行粘贴键盘操作（#392、#393）。** 私钥选择器在所有平台均可显示 `id_rsa`、`id_ed25519` 等无扩展名文件；多行粘贴安全确认框可使用 Enter 确认，且不会将该快捷键扩展到删除或主机密钥等高风险弹窗。
+- **Fix SSH key selection and multiline-paste keyboard handling (#392, #393).** The private-key picker now shows extensionless files such as `id_rsa` and `id_ed25519` on every platform. Multiline-paste confirmation accepts Enter without enabling keyboard confirmation for destructive delete or host-key prompts.
+
 ## [0.6.16] - 2026-08-24
 
 - **新增 Debian 与 Flatpak 安装包。** 发布流水线现在为 Linux x86_64 和 ARM64 生成 `.deb`，并为 x86_64 生成可直接安装的 Flatpak bundle；这些安装包会作为工作流产物保存，并在标签发版时自动附加到 GitHub Release。现有 tar.gz 与 AppImage 保持不变。

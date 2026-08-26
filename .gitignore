@@ -1,5 +1,6 @@
 /target
 Cargo.lock
+!/android/Cargo.lock
 *.rs.bk
 .DS_Store
 /.vscode
@@ -10,3 +11,4 @@ Cargo.lock
 /opencode.jsonc
 /.qoder
 /docs/superpowers
+/android/target/
