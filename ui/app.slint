@@ -18,7 +18,7 @@ import { Theme } from "theme.slint";
 import { Sidebar, DiskInfo } from "sidebar.slint";
 import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
-import { SessionDialog, SessionDraft, PortFwd } from "session_dialog.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { LabeledInput, PrimaryButton, GhostButton, DockExpandButton, IconButton, ToolStrip } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
@@ -783,9 +783,13 @@ export component AppWindow inherits Window {
     callback session-dialog-pick-key();
     // Port forwards for the session being edited (#56).
     in-out property <[PortFwd]> dialog-forwards;
+    in-out property <[TriggerDraft]> dialog-triggers;
     callback add-forward();
     callback update-forward(int /* index */, PortFwd);
     callback delete-forward(int /* index */);
+    callback add-trigger();
+    callback update-trigger(int /* index */, TriggerDraft);
+    callback delete-trigger(int /* index */);
 
     callback tab-selected(string);
     callback tab-closed(string);
@@ -4037,6 +4041,7 @@ export component AppWindow inherits Window {
         draft-note <=> root.dialog-note;
         test-status <=> root.dialog-test-status;
         forwards: root.dialog-forwards;
+        triggers: root.dialog-triggers;
         submit(draft) => { root.session-dialog-submit(draft); }
         test-connection(draft) => { root.session-dialog-test(draft); }
         cancel => { root.session-dialog-cancel(); }
@@ -4044,6 +4049,9 @@ export component AppWindow inherits Window {
         add-forward => { root.add-forward(); }
         update-forward(i, f) => { root.update-forward(i, f); }
         delete-forward(i) => { root.delete-forward(i); }
+        add-trigger => { root.add-trigger(); }
+        update-trigger(i, trigger) => { root.update-trigger(i, trigger); }
+        delete-trigger(i) => { root.delete-trigger(i); }
     }
 
     // --- Delete confirmation (#28) ----------------------------------------

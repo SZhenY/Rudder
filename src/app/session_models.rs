@@ -400,6 +400,7 @@ pub(super) fn session_from_draft(
     draft: &SessionDraft,
     existing: Option<&Session>,
     forwards: Vec<crate::config::PortForward>,
+    triggers: Vec<crate::config::SessionTrigger>,
 ) -> Session {
     let password = if draft.password.is_empty() {
         existing.map(|s| s.password.clone()).unwrap_or_default()
@@ -466,6 +467,7 @@ pub(super) fn session_from_draft(
         flow_control: draft.flow_control.to_string(),
         encoding: draft.encoding.to_string(),
         forwards,
+        triggers,
         disable_shell_integration: draft.disable_shell_integration,
         note: draft.note.to_string(),
         jump_session_id: draft.jump_session_id.to_string(),

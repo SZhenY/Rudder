@@ -13,6 +13,7 @@ mod dock_menu;
 mod jump_list;
 pub mod launch;
 mod port_forward;
+mod session_trigger;
 mod quick_commands;
 mod resource_ui;
 mod session_event;
@@ -30,6 +31,7 @@ mod window;
 
 use self::auth_dialogs::*;
 use self::port_forward::*;
+use self::session_trigger::*;
 use self::quick_commands::*;
 use self::resource_ui::*;
 use self::session_event::*;
@@ -1798,11 +1800,18 @@ fn open_window(
         window.on_set_welcome_as_sidebar(move |v| {
             // The property is two-way-bound through InterfacePanel and changing
             // it destroys/recreates the Welcome subtree that owns the Switch.
-            // Defer the *entire* transition until its callback has returned;
-            // deferring only refresh_panes still destroys the component tree
-            // recursively on Windows (#323).
+            // Persist first: saving config does not touch the Slint tree, and
+            // doing it synchronously means an immediate window close cannot
+            // lose the preference. Only the property/layout transition needs
+            // to wait until this Switch callback has returned (#323).
+            {
+                let mut s = store.borrow_mut();
+                s.set_welcome_as_sidebar(v);
+                if let Err(error) = s.save() {
+                    tracing::warn!("failed to persist welcome sidebar preference: {error:#}");
+                }
+            }
             let weak = weak.clone();
-            let store = store.clone();
             let layout = layout.clone();
             let content_size = content_size.clone();
             let tabs_model = tabs_model.clone();
@@ -1811,11 +1820,6 @@ fn open_window(
             slint::Timer::single_shot(std::time::Duration::ZERO, move || {
                 if let Some(w) = weak.upgrade() {
                     w.set_welcome_as_sidebar(v);
-                    {
-                        let mut s = store.borrow_mut();
-                        s.set_welcome_as_sidebar(v);
-                        let _ = s.save();
-                    }
                     {
                         let mut lay = layout.borrow_mut();
                         update_welcome_tab(&mut lay, v);
@@ -3580,6 +3584,10 @@ fn wire_session_callbacks(
     // Session.forwards; opening the dialog (new/edit) resets it.
     let edit_forwards: Rc<RefCell<Vec<PortFwd>>> =
         Rc::new(RefCell::new(vec![blank_forward_draft()]));
+    let edit_triggers: Rc<RefCell<Vec<TriggerDraft>>> =
+        Rc::new(RefCell::new(vec![blank_trigger_draft()]));
+    let edit_trigger_secrets: Rc<RefCell<Vec<Secret>>> =
+        Rc::new(RefCell::new(vec![Secret::default()]));
     // on_connect_session moves the panes_model binding into its closure; the
     // rename handler below needs its own handle, so clone up front.
     let panes_model_rename = panes_model.clone();
@@ -3609,12 +3617,17 @@ fn wire_session_callbacks(
     // New session -> open dialog with blank draft.
     let weak = window.as_weak();
     let ef_new = edit_forwards.clone();
+    let et_new = edit_triggers.clone();
+    let ets_new = edit_trigger_secrets.clone();
     let store_ng = store.clone();
     window.on_new_session_clicked(move || {
         if let Some(w) = weak.upgrade() {
             *ef_new.borrow_mut() = vec![blank_forward_draft()];
+            *et_new.borrow_mut() = vec![blank_trigger_draft()];
+            *ets_new.borrow_mut() = vec![Secret::default()];
             w.set_session_groups(session_groups_model(&store_ng.borrow()));
             w.set_dialog_forwards(forward_model(&ef_new.borrow()));
+            w.set_dialog_triggers(trigger_model(&et_new.borrow()));
             let empty = Session::new_empty();
             let (jump_labels, jump_ids, jump_idx) =
                 jump_candidates(&store_ng.borrow(), &empty.id, "");
@@ -3827,6 +3840,8 @@ fn wire_session_callbacks(
         let weak = window.as_weak();
         let store = store.clone();
         let ef_edit = edit_forwards.clone();
+        let et_edit = edit_triggers.clone();
+        let ets_edit = edit_trigger_secrets.clone();
         window.on_edit_session(move |id: SharedString| {
             let id = id.to_string();
             let store = store.borrow();
@@ -3837,9 +3852,16 @@ fn wire_session_callbacks(
             if ef_edit.borrow().is_empty() {
                 ef_edit.borrow_mut().push(blank_forward_draft());
             }
+            *et_edit.borrow_mut() = trigger_drafts(&session.triggers);
+            *ets_edit.borrow_mut() = session.triggers.iter().map(|t| t.response.clone()).collect();
+            if et_edit.borrow().is_empty() {
+                et_edit.borrow_mut().push(blank_trigger_draft());
+                ets_edit.borrow_mut().push(Secret::default());
+            }
             if let Some(w) = weak.upgrade() {
                 w.set_session_groups(session_groups_model(&store));
                 w.set_dialog_forwards(forward_model(&ef_edit.borrow()));
+                w.set_dialog_triggers(trigger_model(&et_edit.borrow()));
                 w.set_dialog_id(session.id.clone().into());
                 w.set_dialog_name(session.name.clone().into());
                 w.set_dialog_host(session.host.clone().into());
@@ -4168,6 +4190,8 @@ fn wire_session_callbacks(
         let store = store.clone();
         let sessions_model = sessions_model.clone();
         let edit_forwards = edit_forwards.clone();
+        let edit_triggers = edit_triggers.clone();
+        let edit_trigger_secrets = edit_trigger_secrets.clone();
         let registry = registry.clone();
         window.on_session_dialog_submit(move |draft: SessionDraft| {
             let id = draft.id.to_string();
@@ -4177,6 +4201,13 @@ fn wire_session_callbacks(
                     if let Some(w) = weak.upgrade() {
                         w.set_dialog_test_status(message.into());
                     }
+                    return;
+                }
+            };
+            let triggers = match validated_triggers(&edit_triggers.borrow(), &edit_trigger_secrets.borrow()) {
+                Ok(triggers) => triggers,
+                Err(message) => {
+                    if let Some(w) = weak.upgrade() { w.set_dialog_test_status(message.into()); }
                     return;
                 }
             };
@@ -4263,6 +4294,7 @@ fn wire_session_callbacks(
                 flow_control: draft.flow_control.to_string(),
                 encoding: draft.encoding.to_string(),
                 forwards,
+                triggers,
                 disable_shell_integration: draft.disable_shell_integration,
                 note: draft.note.to_string(),
                 jump_session_id: draft.jump_session_id.to_string(),
@@ -4290,6 +4322,8 @@ fn wire_session_callbacks(
         let runtime = runtime.clone();
         let store = store.clone();
         let edit_forwards = edit_forwards.clone();
+        let edit_triggers = edit_triggers.clone();
+        let edit_trigger_secrets = edit_trigger_secrets.clone();
         window.on_session_dialog_test(move |draft: SessionDraft| {
             let kind = draft.kind.to_string();
             if kind == "serial" {
@@ -4331,7 +4365,14 @@ fn wire_session_callbacks(
                     return;
                 }
             };
-            let session = session_from_draft(&draft, existing.as_ref(), forwards);
+            let triggers = match validated_triggers(&edit_triggers.borrow(), &edit_trigger_secrets.borrow()) {
+                Ok(triggers) => triggers,
+                Err(message) => {
+                    if let Some(w) = weak.upgrade() { w.set_dialog_test_status(message.into()); }
+                    return;
+                }
+            };
+            let session = session_from_draft(&draft, existing.as_ref(), forwards, triggers);
             let weak_done = weak.clone();
 
             if kind == "ssh" {
@@ -4521,6 +4562,47 @@ fn wire_session_callbacks(
             }
             if let Some(w) = weak.upgrade() {
                 w.set_dialog_forwards(forward_model(&ef.borrow()));
+            }
+        });
+    }
+
+    // Session expect/send trigger editor (#212).
+    {
+        let weak = window.as_weak();
+        let triggers = edit_triggers.clone();
+        let secrets = edit_trigger_secrets.clone();
+        window.on_add_trigger(move || {
+            triggers.borrow_mut().push(blank_trigger_draft());
+            secrets.borrow_mut().push(Secret::default());
+            if let Some(w) = weak.upgrade() {
+                w.set_dialog_triggers(trigger_model(&triggers.borrow()));
+            }
+        });
+    }
+    {
+        let triggers = edit_triggers.clone();
+        window.on_update_trigger(move |index: i32, trigger: TriggerDraft| {
+            let i = index as usize;
+            let mut values = triggers.borrow_mut();
+            if i < values.len() { values[i] = trigger; }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let triggers = edit_triggers.clone();
+        let secrets = edit_trigger_secrets.clone();
+        window.on_delete_trigger(move |index: i32| {
+            let i = index as usize;
+            let mut values = triggers.borrow_mut();
+            let mut saved = secrets.borrow_mut();
+            if i < values.len() { values.remove(i); }
+            if i < saved.len() { saved.remove(i); }
+            if values.is_empty() {
+                values.push(blank_trigger_draft());
+                saved.push(Secret::default());
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_dialog_triggers(trigger_model(&values));
             }
         });
     }

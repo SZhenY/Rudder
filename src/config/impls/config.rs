@@ -484,6 +484,12 @@ impl ConfigStore {
                         {
                             session.private_key_inline = Secret::new(plain);
                         }
+                        for trigger in &mut session.triggers {
+                            if let Some(plain) = Self::try_decrypt(&key, trigger.response.as_str())
+                            {
+                                trigger.response = Secret::new(plain);
+                            }
+                        }
                     }
                     if let Some(plain) = Self::try_decrypt(&key, cfg.webdav_password.as_str()) {
                         cfg.webdav_password = Secret::new(plain);
@@ -1559,6 +1565,14 @@ impl ConfigStore {
                 let enc = Self::encrypt(&self.key, session.private_key_inline.as_str())?;
                 session.private_key_inline = Secret::new(enc);
             }
+            for trigger in &mut session.triggers {
+                if !trigger.response.is_empty()
+                    && !trigger.response.as_str().starts_with(Self::ENC_PREFIX)
+                {
+                    let enc = Self::encrypt(&self.key, trigger.response.as_str())?;
+                    trigger.response = Secret::new(enc);
+                }
+            }
         }
         if !disk.webdav_password.is_empty()
             && !disk.webdav_password.as_str().starts_with(Self::ENC_PREFIX)
@@ -1685,6 +1699,12 @@ impl ConfigStore {
                 let enc = Self::encrypt_export(s.private_key_inline.as_str())?;
                 s.private_key_inline = Secret::new(enc);
             }
+            for trigger in &mut s.triggers {
+                if !trigger.response.is_empty() {
+                    let enc = Self::encrypt_export(trigger.response.as_str())?;
+                    trigger.response = Secret::new(enc);
+                }
+            }
             // `last_used` is machine-local noise — don't carry it across.
             s.last_used = None;
         }
@@ -1737,6 +1757,15 @@ impl ConfigStore {
                     Self::try_decrypt(&self.key, s.private_key_inline.as_str())
                 {
                     s.private_key_inline = Secret::new(plain);
+                }
+                for trigger in &mut s.triggers {
+                    if let Some(plain) = Self::decrypt_export(trigger.response.as_str()) {
+                        trigger.response = Secret::new(plain);
+                    } else if let Some(plain) =
+                        Self::try_decrypt(&self.key, trigger.response.as_str())
+                    {
+                        trigger.response = Secret::new(plain);
+                    }
                 }
             }
             let dup = self.cache.sessions.iter().any(|x| {

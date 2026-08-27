@@ -13,6 +13,13 @@ export struct PortFwd {
     host-port: string,
 }
 
+export struct TriggerDraft {
+    expect: string,
+    response: string,
+    append-enter: bool,
+    repeat: bool,
+}
+
 export struct SessionDraft {
     id: string,
     name: string,
@@ -184,6 +191,64 @@ component PortForwardRow inherits VerticalLayout {
             placeholder: @tr("Target port");
             value <=> root.host-port;
             edited(value) => { root.host-port = value; root.notify-updated(); }
+        }
+    }
+}
+
+component TriggerRow inherits VerticalLayout {
+    in property <TriggerDraft> trigger;
+    in property <int> index;
+    callback updated(int, TriggerDraft);
+    callback remove(int);
+
+    property <string> expect: trigger.expect;
+    property <string> response: trigger.response;
+    property <bool> append-enter: trigger.append-enter;
+    property <bool> repeat: trigger.repeat;
+
+    function notify-updated() {
+        root.updated(root.index, {
+            expect: root.expect,
+            response: root.response,
+            append-enter: root.append-enter,
+            repeat: root.repeat,
+        });
+    }
+
+    spacing: 6px;
+    padding: 8px;
+    HorizontalLayout {
+        spacing: 6px;
+        MiniInput {
+            placeholder: @tr("Expected output");
+            value <=> root.expect;
+            edited(value) => { root.expect = value; root.notify-updated(); }
+        }
+        Rectangle {
+            width: 30px; height: 30px;
+            border-radius: Theme.radius-sm;
+            background: trigger-remove.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
+            trigger-remove := TouchArea { mouse-cursor: pointer; clicked => { root.remove(root.index); } }
+            Text {
+                text: "\u{E5CD}"; font-family: "Material Icons"; color: Theme.danger;
+                font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center;
+            }
+        }
+    }
+    MiniInput {
+        placeholder: @tr("Response (leave blank to keep saved value)");
+        value <=> root.response;
+        edited(value) => { root.response = value; root.notify-updated(); }
+    }
+    HorizontalLayout {
+        spacing: 14px;
+        SegOption {
+            label: @tr("Send Enter"); active: root.append-enter;
+            clicked => { root.append-enter = !root.append-enter; root.notify-updated(); }
+        }
+        SegOption {
+            label: @tr("Repeat"); active: root.repeat;
+            clicked => { root.repeat = !root.repeat; root.notify-updated(); }
         }
     }
 }
@@ -422,6 +487,7 @@ export component SessionDialog inherits Rectangle {
 
     // Port forwards / tunnels (#56). Every row is an editable form (#277).
     in property <[PortFwd]> forwards;
+    in property <[TriggerDraft]> triggers;
     property <bool> show-advanced: false;   // collapse proxy + forwarding (#56)
 
     callback submit(SessionDraft);
@@ -430,6 +496,9 @@ export component SessionDialog inherits Rectangle {
     callback add-forward();
     callback update-forward(int /* index */, PortFwd);
     callback delete-forward(int /* index */);
+    callback add-trigger();
+    callback update-trigger(int /* index */, TriggerDraft);
+    callback delete-trigger(int /* index */);
     callback pick-key-file();   // open a native file picker for the private key
 
     visible: is-open;
@@ -1008,6 +1077,26 @@ export component SessionDialog inherits Rectangle {
                     text: @tr("-L: local port → target reached from the server; -R: server port → target reached from here; -D: local SOCKS5 proxy");
                     color: Theme.text-muted;
                     font-size: Theme.fs-xs;
+                }
+            }
+
+            // ── Expect/send login triggers (SSH only) (#212) ───────────────
+            if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
+                spacing: 6px;
+                Text { text: @tr("Login triggers"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
+                for trigger[i] in root.triggers : TriggerRow {
+                    trigger: trigger;
+                    index: i;
+                    updated(index, value) => { root.update-trigger(index, value); }
+                    remove(index) => { root.delete-trigger(index); }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    PrimaryButton { text: @tr("Add trigger"); clicked => { root.add-trigger(); } }
+                }
+                Text {
+                    text: @tr("When expected text appears, send the response automatically. Responses are stored encrypted.");
+                    color: Theme.text-muted; font-size: Theme.fs-xs; wrap: word-wrap;
                 }
             }
 

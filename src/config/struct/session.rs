@@ -157,6 +157,10 @@ pub struct Session {
     #[serde(default)]
     pub forwards: Vec<PortForward>,
 
+    /// Expect/send rules evaluated against interactive terminal output (#212).
+    #[serde(default)]
+    pub triggers: Vec<SessionTrigger>,
+
     /// Skip the shell-integration setup (the cwd-follow PROMPT_COMMAND hook + the
     /// remote resource monitor). Those assume a POSIX shell; on a Windows server
     /// whose shell is pwsh/cmd the injected hook breaks the shell. Turn this on
@@ -190,6 +194,23 @@ pub struct PortForward {
     pub host_port: u16,
 }
 
+/// Automatically send a response when literal terminal output is observed.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionTrigger {
+    pub expect: String,
+    #[serde(default)]
+    pub response: Secret,
+    #[serde(default = "default_true")]
+    pub append_enter: bool,
+    /// False means the rule is consumed after its first match.
+    #[serde(default)]
+    pub repeat: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 impl Session {
     pub fn new_empty() -> Self {
         Self {
@@ -217,6 +238,7 @@ impl Session {
             flow_control: default_flow(),
             encoding: default_encoding(),
             forwards: Vec::new(),
+            triggers: Vec::new(),
             disable_shell_integration: false,
             note: String::new(),
         }
