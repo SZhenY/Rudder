@@ -5,7 +5,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-const SEND_BLOCK_SIZE: usize = 16 * 1024;
+// The ZMODEM specification caps data subpackets at 1 KiB; GNU lrzsz supports
+// the widely used 8 KiB extension, but its receiver buffer is exactly 8 KiB.
+// A 16 KiB subpacket works for tiny files (only the final short packet is sent)
+// and then silently fails as soon as a file reaches one full block (#308).
+const SEND_BLOCK_SIZE: usize = 8 * 1024;
 
 /// Send one or more local files to a remote `rz`. `first` contains the ZRINIT
 /// frame that triggered upload detection. The returned bytes belong to the
@@ -16,7 +20,7 @@ pub(crate) async fn send(
     files: &[PathBuf],
     events: &UnboundedSender<SessionEvent>,
 ) -> Result<Vec<u8>> {
-    tracing::debug!(
+    tracing::info!(
         "zmodem: send start, first[{}]={:02x?}, files={}",
         first.len(),
         &first[..first.len().min(80)],
@@ -31,6 +35,12 @@ pub(crate) async fn send(
         )
     })?;
     let crc32 = receiver.1[3] & CANFC32 != 0;
+    tracing::info!(
+        "zmodem upload: receiver ready flags={:02x?}, crc32={}, block_size={}",
+        receiver.1,
+        crc32,
+        SEND_BLOCK_SIZE
+    );
     let total_bytes = files
         .iter()
         .filter_map(|path| path.metadata().ok())
@@ -69,6 +79,7 @@ pub(crate) async fn send(
         .data(&b"OO"[..])
         .await
         .context("zmodem send close marker")?;
+    tracing::info!("zmodem upload: close handshake complete");
 
     // `byte()` pulls a whole SSH chunk; putting the first prompt byte back
     // preserves that complete chunk for the normal terminal output path.
@@ -136,6 +147,9 @@ async fn send_file_inner(
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
     let info = file_info(name, size, modified, files_left, bytes_left);
+    tracing::info!(
+        "zmodem upload: sending file name={name:?}, size={size}, files_left={files_left}"
+    );
 
     // A receiver may repeat ZRINIT while the file picker is open. Resend ZFILE
     // until the current receiver answers with the requested starting offset.
@@ -150,7 +164,11 @@ async fn send_file_inner(
         })?;
         tracing::debug!("zmodem upload rx header type={frame} data={data:02x?}");
         match frame {
-            ZRPOS => break u32::from_le_bytes(data) as u64,
+            ZRPOS => {
+                let position = u32::from_le_bytes(data) as u64;
+                tracing::info!("zmodem upload: receiver accepted file at offset={position}");
+                break position;
+            }
             ZSKIP => return Ok(()),
             ZCAN | ZABORT => bail!("{}", t("传输被远端取消", "transfer aborted by receiver")),
             ZRINIT => {
@@ -191,6 +209,7 @@ async fn send_file_inner(
         }
         io.send_bin(ZEOF, (position as u32).to_le_bytes(), crc32)
             .await?;
+        tracing::info!("zmodem upload: sent ZEOF position={position}");
 
         loop {
             let (frame, data) = io.read_header().await.with_context(|| {
@@ -201,9 +220,15 @@ async fn send_file_inner(
             })?;
             tracing::debug!("zmodem upload rx header type={frame} data={data:02x?}");
             match frame {
-                ZRINIT => return Ok(()),
+                ZRINIT => {
+                    tracing::info!("zmodem upload: receiver confirmed file completion");
+                    return Ok(());
+                }
                 ZRPOS => {
                     requested = u32::from_le_bytes(data) as u64;
+                    tracing::warn!(
+                        "zmodem upload: receiver requested retransmit from offset={requested}"
+                    );
                     break;
                 }
                 ZSKIP => return Ok(()),
@@ -310,5 +335,10 @@ mod tests {
             encoded,
             [ZDLE, 0x40, ZDLE, 0x51, ZDLE, 0x58, ZDLE, ZRUB0, ZDLE, ZRUB1, b'A']
         );
+    }
+
+    #[test]
+    fn send_blocks_fit_lrzsz_receiver_limit() {
+        assert!(SEND_BLOCK_SIZE <= 8 * 1024);
     }
 }
