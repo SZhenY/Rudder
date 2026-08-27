@@ -545,3 +545,24 @@ msgstr "会话名称"
 
 msgid "Leave empty to restore the default name"
 msgstr "留空则恢复默认名称"
+
+msgid "Login triggers"
+msgstr "登录触发器"
+
+msgid "Expected output"
+msgstr "期望输出"
+
+msgid "Response (leave blank to keep saved value)"
+msgstr "回复内容（留空则保留已保存的值）"
+
+msgid "Send Enter"
+msgstr "发送 Enter"
+
+msgid "Repeat"
+msgstr "重复触发"
+
+msgid "Add trigger"
+msgstr "添加触发器"
+
+msgid "When expected text appears, send the response automatically. Responses are stored encrypted."
+msgstr "出现期望文本时自动发送回复。回复内容会加密保存。"

@@ -548,3 +548,24 @@ msgstr "Session name"
 
 msgid "Leave empty to restore the default name"
 msgstr "Leave empty to restore the default name"
+
+msgid "Login triggers"
+msgstr "Login triggers"
+
+msgid "Expected output"
+msgstr "Expected output"
+
+msgid "Response (leave blank to keep saved value)"
+msgstr "Response (leave blank to keep saved value)"
+
+msgid "Send Enter"
+msgstr "Send Enter"
+
+msgid "Repeat"
+msgstr "Repeat"
+
+msgid "Add trigger"
+msgstr "Add trigger"
+
+msgid "When expected text appears, send the response automatically. Responses are stored encrypted."
+msgstr "When expected text appears, send the response automatically. Responses are stored encrypted."
