@@ -325,11 +325,13 @@ impl<'a> Rx<'a> {
         if crc16(&bytes) != crc {
             bail!("hex header CRC mismatch");
         }
-        // Swallow the trailing CR/LF (+ optional XON) up to the newline.
+        // Swallow the trailing CR/LF (+ optional XON) up to the newline. GNU
+        // lrzsz sets the high bit on LF (`0x8a`). ZFIN has no following XON, so
+        // failing to recognise that byte deadlocks: we wait for a third byte
+        // while remote `rz` waits for our final "OO" (#308).
         for _ in 0..3 {
-            match self.byte().await? {
-                b'\n' => break,
-                _ => continue,
+            if is_zmodem_line_feed(self.byte().await?) {
+                break;
             }
         }
         Ok((bytes[0], [bytes[1], bytes[2], bytes[3], bytes[4]]))
@@ -496,6 +498,10 @@ fn from_hex(c: u8) -> Result<u8> {
     }
 }
 
+fn is_zmodem_line_feed(byte: u8) -> bool {
+    byte & 0x7f == b'\n'
+}
+
 /// CRC-16/XMODEM (poly 0x1021, init 0, no final xor) — ZMODEM header/subpacket.
 fn crc16(data: &[u8]) -> u16 {
     let mut crc: u16 = 0;
@@ -542,6 +548,13 @@ mod tests {
     fn crc32_known_vector() {
         // CRC-32 of "123456789" is 0xCBF43926.
         assert_eq!(crc32_of(b"123456789"), 0xCBF4_3926);
+    }
+
+    #[test]
+    fn accepts_lrzsz_high_bit_line_feed() {
+        assert!(is_zmodem_line_feed(b'\n'));
+        assert!(is_zmodem_line_feed(0x8a));
+        assert!(!is_zmodem_line_feed(b'\r'));
     }
 
     #[test]
