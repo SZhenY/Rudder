@@ -2,6 +2,11 @@ name: macOS Intel Test Build
 
 on:
   workflow_dispatch:
+  # Bootstrap/test changes to this dedicated workflow without requiring an
+  # Actions API token. Ordinary source pushes do not trigger it.
+  push:
+    branches: [main]
+    paths: [.github/workflows/macos-intel-test.yml]
 
 permissions:
   contents: read
@@ -63,4 +68,3 @@ jobs:
           name: macos-x86_64-test
           path: meatshell-macos-x86_64-test.zip
           retention-days: 7
-
