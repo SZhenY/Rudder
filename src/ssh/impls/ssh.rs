@@ -1884,6 +1884,16 @@ async fn run_session(
                                         zmodem_done_at = Some(std::time::Instant::now());
                                         continue;
                                     }
+                                    let _ = events.send(SessionEvent::Output(format!(
+                                        "\r\n[meatshell] {} {}...\r\n",
+                                        t("开始上传", "Uploading"),
+                                        files
+                                            .iter()
+                                            .filter_map(|path| path.file_name())
+                                            .map(|name| name.to_string_lossy())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    )));
                                     crate::terminal::zmodem::send(
                                         &mut channel,
                                         &data,
@@ -1912,7 +1922,7 @@ async fn run_session(
                                     tracing::warn!("zmodem {direction:?} failed: {e:#}");
                                     let _ = channel.data(&ZMODEM_CANCEL[..]).await;
                                     let _ = events.send(SessionEvent::Output(format!(
-                                        "\r\n[meatshell] {}: {e}\r\n",
+                                        "\r\n[meatshell] {}: {e:#}\r\n",
                                         match direction {
                                             ZmodemDirection::Download => t(
                                                 "ZMODEM 接收失败,已取消",

@@ -24,7 +24,12 @@ pub(crate) async fn send(
     );
 
     let mut io = Rx::new(channel, first);
-    let receiver = wait_for_header(&mut io, &[ZRINIT]).await?;
+    let receiver = wait_for_header(&mut io, &[ZRINIT]).await.with_context(|| {
+        t(
+            "等待远端 rz 的初始 ZRINIT 握手",
+            "waiting for the initial ZRINIT handshake from remote rz",
+        )
+    })?;
     let crc32 = receiver.1[3] & CANFC32 != 0;
     let total_bytes = files
         .iter()
@@ -54,7 +59,12 @@ pub(crate) async fn send(
     }
 
     io.send_hex(ZFIN, [0; 4]).await?;
-    let _ = wait_for_header(&mut io, &[ZFIN]).await?;
+    let _ = wait_for_header(&mut io, &[ZFIN]).await.with_context(|| {
+        t(
+            "等待远端 rz 的 ZFIN 关闭握手",
+            "waiting for the ZFIN close handshake from remote rz",
+        )
+    })?;
     io.ch
         .data(&b"OO"[..])
         .await
@@ -132,7 +142,12 @@ async fn send_file_inner(
     io.send_bin(ZFILE, [0; 4], crc32).await?;
     io.send_subpacket(info.as_bytes(), ZCRCW, crc32).await?;
     let mut requested = loop {
-        let (frame, data) = io.read_header().await?;
+        let (frame, data) = io.read_header().await.with_context(|| {
+            t(
+                "已发送文件信息，等待远端 rz 返回 ZRPOS",
+                "sent file metadata; waiting for ZRPOS from remote rz",
+            )
+        })?;
         tracing::debug!("zmodem upload rx header type={frame} data={data:02x?}");
         match frame {
             ZRPOS => break u32::from_le_bytes(data) as u64,
@@ -178,7 +193,12 @@ async fn send_file_inner(
             .await?;
 
         loop {
-            let (frame, data) = io.read_header().await?;
+            let (frame, data) = io.read_header().await.with_context(|| {
+                t(
+                    "已发送文件数据和 ZEOF，等待远端 rz 确认",
+                    "sent file data and ZEOF; waiting for remote rz confirmation",
+                )
+            })?;
             tracing::debug!("zmodem upload rx header type={frame} data={data:02x?}");
             match frame {
                 ZRINIT => return Ok(()),
