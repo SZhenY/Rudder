@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Carries the user's answer to a host-key confirmation prompt back to the
@@ -87,32 +86,5 @@ impl MfaResponder {
 impl std::fmt::Debug for MfaResponder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("MfaResponder")
-    }
-}
-
-/// Carries files selected for an in-terminal ZMODEM `rz` upload back to the
-/// SSH worker. `None` means the picker was cancelled.
-#[derive(Clone)]
-pub struct ZmodemUploadResponder(
-    Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Option<Vec<PathBuf>>>>>>,
-);
-
-impl ZmodemUploadResponder {
-    pub fn new(tx: tokio::sync::oneshot::Sender<Option<Vec<PathBuf>>>) -> Self {
-        Self(Arc::new(std::sync::Mutex::new(Some(tx))))
-    }
-
-    pub fn respond(&self, files: Option<Vec<PathBuf>>) {
-        if let Ok(mut guard) = self.0.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.send(files);
-            }
-        }
-    }
-}
-
-impl std::fmt::Debug for ZmodemUploadResponder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("ZmodemUploadResponder")
     }
 }

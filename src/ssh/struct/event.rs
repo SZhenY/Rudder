@@ -5,7 +5,7 @@ use crate::config::PortForward;
 
 use super::{
     CredentialResponder, HostKeyResponder, MfaResponder, ProcInfo, ProcessKillResult, RemoteEntry,
-    RemoteTreeNode, RuntimeTunnelInfo, SessionCommand, SystemDetails, ZmodemUploadResponder,
+    RemoteTreeNode, RuntimeTunnelInfo, SessionCommand, SystemDetails,
 };
 
 /// Events emitted back to the UI thread.
@@ -54,9 +54,6 @@ pub enum SessionEvent {
         echo: bool,
         responder: MfaResponder,
     },
-    /// The remote `rz` command is waiting for files. The UI opens a native
-    /// multi-file picker and returns the selection to the blocked SSH worker.
-    ZmodemUploadPrompt { responder: ZmodemUploadResponder },
     /// Remote machine resource sample (from the monitor channel).
     /// Memory/swap are in KiB (as reported by /proc/meminfo).
     ResourceStats {
