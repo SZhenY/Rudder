@@ -7,8 +7,6 @@
 //!   * Route Slint callbacks to the right domain module.
 mod auth_dialogs;
 pub(crate) mod core;
-#[cfg(target_os = "macos")]
-mod dock_menu;
 #[cfg(windows)]
 mod jump_list;
 pub mod launch;
@@ -392,14 +390,6 @@ fn do_tab_render_flush(
 /// Number of samples kept for the sparkline.
 const NET_HISTORY_LEN: usize = 60;
 
-/// Set once by `run()`; lets a platform entry point outside the Slint
-/// callback tree (the macOS Dock menu) open a window. Only ever invoked from
-/// the UI/main thread.
-#[cfg(target_os = "macos")]
-thread_local! {
-    static NEW_WINDOW_HOOK: RefCell<Option<Rc<dyn Fn()>>> = RefCell::new(None);
-}
-
 // UI-thread handle to the process core, published by `run()` before the
 // event loop starts. Cross-thread callers (the single-instance IPC
 // listener) run a capture-less closure via `invoke_from_event_loop` and
@@ -407,22 +397,6 @@ thread_local! {
 // threads.
 thread_local! {
     static NEW_WINDOW_CORE: RefCell<Option<Rc<AppCore>>> = const { RefCell::new(None) };
-}
-
-#[cfg(target_os = "macos")]
-fn set_new_window_hook(f: Rc<dyn Fn()>) {
-    NEW_WINDOW_HOOK.with(|h| *h.borrow_mut() = Some(f));
-}
-
-/// Open a new window from a platform entry point (macOS Dock menu action).
-/// Runs on the main/UI thread; a no-op until `run()` installs the hook.
-#[cfg(target_os = "macos")]
-pub(crate) fn request_new_window() {
-    NEW_WINDOW_HOOK.with(|h| {
-        if let Some(f) = h.borrow().as_ref() {
-            f();
-        }
-    });
 }
 
 /// Embed the app icon PNG into the binary and set it as the X11 window icon.
@@ -567,33 +541,7 @@ pub fn run(intent: crate::app::launch::LaunchIntent) -> Result<()> {
     #[cfg(windows)]
     crate::app::jump_list::register_new_window_task();
 
-    // macOS Dock menu ("新建窗口"): install the new-window hook first so a
-    // Dock click can never race ahead of it. The NSApplication patching
-    // itself happens after the first window below, because AppKit asks the
-    // winit delegate for the Dock menu and that delegate only exists once
-    // the backend has built a window. Failures are warn-only and never
-    // block startup (see dock_menu.rs).
-    #[cfg(target_os = "macos")]
-    {
-        let core = core.clone();
-        set_new_window_hook(Rc::new(move || {
-            match open_window(core.clone(), true, None) {
-                Ok(window_id) => {
-                    if let Some(st) = core.window_states.borrow().get(&window_id) {
-                        if let Some(w) = st.weak.upgrade() {
-                            raise_to_front(&w);
-                        }
-                    }
-                }
-                Err(e) => tracing::warn!("failed to open new window: {e:#}"),
-            }
-        }));
-    }
-
     open_window(core.clone(), false, None)?;
-
-    #[cfg(target_os = "macos")]
-    crate::app::dock_menu::install_dock_menu();
 
     // Publish the core to the UI thread so the IPC listener's
     // invoke_from_event_loop closures can open windows without capturing the
