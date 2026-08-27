@@ -1,4 +1,4 @@
-//! Minimal ZMODEM **receiver** — the `rz` side of an `sz` transfer (#76).
+//! Minimal bidirectional ZMODEM implementation for terminal `sz` / `rz`.
 //!
 //! When the user runs `sz <file>` in the terminal, the remote starts a ZMODEM
 //! send. We implement just enough of the protocol to receive: reply to ZRQINIT
@@ -9,9 +9,10 @@
 //! We advertise CANFC32, so the sender uses CRC-32 binary frames; the CRC-16
 //! paths are implemented for completeness but rarely exercised.
 //!
-//! This is intentionally a *receive-only* implementation; `rz` (upload) is not
-//! handled here. Every header is logged at debug level to aid diagnosis, since
-//! the binary protocol can't easily be tested without a live server.
+//! When the remote runs `rz`, the complementary sender path lets the user pick
+//! local files and streams them over the existing PTY. Every header is logged
+//! at debug level to aid diagnosis, since the binary protocol is otherwise hard
+//! to inspect.
 
 use crate::i18n::t;
 use crate::ssh::SessionEvent;
@@ -24,11 +25,16 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedSender;
 
+#[path = "zmodem_send.rs"]
+mod send_impl;
+pub(crate) use send_impl::send;
+
 // --- Frame types -----------------------------------------------------------
 const ZRQINIT: u8 = 0;
 const ZRINIT: u8 = 1;
 const ZACK: u8 = 3;
 const ZFILE: u8 = 4;
+const ZSKIP: u8 = 5;
 const ZNAK: u8 = 6;
 const ZABORT: u8 = 7;
 const ZFIN: u8 = 8;
@@ -113,7 +119,7 @@ pub async fn receive(
                     .await
                     .with_context(|| format!("create {}", path.display()))?;
                 let id = format!("zmodem-{}", uuid::Uuid::new_v4());
-                emit(events, &id, &name, 0, size, 0, "");
+                emit(events, &id, &name, (false, 0, size, 0, ""));
                 cur = Some(CurFile {
                     file,
                     name,
@@ -132,10 +138,7 @@ pub async fn receive(
                         events,
                         &c.id,
                         &c.name,
-                        c.written,
-                        c.size.max(c.written),
-                        0,
-                        "",
+                        (false, c.written, c.size.max(c.written), 0, ""),
                     );
                 }
                 match end {
@@ -160,10 +163,7 @@ pub async fn receive(
                         events,
                         &c.id,
                         &c.name,
-                        c.written,
-                        c.size.max(c.written),
-                        1,
-                        "",
+                        (false, c.written, c.size.max(c.written), 1, ""),
                     );
                     received += 1;
                 }
@@ -325,11 +325,13 @@ impl<'a> Rx<'a> {
         if crc16(&bytes) != crc {
             bail!("hex header CRC mismatch");
         }
-        // Swallow the trailing CR/LF (+ optional XON) up to the newline.
+        // Swallow the trailing CR/LF (+ optional XON) up to the newline. GNU
+        // lrzsz sets the high bit on LF (`0x8a`). ZFIN has no following XON, so
+        // failing to recognise that byte deadlocks: we wait for a third byte
+        // while remote `rz` waits for our final "OO" (#308).
         for _ in 0..3 {
-            match self.byte().await? {
-                b'\n' => break,
-                _ => continue,
+            if is_zmodem_line_feed(self.byte().await?) {
+                break;
             }
         }
         Ok((bytes[0], [bytes[1], bytes[2], bytes[3], bytes[4]]))
@@ -468,15 +470,13 @@ fn emit(
     events: &UnboundedSender<SessionEvent>,
     id: &str,
     name: &str,
-    transferred: u64,
-    total: u64,
-    state: u8,
-    msg: &str,
+    progress: (bool, u64, u64, u8, &str),
 ) {
+    let (is_upload, transferred, total, state, msg) = progress;
     let _ = events.send(SessionEvent::SftpTransfer {
         id: id.to_string(),
         name: name.to_string(),
-        is_upload: false,
+        is_upload,
         transferred,
         total,
         state,
@@ -496,6 +496,10 @@ fn from_hex(c: u8) -> Result<u8> {
         b'A'..=b'F' => Ok(c - b'A' + 10),
         _ => bail!("invalid hex digit {c:#x}"),
     }
+}
+
+fn is_zmodem_line_feed(byte: u8) -> bool {
+    byte & 0x7f == b'\n'
 }
 
 /// CRC-16/XMODEM (poly 0x1021, init 0, no final xor) — ZMODEM header/subpacket.
@@ -544,6 +548,13 @@ mod tests {
     fn crc32_known_vector() {
         // CRC-32 of "123456789" is 0xCBF43926.
         assert_eq!(crc32_of(b"123456789"), 0xCBF4_3926);
+    }
+
+    #[test]
+    fn accepts_lrzsz_high_bit_line_feed() {
+        assert!(is_zmodem_line_feed(b'\n'));
+        assert!(is_zmodem_line_feed(0x8a));
+        assert!(!is_zmodem_line_feed(b'\r'));
     }
 
     #[test]
