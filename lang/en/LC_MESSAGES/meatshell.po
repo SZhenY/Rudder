@@ -399,6 +399,9 @@ msgstr "-D: local SOCKS5 proxy"
 msgid "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 msgstr "meatshell — a lightweight Rust + Slint SSH client by 'lil meatball'"
 
+msgid "A lightweight and efficient Rust + Slint SSH client"
+msgstr "A lightweight and efficient Rust + Slint SSH client"
+
 msgid "Quick connect"
 msgstr "Quick connect"
 

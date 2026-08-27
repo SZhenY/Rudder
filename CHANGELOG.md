@@ -1963,10 +1963,10 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Screenshots in the README** (`docs/screenshots/`, sensitive info redacted).
   **README 增加截图**（`docs/screenshots/`，敏感信息已打码）。
 
-[0.3.8]: https://github.com/jeff141/meatshell/releases/tag/v0.3.8
-[0.3.7]: https://github.com/jeff141/meatshell/releases/tag/v0.3.7
-[0.3.3]: https://github.com/jeff141/meatshell/releases/tag/v0.3.3
-[0.3.2]: https://github.com/jeff141/meatshell/releases/tag/v0.3.2
-[0.3.1]: https://github.com/jeff141/meatshell/releases/tag/v0.3.1
-[0.3.0]: https://github.com/jeff141/meatshell/releases/tag/v0.3.0
-[0.2.2]: https://github.com/jeff141/meatshell/releases/tag/v0.2.2
+[0.3.8]: https://github.com/yituorou/meatshell/releases/tag/v0.3.8
+[0.3.7]: https://github.com/yituorou/meatshell/releases/tag/v0.3.7
+[0.3.3]: https://github.com/yituorou/meatshell/releases/tag/v0.3.3
+[0.3.2]: https://github.com/yituorou/meatshell/releases/tag/v0.3.2
+[0.3.1]: https://github.com/yituorou/meatshell/releases/tag/v0.3.1
+[0.3.0]: https://github.com/yituorou/meatshell/releases/tag/v0.3.0
+[0.2.2]: https://github.com/yituorou/meatshell/releases/tag/v0.2.2

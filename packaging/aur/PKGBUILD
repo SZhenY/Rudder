@@ -1,4 +1,4 @@
-# Maintainer: jeff141 <REPLACE_WITH_YOUR_EMAIL>
+# Maintainer: yituorou <REPLACE_WITH_YOUR_EMAIL>
 #
 # Binary package: installs the pre-built release tarball from GitHub, so Arch
 # users don't have to compile Rust + Slint themselves. The CI in
@@ -9,7 +9,7 @@ pkgver=0.6.6
 pkgrel=1
 pkgdesc="Lightweight FinalShell-style SSH/SFTP/terminal client (Rust + Slint)"
 arch=('x86_64' 'aarch64')
-url="https://github.com/jeff141/meatshell"
+url="https://github.com/yituorou/meatshell"
 license=('MIT' 'Apache-2.0')
 provides=('meatshell')
 conflicts=('meatshell')

@@ -22,7 +22,7 @@ JVM 压到几十 MB 原生级别。
 ## 下载与安装
 
 每次打 `v*` 标签，GitHub Actions 会自动构建 **Windows / Linux / macOS** 三平台二进制，
-发布到 [Releases](https://github.com/jeff141/meatshell/releases) 页面。
+发布到 [Releases](https://github.com/yituorou/meatshell/releases) 页面。
 
 ### Windows
 
