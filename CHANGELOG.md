@@ -5,8 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [0.7.0] - 2026-08-27
 
-- **支持终端内 `rz` 上传（#308）。** 远端执行 `rz` 后，MeatShell 会打开本机多文件选择器并通过 ZMODEM 上传所选文件；取消选择、传输错误和远端取消都会终止协议并恢复终端，原有 `sz` 下载保持不变。
-- **Support in-terminal `rz` uploads (#308).** Running `rz` remotely now opens a native multi-file picker and uploads the selected files over ZMODEM. Cancelling the picker, transfer failures, and remote aborts terminate the protocol cleanly so the terminal recovers, while existing `sz` downloads remain unchanged.
+- **终端内 ZMODEM 支持 `rz` 上传（#308）。** 远端执行 `rz` 后会自动打开本地多文件选择器，通过当前 SSH PTY 上传所选文件，并在传输列表显示进度；取消选择、协议错误或远端取消时会发送标准取消序列，避免会话卡住。握手检测现在会区分 `sz` 的 `ZRQINIT` 与 `rz` 的 `ZRINIT`，已有 `sz` 下载保持不变。
+- **Support in-terminal ZMODEM uploads with `rz` (#308).** Running `rz` remotely now opens a local multi-file picker, uploads the selected files over the current SSH PTY, and reports progress in the transfer list. Cancelling the picker, protocol failures, and remote aborts send the standard cancel sequence so the shell does not hang. Handshake detection now distinguishes `sz`'s `ZRQINIT` from `rz`'s `ZRINIT`, while existing `sz` downloads remain unchanged.
 
 - **新增 Android Beta 安装包。** 发布流水线现在构建 ARM64 APK，以 `-beta.apk` 后缀作为工作流产物并自动附加到 GitHub Release。首个实验版提供密码认证、交互式 SSH Shell 和每次连接前的服务器 SHA-256 密钥指纹确认；桌面版的构建与功能保持不变。
 - **Add an Android Beta package.** The release workflow now builds an ARM64 APK, stores it as a `-beta.apk` workflow artifact, and attaches it to tagged GitHub Releases. This first experimental build provides password authentication, an interactive SSH shell, and per-connection SHA-256 server-key confirmation; desktop builds and features remain unchanged.

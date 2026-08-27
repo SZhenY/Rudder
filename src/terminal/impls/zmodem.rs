@@ -1,4 +1,4 @@
-//! Minimal ZMODEM **receiver** — the `rz` side of an `sz` transfer (#76).
+//! Minimal bidirectional ZMODEM implementation for terminal `sz` / `rz`.
 //!
 //! When the user runs `sz <file>` in the terminal, the remote starts a ZMODEM
 //! send. We implement just enough of the protocol to receive: reply to ZRQINIT
@@ -9,9 +9,10 @@
 //! We advertise CANFC32, so the sender uses CRC-32 binary frames; the CRC-16
 //! paths are implemented for completeness but rarely exercised.
 //!
-//! The complementary sender handles the common `lrzsz rz` upload flow. Every
-//! header is logged at debug level because the binary protocol is otherwise
-//! difficult to diagnose on a live server.
+//! When the remote runs `rz`, the complementary sender path lets the user pick
+//! local files and streams them over the existing PTY. Every header is logged
+//! at debug level to aid diagnosis, since the binary protocol is otherwise hard
+//! to inspect.
 
 use crate::i18n::t;
 use crate::ssh::SessionEvent;
@@ -20,17 +21,21 @@ use russh::client::Msg;
 use russh::{Channel, ChannelMsg};
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedSender;
+
+#[path = "zmodem_send.rs"]
+mod send_impl;
+pub(crate) use send_impl::send;
 
 // --- Frame types -----------------------------------------------------------
 const ZRQINIT: u8 = 0;
 const ZRINIT: u8 = 1;
 const ZACK: u8 = 3;
 const ZFILE: u8 = 4;
-const ZNAK: u8 = 6;
 const ZSKIP: u8 = 5;
+const ZNAK: u8 = 6;
 const ZABORT: u8 = 7;
 const ZFIN: u8 = 8;
 const ZRPOS: u8 = 9;
@@ -114,7 +119,7 @@ pub async fn receive(
                     .await
                     .with_context(|| format!("create {}", path.display()))?;
                 let id = format!("zmodem-{}", uuid::Uuid::new_v4());
-                emit(events, &id, &name, 0, size, 0, "");
+                emit(events, &id, &name, (false, 0, size, 0, ""));
                 cur = Some(CurFile {
                     file,
                     name,
@@ -133,10 +138,7 @@ pub async fn receive(
                         events,
                         &c.id,
                         &c.name,
-                        c.written,
-                        c.size.max(c.written),
-                        0,
-                        "",
+                        (false, c.written, c.size.max(c.written), 0, ""),
                     );
                 }
                 match end {
@@ -161,10 +163,7 @@ pub async fn receive(
                         events,
                         &c.id,
                         &c.name,
-                        c.written,
-                        c.size.max(c.written),
-                        1,
-                        "",
+                        (false, c.written, c.size.max(c.written), 1, ""),
                     );
                     received += 1;
                 }
@@ -233,136 +232,6 @@ pub async fn receive(
     ));
     // Hand back any trailing bytes (the shell prompt) so the caller can display
     // them instead of the receiver swallowing them.
-    Ok(rx.buf.drain(..).collect())
-}
-
-/// Send one or more local files to a remote `lrzsz rz` process. `first`
-/// contains the ZRINIT which caused the SSH worker to open the file picker.
-pub async fn send(
-    channel: &mut Channel<Msg>,
-    first: &[u8],
-    files: &[PathBuf],
-    events: &UnboundedSender<SessionEvent>,
-) -> Result<Vec<u8>> {
-    let mut rx = Rx::new(channel, first);
-    let (kind, _) = rx.read_header().await?;
-    if kind != ZRINIT {
-        bail!("expected ZRINIT, got frame {kind}");
-    }
-
-    let mut bytes_left = 0u64;
-    for path in files {
-        bytes_left = bytes_left.saturating_add(tokio::fs::metadata(path).await?.len());
-    }
-
-    for (index, path) in files.iter().enumerate() {
-        let metadata = tokio::fs::metadata(path)
-            .await
-            .with_context(|| format!("stat {}", path.display()))?;
-        if !metadata.is_file() {
-            bail!("{} is not a regular file", path.display());
-        }
-        let size = metadata.len();
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .filter(|n| !n.is_empty())
-            .ok_or_else(|| anyhow::anyhow!("invalid file name: {}", path.display()))?;
-        let mtime = metadata
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let files_left = files.len() - index;
-        let mut file_info = name.as_bytes().to_vec();
-        file_info.push(0);
-        file_info.extend_from_slice(
-            format!("{size} {mtime:o} 0 0 {files_left} {bytes_left}\0").as_bytes(),
-        );
-
-        rx.send_bin32(ZFILE, [0; 4]).await?;
-        rx.send_subpacket(&file_info, ZCRCW).await?;
-        let (reply, pos) = rx.read_header().await?;
-        if reply == ZCAN || reply == ZABORT {
-            bail!("{}", t("传输被远端取消", "transfer aborted by receiver"));
-        }
-        if reply == ZSKIP {
-            tracing::info!("zmodem: receiver skipped {name}");
-            let id = format!("zmodem-upload-{}", uuid::Uuid::new_v4());
-            emit_upload(
-                events,
-                &id,
-                &name,
-                0,
-                size,
-                4,
-                &t("远端跳过文件", "skipped by receiver"),
-            );
-            bytes_left = bytes_left.saturating_sub(size);
-            continue;
-        }
-        if reply != ZRPOS {
-            bail!("expected ZRPOS, got frame {reply}");
-        }
-
-        let id = format!("zmodem-upload-{}", uuid::Uuid::new_v4());
-        emit_upload(events, &id, &name, 0, size, 0, "");
-        let mut file = tokio::fs::File::open(path)
-            .await
-            .with_context(|| format!("open {}", path.display()))?;
-        let mut offset = u32::from_le_bytes(pos) as u64;
-        if offset > size {
-            bail!("remote requested invalid offset {offset} for {name}");
-        }
-        if offset > 0 {
-            use tokio::io::AsyncSeekExt;
-            file.seek(std::io::SeekFrom::Start(offset)).await?;
-        }
-        rx.send_bin32(ZDATA, (offset as u32).to_le_bytes()).await?;
-        let mut buf = vec![0u8; 32 * 1024];
-        loop {
-            use tokio::io::AsyncReadExt;
-            let n = file.read(&mut buf).await.context("read upload file")?;
-            if n == 0 {
-                rx.send_subpacket(&[], ZCRCE).await?;
-                break;
-            }
-            offset += n as u64;
-            let end = if offset == size { ZCRCE } else { ZCRCG };
-            rx.send_subpacket(&buf[..n], end).await?;
-            emit_upload(events, &id, &name, offset, size, 0, "");
-            if end == ZCRCE {
-                break;
-            }
-        }
-        rx.send_bin32(ZEOF, (offset as u32).to_le_bytes()).await?;
-        let (reply, _) = rx.read_header().await?;
-        if reply != ZRINIT {
-            bail!("expected ZRINIT after ZEOF, got frame {reply}");
-        }
-        emit_upload(events, &id, &name, size, size, 1, "");
-        bytes_left = bytes_left.saturating_sub(size);
-    }
-
-    rx.send_hex(ZFIN, [0; 4]).await?;
-    let (reply, _) = rx.read_header().await?;
-    if reply != ZFIN {
-        bail!("expected ZFIN, got frame {reply}");
-    }
-    rx.ch
-        .data(&b"OO"[..])
-        .await
-        .context("zmodem send OO")?;
-
-    let _ = events.send(SessionEvent::Output(
-        format!(
-            "\r\n[meatshell] {} {}\r\n",
-            files.len(),
-            t("个文件已通过 rz 上传", "file(s) uploaded via rz")
-        )
-        .into(),
-    ));
     Ok(rx.buf.drain(..).collect())
 }
 
@@ -554,27 +423,6 @@ impl<'a> Rx<'a> {
         self.ch.data(&out[..]).await.context("zmodem send header")?;
         Ok(())
     }
-
-    async fn send_bin32(&mut self, ftype: u8, data: [u8; 4]) -> Result<()> {
-        let payload = [ftype, data[0], data[1], data[2], data[3]];
-        let mut out = vec![ZPAD, ZDLE, ZBIN32];
-        append_escaped(&mut out, &payload);
-        append_escaped(&mut out, &crc32_of(&payload).to_le_bytes());
-        self.ch.data(&out[..]).await.context("zmodem send bin32 header")?;
-        Ok(())
-    }
-
-    async fn send_subpacket(&mut self, data: &[u8], end: u8) -> Result<()> {
-        let mut out = Vec::with_capacity(data.len() * 2 + 8);
-        append_escaped(&mut out, data);
-        out.extend_from_slice(&[ZDLE, end]);
-        let mut crc_data = Vec::with_capacity(data.len() + 1);
-        crc_data.extend_from_slice(data);
-        crc_data.push(end);
-        append_escaped(&mut out, &crc32_of(&crc_data).to_le_bytes());
-        self.ch.data(&out[..]).await.context("zmodem send data")?;
-        Ok(())
-    }
 }
 
 /// True for bytes that make up a ZMODEM hex close frame (ZFIN) or the "OO"
@@ -620,50 +468,18 @@ fn emit(
     events: &UnboundedSender<SessionEvent>,
     id: &str,
     name: &str,
-    transferred: u64,
-    total: u64,
-    state: u8,
-    msg: &str,
+    progress: (bool, u64, u64, u8, &str),
 ) {
+    let (is_upload, transferred, total, state, msg) = progress;
     let _ = events.send(SessionEvent::SftpTransfer {
         id: id.to_string(),
         name: name.to_string(),
-        is_upload: false,
+        is_upload,
         transferred,
         total,
         state,
         msg: msg.to_string(),
     });
-}
-
-fn emit_upload(
-    events: &UnboundedSender<SessionEvent>,
-    id: &str,
-    name: &str,
-    transferred: u64,
-    total: u64,
-    state: u8,
-    msg: &str,
-) {
-    let _ = events.send(SessionEvent::SftpTransfer {
-        id: id.to_string(),
-        name: name.to_string(),
-        is_upload: true,
-        transferred,
-        total,
-        state,
-        msg: msg.to_string(),
-    });
-}
-
-fn append_escaped(out: &mut Vec<u8>, data: &[u8]) {
-    for &b in data {
-        if matches!(b, ZDLE | 0x10 | 0x11 | 0x13 | 0x90 | 0x91 | 0x93) {
-            out.extend_from_slice(&[ZDLE, b ^ 0x40]);
-        } else {
-            out.push(b);
-        }
-    }
 }
 
 fn hex_digits(b: u8) -> [u8; 2] {
@@ -726,13 +542,6 @@ mod tests {
     fn crc32_known_vector() {
         // CRC-32 of "123456789" is 0xCBF43926.
         assert_eq!(crc32_of(b"123456789"), 0xCBF4_3926);
-    }
-
-    #[test]
-    fn sender_escapes_zmodem_control_bytes() {
-        let mut out = Vec::new();
-        append_escaped(&mut out, &[b'A', ZDLE, 0x11, 0x7f]);
-        assert_eq!(out, vec![b'A', ZDLE, ZDLE ^ 0x40, ZDLE, 0x51, 0x7f]);
     }
 
     #[test]
