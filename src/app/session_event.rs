@@ -420,6 +420,16 @@ pub(super) fn apply_session_event_to_window(
         } => {
             enqueue_mfa_prompt(win, window_id, session_id, host, prompt, echo, responder);
         }
+        SessionEvent::ZmodemUploadPrompt { responder } => {
+            let files = rfd::FileDialog::new()
+                .set_title(crate::i18n::t(
+                    "选择通过 rz 上传的文件",
+                    "Choose files to upload via rz",
+                ))
+                .pick_files()
+                .filter(|files| !files.is_empty());
+            responder.respond(files);
+        }
         SessionEvent::CommandRan(cmd) => {
             // A command typed directly in the terminal, captured via the shell
             // hook (#113). Record it in the same command-box history, reusing the

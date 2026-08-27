@@ -140,6 +140,7 @@ fn event_requires_immediate_ui(event: &SessionEvent) -> bool {
             | SessionEvent::HostKeyPrompt { .. }
             | SessionEvent::CredentialPrompt { .. }
             | SessionEvent::MfaPrompt { .. }
+            | SessionEvent::ZmodemUploadPrompt { .. }
     )
 }
 

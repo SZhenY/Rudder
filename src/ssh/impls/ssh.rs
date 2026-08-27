@@ -381,9 +381,42 @@ async fn remote_supports_prompt_setup(handle: &Handle<ClientHandler>) -> bool {
 /// `sz` handshake leads with a ZRQINIT hex header (`**\x18B00...`). Matching
 /// ZDLE followed by `B` (hex frame) or `C` (binary frame) reliably catches the
 /// handshake without false-positiving on a lone 0x18 (Ctrl-X) in normal output.
-fn contains_zmodem_init(data: &[u8]) -> bool {
-    data.windows(2)
-        .any(|w| w[0] == 0x18 && (w[1] == b'B' || w[1] == b'C'))
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ZmodemStart {
+    Send,
+    Receive,
+}
+
+fn zmodem_start(data: &[u8]) -> Option<ZmodemStart> {
+    data.windows(4).find_map(|w| {
+        if w[0] != 0x18 || w[1] != b'B' {
+            return None;
+        }
+        let kind = std::str::from_utf8(&w[2..4]).ok()?;
+        match u8::from_str_radix(kind, 16).ok()? {
+            0 => Some(ZmodemStart::Receive), // remote `sz`: ZRQINIT
+            1 => Some(ZmodemStart::Send),    // remote `rz`: ZRINIT
+            _ => None,
+        }
+    })
+}
+
+#[cfg(test)]
+mod zmodem_start_tests {
+    use super::{zmodem_start, ZmodemStart};
+
+    #[test]
+    fn distinguishes_remote_sz_and_rz_handshakes() {
+        assert_eq!(
+            zmodem_start(b"ready\r**\x18B00000000000000\r\n"),
+            Some(ZmodemStart::Receive)
+        );
+        assert_eq!(
+            zmodem_start(b"rz waiting\r**\x18B0100000023be50\r\n"),
+            Some(ZmodemStart::Send)
+        );
+        assert_eq!(zmodem_start(b"ordinary terminal output"), None);
+    }
 }
 
 fn line_start_before(text: &str, pos: usize) -> usize {
@@ -1829,9 +1862,40 @@ async fn run_session(
                         // On any protocol error, cancel so the session recovers.
                         let zmodem_cooldown = zmodem_done_at
                             .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2));
-                        if !zmodem_cooldown && contains_zmodem_init(&data) {
-                            let result =
-                                crate::terminal::zmodem::receive(&mut channel, &data, &events).await;
+                        if !zmodem_cooldown && zmodem_start(&data).is_some() {
+                            let start = zmodem_start(&data).expect("checked above");
+                            let result = match start {
+                                ZmodemStart::Receive => crate::terminal::zmodem::receive(
+                                    &mut channel,
+                                    &data,
+                                    &events,
+                                )
+                                .await,
+                                ZmodemStart::Send => {
+                                    let (tx, rx) = tokio::sync::oneshot::channel();
+                                    let responder = super::ZmodemUploadResponder::new(tx);
+                                    if events
+                                        .send(SessionEvent::ZmodemUploadPrompt { responder })
+                                        .is_err()
+                                    {
+                                        Err(anyhow::anyhow!("UI closed before rz file selection"))
+                                    } else {
+                                        match rx.await.ok().flatten() {
+                                            Some(files) => crate::terminal::zmodem::send(
+                                                &mut channel,
+                                                &data,
+                                                &files,
+                                                &events,
+                                            )
+                                            .await,
+                                            None => {
+                                                let _ = channel.data(&ZMODEM_CANCEL[..]).await;
+                                                Ok(Vec::new())
+                                            }
+                                        }
+                                    }
+                                }
+                            };
                             zmodem_done_at = Some(std::time::Instant::now());
                             match result {
                                 Ok(leftover) => {
@@ -1848,11 +1912,11 @@ async fn run_session(
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::warn!("zmodem receive failed: {e:#}");
+                                    tracing::warn!("zmodem transfer failed: {e:#}");
                                     let _ = channel.data(&ZMODEM_CANCEL[..]).await;
                                     let _ = events.send(SessionEvent::Output(format!(
                                         "\r\n[meatshell] {}: {e}\r\n",
-                                        t("ZMODEM 接收失败,已取消", "ZMODEM receive failed; cancelled")
+                                        t("ZMODEM 传输失败,已取消", "ZMODEM transfer failed; cancelled")
                                     ).into()));
                                 }
                             }

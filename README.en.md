@@ -94,7 +94,7 @@ open /Applications/meatshell.app
     / `~/.config/meatshell/sessions.json` (Linux)
     / `~/Library/Application Support/meatshell/sessions.json` (macOS)
 - [x] SSH (`russh`, pure Rust): password / private key / encrypted key (passphrase)
-- [x] SFTP browser + upload / download (drag-and-drop) + in-terminal ZMODEM (`sz`) receive
+- [x] SFTP browser + upload / download (drag-and-drop) + in-terminal ZMODEM (`sz` download / `rz` upload)
 - [x] SSH port forwarding / tunnels: local -L / remote -R / dynamic -D (SOCKS5)
 - [x] Quick commands + command box (broadcast to all sessions) + command history
 - [x] Serial / Telnet sessions
