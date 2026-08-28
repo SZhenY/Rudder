@@ -269,22 +269,33 @@ async fn remote_supports_prompt_setup(handle: &Handle<ClientHandler>) -> bool {
         let _ = channel.eof().await;
 
         let mut output = String::new();
+        let mut supported: Option<bool> = None;
+        // Drain the channel fully, including the server's CHANNEL_CLOSE. Do not
+        // return as soon as the marker is seen (that drops the Channel
+        // mid-flight) and do not just send `channel.close()` without awaiting
+        // the peer's confirmation: some servers (Dropbear in particular) reuse
+        // channel IDs aggressively and tear down the *next* channel — the
+        // interactive shell — if it is opened while this one is still being
+        // torn down, which surfaces as an instant disconnect right after login.
+        // Draining to Close serializes the teardown and avoids that race; for
+        // OpenSSH it is a no-op.
         while let Some(message) = channel.wait().await {
             match message {
                 ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
-                    output.push_str(&String::from_utf8_lossy(&data));
-                    if let Some(supported) = prompt_setup_supported(&output) {
-                        return Some(supported);
-                    }
-                    if output.len() > 256 {
-                        return Some(false);
+                    if supported.is_none() {
+                        output.push_str(&String::from_utf8_lossy(&data));
+                        if let Some(s) = prompt_setup_supported(&output) {
+                            supported = Some(s);
+                        } else if output.len() > 256 {
+                            supported = Some(false);
+                        }
                     }
                 }
                 ChannelMsg::Close => break,
                 _ => {}
             }
         }
-        Some(false)
+        supported
     };
 
     tokio::time::timeout(std::time::Duration::from_millis(1000), probe)
@@ -2204,11 +2215,26 @@ async fn run_session(
                                 tokio::time::Instant::now()
                                     + std::time::Duration::from_millis(2000),
                             );
-                            // Paint the banner/prompt immediately. Only later
-                            // output containing our injected setup command is
-                            // buffered and stripped; the first usable terminal
-                            // frame no longer waits for shell integration.
-                            let _ = events.send(SessionEvent::Output(chunk));
+                            // Paint the banner/prompt immediately so the first
+                            // usable terminal frame no longer waits for shell
+                            // integration (later output carrying the injected
+                            // setup command is still buffered and stripped).
+                            // On hosts without a login banner this frame IS the
+                            // shell prompt, and the shell prints an identical
+                            // one once the setup command returns — rendering it
+                            // twice. Drop the trailing prompt line here so only
+                            // the post-setup prompt (sent through the normal
+                            // path below) is shown; banner text above it is
+                            // preserved.
+                            let mut painted = chunk;
+                            if let Some(prompt_line) = painted.rsplit('\n').next() {
+                                if prompt_line.trim_end().ends_with(['#', '$', '%', '>']) {
+                                    if let Some(pos) = painted.rfind(prompt_line) {
+                                        painted.truncate(pos);
+                                    }
+                                }
+                            }
+                            let _ = events.send(SessionEvent::Output(painted));
                             let _ = channel.data(prompt_setup.as_bytes()).await;
                             continue;
                         }
