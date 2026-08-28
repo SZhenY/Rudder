@@ -1,4 +1,46 @@
 use super::*;
+use crate::sftp::DownloadConflict;
+
+/// Ask what to do when a download would overwrite an existing local file.
+/// Returns `None` when the user cancels the download. Resolved here, in the UI
+/// thread, so the transfer task never has to block on a modal prompt.
+fn choose_download_conflict(remote: &str, local_dir: &str) -> Option<DownloadConflict> {
+    let target = crate::sftp::download_target_path(remote, local_dir);
+    if !target.is_file() {
+        return Some(DownloadConflict::Replace);
+    }
+    let replace = t("替换", "Replace");
+    let keep_both = t("共存", "Keep both");
+    let cancel = t("取消", "Cancel");
+    let result = rfd::MessageDialog::new()
+        .set_title(t("文件已存在", "File already exists"))
+        .set_description(format!(
+            "{}\n{}",
+            target.display(),
+            t(
+                "请选择替换现有文件，或保留两份文件。",
+                "Choose whether to replace the existing file or keep both files."
+            )
+        ))
+        .set_level(rfd::MessageLevel::Warning)
+        .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
+            replace.to_string(),
+            keep_both.to_string(),
+            cancel.to_string(),
+        ))
+        .show();
+    match result {
+        rfd::MessageDialogResult::Yes => Some(DownloadConflict::Replace),
+        rfd::MessageDialogResult::No => Some(DownloadConflict::KeepBoth),
+        rfd::MessageDialogResult::Custom(value) if value == replace => {
+            Some(DownloadConflict::Replace)
+        }
+        rfd::MessageDialogResult::Custom(value) if value == keep_both => {
+            Some(DownloadConflict::KeepBoth)
+        }
+        _ => None,
+    }
+}
 
 pub(super) fn wire_sftp_callbacks(
     window: &AppWindow,
@@ -101,8 +143,10 @@ pub(super) fn wire_sftp_callbacks(
                 {
                     if let Some(ref dir) = arc_dir {
                         h.download_archive(dir.clone(), arc_names.clone(), preset);
-                    } else {
-                        h.download(remote_path, preset);
+                    } else if let Some(conflict) =
+                        choose_download_conflict(&remote_path, &preset)
+                    {
+                        h.download(remote_path, preset, conflict);
                     }
                     // Pop the transfers panel so progress is visible (user
                     // request: any download opens the download popup).
@@ -122,8 +166,10 @@ pub(super) fn wire_sftp_callbacks(
                     {
                         if let Some(ref rdir) = arc_dir {
                             h.download_archive(rdir.clone(), arc_names.clone(), local_dir);
-                        } else {
-                            h.download(remote_path, local_dir);
+                        } else if let Some(conflict) =
+                            choose_download_conflict(&remote_path, &local_dir)
+                        {
+                            h.download(remote_path, local_dir, conflict);
                         }
                     }
                     let _ = weak.upgrade_in_event_loop(|w| w.set_download_open(true));
@@ -365,7 +411,9 @@ pub(super) fn wire_sftp_callbacks(
                     && let Some(h) = handles.get(tab_id.as_str())
                 {
                     if single {
-                        h.download(paths[0].clone(), preset.clone());
+                        if let Some(conflict) = choose_download_conflict(&paths[0], &preset) {
+                            h.download(paths[0].clone(), preset.clone(), conflict);
+                        }
                     } else {
                         h.download_archive(remote_dir.clone(), names.clone(), preset.clone());
                     }
@@ -382,7 +430,9 @@ pub(super) fn wire_sftp_callbacks(
                             && let Some(h) = handles.get(&tab)
                         {
                             if single {
-                                h.download(paths[0].clone(), dir.clone());
+                                if let Some(conflict) = choose_download_conflict(&paths[0], &dir) {
+                                    h.download(paths[0].clone(), dir.clone(), conflict);
+                                }
                             } else {
                                 h.download_archive(remote_dir.clone(), names.clone(), dir.clone());
                             }

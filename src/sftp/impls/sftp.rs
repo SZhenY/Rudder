@@ -29,7 +29,7 @@ use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
-use super::transfer::{SftpCommand, SftpHandle};
+use super::transfer::{DownloadConflict, SftpCommand, SftpHandle};
 use crate::config::{AuthMethod, Session};
 use crate::i18n::t;
 use crate::ssh::{RemoteEntry, RemoteTreeNode, SessionEvent, format_mtime, format_size};
@@ -41,10 +41,12 @@ impl SftpHandle {
     pub fn refresh_dir(&self, path: String) {
         let _ = self.commands.send(SftpCommand::RefreshDir(path));
     }
-    pub fn download(&self, remote: String, local_dir: String) {
-        let _ = self
-            .commands
-            .send(SftpCommand::Download { remote, local_dir });
+    pub fn download(&self, remote: String, local_dir: String, conflict: DownloadConflict) {
+        let _ = self.commands.send(SftpCommand::Download {
+            remote,
+            local_dir,
+            conflict,
+        });
     }
     pub fn download_archive(&self, remote_dir: String, names: Vec<String>, local_dir: String) {
         let _ = self.commands.send(SftpCommand::DownloadArchive {
@@ -596,7 +598,11 @@ async fn run_sftp(
                 let _ = events.send(SessionEvent::SftpTreeUpdate(nodes));
             }
 
-            SftpCommand::Download { remote, local_dir } => {
+            SftpCommand::Download {
+                remote,
+                local_dir,
+                conflict,
+            } => {
                 // Run on its own task so the command loop stays free to list /
                 // switch directories during the transfer (#116-2).
                 let sftp = sftp.clone();
@@ -660,9 +666,19 @@ async fn run_sftp(
                         // filesystem (#26): a malicious server could otherwise craft a
                         // name with traversal, shell-special chars or a Windows reserved
                         // device name to write outside the chosen dir or hit a device.
-                        let filename = sanitize_filename(&base_name(&remote));
-                        let local_path =
-                            format!("{}/{}", local_dir.trim_end_matches('/'), filename);
+                        let target = download_target_path(&remote, &local_dir);
+                        // "Keep both" writes to a numbered sibling so the
+                        // existing local file survives the download.
+                        let local_path = if conflict == DownloadConflict::KeepBoth {
+                            available_download_path(&target)
+                        } else {
+                            target
+                        };
+                        let filename = local_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| base_name(&remote));
+                        let local_path = local_path.to_string_lossy().to_string();
                         let id = file_id.clone();
                         let _ = events.send(SessionEvent::SftpStatus(format!(
                             "{} {}...",
@@ -1613,6 +1629,39 @@ fn sanitize_filename(name: &str) -> String {
     }
 }
 
+/// The local path a download would write to, applying the same sanitising the
+/// transfer itself uses (#26). Shared with the UI thread so the conflict prompt
+/// can check for an existing file *before* the transfer starts.
+pub(crate) fn download_target_path(remote: &str, local_dir: &str) -> PathBuf {
+    let filename = sanitize_filename(&base_name(remote));
+    PathBuf::from(format!("{}/{}", local_dir.trim_end_matches('/'), filename))
+}
+
+/// First free `name (n).ext` sibling of `requested`, for "keep both" downloads.
+/// Falls back to a bare `name (n)` when there is no extension.
+pub(crate) fn available_download_path(requested: &std::path::Path) -> PathBuf {
+    let parent = requested
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let stem = requested
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("download");
+    let extension = requested.extension().and_then(|value| value.to_str());
+    for suffix in 1usize.. {
+        let name = match extension {
+            Some(extension) if !extension.is_empty() => format!("{stem} ({suffix}).{extension}"),
+            _ => format!("{stem} ({suffix})"),
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    unreachable!("an unused download filename suffix must exist")
+}
+
 /// Watch a downloaded temp file and re-upload it to the remote whenever it
 /// changes on disk (the "edit" flow).  Re-upload is routed back through the
 /// worker's own command channel.  Stops when the channel closes or after a
@@ -2352,8 +2401,8 @@ const _: fn() = || {
 mod sanitize_tests {
     use super::{
         EditorTextRejection, MAX_BUILTIN_EDITOR_BYTES, MAX_BUILTIN_EDITOR_LINE_BYTES,
-        MAX_BUILTIN_EDITOR_LINES, external_edit_local_name, sanitize_filename,
-        validate_editor_text,
+        MAX_BUILTIN_EDITOR_LINES, available_download_path, download_target_path,
+        external_edit_local_name, sanitize_filename, validate_editor_text,
     };
 
     #[test]
@@ -2425,6 +2474,42 @@ mod sanitize_tests {
         assert_eq!(sanitize_filename(""), "file");
         assert_eq!(sanitize_filename("   "), "file");
         assert_eq!(sanitize_filename("..."), "file");
+    }
+
+    #[test]
+    fn keep_both_uses_the_first_available_numbered_name() {
+        let dir = std::env::temp_dir().join(format!(
+            "rudder-download-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let requested = download_target_path("/remote/report.txt", dir.to_str().unwrap());
+        std::fs::write(&requested, b"old").unwrap();
+        std::fs::write(dir.join("report (1).txt"), b"older").unwrap();
+
+        assert_eq!(
+            available_download_path(&requested),
+            dir.join("report (2).txt")
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn download_target_path_sanitises_and_joins() {
+        let dir = std::env::temp_dir().join("rudder-target-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        // A hostile remote name is sanitised before it hits the local fs (#26).
+        let path = download_target_path("/etc/../evil name?.txt", dir.to_str().unwrap());
+        assert_eq!(
+            path,
+            dir.join("evil name_.txt"),
+            "slash and '?' must be neutralised"
+        );
+        // A trailing slash on the directory is tolerated.
+        let path2 = download_target_path("/remote/ok.txt", &format!("{}/", dir.display()));
+        assert_eq!(path2, dir.join("ok.txt"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
