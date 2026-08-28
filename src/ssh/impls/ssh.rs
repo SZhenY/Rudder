@@ -17,8 +17,69 @@ use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
-use crate::config::{AuthMethod, PortForward, Session};
+use crate::config::{AuthMethod, PortForward, Secret, Session, SessionTrigger};
 use crate::i18n::t;
+
+// ---------------------------------------------------------------------------
+// Expect/send login triggers (#212)
+// ---------------------------------------------------------------------------
+
+/// One configured rule plus its rolling match buffer. `active` starts true and
+/// stays true only for repeating rules once the rule has fired.
+struct RuntimeTrigger {
+    rule: SessionTrigger,
+    buffer: String,
+    active: bool,
+}
+
+/// Matches configured `expect` strings against the terminal stream and yields
+/// the responses to send back. Rules are evaluated independently so one rule's
+/// match never consumes another rule's text.
+struct TriggerEngine(Vec<RuntimeTrigger>);
+
+impl TriggerEngine {
+    fn new(rules: &[SessionTrigger]) -> Self {
+        Self(
+            rules
+                .iter()
+                .filter(|rule| !rule.expect.is_empty() && !rule.response.is_empty())
+                .cloned()
+                .map(|rule| RuntimeTrigger {
+                    rule,
+                    buffer: String::new(),
+                    active: true,
+                })
+                .collect(),
+        )
+    }
+
+    fn feed(&mut self, text: &str) -> Vec<(Secret, bool)> {
+        let mut replies = Vec::new();
+        for trigger in &mut self.0 {
+            if !trigger.active {
+                continue;
+            }
+            trigger.buffer.push_str(text);
+            if let Some(end) = trigger
+                .buffer
+                .find(&trigger.rule.expect)
+                .map(|start| start + trigger.rule.expect.len())
+            {
+                replies.push((trigger.rule.response.clone(), trigger.rule.append_enter));
+                trigger.buffer.drain(..end);
+                trigger.active = trigger.rule.repeat;
+            }
+            // Preserve enough trailing text for a match split across chunks.
+            let keep = trigger.rule.expect.len().saturating_sub(1).max(256);
+            if trigger.buffer.len() > keep {
+                let split = trigger.buffer.len() - keep;
+                let split = trigger.buffer.ceil_char_boundary(split);
+                trigger.buffer.drain(..split);
+            }
+        }
+        replies
+    }
+}
 
 // ---------------------------------------------------------------------------
 // SFTP-related shared types
@@ -123,6 +184,53 @@ mod size_format_tests {
         assert_eq!(format_size(PIB), "1.00 PB");
         assert_eq!(format_size(EIB), "1.00 EB");
         assert_eq!(format_size(u64::MAX), "16.00 EB");
+    }
+}
+
+#[cfg(test)]
+mod session_trigger_tests {
+    use super::TriggerEngine;
+    use crate::config::{Secret, SessionTrigger};
+
+    fn trigger(expect: &str, response: &str, repeat: bool) -> SessionTrigger {
+        SessionTrigger {
+            expect: expect.to_string(),
+            response: Secret::new(response),
+            append_enter: true,
+            repeat,
+        }
+    }
+
+    #[test]
+    fn session_trigger_matches_across_output_chunks_once() {
+        let mut engine = TriggerEngine::new(&[trigger("Password:", "secret", false)]);
+        assert!(engine.feed("Pass").is_empty());
+        let replies = engine.feed("word:");
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].0.as_str(), "secret");
+        assert!(replies[0].1);
+        assert!(engine.feed("Password:").is_empty());
+    }
+
+    #[test]
+    fn repeating_session_trigger_consumes_each_match() {
+        let mut engine = TriggerEngine::new(&[trigger("continue?", "y", true)]);
+        assert_eq!(engine.feed("continue?").len(), 1);
+        assert!(engine.feed("unrelated output").is_empty());
+        assert_eq!(engine.feed("continue?").len(), 1);
+    }
+
+    #[test]
+    fn incomplete_rules_are_ignored() {
+        // An empty response would otherwise fire on every chunk.
+        let blank = SessionTrigger::default();
+        let no_response = SessionTrigger {
+            expect: "Password:".into(),
+            ..SessionTrigger::default()
+        };
+        assert!(TriggerEngine::new(&[blank, no_response])
+            .feed("Password:")
+            .is_empty());
     }
 }
 
@@ -1988,6 +2096,9 @@ async fn run_session(
     let mut terminal_decoder = crate::terminal::TerminalEncoding::new(&session.encoding);
     let mut extended_decoder = crate::terminal::TerminalEncoding::new(&session.encoding);
     let terminal_encoder = crate::terminal::TerminalEncoding::new(&session.encoding);
+    // Expect/send login triggers (#212). Rules are matched against the
+    // decoded terminal stream; empty rules are filtered out up front.
+    let mut trigger_engine = TriggerEngine::new(&session.triggers);
 
     // --- Main pump ------------------------------------------------------
     loop {
@@ -2484,10 +2595,34 @@ async fn run_session(
                             }
                         }
 
+                        // Expect/send login triggers (#212): match against the
+                        // text the user actually sees (OSC hooks are already
+                        // stripped above) and reply on the same channel.
+                        for (response, append_enter) in trigger_engine.feed(&text) {
+                            let mut bytes = response.as_str().as_bytes().to_vec();
+                            if append_enter {
+                                bytes.push(b'\r');
+                            }
+                            let encoded = terminal_encoder.encode(&bytes);
+                            if let Err(error) = channel.data(&encoded[..]).await {
+                                tracing::warn!("session trigger response failed: {error}");
+                            }
+                        }
+
                         let _ = events.send(SessionEvent::Output(text));
                     }
                     Some(ChannelMsg::ExtendedData { data, ext: _ }) => {
                         let text = extended_decoder.decode(&data);
+                        for (response, append_enter) in trigger_engine.feed(&text) {
+                            let mut bytes = response.as_str().as_bytes().to_vec();
+                            if append_enter {
+                                bytes.push(b'\r');
+                            }
+                            let encoded = terminal_encoder.encode(&bytes);
+                            if let Err(error) = channel.data(&encoded[..]).await {
+                                tracing::warn!("session trigger response failed: {error}");
+                            }
+                        }
                         let _ = events.send(SessionEvent::Output(text));
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
