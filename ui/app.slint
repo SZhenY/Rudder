@@ -2178,22 +2178,31 @@ export component AppWindow inherits Window {
                                 }
                             }
                             Rectangle { width: 1px; background: Theme.border-subtle; }
-                            ed-scroll := ScrollView {
-                                viewport-width: max(self.visible-width, edit-input.preferred-width + 16px);
-                                viewport-height: max(self.visible-height, edit-input.preferred-height + 16px);
-                                edit-input := TextInput {
-                                    x: 8px;
-                                    y: 8px;
-                                    width: max(parent.visible-width - 16px, self.preferred-width);
-                                    height: self.preferred-height;
-                                    text <=> root.editor-content;
-                                    read-only: root.editor-readonly;
-                                    single-line: false;
-                                    wrap: no-wrap;
-                                    color: Theme.text-primary;
-                                    font-family: Theme.ui-font-family;
-                                    font-size: Theme.fs-md;
-                                    edited => { root.editor-dirty = true; root.editor-recount(root.editor-content); }
+                            // Clip the editing area so text and selection
+                            // painting cannot spill past the panel edge (#387).
+                            editor-viewport := Rectangle {
+                                horizontal-stretch: 1;
+                                clip: true;
+                                ed-scroll := ScrollView {
+                                    viewport-width: max(self.visible-width, edit-input.preferred-width + 16px);
+                                    viewport-height: max(self.visible-height, edit-input.preferred-height + 16px);
+                                    edit-input := TextInput {
+                                        x: 8px;
+                                        y: 8px;
+                                        width: max(parent.visible-width - 16px, self.preferred-width);
+                                        height: self.preferred-height;
+                                        text <=> root.editor-content;
+                                        read-only: root.editor-readonly;
+                                        single-line: false;
+                                        // Wrapping stays OFF: one logical line
+                                        // == one display line, so the gutter
+                                        // numbers line up (#81).
+                                        wrap: no-wrap;
+                                        color: Theme.text-primary;
+                                        font-family: Theme.ui-font-family;
+                                        font-size: Theme.fs-md;
+                                        edited => { root.editor-dirty = true; root.editor-recount(root.editor-content); }
+                                    }
                                 }
                             }
                         }
