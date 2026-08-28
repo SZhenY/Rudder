@@ -322,6 +322,8 @@ export component TerminalView inherits Rectangle {
     in property <[string]> command-history;   // oldest first (newest last, #113)
     in property <[string]> history-view;       // filtered dropdown, newest first (#101, #331)
     property <bool> send-to-all: false;
+    // Toolbar toggle: hide the whole command bar (persisted globally).
+    in property <bool> cmd-bar-hidden: false;
     property <bool> quick-open: false;         // quick-command popup visibility
     property <bool> history-open: false;       // history dropdown visibility
     property <bool> history-autocomplete: false; // live suggestions from command input (#349)
@@ -1253,7 +1255,8 @@ export component TerminalView inherits Rectangle {
 
         // --- Command bar (#55): quick commands + input box + history ---------
         cmd-bar := Rectangle {
-            height: 34px;
+            visible: !root.cmd-bar-hidden;
+            height: root.cmd-bar-hidden ? 0px : 34px;
             background: Theme.bg-panel-alt;
             border-width: 0;
 

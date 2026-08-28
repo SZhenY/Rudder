@@ -843,6 +843,19 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // Toolbar toggle: hide/show the quick-command bar (persisted globally).
+    window.set_cmd_bar_hidden(store.borrow().cmd_bar_hidden());
+    {
+        let store = store.clone();
+        window.on_set_cmd_bar_hidden(move |hidden| {
+            let mut s = store.borrow_mut();
+            s.set_cmd_bar_hidden(hidden);
+            if let Err(error) = s.save() {
+                tracing::warn!("failed to save config: {error:#}");
+            }
+        });
+    }
+
     // Terminal: EOL conversion + OSC 52 clipboard.  Read-once seed + persist.
     {
         let s = store.borrow();

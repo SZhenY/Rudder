@@ -817,6 +817,9 @@ pub struct ConfigFile {
     /// preset download dir. Defaults to false (#87).
     #[serde(default)]
     pub download_always_ask: bool,
+    /// Hide the quick-command bar under the terminal. Defaults to false.
+    #[serde(default)]
+    pub hide_cmd_bar: bool,
     /// Saved quick commands (#55).
     #[serde(default)]
     pub quick_commands: Vec<QuickCommand>,
@@ -1887,6 +1890,15 @@ impl ConfigStore {
 
     pub fn set_download_always_ask(&mut self, ask: bool) {
         self.cache.download_always_ask = ask;
+    }
+
+    /// Whether the quick-command bar under the terminal is hidden.
+    pub fn cmd_bar_hidden(&self) -> bool {
+        self.cache.hide_cmd_bar
+    }
+
+    pub fn set_cmd_bar_hidden(&mut self, hidden: bool) {
+        self.cache.hide_cmd_bar = hidden;
     }
 
     // ── Session groups / folders (#41) ────────────────────────────────────
