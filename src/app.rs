@@ -729,6 +729,22 @@ fn open_window(
         });
     }
     {
+        // Bottom-right resize grip on the main window (frameless mode only).
+        // #main-resize-grip: mirrors proc_window's grip so the main window
+        // gets the same OS-drag-resize-from-corner behavior when the OS title
+        // bar is hidden (custom-titlebar mode on Windows/Linux).
+        use i_slint_backend_winit::winit::window::ResizeDirection;
+        let weak = window.as_weak();
+        window.on_win_resize_se(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_resize_window(ResizeDirection::SouthEast);
+                });
+                schedule_slint_pointer_ungrab(weak.clone());
+            }
+        });
+    }
+    {
         // The sidebar "Processes" button shows / focuses the window.
         let win_weak = window.as_weak();
         let proc_weak = proc_win.as_weak();
@@ -3346,6 +3362,10 @@ fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, LogicalRect, 
     ))
 }
 
+/// The SFTP file-list rectangle inside the active terminal panel. Kept for a
+/// future dedicated SFTP drop target; the shell-page drop currently accepts the
+/// whole terminal panel instead of just this region (#drag-onto-shell).
+#[allow(dead_code)]
 fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect> {
     let (_active, term, term_state) = active_terminal_panel_rects(win)?;
     if term_state.sftp_collapsed {
@@ -3414,8 +3434,9 @@ fn cursor_pos() -> Option<(i32, i32)> {
     }
 }
 
-/// Handle an OS file drop: if it landed over the SFTP file-list area of the
-/// active session tab, upload the file to that tab's current remote directory.
+/// Handle an OS file drop: if it landed over the terminal panel (the shell page)
+/// of the active session tab, upload the file to that tab's current remote
+/// directory.
 #[cfg(windows)]
 fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path: std::path::PathBuf) {
     let active = win.get_active_tab_id().to_string();
@@ -3433,11 +3454,14 @@ fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path: std::path
     // Drop point in logical client coordinates.
     let client_x = (cx - inner.x) as f32 / scale;
     let client_y = (cy - inner.y) as f32 / scale;
-    let Some(file_list) = active_sftp_file_list_rect(win) else {
+    // Accept drops anywhere over the whole terminal panel ("shell page"), so
+    // dragging a file onto the terminal uploads it to the session's current
+    // directory — not just onto the SFTP file list (#drag-onto-shell).
+    let Some((_active, term, _term_state)) = active_terminal_panel_rects(win) else {
         return;
     };
-    if !contains_logical(file_list, client_x, client_y) {
-        return; // dropped outside the file list — ignore
+    if !contains_logical(term, client_x, client_y) {
+        return; // dropped outside the terminal panel — ignore
     }
 
     let dir = active_sftp_path(win, &active);
