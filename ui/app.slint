@@ -527,6 +527,9 @@ export component AppWindow inherits Window {
     // SFTP follows the terminal's cd; opt out in Interface settings.
     in-out property <bool> sftp-follow-cd: true;
     callback set-sftp-follow-cd(bool);             // apply + persist
+    // Hide the quick-command bar under the terminal; toolbar toggle persists it.
+    in-out property <bool> cmd-bar-hidden: false;
+    callback set-cmd-bar-hidden(bool);             // apply + persist
     // Always ask where to save on each download (#87); default off.
     in-out property <bool> download-always-ask: false;
     callback set-download-always-ask(bool);        // apply + persist
@@ -1585,6 +1588,7 @@ export component AppWindow inherits Window {
                     quick-commands: root.quick-commands;
                     quick-sidebar-enabled: root.quick-commands-as-sidebar;
                     quick-panel-docked: root.quick-panel-open;
+                    cmd-bar-hidden: root.cmd-bar-hidden;
                     quick-external-command: root.quick-external-command;
                     quick-external-send-enter: root.quick-external-send-enter;
                     quick-external-sequence: root.quick-external-sequence;
@@ -1920,6 +1924,16 @@ export component AppWindow inherits Window {
             ? (root.sync-input ? "Sync input: ON" : "Sync input")
             : (root.sync-input ? "会话同步：开" : "会话同步");
         clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
+    }
+    IconBtn {
+        x: root.width - 154px - root.toolbar-x-off; y: root.toolbar-y;
+        icon: "\u{E86F}";   // Material "code" — command bar
+        icon-color: root.cmd-bar-hidden ? Theme.text-secondary : Theme.accent;
+        active: !root.cmd-bar-hidden;
+        tooltip: root.lang-en
+            ? (root.cmd-bar-hidden ? "Show command bar" : "Hide command bar")
+            : (root.cmd-bar-hidden ? "显示命令栏" : "隐藏命令栏");
+        clicked => { root.cmd-bar-hidden = !root.cmd-bar-hidden; root.set-cmd-bar-hidden(root.cmd-bar-hidden); }
     }
 
     // Frameless resize edges (#119): thin hit-zones that start an OS-level
