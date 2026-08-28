@@ -4259,6 +4259,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     user: session.user.clone(),
                     session_id: id.clone(),
                     state: 0,
+                    is_local: session.kind == SessionKind::Local,
                     ..Default::default()
                 },
             );

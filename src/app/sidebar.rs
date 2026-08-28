@@ -151,6 +151,25 @@ pub(super) fn refresh_sidebar(
             vm.set_vec(tuple5_rows(&sys.filesystems));
         }
     };
+    // The local machine's own figures: used both by a local-shell tab and by
+    // the welcome tab, neither of which has remote stats to show.
+    let show_local_system_models = |win: &AppWindow| {
+        set_system_models(
+            win,
+            snap.cpu_percent,
+            snap.mem_percent,
+            snap.swap_percent,
+            format_mem(snap.mem_used_mib, snap.mem_total_mib).into(),
+            format_mem(snap.swap_used_mib, snap.swap_total_mib).into(),
+            vec![SysNetRow {
+                name: t("本机", "Local").into(),
+                up: format_bytes_per_sec(snap.net_tx_per_sec).into(),
+                down: format_bytes_per_sec(snap.net_rx_per_sec).into(),
+            }],
+            Vec::new(),
+            SystemDetails::default(),
+        );
+    };
     win.set_proc_available(false);
     win.set_system_info_available(false);
     set_procs(win, &[], "", "");
@@ -163,6 +182,30 @@ pub(super) fn refresh_sidebar(
     };
 
     match status {
+        // A local-shell tab (WSL / cmd / PowerShell) also reaches the connected
+        // state but never reports remote resources, so keep the connection line
+        // and show this machine's own CPU / memory / swap instead of zeroes.
+        Some(st) if st.is_local => {
+            win.set_conn_state(if st.state == 1 {
+                1
+            } else if st.state == 2 {
+                2
+            } else {
+                0
+            });
+            win.set_connection_state(if st.state == 1 {
+                st.host.clone()
+            } else if st.state == 2 {
+                format!("{} {}", st.host, t("已断开", "disconnected"))
+            } else {
+                format!("{} {}", t("连接中", "Connecting"), st.host)
+            }
+            .into());
+            win.set_conn_host(conn_ip(&st.host).into());
+            show_local_res(win);
+            set_top_local(win);
+            show_local_system_models(win);
+        }
         // A live session tab → remote resources + remote NIC on top.
         Some(st) if st.state == 1 => {
             win.set_conn_state(1);
@@ -251,21 +294,7 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host("".into());
             show_local_res(win);
             set_top_local(win);
-            set_system_models(
-                win,
-                snap.cpu_percent,
-                snap.mem_percent,
-                snap.swap_percent,
-                format_mem(snap.mem_used_mib, snap.mem_total_mib).into(),
-                format_mem(snap.swap_used_mib, snap.swap_total_mib).into(),
-                vec![SysNetRow {
-                    name: t("本机", "Local").into(),
-                    up: format_bytes_per_sec(snap.net_tx_per_sec).into(),
-                    down: format_bytes_per_sec(snap.net_rx_per_sec).into(),
-                }],
-                Vec::new(),
-                SystemDetails::default(),
-            );
+            show_local_system_models(win);
         }
     }
 }
