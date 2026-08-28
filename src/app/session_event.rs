@@ -274,6 +274,11 @@ pub(super) fn apply_session_event_to_window<'a>(
                 win.set_editor_content(content.into());
                 win.set_editor_readonly(!edit);
                 win.set_editor_dirty(false);
+                // Fresh find/replace state per open (#287).
+                win.set_editor_find_query("".into());
+                win.set_editor_replace_text("".into());
+                win.set_editor_match_count(0);
+                win.set_editor_find_position(-1);
                 win.set_editor_open(true);
             } else {
                 // Couldn't open as text. The SFTP status line alone is easy to

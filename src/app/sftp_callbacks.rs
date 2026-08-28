@@ -42,12 +42,54 @@ fn choose_download_conflict(remote: &str, local_dir: &str) -> Option<DownloadCon
     }
 }
 
+/// Locate the next (or previous, when `reverse`) match of a literal query in
+/// the editor text, relative to `current` (-1 = no selection yet). Wraps around
+/// at the ends. The count is always the total, so the bar can show "3" even
+/// when the current selection is at the last match.
+fn editor_find_next(
+    content: &str,
+    query: &str,
+    current: i32,
+    reverse: bool,
+) -> EditorFindResult {
+    if query.is_empty() {
+        return EditorFindResult {
+            start: 0,
+            end: 0,
+            count: 0,
+        };
+    }
+    let positions: Vec<usize> = content
+        .match_indices(query)
+        .map(|(index, _)| index)
+        .collect();
+    let selected = if reverse {
+        positions
+            .iter()
+            .rev()
+            .copied()
+            .find(|position| current < 0 || *position < current as usize)
+            .or_else(|| positions.last().copied())
+    } else {
+        positions
+            .iter()
+            .copied()
+            .find(|position| current < 0 || *position > current as usize)
+            .or_else(|| positions.first().copied())
+    };
+    let start = selected.unwrap_or(0).min(i32::MAX as usize) as i32;
+    EditorFindResult {
+        start,
+        end: start.saturating_add(query.len().min(i32::MAX as usize) as i32),
+        count: positions.len().min(i32::MAX as usize) as i32,
+    }
+}
+
 pub(super) fn wire_sftp_callbacks(
     window: &AppWindow,
     sftp_handles: SftpHandles,
     sftp_last_cwd: SftpLastCwd,
-) {
-    // Navigate to a remote path (or ".." to go up one level).
+) {    // Navigate to a remote path (or ".." to go up one level).
     {
         let sftp_handles = sftp_handles.clone();
         let sftp_last_cwd = sftp_last_cwd.clone();
@@ -720,6 +762,86 @@ pub(super) fn wire_sftp_callbacks(
             }
             w.set_editor_open(false);
             w.set_editor_dirty(false);
+            // Drop the find/replace bar state so the next open starts clean.
+            w.set_editor_find_query("".into());
+            w.set_editor_replace_text("".into());
+            w.set_editor_match_count(0);
+            w.set_editor_find_position(-1);
         });
+    }
+
+    // Built-in editor find/replace (#287). Matching is literal and
+    // case-sensitive, which is predictable for configuration/source files.
+    window.on_editor_count_matches(|content: SharedString, query: SharedString| {
+        if query.is_empty() {
+            0
+        } else {
+            content
+                .matches(query.as_str())
+                .count()
+                .min(i32::MAX as usize) as i32
+        }
+    });
+    window.on_editor_find_step(
+        |content: SharedString, query: SharedString, current: i32, reverse: bool| {
+            editor_find_next(content.as_str(), query.as_str(), current, reverse)
+        },
+    );
+    {
+        let weak = window.as_weak();
+        window.on_editor_replace_all(move |query: SharedString, replacement: SharedString| {
+            let Some(w) = weak.upgrade() else { return };
+            if w.get_editor_readonly() || query.is_empty() {
+                return;
+            }
+            let replaced = w
+                .get_editor_content()
+                .replace(query.as_str(), replacement.as_str());
+            w.set_editor_content(replaced.clone().into());
+            w.set_editor_dirty(true);
+            w.set_editor_line_numbers(line_numbers_for(&replaced).into());
+            w.set_editor_match_count(0);
+        });
+    }
+}
+
+#[cfg(test)]
+mod editor_find_tests {
+    use super::editor_find_next;
+
+    #[test]
+    fn finds_forward_from_the_current_selection() {
+        let result = editor_find_next("aaa bbb aaa", "aaa", -1, false);
+        assert_eq!((result.start, result.end, result.count), (0, 3, 2));
+
+        // Advance past the first match.
+        let next = editor_find_next("aaa bbb aaa", "aaa", 0, false);
+        assert_eq!((next.start, next.end, next.count), (8, 11, 2));
+    }
+
+    #[test]
+    fn wraps_around_at_the_end_and_is_case_sensitive() {
+        let result = editor_find_next("AAA aaa", "aaa", 4, false);
+        assert_eq!((result.start, result.end, result.count), (4, 7, 1));
+
+        // "AAA" does not match the lowercase query.
+        let result = editor_find_next("AAA", "aaa", -1, false);
+        assert_eq!(result.count, 0);
+    }
+
+    #[test]
+    fn finds_backward_and_wraps_to_the_last_match() {
+        let result = editor_find_next("aaa bbb aaa", "aaa", 0, true);
+        assert_eq!((result.start, result.end, result.count), (8, 11, 2));
+
+        // Before the first match wraps to the last one.
+        let result = editor_find_next("aaa bbb aaa", "aaa", -1, true);
+        assert_eq!((result.start, result.end, result.count), (8, 11, 2));
+    }
+
+    #[test]
+    fn empty_query_returns_zero_range() {
+        let result = editor_find_next("anything", "", 0, false);
+        assert_eq!((result.start, result.end, result.count), (0, 0, 0));
     }
 }

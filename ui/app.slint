@@ -112,6 +112,14 @@ export struct SplitterInfo {
     vertical: bool,   // true = vertical handle (drag left/right)
 }
 
+// Editor find step result (#287): the byte offsets to select and the total
+// match count (so the bar can show "3" even when the query no longer matches).
+export struct EditorFindResult {
+    start: int,
+    end: int,
+    count: int,
+}
+
 // A 26×26 top-bar icon button with a hover tooltip (right-aligned so it never
 // runs off the window edge). `active` keeps the hover background lit (e.g. while
 // its popup is open).
@@ -655,9 +663,18 @@ export component AppWindow inherits Window {
     in-out property <bool> editor-readonly;   // view = true, edit = false
     in-out property <bool> editor-dirty: false; // edited since load
     in-out property <string> editor-line-numbers; // newline-joined "1..N" from Rust (#81)
+    // Find/replace bar (#287). Matching is literal and case-sensitive, which is
+    // predictable for configuration/source files.
+    in-out property <string> editor-find-query;
+    in-out property <string> editor-replace-text;
+    in-out property <int> editor-match-count: 0;
+    in-out property <int> editor-find-position: -1;
     callback save-file();                     // Ctrl+S / Save button (edit only)
     callback close-editor();                  // X / Esc; uploads if dirty
     callback editor-recount(string);          // rebuild line numbers after an edit
+    callback editor-count-matches(string /* content */, string /* query */) -> int;
+    callback editor-find-step(string /* content */, string /* query */, int /* current */, bool /* reverse */) -> EditorFindResult;
+    callback editor-replace-all(string /* query */, string /* replacement */);
     // Editor card geometry: draggable by its title bar, resizable from the
     // bottom-right grip (same absolute-position pattern as the Interface
     // dialog). Defaults centre the card; user drags/resizes override them.
@@ -2147,6 +2164,94 @@ export component AppWindow inherits Window {
                                 Text { text: "\u{E5CD}"; font-family: "Material Icons";
                                        color: Theme.text-secondary; font-size: Theme.fs-md;
                                        horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                    Rectangle { height: 1px; background: Theme.border-subtle; }
+
+                    // Lightweight find/replace bar (#287). Replacement is
+                    // explicit; closing the editor never writes the file.
+                    Rectangle {
+                        height: 38px;
+                        background: Theme.bg-elevated;
+                        HorizontalLayout {
+                            padding-left: 8px; padding-right: 8px;
+                            padding-top: 5px; padding-bottom: 5px; spacing: 6px;
+                            Text { text: @tr("Find"); color: Theme.text-muted; vertical-alignment: center; }
+                            TextInput {
+                                horizontal-stretch: 1;
+                                single-line: true;
+                                text <=> root.editor-find-query;
+                                edited => {
+                                    root.editor-find-position = -1;
+                                    root.editor-match-count = root.editor-count-matches(
+                                        root.editor-content, root.editor-find-query);
+                                }
+                            }
+                            Text {
+                                width: 42px;
+                                text: root.editor-find-query == "" ? "" : root.editor-match-count;
+                                color: Theme.text-muted;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                            Rectangle {
+                                width: 28px;
+                                border-radius: Theme.radius-sm;
+                                background: find-prev-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                                find-prev-ta := TouchArea {
+                                    enabled: root.editor-match-count > 0;
+                                    clicked => {
+                                        let found = root.editor-find-step(root.editor-content,
+                                            root.editor-find-query, root.editor-find-position, true);
+                                        root.editor-find-position = found.start;
+                                        root.editor-match-count = found.count;
+                                        edit-input.set-selection-offsets(found.start, found.end);
+                                        edit-input.focus();
+                                    }
+                                }
+                                Text { text: "↑"; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                            Rectangle {
+                                width: 28px;
+                                border-radius: Theme.radius-sm;
+                                background: find-next-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                                find-next-ta := TouchArea {
+                                    enabled: root.editor-match-count > 0;
+                                    clicked => {
+                                        let found = root.editor-find-step(root.editor-content,
+                                            root.editor-find-query, root.editor-find-position, false);
+                                        root.editor-find-position = found.start;
+                                        root.editor-match-count = found.count;
+                                        edit-input.set-selection-offsets(found.start, found.end);
+                                        edit-input.focus();
+                                    }
+                                }
+                                Text { text: "↓"; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                            Text { text: @tr("Replace"); color: Theme.text-muted; vertical-alignment: center; }
+                            TextInput {
+                                horizontal-stretch: 1;
+                                single-line: true;
+                                text <=> root.editor-replace-text;
+                            }
+                            Rectangle {
+                                width: 88px;
+                                border-radius: Theme.radius-sm;
+                                background: replace-all-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                                replace-all-ta := TouchArea {
+                                    enabled: !root.editor-readonly && root.editor-find-query != "";
+                                    clicked => {
+                                        root.editor-replace-all(root.editor-find-query, root.editor-replace-text);
+                                    }
+                                }
+                                Text {
+                                    text: @tr("Replace all");
+                                    color: replace-all-ta.enabled ? Theme.text-primary : Theme.text-muted;
+                                    font-size: Theme.fs-sm;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
                     }
