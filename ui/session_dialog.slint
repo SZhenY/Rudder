@@ -565,7 +565,10 @@ export component SessionDialog inherits Rectangle {
                     height: 32px;
                     y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius-sm;
-                    background: close-ta.has-hover ? Theme.bg-hover : transparent;
+                    // Match ProcWindow's close button: red (#e81123) on hover,
+                    // white glyph, smooth 90ms transition (#close-hover-red).
+                    background: close-ta.has-hover ? #e81123 : transparent;
+                    animate background { duration: 90ms; }
                     close-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.cancel(); }
@@ -573,7 +576,7 @@ export component SessionDialog inherits Rectangle {
                     Text {
                         text: "\u{E5CD}";
                         font-family: "Material Icons";
-                        color: Theme.text-secondary;
+                        color: close-ta.has-hover ? white : Theme.text-secondary;
                         font-size: 18px;
                         horizontal-alignment: center;
                         vertical-alignment: center;

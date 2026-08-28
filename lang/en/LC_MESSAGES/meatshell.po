@@ -57,6 +57,9 @@ msgstr "About meatshell"
 msgid "A lightweight Rust + Slint SSH terminal client."
 msgstr "A lightweight Rust + Slint SSH terminal client."
 
+msgid "Transfers manager"
+msgstr "Transfers manager"
+
 msgid "Open source · MIT / Apache-2.0"
 msgstr "Open source · MIT / Apache-2.0"
 

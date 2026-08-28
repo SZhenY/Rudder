@@ -371,6 +371,17 @@ pub(super) fn apply_session_event_to_window(
                     Some(i) => model.set_row_data(i, rec),
                     None => model.insert(0, rec), // newest at top
                 }
+                // Drive the breathing indicator on the Transfers toolbar button:
+                // `true` while any row is active (0) or preparing (3); flips back
+                // to `false` the moment the last transfer finishes (#breathing-light).
+                let has_active = (0..model.row_count())
+                    .any(|i| {
+                        model
+                            .row_data(i)
+                            .map(|r| r.state == 0 || r.state == 3)
+                            .unwrap_or(false)
+                    });
+                win.set_has_active_transfers(has_active);
             }
         }
         SessionEvent::HostKeyPrompt {

@@ -57,6 +57,9 @@ msgstr "关于 meatshell"
 msgid "A lightweight Rust + Slint SSH terminal client."
 msgstr "一个轻量 Rust + Slint SSH 终端客户端。"
 
+msgid "Transfers manager"
+msgstr "传输管理"
+
 msgid "Open source · MIT / Apache-2.0"
 msgstr "开源项目 · 协议 MIT / Apache-2.0"
 
