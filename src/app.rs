@@ -9,7 +9,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::grid::Dimensions;
 
@@ -2339,7 +2339,7 @@ pub fn run() -> Result<()> {
         let mut chrome_done = false;
         window
             .window()
-            .on_winit_window_event(move |slint_window, event| {
+            .on_winit_window_event(move |_slint_window, event| {
                 if !chrome_done {
                     chrome_done = true;
                     if let Some(win) = weak.upgrade() {
@@ -3036,6 +3036,9 @@ fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, LogicalRect, 
     ))
 }
 
+// Only used by the Windows file-drop handler; keep it out of the
+// other platforms' builds so it is not flagged as dead code (#fix-warnings).
+#[cfg(windows)]
 fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect> {
     let (_active, term, term_state) = active_terminal_panel_rects(win)?;
     if term_state.sftp_collapsed {
