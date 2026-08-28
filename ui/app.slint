@@ -142,11 +142,80 @@ component IconBtn inherits Rectangle {
     in property <brush> icon-color: Theme.text-secondary;
     in property <string> tooltip;
     in property <bool> active;
+    // `breathe=true` makes the button add a separate pulse layer underneath
+    // the icon. Used by the Transfers button to signal in-flight transfers
+    // in the toolbar accent without breaking the icon's silhouette
+    // (#breathing-light). All other IconBtn instances leave this false.
+    //
+    // IMPORTANT — background structure split:
+    //   The previous implementation put `active`, hover and `breathe` into
+    //   one `background: ta.has-hover || root.active || root.breathe ? ...`
+    //   expression with a single `animate background { ...; iteration-count:
+    //   -1; ... }` declaration. That made every button with `active=true`
+    //   (which includes the toolbar Settings/Transfers buttons whenever
+    //   their popup is open) keep looping the pulse even though no transfer
+    //   was running, so the toolbar looked like it was always breathing.
+    //
+    //   To fix that, hover/active and breathe are now rendered on two
+    //   independent layers below, with animation only on the breathe layer
+    //   and only while `breathe=true` (#breathing-light).
+    in property <bool> breathe: false;
     callback clicked();
     width: 26px;
     height: 26px;
     border-radius: Theme.radius-sm;
-    background: ta.has-hover || root.active ? Theme.bg-hover : transparent;
+    // Base stays transparent; the two layers below paint onto this.
+    background: transparent;
+
+    // Layer 1 — static hover/active background (no animation, no looping).
+    // Replaces the previous `ta.has-hover || root.active` branch of the
+    // combined background expression so opening a popup no longer keeps the
+    // animate background loop running (#breathing-light).
+    static-bg := Rectangle {
+        x: 0px; y: 0px;
+        width: 100%; height: 100%;
+        border-radius: Theme.radius-sm;
+        background: ta.has-hover || root.active ? Theme.bg-hover : transparent;
+    }
+
+    // Layer 2 — breathing pulse, only while `breathe=true`.
+    // Re-tinted from `Theme.bg-hover` to `Theme.accent` (#v8-accent-breathe)
+    // so the pulse stays visible even when static-bg (Layer 1) is also
+    // painting `Theme.bg-hover` for an open popup. Two layers of
+    // `Theme.bg-hover` overlapped into one grey at every point of the opacity
+    // ramp, so the pulse was invisible once a popup opened. `Theme.accent` is
+    // the project's main accent (dark #4a90e2 / light #0071e3 / wallpaper-
+    // active = the picture's dominant colour) so the pulse reads as the
+    // toolbar accent instead of an alert strobe, and follows the active theme.
+    //
+    // WHY `visible` + `opacity` binding instead of `if root.breathe {…}`:
+    //   Slint's `animate` only fires on a *property change of an already-alive
+    //   element*. An element created by `if` appears with its initial opacity
+    //   already set, which is NOT a change, so the looping animation never
+    //   starts — that is exactly why "有传输任务却看不到脉冲" happened (the
+    //   layer was a static 0.5 square, never animating). Keeping the layer
+    //   always alive and flipping `visible` + `opacity` from false→true makes
+    //   opacity go 0 → 0.55, which *is* a change and starts the loop.
+    //   `visible: root.breathe` then hides it again when there is no transfer
+    //   so the (now-invisible) loop can't show through. Geometry is identical
+    //   to static-bg (Layer 1) so the pulse footprint equals the hover
+    //   footprint (#breathe-size-match).
+    breathe-layer := Rectangle {
+        x: 0px; y: 0px;
+        width: 100%; height: 100%;
+        border-radius: Theme.radius-sm;
+        background: Theme.accent;
+        visible: root.breathe;
+        opacity: root.breathe ? 0.55 : 0;
+        // 0.55 keeps the "low" end of the pulse unmistakably tinted without
+        // ever hitting full-saturation accent; direction: alternate ping-pongs
+        // 0 ↔ 0.55 → reads as a gentle breath, not a strobe (#v8-accent-breathe).
+        animate opacity {
+            duration: 1400ms;
+            iteration-count: -1;
+            direction: alternate;
+        }
+    }
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -180,6 +249,33 @@ component IconBtn inherits Rectangle {
             height: parent.height;
         }
     }
+
+    // (Removed) Combined background+animate declaration previously lived here:
+    //   background: ta.has-hover || root.active || root.breathe
+    //               ? Theme.bg-hover : transparent;
+    //   animate background {
+    //       duration: 1400ms;
+    //       iteration-count: -1;
+    //       direction: alternate;
+    //   }
+    // That single layer made every `active=true` button (toolbar Settings,
+    // Transfers, etc.) pulse forever as long as its popup was open. Replaced
+    // by the two static/breathing layers above so only `breathe=true`
+    // buttons animate, and they animate on a dedicated opacity layer
+    // (#breathing-light).
+    //
+    // (Removed) Previous breathe-layer declaration (#v8-accent-breathe):
+    //   if root.breathe : Rectangle {
+    //       ...
+    //       background: Theme.bg-hover;   // ← same colour as static-bg
+    //       opacity: 0.35;
+    //       animate opacity { duration: 1400ms; iteration-count: -1;
+    //                         direction: alternate; }
+    //   }
+    // Visually identical to "no pulse" once the popup was open, because the
+    // static-bg layer (above) is also painting `Theme.bg-hover`, so opacity
+    // ramps collapsed into a single grey. Retinted to `Theme.accent` so the
+    // pulse is visible against the grey backdrop in every state.
 }
 
 // One row in the keyboard-shortcuts dialog: a key chip + a description (#103).
@@ -357,6 +453,24 @@ export component AppWindow inherits Window {
     callback open-repo();                          // open the project's GitHub page
     in-out property <bool> shortcuts-open: false; // centered keyboard-shortcuts dialog (#103)
     in property <string> download-dir;      // preset SFTP download folder ("" = ask)
+    // Download (Transfers) popup size + resize-drag state. The popup is an
+    // embedded Rectangle (not a top-level window), so its resize is driven in
+    // pure Slint via a bottom-right grip — mirroring the interface dialog's
+    // #dl-resize grip so both popups share one resize affordance.
+    in-out property <length> dl-w: 350px;    // current popup width
+    in-out property <length> dl-h: 400px;    // current popup height
+    in-out property <bool> dl-resizing: false;
+    in-out property <length> dl-base-w;     // width captured when the drag started
+    in-out property <length> dl-base-h;     // height captured when the drag started
+    in-out property <length> dl-grab-x;     // pointer x (logical) when the drag started
+    in-out property <length> dl-grab-y;     // pointer y (logical) when the drag started
+    // `true` while at least one transfer is active or preparing; drives the
+    // breathing indicator on the toolbar Transfers button (#breathing-light).
+    in-out property <bool> has-active-transfers: false;
+    // Start an OS resize from the bottom-right grip; mirrors ProcWindow so the
+    // main window gets the same visual affordance when the OS frame is hidden
+    // (custom-titlebar mode on Windows/Linux, #main-resize-grip).
+    callback win-resize-se();
     // Process monitor is now a detachable top-level window (ProcWindow). Rust
     // shows/hides it in response to open-processes(); proc-list/proc-available
     // stay here as the live data source shared with that window (#23).
@@ -2053,11 +2167,19 @@ export component AppWindow inherits Window {
     }
     IconBtn {
         x: root.width - 64px - root.toolbar-x-off; y: root.toolbar-y;
-        icon: "\u{E2C4}";
-        tooltip: root.lang-en ? "Download" : "下载";
+        icon: "\u{E8D5}";   // Material "swap_vert" — symmetrical up+down arrows, clearer "transfer" semantic
+        tooltip: @tr("Transfers manager");
         active: root.download-open;
+        // Pulse the button's own background instead of a separate dot in the
+        // corner; the dot was visually loud and broke the icon's silhouette
+        // (#breathing-light).
+        breathe: root.has-active-transfers;
         clicked => { root.download-open = !root.download-open; root.settings-open = false; }
     }
+    // (Removed) External breathing-dot Rectangle that previously sat on the
+    // top-left of the Transfers button. The pulse now lives on the IconBtn's
+    // own background via `breathe: root.has-active-transfers` above, so the
+    // icon stays clean and no stray dot shows over the toolbar (#breathing-light).
     IconBtn {
         x: root.width - 94px - root.toolbar-x-off; y: root.toolbar-y;
         icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
@@ -2540,8 +2662,8 @@ export component AppWindow inherits Window {
         // panel docks right/top) (#dock).
         x: parent.width - 364px - root.toolbar-x-off;
         y: (root.custom-titlebar ? 78px : 40px + root.titlebar-inset) + root.toolbar-y-off;
-        width: 350px;
-        height: 400px;
+        width: root.dl-w;
+        height: root.dl-h;
         visible: root.download-open;
         background: Theme.popup-bg;
         border-radius: Theme.radius-md;
@@ -2560,7 +2682,7 @@ export component AppWindow inherits Window {
 
             HorizontalLayout {
                 Text {
-                    text: @tr("Download settings");
+                    text: @tr("Transfers manager");
                     color: Theme.text-primary;
                     font-size: Theme.fs-md;
                     font-weight: 600;
@@ -2570,13 +2692,16 @@ export component AppWindow inherits Window {
                 Rectangle {
                     width: 20px; height: 20px;
                     border-radius: Theme.radius-sm;
-                    background: close-ta.has-hover ? Theme.bg-hover : transparent;
+                    // Match ProcWindow's close button: red (#e81123) on hover,
+                    // white glyph, smooth 90ms transition (#close-hover-red).
+                    background: close-ta.has-hover ? #e81123 : transparent;
+                    animate background { duration: 90ms; }
                     close-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.download-open = false; }
                     }
                     Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           color: close-ta.has-hover ? white : Theme.text-secondary; font-size: Theme.fs-sm;
                            horizontal-alignment: center; vertical-alignment: center; }
                 }
             }
@@ -2681,7 +2806,14 @@ export component AppWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 4px;
                                     Text {
-                                        text: (t.is-upload ? "↑ " : "↓ ") + t.name;
+                                        text: t.is-upload ? "\u{E5D8}" : "\u{E5DB}"; // up / down arrow
+                                        color: t.is-upload ? #639922 : #7c3aed;  // upload=green, download=accent purple
+                                        font-family: "Material Icons";
+                                        font-size: Theme.fs-md;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: t.name;
                                         color: Theme.text-primary;
                                         font-size: Theme.fs-xs;
                                         horizontal-stretch: 1;
@@ -2732,6 +2864,65 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // --- Bottom-right resize grip (#dl-resize) -------------------------
+        // Mirrors the interface dialog's grip: same Material "open_in_full"
+        // glyph + nwse-resize cursor, pure-Slint drag-resize (the popup is an
+        // embedded Rectangle, so OS drag_resize_window can't be used here).
+        Rectangle {
+            // #dl-resize: bottom-right resize grip — switched from
+            // "open_in_full" glyph to the 3-dot diagonal pattern used by
+            // ProcWindow (#grip-icon-3dots) so all three affordances share
+            // one visual. Background stays transparent even on hover so the
+            // hover state never paints a 16x16 grey block (which read as a
+            // "shadow"). Hover feedback is given by the 3 dots shifting to
+            // text-secondary below.
+            x: parent.width - 16px;
+            y: parent.height - 16px;
+            width: 16px;
+            height: 16px;
+            background: transparent;
+            // 保留原 \u{E3C2} open_in_full 视觉（注释保留以备切换） (#grip-icon-3dots)
+            // Text {
+            //     text: "\u{E3C2}";   // Material "open_in_full" — matches interface dialog grip
+            //     font-family: "Material Icons";
+            //     color: Theme.text-muted;
+            //     font-size: 14px;
+            //     horizontal-alignment: center;
+            //     vertical-alignment: center;
+            // }
+            // 替换为进程弹框(ProcWindow:457)同款 3 点对角手柄
+            Rectangle { x: parent.width - 5px;  y: parent.height - 5px;  width: 2px; height: 2px;
+                        background: Theme.text-muted; }
+            Rectangle { x: parent.width - 9px;  y: parent.height - 5px;  width: 2px; height: 2px;
+                        background: Theme.text-muted; }
+            Rectangle { x: parent.width - 5px;  y: parent.height - 9px;  width: 2px; height: 2px;
+                        background: Theme.text-muted; }
+            dl-resize-ta := TouchArea {
+                mouse-cursor: nwse-resize;
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down) {
+                        root.dl-resizing = true;
+                        root.dl-base-w = root.dl-w;
+                        root.dl-base-h = root.dl-h;
+                        root.dl-grab-x = self.absolute-position.x + self.mouse-x;
+                        root.dl-grab-y = self.absolute-position.y + self.mouse-y;
+                    } else if (e.kind == PointerEventKind.up) {
+                        root.dl-resizing = false;
+                    }
+                }
+                moved => {
+                    if (root.dl-resizing) {
+                        root.dl-w = clamp(
+                            round((root.dl-base-w + (self.absolute-position.x + self.mouse-x - root.dl-grab-x)) / 1px) * 1px,
+                            300px, 900px);
+                        root.dl-h = clamp(
+                            round((root.dl-base-h + (self.absolute-position.y + self.mouse-y - root.dl-grab-y)) / 1px) * 1px,
+                            320px, 900px);
                     }
                 }
             }
@@ -3149,12 +3340,15 @@ export component AppWindow inherits Window {
                     Rectangle {
                         width: 22px; height: 22px;
                         border-radius: Theme.radius-sm;
-                        background: qcm-close.has-hover ? Theme.bg-hover : transparent;
+                        // Match ProcWindow's close button: red (#e81123) on hover,
+                        // white glyph, smooth 90ms transition (#close-hover-red).
+                        background: qcm-close.has-hover ? #e81123 : transparent;
+                        animate background { duration: 90ms; }
                         qcm-close := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.quick-cmd-manage-open = false; }
                         }
-                        Text { text: "\u{E5CD}"; font-family: "Material Icons"; color: Theme.text-secondary;
+                        Text { text: "\u{E5CD}"; font-family: "Material Icons"; color: qcm-close.has-hover ? white : Theme.text-secondary;
                                font-size: Theme.fs-md; horizontal-alignment: center; vertical-alignment: center; }
                     }
                 }
@@ -3439,20 +3633,30 @@ export component AppWindow inherits Window {
             // Bottom-right resize grip. The chosen size is retained while the
             // application is running, and remains clamped to the main window.
             Rectangle {
-                x: parent.width - 18px;
-                y: parent.height - 18px;
-                width: 18px;
-                height: 18px;
-                background: qcm-resize-ta.has-hover || root.qcm-dialog-resizing
-                    ? Theme.bg-hover : transparent;
-                Text {
-                    text: "\u{E3C2}";
-                    font-family: "Material Icons";
-                    color: Theme.text-muted;
-                    font-size: 14px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+                // #qcm-resize: bottom-right resize grip — switched from
+                // "open_in_full" glyph to the 3-dot diagonal pattern used by
+                // ProcWindow (#grip-icon-3dots) so all affordances share one visual.
+                x: parent.width - 16px;
+                y: parent.height - 16px;
+                width: 16px;
+                height: 16px;
+                background: transparent;
+                // 保留原 \u{E3C2} open_in_full 视觉（注释保留以备切换） (#grip-icon-3dots)
+                // Text {
+                //     text: "\u{E3C2}";
+                //     font-family: "Material Icons";
+                //     color: Theme.text-muted;
+                //     font-size: 14px;
+                //     horizontal-alignment: center;
+                //     vertical-alignment: center;
+                // }
+                // 替换为进程弹框(ProcWindow:457)同款 3 点对角手柄
+                Rectangle { x: parent.width - 5px;  y: parent.height - 5px;  width: 2px; height: 2px;
+                            background: Theme.text-muted; }
+                Rectangle { x: parent.width - 9px;  y: parent.height - 5px;  width: 2px; height: 2px;
+                            background: Theme.text-muted; }
+                Rectangle { x: parent.width - 5px;  y: parent.height - 9px;  width: 2px; height: 2px;
+                            background: Theme.text-muted; }
                 qcm-resize-ta := TouchArea {
                     mouse-cursor: nwse-resize;
                     pointer-event(e) => {
@@ -4432,13 +4636,16 @@ export component AppWindow inherits Window {
                             Rectangle {
                                 width: 24px; height: 24px;
                                 border-radius: Theme.radius-sm;
-                                background: if-close-ta.has-hover ? Theme.bg-hover : transparent;
+                                // Match ProcWindow's close button: red (#e81123) on hover,
+                                // white glyph, smooth 90ms transition (#close-hover-red).
+                                background: if-close-ta.has-hover ? #e81123 : transparent;
+                                animate background { duration: 90ms; }
                                 if-close-ta := TouchArea {
                                     mouse-cursor: pointer;
                                     clicked => { root.interface-open = false; }
                                 }
                                 Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                                       color: Theme.text-secondary; font-size: 15px;
+                                       color: if-close-ta.has-hover ? white : Theme.text-secondary; font-size: 15px;
                                        horizontal-alignment: center; vertical-alignment: center; }
                             }
                         }
@@ -4550,19 +4757,31 @@ export component AppWindow inherits Window {
                 }
             }
             Rectangle {
-                x: parent.width - 18px;
-                y: parent.height - 18px;
-                width: 18px;
-                height: 18px;
-                background: resize-ta.has-hover || root.ifd-resizing ? Theme.bg-hover : transparent;
-                Text {
-                    text: "\u{E3C2}";
-                    font-family: "Material Icons";
-                    color: Theme.text-muted;
-                    font-size: 14px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+                // #ifd-resize: bottom-right resize grip — switched from
+                // "open_in_full" glyph to the 3-dot diagonal pattern used by
+                // ProcWindow (#grip-icon-3dots) so all three affordances share
+                // one visual.
+                x: parent.width - 16px;
+                y: parent.height - 16px;
+                width: 16px;
+                height: 16px;
+                background: transparent;
+                // 保留原 \u{E3C2} open_in_full 视觉（注释保留以备切换） (#grip-icon-3dots)
+                // Text {
+                //     text: "\u{E3C2}";
+                //     font-family: "Material Icons";
+                //     color: Theme.text-muted;
+                //     font-size: 14px;
+                //     horizontal-alignment: center;
+                //     vertical-alignment: center;
+                // }
+                // 替换为进程弹框(ProcWindow:457)同款 3 点对角手柄
+                Rectangle { x: parent.width - 5px;  y: parent.height - 5px;  width: 2px; height: 2px;
+                            background: Theme.text-muted; }
+                Rectangle { x: parent.width - 9px;  y: parent.height - 5px;  width: 2px; height: 2px;
+                            background: Theme.text-muted; }
+                Rectangle { x: parent.width - 5px;  y: parent.height - 9px;  width: 2px; height: 2px;
+                            background: Theme.text-muted; }
                 resize-ta := TouchArea {
                     mouse-cursor: nwse-resize;
                     pointer-event(e) => {
@@ -4589,5 +4808,32 @@ export component AppWindow inherits Window {
                 }
             }
         }
+    }
+
+    // --- Bottom-right resize grip (frameless platforms) -------------------
+    // #main-resize-grip: mirrors ProcWindow's grip so the main window has the
+    // same visual affordance + drag-resize behavior when the OS title bar is
+    // hidden (custom-titlebar mode). Only rendered in frameless mode; otherwise
+    // the OS frame already provides this corner.
+    if root.custom-titlebar : Rectangle {
+        width: 16px;
+        height: 16px;
+        x: root.width - self.width;
+        y: root.height - self.height;
+        TouchArea {
+            mouse-cursor: nwse-resize;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                    root.win-resize-se();
+                }
+            }
+        }
+        // Classic dotted resize grip (a diagonal of 2px dots, bottom-right).
+        Rectangle { x: parent.width - 5px;  y: parent.height - 5px;  width: 2px; height: 2px;
+                    background: Theme.text-muted; }
+        Rectangle { x: parent.width - 9px;  y: parent.height - 5px;  width: 2px; height: 2px;
+                    background: Theme.text-muted; }
+        Rectangle { x: parent.width - 5px;  y: parent.height - 9px;  width: 2px; height: 2px;
+                    background: Theme.text-muted; }
     }
 }

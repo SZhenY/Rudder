@@ -246,6 +246,13 @@ pub(super) fn wire_sftp_callbacks(
     // Refresh the current directory listing.
     {
         let sftp_handles = sftp_handles.clone();
+        // Added (#sftp-refresh-selection): also need `weak` so we can drop the
+        // selection counter back to zero after the file list is rebuilt. Without
+        // this, the toolbar kept showing the old `sftp_selected_count` (e.g. "2")
+        // even though the freshly loaded entries were all unchecked, and the
+        // batch-download / batch-delete buttons stayed visible until the user
+        // manually toggled a checkbox to force a recount.
+        let weak = window.as_weak();
         window.on_sftp_refresh(move |tab_id: SharedString, path: SharedString| {
             let tab_id = tab_id.to_string();
             let path = path.to_string();
@@ -253,6 +260,21 @@ pub(super) fn wire_sftp_callbacks(
                 if let Some(h) = handles.get(&tab_id) {
                     // Refresh re-syncs the left tree too, not just the file list (#189).
                     h.refresh_dir(path);
+                }
+            }
+            // Reset the multi-select counter to match the new (empty) selection.
+            // The list itself gets replaced by `refresh_dir` with fresh entries
+            // whose `selected=false`, so this only really needs to clamp the
+            // cached count, but reusing `clear_sftp_selection` keeps the
+            // post-refresh state identical to what other actions (navigate,
+            // download-selected, delete-selected, copy-selected-to-target) leave
+            // behind — single source of truth (#sftp-refresh-selection).
+            if let Some(w) = weak.upgrade() {
+                let terminals = w.get_terminals();
+                if let Some(tm) =
+                    terminals.as_any().downcast_ref::<VecModel<TerminalState>>()
+                {
+                    clear_sftp_selection(tm, &tab_id);
                 }
             }
         });
