@@ -202,6 +202,7 @@ mod resource_ui;
 mod session_event;
 mod session_models;
 mod session_runtime;
+mod session_trigger;
 mod sftp_callbacks;
 mod sftp_ui;
 mod sidebar;
@@ -215,6 +216,7 @@ use self::quick_commands::*;
 use self::resource_ui::*;
 use self::session_event::*;
 use self::session_models::*;
+use self::session_trigger::*;
 use self::session_runtime::*;
 use self::sftp_callbacks::*;
 use self::sftp_ui::*;
@@ -3258,6 +3260,11 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
     let edit_forwards: Rc<RefCell<Vec<PortFwd>>> =
         Rc::new(RefCell::new(vec![blank_forward_draft()]));
 
+    // Working set of expect/send login triggers (#212), same lifecycle as the
+    // forward drafts above. Responses stay blank when editing a saved rule.
+    let edit_triggers: Rc<RefCell<Vec<TriggerDraft>>> =
+        Rc::new(RefCell::new(vec![blank_trigger_draft()]));
+
     // Rebuild the session list as the user edits the Quick Connect search.
     {
         let weak = window.as_weak();
@@ -3283,12 +3290,15 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
     // New session -> open dialog with blank draft.
     let weak = window.as_weak();
     let ef_new = edit_forwards.clone();
+    let et_new = edit_triggers.clone();
     let store_ng = store.clone();
     window.on_new_session_clicked(move || {
         if let Some(w) = weak.upgrade() {
             *ef_new.borrow_mut() = vec![blank_forward_draft()];
+            *et_new.borrow_mut() = vec![blank_trigger_draft()];
             w.set_session_groups(session_groups_model(&store_ng.borrow()));
             w.set_dialog_forwards(forward_model(&ef_new.borrow()));
+            w.set_dialog_triggers(trigger_model(&et_new.borrow()));
             let empty = Session::new_empty();
             let (jump_labels, jump_ids, jump_idx) =
                 jump_candidates(&store_ng.borrow(), &empty.id, "");
@@ -3491,6 +3501,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
         let weak = window.as_weak();
         let store = store.clone();
         let ef_edit = edit_forwards.clone();
+        let et_edit = edit_triggers.clone();
         window.on_edit_session(move |id: SharedString| {
             let id = id.to_string();
             let store = store.borrow();
@@ -3501,9 +3512,16 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
             if ef_edit.borrow().is_empty() {
                 ef_edit.borrow_mut().push(blank_forward_draft());
             }
+            // Saved responses are never echoed into the dialog (#10); the
+            // validator keeps them when the response box stays blank.
+            *et_edit.borrow_mut() = trigger_drafts(&session.triggers);
+            if et_edit.borrow().is_empty() {
+                et_edit.borrow_mut().push(blank_trigger_draft());
+            }
             if let Some(w) = weak.upgrade() {
                 w.set_session_groups(session_groups_model(&store));
                 w.set_dialog_forwards(forward_model(&ef_edit.borrow()));
+                w.set_dialog_triggers(trigger_model(&et_edit.borrow()));
                 w.set_dialog_id(session.id.clone().into());
                 w.set_dialog_name(session.name.clone().into());
                 w.set_dialog_host(session.host.clone().into());
@@ -3740,10 +3758,27 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
         let store = store.clone();
         let sessions_model = sessions_model.clone();
         let edit_forwards = edit_forwards.clone();
+        let edit_triggers = edit_triggers.clone();
         window.on_session_dialog_submit(move |draft: SessionDraft| {
             let id = draft.id.to_string();
             let forwards = match validated_port_forwards(&edit_forwards.borrow()) {
                 Ok(forwards) => forwards,
+                Err(message) => {
+                    if let Some(w) = weak.upgrade() {
+                        w.set_dialog_test_status(message.into());
+                    }
+                    return;
+                }
+            };
+            // Triggers keep their saved response when the box is left blank,
+            // so the previously stored secrets must be passed along (#212).
+            let saved_responses: Vec<Secret> = store
+                .borrow()
+                .get(&id)
+                .map(|s| s.triggers.iter().map(|t| t.response.clone()).collect())
+                .unwrap_or_default();
+            let triggers = match validated_triggers(&edit_triggers.borrow(), &saved_responses) {
+                Ok(triggers) => triggers,
                 Err(message) => {
                     if let Some(w) = weak.upgrade() {
                         w.set_dialog_test_status(message.into());
@@ -3834,6 +3869,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                 flow_control: draft.flow_control.to_string(),
                 encoding: draft.encoding.to_string(),
                 forwards,
+                triggers,
                 disable_shell_integration: draft.disable_shell_integration,
                 note: draft.note.to_string(),
                 jump_session_id: draft.jump_session_id.to_string(),
@@ -3901,7 +3937,9 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     return;
                 }
             };
-            let session = session_from_draft(&draft, existing.as_ref(), forwards);
+            // Triggers are irrelevant to an authentication probe (and must not
+            // block it with a validation error), so start from an empty set.
+            let session = session_from_draft(&draft, existing.as_ref(), forwards, Vec::new());
             let weak_done = weak.clone();
 
             if kind == "ssh" {
@@ -4096,6 +4134,50 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
             }
             if let Some(w) = weak.upgrade() {
                 w.set_dialog_forwards(forward_model(&ef.borrow()));
+            }
+        });
+    }
+
+    // Add another expect/send trigger row (#212).
+    {
+        let weak = window.as_weak();
+        let et = edit_triggers.clone();
+        window.on_add_trigger(move || {
+            et.borrow_mut().push(blank_trigger_draft());
+            if let Some(w) = weak.upgrade() {
+                w.set_dialog_triggers(trigger_model(&et.borrow()));
+            }
+        });
+    }
+    // Keep each row in the Rust-side working set, like the forward drafts.
+    {
+        let et = edit_triggers.clone();
+        window.on_update_trigger(move |index: i32, trigger: TriggerDraft| {
+            let i = index as usize;
+            let mut triggers = et.borrow_mut();
+            if i < triggers.len() {
+                triggers[i] = trigger;
+            }
+        });
+    }
+    // Delete a trigger by index (#212). Always keep one blank row so the
+    // dialog never collapses to an empty list.
+    {
+        let weak = window.as_weak();
+        let et = edit_triggers.clone();
+        window.on_delete_trigger(move |index: i32| {
+            let i = index as usize;
+            {
+                let mut v = et.borrow_mut();
+                if i < v.len() {
+                    v.remove(i);
+                }
+                if v.is_empty() {
+                    v.push(blank_trigger_draft());
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_dialog_triggers(trigger_model(&et.borrow()));
             }
         });
     }

@@ -556,6 +556,10 @@ pub struct Session {
     #[serde(default)]
     pub forwards: Vec<PortForward>,
 
+    /// Expect/send rules evaluated against interactive terminal output (#212).
+    #[serde(default)]
+    pub triggers: Vec<SessionTrigger>,
+
     /// Skip the shell-integration setup (the cwd-follow PROMPT_COMMAND hook + the
     /// remote resource monitor). Those assume a POSIX shell; on a Windows server
     /// whose shell is pwsh/cmd the injected hook breaks the shell. Turn this on
@@ -589,6 +593,38 @@ pub struct PortForward {
     pub host_port: u16,
 }
 
+/// Automatically send a response when literal terminal output is observed
+/// (#212) — e.g. answer a `Password:` prompt or accept a host-key confirmation.
+/// `expect` is matched literally against the terminal stream (not a regex), so
+/// it stays predictable for operators writing rules by hand.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTrigger {
+    pub expect: String,
+    /// Stored encrypted like the session password; never logged.
+    #[serde(default)]
+    pub response: Secret,
+    /// Append `\r` after the response so the remote shell accepts it.
+    #[serde(default = "default_true")]
+    pub append_enter: bool,
+    /// False means the rule is consumed after its first match.
+    #[serde(default)]
+    pub repeat: bool,
+}
+
+// Hand-written rather than derived: `Default` must agree with the serde
+// defaults, otherwise a rule built in Rust would silently lose its trailing
+// Enter while the same rule loaded from disk keeps it.
+impl Default for SessionTrigger {
+    fn default() -> Self {
+        Self {
+            expect: String::new(),
+            response: Secret::default(),
+            append_enter: true,
+            repeat: false,
+        }
+    }
+}
+
 impl Session {
     pub fn new_empty() -> Self {
         Self {
@@ -616,6 +652,7 @@ impl Session {
             flow_control: default_flow(),
             encoding: default_encoding(),
             forwards: Vec::new(),
+            triggers: Vec::new(),
             disable_shell_integration: false,
             note: String::new(),
         }
@@ -2630,5 +2667,46 @@ mod tests {
         let _ = std::fs::remove_file(&export_path);
         let _ = std::fs::remove_file(&a.path);
         let _ = std::fs::remove_file(&b.path);
+    }
+}
+
+#[cfg(test)]
+mod session_trigger_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_sessions_without_triggers_still_load() {
+        // Sessions saved before #212 have no `triggers` key; the serde default
+        // must keep them loadable instead of failing the whole config file.
+        let raw = r#"{
+            "id": "legacy-1",
+            "name": "old box",
+            "host": "192.0.2.30",
+            "port": 22,
+            "user": "root",
+            "auth": "password",
+            "password": ""
+        }"#;
+        let session: Session = serde_json::from_str(raw).unwrap();
+        assert!(session.triggers.is_empty());
+    }
+
+    #[test]
+    fn triggers_round_trip_with_defaults() {
+        let mut session = Session::new_empty();
+        session.triggers.push(SessionTrigger {
+            expect: "Password:".into(),
+            response: Secret::new("hunter2"),
+            ..SessionTrigger::default()
+        });
+        let raw = serde_json::to_string(&session).unwrap();
+        let back: Session = serde_json::from_str(&raw).unwrap();
+
+        assert_eq!(back.triggers.len(), 1);
+        assert_eq!(back.triggers[0].expect, "Password:");
+        assert_eq!(back.triggers[0].response.as_str(), "hunter2");
+        // `append_enter` defaults to true, `repeat` to false.
+        assert!(back.triggers[0].append_enter);
+        assert!(!back.triggers[0].repeat);
     }
 }
