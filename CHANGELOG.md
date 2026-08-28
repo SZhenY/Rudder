@@ -3,6 +3,14 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [0.7.1] - 2026-08-29
+
+- **完善终端内 ZMODEM `rz` 上传（#308）。** 采用贡献者实现，补充完整关闭握手、远端跳过与握手失败反馈，并限制数据块大小以提升与 `lrzsz` 的兼容性；`sz` 下载保持不变。
+- **Improve in-terminal ZMODEM `rz` uploads (#308).** Adopt the contributor implementation with a complete close handshake, remote-skip and handshake-failure feedback, plus capped data blocks for better `lrzsz` compatibility. Existing `sz` downloads remain unchanged.
+
+- **优化文件传输工具栏与拖拽上传（#397）。** 改善传输列表工具栏、拖拽上传交互、缩放手柄和传输状态呼吸灯显示。
+- **Polish the file-transfer toolbar and drag-and-drop uploads (#397).** Improve the transfer-list toolbar, drag-and-drop upload interaction, resize handle, and transfer-state breathing indicator.
+
 ## [0.7.0] - 2026-08-27
 
 - **终端内 ZMODEM 支持 `rz` 上传（#308）。** 远端执行 `rz` 后会自动打开本地多文件选择器，通过当前 SSH PTY 上传所选文件，并在传输列表显示进度；取消选择、协议错误或远端取消时会发送标准取消序列，避免会话卡住。握手检测现在会区分 `sz` 的 `ZRQINIT` 与 `rz` 的 `ZRINIT`，已有 `sz` 下载保持不变。
