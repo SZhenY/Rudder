@@ -3706,14 +3706,15 @@ export component AppWindow inherits Window {
     }
 
     // Multi-line paste can execute several shell commands at once. Keep the
-    // prompt explicit and require a button click; clicking the backdrop never
-    // accepts the paste (#262).
+    // prompt explicit; clicking the backdrop never accepts the paste (#262),
+    // while Enter provides the expected keyboard confirmation (#392).
     ConfirmDialog {
         width: parent.width;
         height: parent.height;
         is-open <=> root.paste-confirm-open;
         covered: root.confirm-close-open;
         dismiss-on-backdrop: false;
+        confirm-on-enter: true;
         title: root.lang-en ? "Confirm multi-line paste" : "确认多行粘贴";
         message: root.lang-en
             ? "The clipboard contains line breaks and may execute multiple commands. Review it before pasting."

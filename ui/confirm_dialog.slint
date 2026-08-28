@@ -49,11 +49,35 @@ export component ConfirmDialog inherits Rectangle {
     // security prompts (e.g. host-key trust) so an accidental click outside the card
     // doesn't count as "reject" and abort the connection (#152).
     in property <bool> dismiss-on-backdrop: true;
+    // Opt in per call site: destructive confirmations must not become
+    // keyboard-confirmable merely because they share this component (#392).
+    in property <bool> confirm-on-enter: false;
     callback confirm();
     callback cancel();
 
     visible: is-open && !covered;
     background: #000000aa;
+
+    // Enter confirms, but only where the caller opted in. The scope takes focus
+    // as soon as the dialog becomes visible so no extra click is needed.
+    confirm-key-scope := FocusScope {
+        focus-on-click: false;
+        focus-on-tab-navigation: false;
+        property <bool> active: root.visible && root.confirm-on-enter;
+        changed active => {
+            if (self.active) {
+                self.focus();
+            }
+        }
+        key-pressed(event) => {
+            if (root.confirm-on-enter && event.text == Key.Return) {
+                root.confirm();
+                accept
+            } else {
+                reject
+            }
+        }
+    }
 
     // Backdrop click cancels — unless disabled for a must-decide prompt.
     TouchArea {
