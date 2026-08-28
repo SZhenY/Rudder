@@ -52,6 +52,10 @@ pub(crate) struct TabStatus {
     pub(crate) disks: Vec<(String, u64, u64)>,
     pub(crate) procs: Vec<ProcInfo>,
     pub(crate) sys: SystemDetails,
+    /// A local-shell tab (WSL / cmd / PowerShell). These reach the connected
+    /// state but never produce remote resource stats, so the sidebar must fall
+    /// back to the local machine's own figures instead of showing zeroes.
+    pub(crate) is_local: bool,
 }
 
 pub(crate) type TabStatuses = Arc<Mutex<HashMap<String, TabStatus>>>;
