@@ -305,15 +305,41 @@ async fn remote_supports_prompt_setup(handle: &Handle<ClientHandler>) -> bool {
         .unwrap_or(false)
 }
 
-/// Detect the start of a ZMODEM transfer (sz/rz) in a raw channel chunk.
-///
-/// Every ZMODEM frame begins with ZDLE (0x18) followed by a type byte; the
-/// `sz` handshake leads with a ZRQINIT hex header (`**\x18B00...`). Matching
-/// ZDLE followed by `B` (hex frame) or `C` (binary frame) reliably catches the
-/// handshake without false-positiving on a lone 0x18 (Ctrl-X) in normal output.
-fn contains_zmodem_init(data: &[u8]) -> bool {
-    data.windows(2)
-        .any(|w| w[0] == 0x18 && (w[1] == b'B' || w[1] == b'C'))
+/// Which side of a ZMODEM transfer the remote is asking for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ZmodemDirection {
+    /// Remote `sz` sends files; Rudder receives them into Downloads.
+    Download,
+    /// Remote `rz` receives files; Rudder sends the locally picked selection.
+    Upload,
+}
+
+/// Identify the first hex ZMODEM handshake by its actual frame type. Remote
+/// `sz` starts with ZRQINIT (`00`), while remote `rz` starts with ZRINIT (`01`).
+/// Treating both as a receive operation made `rz` deadlock because each side
+/// waited for the other to start sending (#308).
+fn zmodem_direction(data: &[u8]) -> Option<ZmodemDirection> {
+    data.windows(4).find_map(|window| {
+        if window[0] != 0x18 || window[1] != b'B' {
+            return None;
+        }
+        let high = zmodem_hex_nibble(window[2])?;
+        let low = zmodem_hex_nibble(window[3])?;
+        match (high << 4) | low {
+            0 => Some(ZmodemDirection::Download),
+            1 => Some(ZmodemDirection::Upload),
+            _ => None,
+        }
+    })
+}
+
+fn zmodem_hex_nibble(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn line_start_before(text: &str, pos: usize) -> usize {
@@ -2138,14 +2164,56 @@ async fn run_session(
             msg = channel.wait() => {
                 match msg {
                     Some(ChannelMsg::Data { data }) => {
-                        // A `sz` in the terminal starts a ZMODEM send. Receive it
-                        // straight to the Downloads dir (FinalShell style, #76).
+                        // Route the two ZMODEM handshakes in opposite directions:
+                        // remote `sz` downloads into Downloads (#76); remote `rz`
+                        // opens a local multi-file picker and uploads (#308).
                         // On any protocol error, cancel so the session recovers.
                         let zmodem_cooldown = zmodem_done_at
                             .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2));
-                        if !zmodem_cooldown && contains_zmodem_init(&data) {
-                            let result =
-                                crate::terminal::zmodem::receive(&mut channel, &data, &events).await;
+                        if let Some(direction) = (!zmodem_cooldown)
+                            .then(|| zmodem_direction(&data))
+                            .flatten()
+                        {
+                            let result = match direction {
+                                ZmodemDirection::Download => {
+                                    crate::terminal::zmodem::receive(&mut channel, &data, &events)
+                                        .await
+                                }
+                                ZmodemDirection::Upload => {
+                                    let files = tokio::task::spawn_blocking(|| {
+                                        rfd::FileDialog::new()
+                                            .set_title(t(
+                                                "选择要通过 rz 上传的文件",
+                                                "Choose files to upload via rz",
+                                            ))
+                                            .pick_files()
+                                            .unwrap_or_default()
+                                    })
+                                    .await
+                                    .unwrap_or_default();
+                                    if files.is_empty() {
+                                        let _ = channel.data(&ZMODEM_CANCEL[..]).await;
+                                        let _ = events.send(SessionEvent::Output(format!(
+                                            "\r\n[rudder] {}\r\n",
+                                            t("已取消 rz 上传", "rz upload cancelled")
+                                        )));
+                                        zmodem_done_at = Some(std::time::Instant::now());
+                                        continue;
+                                    }
+                                    let _ = events.send(SessionEvent::Output(format!(
+                                        "\r\n[rudder] {} {}...\r\n",
+                                        t("开始上传", "Uploading"),
+                                        files
+                                            .iter()
+                                            .filter_map(|path| path.file_name())
+                                            .map(|name| name.to_string_lossy())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    )));
+                                    crate::terminal::zmodem::send(&mut channel, &data, &files, &events)
+                                        .await
+                                }
+                            };
                             zmodem_done_at = Some(std::time::Instant::now());
                             match result {
                                 Ok(leftover) => {
@@ -2162,11 +2230,20 @@ async fn run_session(
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::warn!("zmodem receive failed: {e:#}");
+                                    tracing::warn!("zmodem {direction:?} failed: {e:#}");
                                     let _ = channel.data(&ZMODEM_CANCEL[..]).await;
                                     let _ = events.send(SessionEvent::Output(format!(
-                                        "\r\n[rudder] {}: {e}\r\n",
-                                        t("ZMODEM 接收失败,已取消", "ZMODEM receive failed; cancelled")
+                                        "\r\n[rudder] {}: {e:#}\r\n",
+                                        match direction {
+                                            ZmodemDirection::Download => t(
+                                                "ZMODEM 接收失败,已取消",
+                                                "ZMODEM receive failed; cancelled",
+                                            ),
+                                            ZmodemDirection::Upload => t(
+                                                "ZMODEM 上传失败,已取消",
+                                                "ZMODEM upload failed; cancelled",
+                                            ),
+                                        }
                                     )));
                                 }
                             }
@@ -2227,12 +2304,13 @@ async fn run_session(
                             // path below) is shown; banner text above it is
                             // preserved.
                             let mut painted = chunk;
-                            if let Some(prompt_line) = painted.rsplit('\n').next() {
-                                if prompt_line.trim_end().ends_with(['#', '$', '%', '>']) {
-                                    if let Some(pos) = painted.rfind(prompt_line) {
-                                        painted.truncate(pos);
-                                    }
-                                }
+                            let prompt_cut = painted
+                                .rsplit('\n')
+                                .next()
+                                .filter(|line| line.trim_end().ends_with(['#', '$', '%', '>']))
+                                .and_then(|line| painted.rfind(line));
+                            if let Some(pos) = prompt_cut {
+                                painted.truncate(pos);
                             }
                             let _ = events.send(SessionEvent::Output(painted));
                             let _ = channel.data(prompt_setup.as_bytes()).await;
@@ -3573,6 +3651,29 @@ mod prompt_setup_echo_tests {
         // can't be distinguished), so compare trimmed.
         assert_eq!(lines.first().map(|s| s.trim_end()), Some(prompt.trim_end()));
         assert_eq!(crate::terminal::cursor_pos(&term), (0, prompt.len() as u16));
+    }
+}
+
+#[cfg(test)]
+mod zmodem_detection_tests {
+    use super::{ZmodemDirection, zmodem_direction};
+
+    #[test]
+    fn distinguishes_remote_sz_from_remote_rz() {
+        assert_eq!(
+            zmodem_direction(b"**\x18B00000000000000\r\n"),
+            Some(ZmodemDirection::Download)
+        );
+        assert_eq!(
+            zmodem_direction(b"rz waiting to receive.**\x18B0100000023be50\r\n\x11"),
+            Some(ZmodemDirection::Upload)
+        );
+    }
+
+    #[test]
+    fn ignores_non_handshake_frames_and_ctrl_x() {
+        assert_eq!(zmodem_direction(b"plain \x18 text"), None);
+        assert_eq!(zmodem_direction(b"**\x18B08000000000000\r\n"), None);
     }
 }
 

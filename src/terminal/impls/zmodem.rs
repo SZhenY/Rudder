@@ -1,4 +1,4 @@
-//! Minimal ZMODEM **receiver** — the `rz` side of an `sz` transfer (#76).
+//! Minimal **bidirectional** ZMODEM implementation for terminal `sz` / `rz`.
 //!
 //! When the user runs `sz <file>` in the terminal, the remote starts a ZMODEM
 //! send. We implement just enough of the protocol to receive: reply to ZRQINIT
@@ -9,9 +9,10 @@
 //! We advertise CANFC32, so the sender uses CRC-32 binary frames; the CRC-16
 //! paths are implemented for completeness but rarely exercised.
 //!
-//! This is intentionally a *receive-only* implementation; `rz` (upload) is not
-//! handled here. Every header is logged at debug level to aid diagnosis, since
-//! the binary protocol can't easily be tested without a live server.
+//! The complementary direction — the remote runs `rz` — is handled by
+//! `zmodem_send.rs`: the user picks local files and they are streamed over the
+//! existing PTY (#308). Every header is logged at debug level to aid diagnosis,
+//! since the binary protocol can't easily be tested without a live server.
 
 use crate::i18n::t;
 use crate::ssh::SessionEvent;
@@ -24,11 +25,19 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedSender;
 
+// The `rz` (upload) sender lives in its own file; it shares this module's
+// frame constants, CRC helpers and the `Rx` I/O wrapper via `use super::*`.
+#[path = "zmodem_send.rs"]
+mod send_impl;
+pub(crate) use send_impl::send;
+
 // --- Frame types -----------------------------------------------------------
 const ZRQINIT: u8 = 0;
 const ZRINIT: u8 = 1;
 const ZACK: u8 = 3;
 const ZFILE: u8 = 4;
+/// Receiver asks us to skip this file (already present / not wanted, #308).
+const ZSKIP: u8 = 5;
 const ZNAK: u8 = 6;
 const ZABORT: u8 = 7;
 const ZFIN: u8 = 8;
@@ -113,7 +122,7 @@ pub async fn receive(
                     .await
                     .with_context(|| format!("create {}", path.display()))?;
                 let id = format!("zmodem-{}", uuid::Uuid::new_v4());
-                emit(events, &id, &name, 0, size, 0, "");
+                emit(events, &id, &name, false, 0, size, 0, "");
                 cur = Some(CurFile {
                     file,
                     name,
@@ -132,6 +141,7 @@ pub async fn receive(
                         events,
                         &c.id,
                         &c.name,
+                        false,
                         c.written,
                         c.size.max(c.written),
                         0,
@@ -160,6 +170,7 @@ pub async fn receive(
                         events,
                         &c.id,
                         &c.name,
+                        false,
                         c.written,
                         c.size.max(c.written),
                         1,
@@ -456,10 +467,17 @@ fn sanitize(name: &str) -> String {
     }
 }
 
+/// `is_upload` distinguishes the terminal ZMODEM directions so the transfer
+/// panel can label them: `false` for a remote `sz` download into Downloads,
+/// `true` for an `rz` upload of locally picked files (#308).
+// One argument over clippy's default budget, but the flat signature keeps every
+// call site readable — the tuple-packed alternative only hides the count.
+#[allow(clippy::too_many_arguments)]
 fn emit(
     events: &UnboundedSender<SessionEvent>,
     id: &str,
     name: &str,
+    is_upload: bool,
     transferred: u64,
     total: u64,
     state: u8,
@@ -468,7 +486,7 @@ fn emit(
     let _ = events.send(SessionEvent::SftpTransfer {
         id: id.to_string(),
         name: name.to_string(),
-        is_upload: false,
+        is_upload,
         transferred,
         total,
         state,
