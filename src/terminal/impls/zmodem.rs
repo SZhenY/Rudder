@@ -251,23 +251,59 @@ struct CurFile {
     written: u64,
 }
 
-/// Reader/writer over the SSH channel with a byte buffer and ZMODEM helpers.
-struct Rx<'a> {
-    ch: &'a mut Channel<Msg>,
+/// The byte stream the ZMODEM state machine talks to.
+///
+/// Indirection exists purely so the protocol below can be driven by an
+/// in-memory buffer in tests: the real implementation is the SSH channel, but
+/// the ~570 lines of handshake/frame/error-recovery logic behind it were
+/// untestable while they were welded to `russh::Channel` (upstream shipped six
+/// fix commits for #308 in this area, so it is not a quiet corner).
+trait ZmodemIo {
+    /// Next chunk of bytes. `Ok(None)` = stream closed. An empty chunk means
+    /// "nothing useful yet, keep waiting".
+    async fn recv(&mut self) -> Result<Option<Vec<u8>>>;
+    /// Push bytes back towards the sender.
+    async fn send(&mut self, bytes: &[u8]) -> Result<()>;
+}
+
+impl ZmodemIo for Channel<Msg> {
+    async fn recv(&mut self) -> Result<Option<Vec<u8>>> {
+        // Guard against a stalled transfer hanging the session forever.
+        let msg = tokio::time::timeout(Duration::from_secs(30), self.wait())
+            .await
+            .map_err(|_| anyhow::anyhow!("ZMODEM read timed out"))?;
+        Ok(match msg {
+            Some(ChannelMsg::Data { data }) => Some(data.to_vec()),
+            Some(ChannelMsg::ExtendedData { data, .. }) => Some(data.to_vec()),
+            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => None,
+            // Anything else (window adjust, requests…) is not payload.
+            _ => Some(Vec::new()),
+        })
+    }
+
+    async fn send(&mut self, bytes: &[u8]) -> Result<()> {
+        self.data(bytes).await.context("zmodem send header")?;
+        Ok(())
+    }
+}
+
+/// Reader/writer over a byte stream with a buffer and ZMODEM helpers.
+struct Rx<'a, IO: ZmodemIo> {
+    io: &'a mut IO,
     buf: VecDeque<u8>,
     closed: bool,
 }
 
-impl<'a> Rx<'a> {
-    fn new(ch: &'a mut Channel<Msg>, first: &[u8]) -> Self {
+impl<'a, IO: ZmodemIo> Rx<'a, IO> {
+    fn new(io: &'a mut IO, first: &[u8]) -> Self {
         Rx {
-            ch,
+            io,
             buf: first.iter().copied().collect(),
             closed: false,
         }
     }
 
-    /// Next raw byte; pulls more channel data when the buffer drains.
+    /// Next raw byte; pulls more stream data when the buffer drains.
     async fn byte(&mut self) -> Result<u8> {
         loop {
             if let Some(b) = self.buf.pop_front() {
@@ -276,17 +312,9 @@ impl<'a> Rx<'a> {
             if self.closed {
                 bail!("channel closed during ZMODEM");
             }
-            // Guard against a stalled transfer hanging the session forever.
-            let msg = tokio::time::timeout(Duration::from_secs(30), self.ch.wait())
-                .await
-                .map_err(|_| anyhow::anyhow!("ZMODEM read timed out"))?;
-            match msg {
-                Some(ChannelMsg::Data { data }) => self.buf.extend(data.iter().copied()),
-                Some(ChannelMsg::ExtendedData { data, .. }) => {
-                    self.buf.extend(data.iter().copied())
-                }
-                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => self.closed = true,
-                _ => {}
+            match self.io.recv().await? {
+                Some(chunk) => self.buf.extend(chunk),
+                None => self.closed = true,
             }
         }
     }
@@ -428,7 +456,7 @@ impl<'a> Rx<'a> {
             out.push(0x11);
         }
         tracing::debug!("zmodem tx type={ftype} bytes={:02x?}", &out);
-        self.ch.data(&out[..]).await.context("zmodem send header")?;
+        self.io.send(&out).await?;
         Ok(())
     }
 }
@@ -567,5 +595,219 @@ mod tests {
         // Trailing dots/spaces are trimmed; pure-dot names rejected.
         assert_eq!(sanitize("name..."), "name");
         assert_eq!(sanitize(".."), "download");
+    }
+
+    // ── Protocol state machine ----------------------------------------------
+    // The handshake / frame / error-recovery logic below was untestable while
+    // Rx was welded to russh::Channel; it now runs against an in-memory stream.
+    // Upstream shipped six fix commits in this area (#308), hence the coverage.
+
+    /// Scripted byte stream: serves `input` one byte at a time, records `sent`.
+    struct Script {
+        input: VecDeque<u8>,
+        sent: Vec<u8>,
+    }
+
+    impl Script {
+        fn new(bytes: &[u8]) -> Self {
+            Script {
+                input: bytes.iter().copied().collect(),
+                sent: Vec::new(),
+            }
+        }
+    }
+
+    impl ZmodemIo for Script {
+        async fn recv(&mut self) -> Result<Option<Vec<u8>>> {
+            // One byte per call so the parser is exercised byte-at-a-time,
+            // which is how a real channel delivers it.
+            Ok(self.input.pop_front().map(|b| vec![b]))
+        }
+
+        async fn send(&mut self, bytes: &[u8]) -> Result<()> {
+            self.sent.extend_from_slice(bytes);
+            Ok(())
+        }
+    }
+
+    /// Build a hex header the way a real sender would.
+    fn hex_frame(ftype: u8, data: [u8; 4]) -> Vec<u8> {
+        let payload = [ftype, data[0], data[1], data[2], data[3]];
+        let crc = crc16(&payload);
+        let mut out = vec![ZPAD, ZPAD, ZDLE, ZHEX];
+        for &b in &payload {
+            out.extend_from_slice(&hex_digits(b));
+        }
+        out.extend_from_slice(&hex_digits((crc >> 8) as u8));
+        out.extend_from_slice(&hex_digits((crc & 0xff) as u8));
+        out.extend_from_slice(b"\r\n");
+        out
+    }
+
+    /// ZDLE-escape one byte, mirroring the sender's rules (all C0 controls plus
+    /// 0x90/0x91/0x93, so XON/XOFF and the PTY line discipline cannot eat
+    /// frame contents in transit).
+    fn push_escaped(out: &mut Vec<u8>, byte: u8) {
+        match byte {
+            0x7f => out.extend_from_slice(&[ZDLE, ZRUB0]),
+            0xff => out.extend_from_slice(&[ZDLE, ZRUB1]),
+            0x00..=0x1f | 0x90 | 0x91 | 0x93 => out.extend_from_slice(&[ZDLE, byte ^ 0x40]),
+            _ => out.push(byte),
+        }
+    }
+
+    /// Build a binary header (CRC-16 or CRC-32) with ZDLE escaping applied.
+    fn bin_frame(ftype: u8, data: [u8; 4], crc32: bool) -> Vec<u8> {
+        let payload = [ftype, data[0], data[1], data[2], data[3]];
+        let mut out = vec![ZPAD, ZDLE, if crc32 { ZBIN32 } else { ZBIN }];
+        for &b in &payload {
+            push_escaped(&mut out, b);
+        }
+        // The CRC travels in the escaped stream too — read_bin_header pulls it
+        // through zbyte(), so an unescaped 0x18 here would desync the parser.
+        if crc32 {
+            for b in crc32_of(&payload).to_le_bytes() {
+                push_escaped(&mut out, b);
+            }
+        } else {
+            for b in crc16(&payload).to_be_bytes() {
+                push_escaped(&mut out, b);
+            }
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn hex_header_parses_type_and_payload() {
+        let mut io = Script::new(&hex_frame(ZRINIT, [0, 0, 0, 0]));
+        let mut rx = Rx::new(&mut io, b"");
+        let (ftype, data) = rx.read_header().await.unwrap();
+        assert_eq!(ftype, ZRINIT);
+        assert_eq!(data, [0, 0, 0, 0]);
+    }
+
+    #[tokio::test]
+    async fn header_scan_skips_leading_garbage() {
+        // Terminal output before the transfer starts must not derail the scan.
+        let mut bytes = b"some shell noise\r\n".to_vec();
+        bytes.extend_from_slice(&hex_frame(ZRINIT, [1, 2, 3, 4]));
+        let mut io = Script::new(&bytes);
+        let mut rx = Rx::new(&mut io, b"");
+        let (ftype, data) = rx.read_header().await.unwrap();
+        assert_eq!(ftype, ZRINIT);
+        assert_eq!(data, [1, 2, 3, 4]);
+    }
+
+    #[tokio::test]
+    async fn hex_header_rejects_a_corrupted_crc() {
+        let mut frame = hex_frame(ZRINIT, [0, 0, 0, 0]);
+        // Flip a nibble in the CRC field (second-to-last hex pair before CRLF).
+        let crc_hi = frame.len() - 4;
+        frame[crc_hi] = if frame[crc_hi] == b'0' { b'1' } else { b'0' };
+        let mut io = Script::new(&frame);
+        let mut rx = Rx::new(&mut io, b"");
+        let err = rx.read_header().await.unwrap_err().to_string();
+        assert!(err.contains("CRC"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn bin16_header_parses_and_validates() {
+        let mut io = Script::new(&bin_frame(ZRINIT, [0x12, 0, 0, 0], false));
+        let mut rx = Rx::new(&mut io, b"");
+        let (ftype, data) = rx.read_header().await.unwrap();
+        assert_eq!(ftype, ZRINIT);
+        assert_eq!(data[0], 0x12);
+    }
+
+    #[tokio::test]
+    async fn bin32_header_parses_and_validates() {
+        let mut io = Script::new(&bin_frame(ZRINIT, [0, 0, 0, 0x34], true));
+        let mut rx = Rx::new(&mut io, b"");
+        let (ftype, data) = rx.read_header().await.unwrap();
+        assert_eq!(ftype, ZRINIT);
+        assert_eq!(data[3], 0x34);
+    }
+
+    #[tokio::test]
+    async fn bin32_header_rejects_a_truncated_crc() {
+        // Correct header bytes but a wrong CRC-32 must not be accepted.
+        let mut frame = bin_frame(ZRINIT, [0, 0, 0, 0], true);
+        let last = frame.len() - 1;
+        frame[last] ^= 0xff;
+        let mut io = Script::new(&frame);
+        let mut rx = Rx::new(&mut io, b"");
+        assert!(rx.read_header().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn subpacket_unescapes_zdle_sequences() {
+        // ZDLE-escaped 0x7f / 0xff and a control byte escaped as e ^ 0x40.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"AB");
+        bytes.extend_from_slice(&[ZDLE, ZRUB0]); // -> 0x7f
+        bytes.extend_from_slice(&[ZDLE, ZRUB1]); // -> 0xff
+        // 0x40 is 0x00 escaped (byte ^ 0x40) — a raw NUL must not reach the PTY.
+        bytes.extend_from_slice(&[ZDLE, 0x40]);
+        bytes.extend_from_slice(&[ZDLE, ZCRCE]);
+        // CRC-16 over data + terminator, escaped.
+        let mut crc_input = b"AB".to_vec();
+        crc_input.extend_from_slice(&[0x7f, 0xff, 0x00, ZCRCE]);
+        let crc = crc16(&crc_input).to_be_bytes();
+        bytes.extend_from_slice(&crc);
+
+        let mut io = Script::new(&bytes);
+        let mut rx = Rx::new(&mut io, b"");
+        let (data, end) = rx.read_subpacket(false).await.unwrap();
+        assert_eq!(data, vec![b'A', b'B', 0x7f, 0xff, 0x00]);
+        assert_eq!(end, ZCRCE);
+    }
+
+    #[tokio::test]
+    async fn subpacket_detects_a_corrupted_crc() {
+        let mut bytes = b"payload".to_vec();
+        bytes.extend_from_slice(&[ZDLE, ZCRCE]);
+        let mut crc_input = b"payload".to_vec();
+        crc_input.push(ZCRCE);
+        let crc = crc16(&crc_input).to_be_bytes();
+        bytes.extend_from_slice(&[crc[0] ^ 0xff, crc[1]]);
+
+        let mut io = Script::new(&bytes);
+        let mut rx = Rx::new(&mut io, b"");
+        let err = rx.read_subpacket(false).await.unwrap_err().to_string();
+        assert!(err.contains("CRC"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn reading_past_a_closed_stream_errors() {
+        let mut io = Script::new(b"");
+        let mut rx = Rx::new(&mut io, b"");
+        let err = rx.byte().await.unwrap_err().to_string();
+        assert!(err.contains("closed"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn send_hex_emits_a_well_formed_frame() {
+        let mut io = Script::new(b"");
+        {
+            let mut rx = Rx::new(&mut io, b"");
+            rx.send_hex(ZRINIT, [0, 0, 0, 0]).await.unwrap();
+        }
+        // ZPAD ZPAD ZDLE ZHEX + 5 payload bytes as hex + 2 CRC bytes + CRLF + XON
+        assert_eq!(&io.sent[..4], &[ZPAD, ZPAD, ZDLE, ZHEX]);
+        assert!(io.sent.ends_with(b"\r\n\x11"));
+        assert_eq!(io.sent.len(), 4 + 14 + 3);
+    }
+
+    #[tokio::test]
+    async fn send_hex_omits_xon_for_zfin() {
+        // The protocol forbids the trailing XON after ZACK/ZFIN: some senders
+        // treat it as part of the close handshake.
+        let mut io = Script::new(b"");
+        {
+            let mut rx = Rx::new(&mut io, b"");
+            rx.send_hex(ZFIN, [0, 0, 0, 0]).await.unwrap();
+        }
+        assert!(io.sent.ends_with(b"\r\n"));
+        assert!(!io.sent.ends_with(b"\r\n\x11"));
     }
 }
