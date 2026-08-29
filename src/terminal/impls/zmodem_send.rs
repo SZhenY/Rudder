@@ -75,8 +75,8 @@ pub(crate) async fn send(
             "waiting for the ZFIN close handshake from remote rz",
         )
     })?;
-    io.ch
-        .data(&b"OO"[..])
+    io.io
+        .send(&b"OO"[..])
         .await
         .context("zmodem send close marker")?;
     tracing::info!("zmodem upload: close handshake complete");
@@ -98,8 +98,8 @@ pub(crate) async fn send(
     Ok(io.buf.drain(..).collect())
 }
 
-async fn send_file(
-    io: &mut Rx<'_>,
+async fn send_file<IO: ZmodemIo>(
+    io: &mut Rx<'_, IO>,
     path: &Path,
     size: u64,
     files_left: usize,
@@ -127,8 +127,8 @@ async fn send_file(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn send_file_inner(
-    io: &mut Rx<'_>,
+async fn send_file_inner<IO: ZmodemIo>(
+    io: &mut Rx<'_, IO>,
     path: &Path,
     name: &str,
     size: u64,
@@ -240,7 +240,7 @@ async fn send_file_inner(
     }
 }
 
-async fn wait_for_header(io: &mut Rx<'_>, expected: &[u8]) -> Result<(u8, [u8; 4])> {
+async fn wait_for_header<IO: ZmodemIo>(io: &mut Rx<'_, IO>, expected: &[u8]) -> Result<(u8, [u8; 4])> {
     loop {
         let header = io.read_header().await?;
         tracing::debug!(
@@ -261,7 +261,7 @@ fn file_info(name: &str, size: u64, modified: u64, files_left: usize, bytes_left
     format!("{name}\0{size} {modified:o} 0 0 {files_left} {bytes_left}\0")
 }
 
-impl Rx<'_> {
+impl<IO: ZmodemIo> Rx<'_, IO> {
     /// Send a binary CRC-16/CRC-32 header using the receiver's advertised mode.
     async fn send_bin(&mut self, ftype: u8, data: [u8; 4], crc32: bool) -> Result<()> {
         let payload = [ftype, data[0], data[1], data[2], data[3]];
@@ -273,8 +273,8 @@ impl Rx<'_> {
             append_escaped(&mut out, &crc16(&payload).to_be_bytes());
         }
         tracing::debug!("zmodem tx binary type={ftype} len={}", out.len());
-        self.ch
-            .data(&out[..])
+        self.io
+            .send(&out[..])
             .await
             .context("zmodem send binary header")?;
         Ok(())
@@ -293,8 +293,8 @@ impl Rx<'_> {
         } else {
             append_escaped(&mut out, &crc16(&crc_input).to_be_bytes());
         }
-        self.ch
-            .data(&out[..])
+        self.io
+            .send(&out[..])
             .await
             .context("zmodem send data subpacket")?;
         Ok(())
