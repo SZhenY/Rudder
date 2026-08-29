@@ -5,6 +5,71 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- **会话标签支持右键重命名（源自上游 `2834bde` 独立部分）。** 标签右键菜单新增「重命名会话」：弹窗预填当前标题，提交即改显示名；留空提交恢复保存的会话名。纯显示覆盖，不触碰配置。
+- **Rename an open session's tab (from upstream `2834bde`).** A new Rename entry in the tab context menu renames the display title; an empty name restores the saved session name. Display-only, config untouched.
+
+- **欢迎页主机卡片支持拖拽排序与跨分组拖拽（合入上游 `2834bde` + `8bf1185`）。** 按住主机卡片上下拖动即可在同组内排序（跨页拖动不中断），越过分组边界时自动移入相邻组；搜索过滤或内置系统行不可拖拽，顺序持久化保存。
+- **Drag-to-reorder and cross-group drag for Welcome host cards (upstream `2834bde` + `8bf1185`).** Drag a host card to reorder it among its group (survives page flips) or across a group boundary into the neighbour; disabled while searching and for built-in rows, and the order persists.
+
+- **终端字体双粒度缩放与专注模式（合入上游 `0bd5fdc` 剩余部分）。** Ctrl+=/-/0（macOS ⌘）缩放当前会话字体，加 Shift 则缩放全局默认；Ctrl+Alt+Z（macOS ⌥⌘Z）切换专注模式（隐藏侧栏/工具栏，仅留终端），并持久化偏好。
+- **Two-level font zoom and zen mode (upstream `0bd5fdc`, remaining part).** Ctrl+=/-/0 (⌘ on macOS) zooms the current session's font, Shift adds the window-wide default; Ctrl+Alt+Z (⌥⌘Z) toggles zen mode (sidebar/toolbar hidden, terminal only) with the preference persisted.
+
+- **传输管理工具栏视觉改进（合入上游 `0658dd3` 的 slint 部分）。** 工具栏标题与传输方向色区分，传输进行时标题旁显示呼吸状态灯；批量操作按钮间距与悬浮反馈对齐。
+- **Transfer toolbar visual polish (upstream `0658dd3`, slint part).** A titled toolbar with direction-coloured rows and a breathing activity lamp while transfers run; batch-action buttons gain consistent spacing and hover feedback.
+
+- **SSH 会话支持 rz 批量上传（#308，合入上游 5 个 commit）。** 远端执行 `rz` 后本机弹出文件选择，走 ZMODEM 协议上传；支持断点续传、CRC-16/32 自动协商与 8 KiB 块上限（对齐 lrzsz 接收缓冲）。
+- **rz batch uploads over SSH (#308, five upstream commits).** Running `rz` remotely opens a local file picker and uploads over ZMODEM with resume, CRC-16/32 negotiation and the 8 KiB block cap that matches lrzsz's receiver buffer.
+
+- **expect-send 登录触发器（#212，合入上游 `c915636`）。** 会话设置新增「登录触发器」：按「期待文本 → 发送文本」规则在登录阶段自动应答（支持连续多级触发与应答后回车选项）。
+- **expect-send login triggers (#212, upstream `c915636`).** Sessions gain expect/send rules that answer interactive login prompts automatically, with multi-stage chains and an optional trailing Enter.
+
+- **SFTP 下载冲突处理（合入上游 `0738bf1`）。** 下载目标已存在时弹窗提供「替换 / 共存（自动编号）/ 取消」；共存命名沿用已有「(n)」规则并处理无扩展名文件。
+- **SFTP download-conflict handling (upstream `0738bf1`).** A dialog offers replace / keep-both (auto-numbered) / cancel when the local target exists; the numbered naming also covers extension-less files.
+
+- **内置编辑器支持查找与替换（#287，合入上游 `f9dd09d`）。** Ctrl+F 打开查找栏：上一个/下一个、全部替换与计数，跨长文件稳定（限制 100k 行以内）。
+- **Find & replace in the built-in editor (#287, upstream `f9dd09d`).** Ctrl+F opens a find bar with previous/next, replace-all and match counts, stable on files up to 100k lines.
+
+- **回车键确认多行粘贴（#392，合入上游 `14e9f35`）。** 粘贴含换行的内容时按 Enter 确认发送、Esc 取消，避免误触；单行粘贴行为不变。
+- **Enter confirms multi-line paste (#392, upstream `14e9f35`).** Pasting multi-line content now requires Enter to send or Esc to cancel; single-line pastes are unchanged.
+
+- **命令栏显隐切换（合入上游 `0bd5fdc` 第一部分）与侧栏偏好同步持久化（`c915636` 第二部分）。** 命令栏可用快捷键/菜单随时隐藏，侧栏显隐与宽度偏好随每次操作即时落盘。
+- **Command-bar toggle (upstream `0bd5fdc` part 1) and persisted sidebar preference (part 2 of `c915636`).** The command bar hides via a shortcut/menu; sidebar visibility and width persist immediately.
+
+### 修复 / Fixed
+
+- **修复会话重连泄漏 SSH/PTY 线程（架构评审发现）。** 断线后按 Enter 重连时，旧会话句柄此前只从表里移除而未发送关闭命令（`SessionHandle` 无 Drop 实现），导致每重连一次泄漏一组 worker 线程；现改为先关闭再移除。应用退出路径的清理项同步对齐。
+- **Fixed a reconnect resource leak (architecture review).** Reconnecting after a disconnect only *removed* the old session handle without closing it (SessionHandle has no Drop impl), leaking a worker-thread pair per reconnect; handles are now closed before removal, and shutdown cleanup is aligned.
+
+- **消除两处 panic 隐患。** SFTP「共存」命名的 `unreachable!` 在生产路径上改为有界编号 + 时间戳降级；SSH 回显剥离的隐式不变式改为显式 `Option`（行为不变，省一次字符串扫描）。
+- **Removed two panic hazards.** The `unreachable!` in SFTP keep-both naming is now a bounded loop with a timestamp fallback; the SSH echo-stripping invariant is expressed as an explicit `Option` (no behaviour change, one less scan).
+
+- **OSC 52 剪贴板写入改为单 worker 线程 + 有界队列。** 此前每条剪贴板序列派生一个线程，远端输出可导致线程放大；现合并为只写最新值、永不阻塞终端。
+- **OSC 52 clipboard writes now go through one bounded worker.** A thread per sequence could be amplified by remote output; writes are now coalesced to the newest value and never block the terminal.
+
+- **31 处热路径锁操作改为降级处理。** `panic = "abort"`（release）下锁中毒等于进程消失；渲染门、标签关闭、侧栏刷新、系统采样器等 UI/会话热路径的 `lock().unwrap()` 统一改为「跳过本次、下轮重试」，并顺带消除三处结构相同的设置应用样板（收敛为公共辅助）。
+- **31 hot-path lock calls now degrade gracefully.** With release `panic = "abort"`, a poisoned mutex killed the whole client; render gates, tab close, sidebar refresh and the sampler now skip the affected pass and retry next tick. Three identical settings-applier blocks were also collapsed into one helper.
+
+- **SFTP 列表重建后清空勾选计数（合入上游 `0658dd3` 的 bug 修复部分）；编辑器聚焦延迟到下一事件循环（#386，`46d323c`）；窄工具栏固定显示「上一级」（`d1aa6aa` 部分）。**
+- **SFTP selection count resets after a listing rebuild (upstream `0658dd3` bug part); editor focus defers one event loop (#386, `46d323c`); the narrow toolbar keeps its Up button (`d1aa6aa` part).**
+
+- **Dropbear 连接秒断与提示符重复修复（合入上游 `cc44d8c`）。** 兼容 Dropbear 服务器 banner-less 的早期握手，不再误判断开；banner-less 主机的提示符不再重复显示。
+- **Dropbear instant-disconnect and duplicate-prompt fix (upstream `cc44d8c`).** Early handshakes from banner-less Dropbear servers are no longer misread as a disconnect, and their prompts no longer repeat.
+
+### 性能 / Performance
+
+- **回滚视图按绝对行号缓存（架构评审 P1）。** 浏览历史时内容不变，此前每帧对每个可见行全量重算（含 22 条高亮正则）；现按 grid 行号缓存、主题/高亮规则变更自动失效，滚动浏览明显更流畅。
+- **Scrollback rows are cached by absolute grid line (review item P1).** Scrolling a static history no longer re-highlights every visible row each frame (22 regexes); the cache invalidates on theme/rule changes, making history browsing noticeably smoother.
+
+### 内部 / Internal
+
+- **ZMODEM 协议层可测化 + 11 项协议测试。** 把字节流抽象为 `ZmodemIo` trait（内存流可注入测试），握手/帧解析/CRC 校验/转义/关闭握手首次获得覆盖；测试从 216 增至 229。
+- **ZMODEM protocol layer made testable, +11 protocol tests.** The byte stream is abstracted behind a `ZmodemIo` trait so an in-memory stream drives the real state machine; handshake, framing, CRC, escaping and the close handshake are now covered. Tests: 216 → 229.
+
+- **`app.rs` 模块拆分（阶段 A+B，源自架构评审方案）。** 渲染票据、窗口几何、窗格布局、字体选择、更新检查、系统采样、标题栏控制 7 个职责迁出为独立模块，`app.rs` 从 7342 行降至 5925 行（-1417 行），行为零改动；顺带复活 2 个被悬空 cfg 意外禁用的窗口测试。
+- **`app.rs` split into focused modules (stages A+B of the review plan).** Render ticketing, window geometry, pane layout, font selection, updater, sampler and window chrome moved out; `app.rs` shrank 7342 → 5925 lines with zero behaviour change, and 2 tests silently disabled by orphaned `cfg` attributes were revived.
+
 ## [0.6.15] - 2026-08-25
 
 ### 新增 / Added
