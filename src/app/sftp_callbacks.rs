@@ -1,3 +1,4 @@
+use super::window_geometry::active_sftp_path;
 use super::*;
 use crate::sftp::DownloadConflict;
 
