@@ -662,6 +662,9 @@ export component AppWindow inherits Window {
     in-out property <string> editor-content;  // text, two-way with the input
     in-out property <bool> editor-readonly;   // view = true, edit = false
     in-out property <bool> editor-dirty: false; // edited since load
+    // Set when the editor opens; the deferred timer focuses the text on the
+    // next tick instead of from `init` (see the timer below, #386).
+    property <bool> editor-focus-pending: false;
     in-out property <string> editor-line-numbers; // newline-joined "1..N" from Rust (#81)
     // Find/replace bar (#287). Matching is literal and case-sensitive, which is
     // predictable for configuration/source files.
@@ -2349,8 +2352,22 @@ export component AppWindow inherits Window {
                     }
                 }
             }
-            // Focus the text the moment the editor opens.
-            init => { edit-input.focus(); }
+            // Defer focus to the next event-loop tick. Focusing straight from
+            // init re-enters Slint's accessibility adapter while it is still
+            // registering the editor's new item tree, which panics with
+            // "RefCell already borrowed" on Windows (#386). Same pattern as
+            // TerminalView's focus-defer-timer.
+            init => { root.editor-focus-pending = true; }
+            editor-focus-timer := Timer {
+                interval: 0ms;
+                running: root.editor-focus-pending;
+                triggered => {
+                    if (root.editor-focus-pending) {
+                        edit-input.focus();
+                        root.editor-focus-pending = false;
+                    }
+                }
+            }
         }
     }
 
