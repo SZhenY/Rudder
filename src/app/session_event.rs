@@ -93,7 +93,11 @@ pub(super) fn apply_session_event_to_window<'a>(
         SessionEvent::Connected => {
             update_tab(&|t| t.connected = true);
             update_terminal(&|t| t.status = crate::i18n::t("已连接", "Connected").into());
-            if let Some(st) = statuses.lock().unwrap().get_mut(tab_id) {
+            // Poisoned lock → skip the status update rather than abort the
+            // process (release builds use panic = "abort").
+            if let Ok(mut s) = statuses.lock()
+                && let Some(st) = s.get_mut(tab_id)
+            {
                 st.state = 1;
             }
             if win.get_active_tab_id().as_str() == tab_id {
@@ -125,7 +129,9 @@ pub(super) fn apply_session_event_to_window<'a>(
             update_terminal(&|t| {
                 t.status = format!("{} — {reason}", crate::i18n::t("已断开", "Disconnected")).into()
             });
-            if let Some(st) = statuses.lock().unwrap().get_mut(tab_id) {
+            if let Ok(mut s) = statuses.lock()
+                && let Some(st) = s.get_mut(tab_id)
+            {
                 st.state = 2;
             }
             if win.get_active_tab_id().as_str() == tab_id {
@@ -144,7 +150,9 @@ pub(super) fn apply_session_event_to_window<'a>(
             procs: _,
             sys,
         } => {
-            if let Some(st) = statuses.lock().unwrap().get_mut(tab_id) {
+            if let Ok(mut s) = statuses.lock()
+                && let Some(st) = s.get_mut(tab_id)
+            {
                 st.cpu = cpu_percent;
                 st.mem_used_kib = mem_used_kib;
                 st.mem_total_kib = mem_total_kib;
@@ -171,7 +179,9 @@ pub(super) fn apply_session_event_to_window<'a>(
             current_user,
             procs,
         } => {
-            if let Some(st) = statuses.lock().unwrap().get_mut(tab_id) {
+            if let Ok(mut s) = statuses.lock()
+                && let Some(st) = s.get_mut(tab_id)
+            {
                 if !current_user.is_empty() {
                     st.user = current_user;
                 }

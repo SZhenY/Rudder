@@ -147,14 +147,26 @@ pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
             if let Some(handle) = handles.borrow_mut().remove(&id) {
                 handle.close();
             }
-            if let Some(sftp) = sftp_handles.lock().unwrap().remove(&id) {
+            // Closing a tab must never take the process down. Release builds
+            // use panic = "abort", so a poisoned lock in this UI callback would
+            // kill the whole client instead of just leaving one tab's
+            // resources behind — skip the cleanup we cannot reach.
+            if let Ok(mut h) = sftp_handles.lock()
+                && let Some(sftp) = h.remove(&id)
+            {
                 sftp.close();
             }
-            sftp_last_cwd.lock().unwrap().remove(&id);
-            if let Some(gate) = render_gates.lock().unwrap().remove(&id) {
+            if let Ok(mut cwd) = sftp_last_cwd.lock() {
+                cwd.remove(&id);
+            }
+            if let Ok(mut gates) = render_gates.lock()
+                && let Some(gate) = gates.remove(&id)
+            {
                 gate.close();
             }
-            bufs.lock().unwrap().remove(&id);
+            if let Ok(mut b) = bufs.lock() {
+                b.remove(&id);
+            }
 
             // Remove from tabs + terminals models.
             let mut idx = None;

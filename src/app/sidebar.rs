@@ -13,17 +13,32 @@ pub(super) fn refresh_sidebar(
             0.0
         }
     };
-    let snap = local.lock().unwrap().clone();
+    // A poisoned lock must not take the client down — release builds use
+    // panic = "abort". Skip this refresh pass instead; the sampler will
+    // publish a fresh snapshot on the next tick.
+    let Ok(snap) = local.lock().map(|s| s.clone()) else {
+        return;
+    };
 
     // --- Bottom network graph: always the local machine --------------------
     win.set_net_bot_up(format_bytes_per_sec(snap.net_tx_per_sec).into());
     win.set_net_bot_down(format_bytes_per_sec(snap.net_rx_per_sec).into());
-    win.set_net_bot_history(normalized_model(&local_net_hist.lock().unwrap()));
+    // Snapshot the history *before* writing the Slint property: writing can
+    // re-enter UI code, which must not happen while the mutex is held.
+    let bot_hist = local_net_hist
+        .lock()
+        .map(|h| normalized_model(&h))
+        .unwrap_or_default();
+    win.set_net_bot_history(bot_hist);
 
     let set_top_local = |win: &AppWindow| {
         win.set_net_top_up(format_bytes_per_sec(snap.net_tx_per_sec).into());
         win.set_net_top_down(format_bytes_per_sec(snap.net_rx_per_sec).into());
-        win.set_net_top_history(normalized_model(&local_net_hist.lock().unwrap()));
+        let top_hist = local_net_hist
+            .lock()
+            .map(|h| normalized_model(&h))
+            .unwrap_or_default();
+        win.set_net_top_history(top_hist);
         win.set_net_show_selector(false);
         win.set_net_selected("".into());
         win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
@@ -178,7 +193,7 @@ pub(super) fn refresh_sidebar(
     let status = if active == "welcome" {
         None
     } else {
-        statuses.lock().unwrap().get(&active).cloned()
+        statuses.lock().ok().and_then(|s| s.get(&active).cloned())
     };
 
     match status {
