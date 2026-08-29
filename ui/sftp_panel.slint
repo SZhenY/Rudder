@@ -326,8 +326,11 @@ export component SftpPanel inherits Rectangle {
                            horizontal-alignment: center; vertical-alignment: center; }
                 }
 
+                // Parent navigation stays a fixed toolbar action in the compact
+                // layout too: it is the primary way to move around, and burying
+                // it in the ⋮ menu forces an extra click on every step up.
                 up-btn := Rectangle {
-                    visible: root.panel-mode == "files" && !root.narrow-toolbar;
+                    visible: root.panel-mode == "files";
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
                     background: up-ta.has-hover ? Theme.bg-hover : transparent;
