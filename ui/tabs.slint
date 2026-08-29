@@ -184,6 +184,8 @@ export component TabBar inherits Rectangle {
     callback tab-split(string /* tab-id */, string /* dir */);
     // Open another connection to the same session as `tab-id` (#v0.5).
     callback tab-duplicate(string /* tab-id */);
+    // Rename an open session's tab (display name only).
+    callback tab-rename-request(string /* tab-id */);
     callback merge-pane();
     // Drag-to-split (#v0.5): cursor moved / dropped while dragging `tab-id`, in
     // absolute (window) coordinates.
@@ -322,7 +324,7 @@ export component TabBar inherits Rectangle {
         x: root.menu-x;
         y: root.menu-y;
         width: 140px;
-        height: 6 * 29px + 13px;
+        height: 7 * 29px + 13px;
         Rectangle {
             background: Theme.bg-panel;
             border-radius: Theme.radius-sm;
@@ -337,6 +339,11 @@ export component TabBar inherits Rectangle {
                     label: @tr("Duplicate connection");
                     enabled: root.menu-target != "welcome";
                     clicked => { root.tab-duplicate(root.menu-target); }
+                }
+                TabMenuItem {
+                    label: @tr("Rename session");
+                    enabled: root.menu-target != "welcome";
+                    clicked => { root.tab-rename-request(root.menu-target); }
                 }
                 Rectangle { height: 1px; background: Theme.border-subtle; }
                 TabMenuItem {

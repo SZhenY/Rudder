@@ -802,6 +802,13 @@ export component AppWindow inherits Window {
     callback pane-merge(int /* pane-id */);
     // Open another connection to the same session as `tab-id` (a new tab).
     callback tab-duplicate(string /* tab-id */);
+    // Rename an open session's tab. Request pre-fills the dialog (Rust reads
+    // the current title); submit applies the new display name.
+    callback tab-rename-request(string /* tab-id */);
+    callback rename-tab(string /* tab-id */, string /* new-title */);
+    in-out property <bool> tab-rename-open: false;
+    in-out property <string> tab-rename-id: "";
+    in-out property <string> tab-rename-value: "";
     // Drag-to-split (v0.5): cursor moved / dropped while dragging `tab-id`, in
     // pane-area coordinates. Rust hit-tests the pane + edge zone.
     callback tab-drag-move(string /* tab-id */, length /* x */, length /* y */);
@@ -1495,6 +1502,7 @@ export component AppWindow inherits Window {
                     tab-split(id, dir) => { root.pane-split(pane.id, id, dir); }
                     merge-pane() => { root.pane-merge(pane.id); }
                     tab-duplicate(id) => { root.tab-duplicate(id); }
+                    tab-rename-request(id) => { root.tab-rename-request(id); }
                     tab-drag-move(id, ax, ay) => {
                         root.tab-drag-move(id,
                             ax - pane-area.absolute-position.x,
@@ -2365,6 +2373,79 @@ export component AppWindow inherits Window {
                     if (root.editor-focus-pending) {
                         edit-input.focus();
                         root.editor-focus-pending = false;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Rename-session dialog ----------------------------------------------
+    // Tab context menu → Rename: a display-name override for one open session.
+    // Submitting an empty name restores the saved session name.
+    if root.tab-rename-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000080;
+        TouchArea { clicked => { root.tab-rename-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 340px;
+            height: 196px;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #000000a0;
+            TouchArea {}   // swallow inside clicks
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+                Text {
+                    text: root.lang-en ? "Rename session" : "重命名会话";
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-lg;
+                    font-weight: 700;
+                }
+                Text {
+                    text: root.lang-en
+                        ? "Leave empty to restore the saved session name."
+                        : "留空将恢复保存的会话名称。";
+                    color: Theme.text-muted;
+                    font-size: Theme.fs-sm;
+                    wrap: word-wrap;
+                }
+                Rectangle {
+                    height: 30px;
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: rn-input.has-focus ? Theme.accent : Theme.border-strong;
+                    background: Theme.bg-elevated;
+                    rn-input := TextInput {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        single-line: true;
+                        color: Theme.text-primary;
+                        font-size: Theme.fs-md;
+                        text <=> root.tab-rename-value;
+                        accepted => { root.rename-tab(root.tab-rename-id, root.tab-rename-value); }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    GhostButton {
+                        text: root.lang-en ? "Cancel" : "取消";
+                        clicked => { root.tab-rename-open = false; }
+                    }
+                    PrimaryButton {
+                        text: root.lang-en ? "Rename" : "重命名";
+                        clicked => { root.rename-tab(root.tab-rename-id, root.tab-rename-value); }
                     }
                 }
             }
