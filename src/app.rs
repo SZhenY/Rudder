@@ -1820,6 +1820,10 @@ pub fn run() -> Result<()> {
     }
 
     // --- Wire callbacks --------------------------------------------------
+    // Display-name overrides for open session tabs (Rename in the tab context
+    // menu): tab-id → override. Consulted when a tab's title is (re)built;
+    // removed when the tab closes.
+    let tab_titles: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
     wire_session_callbacks(SessionWireCtx {
         window: &window,
         store: store.clone(),
@@ -1841,6 +1845,7 @@ pub fn run() -> Result<()> {
         local_snap: local_snap.clone(),
         local_net_hist: local_net_hist.clone(),
         sftp_follow_cd: sftp_follow_cd.clone(),
+        tab_titles: tab_titles.clone(),
     });
 
     // Recompute the sidebar whenever the active tab changes (fired from Slint's
@@ -2235,6 +2240,7 @@ pub fn run() -> Result<()> {
         render_gates: render_gates.clone(),
         sftp_handles: sftp_handles.clone(),
         sftp_last_cwd: sftp_last_cwd.clone(),
+        tab_titles: tab_titles.clone(),
     });
     wire_sftp_callbacks(&window, sftp_handles.clone(), sftp_last_cwd.clone());
     wire_key_input(
@@ -3203,6 +3209,7 @@ pub struct TabWireCtx<'a> {
     render_gates: RenderGates,
     sftp_handles: SftpHandles,
     sftp_last_cwd: SftpLastCwd,
+    tab_titles: Rc<RefCell<HashMap<String, String>>>,
 }
 
 /// Bundled handles/state threaded into [`wire_session_callbacks`]
@@ -3228,6 +3235,7 @@ struct SessionWireCtx<'a> {
     local_snap: LocalSnap,
     local_net_hist: NetHist,
     sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
+    tab_titles: Rc<RefCell<HashMap<String, String>>>,
 }
 
 /// Re-sync the session list honouring the current Quick Connect search box
@@ -3270,7 +3278,12 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
         local_snap,
         local_net_hist,
         sftp_follow_cd,
+        tab_titles,
     } = ctx;
+    // on_connect_session moves panes_model/splitters_model into its closure;
+    // the rename handler below needs its own handle, so clone up front.
+    let panes_model_rename = panes_model.clone();
+    let splitters_model_rename = splitters_model.clone();
     // Working set of port forwards (#56) for the session being created/edited.
     // The forward add/delete callbacks mutate it; saving reads it into
     // Session.forwards; opening the dialog (new/edit) resets it.
@@ -4429,6 +4442,99 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
             }
             if let Some(w) = weak.upgrade() {
                 w.invoke_connect_session(session_id.into());
+            }
+        });
+    }
+
+    // Rename session (tab context menu): open the dialog pre-filled with the
+    // tab's current title.
+    {
+        use slint::Model as _;
+        let weak = window.as_weak();
+        let tabs_model = tabs_model.clone();
+        window.on_tab_rename_request(move |tab_id: SharedString| {
+            let tab_id = tab_id.to_string();
+            if tab_id.is_empty() || tab_id == "welcome" {
+                return;
+            }
+            let title = (0..tabs_model.row_count())
+                .find_map(|i| {
+                    let row = tabs_model.row_data(i)?;
+                    (row.id.as_str() == tab_id).then(|| row.title.to_string())
+                })
+                .unwrap_or_default();
+            if let Some(w) = weak.upgrade() {
+                w.set_tab_rename_id(tab_id.into());
+                w.set_tab_rename_value(title.into());
+                w.set_tab_rename_open(true);
+            }
+        });
+    }
+
+    // Apply the new display name. An empty name clears the override and
+    // restores the saved session's name. Display-only: the config is untouched.
+    {
+        use slint::Model as _;
+        let weak = window.as_weak();
+        let tabs_model = tabs_model.clone();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        let panes_model = panes_model_rename.clone();
+        let splitters_model = splitters_model_rename.clone();
+        let tab_statuses = tab_statuses.clone();
+        let tab_titles = tab_titles.clone();
+        let store = store.clone();
+        window.on_rename_tab(move |tab_id: SharedString, name: SharedString| {
+            if let Some(w) = weak.upgrade() {
+                w.set_tab_rename_open(false);
+            }
+            let tab_id = tab_id.to_string();
+            let name = name.trim().to_string();
+            let title = if name.is_empty() {
+                tab_titles.borrow_mut().remove(&tab_id);
+                let session_id = tab_statuses
+                    .lock()
+                    .unwrap()
+                    .get(&tab_id)
+                    .map(|s| s.session_id.clone())
+                    .unwrap_or_default();
+                // Two separate borrows: the builtin fallback must not run while
+                // the store lookup's RefCell borrow is still alive.
+                let saved = store.borrow().get(&session_id).map(|s| s.name.clone());
+                saved.or_else(|| {
+                    builtin_local_sessions(store.borrow().wsl_profiles())
+                        .into_iter()
+                        .find(|s| s.id == session_id)
+                        .map(|s| s.name)
+                })
+            } else {
+                tab_titles.borrow_mut().insert(tab_id.clone(), name.clone());
+                Some(name)
+            };
+            let Some(title) = title else {
+                return;
+            };
+            for i in 0..tabs_model.row_count() {
+                if let Some(mut row) = tabs_model.row_data(i)
+                    && row.id.as_str() == tab_id
+                {
+                    row.title_len = tab_title_len(&title);
+                    row.title = title.clone().into();
+                    tabs_model.set_row_data(i, row);
+                    break;
+                }
+            }
+            // Panes mirror the tab model, so re-derive them to refresh the
+            // tab strip in every pane that shows this session.
+            if let Some(w) = weak.upgrade() {
+                refresh_panes(
+                    &w,
+                    &layout.borrow(),
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
             }
         });
     }
