@@ -1649,7 +1649,12 @@ pub(crate) fn available_download_path(requested: &std::path::Path) -> PathBuf {
         .and_then(|value| value.to_str())
         .unwrap_or("download");
     let extension = requested.extension().and_then(|value| value.to_str());
-    for suffix in 1usize.. {
+    // Bounded on purpose: an unbounded `for suffix in 1..` could only terminate
+    // via unreachable!(), which aborts the whole process under panic="abort"
+    // (Cargo.toml [profile.release]). A directory holding this many colliding
+    // names is absurd but not impossible (a runaway script), so fall back to a
+    // timestamped name rather than crashing the transfer — and the client.
+    for suffix in 1..10_000usize {
         let name = match extension {
             Some(extension) if !extension.is_empty() => format!("{stem} ({suffix}).{extension}"),
             _ => format!("{stem} ({suffix})"),
@@ -1659,7 +1664,15 @@ pub(crate) fn available_download_path(requested: &std::path::Path) -> PathBuf {
             return candidate;
         }
     }
-    unreachable!("an unused download filename suffix must exist")
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    let name = match extension {
+        Some(extension) if !extension.is_empty() => format!("{stem} ({stamp}).{extension}"),
+        _ => format!("{stem} ({stamp})"),
+    };
+    parent.join(name)
 }
 
 /// Watch a downloaded temp file and re-upload it to the remote whenever it
@@ -2490,6 +2503,26 @@ mod sanitize_tests {
         assert_eq!(
             available_download_path(&requested),
             dir.join("report (2).txt")
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn keep_both_numbers_extensionless_names_too() {
+        // The no-extension branch used to be reachable only via the same
+        // unreachable!() tail; lock its "(n)" shape down as well.
+        let dir = std::env::temp_dir().join(format!(
+            "rudder-download-noext-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let requested = dir.join("Makefile");
+        std::fs::write(&requested, b"old").unwrap();
+
+        assert_eq!(
+            available_download_path(&requested),
+            dir.join("Makefile (1)")
         );
 
         std::fs::remove_dir_all(&dir).unwrap();

@@ -5532,11 +5532,18 @@ fn wire_key_input(
                     let Some(session) = store.borrow().get(&session_id).cloned() else {
                         return;
                     };
-                    // Drop the dead shell/SFTP handles for this tab.
-                    ctx.handles.borrow_mut().remove(tab_id.as_str());
-                    if let Some(h) =
-                        ctx.sftp_handles.lock().unwrap().remove(tab_id.as_str())
-                    {
+                    // Close (not just remove) the dead shell/SFTP handles for
+                    // this tab. SessionHandle has no Drop impl, so removing it
+                    // alone leaves the SSH/PTY worker threads running until the
+                    // process exits — every reconnect would leak one. close()
+                    // only posts a command, so it is safe on the UI thread.
+                    let dead_shell = ctx.handles.borrow_mut().remove(tab_id.as_str());
+                    if let Some(h) = dead_shell {
+                        h.close();
+                    }
+                    let dead_sftp =
+                        ctx.sftp_handles.lock().unwrap().remove(tab_id.as_str());
+                    if let Some(h) = dead_sftp {
                         h.close();
                     }
                     // Fresh screen: new parser, cleared history/selection.
