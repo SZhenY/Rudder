@@ -15,6 +15,42 @@ use crate::terminal::{TermColor, UnderlineStyle};
 /// Global OSC 52 toggle — set by app.rs on startup / config change.
 pub static OSC52_ENABLED: AtomicBool = AtomicBool::new(true);
 
+/// Single background writer for OSC 52 clipboard payloads.
+///
+/// The trigger is *remote* terminal output, so writing on the caller's thread
+/// is out (clipboard access can block on the OS) — but spawning a thread per
+/// sequence let a chatty or hostile remote amplify threads without bound.
+/// One long-lived worker with a small bounded queue fixes both: writes are
+/// best-effort (`try_send`, never blocks the terminal) and coalesced, since
+/// only the newest clipboard payload is ever worth writing.
+static OSC52_WRITER: std::sync::OnceLock<Option<std::sync::mpsc::SyncSender<String>>> =
+    std::sync::OnceLock::new();
+
+/// `None` if the worker could not be spawned — OSC 52 then degrades to a no-op
+/// instead of taking the process down (panic = "abort" in release).
+fn osc52_writer() -> Option<&'static std::sync::mpsc::SyncSender<String>> {
+    OSC52_WRITER
+        .get_or_init(|| {
+            let (tx, rx) = std::sync::mpsc::sync_channel::<String>(16);
+            std::thread::Builder::new()
+                .name("osc52-clipboard".into())
+                .spawn(move || {
+                    while let Ok(mut latest) = rx.recv() {
+                        // Drain everything queued so far — older payloads would
+                        // be overwritten by this one anyway.
+                        while let Ok(newer) = rx.try_recv() {
+                            latest = newer;
+                        }
+                        let _ =
+                            arboard::Clipboard::new().and_then(|mut c| c.set_text(latest));
+                    }
+                })
+                .ok()
+                .map(|_| tx)
+        })
+        .as_ref()
+}
+
 // ── Custom Dimensions impl — alacritty 0.26 does not export a standalone
 //    TermSize type (it's behind #[cfg(test)]), so we bring our own.
 #[derive(Clone, Copy, Debug)]
@@ -202,9 +238,12 @@ pub(crate) fn process_bytes(processor: &mut Processor, term: &mut ATerm, bytes: 
     if OSC52_ENABLED.load(Ordering::Relaxed)
         && let Some(data) = osc52_extract(bytes)
     {
-        std::thread::spawn(move || {
-            let _ = arboard::Clipboard::new().and_then(|mut c| c.set_text(data));
-        });
+        // Best-effort and never blocking: a full queue means the remote is
+        // flooding OSC 52, and dropping surplus payloads is harmless because
+        // only the most recent clipboard value is ever useful.
+        if let Some(tx) = osc52_writer() {
+            let _ = tx.try_send(data);
+        }
     }
     processor.advance(term, bytes);
 }

@@ -2345,15 +2345,25 @@ pub fn run() -> Result<()> {
                 WinActivity::Active => {}
             }
             let snap = {
-                let mut s = tick_sampler.lock().expect("sampler poisoned");
+                // A poisoned sampler mutex must not take the client down:
+                // release builds use panic = "abort", so the old expect() here
+                // turned any panic in the sampler thread into a dead client.
+                // Skip this tick instead; the next one retries.
+                let Ok(mut s) = tick_sampler.lock() else {
+                    return;
+                };
                 s.sample()
             };
             // Append the raw local throughput to the bottom-graph ring buffer
             // (normalisation happens at display time so the graph auto-scales).
-            push_ring(&mut tick_net.lock().unwrap(), snap.net_bytes_per_sec as f32);
+            if let Ok(mut net) = tick_net.lock() {
+                push_ring(&mut net, snap.net_bytes_per_sec as f32);
+            }
             // Stash the local sample; the sidebar shows it on the welcome tab
             // and in the bottom network graph.
-            *tick_local.lock().unwrap() = snap.clone();
+            if let Ok(mut local) = tick_local.lock() {
+                *local = snap.clone();
+            }
 
             if let Some(w) = weak.upgrade() {
                 // Everything (status, CPU/mem/swap, both graphs) follows the
@@ -5532,11 +5542,18 @@ fn wire_key_input(
                     let Some(session) = store.borrow().get(&session_id).cloned() else {
                         return;
                     };
-                    // Drop the dead shell/SFTP handles for this tab.
-                    ctx.handles.borrow_mut().remove(tab_id.as_str());
-                    if let Some(h) =
-                        ctx.sftp_handles.lock().unwrap().remove(tab_id.as_str())
-                    {
+                    // Close (not just remove) the dead shell/SFTP handles for
+                    // this tab. SessionHandle has no Drop impl, so removing it
+                    // alone leaves the SSH/PTY worker threads running until the
+                    // process exits — every reconnect would leak one. close()
+                    // only posts a command, so it is safe on the UI thread.
+                    let dead_shell = ctx.handles.borrow_mut().remove(tab_id.as_str());
+                    if let Some(h) = dead_shell {
+                        h.close();
+                    }
+                    let dead_sftp =
+                        ctx.sftp_handles.lock().unwrap().remove(tab_id.as_str());
+                    if let Some(h) = dead_sftp {
                         h.close();
                     }
                     // Fresh screen: new parser, cleared history/selection.

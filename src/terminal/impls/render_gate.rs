@@ -17,8 +17,12 @@ impl TabRenderGate {
     }
 
     /// Register a snapshot request and return `(ticket, should_schedule)`.
+    ///
+    /// A poisoned lock degrades to `None` (this gate stops queueing work)
+    /// rather than panicking: release builds use `panic = "abort"`, so a
+    /// poisoned mutex anywhere would otherwise kill the whole client.
     pub(crate) fn request(&self) -> Option<(u64, bool)> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().ok()?;
         if state.closed {
             return None;
         }
@@ -32,7 +36,10 @@ impl TabRenderGate {
     }
 
     pub(crate) fn flush_delay(&self, min_interval: std::time::Duration) -> std::time::Duration {
-        let state = self.state.lock().unwrap();
+        // Poisoned → flush immediately (no throttle) instead of panicking.
+        let Ok(state) = self.state.lock() else {
+            return std::time::Duration::ZERO;
+        };
         if state.closed {
             return std::time::Duration::ZERO;
         }
@@ -41,7 +48,7 @@ impl TabRenderGate {
 
     /// Capture the newest request covered by the snapshot about to be built.
     pub(crate) fn begin_flush(&self) -> Option<u64> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().ok()?;
         if state.closed || state.phase != RenderGatePhase::Scheduled {
             return None;
         }
@@ -52,7 +59,10 @@ impl TabRenderGate {
     /// Settle all requests covered by a UI flush and report whether another
     /// request arrived after `begin_flush` captured its generation.
     pub(crate) fn finish_flush(&self, through: u64, visible: bool) -> bool {
-        let mut state = self.state.lock().unwrap();
+        // Poisoned → report "nothing more to do" rather than panic.
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
         state.settled = state.settled.max(through);
         if visible {
             state.last_visible_flush = std::time::Instant::now();
@@ -69,13 +79,15 @@ impl TabRenderGate {
     }
 
     pub(crate) fn wait_for(&self, ticket: u64, timeout: std::time::Duration) -> RenderWaitResult {
-        let state = self.state.lock().unwrap();
-        let (state, _) = self
-            .settled_cv
-            .wait_timeout_while(state, timeout, |state| {
-                state.settled < ticket && !state.closed
-            })
-            .unwrap();
+        // Poisoned mutex or Condvar → treat the gate as gone and stop waiting.
+        let Ok(state) = self.state.lock() else {
+            return RenderWaitResult::Closed;
+        };
+        let Ok((state, _)) = self.settled_cv.wait_timeout_while(state, timeout, |state| {
+            state.settled < ticket && !state.closed
+        }) else {
+            return RenderWaitResult::Closed;
+        };
         if state.settled >= ticket {
             RenderWaitResult::Settled
         } else if state.closed {
@@ -86,7 +98,10 @@ impl TabRenderGate {
     }
 
     pub(crate) fn close(&self) {
-        let mut state = self.state.lock().unwrap();
+        // Nothing useful to do on a poisoned lock — the gate is already dead.
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
         state.closed = true;
         state.phase = RenderGatePhase::Idle;
         self.settled_cv.notify_all();

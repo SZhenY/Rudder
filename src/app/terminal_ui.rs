@@ -207,18 +207,32 @@ pub(super) fn theme_pref_is_dark(store: &ConfigStore) -> bool {
     }
 }
 
-pub(super) fn apply_dark_mode(window: &AppWindow, bufs: &TermBuffers, dark: bool) {
-    window.set_dark_mode(dark);
-    {
-        let handles: Vec<_> = bufs.lock().unwrap().values().cloned().collect();
-        for h in handles {
-            h.lock().unwrap().is_dark = dark;
+/// Apply `apply` to every open terminal buffer, then rebuild each tab.
+///
+/// The three `apply_*` settings tweaks below are identical apart from the field
+/// they touch, so the walk lives here. Handles are collected under one short
+/// lock and each buffer is then locked individually: a poisoned buffer skips
+/// just itself instead of aborting the process (release uses panic = "abort").
+fn for_each_buffer(window: &AppWindow, bufs: &TermBuffers, apply: impl Fn(&mut TermBuffer)) {
+    let Ok(map) = bufs.lock() else {
+        return;
+    };
+    let handles: Vec<TermBufferHandle> = map.values().cloned().collect();
+    let tab_ids: Vec<String> = map.keys().cloned().collect();
+    drop(map);
+    for h in handles {
+        if let Ok(mut b) = h.lock() {
+            apply(&mut b);
         }
     }
-    let tab_ids: Vec<String> = bufs.lock().unwrap().keys().cloned().collect();
     for tid in tab_ids {
         rebuild_tab_display(window, bufs, &tid);
     }
+}
+
+pub(super) fn apply_dark_mode(window: &AppWindow, bufs: &TermBuffers, dark: bool) {
+    window.set_dark_mode(dark);
+    for_each_buffer(window, bufs, |b| b.is_dark = dark);
 }
 
 pub(super) fn apply_output_highlight(
@@ -228,16 +242,7 @@ pub(super) fn apply_output_highlight(
     preset: &str,
 ) {
     let mode = OutputHighlightPreset::from_settings(enabled, preset);
-    {
-        let handles: Vec<_> = bufs.lock().unwrap().values().cloned().collect();
-        for handle in handles {
-            handle.lock().unwrap().output_highlight = mode;
-        }
-    }
-    let tab_ids: Vec<String> = bufs.lock().unwrap().keys().cloned().collect();
-    for tab_id in tab_ids {
-        rebuild_tab_display(window, bufs, &tab_id);
-    }
+    for_each_buffer(window, bufs, |b| b.output_highlight = mode);
 }
 
 pub(super) fn apply_custom_output_rules(
@@ -246,16 +251,7 @@ pub(super) fn apply_custom_output_rules(
     rules: &[OutputHighlightRule],
 ) {
     let compiled = compile_output_rules(rules);
-    {
-        let handles: Vec<_> = bufs.lock().unwrap().values().cloned().collect();
-        for handle in handles {
-            handle.lock().unwrap().custom_highlight_rules = compiled.clone();
-        }
-    }
-    let tab_ids: Vec<String> = bufs.lock().unwrap().keys().cloned().collect();
-    for tab_id in tab_ids {
-        rebuild_tab_display(window, bufs, &tab_id);
-    }
+    for_each_buffer(window, bufs, |b| b.custom_highlight_rules = compiled.clone());
 }
 
 pub(super) fn apply_wallpaper(

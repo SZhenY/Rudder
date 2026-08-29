@@ -2250,9 +2250,11 @@ async fn run_session(
                 suppress_deadline = None;
                 let mut buf = std::mem::take(&mut echo_buf);
                 if let Some(p) = buf.find(PROMPT_SETUP_PREFIX) {
-                    if buf[p..].contains(PROMPT_SETUP_SUFFIX) {
-                        // The whole echoed line has landed: strip it normally.
-                        let end = prompt_setup_echo_end(&buf, p).unwrap();
+                    // The whole echoed line has landed: strip it normally.
+                    // find() replaces a contains()+unwrap() pair — same
+                    // behaviour, but the Option makes the invariant explicit
+                    // instead of leaning on a guard two lines above.
+                    if let Some(end) = prompt_setup_echo_end(&buf, p) {
                         strip_prompt_setup_echo(&mut buf, p, end);
                         late_prompt_echo_pending = false;
                     } else if late_echo_window.is_none_or(|w| tokio::time::Instant::now() < w) {
@@ -2481,8 +2483,9 @@ async fn run_session(
                                 suppress_deadline = None;
                                 let mut buf = std::mem::take(&mut echo_buf);
                                 if let Some(p) = buf.find(PROMPT_SETUP_PREFIX) {
-                                    if buf[p..].contains(PROMPT_SETUP_SUFFIX) {
-                                        let end = prompt_setup_echo_end(&buf, p).unwrap();
+                                    // find() replaces contains()+unwrap(): the
+                                    // Option states the invariant explicitly.
+                                    if let Some(end) = prompt_setup_echo_end(&buf, p) {
                                         strip_prompt_setup_echo(&mut buf, p, end);
                                         late_prompt_echo_pending = false;
                                     } else if late_echo_window
