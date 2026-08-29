@@ -239,3 +239,36 @@ pub(crate) fn c0_letter_key_down(codepoint: u32) -> bool {
     }
     unsafe { (GetKeyState(virtual_key) as u16) & 0x8000 != 0 }
 }
+
+#[cfg(test)]
+mod interrupt_tests {
+    use super::{key_to_pty_bytes, should_drop_bare_ctrl_marker};
+
+    /// Ctrl+C (ETX) is the terminal interrupt: it must reach the PTY whether or
+    /// not the backend still reports the Control modifier alongside it. Upstream
+    /// hit a regression here (#377) where a bare-modifier filter swallowed it.
+    #[test]
+    fn ctrl_c_interrupt_reaches_the_pty_with_and_without_the_modifier() {
+        assert_eq!(
+            key_to_pty_bytes("\u{0003}", true, false, false),
+            vec![0x03],
+            "Ctrl+C with the modifier held must reach the PTY"
+        );
+        assert_eq!(
+            key_to_pty_bytes("\u{0003}", false, false, false),
+            vec![0x03],
+            "an already-translated ETX (ctrl=false) is still an interrupt"
+        );
+    }
+
+    #[test]
+    fn bare_ctrl_marker_filter_never_drops_the_interrupt() {
+        // Enabled or not, the workaround only targets the physical Control
+        // markers (Ctrl+Q / Ctrl+V, plus Ctrl+W / Ctrl+H on macOS).
+        assert!(!should_drop_bare_ctrl_marker("\u{0003}", true, true));
+        assert!(!should_drop_bare_ctrl_marker("\u{0003}", false, true));
+        // …and it does still drop the markers it was written for.
+        assert!(should_drop_bare_ctrl_marker("\u{0011}", true, true));
+        assert!(should_drop_bare_ctrl_marker("\u{0016}", true, true));
+    }
+}
