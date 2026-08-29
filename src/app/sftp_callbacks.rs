@@ -121,10 +121,23 @@ pub(super) fn wire_sftp_callbacks(
             // directory — snaps the panel back to the shell's cwd; manual
             // navigation never permanently disables cd-follow.
             sftp_last_cwd.lock().unwrap().remove(&tab_id);
+            let mut listing_replaced = false;
             if let Ok(handles) = sftp_handles.lock()
                 && let Some(h) = handles.get(&tab_id)
             {
                 h.list_dir(resolved);
+                listing_replaced = true;
+            }
+            // Same stale-counter fix as refresh: the checked entries belong to
+            // the directory we just left, so drop the selection with them.
+            if listing_replaced && let Some(w) = weak.upgrade() {
+                let terminals = w.get_terminals();
+                if let Some(tm) = terminals
+                    .as_any()
+                    .downcast_ref::<VecModel<TerminalState>>()
+                {
+                    clear_sftp_selection(tm, &tab_id);
+                }
             }
         });
     }
@@ -292,6 +305,7 @@ pub(super) fn wire_sftp_callbacks(
     // Refresh the current directory listing.
     {
         let sftp_handles = sftp_handles.clone();
+        let weak = window.as_weak();
         window.on_sftp_refresh(move |tab_id: SharedString, path: SharedString| {
             let tab_id = tab_id.to_string();
             let path = path.to_string();
@@ -300,6 +314,20 @@ pub(super) fn wire_sftp_callbacks(
             {
                 // Refresh re-syncs the left tree too, not just the file list (#189).
                 h.refresh_dir(path);
+            }
+            // Reset the multi-select counter to match the new (empty) selection.
+            // `refresh_dir` replaces the listing with freshly loaded, unchecked
+            // entries, but without this the toolbar kept showing the stale
+            // count (e.g. "2") and the batch download/delete buttons stayed
+            // visible until the user toggled a checkbox to force a recount.
+            if let Some(w) = weak.upgrade() {
+                let terminals = w.get_terminals();
+                if let Some(tm) = terminals
+                    .as_any()
+                    .downcast_ref::<VecModel<TerminalState>>()
+                {
+                    clear_sftp_selection(tm, &tab_id);
+                }
             }
         });
     }
