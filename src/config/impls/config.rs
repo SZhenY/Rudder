@@ -820,6 +820,9 @@ pub struct ConfigFile {
     /// Hide the quick-command bar under the terminal. Defaults to false.
     #[serde(default)]
     pub hide_cmd_bar: bool,
+    /// Zen (focus) mode: sidebar + tab strip hidden. Defaults to false.
+    #[serde(default)]
+    pub zen_mode: bool,
     /// Saved quick commands (#55).
     #[serde(default)]
     pub quick_commands: Vec<QuickCommand>,
@@ -2025,6 +2028,15 @@ impl ConfigStore {
         self.cache.hide_cmd_bar = hidden;
     }
 
+    /// Zen (focus) mode: sidebar and tab strip hidden.
+    pub fn zen_mode(&self) -> bool {
+        self.cache.zen_mode
+    }
+
+    pub fn set_zen_mode(&mut self, enabled: bool) {
+        self.cache.zen_mode = enabled;
+    }
+
     // ── Session groups / folders (#41) ────────────────────────────────────
 
     /// Explicit groups (empty folders included). "default" is implicit.
@@ -2929,6 +2941,29 @@ mod tests {
         lone.cache.collapsed_session_groups = Some(Vec::new());
         assert!(!lone.reorder_session("only", 1));
         assert!(!lone.reorder_session("only", -1));
+    }
+
+    // ── Zen mode (focus) ─────────────────────────────────────────────────
+
+    #[test]
+    fn zen_mode_defaults_off_and_round_trips() {
+        let mut store = temp_store();
+        assert!(!store.zen_mode());
+
+        store.set_zen_mode(true);
+        assert!(store.zen_mode());
+
+        // Persisted form stays compatible with configs written before zen.
+        let raw = serde_json::to_string(&store.cache).unwrap();
+        let back: ConfigFile = serde_json::from_str(&raw).unwrap();
+        assert!(back.zen_mode);
+    }
+
+    #[test]
+    fn legacy_config_without_zen_field_still_loads() {
+        let raw = r#"{"download_always_ask": true}"#;
+        let cache: ConfigFile = serde_json::from_str(raw).unwrap();
+        assert!(!cache.zen_mode);
     }
 }
 

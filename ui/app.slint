@@ -68,7 +68,10 @@ export struct TerminalState {
     is-alt-screen: bool,
     find-matches: [TermMatch], // search-highlight rectangles
     selection: [TermMatch],    // drag-selection highlight rectangles
-
+    // Per-session font-size override in px; 0 = follow the global setting.
+    // Set by Ctrl+=/-/0 (⌘) zoom; Ctrl+Shift variants clear overrides so the
+    // window-wide size applies to every session.
+    font-size: float,
     // SFTP panel state
     sftp-path: string,
     sftp-entries: [SftpEntry],
@@ -538,6 +541,11 @@ export component AppWindow inherits Window {
     // Hide the quick-command bar under the terminal; toolbar toggle persists it.
     in-out property <bool> cmd-bar-hidden: false;
     callback set-cmd-bar-hidden(bool);             // apply + persist
+    // Zen (focus) mode: hide the sidebar and tab strip for a distraction-free
+    // terminal. Toggled by Ctrl+Alt+Z (⌘⌥Z on macOS) and persisted.
+    in-out property <bool> zen-mode: false;
+    callback set-zen-mode(bool);                   // apply + persist
+    callback toggle-zen-key();
     // Always ask where to save on each download (#87); default off.
     in-out property <bool> download-always-ask: false;
     callback set-download-always-ask(bool);        // apply + persist
@@ -1296,7 +1304,7 @@ export component AppWindow inherits Window {
             height: root.sidebar-horizontal ? parent.height : parent.sb-h-taken;
             clip: true;
             background: Theme.bg-panel;
-        if !root.sidebar-collapsed : Rectangle {
+        if !root.sidebar-collapsed && !root.zen-mode : Rectangle {
             animate opacity { duration: 120ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
             opacity: root.sidebar-collapsed ? 0.0 : 1.0;
             width: parent.width; height: parent.height;
@@ -1490,6 +1498,7 @@ export component AppWindow inherits Window {
                 // (Collapsed resource panel now reserves its own ToolStrip slot in
                 // `rest`, so the tab strip no longer needs a spacer for it.)
                 TabBar {
+                    visible: !root.zen-mode;
                     horizontal-stretch: 1;
                     // Reserve room for the top-right toolbar icons that sit over
                     // this row so tabs don't slide underneath them (#122).
@@ -1624,6 +1633,8 @@ export component AppWindow inherits Window {
                     quick-sidebar-enabled: root.quick-commands-as-sidebar;
                     quick-panel-docked: root.quick-panel-open;
                     cmd-bar-hidden: root.cmd-bar-hidden;
+                    // Per-session zoom override wins over the global size.
+                    term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : root.term-font-size / 1px;
                     quick-external-command: root.quick-external-command;
                     quick-external-send-enter: root.quick-external-send-enter;
                     quick-external-sequence: root.quick-external-sequence;

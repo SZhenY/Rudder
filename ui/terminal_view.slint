@@ -322,6 +322,9 @@ export component TerminalView inherits Rectangle {
     in property <[string]> command-history;   // oldest first (newest last, #113)
     in property <[string]> history-view;       // filtered dropdown, newest first (#101, #331)
     property <bool> send-to-all: false;
+    // Effective terminal font size in px: per-session zoom override when > 0,
+    // else the window/global size (Theme.term-font-size).
+    in property <float> term-font-size-px: Theme.term-font-size / 1px;
     // Toolbar toggle: hide the whole command bar (persisted globally).
     in property <bool> cmd-bar-hidden: false;
     property <bool> quick-open: false;         // quick-command popup visibility
@@ -455,7 +458,7 @@ export component TerminalView inherits Rectangle {
     cell-probe := Text {
         text: "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM"; // exactly 50×M
         font-family: Theme.term-font-family;
-        font-size: Theme.term-font-size;
+        font-size: root.term-font-size-px * 1px;
         font-weight: Theme.term-font-bold ? 700 : 400;
         // Keep it in layout but invisible: opacity:0 forces full font loading.
         opacity: 0;
@@ -820,7 +823,7 @@ export component TerminalView inherits Rectangle {
                                 font-family: (span.cjk && !Theme.term-font-cjk) ? Theme.ui-font-family
                                            : span.dim ? Theme.term-font-family + " Thin"
                                            : Theme.term-font-family;
-                                font-size: Theme.term-font-size;
+                                font-size: root.term-font-size-px * 1px;
                                 font-weight: (Theme.term-font-bold || span.bold) ? 700 : 400;
                                 font-italic: span.italic;
                             }
@@ -838,7 +841,7 @@ export component TerminalView inherits Rectangle {
                             // parent.height — Slint hoists property declarations
                             // inside anonymous for-blocks to the component, so
                             // parent.height would resolve to the grid viewport!
-                            property <length> line-w: max(1px, Theme.term-font-size / 16);
+                            property <length> line-w: max(1px, root.term-font-size-px / 16 * 1px);
                             property <length> ch: root.cell-h;
 
                             // Single underline (+ curly fallback — curly is unsupported).

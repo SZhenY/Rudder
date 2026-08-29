@@ -856,6 +856,34 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // Zen (focus) mode: sidebar + tab strip hidden, persisted across launches.
+    window.set_zen_mode(store.borrow().zen_mode());
+    {
+        let store = store.clone();
+        window.on_set_zen_mode(move |enabled| {
+            let mut s = store.borrow_mut();
+            s.set_zen_mode(enabled);
+            if let Err(error) = s.save() {
+                tracing::warn!("failed to save config: {error:#}");
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_toggle_zen_key(move || {
+            if let Some(w) = weak.upgrade() {
+                let next = !w.get_zen_mode();
+                let mut s = store.borrow_mut();
+                s.set_zen_mode(next);
+                if let Err(error) = s.save() {
+                    tracing::warn!("failed to save config: {error:#}");
+                }
+                w.set_zen_mode(next);
+            }
+        });
+    }
+
     // Terminal: EOL conversion + OSC 52 clipboard.  Read-once seed + persist.
     {
         let s = store.borrow();
@@ -4367,6 +4395,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                 is_alt_screen: false,
                 find_matches: ModelRc::from(std::rc::Rc::new(VecModel::<TermMatch>::default())),
                 selection: ModelRc::from(std::rc::Rc::new(VecModel::<TermMatch>::default())),
+                font_size: 0.0,
                 sftp_path: "/".into(),
                 sftp_entries: ModelRc::from(std::rc::Rc::new(VecModel::<SftpEntry>::default())),
                 sftp_status: if has_sftp {
@@ -5011,6 +5040,69 @@ fn drag_target(
 // Raw keystroke forwarding and PTY resize
 // ---------------------------------------------------------------------------
 
+/// Font zoom shared by the session-wide and window-wide shortcut paths.
+/// `window_wide` changes the shared `term_font_size` (and clears every
+/// per-session override so the new size visibly applies to all); otherwise the
+/// active session gets its own override. Direction: +1 larger, -1 smaller,
+/// 0 reset. Zoom never persists globally — the Settings stepper owns that.
+/// Changing the size re-measures the cell grid, which triggers the PTY resize.
+fn zoom_term_font(
+    w: &AppWindow,
+    tab_id: &str,
+    direction: i32,
+    window_wide: bool,
+    store: &Rc<RefCell<ConfigStore>>,
+) {
+    use slint::Model as _;
+    let settings_size = store.borrow().font_size() as i32;
+    if window_wide {
+        let next = if direction == 0 {
+            settings_size
+        } else {
+            w.get_term_font_size() as i32 + direction
+        };
+        w.set_term_font_size(next.clamp(8, 32) as f32);
+        // Per-tab overrides would pin sessions at their old size and defeat
+        // "zoom everything", so drop them.
+        let terminals = w.get_terminals();
+        let Some(tm) = terminals.as_any().downcast_ref::<VecModel<TerminalState>>() else {
+            return;
+        };
+        let overrides: Vec<String> = (0..tm.row_count())
+            .filter_map(|i| {
+                let row = tm.row_data(i)?;
+                (row.font_size > 0.0).then(|| row.id.to_string())
+            })
+            .collect();
+        for id in overrides {
+            set_terminal_row(w, &id, |r| r.font_size = 0.0);
+        }
+        return;
+    }
+    if tab_id.is_empty() || tab_id == "welcome" {
+        return;
+    }
+    let Some(current) = (0..w.get_terminals().row_count())
+        .find_map(|i| {
+            let row = w.get_terminals().row_data(i)?;
+            (row.id.as_str() == tab_id).then_some(row.font_size)
+        })
+    else {
+        return;
+    };
+    let base = if current > 0.0 {
+        current as i32
+    } else {
+        w.get_term_font_size() as i32
+    };
+    let next = if direction == 0 {
+        settings_size
+    } else {
+        base + direction
+    };
+    set_terminal_row(w, tab_id, |r| r.font_size = next.clamp(8, 32) as f32);
+}
+
 fn wire_key_input(
     window: &AppWindow,
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
@@ -5477,6 +5569,31 @@ fn wire_key_input(
                     start_session_in_tab(tab_id.as_str(), session, &ctx);
                     return;
                 }
+            }
+            // ── Font zoom (Ctrl+=/-/0, ⌘ on macOS; Ctrl+Shift = whole window) ──
+            // Handled here before anything reaches the PTY. Ctrl(+Shift)+0
+            // resets to the size chosen in Settings.
+            if ctrl && !alt {
+                let direction = match key.as_str() {
+                    "=" | "+" => Some(1),
+                    "-" | "_" => Some(-1),
+                    "0" | ")" => Some(0),
+                    _ => None,
+                };
+                if let Some(direction) = direction {
+                    if let Some(w) = ctx.weak.upgrade() {
+                        zoom_term_font(&w, tab_id.as_str(), direction, shift, &ctx.store);
+                    }
+                    return;
+                }
+            }
+            // Zen (focus) mode toggle: Ctrl+Alt+Z (⌘⌥Z on macOS). Consumed
+            // here so it works whether the terminal or the sidebar holds focus.
+            if ctrl && alt && matches!(key.as_str(), "z" | "Z" | "\u{001a}") {
+                if let Some(w) = ctx.weak.upgrade() {
+                    w.set_zen_mode(!w.get_zen_mode());
+                }
+                return;
             }
             // Check whether the remote PTY switched to application cursor mode
             // (DECCKM, set by nano/vim via \x1b[?1h). In that mode the terminal
