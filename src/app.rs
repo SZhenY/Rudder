@@ -4463,6 +4463,8 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     csi_pending: Vec::new(),
                     raw: std::collections::VecDeque::new(),
                     rendered: Vec::new(),
+                    scroll_cache: HashMap::new(),
+                    render_gen: 0,
                     overline_active: false,
                     overline_start: None,
                     overline_ranges: Vec::new(),

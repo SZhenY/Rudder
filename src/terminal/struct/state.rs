@@ -38,6 +38,16 @@ pub(crate) struct TermBuffer {
     /// Row-level render cache: Some(line) when the live grid row has not
     /// changed since the last render, None for cold/invalidated rows.
     pub(crate) rendered: Vec<Option<RenderedLine>>,
+    /// Row-level render cache for the SCROLLBACK view, keyed by absolute grid
+    /// line (`GridLine`, negative into history).  Scrollback is immutable, so
+    /// these entries survive across frames — unlike live rows they cannot be
+    /// indexed by screen position, because one screen row maps to a different
+    /// history line whenever `view_offset` moves.
+    pub(crate) scroll_cache: HashMap<i32, ScrollLine>,
+    /// Bumped whenever something *outside* the grid changes the way a row
+    /// renders (theme, highlight preset, custom rules, resize).  Cached lines
+    /// carrying an older generation are ignored and rebuilt.
+    pub(crate) render_gen: u64,
     /// SGR 53 (overline) interceptor state.  vte 0.15 and alacritty 0.26 both
     /// drop the overline attribute, so `ingest` scans the raw byte stream for
     /// `ESC [ … 53 … m` and records the affected column ranges itself.
@@ -67,6 +77,15 @@ pub(crate) struct TermBuffer {
 /// not `Send`) happens lazily during render.
 #[derive(Clone)]
 pub(crate) struct RenderedLine {
+    pub(crate) plain_key: String,
+    pub(crate) runs: Vec<HistSpan>,
+}
+
+/// One cached scrollback line. `gen` guards against render-setting changes
+/// (theme / highlight rules / width) that alter output without touching the
+/// terminal grid, which would otherwise leave stale spans on screen.
+pub(crate) struct ScrollLine {
+    pub(crate) generation: u64,
     pub(crate) plain_key: String,
     pub(crate) runs: Vec<HistSpan>,
 }
