@@ -154,11 +154,51 @@ component IconBtn inherits Rectangle {
     in property <brush> icon-color: Theme.text-secondary;
     in property <string> tooltip;
     in property <bool> active;
+    // `breathe=true` adds a separate pulse layer underneath the icon, used by
+    // the Transfers button to signal in-flight transfers without breaking the
+    // icon's silhouette. Hover/active and breathe are rendered on two
+    // independent layers: a single combined background expression with a
+    // looping animation would keep pulsing on every `active=true` button (any
+    // toolbar button with its popup open), making the toolbar look like it is
+    // always breathing.
+    in property <bool> breathe: false;
     callback clicked();
     width: 26px;
     height: 26px;
     border-radius: Theme.radius-sm;
-    background: ta.has-hover || root.active ? Theme.bg-hover : transparent;
+    // Base stays transparent; the two layers below paint onto this.
+    background: transparent;
+
+    // Layer 1 — static hover/active background (no animation, no looping).
+    static-bg := Rectangle {
+        x: 0px; y: 0px;
+        width: 100%; height: 100%;
+        border-radius: Theme.radius-sm;
+        background: ta.has-hover || root.active ? Theme.bg-hover : transparent;
+    }
+
+    // Layer 2 — breathing pulse, only while `breathe=true`. Tinted with the
+    // accent so the pulse stays visible even when Layer 1 also paints
+    // bg-hover for an open popup, and follows the active theme.
+    //
+    // `visible` + `opacity` binding instead of `if root.breathe {…}`: Slint's
+    // `animate` only fires on a property change of an already-alive element,
+    // so an `if`-created layer would appear with its initial opacity already
+    // set and never animate. Flipping opacity 0 → 0.55 is a change, which
+    // starts the loop; `visible` hides the layer again once transfers end.
+    breathe-layer := Rectangle {
+        x: 0px; y: 0px;
+        width: 100%; height: 100%;
+        border-radius: Theme.radius-sm;
+        background: Theme.accent;
+        visible: root.breathe;
+        opacity: root.breathe ? 0.55 : 0;
+        animate opacity {
+            duration: 1400ms;
+            iteration-count: -1;
+            direction: alternate;
+        }
+    }
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -281,6 +321,9 @@ export component AppWindow inherits Window {
 
     // --- Top-right popups --------------------------------------------------
     in-out property <bool> download-open: false;  // download manager popup
+    // True while any transfer is active or preparing; drives the breathing
+    // pulse on the Transfers toolbar button (#breathing-light).
+    in-out property <bool> has-active-transfers: false;
     in-out property <bool> settings-open: false;  // settings menu popup
 
     // Immersive custom title bar (#119). Rust sets `custom-titlebar` true on
@@ -1949,9 +1992,11 @@ export component AppWindow inherits Window {
     }
     IconBtn {
         x: root.width - 64px - root.toolbar-x-off; y: root.toolbar-y;
-        icon: "\u{E2C4}";
-        tooltip: root.lang-en ? "Download" : "下载";
+        icon: "\u{E5D5}";   // swap_vert — transfer manager (up/down)
+        tooltip: root.lang-en ? "Transfers manager" : "传输管理";
         active: root.download-open;
+        // Breathe while any transfer is running (driven from Rust).
+        breathe: root.has-active-transfers;
         clicked => { root.download-open = !root.download-open; root.settings-open = false; }
     }
     IconBtn {
@@ -2506,7 +2551,7 @@ export component AppWindow inherits Window {
 
             HorizontalLayout {
                 Text {
-                    text: @tr("Download settings");
+                    text: root.lang-en ? "Transfers manager" : "传输管理";
                     color: Theme.text-primary;
                     font-size: Theme.fs-md;
                     font-weight: 600;
@@ -2516,13 +2561,13 @@ export component AppWindow inherits Window {
                 Rectangle {
                     width: 20px; height: 20px;
                     border-radius: Theme.radius-sm;
-                    background: close-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: close-ta.has-hover ? #e81123 : transparent;
                     close-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.download-open = false; }
                     }
                     Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           color: close-ta.has-hover ? white : Theme.text-secondary; font-size: Theme.fs-sm;
                            horizontal-alignment: center; vertical-alignment: center; }
                 }
             }
@@ -2626,8 +2671,16 @@ export component AppWindow inherits Window {
                                 spacing: 3px;
                                 HorizontalLayout {
                                     spacing: 4px;
+                                    // Direction glyph: upload green / download purple.
                                     Text {
-                                        text: (t.is-upload ? "↑ " : "↓ ") + t.name;
+                                        text: t.is-upload ? "\u{E5D8}" : "\u{E5DB}"; // arrow_upward / arrow_downward
+                                        font-family: "Material Icons";
+                                        color: t.is-upload ? Theme.success : #9c6ade;
+                                        font-size: Theme.fs-sm;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: t.name;
                                         color: Theme.text-primary;
                                         font-size: Theme.fs-xs;
                                         horizontal-stretch: 1;
