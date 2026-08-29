@@ -161,7 +161,7 @@ use crate::i18n::t;
 include!(concat!(env!("OUT_DIR"), "/deps.rs"));
 use crate::resource::system::{format_bytes_per_sec, format_mem};
 use crate::resource::{LocalSnap, NetHist, TabStatus, TabStatuses};
-use crate::resource::{SystemSampler, SystemSnapshot};
+use crate::resource::SystemSnapshot;
 use crate::session::{ConnectCtx, PendingCred, PendingHostKey, PendingMfa};
 use crate::sftp::{SftpHandles, SftpLastCwd, spawn_sftp};
 use crate::ssh::{
@@ -203,6 +203,10 @@ mod window;
 mod window_geometry;
 mod pane_layout;
 mod fonts_ui;
+mod updater;
+mod sampler;
+use sampler::spawn_system_sampler;
+use updater::wire_update_check;
 pub(crate) use fonts_ui::{FontEntry, family_from_label, font_choices, resolve_ui_font_family, term_font_covers_cjk};
 pub(crate) use pane_layout::{
     drag_target, refresh_panes, save_layout, update_terminal_row, zoom_term_font,
@@ -261,6 +265,13 @@ pub(crate) fn visible_tab_ids(win: &AppWindow) -> HashSet<String> {
 const NET_HISTORY_LEN: usize = 60;
 
 
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WinActivity {
+    Active,     // focused & visible → full rate
+    Background, // visible but unfocused → throttled
+    Hidden,     // minimized / occluded → paused
+}
 pub fn run() -> Result<()> {
     // Load the renderer preference before creating any Slint window. Reuse the
     // same store for the rest of the app so startup does not read the config
@@ -1871,189 +1882,7 @@ pub fn run() -> Result<()> {
     }
 
     // --- In-app update check (#48) -----------------------------------------
-    // "Download" on the banner opens the latest-release page in the browser.
-    window.on_open_update_url(move || {
-        let url = "https://github.com/SZhenY/Rudder/releases/latest";
-        #[cfg(windows)]
-        let _ = std::process::Command::new("explorer").arg(url).spawn();
-        #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").arg(url).spawn();
-        #[cfg(all(not(windows), not(target_os = "macos")))]
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-    });
-    // The open-source link in the About dialog opens the project page.
-    window.on_open_repo(move || {
-        let url = "https://github.com/SZhenY/Rudder";
-        #[cfg(windows)]
-        let _ = std::process::Command::new("explorer").arg(url).spawn();
-        #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").arg(url).spawn();
-        #[cfg(all(not(windows), not(target_os = "macos")))]
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-    });
-    // Query the GitHub releases API on a background thread; if a newer version
-    // exists, flip the banner on. Best-effort: any network/parse error is
-    // silently ignored and the app keeps working on the current version.
-    // Skipped entirely when the user turned the check off (#184).
-    if store.borrow().update_check_enabled() {
-        let weak = window.as_weak();
-        std::thread::spawn(move || {
-            let body = match ureq::get("https://api.github.com/repos/SZhenY/Rudder/releases/latest")
-                .set("User-Agent", "rudder-update-check")
-                .timeout(std::time::Duration::from_secs(8))
-                .call()
-            {
-                Ok(resp) => resp.into_string().unwrap_or_default(),
-                Err(_) => return,
-            };
-            let json: serde_json::Value = match serde_json::from_str(&body) {
-                Ok(v) => v,
-                Err(_) => return,
-            };
-            let tag = json["tag_name"].as_str().unwrap_or("").to_string();
-            let newer = matches!(
-                (parse_version(&tag), parse_version(env!("CARGO_PKG_VERSION"))),
-                (Some(latest), Some(cur)) if latest > cur
-            );
-            if !newer {
-                return;
-            }
-            let _ = weak.upgrade_in_event_loop(move |w| {
-                w.set_update_version(tag.into());
-                w.set_update_available(true);
-            });
-        });
-    }
-
-    // Transfer records (download/upload progress + history) shown in the popup.
-    let transfers_model: Rc<VecModel<TransferInfo>> = Rc::new(VecModel::default());
-    window.set_transfers(ModelRc::from(transfers_model.clone()));
-    {
-        let tm = transfers_model.clone();
-        window.on_clear_transfers(move || tm.set_vec(Vec::<TransferInfo>::new()));
-    }
-    {
-        // Cancel a transfer by id. The id is a UUID unique across sessions, so we
-        // broadcast to every SFTP handle — only the owning one has it registered
-        // and will act on it (#100).
-        let sftp_handles = sftp_handles.clone();
-        window.on_cancel_transfer(move |id: SharedString| {
-            if let Ok(handles) = sftp_handles.lock() {
-                for h in handles.values() {
-                    h.cancel_transfer(id.to_string());
-                }
-            }
-        });
-    }
-
-    // Open-source libraries with resolved versions, shown in the About popup.
-    // Versions are baked in at compile time by build.rs → $OUT_DIR/deps.rs
-    // (included as module-level `DEP_VERSIONS` above).
-    {
-        let get_ver = |name: &str| -> &str {
-            DEP_VERSIONS
-                .iter()
-                .find(|(n, _)| *n == name)
-                .map(|(_, v)| *v)
-                .unwrap_or("-")
-        };
-
-        let zh = crate::i18n::t;
-        let libs: Vec<SharedString> = vec![
-            SharedString::from(format!(
-                "Slint v{} — {}",
-                get_ver("slint"),
-                zh("图形界面框架", "GUI framework")
-            )),
-            SharedString::from(format!(
-                "russh v{} — {}",
-                get_ver("russh"),
-                zh("SSH 协议实现", "SSH protocol")
-            )),
-            SharedString::from(format!(
-                "russh-sftp v{} — {}",
-                get_ver("russh-sftp"),
-                zh("SFTP 文件传输", "SFTP file transfer")
-            )),
-            SharedString::from(format!(
-                "ssh-key v{} — {}",
-                get_ver("ssh-key"),
-                zh("SSH 密钥解析", "SSH key parsing")
-            )),
-            SharedString::from(format!(
-                "tokio v{} — {}",
-                get_ver("tokio"),
-                zh("异步运行时", "async runtime")
-            )),
-            SharedString::from(format!(
-                "alacritty_terminal v{} — {}",
-                get_ver("alacritty_terminal"),
-                zh("终端模拟与解析", "terminal emulator & parser")
-            )),
-            SharedString::from(format!(
-                "sysinfo v{} — {}",
-                get_ver("sysinfo"),
-                zh("本机资源采集", "local resource sampling")
-            )),
-            SharedString::from(format!(
-                "serde v{} — {}",
-                get_ver("serde"),
-                zh("配置序列化", "config serialization")
-            )),
-            SharedString::from(format!(
-                "arboard v{} — {}",
-                get_ver("arboard"),
-                zh("系统剪贴板", "system clipboard")
-            )),
-            SharedString::from(format!(
-                "rfd v{} — {}",
-                get_ver("rfd"),
-                zh("原生文件对话框", "native file dialogs")
-            )),
-            SharedString::from(format!(
-                "directories v{} — {}",
-                get_ver("directories"),
-                zh("配置目录定位", "config dir lookup")
-            )),
-            SharedString::from(format!(
-                "chrono v{} — {}",
-                get_ver("chrono"),
-                zh("日期时间处理", "date/time handling")
-            )),
-            SharedString::from(format!(
-                "uuid v{} — {}",
-                get_ver("uuid"),
-                zh("唯一标识符", "unique identifiers")
-            )),
-            SharedString::from(format!(
-                "anyhow v{} — {}",
-                get_ver("anyhow"),
-                zh("错误处理", "error handling")
-            )),
-            SharedString::from(format!(
-                "tracing v{} — {}",
-                get_ver("tracing"),
-                zh("日志", "logging")
-            )),
-            SharedString::from(format!(
-                "futures v{} — {}",
-                get_ver("futures"),
-                zh("异步辅助", "async helpers")
-            )),
-            SharedString::from(format!(
-                "rand v{} — {}",
-                get_ver("rand"),
-                zh("随机数", "randomness")
-            )),
-            SharedString::from(format!(
-                "winresource v{} — {}",
-                get_ver("winresource"),
-                zh("Windows 图标嵌入", "Windows icon embedding")
-            )),
-        ]
-        .to_vec();
-        window.set_about_libs(ModelRc::from(Rc::new(VecModel::from(libs))));
-    }
+    wire_update_check(&window, &store, &sftp_handles);
 
     wire_tab_callbacks(TabWireCtx {
         window: &window,
@@ -2100,12 +1929,6 @@ pub fn run() -> Result<()> {
     // cursor blink whenever the window isn't focused (mirrors what Tabby / Windows
     // Terminal do). The winit event handler below updates this; the blink reads
     // Theme.window-focused.
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum WinActivity {
-        Active,     // focused & visible → full rate
-        Background, // visible but unfocused → throttled
-        Hidden,     // minimized / occluded → paused
-    }
     let activity = Rc::new(std::cell::Cell::new(WinActivity::Active));
     // Once the user confirms shutdown, every subsequent native/custom close
     // request must pass through without reopening the modal. Windows Installer
@@ -2113,69 +1936,7 @@ pub fn run() -> Result<()> {
     // the executable (#267).
     let exit_confirmed = Rc::new(Cell::new(false));
 
-    // --- System sampler (1 Hz) ------------------------------------------
-    let sampler = Rc::new(Mutex::new(SystemSampler::new()));
-    let weak = window.as_weak();
-    let tick_sampler = sampler.clone();
-    let tick_statuses = tab_statuses.clone();
-    let tick_local = local_snap.clone();
-    let tick_net = local_net_hist.clone();
-    let tick_activity = activity.clone();
-    let mut bg_tick = 0u32;
-    let timer = slint::Timer::default();
-    timer.start(
-        slint::TimerMode::Repeated,
-        SystemSampler::recommended_interval(),
-        move || {
-            // Skip the (non-trivial) sysinfo refresh + sidebar repaint when no one
-            // is looking, and back off to ~5 s when the window is in the background.
-            // A collapsed sidebar hides the graphs entirely, so skip too
-            // (upstream b17da25).
-            if weak.upgrade().map(|w| w.get_sidebar_collapsed()).unwrap_or(false) {
-                return;
-            }
-            match tick_activity.get() {
-                WinActivity::Hidden => return,
-                WinActivity::Background => {
-                    bg_tick = bg_tick.wrapping_add(1);
-                    if !bg_tick.is_multiple_of(5) {
-                        return;
-                    }
-                }
-                WinActivity::Active => {}
-            }
-            let snap = {
-                // A poisoned sampler mutex must not take the client down:
-                // release builds use panic = "abort", so the old expect() here
-                // turned any panic in the sampler thread into a dead client.
-                // Skip this tick instead; the next one retries.
-                let Ok(mut s) = tick_sampler.lock() else {
-                    return;
-                };
-                s.sample()
-            };
-            // Append the raw local throughput to the bottom-graph ring buffer
-            // (normalisation happens at display time so the graph auto-scales).
-            if let Ok(mut net) = tick_net.lock() {
-                push_ring(&mut net, snap.net_bytes_per_sec as f32);
-            }
-            // Stash the local sample; the sidebar shows it on the welcome tab
-            // and in the bottom network graph.
-            if let Ok(mut local) = tick_local.lock() {
-                *local = snap.clone();
-            }
-
-            if let Some(w) = weak.upgrade() {
-                // Everything (status, CPU/mem/swap, both graphs) follows the
-                // active tab; refresh_sidebar reads the stores we just updated.
-                refresh_sidebar(&w, &tick_statuses, &tick_local, &tick_net);
-            }
-        },
-    );
-    // Keep the timer alive for the entire event loop by parking it on a
-    // leaked Box. Slint timers drop themselves on Drop, and we don't want
-    // that here.
-    Box::leak(Box::new(timer));
+    spawn_system_sampler(&window, &tab_statuses, &local_snap, &local_net_hist, &activity);
 
     // OS file drag-and-drop → upload to the active session's SFTP directory,
     // but only when the file is dropped over the file-list area.
@@ -5545,7 +5306,7 @@ fn clipboard_set_text(text: String) {
 /// Parse a "vX.Y.Z" / "X.Y.Z" tag into a comparable tuple, or None if it isn't
 /// a three-part numeric version. A pre-release suffix on the patch (e.g.
 /// "3-rc1") is tolerated by taking its leading digits (#48).
-fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
+pub(crate) fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
     let s = s.trim().trim_start_matches('v');
     let mut it = s.split('.');
     let major = it.next()?.parse().ok()?;
@@ -6244,3 +6005,5 @@ mod font_choice_tests {
         }
     }
 }
+
+
