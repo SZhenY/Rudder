@@ -1,6 +1,6 @@
 use crate::terminal::{
-    BuiltScreen, CsiState, HistSpan, Line, OverlineRange, RAW_CAP, RenderedLine, TermBuffer,
-    build_line, build_row, cursor_pos, highlight_plain_output, is_alt, process_bytes,
+    BuiltScreen, CsiState, HistSpan, Line, OverlineRange, RAW_CAP, RenderedLine, ScrollLine,
+    TermBuffer, build_line, build_row, cursor_pos, highlight_plain_output, is_alt, process_bytes,
     refresh_overlines, render_term_span, resize_term, term_size,
 };
 use crate::ui::TermMatch;
@@ -26,6 +26,11 @@ fn terminal_query(sequence: &[u8]) -> Option<TerminalQuery> {
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::Line as GridLine;
 use alacritty_terminal::term::TermDamage;
+
+/// Upper bound on cached scrollback lines. Roughly one screenful per entry, so
+/// this keeps the cache in the low hundreds of KiB; exceeding it clears rather
+/// than evicts, because the entries are immutable and cheap to rebuild.
+const SCROLL_CACHE_MAX: usize = 4096;
 // Selection type used only in selection_rects_visible via term.selection
 
 impl TermBuffer {
@@ -465,9 +470,23 @@ impl TermBuffer {
         resize_term(&mut self.term, new_rows, new_cols);
         self.prev.clear();
         self.rendered.clear();
+        // A reflow rewraps every line: cached scrollback spans were built
+        // against the old width and are meaningless now.
+        self.scroll_cache.clear();
+        self.render_gen = self.render_gen.wrapping_add(1);
         self.view_offset = 0;
         self.term.selection = None;
         self.clear_overlines();
+    }
+
+    /// Invalidate everything derived from the current render settings.
+    ///
+    /// Called when something *outside* the terminal grid changes how a line
+    /// looks (theme, highlight preset, custom rules). Without this the
+    /// scrollback cache would keep serving spans coloured by the old settings.
+    pub(crate) fn bump_render_gen(&mut self) {
+        self.render_gen = self.render_gen.wrapping_add(1);
+        self.rendered.clear();
     }
 
     fn rewrite_hvp(&mut self, input: &[u8]) -> Vec<u8> {
@@ -595,17 +614,54 @@ impl TermBuffer {
         let vo = self.view_offset;
         let mut spans = Vec::with_capacity(win * 6);
         let mut displayed = Vec::with_capacity(win);
+        // Scrolling back does not change history content, so what a screen row
+        // renders depends only on the absolute grid line it shows. Cache by
+        // that line and the per-frame whole-viewport rebuild (22 highlight
+        // regexes per row) collapses into a borrow: consecutive frames while
+        // the user scrolls are otherwise byte-identical work.
+        let generation = self.render_gen;
         for d in 0..win {
-            let grid_line = GridLine(d as i32 - vo as i32);
+            let line_no = d as i32 - vo as i32;
+            let grid_line = GridLine(line_no);
             let (plain, runs, _wrapped) =
                 build_line(&self.term, grid_line, cols, &self.overline_ranges);
-            let display = plain.trim_end().to_string();
+            let display = plain.trim_end();
+
+            // `hit` resolves the immutable borrow before the mutable
+            // `scroll_cache.insert` below, so the two can coexist here.
+            let hit = self
+                .scroll_cache
+                .get(&line_no)
+                .is_some_and(|c| c.generation == generation && c.plain_key == display);
+            if hit {
+                let cached = &self.scroll_cache[&line_no];
+                for hs in &cached.runs {
+                    spans.extend(render_term_span(hs, d as i32, self.is_dark));
+                }
+                displayed.push(display.to_string());
+                continue;
+            }
+
             let hr =
                 highlight_plain_output(runs, self.output_highlight, &self.custom_highlight_rules);
             for hs in &hr {
                 spans.extend(render_term_span(hs, d as i32, self.is_dark));
             }
-            displayed.push(display);
+            // Bounded: an long scroll-back session would otherwise accumulate
+            // one entry per history line ever shown. Clearing is cheap — the
+            // lines are immutable and re-highlight within a single frame.
+            if self.scroll_cache.len() >= SCROLL_CACHE_MAX {
+                self.scroll_cache.clear();
+            }
+            self.scroll_cache.insert(
+                line_no,
+                ScrollLine {
+                    generation,
+                    plain_key: display.to_string(),
+                    runs: hr,
+                },
+            );
+            displayed.push(display.to_string());
         }
         while displayed.len() < win {
             displayed.push(String::new());
@@ -713,6 +769,8 @@ mod tests {
             csi_pending: Vec::new(),
             raw: std::collections::VecDeque::new(),
             rendered: Vec::new(),
+            scroll_cache: std::collections::HashMap::new(),
+            render_gen: 0,
             overline_active: false,
             overline_start: None,
             overline_ranges: Vec::new(),
@@ -897,6 +955,8 @@ mod tests {
             csi_pending: Vec::new(),
             raw: std::collections::VecDeque::new(),
             rendered: Vec::new(),
+            scroll_cache: std::collections::HashMap::new(),
+            render_gen: 0,
             overline_active: false,
             overline_start: None,
             overline_ranges: Vec::new(),
@@ -1011,6 +1071,8 @@ mod real_file_overline_verify {
             csi_pending: Vec::new(),
             raw: VecDeque::new(),
             rendered: Vec::new(),
+            scroll_cache: std::collections::HashMap::new(),
+            render_gen: 0,
             overline_active: false,
             overline_start: None,
             overline_ranges: Vec::new(),
@@ -1068,6 +1130,8 @@ mod render_path_cube_tests {
             csi_pending: Vec::new(),
             raw: std::collections::VecDeque::new(),
             rendered: Vec::new(),
+            scroll_cache: std::collections::HashMap::new(),
+            render_gen: 0,
             overline_active: false,
             overline_start: None,
             overline_ranges: Vec::new(),

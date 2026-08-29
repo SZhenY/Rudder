@@ -1,3 +1,4 @@
+use super::render_tickets::{request_tab_render, wait_for_ui_flush};
 use super::*;
 
 pub(super) fn resolve_jump(store: &Rc<RefCell<ConfigStore>>, session: &Session) -> Option<Session> {

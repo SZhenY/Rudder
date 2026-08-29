@@ -222,6 +222,10 @@ fn for_each_buffer(window: &AppWindow, bufs: &TermBuffers, apply: impl Fn(&mut T
     drop(map);
     for h in handles {
         if let Ok(mut b) = h.lock() {
+            // The apply callbacks below change how lines are coloured, which
+            // no amount of grid damage tracking can detect — the caches have
+            // to be invalidated explicitly or stale spans stay on screen.
+            b.bump_render_gen();
             apply(&mut b);
         }
     }

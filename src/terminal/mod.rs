@@ -52,8 +52,8 @@ pub(crate) use render::{RAW_CAP, build_line, build_row, cell_prefix, refresh_ove
 pub(crate) use state::CtrlKeySide;
 pub(crate) use state::{
     ATerm, BuiltScreen, CompiledOutputRule, CsiState, HistSpan, Line, OutputHighlightPreset,
-    OverlineRange, RenderGates, RenderedLine, TabRenderGate, TermBuffer, TermBufferHandle,
-    TermBuffers, TermColor, UnderlineStyle,
+    OverlineRange, RenderGates, RenderedLine, ScrollLine, TabRenderGate, TermBuffer,
+    TermBufferHandle, TermBuffers, TermColor, UnderlineStyle,
 };
 pub(crate) use tailspin_rules::builtin_rules;
 pub(crate) use vt_adapter::{

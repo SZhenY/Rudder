@@ -20,28 +20,19 @@ const OUTPUT_MERGE_BYTE_CAP: usize = 64 * 1024;
 /// Output parsed between UI-flush checkpoints during sustained traffic.
 const INGEST_FRAME_BUDGET: usize = 64 * 1024;
 
-/// A busy or closing UI must never block a session pump indefinitely.
-const UI_FLUSH_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// Do not deliberately pace a pump while a large unbounded-channel backlog is
 /// already present. It catches up first, then paces the tail of the stream.
 const PACED_LOCAL_BACKLOG_LIMIT: usize = 1024 * 1024;
 const PACED_QUEUE_EVENT_LIMIT: usize = 256;
 
-/// Max UI renders per second for a tab under sustained output (#209).
-const RENDER_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(33);
-/// Echo produced shortly after a physical keypress should feel immediate. This
-/// temporary 120 Hz ceiling is still coalesced, then falls back to 30 Hz once
-/// the user stops typing so firehose output keeps its existing CPU protection.
-const INTERACTIVE_RENDER_MIN_INTERVAL: std::time::Duration =
-    std::time::Duration::from_millis(8);
 const INTERACTIVE_ECHO_WINDOW: std::time::Duration = std::time::Duration::from_millis(180);
 
 fn term_buf(bufs: &TermBuffers, tab_id: &str) -> Option<TermBufferHandle> {
     bufs.lock().unwrap().get(tab_id).cloned()
 }
 
-fn with_term_buf<R>(
+pub(crate) fn with_term_buf<R>(
     bufs: &TermBuffers,
     tab_id: &str,
     f: impl FnOnce(&mut TermBuffer) -> R,
@@ -165,13 +156,12 @@ use crate::config::{
     is_reserved_session_group,
 };
 use crate::i18n::t;
-use crate::layout::{LogicalRect, TerminalWheelHit};
 
 // Dependency versions baked in by build.rs → $OUT_DIR/deps.rs.
 include!(concat!(env!("OUT_DIR"), "/deps.rs"));
 use crate::resource::system::{format_bytes_per_sec, format_mem};
 use crate::resource::{LocalSnap, NetHist, TabStatus, TabStatuses};
-use crate::resource::{SystemSampler, SystemSnapshot};
+use crate::resource::SystemSnapshot;
 use crate::session::{ConnectCtx, PendingCred, PendingHostKey, PendingMfa};
 use crate::sftp::{SftpHandles, SftpLastCwd, spawn_sftp};
 use crate::ssh::{
@@ -210,6 +200,26 @@ mod tab_callbacks;
 mod terminal_ui;
 mod webdav;
 mod window;
+mod window_geometry;
+mod pane_layout;
+mod fonts_ui;
+mod updater;
+mod sampler;
+mod window_chrome;
+use window_chrome::wire_window_chrome;
+use sampler::spawn_system_sampler;
+use updater::wire_update_check;
+pub(crate) use fonts_ui::{FontEntry, family_from_label, font_choices, resolve_ui_font_family, term_font_covers_cjk};
+pub(crate) use pane_layout::{
+    drag_target, refresh_panes, save_layout, update_terminal_row, zoom_term_font,
+};
+pub(crate) use window_geometry::{
+    center_window, handle_file_drop, handle_macos_terminal_wheel,
+    macos_terminal_wheel_can_target_terminal,
+};
+
+mod render_tickets;
+use render_tickets::RENDER_MIN_INTERVAL;
 use self::auth_dialogs::*;
 use self::port_forward::*;
 use self::quick_commands::*;
@@ -234,12 +244,12 @@ fn tab_title_len(title: &str) -> i32 {
         .min(i32::MAX as usize) as i32
 }
 
-fn should_block_close(exit_confirmed: bool, has_live_sessions: bool) -> bool {
+pub(crate) fn should_block_close(exit_confirmed: bool, has_live_sessions: bool) -> bool {
     !exit_confirmed && has_live_sessions
 }
 
 /// Tab ids currently shown in a pane (`term.id == pane.active-id` in Slint).
-fn visible_tab_ids(win: &AppWindow) -> HashSet<String> {
+pub(crate) fn visible_tab_ids(win: &AppWindow) -> HashSet<String> {
     use slint::Model as _;
     let mut out = HashSet::new();
     let panes = win.get_panes();
@@ -253,214 +263,17 @@ fn visible_tab_ids(win: &AppWindow) -> HashSet<String> {
     out
 }
 
-struct TabRenderTicket {
-    gate: Arc<TabRenderGate>,
-    generation: u64,
-}
-
-fn register_tab_render_request(
-    tab_id: &str,
-    gates: &RenderGates,
-) -> Option<(Arc<TabRenderGate>, TabRenderTicket, bool)> {
-    let gate = {
-        let map = gates.lock().unwrap();
-        map.get(tab_id).cloned()
-    }?;
-    let (generation, should_schedule) = gate.request()?;
-    let ticket = TabRenderTicket {
-        gate: gate.clone(),
-        generation,
-    };
-    Some((gate, ticket, should_schedule))
-}
-
-fn request_tab_render(
-    weak: slint::Weak<AppWindow>,
-    tab_id: &str,
-    bufs: &TermBuffers,
-    gates: &RenderGates,
-) -> Option<TabRenderTicket> {
-    let (gate, ticket, should_schedule) = register_tab_render_request(tab_id, gates)?;
-    if !should_schedule {
-        return Some(ticket);
-    }
-
-    let weak2 = weak.clone();
-    let tid = tab_id.to_string();
-    let bufs2 = bufs.clone();
-    let gate2 = gate.clone();
-    // Always bounce through the event loop from pump / worker threads.
-    // Never call invoke_from_event_loop from inside a UI callback — that
-    // deadlocks Slint (opening a second tab then froze the whole app).
-    if slint::invoke_from_event_loop(move || {
-        run_coalesced_tab_render(&weak2, &tid, &bufs2, gate2);
-    })
-    .is_err()
-    {
-        // The event loop is gone. Wake any pump waiting on this ticket and
-        // reject future requests instead of leaving the gate scheduled forever.
-        gate.close();
-    }
-    Some(ticket)
-}
-
-/// UI-thread variant for synthetic Output events. It shares the same gate but
-/// enters the throttle directly because invoking Slint from its own callback
-/// can deadlock.
-fn request_tab_render_from_ui(
-    weak: slint::Weak<AppWindow>,
-    tab_id: &str,
-    bufs: &TermBuffers,
-    gates: &RenderGates,
-) {
-    let Some((gate, _, should_schedule)) = register_tab_render_request(tab_id, gates) else {
-        return;
-    };
-    if should_schedule {
-        run_coalesced_tab_render(&weak, tab_id, bufs, gate);
-    }
-}
-
-fn wait_for_ui_flush(ticket: Option<TabRenderTicket>) {
-    if let Some(ticket) = ticket {
-        let _ = ticket
-            .gate
-            .wait_for(ticket.generation, UI_FLUSH_ACK_TIMEOUT);
-    }
-}
-
-/// UI-thread entry: honour the throttle, then render. Timer must be created
-/// here — not on pump threads (#209).
-fn run_coalesced_tab_render(
-    weak: &slint::Weak<AppWindow>,
-    tab_id: &str,
-    bufs: &TermBuffers,
-    gate: Arc<TabRenderGate>,
-) {
-    // Interactive typing short-circuits the firehose throttle: while the echo
-    // window is open, render at 120 Hz so keystrokes feel immediate.
-    let interactive = with_term_buf(bufs, tab_id, |b| {
-        std::time::Instant::now() < b.interactive_echo_until
-    })
-    .unwrap_or(false);
-    let interval = if interactive {
-        INTERACTIVE_RENDER_MIN_INTERVAL
-    } else {
-        RENDER_MIN_INTERVAL
-    };
-    let delay = gate.flush_delay(interval);
-
-    let weak2 = weak.clone();
-    let tid = tab_id.to_string();
-    let bufs2 = bufs.clone();
-
-    if delay.is_zero() {
-        do_tab_render_flush(&weak2, &tid, &bufs2, gate);
-    } else {
-        slint::Timer::single_shot(delay, move || {
-            do_tab_render_flush(&weak2, &tid, &bufs2, gate);
-        });
-    }
-}
-
-/// UI-thread only: commit the vt100 snapshot to Slint's model, then reschedule
-/// if output arrived after this snapshot began. `request_redraw` is asynchronous,
-/// so completion acknowledges a model flush rather than GPU presentation.
-fn do_tab_render_flush(
-    weak: &slint::Weak<AppWindow>,
-    tab_id: &str,
-    bufs: &TermBuffers,
-    gate: Arc<TabRenderGate>,
-) {
-    let Some(through) = gate.begin_flush() else {
-        return;
-    };
-
-    let visible = if let Some(win) = weak.upgrade() {
-        if visible_tab_ids(&win).contains(tab_id) {
-            rebuild_tab_display(&win, bufs, tab_id);
-            true
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    if gate.finish_flush(through, visible) {
-        let weak2 = weak.clone();
-        let tid = tab_id.to_string();
-        let bufs2 = bufs.clone();
-        // Defer the continuation to avoid recursive flushes for hidden tabs,
-        // whose last-visible timestamp intentionally does not throttle them.
-        slint::Timer::single_shot(std::time::Duration::ZERO, move || {
-            run_coalesced_tab_render(&weak2, &tid, &bufs2, gate);
-        });
-    }
-}
-
 /// Number of samples kept for the sparkline.
 const NET_HISTORY_LEN: usize = 60;
 
-/// Embed the app icon PNG into the binary and set it as the X11 window icon.
-///
-/// On X11, the taskbar/dock icon for a running window comes from the
-/// `_NET_WM_ICON` property, which winit sets via `Window::set_window_icon`.
-/// When the app runs as a bare AppImage (or from a plain directory without
-/// running install-linux.sh) there is no installed .desktop + icon, so the
-/// dock falls back to a generic gear.  This call fixes that for X11 sessions.
-///
-/// On Wayland the dock icon is resolved by the compositor from the XDG
-/// app-id → .desktop file mapping; `set_window_icon` is a no-op there, so
-/// Wayland users still need AppImageLauncher or install-linux.sh for the
-/// dock icon.  The `icon:` property in app.slint handles the in-title-bar
-/// icon on both backends without any runtime work.
-///
-/// Windows gets its icon from the `.ico` embedded by winresource at link
-/// time; macOS from the app bundle — neither path needs runtime decoding.
-#[cfg(target_os = "linux")]
 
-/// On Windows, keep the frameless Slint surface and the native hit-test surface
-/// aligned. Some Win10 systems expose winit's undecorated-shadow compatibility
-/// frame as a real non-client strip, which shifts hit testing (#193).
-#[cfg(windows)]
-#[cfg(not(windows))]
-#[cfg(windows)]
 
-/// Linux renderer selection from Settings. Leave Slint in charge when the
-/// environment explicitly selects a backend, including non-winit backends.
-/// Automatic mode likewise keeps Slint's native backend/renderer selection.
-#[cfg(target_os = "linux")]
-#[cfg(target_os = "linux")]
-#[cfg(not(target_os = "linux"))]
-
-/// Detect the Windows mixed-DPI failure where the native maximized flag stays
-/// set but the HWND keeps a much smaller geometry from the previous monitor.
-/// Normal maximized work areas may be a little smaller because of the taskbar;
-/// only a large mismatch is considered stale.
-
-/// Ask the renderer to repaint after the window becomes visible again and, on
-/// Windows, repair a stale maximized rectangle caused by crossing monitors with
-/// different DPI scales (#272). The second redraw runs after the window manager
-/// has applied the restore/maximize transition.
-
-#[cfg(test)]
-mod mixed_dpi_window_tests {
-    use super::maximized_geometry_needs_repair;
-
-    #[test]
-    fn repairs_large_maximized_geometry_mismatch() {
-        assert!(maximized_geometry_needs_repair(604, 1384, 1080, 1501));
-        assert!(maximized_geometry_needs_repair(1920, 1000, 3840, 2160));
-    }
-
-    #[test]
-    fn accepts_taskbar_sized_maximized_work_area() {
-        assert!(!maximized_geometry_needs_repair(1920, 1040, 1920, 1080));
-        assert!(!maximized_geometry_needs_repair(2560, 1400, 2560, 1440));
-    }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WinActivity {
+    Active,     // focused & visible → full rate
+    Background, // visible but unfocused → throttled
+    Hidden,     // minimized / occluded → paused
 }
-
 pub fn run() -> Result<()> {
     // Load the renderer preference before creating any Slint window. Reuse the
     // same store for the rest of the app so startup does not read the config
@@ -2071,189 +1884,7 @@ pub fn run() -> Result<()> {
     }
 
     // --- In-app update check (#48) -----------------------------------------
-    // "Download" on the banner opens the latest-release page in the browser.
-    window.on_open_update_url(move || {
-        let url = "https://github.com/SZhenY/Rudder/releases/latest";
-        #[cfg(windows)]
-        let _ = std::process::Command::new("explorer").arg(url).spawn();
-        #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").arg(url).spawn();
-        #[cfg(all(not(windows), not(target_os = "macos")))]
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-    });
-    // The open-source link in the About dialog opens the project page.
-    window.on_open_repo(move || {
-        let url = "https://github.com/SZhenY/Rudder";
-        #[cfg(windows)]
-        let _ = std::process::Command::new("explorer").arg(url).spawn();
-        #[cfg(target_os = "macos")]
-        let _ = std::process::Command::new("open").arg(url).spawn();
-        #[cfg(all(not(windows), not(target_os = "macos")))]
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-    });
-    // Query the GitHub releases API on a background thread; if a newer version
-    // exists, flip the banner on. Best-effort: any network/parse error is
-    // silently ignored and the app keeps working on the current version.
-    // Skipped entirely when the user turned the check off (#184).
-    if store.borrow().update_check_enabled() {
-        let weak = window.as_weak();
-        std::thread::spawn(move || {
-            let body = match ureq::get("https://api.github.com/repos/SZhenY/Rudder/releases/latest")
-                .set("User-Agent", "rudder-update-check")
-                .timeout(std::time::Duration::from_secs(8))
-                .call()
-            {
-                Ok(resp) => resp.into_string().unwrap_or_default(),
-                Err(_) => return,
-            };
-            let json: serde_json::Value = match serde_json::from_str(&body) {
-                Ok(v) => v,
-                Err(_) => return,
-            };
-            let tag = json["tag_name"].as_str().unwrap_or("").to_string();
-            let newer = matches!(
-                (parse_version(&tag), parse_version(env!("CARGO_PKG_VERSION"))),
-                (Some(latest), Some(cur)) if latest > cur
-            );
-            if !newer {
-                return;
-            }
-            let _ = weak.upgrade_in_event_loop(move |w| {
-                w.set_update_version(tag.into());
-                w.set_update_available(true);
-            });
-        });
-    }
-
-    // Transfer records (download/upload progress + history) shown in the popup.
-    let transfers_model: Rc<VecModel<TransferInfo>> = Rc::new(VecModel::default());
-    window.set_transfers(ModelRc::from(transfers_model.clone()));
-    {
-        let tm = transfers_model.clone();
-        window.on_clear_transfers(move || tm.set_vec(Vec::<TransferInfo>::new()));
-    }
-    {
-        // Cancel a transfer by id. The id is a UUID unique across sessions, so we
-        // broadcast to every SFTP handle — only the owning one has it registered
-        // and will act on it (#100).
-        let sftp_handles = sftp_handles.clone();
-        window.on_cancel_transfer(move |id: SharedString| {
-            if let Ok(handles) = sftp_handles.lock() {
-                for h in handles.values() {
-                    h.cancel_transfer(id.to_string());
-                }
-            }
-        });
-    }
-
-    // Open-source libraries with resolved versions, shown in the About popup.
-    // Versions are baked in at compile time by build.rs → $OUT_DIR/deps.rs
-    // (included as module-level `DEP_VERSIONS` above).
-    {
-        let get_ver = |name: &str| -> &str {
-            DEP_VERSIONS
-                .iter()
-                .find(|(n, _)| *n == name)
-                .map(|(_, v)| *v)
-                .unwrap_or("-")
-        };
-
-        let zh = crate::i18n::t;
-        let libs: Vec<SharedString> = vec![
-            SharedString::from(format!(
-                "Slint v{} — {}",
-                get_ver("slint"),
-                zh("图形界面框架", "GUI framework")
-            )),
-            SharedString::from(format!(
-                "russh v{} — {}",
-                get_ver("russh"),
-                zh("SSH 协议实现", "SSH protocol")
-            )),
-            SharedString::from(format!(
-                "russh-sftp v{} — {}",
-                get_ver("russh-sftp"),
-                zh("SFTP 文件传输", "SFTP file transfer")
-            )),
-            SharedString::from(format!(
-                "ssh-key v{} — {}",
-                get_ver("ssh-key"),
-                zh("SSH 密钥解析", "SSH key parsing")
-            )),
-            SharedString::from(format!(
-                "tokio v{} — {}",
-                get_ver("tokio"),
-                zh("异步运行时", "async runtime")
-            )),
-            SharedString::from(format!(
-                "alacritty_terminal v{} — {}",
-                get_ver("alacritty_terminal"),
-                zh("终端模拟与解析", "terminal emulator & parser")
-            )),
-            SharedString::from(format!(
-                "sysinfo v{} — {}",
-                get_ver("sysinfo"),
-                zh("本机资源采集", "local resource sampling")
-            )),
-            SharedString::from(format!(
-                "serde v{} — {}",
-                get_ver("serde"),
-                zh("配置序列化", "config serialization")
-            )),
-            SharedString::from(format!(
-                "arboard v{} — {}",
-                get_ver("arboard"),
-                zh("系统剪贴板", "system clipboard")
-            )),
-            SharedString::from(format!(
-                "rfd v{} — {}",
-                get_ver("rfd"),
-                zh("原生文件对话框", "native file dialogs")
-            )),
-            SharedString::from(format!(
-                "directories v{} — {}",
-                get_ver("directories"),
-                zh("配置目录定位", "config dir lookup")
-            )),
-            SharedString::from(format!(
-                "chrono v{} — {}",
-                get_ver("chrono"),
-                zh("日期时间处理", "date/time handling")
-            )),
-            SharedString::from(format!(
-                "uuid v{} — {}",
-                get_ver("uuid"),
-                zh("唯一标识符", "unique identifiers")
-            )),
-            SharedString::from(format!(
-                "anyhow v{} — {}",
-                get_ver("anyhow"),
-                zh("错误处理", "error handling")
-            )),
-            SharedString::from(format!(
-                "tracing v{} — {}",
-                get_ver("tracing"),
-                zh("日志", "logging")
-            )),
-            SharedString::from(format!(
-                "futures v{} — {}",
-                get_ver("futures"),
-                zh("异步辅助", "async helpers")
-            )),
-            SharedString::from(format!(
-                "rand v{} — {}",
-                get_ver("rand"),
-                zh("随机数", "randomness")
-            )),
-            SharedString::from(format!(
-                "winresource v{} — {}",
-                get_ver("winresource"),
-                zh("Windows 图标嵌入", "Windows icon embedding")
-            )),
-        ]
-        .to_vec();
-        window.set_about_libs(ModelRc::from(Rc::new(VecModel::from(libs))));
-    }
+    wire_update_check(&window, &store, &sftp_handles);
 
     wire_tab_callbacks(TabWireCtx {
         window: &window,
@@ -2300,12 +1931,6 @@ pub fn run() -> Result<()> {
     // cursor blink whenever the window isn't focused (mirrors what Tabby / Windows
     // Terminal do). The winit event handler below updates this; the blink reads
     // Theme.window-focused.
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum WinActivity {
-        Active,     // focused & visible → full rate
-        Background, // visible but unfocused → throttled
-        Hidden,     // minimized / occluded → paused
-    }
     let activity = Rc::new(std::cell::Cell::new(WinActivity::Active));
     // Once the user confirms shutdown, every subsequent native/custom close
     // request must pass through without reopening the modal. Windows Installer
@@ -2313,69 +1938,7 @@ pub fn run() -> Result<()> {
     // the executable (#267).
     let exit_confirmed = Rc::new(Cell::new(false));
 
-    // --- System sampler (1 Hz) ------------------------------------------
-    let sampler = Rc::new(Mutex::new(SystemSampler::new()));
-    let weak = window.as_weak();
-    let tick_sampler = sampler.clone();
-    let tick_statuses = tab_statuses.clone();
-    let tick_local = local_snap.clone();
-    let tick_net = local_net_hist.clone();
-    let tick_activity = activity.clone();
-    let mut bg_tick = 0u32;
-    let timer = slint::Timer::default();
-    timer.start(
-        slint::TimerMode::Repeated,
-        SystemSampler::recommended_interval(),
-        move || {
-            // Skip the (non-trivial) sysinfo refresh + sidebar repaint when no one
-            // is looking, and back off to ~5 s when the window is in the background.
-            // A collapsed sidebar hides the graphs entirely, so skip too
-            // (upstream b17da25).
-            if weak.upgrade().map(|w| w.get_sidebar_collapsed()).unwrap_or(false) {
-                return;
-            }
-            match tick_activity.get() {
-                WinActivity::Hidden => return,
-                WinActivity::Background => {
-                    bg_tick = bg_tick.wrapping_add(1);
-                    if !bg_tick.is_multiple_of(5) {
-                        return;
-                    }
-                }
-                WinActivity::Active => {}
-            }
-            let snap = {
-                // A poisoned sampler mutex must not take the client down:
-                // release builds use panic = "abort", so the old expect() here
-                // turned any panic in the sampler thread into a dead client.
-                // Skip this tick instead; the next one retries.
-                let Ok(mut s) = tick_sampler.lock() else {
-                    return;
-                };
-                s.sample()
-            };
-            // Append the raw local throughput to the bottom-graph ring buffer
-            // (normalisation happens at display time so the graph auto-scales).
-            if let Ok(mut net) = tick_net.lock() {
-                push_ring(&mut net, snap.net_bytes_per_sec as f32);
-            }
-            // Stash the local sample; the sidebar shows it on the welcome tab
-            // and in the bottom network graph.
-            if let Ok(mut local) = tick_local.lock() {
-                *local = snap.clone();
-            }
-
-            if let Some(w) = weak.upgrade() {
-                // Everything (status, CPU/mem/swap, both graphs) follows the
-                // active tab; refresh_sidebar reads the stores we just updated.
-                refresh_sidebar(&w, &tick_statuses, &tick_local, &tick_net);
-            }
-        },
-    );
-    // Keep the timer alive for the entire event loop by parking it on a
-    // leaked Box. Slint timers drop themselves on Drop, and we don't want
-    // that here.
-    Box::leak(Box::new(timer));
+    spawn_system_sampler(&window, &tab_statuses, &local_snap, &local_net_hist, &activity);
 
     // OS file drag-and-drop → upload to the active session's SFTP directory,
     // but only when the file is dropped over the file-list area.
@@ -2734,499 +2297,12 @@ pub fn run() -> Result<()> {
         });
     }
 
-    // --- Custom title-bar window controls (#119) --------------------------
-    {
-        let weak = window.as_weak();
-        window.on_win_minimize(move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| ww.set_minimized(true));
-            }
-        });
-    }
-    {
-        let weak = window.as_weak();
-        window.on_win_maximize_toggle(move || {
-            if let Some(w) = weak.upgrade() {
-                let now = w.window().with_winit_window(|ww| {
-                    let m = !ww.is_maximized();
-                    ww.set_maximized(m);
-                    m
-                });
-                if let Some(m) = now {
-                    w.set_window_maximized(m);
-                }
-            }
-        });
-    }
-    {
-        let weak = window.as_weak();
-        let close_handles = handles.clone();
-        let wc_store = store.clone();
-        let wc_exit_confirmed = exit_confirmed.clone();
-        window.on_win_close(move || {
-            if let Some(w) = weak.upgrade() {
-                // Mirror the native-X behaviour: confirm if sessions are open.
-                if !should_block_close(wc_exit_confirmed.get(), !close_handles.borrow().is_empty())
-                {
-                    wc_exit_confirmed.set(true);
-                    save_layout(&w, &wc_store);
-                    let _ = slint::quit_event_loop();
-                } else {
-                    w.set_confirm_close_open(true);
-                }
-            }
-        });
-    }
-    {
-        let weak = window.as_weak();
-        window.on_win_drag(move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_window();
-                });
-                schedule_slint_pointer_ungrab(weak.clone());
-            }
-        });
-    }
-    {
-        use i_slint_backend_winit::winit::window::ResizeDirection;
-        let weak = window.as_weak();
-        window.on_win_resize(move |dir: i32| {
-            if let Some(w) = weak.upgrade() {
-                let d = match dir {
-                    0 => ResizeDirection::North,
-                    1 => ResizeDirection::South,
-                    2 => ResizeDirection::East,
-                    3 => ResizeDirection::West,
-                    4 => ResizeDirection::NorthEast,
-                    5 => ResizeDirection::NorthWest,
-                    6 => ResizeDirection::SouthEast,
-                    _ => ResizeDirection::SouthWest,
-                };
-                w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_resize_window(d);
-                });
-                schedule_slint_pointer_ungrab(weak.clone());
-            }
-        });
-    }
-
-    // Center the window on the primary monitor once it's shown (size is only
-    // known after the first frame, so defer via a single-shot timer).
-    {
-        let weak = window.as_weak();
-        slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
-            if let Some(w) = weak.upgrade() {
-                center_window(&w);
-            }
-        });
-    }
+    wire_window_chrome(&window, &handles, &store, &exit_confirmed);
 
     window.run().context("event loop exited with error")?;
     Ok(())
 }
 
-/// Center the window on the primary monitor's work area (Windows).
-#[cfg(windows)]
-fn center_window(win: &AppWindow) {
-    #[repr(C)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn SystemParametersInfoW(action: u32, uiparam: u32, pvparam: *mut Rect, winini: u32)
-        -> i32;
-    }
-    const SPI_GETWORKAREA: u32 = 0x0030;
-
-    let size = win.window().size(); // physical pixels
-    let mut wa = Rect {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa, 0) };
-    if ok == 0 {
-        return;
-    }
-    let area_w = (wa.right - wa.left).max(0) as u32;
-    let area_h = (wa.bottom - wa.top).max(0) as u32;
-    let x = wa.left + ((area_w.saturating_sub(size.width)) / 2) as i32;
-    let y = wa.top + ((area_h.saturating_sub(size.height)) / 2) as i32;
-    win.window()
-        .set_position(slint::PhysicalPosition::new(x, y));
-}
-
-#[cfg(not(windows))]
-fn center_window(_win: &AppWindow) {}
-
-/// The active terminal tab's current SFTP directory ("" if unknown).
-fn active_sftp_path(win: &AppWindow, tab_id: &str) -> String {
-    let model = win.get_terminals();
-    if let Some(m) = model.as_any().downcast_ref::<VecModel<TerminalState>>() {
-        for i in 0..m.row_count() {
-            if let Some(row) = m.row_data(i)
-                && row.id.as_str() == tab_id
-            {
-                return row.sftp_path.to_string();
-            }
-        }
-    }
-    String::new()
-}
-
-fn handle_macos_terminal_wheel(
-    win: &AppWindow,
-    bufs: &TermBuffers,
-    x: f32,
-    y: f32,
-    lines: i32,
-) -> bool {
-    let Some(hit) = terminal_wheel_hit(win, bufs, x, y) else {
-        return false;
-    };
-    if hit.is_alt {
-        win.invoke_terminal_wheel(hit.tab_id.into(), lines.signum(), hit.col, hit.row);
-    } else {
-        win.invoke_terminal_scroll(hit.tab_id.into(), lines);
-    }
-    true
-}
-
-// The raw macOS wheel fallback runs before the usual Slint hit testing. Keep
-// modal-state routing explicit so it cannot target a terminal behind a dialog.
-fn macos_terminal_wheel_can_target_terminal(interface_open: bool) -> bool {
-    !interface_open
-}
-
-fn terminal_wheel_hit(
-    win: &AppWindow,
-    bufs: &TermBuffers,
-    x: f32,
-    y: f32,
-) -> Option<TerminalWheelHit> {
-    let (active, term, term_state) = active_terminal_panel_rects(win)?;
-    let mut term_x = term.x;
-    let mut term_y = term.y;
-    let mut term_w = term.w;
-    let mut term_h = term.h;
-
-    // TerminalView starts with a 24px status line, then the SFTP dock-region.
-    term_y += 24.0;
-    term_h = (term_h - 24.0).max(0.0);
-
-    let sftp_dock = win.get_sftp_dock().to_string();
-    let sftp_take = if term_state.sftp_collapsed {
-        36.0
-    } else if sftp_dock == "left" || sftp_dock == "right" {
-        term_state.sftp_panel_width + 4.0
-    } else {
-        term_state.sftp_panel_height + 4.0
-    };
-    shrink_edge(
-        &mut term_x,
-        &mut term_y,
-        &mut term_w,
-        &mut term_h,
-        &sftp_dock,
-        sftp_take,
-    );
-
-    // Leave the command bar to TextInput/history handling; wheel fallback is for
-    // terminal output only.
-    term_h = (term_h - 34.0).max(0.0);
-    if !contains_logical(
-        LogicalRect {
-            x: term_x,
-            y: term_y,
-            w: term_w,
-            h: term_h,
-        },
-        x,
-        y,
-    ) {
-        return None;
-    }
-
-    let h = term_buf(bufs, &active)?;
-    let guard = h.lock().ok()?;
-    let (rows, cols) = crate::terminal::term_size(&guard.term);
-    let is_alt = crate::terminal::is_alt(&guard.term);
-    let cell_w = (term_w / cols.max(1) as f32).max(1.0);
-    let cell_h = (term_h / rows.max(1) as f32).max(1.0);
-    Some(TerminalWheelHit {
-        tab_id: active,
-        is_alt,
-        col: ((x - term_x) / cell_w).floor() as i32,
-        row: ((y - term_y) / cell_h).floor() as i32,
-    })
-}
-
-fn shrink_edge(x: &mut f32, y: &mut f32, w: &mut f32, h: &mut f32, dock: &str, amount: f32) {
-    let amount = amount.max(0.0);
-    match dock {
-        "left" => {
-            *x += amount;
-            *w = (*w - amount).max(0.0);
-        }
-        "right" => *w = (*w - amount).max(0.0),
-        "top" => {
-            *y += amount;
-            *h = (*h - amount).max(0.0);
-        }
-        "bottom" => *h = (*h - amount).max(0.0),
-        _ => {}
-    }
-}
-
-fn contains_logical(rect: LogicalRect, x: f32, y: f32) -> bool {
-    x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
-}
-
-fn app_content_area(win: &AppWindow) -> LogicalRect {
-    let size = win.window().size();
-    let scale = win.window().scale_factor().max(0.01);
-    let mut area = LogicalRect {
-        x: 0.0,
-        y: if win.get_custom_titlebar() {
-            38.0
-        } else if win.get_is_mac() {
-            28.0
-        } else {
-            0.0
-        },
-        w: size.width as f32 / scale,
-        h: 0.0,
-    };
-    area.h = size.height as f32 / scale - area.y;
-
-    if win.get_welcome_as_sidebar() {
-        let dock = win.get_welcome_sidebar_dock().to_string();
-        let sidebar_strip_outside = !win.get_welcome_collapsed()
-            && win.get_sidebar_collapsed()
-            && win.get_sidebar_dock().as_str() == dock.as_str();
-        let welcome_taken = (if win.get_welcome_collapsed() {
-            36.0
-        } else {
-            win.get_welcome_sidebar_width()
-        }) + if sidebar_strip_outside { 36.0 } else { 0.0 };
-        shrink_edge(
-            &mut area.x,
-            &mut area.y,
-            &mut area.w,
-            &mut area.h,
-            &dock,
-            welcome_taken,
-        );
-    }
-
-    let side_dock = win.get_sidebar_dock().to_string();
-    let side_take = if win.get_sidebar_collapsed() {
-        36.0
-    } else if side_dock == "left" || side_dock == "right" {
-        win.get_sidebar_width() + 4.0
-    } else {
-        win.get_sidebar_height() + 4.0
-    };
-    shrink_edge(
-        &mut area.x,
-        &mut area.y,
-        &mut area.w,
-        &mut area.h,
-        &side_dock,
-        side_take,
-    );
-    if win.get_quick_panel_open() {
-        let quick_dock = win.get_quick_panel_dock().to_string();
-        let quick_merged = win.get_quick_panel_collapsed()
-            && ((win.get_welcome_as_sidebar()
-                && win.get_welcome_collapsed()
-                && win.get_welcome_sidebar_dock().as_str() == quick_dock.as_str())
-                || (win.get_sidebar_collapsed() && side_dock.as_str() == quick_dock.as_str()));
-        if quick_merged {
-            return area;
-        }
-        let quick_take = if win.get_quick_panel_collapsed() {
-            36.0
-        } else if quick_dock == "left" || quick_dock == "right" {
-            win.get_quick_panel_width() + 4.0
-        } else {
-            win.get_quick_panel_height() + 4.0
-        };
-        shrink_edge(
-            &mut area.x,
-            &mut area.y,
-            &mut area.w,
-            &mut area.h,
-            &quick_dock,
-            quick_take,
-        );
-    }
-    area
-}
-
-fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, LogicalRect, TerminalState)> {
-    let active = win.get_active_tab_id().to_string();
-    if active.is_empty() || active == "welcome" {
-        return None;
-    }
-
-    let area = app_content_area(win);
-    let panes = win.get_panes();
-    let pane = (0..panes.row_count())
-        .filter_map(|i| panes.row_data(i))
-        .find(|p| p.active_id.as_str() == active.as_str())?;
-
-    let terms = win.get_terminals();
-    let term_state = (0..terms.row_count())
-        .filter_map(|i| terms.row_data(i))
-        .find(|t| t.id.as_str() == active.as_str())?;
-
-    Some((
-        active,
-        LogicalRect {
-            x: area.x + pane.x,
-            y: area.y + pane.y + 40.0,
-            w: pane.w,
-            h: (pane.h - 40.0).max(0.0),
-        },
-        term_state,
-    ))
-}
-
-// Only used by the Windows file-drop handler; keep it out of the
-// other platforms' builds so it is not flagged as dead code (#fix-warnings).
-#[cfg(windows)]
-fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect> {
-    let (_active, term, term_state) = active_terminal_panel_rects(win)?;
-    if term_state.sftp_collapsed {
-        return None;
-    }
-
-    // TerminalView starts with a 24px connection-status line; SFTP docks inside
-    // the remaining dock-region. This mirrors ui/terminal_view.slint.
-    let dock_region = LogicalRect {
-        x: term.x,
-        y: term.y + 24.0,
-        w: term.w,
-        h: (term.h - 24.0).max(0.0),
-    };
-    let dock = win.get_sftp_dock().to_string();
-    let mut panel = LogicalRect {
-        x: dock_region.x,
-        y: dock_region.y,
-        w: if dock == "left" || dock == "right" {
-            term_state.sftp_panel_width
-        } else {
-            dock_region.w
-        },
-        h: if dock == "left" || dock == "right" {
-            dock_region.h
-        } else {
-            term_state.sftp_panel_height
-        },
-    };
-    if dock == "right" {
-        panel.x = dock_region.x + (dock_region.w - panel.w).max(0.0);
-    } else if dock == "bottom" {
-        panel.y = dock_region.y + (dock_region.h - panel.h).max(0.0);
-    }
-
-    // SftpPanel layout: toolbar 34, then file headers 20 + separator 1; when the
-    // tree is shown (top/bottom docks), the file list starts after tree 160 + sep.
-    let show_tree = dock != "left" && dock != "right";
-    panel.y += 34.0 + 20.0 + 1.0;
-    panel.h = (panel.h - 34.0 - 20.0 - 1.0).max(0.0);
-    if show_tree {
-        panel.x += 160.0 + 1.0;
-        panel.w = (panel.w - 160.0 - 1.0).max(0.0);
-    }
-    Some(panel)
-}
-
-/// Current mouse cursor position in physical screen pixels (Windows).
-#[cfg(windows)]
-fn cursor_pos() -> Option<(i32, i32)> {
-    #[repr(C)]
-    struct Point {
-        x: i32,
-        y: i32,
-    }
-    unsafe extern "system" {
-        fn GetCursorPos(p: *mut Point) -> i32;
-    }
-    let mut p = Point { x: 0, y: 0 };
-    if unsafe { GetCursorPos(&mut p) } != 0 {
-        Some((p.x, p.y))
-    } else {
-        None
-    }
-}
-
-/// Handle an OS file drop: if it landed over the SFTP file-list area of the
-/// active session tab, upload the file to that tab's current remote directory.
-#[cfg(windows)]
-fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path: std::path::PathBuf) {
-    let active = win.get_active_tab_id().to_string();
-    if active == "welcome" {
-        return;
-    }
-    let w = win.window();
-    let scale = w.scale_factor().max(0.01);
-    let Some(inner) = w.with_winit_window(|ww| ww.inner_position().ok()).flatten() else {
-        return;
-    };
-    let Some((cx, cy)) = cursor_pos() else {
-        return;
-    };
-    // Drop point in logical client coordinates.
-    let client_x = (cx - inner.x) as f32 / scale;
-    let client_y = (cy - inner.y) as f32 / scale;
-    let Some(file_list) = active_sftp_file_list_rect(win) else {
-        return;
-    };
-    if !contains_logical(file_list, client_x, client_y) {
-        return; // dropped outside the file list — ignore
-    }
-
-    let dir = active_sftp_path(win, &active);
-    if dir.is_empty() {
-        return;
-    }
-    // Session-sync (#sync): when both toggles are on, also mirror the drop to
-    // every other online session — each into *its own* current SFTP dir. This
-    // matches the upload button's behaviour (drag-and-drop is a separate path).
-    let sync = win.get_sync_input() && win.get_sync_upload_enabled();
-    let other_dirs = if sync {
-        terminal_sftp_paths(win)
-    } else {
-        HashMap::new()
-    };
-    if let Ok(handles) = sftp_handles.lock() {
-        if let Some(h) = handles.get(&active) {
-            win.set_download_open(true);
-            h.upload(path.clone(), dir);
-        }
-        if sync {
-            for (id, h) in handles.iter() {
-                if id == &active {
-                    continue;
-                }
-                if let Some(d) = other_dirs.get(id).filter(|d| !d.is_empty()) {
-                    h.upload(path.clone(), d.clone());
-                }
-            }
-        }
-    }
-}
-
-#[cfg(not(windows))]
-fn handle_file_drop(_win: &AppWindow, _sftp_handles: &SftpHandles, _path: std::path::PathBuf) {}
 
 // ---------------------------------------------------------------------------
 // Session callbacks (welcome page + dialog)
@@ -4463,6 +3539,8 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     csi_pending: Vec::new(),
                     raw: std::collections::VecDeque::new(),
                     rendered: Vec::new(),
+                    scroll_cache: HashMap::new(),
+                    render_gen: 0,
                     overline_active: false,
                     overline_start: None,
                     overline_ranges: Vec::new(),
@@ -4721,46 +3799,6 @@ mod process_row_tests {
     }
 }
 
-/// Persist the current panel docking layout (both panels' edge + size) and the
-/// window size, so the next launch restores the user's arrangement. Called on
-/// every exit path (#dock).
-fn save_layout(win: &AppWindow, store: &Rc<RefCell<ConfigStore>>) {
-    let scale = win.window().scale_factor().max(0.01);
-    let size = win.window().size();
-    let w = size.width as f32 / scale;
-    let h = size.height as f32 / scale;
-    let mut s = store.borrow_mut();
-    s.set_sidebar_width(win.get_sidebar_width());
-    s.set_sidebar_height(win.get_sidebar_height());
-    s.set_sidebar_dock(win.get_sidebar_dock().to_string());
-    s.set_sidebar_collapsed(win.get_sidebar_collapsed());
-    s.set_sftp_panel_width(win.get_sftp_panel_width());
-    s.set_sftp_panel_height(win.get_sftp_panel_height());
-    s.set_sftp_dock(win.get_sftp_dock().to_string());
-    s.set_quick_panel_open(win.get_quick_panel_open());
-    s.set_quick_panel_collapsed(win.get_quick_panel_collapsed());
-    s.set_quick_panel_width(win.get_quick_panel_width());
-    s.set_quick_panel_height(win.get_quick_panel_height());
-    s.set_quick_panel_dock(win.get_quick_panel_dock().to_string());
-    s.set_welcome_sidebar_width(win.get_welcome_sidebar_width());
-    s.set_welcome_sidebar_dock(win.get_welcome_sidebar_dock().to_string());
-    s.set_welcome_collapsed(win.get_welcome_collapsed());
-    // A maximized size isn't a useful "preferred" size to restore to, so only
-    // remember the windowed size. Ask the native window too, because the Slint
-    // property can lag during startup/shutdown on frameless Windows (#234).
-    let native_maximized = win
-        .window()
-        .with_winit_window(|ww| ww.is_maximized())
-        .unwrap_or_else(|| win.get_window_maximized());
-    let (saved_w, saved_h) = s.window_size();
-    if !native_maximized && (saved_w <= 0.0 || saved_h <= 0.0) && w > 200.0 && h > 200.0 {
-        // Normal resize events keep this cache current. Only fall back to the
-        // close-time geometry for a first run where no valid resize was seen;
-        // do not issue a new native resize while the window is shutting down.
-        s.set_window_size(w, h);
-    }
-    let _ = s.save();
-}
 
 #[cfg(test)]
 mod port_forward_draft_tests {
@@ -4872,246 +3910,9 @@ thread_local! {
 // Split panes (v0.5)
 // ---------------------------------------------------------------------------
 
-/// Re-flatten the split-tree `layout` for the current content-area size and push
-/// the result into the AppWindow's `panes` / `splitters` models. Also keeps the
-/// single global `active-tab-id` pointing at the focused pane's active tab — the
-/// sidebar and key routing still read that one id.
-/// True when two tab sub-models hold the same ids in the same order.
-fn tabs_eq(a: &ModelRc<TabInfo>, b: &ModelRc<TabInfo>) -> bool {
-    if a.row_count() != b.row_count() {
-        return false;
-    }
-    (0..a.row_count()).all(|i| match (a.row_data(i), b.row_data(i)) {
-        (Some(x), Some(y)) => x.id == y.id,
-        _ => false,
-    })
-}
 
-/// Find the terminal row with `tab_id`, apply `mutator`, and write it back.
-fn update_terminal_row(
-    model: &VecModel<TerminalState>,
-    tab_id: &str,
-    mutator: impl FnOnce(&mut TerminalState),
-) {
-    for i in 0..model.row_count() {
-        if let Some(mut row) = model.row_data(i)
-            && row.id.as_str() == tab_id
-        {
-            mutator(&mut row);
-            model.set_row_data(i, row);
-            return;
-        }
-    }
-}
 
-fn refresh_panes(
-    window: &AppWindow,
-    layout: &crate::layout::Layout,
-    content: (f32, f32),
-    tabs_model: &VecModel<TabInfo>,
-    panes_model: &VecModel<PaneInfo>,
-    splitters_model: &VecModel<SplitterInfo>,
-) {
-    let (cw, ch) = (content.0.max(1.0), content.1.max(1.0));
-    let (panes, splits) = layout.flatten(0.0, 0.0, cw, ch);
 
-    let pane_infos: Vec<PaneInfo> = panes
-        .iter()
-        .map(|p| {
-            // Map this pane's tab ids to their TabInfo rows (skipping any not yet
-            // in the model).
-            let tabs: Vec<TabInfo> = p
-                .tabs
-                .iter()
-                .filter_map(|tid| {
-                    (0..tabs_model.row_count()).find_map(|i| {
-                        let row = tabs_model.row_data(i)?;
-                        (row.id.as_str() == tid.as_str()).then_some(row)
-                    })
-                })
-                .collect();
-            // Only the pane touching the top-right corner keeps room for the
-            // floating toolbar icons (#122).
-            let top_right = p.x + p.w >= cw - 0.5 && p.y <= 0.5;
-            PaneInfo {
-                id: p.id as i32,
-                x: p.x,
-                y: p.y,
-                w: p.w,
-                h: p.h,
-                active_id: p.active.clone().into(),
-                focused: p.focused,
-                reserve_right: if top_right { 140.0 } else { 0.0 },
-                tabs: ModelRc::from(Rc::new(VecModel::from(tabs))),
-            }
-        })
-        .collect();
-
-    // Update the models IN PLACE rather than replacing them, so the `for pane` /
-    // `for sp` elements are reused: this keeps terminals from being recreated on
-    // every refresh AND preserves the splitter's pointer-grab during a drag (a
-    // fresh model would destroy the element mid-drag and drop the grab). When the
-    // structure changes (split/close → different row count) a full rebuild is fine
-    // since no drag is in flight.
-    if panes_model.row_count() == pane_infos.len() {
-        for (i, mut r) in pane_infos.into_iter().enumerate() {
-            if let Some(old) = panes_model.row_data(i) {
-                // Reuse the existing tab sub-model when the tabs are unchanged so a
-                // geometry-only refresh doesn't churn the tab strips.
-                if old.id == r.id && tabs_eq(&old.tabs, &r.tabs) {
-                    r.tabs = old.tabs;
-                }
-            }
-            panes_model.set_row_data(i, r);
-        }
-    } else {
-        panes_model.set_vec(pane_infos);
-    }
-
-    let split_infos: Vec<SplitterInfo> = splits
-        .iter()
-        .map(|s| SplitterInfo {
-            split_id: s.split_id as i32,
-            x: s.x,
-            y: s.y,
-            w: s.w,
-            h: s.h,
-            vertical: s.vertical,
-        })
-        .collect();
-    if splitters_model.row_count() == split_infos.len() {
-        for (i, r) in split_infos.into_iter().enumerate() {
-            splitters_model.set_row_data(i, r);
-        }
-    } else {
-        splitters_model.set_vec(split_infos);
-    }
-
-    if let Some(fp) = panes.iter().find(|p| p.focused)
-        && window.get_active_tab_id().as_str() != fp.active.as_str()
-    {
-        window.set_active_tab_id(fp.active.clone().into());
-    }
-}
-
-/// Hit-test a drag point (pane-area coords) to a target pane + drop zone, plus
-/// the highlight rect the dropped tab would affect. Zone is one of
-/// "tabstrip"/"left"/"right"/"up"/"down"/"center"; `None` when the point is
-/// outside every pane. The 30% edge bands trigger a split; the tab strip and
-type PaneRect = (f32, f32, f32, f32);
-/// middle drop into the pane's tab group.
-fn drag_target(
-    layout: &crate::layout::Layout,
-    content: (f32, f32),
-    x: f32,
-    y: f32,
-) -> Option<(u64, &'static str, PaneRect)> {
-    const STRIP: f32 = 36.0;
-    const EDGE: f32 = 0.30;
-    let (cw, ch) = (content.0.max(1.0), content.1.max(1.0));
-    let (panes, _) = layout.flatten(0.0, 0.0, cw, ch);
-    let p = panes
-        .iter()
-        .find(|p| x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h)?;
-    let body_top = p.y + STRIP;
-    if y < body_top {
-        let ix = x.clamp(p.x + 3.0, p.x + p.w - 3.0) - 3.0;
-        return Some((p.id, "tabstrip", (ix, p.y + 4.0, 6.0, STRIP - 8.0)));
-    }
-    let bw = p.w.max(1.0);
-    let bh = (p.h - STRIP).max(1.0);
-    let rx = (x - p.x) / bw;
-    let ry = (y - body_top) / bh;
-    let (dl, dr, dt, db) = (rx, 1.0 - rx, ry, 1.0 - ry);
-    let m = dl.min(dr).min(dt).min(db);
-    let (zone, rect) = if m > EDGE {
-        ("center", (p.x, p.y, p.w, p.h))
-    } else if m == dl {
-        ("left", (p.x, p.y, p.w * 0.5, p.h))
-    } else if m == dr {
-        ("right", (p.x + p.w * 0.5, p.y, p.w * 0.5, p.h))
-    } else if m == dt {
-        ("up", (p.x, p.y, p.w, p.h * 0.5))
-    } else {
-        ("down", (p.x, p.y + p.h * 0.5, p.w, p.h * 0.5))
-    };
-    Some((p.id, zone, rect))
-}
-
-// ---------------------------------------------------------------------------
-// Tab callbacks
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// SFTP callbacks
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Raw keystroke forwarding and PTY resize
-// ---------------------------------------------------------------------------
-
-/// Font zoom shared by the session-wide and window-wide shortcut paths.
-/// `window_wide` changes the shared `term_font_size` (and clears every
-/// per-session override so the new size visibly applies to all); otherwise the
-/// active session gets its own override. Direction: +1 larger, -1 smaller,
-/// 0 reset. Zoom never persists globally — the Settings stepper owns that.
-/// Changing the size re-measures the cell grid, which triggers the PTY resize.
-fn zoom_term_font(
-    w: &AppWindow,
-    tab_id: &str,
-    direction: i32,
-    window_wide: bool,
-    store: &Rc<RefCell<ConfigStore>>,
-) {
-    use slint::Model as _;
-    let settings_size = store.borrow().font_size() as i32;
-    if window_wide {
-        let next = if direction == 0 {
-            settings_size
-        } else {
-            w.get_term_font_size() as i32 + direction
-        };
-        w.set_term_font_size(next.clamp(8, 32) as f32);
-        // Per-tab overrides would pin sessions at their old size and defeat
-        // "zoom everything", so drop them.
-        let terminals = w.get_terminals();
-        let Some(tm) = terminals.as_any().downcast_ref::<VecModel<TerminalState>>() else {
-            return;
-        };
-        let overrides: Vec<String> = (0..tm.row_count())
-            .filter_map(|i| {
-                let row = tm.row_data(i)?;
-                (row.font_size > 0.0).then(|| row.id.to_string())
-            })
-            .collect();
-        for id in overrides {
-            set_terminal_row(w, &id, |r| r.font_size = 0.0);
-        }
-        return;
-    }
-    if tab_id.is_empty() || tab_id == "welcome" {
-        return;
-    }
-    let Some(current) = (0..w.get_terminals().row_count())
-        .find_map(|i| {
-            let row = w.get_terminals().row_data(i)?;
-            (row.id.as_str() == tab_id).then_some(row.font_size)
-        })
-    else {
-        return;
-    };
-    let base = if current > 0.0 {
-        current as i32
-    } else {
-        w.get_term_font_size() as i32
-    };
-    let next = if direction == 0 {
-        settings_size
-    } else {
-        base + direction
-    };
-    set_terminal_row(w, tab_id, |r| r.font_size = next.clamp(8, 32) as f32);
-}
 
 fn wire_key_input(
     window: &AppWindow,
@@ -6318,7 +5119,7 @@ fn wire_key_input(
 
 /// Mutate the `TerminalState` whose id matches `tab_id` in the live model.
 /// Must run on the Slint event loop thread.
-fn set_terminal_row(win: &AppWindow, tab_id: &str, mutator: impl Fn(&mut TerminalState)) {
+pub(crate) fn set_terminal_row(win: &AppWindow, tab_id: &str, mutator: impl Fn(&mut TerminalState)) {
     let terminals = win.get_terminals();
     let Some(model) = terminals.as_any().downcast_ref::<VecModel<TerminalState>>() else {
         return;
@@ -6407,230 +5208,10 @@ fn clipboard_set_text(text: String) {
     }
 }
 
-/// Enumerate installed monospace font families for the Interface font picker.
-/// Terminals want fixed-width fonts, so non-monospace families are filtered out.
-/// Choose a UI font family that fontdb can actually resolve, falling back to the
-/// embedded "Meatshell Mono" when the system font database is empty/unreadable.
-///
-/// macOS 26 (Tahoe) shipped a system where fontdb couldn't register the named
-/// CJK font ("PingFang SC"), so hard-coding that name made the whole UI render
-/// blank (#129). This probes the loaded faces and picks the first CJK-capable
-/// family that exists; if none do, it returns the embedded font so the window is
-/// still visible (Latin text shows; CJK may tofu — far better than a blank UI).
-///
-/// Emits a one-line WARN summary (faces loaded + chosen font) so the choice lands
-/// in `error.log` for diagnostics without needing RUST_LOG.
-/// Does the terminal font family cover CJK glyphs?  A lightweight family-name
-/// probe: CJK-capable builds conventionally tag their names with CN / SC /
-/// TC / JP / KR / CJK / Han (e.g. "Maple Mono Normal NL NF CN", "Noto Sans
-/// CJK SC").  When true, terminal spans keep the terminal font for Chinese
-/// text so italic / thin variants apply to CJK glyphs too; when false they
-/// fall back to the UI sans font (the embedded mono fonts have no CJK).
-fn term_font_covers_cjk(family: &str) -> bool {
-    let f = family.to_lowercase();
-    ["cn", "sc", "tc", "jp", "kr", "cjk", "han"]
-        .iter()
-        .any(|tag| f.contains(tag))
-}
 
-fn resolve_ui_font_family() -> slint::SharedString {
-    use fontdb::{Database, Family, Query, Stretch, Style, Weight};
 
-    // User has picked a UI font in settings → use it unconditionally.
-    let saved = HISTORY_STORE.with(|s| {
-        s.borrow()
-            .as_ref()
-            .map(|st| st.borrow().ui_font_family().to_owned())
-            .unwrap_or_default()
-    });
-    if !saved.is_empty() {
-        tracing::debug!(font = %saved, "ui-font: using saved preference");
-        return saved.into();
-    }
 
-    // Diagnostic / escape hatch (#129): force a specific UI font without a rebuild.
-    // e.g. MEATSHELL_UI_FONT="Meatshell Mono" to test whether the embedded font
-    // renders when system fonts don't. Empty value is ignored.
-    if let Some(f) = std::env::var_os("MEATSHELL_UI_FONT") {
-        let f = f.to_string_lossy().into_owned();
-        if !f.trim().is_empty() {
-            tracing::debug!(font = %f, "ui-font: overridden via MEATSHELL_UI_FONT");
-            return f.into();
-        }
-    }
 
-    let mut db = Database::new();
-    db.load_system_fonts();
-    let face_count = db.faces().count();
-
-    // CJK-capable system families, most-preferred first, per platform. The UI
-    // default font must cover CJK because TextInput doesn't glyph-fallback (#54).
-    //
-    // macOS note (#129): the modern system CJK fonts (PingFang SC, Hiragino) fail
-    // to rasterize under femtovg on some macOS 26 machines — fontdb finds them but
-    // every glyph comes out blank. The older Heiti/Songti faces render fine and
-    // ship on every macOS, so we prefer them and keep PingFang only as a late
-    // fallback. (Verified on an M2/macOS 26: Heiti SC/STHeiti/Songti SC render,
-    // PingFang/Hiragino don't.) Power users can still force one via
-    // MEATSHELL_UI_FONT. Heiti SC is a clean sans-serif (better for UI than the
-    // serif Songti), so it leads.
-    #[cfg(target_os = "macos")]
-    let candidates: &[&str] = &[
-        "Heiti SC",
-        "STHeiti",
-        "Songti SC",
-        "PingFang SC",
-        "Hiragino Sans GB",
-    ];
-    #[cfg(target_os = "windows")]
-    let candidates: &[&str] = &[
-        // DengXian (等线) leads on Windows: it is the only built-in CJK family
-        // with an Italic face, and Slint's femtovg renderer does *not* synthesize
-        // oblique — font-italic matches real italic font files only. YaHei/SimHei/
-        // SimSun have no italic variants, so CJK spans (rendered with this UI
-        // font) would never appear slanted (#italic-cjk).
-        "DengXian",
-        "Microsoft YaHei UI",
-        "Microsoft YaHei",
-        "SimHei",
-        "SimSun",
-    ];
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let candidates: &[&str] = &[
-        "Noto Sans CJK SC",
-        "Noto Sans CJK",
-        "Source Han Sans SC",
-        "WenQuanYi Micro Hei",
-        "Droid Sans Fallback",
-    ];
-
-    for name in candidates {
-        let q = Query {
-            families: &[Family::Name(name)],
-            weight: Weight::NORMAL,
-            stretch: Stretch::Normal,
-            style: Style::Normal,
-        };
-        if db.query(&q).is_some() {
-            tracing::debug!(
-                faces = face_count,
-                font = name,
-                "ui-font: using system CJK font"
-            );
-            return (*name).into();
-        }
-    }
-
-    // No preferred family resolved. List what *is* available (if anything) so the
-    // log shows whether enumeration is empty or just missing our candidates (#129).
-    if face_count > 0 {
-        let mut fams: Vec<String> = db
-            .faces()
-            .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
-            .collect();
-        fams.sort();
-        fams.dedup();
-        let sample: Vec<String> = fams.into_iter().take(40).collect();
-        tracing::warn!(faces = face_count, available = ?sample,
-            "ui-font: no preferred CJK font resolved; listing available families");
-    }
-    tracing::warn!(
-        faces = face_count,
-        "ui-font: falling back to embedded 'Meatshell Mono' (system fonts unusable, #129)"
-    );
-    "Meatshell Mono".into()
-}
-
-/// One entry of the font picker list.
-#[allow(dead_code)] // Header payload read by tests only
-enum FontEntry {
-    /// A non-selectable group header, shown as `▍内嵌字体` etc.
-    Header(&'static str),
-    /// A selectable family, rendered indented under its header.
-    Family(String),
-}
-
-/// Font picker list for Settings → Interface → Terminal font.
-///
-/// The ComboBox model is a flat string list with group headers:
-///
-/// ```text
-/// ▍内嵌字体
-///   JetBrains Mono
-///   Meatshell Mono
-/// ▍外置字体
-///   Maple Mono Normal NL NF CN
-/// ▍系统字体
-///   Consolas
-///   Cascadia Mono
-/// ```
-///
-/// Header rows (▍) are not selectable; family rows strip their two-space
-/// indent via [`family_from_label`] before the config is written, so the
-/// stored value stays a bare family name. System monospace families are
-/// listed last. Duplicates keep the highest-priority label (embedded >
-/// external > system).
-///
-/// Returns `(labels, entries)` — parallel vectors, `entries` used to map a
-/// saved family back to its list index.
-/// When `monospace_filter` is false, all system fonts are included (for UI
-/// font picker); when true, only monospace families (for terminal font picker).
-fn font_choices(
-    external: &[String],
-    monospace_filter: bool,
-) -> (Vec<slint::SharedString>, Vec<FontEntry>) {
-    let mut labels: Vec<slint::SharedString> = Vec::new();
-    let mut entries: Vec<FontEntry> = Vec::new();
-    let mut known: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    let push_family = |family: &str,
-                       labels: &mut Vec<slint::SharedString>,
-                       entries: &mut Vec<FontEntry>,
-                       known: &mut std::collections::HashSet<String>| {
-        if known.insert(family.to_string()) {
-            labels.push(format!("  {family}").into());
-            entries.push(FontEntry::Family(family.to_string()));
-        }
-    };
-    let push_header = |header: &'static str,
-                       labels: &mut Vec<slint::SharedString>,
-                       entries: &mut Vec<FontEntry>| {
-        labels.push(format!("▍{header}").into());
-        entries.push(FontEntry::Header(header));
-    };
-
-    // Embedded first, external (registered from the fonts dir) next,
-    // system monospace families last — highest priority wins on duplicates.
-    push_header("内嵌字体", &mut labels, &mut entries);
-    for family in ["JetBrains Mono", "Meatshell Mono"] {
-        push_family(family, &mut labels, &mut entries, &mut known);
-    }
-    push_header("外置字体", &mut labels, &mut entries);
-    for family in external {
-        push_family(family, &mut labels, &mut entries, &mut known);
-    }
-    push_header("系统字体", &mut labels, &mut entries);
-    let sys = if monospace_filter {
-        crate::fonts::system_monospace_families()
-    } else {
-        crate::fonts::system_families()
-    };
-    for family in sys {
-        push_family(&family, &mut labels, &mut entries, &mut known);
-    }
-    (labels, entries)
-}
-
-/// Resolve a picker label to a bare family name.
-///
-/// Group headers (`▍…`) return `None` — selecting them must be a no-op.
-/// Family rows (two-space indented) return the name without the indent.
-fn family_from_label(label: &str) -> Option<&str> {
-    if label.starts_with('▍') {
-        return None;
-    }
-    Some(label.strip_prefix("  ").unwrap_or(label))
-}
 
 /// Split a stored proxy URL into `(type, host:port)` for the session dialog.
 ///
@@ -6641,7 +5222,7 @@ fn family_from_label(label: &str) -> Option<&str> {
 /// Parse a "vX.Y.Z" / "X.Y.Z" tag into a comparable tuple, or None if it isn't
 /// a three-part numeric version. A pre-release suffix on the patch (e.g.
 /// "3-rc1") is tolerated by taking its leading digits (#48).
-fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
+pub(crate) fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
     let s = s.trim().trim_start_matches('v');
     let mut it = s.split('.');
     let major = it.next()?.parse().ok()?;
@@ -7340,3 +5921,5 @@ mod font_choice_tests {
         }
     }
 }
+
+
