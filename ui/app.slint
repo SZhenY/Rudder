@@ -2456,26 +2456,28 @@ export component AppWindow inherits Window {
     // rename callback silently never fired. A PopupWindow is a top-level layer
     // that reliably covers the whole window regardless of where it sits in the
     // widget tree.
-    // PopupWindow must be a direct child of the component (not inside an
-    // `if` block) — it stays in the tree and its `visible` toggles with the
-    // dialog state. The previous Rectangle anchored to parent.width/height
-    // could compress into a narrow vertical strip on some layouts; PopupWindow
-    // is a top-level layer that always covers the whole window.
-    PopupWindow {
-        visible: root.tab-rename-open;
-        // Full-window translucent backdrop that swallows outside-clicks.
-        Rectangle {
-            width: 100%;
-            height: 100%;
-            background: #00000080;
-            TouchArea { clicked => { root.tab-rename-open = false; } }
+    // Dialog is sized in absolute terms (root.width/height from AppWindow)
+    // and uses an `if` so the inner Rectangle hierarchy (backdrop + dialog)
+    // only mounts when needed. Anchoring to `parent.width/height` previously
+    // let the dialog compress into a narrow vertical strip on some layouts, and
+    // the PopupWindow form silently routed clicks away from the menu items
+    // that open it.
+    if root.tab-rename-open : Rectangle {
+        // Full-window translucent backdrop (anchored to AppWindow, not parent,
+        // so the layout cannot shrink it).
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        background: #00000080;
+        TouchArea { clicked => { root.tab-rename-open = false; } }
 
-            // Centred dialog.
-            Rectangle {
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                width: 340px;
-                height: 196px;
+        // Centred dialog.
+        Rectangle {
+            x: (root.width - 340px) / 2;
+            y: (root.height - 196px) / 2;
+            width: 340px;
+            height: 196px;
                 background: Theme.bg-panel;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
@@ -2534,7 +2536,6 @@ export component AppWindow inherits Window {
                 }
             }
         }
-    }
 
     // --- Download manager popup -------------------------------------------
     // Click-outside-to-close: a full-window transparent sensor sitting *under*
