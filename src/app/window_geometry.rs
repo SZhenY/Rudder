@@ -16,6 +16,8 @@ use crate::layout::{LogicalRect, TerminalWheelHit};
 use crate::sftp::SftpHandles;
 use crate::terminal::TermBuffers;
 
+#[cfg(windows)]
+use crate::app::terminal_sftp_paths;
 use super::term_buf;
 use crate::ui::{AppWindow, TerminalState};
 
