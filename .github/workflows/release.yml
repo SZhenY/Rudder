@@ -83,7 +83,7 @@ jobs:
       # Build-time only — no GPU/display required to compile.
       - name: Cache apt packages
         if: runner.os == 'Linux'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /var/cache/apt/archives
           key: apt-${{ runner.os }}-${{ matrix.target }}-2026-08
@@ -129,7 +129,7 @@ jobs:
 
       - name: Cache linuxdeploy
         if: matrix.name == 'linux-x86_64'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             linuxdeploy
@@ -236,7 +236,7 @@ jobs:
       - name: Cache cargo-wix
         if: matrix.name == 'windows-x86_64'
         id: wix-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-wix
           key: cargo-wix-windows-2026-08
@@ -256,42 +256,42 @@ jobs:
           echo "MSI=rudder-$VERSION-windows-x86_64.msi" >> $env:GITHUB_ENV
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.name }}
           path: ${{ env.ASSET }}
 
       - name: Upload AppImage artifact
         if: matrix.name == 'linux-x86_64'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: linux-x86_64-appimage
           path: ${{ env.APPIMAGE }}
 
       - name: Upload MSI artifact
         if: matrix.name == 'windows-x86_64' && env.MSI != ''
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: windows-x86_64-msi
           path: ${{ env.MSI }}
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.ASSET }}
           fail_on_unmatched_files: true
 
       - name: Attach AppImage to GitHub Release
         if: matrix.name == 'linux-x86_64' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.APPIMAGE }}
           fail_on_unmatched_files: true
 
       - name: Attach MSI to GitHub Release
         if: matrix.name == 'windows-x86_64' && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.MSI }}
           fail_on_unmatched_files: false
@@ -304,7 +304,7 @@ jobs:
 
     steps:
       - name: Cache apt packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /var/cache/apt/archives
           key: apt-debian10-${{ matrix.name }}-2026-08
@@ -379,14 +379,14 @@ jobs:
           echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: linux-aarch64-glibc228
           path: ${{ env.ASSET }}
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.ASSET }}
           fail_on_unmatched_files: true
@@ -399,7 +399,7 @@ jobs:
 
     steps:
       - name: Cache apt packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /var/cache/apt/archives
           key: apt-debian10-${{ matrix.name }}-2026-08
@@ -474,14 +474,14 @@ jobs:
           echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: linux-x86_64-glibc228
           path: ${{ env.ASSET }}
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.ASSET }}
           fail_on_unmatched_files: true
