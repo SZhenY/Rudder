@@ -930,6 +930,27 @@ export component SessionDialog inherits Rectangle {
                 }
             }
 
+            // ── Terminal character encoding (SSH only) (#338) ───────────────
+            if root.draft-kind == "ssh" : VerticalLayout {
+                spacing: 4px;
+                Text {
+                    text: @tr("Terminal character encoding");
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                }
+                ComboBox {
+                    model: ["UTF-8", "GBK", "Big5", "Shift_JIS", "EUC-KR", "Windows-1252"];
+                    current-value: root.draft-encoding;
+                    selected(value) => { root.draft-encoding = value; }
+                }
+                Text {
+                    text: @tr("Use GBK for servers configured for GB2312 or GBK output.");
+                    color: Theme.text-muted;
+                    font-size: Theme.fs-xs;
+                }
+                Rectangle { height: 6px; }
+            }
+
             // ── Advanced (collapsed by default): proxy + port forwarding ────
             if root.draft-kind != "serial" : Rectangle {
                 height: 26px;
@@ -956,26 +977,6 @@ export component SessionDialog inherits Rectangle {
                 }
             }
 
-            // ── Terminal character encoding (SSH only) (#338) ───────────────
-            if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
-                spacing: 4px;
-                Text {
-                    text: @tr("Terminal character encoding");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
-                ComboBox {
-                    model: ["UTF-8", "GBK", "Big5", "Shift_JIS", "EUC-KR", "Windows-1252"];
-                    current-value: root.draft-encoding;
-                    selected(value) => { root.draft-encoding = value; }
-                }
-                Text {
-                    text: @tr("Use GBK for servers configured for GB2312 or GBK output.");
-                    color: Theme.text-muted;
-                    font-size: Theme.fs-xs;
-                }
-                Rectangle { height: 6px; }
-            }
 
             // ── Optional outbound proxy (SSH / Telnet only) ─────────────────
             if root.show-advanced && root.draft-kind != "serial" : VerticalLayout {
