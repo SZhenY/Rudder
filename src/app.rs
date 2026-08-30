@@ -3629,8 +3629,10 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
         window.on_tab_rename_request(move |tab_id: SharedString| {
             let tab_id = tab_id.to_string();
             if tab_id.is_empty() || tab_id == "welcome" {
+                tracing::info!(target: "rudder_rename", "rename-request: rejected tab_id={:?}", tab_id);
                 return;
             }
+            tracing::info!(target: "rudder_rename", "rename-request: tab_id={:?}, current_title={:?}", tab_id, "...");
             let title = (0..tabs_model.row_count())
                 .find_map(|i| {
                     let row = tabs_model.row_data(i)?;
@@ -3659,6 +3661,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
         let tab_titles = tab_titles.clone();
         let store = store.clone();
         window.on_rename_tab(move |tab_id: SharedString, name: SharedString| {
+            tracing::info!(target: "rudder_rename", "rename-tab invoked: tab_id={:?}, name={:?}", tab_id.as_str(), name.as_str());
             if let Some(w) = weak.upgrade() {
                 w.set_tab_rename_open(false);
             }
@@ -3688,6 +3691,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
             let Some(title) = title else {
                 return;
             };
+            let mut matched = false;
             for i in 0..tabs_model.row_count() {
                 if let Some(mut row) = tabs_model.row_data(i)
                     && row.id.as_str() == tab_id
@@ -3695,8 +3699,16 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     row.title_len = tab_title_len(&title);
                     row.title = title.clone().into();
                     tabs_model.set_row_data(i, row);
+                    matched = true;
+                    tracing::info!(target: "rudder_rename", "rename-tab: matched row {} for tab_id={:?}, new_title={:?}", i, tab_id, title);
                     break;
                 }
+            }
+            if !matched {
+                let ids: Vec<String> = (0..tabs_model.row_count())
+                    .filter_map(|i| tabs_model.row_data(i).map(|r| r.id.to_string()))
+                    .collect();
+                tracing::warn!(target: "rudder_rename", "rename-tab: NO MATCH for tab_id={:?}, available ids={:?}", tab_id, ids);
             }
             // Panes mirror the tab model, so re-derive them to refresh the
             // tab strip in every pane that shows this session.
