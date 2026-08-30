@@ -1,6 +1,6 @@
 name: Publish to AUR
 
-# Pushes the meatshell-bin package to the AUR after a GitHub Release is
+# Pushes the rudder-bin package to the AUR after a GitHub Release is
 # published. Requires three repository secrets (see packaging/aur/README.md):
 #   AUR_USERNAME, AUR_EMAIL, AUR_SSH_PRIVATE_KEY
 # Without them the job is skipped, so this is harmless until you set AUR up.
@@ -23,7 +23,7 @@ jobs:
     # Release and manual-dispatch events are the only supported triggers.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.release != null }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Resolve version + set pkgver
         run: |
@@ -37,17 +37,17 @@ jobs:
                   | grep -oP '"tag_name":\s*"\K[^"]+')
           fi
           VER="${VER#v}"   # strip leading v
-          echo "Publishing meatshell-bin $VER"
+          echo "Publishing rudder-bin $VER"
           sed -i "s/^pkgver=.*/pkgver=${VER}/" packaging/aur/PKGBUILD
           sed -i "s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
           echo "VER=$VER" >> "$GITHUB_ENV"
 
-      - name: Publish meatshell-bin to the AUR
+      - name: Publish rudder-bin to the AUR
         # Skips cleanly until all required AUR secrets are configured.
         if: ${{ env.AUR_USERNAME != '' && env.AUR_EMAIL != '' && env.AUR_SSH_PRIVATE_KEY != '' }}
         uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
         with:
-          pkgname: meatshell-bin
+          pkgname: rudder-bin
           pkgbuild: packaging/aur/PKGBUILD
           commit_username: ${{ env.AUR_USERNAME }}
           commit_email: ${{ env.AUR_EMAIL }}

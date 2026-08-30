@@ -6,6 +6,10 @@ import { Theme } from "theme.slint";
 export component IconButton inherits Rectangle {
     in property <string> glyph;
     in property <string> tooltip;
+    // Icon font for `glyph` when it is a non-ASCII icon codepoint (e.g. the
+    // bundled MaterialIcons-Regular.ttf). Defaults to the UI font; leave empty
+    // for plain ASCII glyphs like "+" / "×".
+    in property <string> font-family: "";
     in property <length> size: 28px;
     in property <brush> fg: Theme.text-secondary;
     in property <brush> fg-hover: Theme.text-primary;
@@ -19,6 +23,7 @@ export component IconButton inherits Rectangle {
 
     Text {
         text: glyph;
+        font-family: root.font-family;
         color: touch.has-hover ? fg-hover : fg;
         font-size: Theme.fs-md;
         horizontal-alignment: center;

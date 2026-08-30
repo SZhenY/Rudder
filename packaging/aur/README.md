@@ -1,4 +1,4 @@
-# 发布到 AUR（meatshell-bin）
+# 发布到 AUR（rudder-bin）
 
 仓库里已经备好 `PKGBUILD` 和发布工作流 `.github/workflows/aur-publish.yml`，
 走的是 **-bin 二进制包**：直接安装 GitHub Release 里预编译好的 Linux tar.gz，
@@ -13,7 +13,7 @@ Arch 用户不用自己编译 Rust + Slint。
 - 在 https://aur.archlinux.org 注册账号。
 - 本地生成一把专用 SSH key（**不要**复用日常 key）：
   ```sh
-  ssh-keygen -t ed25519 -f ~/.ssh/aur -C "meatshell-aur"
+  ssh-keygen -t ed25519 -f ~/.ssh/aur -C "rudder-aur"
   ```
 - 把 **公钥** `~/.ssh/aur.pub` 的内容贴到 AUR 账号设置的「SSH Public Key」里。
 
@@ -28,12 +28,12 @@ Arch 用户不用自己编译 Rust + Slint。
 > 没配 `AUR_SSH_PRIVATE_KEY` 之前，发布工作流会**自动跳过**那一步，不会报错。
 
 ### 3. 首次手动创建 AUR 包仓库
-AUR 上必须先存在 `meatshell-bin` 这个包，工作流才能 push 更新。第一次手动建：
+AUR 上必须先存在 `rudder-bin` 这个包，工作流才能 push 更新。第一次手动建：
 ```sh
-git clone ssh://aur@aur.archlinux.org/meatshell-bin.git
-cd meatshell-bin
+git clone ssh://aur@aur.archlinux.org/rudder-bin.git
+cd rudder-bin
 # 把本仓库的 packaging/aur/PKGBUILD 复制进来，按需把 pkgver 改成最新 release 版本
-cp /path/to/meatshell/packaging/aur/PKGBUILD .
+cp /path/to/rudder/packaging/aur/PKGBUILD .
 # 填邮箱、刷新校验和、生成 .SRCINFO
 updpkgsums
 makepkg --printsrcinfo > .SRCINFO
@@ -41,7 +41,7 @@ makepkg --printsrcinfo > .SRCINFO
 makepkg -si
 # 推到 AUR
 git add PKGBUILD .SRCINFO
-git commit -m "Initial import: meatshell-bin"
+git commit -m "Initial import: rudder-bin"
 git push
 ```
 
@@ -58,7 +58,7 @@ git push
 也可以在 Actions 里手动触发 `Publish to AUR`（可填指定版本）补发。
 
 ## 备注
-- 包名用 `meatshell-bin`（二进制包惯例）。若以后想要从源码编译的 `meatshell`
+- 包名用 `rudder-bin`（二进制包惯例）。若以后想要从源码编译的 `rudder`
   包，可另加一份从源码 `makepkg` 的 PKGBUILD（需要 Arch 上有 Rust 工具链 +
   那串 Slint 的 GUI 依赖）。
 - ArchLinuxCN 源：在 AUR 稳定后，可以向 archlinuxcn/repo 提 PR 把它纳入二进制源

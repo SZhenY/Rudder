@@ -247,9 +247,11 @@ export component TabBar inherits Rectangle {
         }
 
         // A stable right-edge entry point for finding any open session when
-        // the tab strip is crowded (#340).
+        // the tab strip is crowded (#340). E5C5 is a Material Icons codepoint
+        // (view_list) — without the icon font it renders as a tofu box.
         IconButton {
             glyph: "\u{E5C5}";
+            font-family: "Material Icons";
             size: 28px;
             y: (parent.height - self.height) / 2;
             clicked => { all-tabs-menu.show(); }

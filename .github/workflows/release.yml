@@ -19,7 +19,7 @@ jobs:
     name: Check tag version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Ensure tag matches Cargo package version
         if: startsWith(github.ref, 'refs/tags/')
@@ -77,7 +77,7 @@ jobs:
             bin: rudder
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Slint (winit + femtovg) + rfd (GTK) + arboard need these system libs.
       # Build-time only — no GPU/display required to compile.
@@ -232,21 +232,21 @@ jobs:
           echo "MSI=rudder-$VERSION-windows-x86_64.msi" >> $env:GITHUB_ENV
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.name }}
           path: ${{ env.ASSET }}
 
       - name: Upload AppImage artifact
         if: matrix.name == 'linux-x86_64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-x86_64-appimage
           path: ${{ env.APPIMAGE }}
 
       - name: Upload MSI artifact
         if: matrix.name == 'windows-x86_64' && env.MSI != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: windows-x86_64-msi
           path: ${{ env.MSI }}
@@ -300,7 +300,7 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libgtk-3-dev \
             libudev-dev
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         shell: bash
@@ -349,7 +349,7 @@ jobs:
           echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-aarch64-glibc228
           path: ${{ env.ASSET }}
@@ -389,7 +389,7 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libgtk-3-dev \
             libudev-dev
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         shell: bash
@@ -438,7 +438,7 @@ jobs:
           echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-x86_64-glibc228
           path: ${{ env.ASSET }}
