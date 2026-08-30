@@ -81,13 +81,6 @@ jobs:
 
       # Slint (winit + femtovg) + rfd (GTK) + arboard need these system libs.
       # Build-time only — no GPU/display required to compile.
-      - name: Cache apt packages
-        if: runner.os == 'Linux'
-        uses: actions/cache@v5
-        with:
-          path: /var/cache/apt/archives
-          key: apt-${{ runner.os }}-${{ matrix.target }}-2026-08
-
       - name: Install Linux GUI dependencies
         if: runner.os == 'Linux'
         run: |
@@ -303,12 +296,6 @@ jobs:
     container: debian:10
 
     steps:
-      - name: Cache apt packages
-        uses: actions/cache@v5
-        with:
-          path: /var/cache/apt/archives
-          key: apt-debian10-${{ matrix.name }}-2026-08
-
       - name: Prepare Debian 10 build dependencies
         shell: bash
         run: |
@@ -398,12 +385,6 @@ jobs:
     container: debian:10
 
     steps:
-      - name: Cache apt packages
-        uses: actions/cache@v5
-        with:
-          path: /var/cache/apt/archives
-          key: apt-debian10-${{ matrix.name }}-2026-08
-
       - name: Prepare Debian 10 build dependencies
         shell: bash
         run: |
