@@ -4,7 +4,13 @@
 //! (terminal panes, SFTP list). The Win32 FFI is confined to the two functions
 //! that need OS geometry (centering, cursor position).
 
+#[cfg(windows)]
+use std::collections::HashMap;
+
 use slint::{ComponentHandle as _, Model as _, VecModel};
+
+#[cfg(windows)]
+use i_slint_backend_winit::WinitWindowAccessor;
 
 use crate::layout::{LogicalRect, TerminalWheelHit};
 use crate::sftp::SftpHandles;

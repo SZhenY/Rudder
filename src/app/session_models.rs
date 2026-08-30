@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(windows)]
+use std::sync::OnceLock;
 
 pub(super) fn wsl_profile_model(store: &ConfigStore) -> ModelRc<WslProfileInfo> {
     let rows = store

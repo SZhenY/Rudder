@@ -2015,7 +2015,7 @@ pub fn run() -> Result<()> {
                                 CtrlKeySide::Left => slint::platform::Key::Control,
                                 CtrlKeySide::Right => slint::platform::Key::ControlR,
                             };
-                            slint_window.dispatch_event(
+                            _slint_window.dispatch_event(
                                 slint::platform::WindowEvent::KeyReleased { text: key.into() },
                             );
                             tracing::debug!(
@@ -2033,7 +2033,7 @@ pub fn run() -> Result<()> {
                         // detached and every TextInput appears to stop accepting keys
                         // (#236). Re-associate the window with its current default IME;
                         // the focused Slint TextInput keeps owning text input as before.
-                        slint_window.with_winit_window(|window| window.set_ime_allowed(true));
+                        _slint_window.with_winit_window(|window| window.set_ime_allowed(true));
                     }
                     WEvent::DroppedFile(path) => {
                         if let Some(win) = weak.upgrade() {
@@ -2086,7 +2086,7 @@ pub fn run() -> Result<()> {
                         apply_activity(focused, minimized, occluded);
                         if *f {
                             #[cfg(target_os = "windows")]
-                            slint_window.with_winit_window(|window| window.set_ime_allowed(true));
+                            _slint_window.with_winit_window(|window| window.set_ime_allowed(true));
 
                             // Some window managers deliver the first Resized event
                             // before the native window belongs to a monitor. Focus
