@@ -527,3 +527,168 @@ msgstr "结束进程"
 
 msgid "Default"
 msgstr "默认"
+
+msgid "-L: local port → target reached from the server; -R: server port → target reache"
+msgstr "-L：本地端口→服务器可达的目标；-R：服务器端口→远端可达的目标"
+
+msgid "Add trigger"
+msgstr "添加触发器"
+
+msgid "Advanced (encoding, proxy, tunnels)"
+msgstr "高级（编码、代理、隔管）"
+
+msgid "Available"
+msgstr "可用"
+
+msgid "Big5"
+msgstr "Big5"
+
+msgid "CPU usage"
+msgstr "CPU 使用率"
+
+msgid "Cache"
+msgstr "缓存"
+
+msgid "Clear search"
+msgstr "清空搜索"
+
+msgid "Cores"
+msgstr "核心数"
+
+msgid "Driver"
+msgstr "驱动"
+
+msgid "EUC-KR"
+msgstr "EUC-KR"
+
+msgid "Expected output"
+msgstr "预期输出"
+
+msgid "Files"
+msgstr "文件"
+
+msgid "Filesystems"
+msgstr "文库系统"
+
+msgid "Free"
+msgstr "空闲"
+
+msgid "Frequency"
+msgstr "频率"
+
+msgid "GBK"
+msgstr "GBK"
+
+msgid "Idle"
+msgstr "空闲"
+
+msgid "Login triggers"
+msgstr "登录触发器"
+
+msgid "Merge panes"
+msgstr "合并面板"
+
+msgid "Mount point"
+msgstr "挂载点"
+
+msgid "Network interfaces"
+msgstr "网络接口"
+
+msgid "No data"
+msgstr "无数据"
+
+msgid "No match"
+msgstr "无匹配"
+
+msgid "No matching sessions"
+msgstr "无匹配会话"
+
+msgid "No tunnels"
+msgstr "无隔管"
+
+msgid "Overview"
+msgstr "概览"
+
+msgid "Paste and go"
+msgstr "粘贴并发送"
+
+msgid "Receive speed"
+msgstr "接收速率"
+
+msgid "Received"
+msgstr "已接收"
+
+msgid "Rename session"
+msgstr "重命名会话"
+
+msgid "Repeat"
+msgstr "重复"
+
+msgid "Replace"
+msgstr "替换"
+
+msgid "Replace all"
+msgstr "全部替换"
+
+msgid "Response (leave blank to keep saved value)"
+msgstr "响应（留空以保留已保存值）"
+
+msgid "SFTP not available"
+msgstr "SFTP 不可用"
+
+msgid "Search by name or host..."
+msgstr "按名称或主机搜索…"
+
+msgid "Send Enter"
+msgstr "发送回车"
+
+msgid "Send speed"
+msgstr "发送速率"
+
+msgid "Sent"
+msgstr "已发送"
+
+msgid "Shift_JIS"
+msgstr "Shift_JIS"
+
+msgid "Stop"
+msgstr "停止"
+
+msgid "System"
+msgstr "系统"
+
+msgid "System information"
+msgstr "系统信息"
+
+msgid "Terminal character encoding"
+msgstr "终端字符集"
+
+msgid "Total"
+msgstr "总计"
+
+msgid "Tunnels"
+msgstr "隔管"
+
+msgid "UTF-8"
+msgstr "UTF-8"
+
+msgid "Up one level"
+msgstr "上一级"
+
+msgid "Usage"
+msgstr "使用率"
+
+msgid "Use GBK for servers configured for GB2312 or GBK output."
+msgstr "服务器若配置为 GB2312 或 GBK 输出，请选择 GBK。"
+
+msgid "Used"
+msgstr "已用"
+
+msgid "Vendor"
+msgstr "厂商"
+
+msgid "When expected text appears, send the response automatically. Responses are store"
+msgstr "当预期文本出现时自动发送响应。响应保存在会话配置中。"
+
+msgid "Windows-1252"
+msgstr "Windows-1252"

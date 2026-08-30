@@ -527,3 +527,168 @@ msgstr "Terminate"
 
 msgid "Default"
 msgstr "Default"
+
+msgid "-L: local port → target reached from the server; -R: server port → target reache"
+msgstr "-L: local port → target reached from the server; -R: server port → target reache"
+
+msgid "Add trigger"
+msgstr "Add trigger"
+
+msgid "Advanced (encoding, proxy, tunnels)"
+msgstr "Advanced (encoding, proxy, tunnels)"
+
+msgid "Available"
+msgstr "Available"
+
+msgid "Big5"
+msgstr "Big5"
+
+msgid "CPU usage"
+msgstr "CPU usage"
+
+msgid "Cache"
+msgstr "Cache"
+
+msgid "Clear search"
+msgstr "Clear search"
+
+msgid "Cores"
+msgstr "Cores"
+
+msgid "Driver"
+msgstr "Driver"
+
+msgid "EUC-KR"
+msgstr "EUC-KR"
+
+msgid "Expected output"
+msgstr "Expected output"
+
+msgid "Files"
+msgstr "Files"
+
+msgid "Filesystems"
+msgstr "Filesystems"
+
+msgid "Free"
+msgstr "Free"
+
+msgid "Frequency"
+msgstr "Frequency"
+
+msgid "GBK"
+msgstr "GBK"
+
+msgid "Idle"
+msgstr "Idle"
+
+msgid "Login triggers"
+msgstr "Login triggers"
+
+msgid "Merge panes"
+msgstr "Merge panes"
+
+msgid "Mount point"
+msgstr "Mount point"
+
+msgid "Network interfaces"
+msgstr "Network interfaces"
+
+msgid "No data"
+msgstr "No data"
+
+msgid "No match"
+msgstr "No match"
+
+msgid "No matching sessions"
+msgstr "No matching sessions"
+
+msgid "No tunnels"
+msgstr "No tunnels"
+
+msgid "Overview"
+msgstr "Overview"
+
+msgid "Paste and go"
+msgstr "Paste and go"
+
+msgid "Receive speed"
+msgstr "Receive speed"
+
+msgid "Received"
+msgstr "Received"
+
+msgid "Rename session"
+msgstr "Rename session"
+
+msgid "Repeat"
+msgstr "Repeat"
+
+msgid "Replace"
+msgstr "Replace"
+
+msgid "Replace all"
+msgstr "Replace all"
+
+msgid "Response (leave blank to keep saved value)"
+msgstr "Response (leave blank to keep saved value)"
+
+msgid "SFTP not available"
+msgstr "SFTP not available"
+
+msgid "Search by name or host..."
+msgstr "Search by name or host..."
+
+msgid "Send Enter"
+msgstr "Send Enter"
+
+msgid "Send speed"
+msgstr "Send speed"
+
+msgid "Sent"
+msgstr "Sent"
+
+msgid "Shift_JIS"
+msgstr "Shift_JIS"
+
+msgid "Stop"
+msgstr "Stop"
+
+msgid "System"
+msgstr "System"
+
+msgid "System information"
+msgstr "System information"
+
+msgid "Terminal character encoding"
+msgstr "Terminal character encoding"
+
+msgid "Total"
+msgstr "Total"
+
+msgid "Tunnels"
+msgstr "Tunnels"
+
+msgid "UTF-8"
+msgstr "UTF-8"
+
+msgid "Up one level"
+msgstr "Up one level"
+
+msgid "Usage"
+msgstr "Usage"
+
+msgid "Use GBK for servers configured for GB2312 or GBK output."
+msgstr "Use GBK for servers configured for GB2312 or GBK output."
+
+msgid "Used"
+msgstr "Used"
+
+msgid "Vendor"
+msgstr "Vendor"
+
+msgid "When expected text appears, send the response automatically. Responses are store"
+msgstr "When expected text appears, send the response automatically. Responses are store"
+
+msgid "Windows-1252"
+msgstr "Windows-1252"

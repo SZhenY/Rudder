@@ -939,7 +939,8 @@ export component SessionDialog inherits Rectangle {
                     font-size: Theme.fs-sm;
                 }
                 ComboBox {
-                    model: ["UTF-8", "GBK", "Big5", "Shift_JIS", "EUC-KR", "Windows-1252"];
+                    height: 32px;
+                    model: [@tr("UTF-8"), @tr("GBK"), @tr("Big5"), @tr("Shift_JIS"), @tr("EUC-KR"), @tr("Windows-1252")];
                     current-value: root.draft-encoding;
                     selected(value) => { root.draft-encoding = value; }
                 }
