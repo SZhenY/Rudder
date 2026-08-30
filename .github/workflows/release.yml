@@ -81,6 +81,13 @@ jobs:
 
       # Slint (winit + femtovg) + rfd (GTK) + arboard need these system libs.
       # Build-time only — no GPU/display required to compile.
+      - name: Cache apt packages
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-${{ matrix.target }}-2026-08
+
       - name: Install Linux GUI dependencies
         if: runner.os == 'Linux'
         run: |
@@ -119,6 +126,15 @@ jobs:
           fi
           ACTUAL="$(target/${{ matrix.target }}/release/${{ matrix.bin }} --version)"
           test "$ACTUAL" = "rudder ${EXPECTED}"
+
+      - name: Cache linuxdeploy
+        if: matrix.name == 'linux-x86_64'
+        uses: actions/cache@v4
+        with:
+          path: |
+            linuxdeploy
+            linuxdeploy-plugin-appimage
+          key: linuxdeploy-2024
 
       - name: Build AppImage
         if: matrix.name == 'linux-x86_64'
@@ -217,6 +233,14 @@ jobs:
       # MSI installer with a "choose install location" wizard (WixUI_InstallDir).
       # Best-effort: if the WiX/cargo-wix tooling hiccups it must not block the
       # .zip release, hence continue-on-error.
+      - name: Cache cargo-wix
+        if: matrix.name == 'windows-x86_64'
+        id: wix-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-wix
+          key: cargo-wix-windows-2026-08
+
       - name: Build MSI installer (Windows)
         if: matrix.name == 'windows-x86_64' && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') && !contains(github.ref, '-rc')
         continue-on-error: true
@@ -227,7 +251,7 @@ jobs:
           choco install wixtoolset -y --no-progress
           $candle = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*\bin\candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($candle) { $env:PATH = "$($candle.DirectoryName);$env:PATH" }
-          cargo install cargo-wix --locked
+          if (-not (Test-Path "$env:USERPROFILE\.cargo\bin\cargo-wix.exe")) { cargo install cargo-wix --locked }
           cargo wix --no-build --nocapture --target ${{ matrix.target }} --output "rudder-$VERSION-windows-x86_64.msi"
           echo "MSI=rudder-$VERSION-windows-x86_64.msi" >> $env:GITHUB_ENV
 
@@ -279,6 +303,12 @@ jobs:
     container: debian:10
 
     steps:
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-debian10-${{ matrix.name }}-2026-08
+
       - name: Prepare Debian 10 build dependencies
         shell: bash
         run: |
@@ -307,7 +337,7 @@ jobs:
         run: |
           set -eu
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --profile minimal --default-toolchain stable
+            | sh -s -- -y --profile minimal --default-toolchain 1.96.0
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Cache cargo build
@@ -368,6 +398,12 @@ jobs:
     container: debian:10
 
     steps:
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-debian10-${{ matrix.name }}-2026-08
+
       - name: Prepare Debian 10 build dependencies
         shell: bash
         run: |
@@ -396,7 +432,7 @@ jobs:
         run: |
           set -eu
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-            | sh -s -- -y --profile minimal --default-toolchain stable
+            | sh -s -- -y --profile minimal --default-toolchain 1.96.0
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Cache cargo build
