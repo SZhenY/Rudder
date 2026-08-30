@@ -118,7 +118,7 @@ pub(crate) fn refresh_panes(
                 h: p.h,
                 active_id: p.active.clone().into(),
                 focused: p.focused,
-                reserve_right: if top_right { 110.0 } else { 0.0 },
+                reserve_right: if top_right { 160.0 } else { 0.0 },
                 tabs: ModelRc::from(Rc::new(VecModel::from(tabs))),
             }
         })
