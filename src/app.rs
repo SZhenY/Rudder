@@ -1299,7 +1299,7 @@ pub fn run() -> Result<()> {
         let proc_weak = proc_win.as_weak();
         window.on_pick_wallpaper_file(move || {
             let picked = rfd::FileDialog::new()
-                .set_title("选择壁纸 / Choose wallpaper")
+                .set_title(t("选择壁纸", "Choose wallpaper"))
                 .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp"])
                 .pick_file();
             if let Some(path) = picked {

@@ -1,9 +1,9 @@
 fn main() {
     // Bundle the gettext `.po` translations under `lang/` so the UI's `@tr(...)`
     // strings can switch language at runtime via slint::select_bundled_translation.
-    // Source language is Chinese (the msgids); `lang/<lc>/LC_MESSAGES/rudder.po`
-    // provides other locales.  No per-component context, so msgids are the raw
-    // Chinese strings.
+    // The `.slint` source (msgids) is English; `lang/zh/LC_MESSAGES/rudder.po`
+    // maps msgids to Chinese and `lang/en/...` keeps the identity mapping.  No
+    // per-component context, so msgids are the raw English strings.
     println!("cargo:rerun-if-changed=lang");
     slint_build::compile_with_config(
         "ui/app.slint",

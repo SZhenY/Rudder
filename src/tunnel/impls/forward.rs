@@ -16,6 +16,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 
+use crate::i18n::t;
 use crate::ssh::{ClientHandler, SessionEvent};
 
 /// Emit a one-line notice into the terminal output stream.
@@ -71,7 +72,7 @@ pub fn spawn_local(
         let listener = match TcpListener::bind(&bind).await {
             Ok(l) => l,
             Err(e) => {
-                notice(&events, format!("-L {bind} 监听失败 / bind failed: {e}"));
+                notice(&events, format!("-L {bind} {}: {e}", t("监听失败", "bind failed")));
                 return;
             }
         };
@@ -92,7 +93,7 @@ pub fn spawn_local(
                     }
                     Err(e) => notice(
                         &ev,
-                        format!("-L {host}:{target_port} 连接失败 / open failed: {e}"),
+                        format!("-L {host}:{target_port} {}: {e}", t("连接失败", "open failed")),
                     ),
                 }
             });
@@ -114,7 +115,7 @@ pub fn spawn_dynamic(
         let listener = match TcpListener::bind(&bind).await {
             Ok(l) => l,
             Err(e) => {
-                notice(&events, format!("-D {bind} 监听失败 / bind failed: {e}"));
+                notice(&events, format!("-D {bind} {}: {e}", t("监听失败", "bind failed")));
                 return;
             }
         };

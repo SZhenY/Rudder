@@ -2,6 +2,8 @@
 
 
 
+use crate::i18n::t;
+
 use super::HISTORY_STORE;
 
 /// Enumerate installed monospace font families for the Interface font picker.
@@ -187,15 +189,15 @@ pub(crate) fn font_choices(
 
     // Embedded first, external (registered from the fonts dir) next,
     // system monospace families last — highest priority wins on duplicates.
-    push_header("内嵌字体", &mut labels, &mut entries);
+    push_header(t("内嵌字体", "Embedded fonts"), &mut labels, &mut entries);
     for family in ["JetBrains Mono", "Meatshell Mono"] {
         push_family(family, &mut labels, &mut entries, &mut known);
     }
-    push_header("外置字体", &mut labels, &mut entries);
+    push_header(t("外置字体", "External fonts"), &mut labels, &mut entries);
     for family in external {
         push_family(family, &mut labels, &mut entries, &mut known);
     }
-    push_header("系统字体", &mut labels, &mut entries);
+    push_header(t("系统字体", "System fonts"), &mut labels, &mut entries);
     let sys = if monospace_filter {
         crate::fonts::system_monospace_families()
     } else {

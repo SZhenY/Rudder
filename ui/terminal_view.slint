@@ -1658,7 +1658,7 @@ export component TerminalView inherits Rectangle {
                                                 pi-md-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, "default"); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
-                                                    Text { text: "default"; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
+                                                    Text { text: @tr("Default"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             for s in root.quick-commands : Rectangle {
                                                 visible: s.group-header != "" && s.group != "default" && s.group != q.group;
                                                 height: self.visible ? 28px : 0px;

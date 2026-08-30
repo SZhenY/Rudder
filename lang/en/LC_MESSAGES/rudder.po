@@ -524,3 +524,6 @@ msgstr "Terminating process..."
 
 msgid "Terminate"
 msgstr "Terminate"
+
+msgid "Default"
+msgstr "Default"

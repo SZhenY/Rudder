@@ -524,3 +524,6 @@ msgstr "正在结束进程..."
 
 msgid "Terminate"
 msgstr "结束进程"
+
+msgid "Default"
+msgstr "默认"
