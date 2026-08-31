@@ -42,6 +42,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **历史命令下拉恢复最新命令排在最后（合入上游 `5699593`，0.7.1 回退 #331）。** 下拉列表不再反转存储顺序（最旧在前、最新在后），与输入框 ↑/↓ 召回顺序一致；打开时默认高亮最新命令。
+- **Command-history dropdown shows newest at the bottom (upstream `5699593`, 0.7.1 revert of #331).** The dropdown no longer reverses storage order (oldest first, newest last), matching the ↑/↓ recall direction; the newest entry is highlighted on open.
+
 - **会话「重命名」弹窗修复。** 弹窗此前依赖父容器尺寸，特定布局下被压缩成一条竖向窄条而无法使用；现改为按窗口根尺寸定位的固定尺寸对话框，居中显示、按钮可正常点击。
 - **Rename-session dialog fixed.** The dialog previously relied on its parent container's size and could collapse into a narrow vertical strip on some layouts; it is now a fixed-size dialog positioned against the window root, centred and fully clickable.
 
