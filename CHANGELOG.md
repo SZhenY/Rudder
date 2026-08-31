@@ -3,7 +3,7 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
-## [Unreleased]
+## [0.7.2] - 2026-08-31
 
 ### 新增 / Added
 
@@ -41,6 +41,12 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **Terminal mouse forwarding (upstream `d8eff40`).** TUI apps that enable a mouse protocol (btop/htop/mc) now receive clicks, drags and releases in the encoding they requested (X10/SGR); Shift+click still selects locally, and the wheel sends real button codes when tmux has `mouse on`.
 
 ### 修复 / Fixed
+
+- **macOS 配置与日志统一走官方路径。** 数据不再写入应用包旁的 `config/`、`log/` 目录（`/Applications` 通常只读），全部收敛到 `~/Library/Application Support/dev.rudder.rudder`（sessions/密钥/known_hosts/log/字体）；旧的 exe 旁数据首次启动自动迁移。Windows 保持 exe 旁专用不变。
+- **macOS data & logs now use the official per-user location.** Data no longer lands in `config/`/`log/` beside the app bundle (`/Applications` is normally read-only); everything lives under `~/Library/Application Support/dev.rudder.rudder` (sessions/keys/known_hosts/log/fonts), with a one-time migration from any previous exe-adjacent config. Windows keeps its exe-adjacent layout.
+
+- **macOS 外部字体支持应用旁目录（只读回退）。** 除了官方字体目录外，手动在 `/Applications/rudder.app/Contents/MacOS/rudder/config/fonts` 放置的字体也会被扫描加载；官方目录（`~/Library/Application Support/dev.rudder.rudder/fonts`）仍是推荐位置并自动创建。
+- **macOS external fonts also load from an app-adjacent directory (read-only fallback).** Besides the official fonts dir, fonts placed manually in `/Applications/rudder.app/Contents/MacOS/rudder/config/fonts` are scanned too; the official `~/Library/Application Support/dev.rudder.rudder/fonts` remains the recommended, auto-created location.
 
 - **历史命令下拉恢复最新命令排在最后（合入上游 `5699593`，0.7.1 回退 #331）。** 下拉列表不再反转存储顺序（最旧在前、最新在后），与输入框 ↑/↓ 召回顺序一致；打开时默认高亮最新命令。
 - **Command-history dropdown shows newest at the bottom (upstream `5699593`, 0.7.1 revert of #331).** The dropdown no longer reverses storage order (oldest first, newest last), matching the ↑/↓ recall direction; the newest entry is highlighted on open.
