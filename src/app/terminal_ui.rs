@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
+pub(crate) fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
     let rows: Vec<SharedString> = store
         .command_history()
         .iter()
@@ -84,12 +84,12 @@ pub(super) fn history_view_rows(history: &[String], query: &str) -> Vec<SharedSt
         .collect()
 }
 
-pub(super) fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
+pub(crate) fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
     let rows = history_view_rows(store.command_history(), query);
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
-pub(super) fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
+pub(crate) fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
     let mut out: Vec<TermMatch> = Vec::new();
     if query.is_empty() {
         return out;
@@ -121,7 +121,7 @@ pub(super) fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatc
     out
 }
 
-pub(super) fn apply_terminal_resize(
+pub(crate) fn apply_terminal_resize(
     handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
     bufs: &TermBuffers,
     last_term_size: &Arc<Mutex<(u32, u32)>>,
@@ -151,7 +151,7 @@ pub(super) fn apply_terminal_resize(
     }
 }
 
-pub(super) fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
+pub(crate) fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
     let data = with_term_buf(bufs, tab_id, |buf| {
         let cols = crate::terminal::term_size(&buf.term).1;
         let b = buf.render(); // also refreshes buf.displayed_text
@@ -182,7 +182,7 @@ pub(super) fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &
     win.window().request_redraw();
 }
 
-pub(super) fn refresh_terminal_selection(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
+pub(crate) fn refresh_terminal_selection(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
     let selection = with_term_buf(bufs, tab_id, |buf| {
         let cols = crate::terminal::term_size(&buf.term).1;
         buf.selection_rects_visible(cols)

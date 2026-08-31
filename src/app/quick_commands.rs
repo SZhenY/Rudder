@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn all_quick_group_names(store: &ConfigStore) -> std::collections::HashSet<String> {
+pub(crate) fn all_quick_group_names(store: &ConfigStore) -> std::collections::HashSet<String> {
     let cmds = store.quick_commands();
     let mut set: std::collections::HashSet<String> = std::collections::HashSet::new();
     if cmds.iter().any(|c| c.group.trim().is_empty()) {
@@ -93,7 +93,7 @@ pub(super) fn quick_cmd_model(
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
-pub(super) fn reorder_quick_command(
+pub(crate) fn reorder_quick_command(
     commands: &mut [crate::config::QuickCommand],
     index: usize,
     move_up: bool,

@@ -11,7 +11,7 @@ pub(super) fn resolve_jump(store: &Rc<RefCell<ConfigStore>>, session: &Session) 
     store.borrow().get(&session.jump_session_id).cloned()
 }
 
-pub(super) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
+pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
     let has_sftp = session.kind == SessionKind::Ssh;
     let (initial_cols, initial_rows) = *ctx.last_term_size.lock().unwrap_or_else(|e| e.into_inner());
     // Resolve the optional SSH jump host now (on the UI thread, where the store
