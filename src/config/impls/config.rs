@@ -61,6 +61,20 @@ pub fn data_dir() -> PathBuf {
 /// the executable (a sibling of `config/`), falling back to a `log/` subdir
 /// under the per-user data dir when the exe dir is read-only (Program Files etc.)
 /// (#log-dir).
+/// macOS: always the per-user log dir — the app bundle /Applications is a
+/// shared system location and never gets an exe-adjacent `log/` folder. All
+/// user data stays under `~/Library/Application Support/dev.rudder.rudder`.
+#[cfg(target_os = "macos")]
+pub fn log_dir() -> PathBuf {
+    let dir = data_dir().join("log");
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+/// Windows / Linux: portable-first — `<exe_dir>/log`, sibling of the portable
+/// config/ folder, falling back to a `log/` subdir under the per-user data dir
+/// when the exe dir is read-only (Program Files etc.).
+#[cfg(not(target_os = "macos"))]
 pub fn log_dir() -> PathBuf {
     // Portable: <exe_dir>/log, sibling of the portable config/ folder.
     if let Ok(exe) = std::env::current_exe()
@@ -93,6 +107,8 @@ fn portable_data_dir() -> Option<PathBuf> {
 /// True only if we can actually create and write a file in `dir` — Program Files
 /// and other system locations can reject writes even when the dir appears to
 /// exist, so a real write probe is the reliable test.
+/// (macOS always uses the per-user dir, so the probe is Windows/Linux only.)
+#[cfg(not(target_os = "macos"))]
 fn dir_is_writable(dir: &Path) -> bool {
     let probe = dir.join(format!(".write_probe_{}", std::process::id()));
     match fs::write(&probe, b"") {
@@ -130,10 +146,31 @@ fn resolve_data_dir() -> PathBuf {
     dir
 }
 
-/// macOS / Linux: keep the original behaviour — portable-first when the exe
-/// dir is writable, otherwise the per-user OS config dir (AppData-style), with
-/// a temp dir as the last resort.
-#[cfg(not(target_os = "windows"))]
+/// macOS: always the per-user OS config dir (`~/Library/Application
+/// Support/dev.rudder.rudder`). The app bundle lives in a shared, usually
+/// read-only location, so no `config/` folder is ever created beside the
+/// executable — matching the user's preference to keep all data under the
+/// official macOS location. A one-time migration pulls data from a previous
+/// portable (exe-adjacent) config if the per-user dir is still empty.
+#[cfg(target_os = "macos")]
+fn resolve_data_dir() -> PathBuf {
+    let dir = legacy_data_dir().unwrap_or_else(|| std::env::temp_dir().join("rudder"));
+    let _ = fs::create_dir_all(&dir);
+
+    if let Some(portable) = portable_data_dir()
+        && portable != dir
+        && portable.exists()
+        && !dir.join("sessions.json").exists()
+    {
+        migrate_legacy(&portable, &dir);
+    }
+    dir
+}
+
+/// Linux: keep the original behaviour — portable-first when the exe dir is
+/// writable, otherwise the per-user OS config dir (AppData-style), with a temp
+/// dir as the last resort.
+#[cfg(target_os = "linux")]
 fn resolve_data_dir() -> PathBuf {
     let legacy = legacy_data_dir();
 
