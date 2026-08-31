@@ -296,6 +296,15 @@ pub(crate) struct AppContext {
     /// shared so on_connect_session can pass a sensible initial PTY size to
     /// spawn_session before the first resize callback fires.
     pub(crate) last_term_size: Arc<Mutex<(u32, u32)>>,
+    /// Startup window-size tracking: the native window's preferred size is
+    /// applied while it is created; those Resized events must not overwrite the
+    /// persisted size before restoration (#278).
+    pub(crate) window_size_tracking_ready: Rc<Cell<bool>>,
+    pub(crate) pending_window_size_restore: Rc<Cell<Option<(f32, f32)>>>,
+    /// Per-tab connection status + remote resources (#23).
+    pub(crate) tab_statuses: TabStatuses,
+    /// Display-name overrides for open session tabs (Rename): tab-id → override.
+    pub(crate) tab_titles: Rc<RefCell<HashMap<String, String>>>,
 }
 
 impl AppContext {
@@ -313,6 +322,10 @@ impl AppContext {
         let bufs: TermBuffers = Arc::new(Mutex::new(HashMap::new()));
         let render_gates: RenderGates = Arc::new(Mutex::new(HashMap::new()));
         let last_term_size: Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((80, 24)));
+        let window_size_tracking_ready = Rc::new(Cell::new(false));
+        let pending_window_size_restore = Rc::new(Cell::new(None::<(f32, f32)>));
+        let tab_statuses: TabStatuses = Arc::new(Mutex::new(HashMap::new()));
+        let tab_titles: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
 
         Ok(Self {
             runtime,
@@ -323,6 +336,10 @@ impl AppContext {
             bufs,
             render_gates,
             last_term_size,
+            window_size_tracking_ready,
+            pending_window_size_restore,
+            tab_statuses,
+            tab_titles,
         })
     }
 }
@@ -360,6 +377,10 @@ pub fn run() -> Result<()> {
     let bufs = ctx.bufs.clone();
     let render_gates = ctx.render_gates.clone();
     let last_term_size = ctx.last_term_size.clone();
+    let window_size_tracking_ready = ctx.window_size_tracking_ready.clone();
+    let pending_window_size_restore = ctx.pending_window_size_restore.clone();
+    let tab_statuses = ctx.tab_statuses.clone();
+    let tab_titles = ctx.tab_titles.clone();
 
     // --- Build window + models ------------------------------------------
     // Set the Wayland app_id / X11 WM_CLASS *before* the window is created so
@@ -371,9 +392,6 @@ pub fn run() -> Result<()> {
     // Slint applies preferred-width/height while the native window is being
     // created. Do not treat those startup Resized events as user adjustments;
     // otherwise they overwrite the persisted size before restoration (#278).
-    let window_size_tracking_ready = Rc::new(Cell::new(false));
-    let pending_window_size_restore = Rc::new(Cell::new(None::<(f32, f32)>));
-
     // Show the crate version (from Cargo.toml at compile time) in the sidebar,
     // so the footer never drifts out of sync with the actual build.
     window.set_app_version(env!("CARGO_PKG_VERSION").into());
@@ -1612,9 +1630,8 @@ pub fn run() -> Result<()> {
         });
     }
 
-    // Per-tab connection status + remote resources, the latest local sample,
-    // and the local machine's network history (bottom sparkline).
-    let tab_statuses: TabStatuses = Arc::new(Mutex::new(HashMap::new()));
+    // The latest local sample + the local machine's network history (bottom
+    // sparkline); the per-tab `tab_statuses` now lives in AppContext.
     let local_snap: LocalSnap = Arc::new(Mutex::new(SystemSnapshot::default()));
     let local_net_hist: NetHist = Arc::new(Mutex::new(vec![0.0; NET_HISTORY_LEN]));
 
@@ -1700,10 +1717,6 @@ pub fn run() -> Result<()> {
     }
 
     // --- Wire callbacks --------------------------------------------------
-    // Display-name overrides for open session tabs (Rename in the tab context
-    // menu): tab-id → override. Consulted when a tab's title is (re)built;
-    // removed when the tab closes.
-    let tab_titles: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
     wire_session_callbacks(SessionWireCtx {
         window: &window,
         store: store.clone(),
