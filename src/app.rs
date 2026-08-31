@@ -274,6 +274,59 @@ pub(crate) enum WinActivity {
     Background, // visible but unfocused → throttled
     Hidden,     // minimized / occluded → paused
 }
+/// App-wide shared state roots, created once at startup and threaded through
+/// `run()` (and eventually the wire-* callbacks).  Centralising the roots here
+/// gives them a home instead of ~40 scattered locals in `run()` (refactor
+/// plan stage C, step 1: create + initialise in one constructor).
+pub(crate) struct AppContext {
+    pub(crate) runtime: Arc<Runtime>,
+    pub(crate) store: Rc<RefCell<ConfigStore>>,
+    /// Per-tab SSH handles (shell only; lives on Slint thread via Rc).
+    pub(crate) handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
+    /// Per-tab SFTP handles — Arc<Mutex> so the event-pump OS thread and the
+    /// Slint UI thread can both post SftpCommands.
+    pub(crate) sftp_handles: SftpHandles,
+    /// Per-tab cwd the SFTP panel last followed (see SftpLastCwd).
+    pub(crate) sftp_last_cwd: SftpLastCwd,
+    /// Per-tab vt100 parsers + history logs (Arc<Mutex> so they can be cloned
+    /// into the thread that pumps session events into invoke_from_event_loop).
+    pub(crate) bufs: TermBuffers,
+    pub(crate) render_gates: RenderGates,
+    /// Last-known terminal pixel dimensions (80×24 SSH minimum default),
+    /// shared so on_connect_session can pass a sensible initial PTY size to
+    /// spawn_session before the first resize callback fires.
+    pub(crate) last_term_size: Arc<Mutex<(u32, u32)>>,
+}
+
+impl AppContext {
+    pub(crate) fn new(config: ConfigStore) -> anyhow::Result<Self> {
+        let runtime = Arc::new(Runtime::new().context("failed to start tokio runtime")?);
+        let store = Rc::new(RefCell::new(config));
+        // Reachable from the Slint-thread event handler for recording terminal
+        // commands into history (#113).
+        HISTORY_STORE.with(|s| *s.borrow_mut() = Some(store.clone()));
+
+        let handles: Rc<RefCell<HashMap<String, SessionHandle>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+        let sftp_handles: SftpHandles = Arc::new(Mutex::new(HashMap::new()));
+        let sftp_last_cwd: SftpLastCwd = Arc::new(Mutex::new(HashMap::new()));
+        let bufs: TermBuffers = Arc::new(Mutex::new(HashMap::new()));
+        let render_gates: RenderGates = Arc::new(Mutex::new(HashMap::new()));
+        let last_term_size: Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((80, 24)));
+
+        Ok(Self {
+            runtime,
+            store,
+            handles,
+            sftp_handles,
+            sftp_last_cwd,
+            bufs,
+            render_gates,
+            last_term_size,
+        })
+    }
+}
+
 pub fn run() -> Result<()> {
     // Load the renderer preference before creating any Slint window. Reuse the
     // same store for the rest of the app so startup does not read the config
@@ -295,32 +348,18 @@ pub fn run() -> Result<()> {
     setup_macos_platform(config.renderer_mode());
 
     // --- Runtime + store -------------------------------------------------
-    let runtime = Arc::new(Runtime::new().context("failed to start tokio runtime")?);
-    let store = Rc::new(RefCell::new(config));
-    // Reachable from the Slint-thread event handler for recording terminal
-    // commands into history (#113).
-    HISTORY_STORE.with(|s| *s.borrow_mut() = Some(store.clone()));
-
-    // Per-tab SSH handles (shell only; lives on Slint thread via Rc).
-    let handles: Rc<RefCell<HashMap<String, SessionHandle>>> =
-        Rc::new(RefCell::new(HashMap::new()));
-
-    // Per-tab SFTP handles — Arc<Mutex> so the event-pump OS thread and the
-    // Slint UI thread can both post SftpCommands.
-    let sftp_handles: SftpHandles = Arc::new(Mutex::new(HashMap::new()));
-    // Per-tab cwd the SFTP panel last followed (see SftpLastCwd).
-    let sftp_last_cwd: SftpLastCwd = Arc::new(Mutex::new(HashMap::new()));
-
-    // Per-tab vt100 parsers + history logs (Arc<Mutex> so they can be cloned
-    // into the thread that pumps session events into invoke_from_event_loop).
-    let bufs: TermBuffers = Arc::new(Mutex::new(HashMap::new()));
-    let render_gates: RenderGates = Arc::new(Mutex::new(HashMap::new()));
-
-    // Last-known terminal pixel dimensions, updated by every terminal-resize
-    // callback.  Shared so on_connect_session can pass a sensible initial PTY
-    // size to spawn_session before the first resize callback fires.
-    // Default: 80 cols × 24 rows (SSH spec minimum).
-    let last_term_size: Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((80, 24)));
+    // Stage C: the roots are built by AppContext::new and re-exported as
+    // locals here so the rest of run() (and its closures) keep their names;
+    // a later step can thread `ctx` directly.
+    let ctx = AppContext::new(config)?;
+    let runtime = ctx.runtime.clone();
+    let store = ctx.store.clone();
+    let handles = ctx.handles.clone();
+    let sftp_handles = ctx.sftp_handles.clone();
+    let sftp_last_cwd = ctx.sftp_last_cwd.clone();
+    let bufs = ctx.bufs.clone();
+    let render_gates = ctx.render_gates.clone();
+    let last_term_size = ctx.last_term_size.clone();
 
     // --- Build window + models ------------------------------------------
     // Set the Wayland app_id / X11 WM_CLASS *before* the window is created so
