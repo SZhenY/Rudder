@@ -5662,6 +5662,32 @@ mod key_tests {
         // Port out of u16 range → None.
         assert!(parse_tunnel_forward("local", "x", "h", "65536", "h", "2").is_none());
     }
+
+    #[test]
+    fn tab_title_len_counts_wide_chars_as_two() {
+        assert_eq!(tab_title_len(""), 0);
+        assert_eq!(tab_title_len("abc"), 3);
+        assert_eq!(tab_title_len("中文"), 4);
+        assert_eq!(tab_title_len("a中文b"), 1 + 4 + 1);
+    }
+
+    #[test]
+    fn is_special_partition_filters_pseudo_fs() {
+        assert!(is_special_partition("/proc"));
+        assert!(is_special_partition("/proc/cpuinfo"));
+        assert!(is_special_partition("/sys"));
+        assert!(is_special_partition("/dev/sda1"));
+        assert!(is_special_partition("/run"));
+        assert!(is_special_partition("/tmp"));
+        assert!(is_special_partition("/snap/core20/1234"));
+        assert!(is_special_partition("/var/snap/foo"));
+        assert!(is_special_partition("/boot/efi"));
+        // Real user mounts stay visible.
+        assert!(!is_special_partition("/"));
+        assert!(!is_special_partition("/home"));
+        assert!(!is_special_partition("/mnt/data"));
+        assert!(!is_special_partition("/Users/zheny"));
+    }
 }
 
 #[cfg(test)]
