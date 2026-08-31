@@ -124,16 +124,5 @@ pub fn format_mem(used_mib: u64, total_mib: u64) -> String {
 
 /// Human-readable network throughput (e.g. `"1.2 MB/s"`).
 pub fn format_bytes_per_sec(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["B/s", "KB/s", "MB/s", "GB/s"];
-    let mut value = bytes as f64;
-    let mut idx = 0;
-    while value >= 1024.0 && idx < UNITS.len() - 1 {
-        value /= 1024.0;
-        idx += 1;
-    }
-    if idx == 0 {
-        format!("{} {}", bytes, UNITS[idx])
-    } else {
-        format!("{:.1} {}", value, UNITS[idx])
-    }
+    crate::ssh::format_bytes_units(bytes, &["B/s", "KB/s", "MB/s", "GB/s"])
 }

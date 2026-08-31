@@ -219,22 +219,27 @@ pub(crate) fn key_to_pty_bytes(key: &str, ctrl: bool, alt: bool, app_cursor: boo
         return Vec::new();
     }
 
-    if let Some(character) = key.chars().next() {
+    // Single-char fast path: most key events carry exactly one character.
+    let mut chars = key.chars();
+    let character = chars.next();
+    let single = character.is_some() && chars.next().is_none();
+
+    if let Some(character) = character {
         let codepoint = character as u32;
-        if key.chars().count() == 1 && !ctrl && (0x10..=0x18).contains(&codepoint) {
+        if single && !ctrl && (0x10..=0x18).contains(&codepoint) {
             return Vec::new();
         }
     }
 
     if ctrl {
-        if let Some(character) = key.chars().next() {
+        if let Some(character) = character {
             let codepoint = character as u32;
-            if key.chars().count() == 1 && (0x01..=0x1f).contains(&codepoint) {
+            if single && (0x01..=0x1f).contains(&codepoint) {
                 return vec![codepoint as u8];
             }
         }
-        if let Some(character) = key.chars().next()
-            && key.chars().count() == 1
+        if let Some(character) = character
+            && single
         {
             let upper = character.to_ascii_uppercase() as u8;
             let control = match upper {

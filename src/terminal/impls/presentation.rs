@@ -173,6 +173,76 @@ pub(crate) fn text_cell_width(text: &str) -> i32 {
 }
 
 /// Return `(byte_start, byte_end, xterm_256_index)` for a log severity marker.
+/// Shared marker scanner used by both the log-level and devops presets:
+/// 1) scans for uppercase keywords (e.g. `ERROR`, `SUCCEEDED`), then
+/// 2) falls back to structured `key=value` values in lowercase (`level=error`,
+///    `"status": "ok"`). Only values after a real key are accepted, keeping
+///    normal lowercase prose untouched.
+fn find_marker(
+    text: &str,
+    max_chars: usize,
+    words: &[(&str, u8)],
+    keys: &[&str],
+) -> Option<(usize, usize, u8)> {
+    let bytes = text.as_bytes();
+    let mut best: Option<(usize, usize, u8)> = None;
+    for (word, colour) in words {
+        for (start, _) in text.match_indices(word) {
+            if text[..start].chars().count() >= max_chars
+                || !ascii_word_boundary(bytes, start, start + word.len())
+            {
+                continue;
+            }
+            let candidate = (start, start + word.len(), *colour);
+            if best.is_none_or(|current| start < current.0) {
+                best = Some(candidate);
+            }
+            break;
+        }
+    }
+    if best.is_some() {
+        return best;
+    }
+
+    let lower = text.to_ascii_lowercase();
+    let lower_bytes = lower.as_bytes();
+    for key in keys {
+        for (key_start, _) in lower.match_indices(key) {
+            if text[..key_start].chars().count() >= max_chars
+                || !ascii_word_boundary(lower_bytes, key_start, key_start + key.len())
+            {
+                continue;
+            }
+            let mut pos = key_start + key.len();
+            if lower_bytes.get(pos) == Some(&b'"') {
+                pos += 1;
+            }
+            while lower_bytes.get(pos).is_some_and(u8::is_ascii_whitespace) {
+                pos += 1;
+            }
+            if !matches!(lower_bytes.get(pos).copied(), Some(b'=') | Some(b':')) {
+                continue;
+            }
+            pos += 1;
+            while lower_bytes.get(pos).is_some_and(u8::is_ascii_whitespace) {
+                pos += 1;
+            }
+            if matches!(lower_bytes.get(pos).copied(), Some(b'"') | Some(b'\'')) {
+                pos += 1;
+            }
+            for (word, colour) in words {
+                let word = word.to_ascii_lowercase();
+                if lower[pos..].starts_with(&word)
+                    && ascii_word_boundary(lower_bytes, pos, pos + word.len())
+                {
+                    return Some((pos, pos + word.len(), *colour));
+                }
+            }
+        }
+    }
+    None
+}
+
 pub(crate) fn log_level_marker(text: &str, max_chars: usize) -> Option<(usize, usize, u8)> {
     const LEVELS: [(&str, u8); 10] = [
         ("CRITICAL", 9),
@@ -186,65 +256,7 @@ pub(crate) fn log_level_marker(text: &str, max_chars: usize) -> Option<(usize, u
         ("INFO", 14),
         ("WARN", 11),
     ];
-
-    let bytes = text.as_bytes();
-    let mut best: Option<(usize, usize, u8)> = None;
-    for (word, colour) in LEVELS {
-        for (start, _) in text.match_indices(word) {
-            if text[..start].chars().count() >= max_chars
-                || !ascii_word_boundary(bytes, start, start + word.len())
-            {
-                continue;
-            }
-            let candidate = (start, start + word.len(), colour);
-            if best.is_none_or(|current| start < current.0) {
-                best = Some(candidate);
-            }
-            break;
-        }
-    }
-    if best.is_some() {
-        return best;
-    }
-
-    // Structured logging commonly emits `level=error`, `level: warn`, or
-    // `{"level":"info"}` using lowercase values. Only accept those values
-    // after a real `level` key, keeping normal lowercase prose untouched.
-    let lower = text.to_ascii_lowercase();
-    let lower_bytes = lower.as_bytes();
-    for (key_start, _) in lower.match_indices("level") {
-        if text[..key_start].chars().count() >= max_chars
-            || !ascii_word_boundary(lower_bytes, key_start, key_start + 5)
-        {
-            continue;
-        }
-        let mut pos = key_start + 5;
-        if lower_bytes.get(pos) == Some(&b'"') {
-            pos += 1;
-        }
-        while lower_bytes.get(pos).is_some_and(u8::is_ascii_whitespace) {
-            pos += 1;
-        }
-        if !matches!(lower_bytes.get(pos).copied(), Some(b'=') | Some(b':')) {
-            continue;
-        }
-        pos += 1;
-        while lower_bytes.get(pos).is_some_and(u8::is_ascii_whitespace) {
-            pos += 1;
-        }
-        if matches!(lower_bytes.get(pos).copied(), Some(b'"') | Some(b'\'')) {
-            pos += 1;
-        }
-        for (word, colour) in LEVELS {
-            let word = word.to_ascii_lowercase();
-            if lower[pos..].starts_with(&word)
-                && ascii_word_boundary(lower_bytes, pos, pos + word.len())
-            {
-                return Some((pos, pos + word.len(), colour));
-            }
-        }
-    }
-    None
+    find_marker(text, max_chars, &LEVELS, &["level"])
 }
 
 fn output_highlight_marker(
@@ -284,64 +296,7 @@ fn devops_marker(text: &str, max_chars: usize) -> Option<(usize, usize, u8)> {
         ("RETRY", 11),
         ("FAIL", 9),
     ];
-
-    let bytes = text.as_bytes();
-    let mut best: Option<(usize, usize, u8)> = None;
-    for (word, colour) in STATES {
-        for (start, _) in text.match_indices(word) {
-            if text[..start].chars().count() >= max_chars
-                || !ascii_word_boundary(bytes, start, start + word.len())
-            {
-                continue;
-            }
-            let candidate = (start, start + word.len(), colour);
-            if best.is_none_or(|current| start < current.0) {
-                best = Some(candidate);
-            }
-            break;
-        }
-    }
-    if best.is_some() {
-        return best;
-    }
-
-    let lower = text.to_ascii_lowercase();
-    let lower_bytes = lower.as_bytes();
-    for key in ["status", "state", "result"] {
-        for (key_start, _) in lower.match_indices(key) {
-            if text[..key_start].chars().count() >= max_chars
-                || !ascii_word_boundary(lower_bytes, key_start, key_start + key.len())
-            {
-                continue;
-            }
-            let mut pos = key_start + key.len();
-            if lower_bytes.get(pos) == Some(&b'"') {
-                pos += 1;
-            }
-            while lower_bytes.get(pos).is_some_and(u8::is_ascii_whitespace) {
-                pos += 1;
-            }
-            if !matches!(lower_bytes.get(pos).copied(), Some(b'=') | Some(b':')) {
-                continue;
-            }
-            pos += 1;
-            while lower_bytes.get(pos).is_some_and(u8::is_ascii_whitespace) {
-                pos += 1;
-            }
-            if matches!(lower_bytes.get(pos).copied(), Some(b'"') | Some(b'\'')) {
-                pos += 1;
-            }
-            for (word, colour) in STATES {
-                let word = word.to_ascii_lowercase();
-                if lower[pos..].starts_with(&word)
-                    && ascii_word_boundary(lower_bytes, pos, pos + word.len())
-                {
-                    return Some((pos, pos + word.len(), colour));
-                }
-            }
-        }
-    }
-    None
+    find_marker(text, max_chars, &STATES, &["status", "state", "result"])
 }
 
 fn ascii_word_boundary(bytes: &[u8], start: usize, end: usize) -> bool {

@@ -149,23 +149,28 @@ pub(crate) fn load_session_private_key(session: &Session, pass: &str) -> Result<
         .with_context(|| format!("failed to load key {key_path}"))
 }
 
-/// Format a byte count as a human-readable string.
-pub fn format_size(bytes: u64) -> String {
-    const UNIT: f64 = 1024.0;
-    const UNITS: [&str; 7] = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
+/// Format a byte count with the given 1024-based unit suffixes. The first
+/// unit is rendered as an integer; ≥TB sizes (when more than 4 units exist)
+/// get two decimals, everything else one.
+pub(crate) fn format_bytes_units(bytes: u64, units: &[&str]) -> String {
     let mut value = bytes as f64;
     let mut idx = 0;
-    while value >= UNIT && idx < UNITS.len() - 1 {
-        value /= UNIT;
+    while value >= 1024.0 && idx < units.len() - 1 {
+        value /= 1024.0;
         idx += 1;
     }
     if idx == 0 {
-        format!("{} {}", bytes, UNITS[0])
-    } else if idx >= 4 {
-        format!("{:.2} {}", value, UNITS[idx])
+        format!("{} {}", bytes, units[0])
+    } else if units.len() > 4 && idx >= 4 {
+        format!("{:.2} {}", value, units[idx])
     } else {
-        format!("{:.1} {}", value, UNITS[idx])
+        format!("{:.1} {}", value, units[idx])
     }
+}
+
+/// Format a byte count as a human-readable string.
+pub fn format_size(bytes: u64) -> String {
+    format_bytes_units(bytes, &["B", "KB", "MB", "GB", "TB", "PB", "EB"])
 }
 
 #[cfg(test)]
