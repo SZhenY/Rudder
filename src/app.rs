@@ -694,7 +694,12 @@ pub fn run() -> Result<()> {
     // <exe_dir>/config/fonts; macOS/Linux: per-user config dir) are registered
     // with Slint's shared collection and become selectable below — large CJK
     // families like Maple Mono no longer need to be embedded at build time.
-    let external_fonts = crate::fonts::load_external_fonts(&crate::fonts::external_fonts_dir());
+    let fonts_dirs = crate::fonts::external_fonts_dirs();
+    tracing::info!(
+        "external fonts dirs: {}",
+        fonts_dirs.iter().map(|d| d.display().to_string()).collect::<Vec<_>>().join(", ")
+    );
+    let external_fonts = crate::fonts::load_external_fonts(&fonts_dirs);
     // Populate the Interface font picker: embedded first, external next,
     // system monospace families last, each labelled with its source.
     let (font_labels, font_entries) = font_choices(&external_fonts, true);

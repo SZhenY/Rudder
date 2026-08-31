@@ -38,6 +38,23 @@ pub(crate) fn external_fonts_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("fonts"))
 }
 
+/// All directories scanned for external fonts. The primary dir (per-user
+/// config on macOS/Linux, exe-adjacent on Windows) is auto-created at startup;
+/// the macOS app-adjacent `<exe>/config/fonts` is *read-only* fallback —
+/// `/Applications` is typically not writable, so it is scanned only if the
+/// user created it by hand. Deduplicated so overlapping fonts load once.
+pub(crate) fn external_fonts_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![external_fonts_dir()];
+    #[cfg(target_os = "macos")]
+    if let Ok(exe) = std::env::current_exe() {
+        let adjacent = exe.join("config").join("fonts");
+        if adjacent != dirs[0] && !dirs.contains(&adjacent) {
+            dirs.push(adjacent);
+        }
+    }
+    dirs
+}
+
 /// Font extensions accepted from the fonts dir: `.ttf` / `.otf` and the
 /// collection formats `.ttc` / `.otc` (a single file holding several faces).
 /// Case-insensitive; sorted for deterministic order.
@@ -116,10 +133,15 @@ pub(crate) fn system_families() -> Vec<String> {
 ///
 /// Must run after the Slint platform is initialized (`AppWindow::new`), since
 /// `shared_collection()` requires the global font context.
-pub(crate) fn load_external_fonts(fonts_dir: &Path) -> Vec<String> {
-    let _ = std::fs::create_dir_all(fonts_dir);
+pub(crate) fn load_external_fonts(fonts_dirs: &[PathBuf]) -> Vec<String> {
     let mut families: Vec<String> = Vec::new();
-    for path in scan_font_files(fonts_dir) {
+    for (i, fonts_dir) in fonts_dirs.iter().enumerate() {
+        // Auto-create only the primary dir; read-only fallbacks (app-adjacent
+        // on macOS) are scanned as-is so a failure here never breaks startup.
+        if i == 0 {
+            let _ = std::fs::create_dir_all(fonts_dir);
+        }
+        for path in scan_font_files(fonts_dir) {
         let Ok(bytes) = std::fs::read(&path) else {
             continue;
         };
@@ -130,6 +152,7 @@ pub(crate) fn load_external_fonts(fonts_dir: &Path) -> Vec<String> {
             if let Some(name) = collection.family_name(family_id) {
                 families.push(name.to_string());
             }
+        }
         }
     }
     families.sort();
@@ -195,3 +218,4 @@ mod tests {
         );
     }
 }
+
