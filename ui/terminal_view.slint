@@ -321,7 +321,7 @@ export component TerminalView inherits Rectangle {
     // fed from Rust); send-to-all is a per-tab toggle.
     in property <[QuickCmd]> quick-commands;
     in property <[string]> command-history;   // oldest first (newest last, #113)
-    in property <[string]> history-view;       // filtered dropdown, newest first (#101, #331)
+    in property <[string]> history-view;       // filtered dropdown, oldest first (newest last, #101)
     property <bool> send-to-all: false;
     // Effective terminal font size in px: per-session zoom override when > 0,
     // else the window/global size (Theme.term-font-size).
@@ -537,7 +537,9 @@ export component TerminalView inherits Rectangle {
     changed history-open => {
         if (root.history-open) {
             if (!root.history-autocomplete) { root.search-history(""); }
-            root.history-selected = 0;
+            // List is oldest→newest (#101): default-select the newest entry.
+            root.history-selected = root.history-view.length > 0
+                ? root.history-view.length - 1 : 0;
         } else {
             root.history-autocomplete = false;
         }

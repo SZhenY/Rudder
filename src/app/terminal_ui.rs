@@ -75,9 +75,10 @@ pub(super) fn validate_output_highlight_rule(
 
 pub(super) fn history_view_rows(history: &[String], query: &str) -> Vec<SharedString> {
     let q = query.trim().to_lowercase();
+    // Oldest first, newest at the bottom — same storage order as ↑/↓ recall
+    // (#55, #101). Upstream 0.7.1 reverted the #331 newest-first flip.
     history
         .iter()
-        .rev()
         .filter(|command| q.is_empty() || command.to_lowercase().contains(&q))
         .map(|command| command.clone().into())
         .collect()

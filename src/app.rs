@@ -3859,7 +3859,7 @@ mod history_view_tests {
     use super::history_view_rows;
 
     #[test]
-    fn lists_and_filters_commands_newest_first() {
+    fn lists_and_filters_commands_newest_last() {
         let history = vec![
             "git status".to_string(),
             "cargo check".to_string(),
@@ -3870,13 +3870,13 @@ mod history_view_tests {
             .into_iter()
             .map(Into::into)
             .collect();
-        assert_eq!(all, ["git log", "cargo check", "git status"]);
+        assert_eq!(all, ["git status", "cargo check", "git log"]);
 
         let filtered: Vec<String> = history_view_rows(&history, "GIT")
             .into_iter()
             .map(Into::into)
             .collect();
-        assert_eq!(filtered, ["git log", "git status"]);
+        assert_eq!(filtered, ["git status", "git log"]);
     }
 }
 
