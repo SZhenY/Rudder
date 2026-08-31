@@ -18,8 +18,6 @@ use crate::terminal::{
     encode_pasted_text, key_to_pty_bytes, paste_requires_large_review,
     should_drop_bare_ctrl_marker, terminal_uses_bracketed_paste,
 };
-#[cfg(any(target_os = "windows", test))]
-use crate::terminal::{CtrlKeySide, windows_process_ctrl_release};
 #[cfg(windows)]
 use crate::terminal::c0_letter_key_down;
 use crate::ui::{AppWindow, TermMatch, TermSpan};
@@ -488,14 +486,7 @@ pub(crate) fn wire_key_input(
                     {
                         if let Some(h) = term_buf(&ctx.bufs, tab_id.as_str()) {
                             let mut b = h.lock().unwrap_or_else(|e| e.into_inner());
-                            let (rows, cols) = crate::terminal::term_size(&b.term);
-                            (b.term, b.processor) = crate::terminal::new_term(rows, cols, ctx.store.borrow().scrollback_lines());
-                            b.rendered.clear();
-                            b.prev.clear();
-                            b.displayed_text.clear();
-                            b.view_offset = 0;
-                            b.term.selection = None;
-                            b.raw.clear();
+                            b.reset(ctx.store.borrow().scrollback_lines());
                         }
                     }
                     if let Some(st) =
@@ -951,16 +942,8 @@ pub(crate) fn wire_key_input(
             let tid = tab_id.to_string();
             if let Some(h) = term_buf(&bufs_clear, &tid) {
                 let mut buf = h.lock().unwrap_or_else(|e| e.into_inner());
-                let (rows, cols) = crate::terminal::term_size(&buf.term);
-                (buf.term, buf.processor) =
-                    crate::terminal::new_term(rows, cols, store_clear.borrow().scrollback_lines());
-                buf.rendered.clear();
+                buf.reset(store_clear.borrow().scrollback_lines());
                 buf.find_query.clear();
-                buf.prev = Vec::new();
-                buf.view_offset = 0;
-                buf.term.selection = None;
-                buf.displayed_text = Vec::new();
-                buf.raw.clear();
             }
             if let Some(win) = weak.upgrade() {
                 set_terminal_row(&win, &tid, |row| {

@@ -25,7 +25,9 @@ pub(crate) fn compile_output_rules(rules: &[OutputHighlightRule]) -> Vec<Compile
         .collect()
 }
 
-fn highlight_color_index(color: &str) -> u8 {
+/// Map a user-facing colour name to its 256-colour index; unknown names
+/// default to bright red (9).
+pub(crate) fn highlight_color_index(color: &str) -> u8 {
     match color {
         "yellow" => 11,
         "green" => 10,

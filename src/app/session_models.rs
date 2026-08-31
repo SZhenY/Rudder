@@ -65,7 +65,7 @@ pub(super) fn parse_batch_import(text: &str) -> Vec<Session> {
 
 pub(crate) fn session_groups_model(store: &ConfigStore) -> ModelRc<SharedString> {
     let sessions = store.sessions();
-    let mut named: Vec<String> = store
+    let named: Vec<String> = store
         .groups()
         .iter()
         .cloned()
@@ -76,8 +76,7 @@ pub(crate) fn session_groups_model(store: &ConfigStore) -> ModelRc<SharedString>
                 .map(|s| s.group.clone()),
         )
         .collect();
-    named.sort_by_key(|g| g.to_lowercase());
-    named.dedup();
+    let named = crate::config::dedup_sorted(named);
     ModelRc::from(Rc::new(VecModel::from(
         named
             .into_iter()
@@ -168,7 +167,7 @@ fn build_session_rows(
         (session.group.is_empty() || is_reserved_session_group(session.group.trim()))
             && matches(session)
     });
-    let mut named: Vec<String> = if searching {
+    let named: Vec<String> = if searching {
         sessions
             .iter()
             .filter(|session| {
@@ -194,8 +193,7 @@ fn build_session_rows(
             )
             .collect()
     };
-    named.sort_by_key(|g| g.to_lowercase());
-    named.dedup();
+    let named = crate::config::dedup_sorted(named);
 
     let mut display_groups: Vec<String> = Vec::new();
     if has_default {

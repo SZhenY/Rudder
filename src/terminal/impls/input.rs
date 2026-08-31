@@ -61,7 +61,7 @@ pub(crate) fn encode_command_bar_input(command: &str) -> Option<(String, Vec<u8>
     if command.is_empty() {
         return None;
     }
-    let mut bytes = command.clone().into_bytes();
+    let mut bytes = command.as_bytes().to_vec();
     bytes.push(b'\n');
     Some((command, bytes))
 }
@@ -143,10 +143,9 @@ pub(crate) fn should_drop_bare_ctrl_marker(key: &str, ctrl: bool, workaround: bo
     if !workaround || !ctrl {
         return false;
     }
-    let marker = key.chars().collect::<Vec<_>>();
     // Slint/winit on Linux (Debian, Fedora, …) and macOS emits these bare Ctrl
     // modifier markers before the actual Ctrl+letter event (#274, #369).
-    if marker.as_slice() == ['\u{0011}'] || marker.as_slice() == ['\u{0016}'] {
+    if key == "\u{0011}" || key == "\u{0016}" {
         return true;
     }
     // macOS IME combinations may report bare physical Control as other C0
@@ -155,7 +154,7 @@ pub(crate) fn should_drop_bare_ctrl_marker(key: &str, ctrl: bool, workaround: bo
     // Ctrl+Space input-method switching (#348). Genuine chords still arrive
     // through the final printable letter, so filtering these markers is safe.
     #[cfg(target_os = "macos")]
-    if marker.as_slice() == ['\u{0017}'] || marker.as_slice() == ['\u{0008}'] {
+    if key == "\u{0017}" || key == "\u{0008}" {
         return true;
     }
     false

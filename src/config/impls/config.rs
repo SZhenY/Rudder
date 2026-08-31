@@ -1016,6 +1016,14 @@ fn dedup_keep_last(items: &mut Vec<String>) {
 
 /// Display-only session groups that must never be persisted as user folders.
 /// `default` maps to an empty group; `system` is owned by built-in local shells.
+/// Case-insensitively sort a list of names and drop duplicates (used for
+/// session groups / quick-command groups in three modules).
+pub(crate) fn dedup_sorted(mut names: Vec<String>) -> Vec<String> {
+    names.sort_by_key(|g| g.to_lowercase());
+    names.dedup();
+    names
+}
+
 pub(crate) fn is_reserved_session_group(name: &str) -> bool {
     name.eq_ignore_ascii_case("default") || name.eq_ignore_ascii_case("system")
 }
@@ -1268,7 +1276,7 @@ impl ConfigStore {
         {
             display.push("default".to_string());
         }
-        let mut named: Vec<String> = self
+        let named: Vec<String> = self
             .cache
             .groups
             .iter()
@@ -1282,9 +1290,7 @@ impl ConfigStore {
                     .filter(|g| g != "default"),
             )
             .collect();
-        named.sort_by_key(|g| g.to_lowercase());
-        named.dedup();
-        display.extend(named);
+        display.extend(crate::config::dedup_sorted(named));
 
         let Some(pos) = display.iter().position(|g| g == &group) else {
             return false;

@@ -18,9 +18,10 @@ pub(super) fn output_highlight_rule_model(store: &ConfigStore) -> ModelRc<Output
             regex: rule.regex,
             case_sensitive: rule.case_sensitive,
             whole_line: rule.whole_line,
-            color: match rule.color.as_str() {
-                "yellow" | "green" | "cyan" | "magenta" | "gray" => rule.color.clone(),
-                _ => "red".to_string(),
+            color: if crate::terminal::highlight_color_index(&rule.color) != 9 {
+                rule.color.clone()
+            } else {
+                "red".to_string()
             }
             .into(),
             enabled: rule.enabled,

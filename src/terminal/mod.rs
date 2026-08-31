@@ -43,7 +43,7 @@ pub(crate) use input::{
 };
 pub(crate) use encoding::TerminalEncoding;
 pub(crate) use json_output::format_json_output;
-pub(crate) use output_highlight::compile_output_rules;
+pub(crate) use output_highlight::{compile_output_rules, highlight_color_index};
 pub(crate) use presentation::{highlight_plain_output, render_term_span};
 #[cfg(test)]
 pub(crate) use presentation::{log_level_marker, text_cell_width};

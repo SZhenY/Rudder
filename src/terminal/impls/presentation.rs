@@ -811,13 +811,7 @@ const ANSI16_LIGHT_BG: [(u8, u8, u8); 16] = [
 /// ≥ 0.55) are darkened so they remain readable on a near-white background.
 fn vt_color_to_slint(color: TermColor, bold: bool, is_dark: bool) -> slint::Color {
     let (r, g, b) = match color {
-        TermColor::Default => {
-            if is_dark {
-                (0xd4, 0xd4, 0xd4)
-            } else {
-                (0x2d, 0x2d, 0x2f)
-            }
-        }
+        TermColor::Default => vt_default_fg_rgb(is_dark),
         TermColor::Idx(i) => idx_to_rgb(i, bold, is_dark),
         TermColor::Rgb(r, g, b) => {
             if is_dark {

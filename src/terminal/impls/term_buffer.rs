@@ -34,6 +34,18 @@ const SCROLL_CACHE_MAX: usize = 4096;
 // Selection type used only in selection_rects_visible via term.selection
 
 impl TermBuffer {
+    /// Reset to a fresh screen: new parser + cleared caches/selection/raw.
+    pub(crate) fn reset(&mut self, scrollback_lines: usize) {
+        let (rows, cols) = term_size(&self.term);
+        (self.term, self.processor) = crate::terminal::new_term(rows, cols, scrollback_lines);
+        self.rendered.clear();
+        self.prev.clear();
+        self.displayed_text.clear();
+        self.view_offset = 0;
+        self.term.selection = None;
+        self.raw.clear();
+    }
+
     /// Selection highlight rectangles for the current visible window.
     pub(crate) fn selection_rects_visible(&self, cols: u16) -> Vec<TermMatch> {
         let sel = match self.term.selection {
@@ -137,9 +149,9 @@ impl TermBuffer {
             .then(|| crate::terminal::format_json_output(input));
         let input = formatted.as_deref().unwrap_or(input);
         let replies = self.detect_terminal_queries(input);
-        // Rewrite HVP (`ESC [ … f`) → CUP (`ESC [ … H`) so vt100 (which only
-        // implements `H`) honours btop/htop's absolute cursor positioning.
-        let bytes = self.rewrite_hvp(input);
+        // vte treats HVP (`ESC [ … f`) identically to CUP (`ESC [ … H`), so no
+        // rewrite is needed — pass the stream through as-is.
+        let bytes = input.to_vec();
         // Retain the (post-rewrite) stream, capped, so a resize can replay it at
         // the new width and reflow already-printed output (#169).
         self.raw.extend(bytes.iter().copied());
@@ -499,51 +511,11 @@ impl TermBuffer {
         self.rendered.clear();
     }
 
-    fn rewrite_hvp(&mut self, input: &[u8]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(input.len());
-        for &b in input {
-            match self.csi_state {
-                CsiState::Normal => {
-                    if b == 0x1b {
-                        self.csi_state = CsiState::Esc;
-                    }
-                    out.push(b);
-                }
-                CsiState::Esc => {
-                    if b == b'[' {
-                        self.csi_state = CsiState::Csi;
-                    } else {
-                        self.csi_state = if b == 0x1b {
-                            CsiState::Esc
-                        } else {
-                            CsiState::Normal
-                        };
-                    }
-                    out.push(b);
-                }
-                CsiState::Csi => {
-                    if (0x40..=0x7e).contains(&b) {
-                        out.push(if b == b'f' { b'H' } else { b });
-                        self.csi_state = CsiState::Normal;
-                    } else {
-                        out.push(b);
-                    }
-                }
-            }
-        }
-        out
-    }
-
-    /// Scrollback is read directly from alacritty's grid on demand.
-    fn ensure_history(&mut self) {
-        // no-op: alacritty maintains scrollback natively
-    }
 
     /// Render the terminal grid for the current scrollback `view_offset`
     /// (0 = live).  Row-level caching avoids rebuilding spans for unchanged
     /// lines — huge win for tail / idle screens.
     pub(crate) fn render(&mut self) -> BuiltScreen {
-        self.ensure_history();
         let (rows, cols) = term_size(&self.term);
         let (cur_row, cur_col) = cursor_pos(&self.term);
         let alt = is_alt(&self.term);

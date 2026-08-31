@@ -26,7 +26,7 @@ pub(super) fn quick_cmd_model(
 
     let has_default = cmds.iter().any(|c| c.group.trim().is_empty());
     // Named groups = explicit quick-groups ∪ groups referenced by commands.
-    let mut named: Vec<String> = store
+    let named: Vec<String> = store
         .quick_groups()
         .iter()
         .cloned()
@@ -36,8 +36,7 @@ pub(super) fn quick_cmd_model(
                 .filter(|g| !g.is_empty()),
         )
         .collect();
-    named.sort_by_key(|g| g.to_lowercase());
-    named.dedup();
+    let named = crate::config::dedup_sorted(named);
 
     let mut groups: Vec<String> = Vec::new();
     if has_default {
