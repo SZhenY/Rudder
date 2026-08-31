@@ -3995,6 +3995,36 @@ thread_local! {
 
 
 
+/// Parse a runtime tunnel forward from the SSH dialog fields (#206).
+/// Returns `None` for unknown kinds or unparseable ports — the caller then
+/// silently ignores the request (no feedback loop for a dialog-only input).
+fn parse_tunnel_forward(
+    kind: &str,
+    name: &str,
+    bind: &str,
+    bind_port: &str,
+    host: &str,
+    host_port: &str,
+) -> Option<crate::config::PortForward> {
+    if kind != "local" && kind != "dynamic" {
+        return None;
+    }
+    let bind_port = bind_port.trim().parse::<u16>().ok()?;
+    let host_port = if kind == "dynamic" {
+        0
+    } else {
+        host_port.trim().parse::<u16>().ok()?
+    };
+    Some(crate::config::PortForward {
+        kind: kind.to_string(),
+        name: name.trim().to_string(),
+        bind_addr: bind.trim().to_string(),
+        bind_port,
+        host: host.trim().to_string(),
+        host_port,
+    })
+}
+
 fn wire_key_input(
     window: &AppWindow,
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
@@ -4015,28 +4045,10 @@ fn wire_key_input(
                   bind_port: SharedString,
                   host: SharedString,
                   host_port: SharedString| {
-                let kind = kind.to_string();
-                if kind != "local" && kind != "dynamic" {
+                let Some(forward) = parse_tunnel_forward(
+                    &kind, &name, &bind, &bind_port, &host, &host_port,
+                ) else {
                     return;
-                }
-                let Ok(bind_port) = bind_port.trim().parse::<u16>() else {
-                    return;
-                };
-                let host_port = if kind == "dynamic" {
-                    0
-                } else {
-                    match host_port.trim().parse::<u16>() {
-                        Ok(p) => p,
-                        Err(_) => return,
-                    }
-                };
-                let forward = crate::config::PortForward {
-                    kind,
-                    name: name.trim().to_string(),
-                    bind_addr: bind.trim().to_string(),
-                    bind_port,
-                    host: host.trim().to_string(),
-                    host_port,
                 };
                 if let Some(handle) = handles_rc.borrow().get(tab_id.as_str()) {
                     handle.add_tunnel(format!("runtime-{}", uuid::Uuid::new_v4()), forward);
@@ -5618,6 +5630,37 @@ mod key_tests {
         assert!(mixed.contains("printable redacted"));
         // Multi-byte printable chars count individually.
         assert_eq!(redact_key("密码"), "<2 printable redacted>");
+    }
+
+    #[test]
+    fn parse_tunnel_forward_validates_fields() {
+        // Local forward: all fields parsed + trimmed.
+        let f = parse_tunnel_forward(
+            "local", "  web  ", " 127.0.0.1 ", "8080", "db.internal", "5432",
+        )
+        .unwrap();
+        assert_eq!(f.kind, "local");
+        assert_eq!(f.name, "web");
+        assert_eq!(f.bind_addr, "127.0.0.1");
+        assert_eq!(f.bind_port, 8080);
+        assert_eq!(f.host, "db.internal");
+        assert_eq!(f.host_port, 5432);
+
+        // Dynamic: host port is forced to 0 (SOCKS).
+        let d = parse_tunnel_forward(
+            "dynamic", "socks", "0.0.0.0", "1080", "", "ignored",
+        )
+        .unwrap();
+        assert_eq!(d.kind, "dynamic");
+        assert_eq!(d.host_port, 0);
+
+        // Unknown kind → None.
+        assert!(parse_tunnel_forward("remote", "x", "h", "1", "h", "2").is_none());
+        // Unparseable ports → None.
+        assert!(parse_tunnel_forward("local", "x", "h", "abc", "h", "2").is_none());
+        assert!(parse_tunnel_forward("local", "x", "h", "8080", "h", "x").is_none());
+        // Port out of u16 range → None.
+        assert!(parse_tunnel_forward("local", "x", "h", "65536", "h", "2").is_none());
     }
 }
 
