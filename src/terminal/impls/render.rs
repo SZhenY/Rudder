@@ -6,7 +6,6 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::terminal::{
     ATerm, CellAttr, HistSpan, Line as TermLine, OverlineRange, TermColor, attr_from_cell,
-    cell_attrs, is_wide_continuation, row_wrapped,
 };
 
 /// Small window of retained bytes for split-ESC[3J detection (no longer
@@ -150,17 +149,6 @@ fn span_slice(
 /// Skip blank cells between a tab cell and its tab stop, returning the next
 /// column to continue from.  Stops early if a non-blank cell is found (a
 /// program overwrote part of the gap).
-fn skip_tab_filler(term: &ATerm, row: u16, mut column: u16, stop: i32, columns: u16) -> u16 {
-    while column < columns && (column as i32) < stop {
-        let filler = cell_attrs(term, row, column);
-        if filler.contents != " " {
-            break;
-        }
-        column += 1;
-    }
-    column
-}
-
 pub(crate) fn cell_prefix(chars: &[char]) -> Vec<usize> {
     let mut prefix = Vec::with_capacity(chars.len() + 1);
     let mut accumulated = 0usize;
@@ -184,96 +172,9 @@ pub(crate) fn build_row(
     columns: u16,
     overlines: &[OverlineRange],
 ) -> TermLine {
-    // Fast path: skip rows that alacritty's occ tracking knows are empty.
-    // Most terminal screens are only partially filled, so this avoids
-    // scanning all `columns` cells for blank rows.
-    if term.grid()[Line(row as i32)].is_clear() {
-        return (String::new(), Vec::new(), false);
-    }
-
-    let mut plain = String::with_capacity(columns as usize);
-    let mut runs = Vec::new();
-    let mut column = 0u16;
-    while column < columns {
-        // Skip the spacer half of a wide char (its content lives in the
-        // leading cell).
-        if is_wide_continuation(term, row, column) {
-            column += 1;
-            continue;
-        }
-
-        let attr = cell_attrs(term, row, column);
-
-        // Tab cells: expand to spaces up to the next 8-column tab stop and
-        // skip the blank filler cells (see `tab_expansion`).
-        if attr.contents == "\t" {
-            let col_i = column as i32;
-            let (spaces, next_col) = tab_expansion(col_i);
-            let text = " ".repeat(spaces);
-            plain.push_str(&text);
-            let advance = skip_tab_filler(term, row, column + 1, next_col, columns);
-            let cells = next_col - col_i;
-            if !is_invisible_default_blank(&text, &attr) {
-                runs.extend(make_span(
-                    attr,
-                    text,
-                    column as i32,
-                    cells,
-                    term,
-                    row as i32,
-                    overlines,
-                ));
-            }
-            column = advance;
-            continue;
-        }
-
-        if attr.wide {
-            let text = attr.contents.clone();
-            plain.push_str(&text);
-            runs.extend(make_span(
-                attr,
-                text,
-                column as i32,
-                2,
-                term,
-                row as i32,
-                overlines,
-            ));
-            column += 2;
-            continue;
-        }
-
-        let start_column = column;
-        let mut text = attr.contents.clone();
-        plain.push_str(&attr.contents);
-        column += 1;
-        while column < columns {
-            let next = cell_attrs(term, row, column);
-            // Tab cells must end the run so the outer loop can expand them;
-            // otherwise the raw \t char would end up in the span text.
-            if next.wide || next.contents == "\t" || !same_style(&attr, &next) {
-                break;
-            }
-            plain.push_str(&next.contents);
-            text.push_str(&next.contents);
-            column += 1;
-        }
-
-        let cells = (column - start_column) as i32;
-        if !is_invisible_default_blank(&text, &attr) {
-            runs.extend(make_span(
-                attr,
-                text,
-                start_column as i32,
-                cells,
-                term,
-                row as i32,
-                overlines,
-            ));
-        }
-    }
-    (plain, runs, row_wrapped(term, row))
+    // Identical logic to `build_line`; a live row is just a grid line at a
+    // non-negative index (kept as a thin wrapper for the live-view callers).
+    build_line(term, Line(row as i32), columns, overlines)
 }
 
 /// A run of plain spaces on the default background is invisible (the grid

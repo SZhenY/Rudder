@@ -57,7 +57,6 @@ pub(crate) use state::{
 };
 pub(crate) use tailspin_rules::builtin_rules;
 pub(crate) use vt_adapter::{
-    CellAttr, MouseReport, app_cursor, attr_from_cell, bracketed_paste, cell_attrs, cursor_pos,
-    is_alt, is_wide_continuation, mouse_report, new_term, process_bytes, resize_term, row_wrapped,
-    term_size,
+    CellAttr, MouseReport, app_cursor, attr_from_cell, bracketed_paste, cursor_pos,
+    is_alt, mouse_report, new_term, process_bytes, resize_term, term_size,
 };

@@ -162,7 +162,7 @@ pub(crate) struct CellAttr {
     pub(crate) inverse: bool,
 }
 
-/// Shared extraction used by both `cell_attrs` (live rows, u16 coords) and
+/// Shared extraction used by both live rows (u16 coords) and
 /// `build_line` (scrollback rows, possibly negative `Line`).
 pub(crate) fn attr_from_cell(cell: &alacritty_terminal::term::cell::Cell) -> CellAttr {
     let mut contents = cell.c.to_string();
@@ -186,47 +186,6 @@ pub(crate) fn attr_from_cell(cell: &alacritty_terminal::term::cell::Cell) -> Cel
         wide: flags.contains(Flags::WIDE_CHAR),
         inverse: flags.contains(Flags::INVERSE),
     }
-}
-
-/// Read one cell's attributes — replaces `screen.cell(row, col)` +
-/// `cell.contents()/fgcolor()/bgcolor()/bold()/is_wide()/inverse()`.
-///
-/// Wide chars: the leading cell carries `WIDE_CHAR`; the spacer cell carries
-/// `WIDE_CHAR_SPACER` (its `c` is a space). Combining marks live in
-/// `cell.zerowidth()` and are appended to the contents.
-pub(crate) fn cell_attrs(term: &ATerm, row: u16, column: u16) -> CellAttr {
-    let point = Point {
-        line: Line(row as i32),
-        column: Column(column as usize),
-    };
-    attr_from_cell(&term.grid()[point])
-}
-
-/// Is this cell the spacer half of a wide (CJK) char? — replaces
-/// `cell.is_wide_continuation()`.
-pub(crate) fn is_wide_continuation(term: &ATerm, row: u16, column: u16) -> bool {
-    let point = Point {
-        line: Line(row as i32),
-        column: Column(column as usize),
-    };
-    term.grid()[point].flags.contains(Flags::WIDE_CHAR_SPACER)
-}
-
-/// Is this row continued onto the next by automatic wrapping? — replaces
-/// `screen.row_wrapped(row)`.
-///
-/// Alacritty stores the WRAPLINE flag on the last cell of the row (the line
-/// was auto-wrapped and its content continues on the next line).
-pub(crate) fn row_wrapped(term: &ATerm, row: u16) -> bool {
-    let cols = term.grid().columns();
-    if cols == 0 {
-        return false;
-    }
-    let point = Point {
-        line: Line(row as i32),
-        column: Column(cols - 1),
-    };
-    term.grid()[point].flags.contains(Flags::WRAPLINE)
 }
 
 /// Feed bytes into the terminal (replaces `parser.process`).
@@ -297,7 +256,11 @@ pub(crate) fn grid_to_lines(term: &ATerm) -> Vec<String> {
         let mut s = String::new();
         let mut c = 0u16;
         while c < cols {
-            let attr = cell_attrs(term, r, c);
+            let point = Point {
+                line: Line(r as i32),
+                column: Column(c as usize),
+            };
+            let attr = attr_from_cell(&term.grid()[point]);
             s.push_str(&attr.contents);
             c += 1;
         }
@@ -313,12 +276,16 @@ pub(crate) fn grid_to_lines(term: &ATerm) -> Vec<String> {
 mod tests {
     use super::*;
 
+    fn cell_attr(term: &ATerm, row: u16, col: u16) -> CellAttr {
+        attr_from_cell(&term.grid()[Point::new(Line(row as i32), Column(col as usize))])
+    }
+
     #[test]
     fn process_and_read_back() {
         let (mut term, mut proc) = new_term(5, 30, 100);
         process_bytes(&mut proc, &mut term, b"hello");
         assert_eq!(term_size(&term), (5, 30));
-        let attr = cell_attrs(&term, 0, 0);
+        let attr = attr_from_cell(&term.grid()[Point::new(Line(0), Column(0))]);
         assert_eq!(attr.contents, "h");
         let (row, col) = cursor_pos(&term);
         assert_eq!((row, col), (0, 5));
@@ -329,13 +296,15 @@ mod tests {
         let (mut term, mut proc) = new_term(3, 30, 100);
         // "你" is a 2-cell wide char.
         process_bytes(&mut proc, &mut term, "你".as_bytes());
-        let attr = cell_attrs(&term, 0, 0);
+        let attr = attr_from_cell(&term.grid()[Point::new(Line(0), Column(0))]);
         assert!(attr.wide, "leading cell should carry WIDE_CHAR");
         assert!(
-            is_wide_continuation(&term, 0, 1),
+            term.grid()[Point::new(Line(0), Column(1))]
+                .flags
+                .contains(Flags::WIDE_CHAR_SPACER),
             "spacer cell should carry WIDE_CHAR_SPACER"
         );
-        let attr = cell_attrs(&term, 0, 0);
+        let attr = attr_from_cell(&term.grid()[Point::new(Line(0), Column(0))]);
         assert_eq!(attr.contents, "你");
     }
 
@@ -382,7 +351,7 @@ mod tests {
         let (mut term, mut proc) = new_term(3, 30, 100);
         // "e" + U+0301 (combining acute)
         process_bytes(&mut proc, &mut term, "e\u{301}".as_bytes());
-        let attr = cell_attrs(&term, 0, 0);
+        let attr = cell_attr(&term, 0, 0);
         assert_eq!(attr.contents, "e\u{301}");
     }
 
@@ -425,10 +394,10 @@ mod tests {
         let (mut term, mut proc) = new_term(3, 30, 100);
         // SGR 31 (red fg) + 42 (green bg), then 93 (bright yellow fg).
         process_bytes(&mut proc, &mut term, b"\x1b[31;42mX\x1b[93mY");
-        let attr = cell_attrs(&term, 0, 0);
+        let attr = cell_attr(&term, 0, 0);
         assert_eq!(attr.fg, TermColor::Idx(1));
         assert_eq!(attr.bg, TermColor::Idx(2));
-        let attr = cell_attrs(&term, 0, 1);
+        let attr = cell_attr(&term, 0, 1);
         assert_eq!(attr.fg, TermColor::Idx(11), "SGR 93 → BrightYellow index");
         assert_eq!(attr.bg, TermColor::Idx(2));
     }
@@ -437,7 +406,7 @@ mod tests {
     fn sgr_39_49_reset_to_default() {
         let (mut term, mut proc) = new_term(3, 30, 100);
         process_bytes(&mut proc, &mut term, b"\x1b[31;42mX\x1b[39;49mY");
-        let attr = cell_attrs(&term, 0, 1);
+        let attr = cell_attr(&term, 0, 1);
         assert_eq!(attr.fg, TermColor::Default);
         assert_eq!(attr.bg, TermColor::Default);
     }
@@ -446,7 +415,7 @@ mod tests {
     fn text_attributes_are_extracted_from_flags() {
         let (mut term, mut proc) = new_term(3, 60, 100);
         process_bytes(&mut proc, &mut term, b"\x1b[1;2;3;4;8;9mABCDEF");
-        let attr = cell_attrs(&term, 0, 0);
+        let attr = cell_attr(&term, 0, 0);
         assert!(attr.bold);
         assert!(attr.dim);
         assert!(attr.italic);
@@ -456,7 +425,7 @@ mod tests {
 
         // 4:2 (double underline) — the colon sub-parameter form vte parses.
         process_bytes(&mut proc, &mut term, b"\r\x1b[0m\x1b[4:2mX");
-        let attr = cell_attrs(&term, 0, 0);
+        let attr = cell_attr(&term, 0, 0);
         assert_eq!(attr.underline, UnderlineStyle::Double);
 
         // Curly / dotted / dashed variants, one column each.
@@ -465,8 +434,8 @@ mod tests {
             &mut term,
             b"\r\x1b[0m\x1b[4:3mX\x1b[0m\x1b[4:4mY\x1b[0m\x1b[4:5mZ",
         );
-        assert_eq!(cell_attrs(&term, 0, 0).underline, UnderlineStyle::Curly);
-        assert_eq!(cell_attrs(&term, 0, 1).underline, UnderlineStyle::Dotted);
-        assert_eq!(cell_attrs(&term, 0, 2).underline, UnderlineStyle::Dashed);
+        assert_eq!(cell_attr(&term, 0, 0).underline, UnderlineStyle::Curly);
+        assert_eq!(cell_attr(&term, 0, 1).underline, UnderlineStyle::Dotted);
+        assert_eq!(cell_attr(&term, 0, 2).underline, UnderlineStyle::Dashed);
     }
 }

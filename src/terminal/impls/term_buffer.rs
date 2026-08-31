@@ -736,10 +736,15 @@ fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alacritty_terminal::index::{Column, Line, Point};
     use crate::terminal::{
-        CsiState, OutputHighlightPreset, TermColor, UnderlineStyle, build_line, build_row,
-        cell_attrs, new_term,
+        CsiState, OutputHighlightPreset, TermColor, UnderlineStyle, attr_from_cell,
+        build_line, build_row, new_term,
     };
+
+    fn cell_attr(term: &crate::terminal::ATerm, row: u16, col: u16) -> crate::terminal::CellAttr {
+        attr_from_cell(&term.grid()[Point::new(Line(row as i32), Column(col as usize))])
+    }
 
     fn make_buffer() -> TermBuffer {
         let (term, processor) = new_term(10, 40, 100);
@@ -784,7 +789,7 @@ mod tests {
         assert_eq!(runs[0].cells, 8);
         assert!(!runs[1].overline);
         // Plain text must survive: the empty SGR rewrite must NOT reset styles.
-        let attr = cell_attrs(&buf.term, 0, 0);
+        let attr = cell_attr(&buf.term, 0, 0);
         assert_eq!(attr.contents, "O");
     }
 
@@ -793,7 +798,7 @@ mod tests {
         let mut buf = make_buffer();
         // 31;53 → red + overline; the 31 must reach the parser.
         buf.ingest(b"\x1b[31;53mX");
-        let attr = cell_attrs(&buf.term, 0, 0);
+        let attr = cell_attr(&buf.term, 0, 0);
         assert_eq!(
             attr.fg,
             TermColor::Idx(1),
@@ -896,7 +901,7 @@ mod tests {
         // vte 0.15 parses 21 as CancelBold; the interceptor rewrites it to
         // the 4:2 double-underline form alacritty understands.
         buf.ingest(b"\x1b[21mDUB");
-        let attr = cell_attrs(&buf.term, 0, 0);
+        let attr = cell_attr(&buf.term, 0, 0);
         assert_eq!(attr.underline, UnderlineStyle::Double);
     }
 
