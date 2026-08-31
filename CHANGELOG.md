@@ -37,7 +37,22 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **命令栏显隐切换（合入上游 `0bd5fdc` 第一部分）与侧栏偏好同步持久化（`c915636` 第二部分）。** 命令栏可用快捷键/菜单随时隐藏，侧栏显隐与宽度偏好随每次操作即时落盘。
 - **Command-bar toggle (upstream `0bd5fdc` part 1) and persisted sidebar preference (part 2 of `c915636`).** The command bar hides via a shortcut/menu; sidebar visibility and width persist immediately.
 
+- **终端鼠标事件转发（合入上游 `d8eff40`）。** btop/htop/mc 等开启鼠标协议的 TUI 应用现在可以直接用鼠标操作：点击、拖拽、释放按远端请求的编码（X10/SGR）转发给 PTY；按住 Shift 点击仍是本地选择；滚轮在 tmux `mouse on` 时转发真实滚轮键码。
+- **Terminal mouse forwarding (upstream `d8eff40`).** TUI apps that enable a mouse protocol (btop/htop/mc) now receive clicks, drags and releases in the encoding they requested (X10/SGR); Shift+click still selects locally, and the wheel sends real button codes when tmux has `mouse on`.
+
 ### 修复 / Fixed
+
+- **会话「重命名」弹窗修复。** 弹窗此前依赖父容器尺寸，特定布局下被压缩成一条竖向窄条而无法使用；现改为按窗口根尺寸定位的固定尺寸对话框，居中显示、按钮可正常点击。
+- **Rename-session dialog fixed.** The dialog previously relied on its parent container's size and could collapse into a narrow vertical strip on some layouts; it is now a fixed-size dialog positioned against the window root, centred and fully clickable.
+
+- **标签栏 all-tabs 菜单图标显示为方框（tofu）修复。** 图标码位此前未指定图标字体，回退到默认 UI 字体导致缺字。
+- **Tab-bar all-tabs icon rendered as a tofu box.** The Material Icons codepoint lacked an explicit icon-font family and fell back to the UI font.
+
+- **i18n 补齐。** 修复 49 个界面文案在中英文切换时仍显示英文的问题（`.po` 缺失条目，含右键菜单「重命名会话/合并面板」、会话对话框「终端字符集/高级选项」等）；字体下拉分组标题、壁纸对话框标题、端口转发错误提示等 7 处硬编码文案补齐双语；字符集编码下拉各选项接入翻译。
+- **i18n completion.** 49 UI strings that stayed English after switching languages are now translated (missing `.po` entries: tab context menu, session dialog, encoding, tunnels…); 7 hardcoded strings gained bilingual variants (font-group headers, wallpaper dialog, port-forward errors); the charset combo box entries now go through translation.
+
+- **Linux 打包修正（合入上游 `1128c66` / `a5d3fc3`）。** desktop 条目 Categories 规范化为 `Network;TerminalEmulator;`（多主分类会让 GNOME 应用网格索引不一致）；安装脚本新增 `--system` 系统级安装模式（/usr/local + sudo），默认仍是免 root 的用户级安装，系统级安装会清理过期的用户级启动器。
+- **Linux packaging fixes (upstream `1128c66` / `a5d3fc3`).** Desktop Categories normalised to `Network;TerminalEmulator;` (multiple main categories break GNOME app-grid indexing); the install script gains a `--system` mode (/usr/local via sudo) while staying per-user by default, and a system-wide install now removes a stale per-user launcher.
 
 - **修复会话重连泄漏 SSH/PTY 线程（架构评审发现）。** 断线后按 Enter 重连时，旧会话句柄此前只从表里移除而未发送关闭命令（`SessionHandle` 无 Drop 实现），导致每重连一次泄漏一组 worker 线程；现改为先关闭再移除。应用退出路径的清理项同步对齐。
 - **Fixed a reconnect resource leak (architecture review).** Reconnecting after a disconnect only *removed* the old session handle without closing it (SessionHandle has no Drop impl), leaking a worker-thread pair per reconnect; handles are now closed before removal, and shutdown cleanup is aligned.
@@ -59,6 +74,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 性能 / Performance
 
+- **渲染缓存判等前移（架构评审 P2）。** 可见行在缓存命中时不再执行两次 String 分配（判等改用借用切片，仅在写入时构造 owned 值）；24–50 行 × 10–30 fps 下每秒消除数百到上千次无谓分配。
+- **Render cache compares before allocating (review item P2).** Cache hits no longer perform two String allocations per visible row per frame (borrowed-slice compare; the owned copy is built only on write) — hundreds to thousands of needless allocations per second eliminated at 24–50 rows × 10–30 fps.
+
 - **回滚视图按绝对行号缓存（架构评审 P1）。** 浏览历史时内容不变，此前每帧对每个可见行全量重算（含 22 条高亮正则）；现按 grid 行号缓存、主题/高亮规则变更自动失效，滚动浏览明显更流畅。
 - **Scrollback rows are cached by absolute grid line (review item P1).** Scrolling a static history no longer re-highlights every visible row each frame (22 regexes); the cache invalidates on theme/rule changes, making history browsing noticeably smoother.
 
@@ -66,6 +84,12 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 - **ZMODEM 协议层可测化 + 11 项协议测试。** 把字节流抽象为 `ZmodemIo` trait（内存流可注入测试），握手/帧解析/CRC 校验/转义/关闭握手首次获得覆盖；测试从 216 增至 229。
 - **ZMODEM protocol layer made testable, +11 protocol tests.** The byte stream is abstracted behind a `ZmodemIo` trait so an in-memory stream drives the real state machine; handshake, framing, CRC, escaping and the close handshake are now covered. Tests: 216 → 229.
+
+- **剩余 41 处锁操作补齐中毒恢复（架构评审 A1 收尾）。** 8/29 的热路径降级处理后，`app.rs`/`sftp.rs`/终端与采样器中残余的 `lock().unwrap()` 统一改为 `unwrap_or_else(into_inner)`，`panic = "abort"` 下锁中毒不再有崩溃路径。
+- **Remaining 41 lock sites now degrade gracefully (review A1 wrap-up).** After the 8/29 hot-path pass, the leftover `lock().unwrap()` calls in `app.rs`/`sftp.rs`/terminal and sampler code use `unwrap_or_else(into_inner)`; a poisoned mutex no longer has a crash path under `panic = "abort"`.
+
+- **AUR 包名迁移：`meatshell-bin` → `rudder-bin`。** 发布工作流、PKGBUILD（pkgname/url/source/安装路径）与 AUR README 全套对齐 Rudder 仓库与产物命名。
+- **AUR package migrated: `meatshell-bin` → `rudder-bin`.** The publish workflow, PKGBUILD (pkgname/url/sources/paths) and AUR README now match the Rudder repository and release artifact naming.
 
 - **`app.rs` 模块拆分（阶段 A+B，源自架构评审方案）。** 渲染票据、窗口几何、窗格布局、字体选择、更新检查、系统采样、标题栏控制 7 个职责迁出为独立模块，`app.rs` 从 7342 行降至 5925 行（-1417 行），行为零改动；顺带复活 2 个被悬空 cfg 意外禁用的窗口测试。
 - **`app.rs` split into focused modules (stages A+B of the review plan).** Render ticketing, window geometry, pane layout, font selection, updater, sampler and window chrome moved out; `app.rs` shrank 7342 → 5925 lines with zero behaviour change, and 2 tests silently disabled by orphaned `cfg` attributes were revived.

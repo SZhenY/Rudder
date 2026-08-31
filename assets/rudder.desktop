@@ -7,7 +7,10 @@ Comment[zh_CN]=轻量级 Rust + Slint SSH/SFTP 客户端
 Exec=rudder
 Icon=rudder
 Terminal=false
-Categories=Network;System;TerminalEmulator;Utility;
+# Network is the single freedesktop main category; the remaining category is
+# an additional hint. Multiple main categories can make GNOME app-grid
+# indexing inconsistent on Ubuntu 26.04 (upstream 1128c66).
+Categories=Network;TerminalEmulator;
 Keywords=ssh;sftp;terminal;shell;
 StartupNotify=true
 StartupWMClass=rudder
