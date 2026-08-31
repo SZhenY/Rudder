@@ -305,10 +305,16 @@ pub(crate) struct AppContext {
     pub(crate) tab_statuses: TabStatuses,
     /// Display-name overrides for open session tabs (Rename): tab-id → override.
     pub(crate) tab_titles: Rc<RefCell<HashMap<String, String>>>,
+    pub(crate) tabs_model: Rc<VecModel<TabInfo>>,
+    pub(crate) terminals_model: Rc<VecModel<TerminalState>>,
+    pub(crate) layout: Rc<RefCell<crate::layout::Layout>>,
+    pub(crate) content_size: Rc<std::cell::Cell<(f32, f32)>>,
+    pub(crate) panes_model: Rc<VecModel<PaneInfo>>,
+    pub(crate) splitters_model: Rc<VecModel<SplitterInfo>>,
 }
 
 impl AppContext {
-    pub(crate) fn new(config: ConfigStore) -> anyhow::Result<Self> {
+    pub(crate) fn new(config: ConfigStore, window: AppWindow) -> anyhow::Result<Self> {
         let runtime = Arc::new(Runtime::new().context("failed to start tokio runtime")?);
         let store = Rc::new(RefCell::new(config));
         // Reachable from the Slint-thread event handler for recording terminal
@@ -327,6 +333,45 @@ impl AppContext {
         let tab_statuses: TabStatuses = Arc::new(Mutex::new(HashMap::new()));
         let tab_titles: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
 
+        // --- UI models (window is created before the context) -------------
+        let tabs_model: Rc<VecModel<TabInfo>> = Rc::new(VecModel::default());
+        tabs_model.push(TabInfo {
+            id: "welcome".into(),
+            title_len: tab_title_len(t("新标签页", "New tab")),
+            title: t("新标签页", "New tab").into(),
+            kind: "welcome".into(),
+            connected: false,
+        });
+        window.set_tabs(ModelRc::from(tabs_model.clone()));
+        window.set_active_tab_id("welcome".into());
+
+        let terminals_model: Rc<VecModel<TerminalState>> = Rc::new(VecModel::default());
+        window.set_terminals(ModelRc::from(terminals_model.clone()));
+
+        // Split-pane layout tree (v0.5). Starts as a single pane owning the
+        // welcome tab; in welcome-as-sidebar mode the session list lives in a
+        // left panel, so the layout starts empty.
+        let welcome_sidebar = store.borrow().welcome_as_sidebar();
+        let layout: Rc<RefCell<crate::layout::Layout>> = Rc::new(RefCell::new(if welcome_sidebar {
+            crate::layout::Layout::new(Vec::new(), String::new())
+        } else {
+            crate::layout::Layout::new(vec!["welcome".into()], "welcome".into())
+        }));
+        let content_size: Rc<std::cell::Cell<(f32, f32)>> =
+            Rc::new(std::cell::Cell::new((1200.0, 800.0)));
+        let panes_model: Rc<VecModel<PaneInfo>> = Rc::new(VecModel::default());
+        window.set_panes(ModelRc::from(panes_model.clone()));
+        let splitters_model: Rc<VecModel<SplitterInfo>> = Rc::new(VecModel::default());
+        window.set_splitters(ModelRc::from(splitters_model.clone()));
+        crate::app::pane_layout::refresh_panes(
+            &window,
+            &layout.borrow(),
+            content_size.get(),
+            &tabs_model,
+            &panes_model,
+            &splitters_model,
+        );
+
         Ok(Self {
             runtime,
             store,
@@ -340,6 +385,12 @@ impl AppContext {
             pending_window_size_restore,
             tab_statuses,
             tab_titles,
+            tabs_model,
+            terminals_model,
+            layout,
+            content_size,
+            panes_model,
+            splitters_model,
         })
     }
 }
@@ -368,7 +419,10 @@ pub fn run() -> Result<()> {
     // Stage C: the roots are built by AppContext::new and re-exported as
     // locals here so the rest of run() (and its closures) keep their names;
     // a later step can thread `ctx` directly.
-    let ctx = AppContext::new(config)?;
+    // The window must exist before the context so the UI models can be wired
+    // to it inside AppContext::new.
+    let window = AppWindow::new().context("failed to build Slint window")?;
+    let ctx = AppContext::new(config, window.clone_strong())?;
     let runtime = ctx.runtime.clone();
     let store = ctx.store.clone();
     let handles = ctx.handles.clone();
@@ -381,6 +435,12 @@ pub fn run() -> Result<()> {
     let pending_window_size_restore = ctx.pending_window_size_restore.clone();
     let tab_statuses = ctx.tab_statuses.clone();
     let tab_titles = ctx.tab_titles.clone();
+    let tabs_model = ctx.tabs_model.clone();
+    let terminals_model = ctx.terminals_model.clone();
+    let layout = ctx.layout.clone();
+    let content_size = ctx.content_size.clone();
+    let panes_model = ctx.panes_model.clone();
+    let splitters_model = ctx.splitters_model.clone();
 
     // --- Build window + models ------------------------------------------
     // Set the Wayland app_id / X11 WM_CLASS *before* the window is created so
@@ -388,10 +448,7 @@ pub fn run() -> Result<()> {
     // `rudder.desktop` entry and show our icon in the dock/taskbar.  (On
     // Windows the icon comes from the embedded .ico, so this is a no-op there.)
     let _ = slint::set_xdg_app_id("rudder");
-    let window = AppWindow::new().context("failed to build Slint window")?;
-    // Slint applies preferred-width/height while the native window is being
-    // created. Do not treat those startup Resized events as user adjustments;
-    // otherwise they overwrite the persisted size before restoration (#278).
+
     // Show the crate version (from Cargo.toml at compile time) in the sidebar,
     // so the footer never drifts out of sync with the actual build.
     window.set_app_version(env!("CARGO_PKG_VERSION").into());
@@ -1474,48 +1531,6 @@ pub fn run() -> Result<()> {
         });
     }
 
-    let tabs_model: Rc<VecModel<TabInfo>> = Rc::new(VecModel::default());
-    tabs_model.push(TabInfo {
-        id: "welcome".into(),
-        title_len: tab_title_len(t("新标签页", "New tab")),
-        title: t("新标签页", "New tab").into(),
-        kind: "welcome".into(),
-        connected: false,
-    });
-    window.set_tabs(ModelRc::from(tabs_model.clone()));
-    window.set_active_tab_id("welcome".into());
-
-    let terminals_model: Rc<VecModel<TerminalState>> = Rc::new(VecModel::default());
-    window.set_terminals(ModelRc::from(terminals_model.clone()));
-
-    // Split-pane layout tree (v0.5). Starts as a single pane owning the welcome
-    // tab; tab opens/closes/moves mutate it and re-flatten into the `panes`
-    // model. `content_size` is the pane-area px size reported from Slint.
-    // In welcome-as-sidebar mode the session list lives in a left panel, so the
-    // layout starts empty (no "welcome" tab); otherwise it owns the welcome tab.
-    let welcome_sidebar = store.borrow().welcome_as_sidebar();
-    let layout: Rc<RefCell<crate::layout::Layout>> = Rc::new(RefCell::new(if welcome_sidebar {
-        crate::layout::Layout::new(Vec::new(), String::new())
-    } else {
-        crate::layout::Layout::new(vec!["welcome".into()], "welcome".into())
-    }));
-    let content_size: Rc<std::cell::Cell<(f32, f32)>> =
-        Rc::new(std::cell::Cell::new((1200.0, 800.0)));
-    // Persistent pane / splitter models. refresh_panes updates these IN PLACE so
-    // the rendered `for pane` / `for sp` elements are reused (terminals survive,
-    // and the splitter keeps its pointer-grab during a drag).
-    let panes_model: Rc<VecModel<PaneInfo>> = Rc::new(VecModel::default());
-    window.set_panes(ModelRc::from(panes_model.clone()));
-    let splitters_model: Rc<VecModel<SplitterInfo>> = Rc::new(VecModel::default());
-    window.set_splitters(ModelRc::from(splitters_model.clone()));
-    refresh_panes(
-        &window,
-        &layout.borrow(),
-        content_size.get(),
-        &tabs_model,
-        &panes_model,
-        &splitters_model,
-    );
     {
         let weak = window.as_weak();
         let layout = layout.clone();
