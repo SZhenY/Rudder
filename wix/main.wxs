@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="windows-1252"?>
 <!--
-  WiX (v3) installer definition for meatshell, driven by `cargo wix`.
+  WiX (v3) installer definition for Rudder, driven by `cargo wix`.
 
   cargo-wix injects these preprocessor variables:
     $(var.Version)            crate version from Cargo.toml
@@ -13,17 +13,17 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
     <Product
         Id="*"
-        Name="meatshell"
+        Name="Rudder"
         UpgradeCode="6E8F2A1B-3C4D-4E5F-9A0B-1C2D3E4F5A6B"
-        Manufacturer="meatshell contributors"
+        Manufacturer="Rudder contributors"
         Language="1033"
         Codepage="1252"
         Version="$(var.Version)">
 
         <Package Id="*"
             Keywords="Installer"
-            Description="meatshell - lightweight Rust + Slint SSH/terminal client"
-            Manufacturer="meatshell contributors"
+            Description="Rudder - lightweight Rust + Slint SSH/terminal client"
+            Manufacturer="Rudder contributors"
             InstallerVersion="450"
             Languages="1033"
             Compressed="yes"
@@ -33,17 +33,17 @@
         <!-- Replace an older install in place instead of erroring out. -->
         <MajorUpgrade
             Schedule="afterInstallInitialize"
-            DowngradeErrorMessage="A newer version of meatshell is already installed. Setup will now exit."/>
+            DowngradeErrorMessage="A newer version of Rudder is already installed. Setup will now exit."/>
 
         <Media Id="1" Cabinet="media1.cab" EmbedCab="yes" DiskPrompt="CD-ROM #1"/>
-        <Property Id="DiskPrompt" Value="meatshell Installation"/>
+        <Property Id="DiskPrompt" Value="Rudder Installation"/>
 
-        <Icon Id="ProductICO" SourceFile="assets\meatshell.ico"/>
+        <Icon Id="ProductICO" SourceFile="assets\rudder.ico"/>
         <Property Id="ARPPRODUCTICON" Value="ProductICO"/>
 
         <!--
           Preserve a custom install location across major upgrades (#293).
-          New packages write Software\meatshell\InstallDir below. The component
+          New packages write Software\Rudder\InstallDir below. The component
           search is the migration fallback for v0.6.5-v0.6.7, which did not
           persist either that value or ARPINSTALLLOCATION. MainExecutable's
           generated component GUID in those packages was stable and is now
@@ -52,7 +52,7 @@
         <Property Id="APPLICATIONFOLDER" Secure="yes">
             <RegistrySearch Id="PreviousInstallDirRegistry"
                 Root="HKLM"
-                Key="Software\meatshell"
+                Key="Software\Rudder"
                 Name="InstallDir"
                 Type="directory"
                 Win64="yes"/>
@@ -67,12 +67,12 @@
         <Directory Id="TARGETDIR" Name="SourceDir">
             <Directory Id="ProgramFiles64Folder">
                 <!-- Default path; the InstallDir UI lets the user change it. -->
-                <Directory Id="APPLICATIONFOLDER" Name="meatshell">
+                <Directory Id="APPLICATIONFOLDER" Name="Rudder">
                     <Component Id="MainExecutable"
                                Guid="{ECB1F8D7-7CC7-5A8A-A7CC-56A267A502DC}">
-                        <File Id="meatshellEXE"
-                              Name="meatshell.exe"
-                              Source="$(var.CargoTargetBinDir)\meatshell.exe"
+                        <File Id="rudderEXE"
+                              Name="rudder.exe"
+                              Source="$(var.CargoTargetBinDir)\rudder.exe"
                               KeyPath="yes"/>
                     </Component>
                     <Component Id="ThirdPartyNotices" Guid="*">
@@ -85,7 +85,7 @@
                                Guid="{E6877B59-AD5C-4CA3-A1F5-8F8E0CC6CC53}"
                                Win64="yes">
                         <RegistryValue Root="HKLM"
-                            Key="Software\meatshell"
+                            Key="Software\Rudder"
                             Name="InstallDir"
                             Type="string"
                             Value="[APPLICATIONFOLDER]"
@@ -96,14 +96,14 @@
             <Directory Id="ProgramMenuFolder">
                 <Component Id="ApplicationShortcut" Guid="*">
                     <Shortcut Id="StartMenuShortcut"
-                        Name="meatshell"
+                        Name="Rudder"
                         Description="Lightweight SSH/terminal client"
-                        Target="[APPLICATIONFOLDER]meatshell.exe"
+                        Target="[APPLICATIONFOLDER]rudder.exe"
                         WorkingDirectory="APPLICATIONFOLDER"
                         Icon="ProductICO"/>
                     <RemoveFolder Id="CleanUpShortCut" On="uninstall"/>
                     <RegistryValue Root="HKCU"
-                        Key="Software\meatshell"
+                        Key="Software\Rudder"
                         Name="installed"
                         Type="integer"
                         Value="1"
@@ -114,13 +114,13 @@
                 <Component Id="DesktopShortcut"
                            Guid="{A034B952-E060-47C3-8D04-FCA147FBE3E5}">
                     <Shortcut Id="DesktopShortcutLink"
-                        Name="meatshell"
+                        Name="Rudder"
                         Description="Lightweight SSH/terminal client"
-                        Target="[APPLICATIONFOLDER]meatshell.exe"
+                        Target="[APPLICATIONFOLDER]rudder.exe"
                         WorkingDirectory="APPLICATIONFOLDER"
                         Icon="ProductICO"/>
                     <RegistryValue Root="HKCU"
-                        Key="Software\meatshell"
+                        Key="Software\Rudder"
                         Name="desktopShortcut"
                         Type="integer"
                         Value="1"
@@ -129,7 +129,7 @@
             </Directory>
         </Directory>
 
-        <Feature Id="MainProgram" Title="meatshell" Level="1">
+        <Feature Id="MainProgram" Title="Rudder" Level="1">
             <ComponentRef Id="MainExecutable"/>
             <ComponentRef Id="ThirdPartyNotices"/>
             <ComponentRef Id="InstallLocationRegistry"/>
