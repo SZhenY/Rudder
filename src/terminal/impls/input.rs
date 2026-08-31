@@ -376,3 +376,67 @@ mod interrupt_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod key_bytes_tests {
+    use super::*;
+
+    #[test]
+    fn encode_command_bar_input_adds_newline_and_trims_tail() {
+        assert_eq!(
+            encode_command_bar_input("ls -la"),
+            Some(("ls -la".to_string(), b"ls -la\n".to_vec()))
+        );
+        assert_eq!(
+            encode_command_bar_input("git status  "),
+            Some(("git status".to_string(), b"git status\n".to_vec()))
+        );
+        assert_eq!(encode_command_bar_input(""), None);
+        assert_eq!(encode_command_bar_input("   "), None);
+    }
+
+    #[test]
+    fn key_to_pty_bytes_maps_specials_and_application_cursor() {
+        // Arrow keys: application-cursor mode switches to SS3 (ESC O …).
+        assert_eq!(key_to_pty_bytes("\u{F700}", false, false, false), b"\x1b[A");
+        assert_eq!(key_to_pty_bytes("\u{F700}", false, false, true), b"\x1bOA");
+        assert_eq!(key_to_pty_bytes("\u{F702}", false, false, false), b"\x1b[D");
+        assert_eq!(key_to_pty_bytes("\u{F702}", false, false, true), b"\x1bOD");
+        assert_eq!(key_to_pty_bytes("\u{F72C}", false, false, false), b"\x1b[5~");
+        assert_eq!(key_to_pty_bytes("\u{F704}", false, false, false), b"\x1bOP");
+    }
+
+    #[test]
+    fn key_to_pty_bytes_maps_ctrl_and_alt() {
+        assert_eq!(key_to_pty_bytes("c", true, false, false), b"\x03");
+        assert_eq!(key_to_pty_bytes("C", true, false, false), b"\x03");
+        assert_eq!(key_to_pty_bytes("[", true, false, false), b"\x1b");
+        assert_eq!(key_to_pty_bytes("@", true, false, false), b"\x00");
+        // Alt prefix.
+        assert_eq!(key_to_pty_bytes("a", false, true, false), b"\x1ba");
+        // Enter without modifiers becomes CR.
+        assert_eq!(key_to_pty_bytes("\n", false, false, false), b"\x0d");
+        // Backspace → DEL.
+        assert_eq!(key_to_pty_bytes("\u{0008}", false, false, false), b"\x7f");
+    }
+
+    #[test]
+    fn key_to_pty_bytes_drops_unsendable_keys() {
+        // Bare C0 single chars (Ctrl-P..Ctrl-X without Ctrl) are dropped (#377).
+        assert_eq!(key_to_pty_bytes("\u{0010}", false, false, false), b"");
+        // Private-use range (Slint sentinel keys) never reaches the PTY.
+        assert_eq!(key_to_pty_bytes("\u{E000}", false, false, false), b"");
+        // Empty key.
+        assert_eq!(key_to_pty_bytes("", false, false, false), b"");
+    }
+
+    #[test]
+    fn encode_pasted_text_filters_forgery_bytes_in_bracketed_mode() {
+        assert_eq!(
+            encode_pasted_text("hello", false, false),
+            b"hello".to_vec()
+        );
+        let bracketed = encode_pasted_text("a\x1bb\x03c", true, false);
+        assert_eq!(bracketed, b"\x1b[200~abc\x1b[201~".to_vec());
+    }
+}

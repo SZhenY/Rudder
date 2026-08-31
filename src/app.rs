@@ -5603,6 +5603,22 @@ mod key_tests {
         assert!(!should_block_close(true, true));
         assert!(!should_block_close(true, false));
     }
+
+    #[test]
+    fn redact_key_hides_secrets_but_keeps_control_codes() {
+        // Empty key.
+        assert_eq!(redact_key(""), "(empty)");
+        // Control codes are shown as U+XXXX, printable chars are redacted.
+        assert_eq!(redact_key("\x03"), "U+0003");
+        assert_eq!(redact_key("secret"), "<6 printable redacted>");
+        // Mixed: only the control bytes leak their codepoints.
+        let mixed = redact_key("a\x1b[b\x7f");
+        assert!(mixed.contains("U+001B"));
+        assert!(mixed.contains("U+007F"));
+        assert!(mixed.contains("printable redacted"));
+        // Multi-byte printable chars count individually.
+        assert_eq!(redact_key("密码"), "<2 printable redacted>");
+    }
 }
 
 #[cfg(test)]
