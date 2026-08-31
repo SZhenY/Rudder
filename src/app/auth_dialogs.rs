@@ -33,7 +33,7 @@ pub(super) fn hostkey_dialog_text(
     }
 }
 
-pub(super) fn enqueue_hostkey_prompt(
+pub(crate) fn enqueue_hostkey_prompt(
     win: &AppWindow,
     host: String,
     port: u16,
@@ -116,7 +116,7 @@ pub(super) fn resolve_front_hostkey(win: &AppWindow, accept: bool) {
     }
 }
 
-pub(super) fn enqueue_cred_prompt(
+pub(crate) fn enqueue_cred_prompt(
     win: &AppWindow,
     session_id: String,
     host: String,
@@ -223,7 +223,7 @@ pub(super) fn persist_credentials(
     });
 }
 
-pub(super) fn enqueue_mfa_prompt(
+pub(crate) fn enqueue_mfa_prompt(
     win: &AppWindow,
     session_id: String,
     host: String,

@@ -63,7 +63,7 @@ pub(super) fn parse_batch_import(text: &str) -> Vec<Session> {
     out
 }
 
-pub(super) fn session_groups_model(store: &ConfigStore) -> ModelRc<SharedString> {
+pub(crate) fn session_groups_model(store: &ConfigStore) -> ModelRc<SharedString> {
     let sessions = store.sessions();
     let mut named: Vec<String> = store
         .groups()
@@ -86,7 +86,7 @@ pub(super) fn session_groups_model(store: &ConfigStore) -> ModelRc<SharedString>
     )))
 }
 
-pub(super) fn jump_candidates(
+pub(crate) fn jump_candidates(
     store: &ConfigStore,
     exclude_id: &str,
     current_jump_id: &str,
@@ -285,7 +285,7 @@ fn build_session_rows(
     rows
 }
 
-pub(super) fn sync_sessions_to_model_with_filter(
+pub(crate) fn sync_sessions_to_model_with_filter(
     store: &ConfigStore,
     model: &VecModel<SessionInfo>,
     query: &str,
@@ -300,7 +300,7 @@ pub(super) fn sync_sessions_to_model_with_filter(
     ));
 }
 
-pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
+pub(crate) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<SessionInfo>) {
     sync_sessions_to_model_with_filter(store, model, "");
 }
 
@@ -308,7 +308,7 @@ pub(super) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<Sessi
 /// is unchanged the rows are written with `set_row_data` instead of `set_vec`:
 /// the `for` loop keeps its elements (and a drag's pointer grab) alive. Used
 /// for per-hop updates during drag-to-reorder.
-pub(super) fn refresh_session_rows_in_place(
+pub(crate) fn refresh_session_rows_in_place(
     store: &ConfigStore,
     model: &VecModel<SessionInfo>,
     query: &str,
@@ -331,7 +331,7 @@ pub(super) fn refresh_session_rows_in_place(
     }
 }
 
-pub(super) fn builtin_local_sessions(wsl_profiles: &[crate::config::WslProfile]) -> Vec<Session> {
+pub(crate) fn builtin_local_sessions(wsl_profiles: &[crate::config::WslProfile]) -> Vec<Session> {
     // The parameter is only consumed by the Windows branch; keep non-Windows
     // builds warning-free without gating the signature itself.
     #[cfg(not(windows))]
@@ -409,7 +409,7 @@ pub(super) fn wsl_available() -> bool {
     })
 }
 
-pub(super) fn session_from_draft(
+pub(crate) fn session_from_draft(
     draft: &SessionDraft,
     existing: Option<&Session>,
     forwards: Vec<crate::config::PortForward>,

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn blank_forward_draft() -> PortFwd {
+pub(crate) fn blank_forward_draft() -> PortFwd {
     PortFwd {
         kind: "local".into(),
         name: "".into(),
@@ -33,11 +33,11 @@ pub(super) fn forward_drafts(forwards: &[crate::config::PortForward]) -> Vec<Por
         .collect()
 }
 
-pub(super) fn forward_model(forwards: &[PortFwd]) -> ModelRc<PortFwd> {
+pub(crate) fn forward_model(forwards: &[PortFwd]) -> ModelRc<PortFwd> {
     ModelRc::from(Rc::new(VecModel::from(forwards.to_vec())))
 }
 
-pub(super) fn validated_port_forwards(
+pub(crate) fn validated_port_forwards(
     drafts: &[PortFwd],
 ) -> std::result::Result<Vec<crate::config::PortForward>, String> {
     let mut forwards = Vec::new();

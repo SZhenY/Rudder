@@ -6,7 +6,7 @@
 
 use super::*;
 
-pub(super) fn blank_trigger_draft() -> TriggerDraft {
+pub(crate) fn blank_trigger_draft() -> TriggerDraft {
     TriggerDraft {
         expect: "".into(),
         response: "".into(),
@@ -17,7 +17,7 @@ pub(super) fn blank_trigger_draft() -> TriggerDraft {
 
 /// Load saved rules into the dialog. The response is deliberately left blank so
 /// a stored secret is never echoed back into an editable field (#10).
-pub(super) fn trigger_drafts(triggers: &[crate::config::SessionTrigger]) -> Vec<TriggerDraft> {
+pub(crate) fn trigger_drafts(triggers: &[crate::config::SessionTrigger]) -> Vec<TriggerDraft> {
     triggers
         .iter()
         .map(|trigger| TriggerDraft {
@@ -29,14 +29,14 @@ pub(super) fn trigger_drafts(triggers: &[crate::config::SessionTrigger]) -> Vec<
         .collect()
 }
 
-pub(super) fn trigger_model(triggers: &[TriggerDraft]) -> ModelRc<TriggerDraft> {
+pub(crate) fn trigger_model(triggers: &[TriggerDraft]) -> ModelRc<TriggerDraft> {
     ModelRc::from(Rc::new(VecModel::from(triggers.to_vec())))
 }
 
 /// Validate drafts into stored rules. `saved_responses` holds the responses of
 /// the session being edited, index-aligned with the drafts: a blank response box
 /// means "keep what was saved" rather than "clear it".
-pub(super) fn validated_triggers(
+pub(crate) fn validated_triggers(
     drafts: &[TriggerDraft],
     saved_responses: &[Secret],
 ) -> std::result::Result<Vec<crate::config::SessionTrigger>, String> {
