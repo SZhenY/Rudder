@@ -180,7 +180,7 @@ async fn run_serial(
                 tracing::debug!("serial write len={} bytes", bytes.len());
                 let w = writer.clone();
                 let res = tokio::task::spawn_blocking(move || {
-                    let mut guard = w.lock().unwrap();
+                    let mut guard = w.lock().unwrap_or_else(|e| e.into_inner());
                     guard.write_all(&bytes).and_then(|_| guard.flush())
                 })
                 .await;

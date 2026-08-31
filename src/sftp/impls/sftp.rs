@@ -728,7 +728,7 @@ async fn run_sftp(
                             }
                         }
                     }
-                    cancels_done.lock().unwrap().remove(&file_id);
+                    cancels_done.lock().unwrap_or_else(|e| e.into_inner()).remove(&file_id);
                 });
             }
 
@@ -746,7 +746,7 @@ async fn run_sftp(
                 // Register a cancel flag up-front so CancelTransfer can flip it (#100).
                 let id = Uuid::new_v4().to_string();
                 let cancel = Arc::new(AtomicBool::new(false));
-                cancels.lock().unwrap().insert(id.clone(), cancel.clone());
+                cancels.lock().unwrap_or_else(|e| e.into_inner()).insert(id.clone(), cancel.clone());
                 let cancels_done = cancels.clone();
                 tokio::spawn(async move {
                     let n = names.len();
@@ -835,12 +835,12 @@ async fn run_sftp(
                             )));
                         }
                     }
-                    cancels_done.lock().unwrap().remove(&id);
+                    cancels_done.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
                 });
             }
 
             SftpCommand::CancelTransfer(id) => {
-                if let Some(flag) = cancels.lock().unwrap().get(&id) {
+                if let Some(flag) = cancels.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
                     flag.store(true, Ordering::Relaxed);
                 }
             }
@@ -881,7 +881,7 @@ async fn run_sftp(
                                 if let Some(path) = cleanup_after.as_deref() {
                                     cleanup_import_path(path).await;
                                 }
-                                cancels_done.lock().unwrap().remove(&up_id);
+                                cancels_done.lock().unwrap_or_else(|e| e.into_inner()).remove(&up_id);
                                 return;
                             }
                         };
@@ -923,7 +923,7 @@ async fn run_sftp(
                                 if let Some(path) = cleanup_after.as_deref() {
                                     cleanup_import_path(path).await;
                                 }
-                                cancels_done.lock().unwrap().remove(&up_id);
+                                cancels_done.lock().unwrap_or_else(|e| e.into_inner()).remove(&up_id);
                                 return;
                             }
                         };
@@ -994,7 +994,7 @@ async fn run_sftp(
                     if let Some(path) = cleanup_after.as_deref() {
                         cleanup_import_path(path).await;
                     }
-                    cancels_done.lock().unwrap().remove(&up_id);
+                    cancels_done.lock().unwrap_or_else(|e| e.into_inner()).remove(&up_id);
                 });
             }
 

@@ -128,12 +128,12 @@ pub(super) fn apply_terminal_resize(
     cols: u32,
     rows: u32,
 ) {
-    *last_term_size.lock().unwrap() = (cols, rows);
+    *last_term_size.lock().unwrap_or_else(|e| e.into_inner()) = (cols, rows);
     if let Some(handle) = handles.borrow().get(tab_id) {
         handle.resize(cols, rows);
     }
     if let Some(h) = term_buf(bufs, tab_id) {
-        let mut buf = h.lock().unwrap();
+        let mut buf = h.lock().unwrap_or_else(|e| e.into_inner());
         let (old_rows, old_cols) = crate::terminal::term_size(&buf.term);
         let (new_rows, new_cols) = (rows as u16, cols as u16);
         if (new_rows, new_cols) != (old_rows, old_cols) {

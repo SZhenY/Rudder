@@ -138,7 +138,7 @@ async fn run_local(
         match cmd {
             SessionCommand::RawInput(bytes) => {
                 tracing::debug!("local pty write len={} bytes", bytes.len());
-                let mut guard = writer.lock().unwrap();
+                let mut guard = writer.lock().unwrap_or_else(|e| e.into_inner());
                 if guard.write_all(&bytes).and_then(|_| guard.flush()).is_err() {
                     let _ = events.send(SessionEvent::Closed(t("写入失败", "write failed").into()));
                     break;
@@ -166,7 +166,7 @@ async fn run_local(
                 });
             }
             SessionCommand::Close => {
-                let _ = child.lock().unwrap().kill();
+                let _ = child.lock().unwrap_or_else(|e| e.into_inner()).kill();
                 break;
             }
         }

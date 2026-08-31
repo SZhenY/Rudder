@@ -37,9 +37,9 @@ pub(crate) use input::normalize_pasted_newlines;
 #[cfg(any(target_os = "windows", test))]
 pub(crate) use input::windows_process_ctrl_release;
 pub(crate) use input::{
-    bare_ctrl_marker_workaround_enabled, encode_command_bar_input, encode_pasted_text,
-    key_to_pty_bytes, paste_requires_large_review, should_drop_bare_ctrl_marker,
-    terminal_uses_bracketed_paste,
+    bare_ctrl_marker_workaround_enabled, encode_command_bar_input, encode_mouse_event,
+    encode_pasted_text, key_to_pty_bytes, paste_requires_large_review,
+    should_drop_bare_ctrl_marker, terminal_uses_bracketed_paste,
 };
 pub(crate) use encoding::TerminalEncoding;
 pub(crate) use json_output::format_json_output;

@@ -548,7 +548,11 @@ impl TermBuffer {
             let mut last_content = 0i32;
             for r in 0..rows {
                 let (plain, runs, _wrapped) = build_row(&self.term, r, cols, &self.overline_ranges);
-                let display = plain.trim_end().to_string();
+                // Compare the cache against a borrowed slice first: allocating a
+                // `String` for every row on every frame is pure waste when the
+                // row is unchanged (24–50 rows × 10–30 fps). The owned copy is
+                // only built where it is actually stored (`displayed_text`).
+                let display_key = plain.trim_end();
 
                 // Reuse cached spans when the plain text is identical.
                 // Reuse cached runs when plain text is identical, only
@@ -559,7 +563,7 @@ impl TermBuffer {
                 // visible text but a new SGR-53 range (or a range pruned by
                 // the cap), and stale flags must not stick.
                 let line_spans: Vec<_> = if let Some(ref cached) = self.rendered[r as usize] {
-                    if cached.plain_key == display {
+                    if cached.plain_key == display_key {
                         let runs = refresh_overlines(
                             &cached.runs,
                             &self.overline_ranges,
@@ -570,17 +574,17 @@ impl TermBuffer {
                             .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
                             .collect()
                     } else {
-                        self.build_spans(r as i32, &display, &runs, alt)
+                        self.build_spans(r as i32, display_key, &runs, alt)
                     }
                 } else {
-                    self.build_spans(r as i32, &display, &runs, alt)
+                    self.build_spans(r as i32, display_key, &runs, alt)
                 };
 
                 if !line_spans.is_empty() {
                     last_content = r as i32;
                 }
                 spans.extend(line_spans);
-                displayed.push(display);
+                displayed.push(display_key.to_string());
             }
             self.displayed_text = displayed;
             let rows_used = if alt { rows as i32 } else { last_content + 1 };

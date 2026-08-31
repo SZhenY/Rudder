@@ -35,7 +35,7 @@ pub(crate) fn register_tab_render_request(
     gates: &RenderGates,
 ) -> Option<(Arc<TabRenderGate>, TabRenderTicket, bool)> {
     let gate = {
-        let map = gates.lock().unwrap();
+        let map = gates.lock().unwrap_or_else(|e| e.into_inner());
         map.get(tab_id).cloned()
     }?;
     let (generation, should_schedule) = gate.request()?;

@@ -1,7 +1,48 @@
 use crate::terminal::TermBuffers;
+use crate::terminal::MouseReport;
 
 #[cfg(any(target_os = "windows", test))]
 use super::state::CtrlKeySide;
+
+/// Encode a terminal mouse event for the PTY using the encoding the remote
+/// application requested (X10 / SGR) — so btop, htop, mc and other mouse-aware
+/// TUI apps get click/drag/wheel events (ported from upstream `d8eff40`).
+///
+/// `btn` follows the xterm conventions:
+///   0/1/2 = left / middle / right button press,
+///   32    = motion with no button,
+///   35    = motion with a button held,
+///   64/65 = wheel up / down.
+/// `release` marks a button-release event (only meaningful for `btn` 0–2):
+/// X10 encodes it as `btn + 3`, SGR keeps the same code but ends the report
+/// with a lowercase `m`.
+///
+/// Coordinates are 1-based grid cells clamped into [1, 223] — the range the
+/// classic X10 byte encoding can express — matching how the remote draws its
+/// UI. `cols`/`rows` are the *screen* dimensions so the report always points
+/// at the same cell the program rendered.
+pub(crate) fn encode_mouse_event(
+    btn: u8,
+    release: bool,
+    col: i32,
+    row: i32,
+    cols: u16,
+    rows: u16,
+    encoding: MouseReport,
+) -> Vec<u8> {
+    let c = (col.clamp(0, cols.saturating_sub(1) as i32) as u16 + 1).clamp(1, 223);
+    let r = (row.clamp(0, rows.saturating_sub(1) as i32) as u16 + 1).clamp(1, 223);
+    match encoding {
+        MouseReport::Sgr => {
+            let final_byte = if release { b'm' } else { b'M' };
+            format!("\x1b[<{btn};{c};{r}{}", final_byte as char).into_bytes()
+        }
+        _ => {
+            let cb = btn as u16 + if release { 3 } else { 0 } + 32;
+            vec![0x1b, b'[', b'M', cb as u8, (c + 32) as u8, (r + 32) as u8]
+        }
+    }
+}
 
 /// Normalize clipboard line endings to the single CR byte expected for Enter
 /// by a terminal, including inside bracketed-paste payloads.
@@ -242,7 +283,8 @@ pub(crate) fn c0_letter_key_down(codepoint: u32) -> bool {
 
 #[cfg(test)]
 mod interrupt_tests {
-    use super::{key_to_pty_bytes, should_drop_bare_ctrl_marker};
+    use super::{encode_mouse_event, key_to_pty_bytes, should_drop_bare_ctrl_marker};
+    use crate::terminal::MouseReport;
 
     /// Ctrl+C (ETX) is the terminal interrupt: it must reach the PTY whether or
     /// not the backend still reports the Control modifier alongside it. Upstream
@@ -270,5 +312,67 @@ mod interrupt_tests {
         // …and it does still drop the markers it was written for.
         assert!(should_drop_bare_ctrl_marker("\u{0011}", true, true));
         assert!(should_drop_bare_ctrl_marker("\u{0016}", true, true));
+    }
+
+    #[test]
+    fn mouse_events_encode_as_sgr() {
+        // Press of the left button on the top-left cell: 1-based, uppercase M.
+        assert_eq!(
+            encode_mouse_event(0, false, 0, 0, 80, 24, MouseReport::Sgr),
+            b"\x1b[<0;1;1M".to_vec()
+        );
+        // Release keeps the same button code but ends in lowercase m.
+        assert_eq!(
+            encode_mouse_event(0, true, 4, 9, 80, 24, MouseReport::Sgr),
+            b"\x1b[<0;5;10m".to_vec()
+        );
+        // Wheel up / down are just button codes 64 / 65.
+        assert_eq!(
+            encode_mouse_event(64, false, 0, 0, 80, 24, MouseReport::Sgr),
+            b"\x1b[<64;1;1M".to_vec()
+        );
+    }
+
+    #[test]
+    fn mouse_events_encode_as_x10() {
+        // ESC [ M  Cb Cx Cy with every value offset by 32.
+        assert_eq!(
+            encode_mouse_event(0, false, 0, 0, 80, 24, MouseReport::X10),
+            vec![0x1b, b'[', b'M', 32, 33, 33]
+        );
+        // Release bumps the button code by 3 (X10 has no separate release form).
+        assert_eq!(
+            encode_mouse_event(0, true, 0, 0, 80, 24, MouseReport::X10),
+            vec![0x1b, b'[', b'M', 35, 33, 33]
+        );
+    }
+
+    #[test]
+    fn mouse_coordinates_clamp_into_the_x10_range() {
+        // Negative coordinates must not underflow into a bogus cell.
+        assert_eq!(
+            encode_mouse_event(0, false, -5, -5, 80, 24, MouseReport::Sgr),
+            b"\x1b[<0;1;1M".to_vec()
+        );
+        // Past the right/bottom edge clamps to the last cell.
+        assert_eq!(
+            encode_mouse_event(0, false, 999, 999, 80, 24, MouseReport::Sgr),
+            b"\x1b[<0;80;24M".to_vec()
+        );
+        // X10 can only express up to cell 223, so wider screens clamp there.
+        assert_eq!(
+            encode_mouse_event(0, false, 400, 0, 500, 24, MouseReport::X10),
+            vec![0x1b, b'[', b'M', 32, 255, 33]
+        );
+    }
+
+    #[test]
+    fn mouse_event_with_no_tracking_still_encodes() {
+        // The caller gates on MouseReport::None; encoding is a pure formatter
+        // and falls back to the X10 byte form for anything that is not SGR.
+        assert_eq!(
+            encode_mouse_event(2, false, 0, 0, 80, 24, MouseReport::None),
+            vec![0x1b, b'[', b'M', 34, 33, 33]
+        );
     }
 }

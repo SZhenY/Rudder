@@ -29,7 +29,7 @@ const PACED_QUEUE_EVENT_LIMIT: usize = 256;
 const INTERACTIVE_ECHO_WINDOW: std::time::Duration = std::time::Duration::from_millis(180);
 
 fn term_buf(bufs: &TermBuffers, tab_id: &str) -> Option<TermBufferHandle> {
-    bufs.lock().unwrap().get(tab_id).cloned()
+    bufs.lock().unwrap_or_else(|e| e.into_inner()).get(tab_id).cloned()
 }
 
 pub(crate) fn with_term_buf<R>(
@@ -38,13 +38,13 @@ pub(crate) fn with_term_buf<R>(
     f: impl FnOnce(&mut TermBuffer) -> R,
 ) -> Option<R> {
     let h = term_buf(bufs, tab_id)?;
-    let mut guard = h.lock().unwrap();
+    let mut guard = h.lock().unwrap_or_else(|e| e.into_inner());
     Some(f(&mut guard))
 }
 
 fn ingest_terminal_output(bufs: &TermBuffers, tab_id: &str, chunk: &[u8]) -> Vec<u8> {
     if let Some(h) = term_buf(bufs, tab_id) {
-        h.lock().unwrap().ingest(chunk)
+        h.lock().unwrap_or_else(|e| e.into_inner()).ingest(chunk)
     } else {
         Vec::new()
     }
@@ -1123,8 +1123,8 @@ pub fn run() -> Result<()> {
                 let _ = s.save();
             }
             // Flip live buffers so the change applies without reconnecting.
-            for buffer in bufs.lock().unwrap().values() {
-                buffer.lock().unwrap().json_format_output = enabled;
+            for buffer in bufs.lock().unwrap_or_else(|e| e.into_inner()).values() {
+                buffer.lock().unwrap_or_else(|e| e.into_inner()).json_format_output = enabled;
             }
         });
     }
@@ -1595,7 +1595,7 @@ pub fn run() -> Result<()> {
                 // Re-check the source tab, PID, and owner against the latest sample;
                 // the main window may have switched tabs since the menu was opened.
                 let ownership = {
-                    let states = statuses.lock().unwrap();
+                    let states = statuses.lock().unwrap_or_else(|e| e.into_inner());
                     states.get(&tab_id).map_or_else(
                         || Err(t("当前会话不可用", "The current session is unavailable")),
                         |status| {
@@ -1826,7 +1826,7 @@ pub fn run() -> Result<()> {
         window.on_select_net_iface(move |iface: SharedString| {
             let Some(w) = weak.upgrade() else { return };
             let active = w.get_active_tab_id().to_string();
-            if let Some(st) = statuses.lock().unwrap().get_mut(&active) {
+            if let Some(st) = statuses.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&active) {
                 st.selected_iface = iface.to_string();
                 st.net_hist = vec![0.0; NET_HISTORY_LEN]; // reset graph for new NIC
             }
@@ -3436,7 +3436,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
             // Seed the per-tab status so the sidebar shows "连接中 host" the
             // moment this tab becomes active (the `changed active-tab-id`
             // handler fires refresh-sidebar right after set_active_tab_id below).
-            tab_statuses.lock().unwrap().insert(
+            tab_statuses.lock().unwrap_or_else(|e| e.into_inner()).insert(
                 tab_id.clone(),
                 TabStatus {
                     host: conn_label.clone(),
@@ -3523,7 +3523,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                 )
             };
             let (t24, p24) = new_term(24, 80, store.borrow().scrollback_lines());
-            bufs.lock().unwrap().insert(
+            bufs.lock().unwrap_or_else(|e| e.into_inner()).insert(
                 tab_id.clone(),
                 Arc::new(Mutex::new(TermBuffer {
                     term: t24,
@@ -3549,12 +3549,12 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     json_format_output: store.borrow().json_format_output(),
                 })),
             );
-            render_gates.lock().unwrap().insert(
+            render_gates.lock().unwrap_or_else(|e| e.into_inner()).insert(
                 tab_id.clone(),
                 Arc::new(TabRenderGate::new(RENDER_MIN_INTERVAL)),
             );
             // No followed-cwd yet: the first OSC 7 always triggers a follow.
-            sftp_last_cwd.lock().unwrap().remove(&tab_id);
+            sftp_last_cwd.lock().unwrap_or_else(|e| e.into_inner()).remove(&tab_id);
             // Add the new tab to the focused pane and re-flatten (this also sets
             // active-tab-id to the new tab via refresh_panes).
             layout.borrow_mut().add_tab(tab_id.clone());
@@ -4345,7 +4345,7 @@ fn wire_key_input(
             // with a fresh screen instead of forcing the user to open a new one.
             if key.as_str() == "\n" && !ctrl && !alt {
                 let dead_session = {
-                    let statuses = ctx.tab_statuses.lock().unwrap();
+                    let statuses = ctx.tab_statuses.lock().unwrap_or_else(|e| e.into_inner());
                     statuses
                         .get(tab_id.as_str())
                         .filter(|st| st.state == 2)
@@ -4365,14 +4365,14 @@ fn wire_key_input(
                         h.close();
                     }
                     let dead_sftp =
-                        ctx.sftp_handles.lock().unwrap().remove(tab_id.as_str());
+                        ctx.sftp_handles.lock().unwrap_or_else(|e| e.into_inner()).remove(tab_id.as_str());
                     if let Some(h) = dead_sftp {
                         h.close();
                     }
                     // Fresh screen: new parser, cleared history/selection.
                     {
                         if let Some(h) = term_buf(&ctx.bufs, tab_id.as_str()) {
-                            let mut b = h.lock().unwrap();
+                            let mut b = h.lock().unwrap_or_else(|e| e.into_inner());
                             let (rows, cols) = crate::terminal::term_size(&b.term);
                             (b.term, b.processor) = crate::terminal::new_term(rows, cols, ctx.store.borrow().scrollback_lines());
                             b.rendered.clear();
@@ -4384,12 +4384,12 @@ fn wire_key_input(
                         }
                     }
                     if let Some(st) =
-                        ctx.tab_statuses.lock().unwrap().get_mut(tab_id.as_str())
+                        ctx.tab_statuses.lock().unwrap_or_else(|e| e.into_inner()).get_mut(tab_id.as_str())
                     {
                         st.state = 0;
                     }
                     // Fresh session: the first OSC 7 after reconnect follows.
-                    ctx.sftp_last_cwd.lock().unwrap().remove(tab_id.as_str());
+                    ctx.sftp_last_cwd.lock().unwrap_or_else(|e| e.into_inner()).remove(tab_id.as_str());
                     if let Some(w) = ctx.weak.upgrade() {
                         set_terminal_row(&w, tab_id.as_str(), |t| {
                             t.status =
@@ -4429,7 +4429,7 @@ fn wire_key_input(
             // (DECCKM, set by nano/vim via \x1b[?1h). In that mode the terminal
             // must send \x1bOA/B/C/D instead of \x1b[A/B/C/D.
             let app_cursor = if let Some(h) = term_buf(&bufs, tab_id.as_str()) {
-                let mut b = h.lock().unwrap();
+                let mut b = h.lock().unwrap_or_else(|e| e.into_inner());
                 // Typing snaps the view back to the live bottom so the
                 // user always sees what they're entering.
                 b.view_offset = 0;
@@ -4470,7 +4470,7 @@ fn wire_key_input(
             // alone fires so the filter below can catch IME-injected Backspace
             // events even if they arrive with shift=false.
             if key.as_str().is_empty() && shift && !ctrl && !alt {
-                *last_shift_time.lock().unwrap() = Some(std::time::Instant::now());
+                *last_shift_time.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
                 tracing::info!("[KEY_DIAG] lone-Shift recorded → timestamp saved");
             }
 
@@ -4500,7 +4500,7 @@ fn wire_key_input(
                         && (0x01..=0x1f).contains(&cp)
                         && !is_standalone
                     {
-                        *last_shift_time.lock().unwrap() = Some(std::time::Instant::now());
+                        *last_shift_time.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
                         tracing::info!(
                             "[KEY_DIAG] DROPPED IME C0 marker U+{:04X} (shift={}) → timestamp saved",
                             cp, shift
@@ -4580,7 +4580,7 @@ fn wire_key_input(
             // longer paired with this Backspace. Without clearing it, the broad
             // safety window drops legitimate Vim insert-mode Backspace (#319).
             if key.as_str() != "\u{0008}" && !key.as_str().is_empty() {
-                *last_shift_time.lock().unwrap() = None;
+                *last_shift_time.lock().unwrap_or_else(|e| e.into_inner()) = None;
             }
 
             if key.as_str() == "\u{0008}" && !ctrl && !alt {
@@ -4593,7 +4593,7 @@ fn wire_key_input(
                 // 日志显示百度拼音注入 U+0010(右Shift标记) 到 Backspace 之间
                 // 间隔约 914ms，因此窗口设为 1500ms 以覆盖该场景。
                 let (shift_just_pressed, elapsed_ms) = {
-                    let guard = last_shift_time.lock().unwrap();
+                    let guard = last_shift_time.lock().unwrap_or_else(|e| e.into_inner());
                     match *guard {
                         Some(t) => {
                             let ms = t.elapsed().as_millis();
@@ -4642,14 +4642,14 @@ fn wire_key_input(
                     // Broadcast the same bytes to every online session (#78 pt.4).
                     for (target_id, handle) in h.iter() {
                         if let Some(buffer) = term_buf(&bufs, target_id) {
-                            buffer.lock().unwrap().interactive_echo_until =
+                            buffer.lock().unwrap_or_else(|e| e.into_inner()).interactive_echo_until =
                                 std::time::Instant::now() + INTERACTIVE_ECHO_WINDOW;
                         }
                         handle.send_raw(bytes.clone());
                     }
                 } else if let Some(handle) = h.get(tab_id.as_str()) {
                     if let Some(buffer) = term_buf(&bufs, tab_id.as_str()) {
-                        buffer.lock().unwrap().interactive_echo_until =
+                        buffer.lock().unwrap_or_else(|e| e.into_inner()).interactive_echo_until =
                             std::time::Instant::now() + INTERACTIVE_ECHO_WINDOW;
                     }
                     handle.send_raw(bytes);
@@ -4736,7 +4736,7 @@ fn wire_key_input(
         window.on_copy_terminal_text(move |tab_id: SharedString| {
             let text = term_buf(&bufs, tab_id.as_str())
                 .map(|h| {
-                    let buf = h.lock().unwrap();
+                    let buf = h.lock().unwrap_or_else(|e| e.into_inner());
                     // Copy the drag-selection when there is one, else the
                     // whole displayed screen.
                     let sel = buf.term.selection_to_string().unwrap_or_default();
@@ -4835,7 +4835,7 @@ fn wire_key_input(
         window.on_clear_terminal(move |tab_id: SharedString| {
             let tid = tab_id.to_string();
             if let Some(h) = term_buf(&bufs_clear, &tid) {
-                let mut buf = h.lock().unwrap();
+                let mut buf = h.lock().unwrap_or_else(|e| e.into_inner());
                 let (rows, cols) = crate::terminal::term_size(&buf.term);
                 (buf.term, buf.processor) =
                     crate::terminal::new_term(rows, cols, store_clear.borrow().scrollback_lines());
@@ -4930,23 +4930,14 @@ fn wire_key_input(
         window.on_terminal_wheel(move |tab_id: SharedString, dir: i32, col: i32, row: i32| {
             let tid = tab_id.to_string();
             let bytes = term_buf(&bufs_wheel, &tid).map(|h| {
-                let buf = h.lock().unwrap();
-                if crate::terminal::mouse_report(&buf.term) != crate::terminal::MouseReport::None {
-                    // 1-based cell under the cursor, clamped to the screen.
+                let buf = h.lock().unwrap_or_else(|e| e.into_inner());
+                let report = crate::terminal::mouse_report(&buf.term);
+                if report != crate::terminal::MouseReport::None {
+                    // Wheel up / down are button codes 64 / 65; encode_mouse_event
+                    // handles the 1-based clamping and both wire encodings.
                     let (rows, cols) = crate::terminal::term_size(&buf.term);
-                    let c = (col.clamp(0, cols.saturating_sub(1) as i32) as u16) + 1;
-                    let r = (row.clamp(0, rows.saturating_sub(1) as i32) as u16) + 1;
-                    let btn: u16 = if dir > 0 { 64 } else { 65 }; // wheel up / down
-                    if crate::terminal::mouse_report(&buf.term) == crate::terminal::MouseReport::Sgr
-                    {
-                        format!("\x1b[<{btn};{c};{r}M").into_bytes()
-                    } else {
-                        // Legacy X10 encoding: ESC [ M  Cb Cx Cy  (each value + 32).
-                        let cb = (btn + 32) as u8;
-                        let cx = (c.min(223) + 32) as u8;
-                        let cy = (r.min(223) + 32) as u8;
-                        vec![0x1b, b'[', b'M', cb, cx, cy]
-                    }
+                    let btn: u8 = if dir > 0 { 64 } else { 65 };
+                    crate::terminal::encode_mouse_event(btn, false, col, row, cols, rows, report)
                 } else {
                     // alternate-scroll: 3 arrow presses per notch, app-cursor aware.
                     let one: &[u8] = if dir > 0 {
@@ -5087,7 +5078,7 @@ fn wire_key_input(
                 return;
             };
             {
-                let mut buf = h.lock().unwrap();
+                let mut buf = h.lock().unwrap_or_else(|e| e.into_inner());
                 if crate::terminal::is_alt(&buf.term) || buf.term.selection.is_none() {
                     return;
                 }
