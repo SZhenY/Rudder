@@ -1,7 +1,7 @@
 use crate::terminal::{
-    BuiltScreen, CsiState, HistSpan, Line, OverlineRange, RAW_CAP, RenderedLine, ScrollLine,
-    TermBuffer, build_line, build_row, cursor_pos, highlight_plain_output, is_alt, process_bytes,
-    refresh_overlines, render_term_span, resize_term, term_size,
+    BuiltScreen, CsiState, HistSpan, Line, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
+    ScrollLine, TermBuffer, build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
+    process_bytes, refresh_overlines, render_term_span, resize_term, term_size,
 };
 use crate::ui::TermMatch;
 use crate::ui::TermSpan;
@@ -119,6 +119,15 @@ impl TermBuffer {
     /// longer need to capture scrolled-off lines into a separate history.
     /// The returned bytes are terminal-query replies (DSR/CPR/DA1) that must
     /// be written back to the PTY immediately (#328).
+    /// Refresh the cached `mouse_tracked` flag from the parser's current mouse
+    /// protocol state (the remote app enables it with e.g. `\x1b[?1000h` /
+    /// `\x1b[?1002h`). Kept as a cached bool so the UI hot path doesn't need to
+    /// re-derive it per frame (upstream d8eff40; alacritty variant).
+    fn sync_mouse_tracked(&mut self) {
+        self.mouse_tracked =
+            super::vt_adapter::mouse_report(&self.term) != MouseReport::None;
+    }
+
     pub(crate) fn ingest(&mut self, input: &[u8]) -> Vec<u8> {
         // Pretty-print + colour complete JSON lines before any other handling
         // so the grid, raw replay stream, and query scanner all see the same
@@ -154,6 +163,7 @@ impl TermBuffer {
         }
         self.cap_raw();
         self.ingest_chunk(&bytes);
+        self.sync_mouse_tracked();
         replies
     }
 
@@ -589,6 +599,7 @@ impl TermBuffer {
             self.displayed_text = displayed;
             let rows_used = if alt { rows as i32 } else { last_content + 1 };
             return BuiltScreen {
+                mouse_tracked: self.mouse_tracked,
                 spans,
                 cursor_row: cur_row as i32,
                 cursor_col: cur_col as i32,
@@ -672,6 +683,7 @@ impl TermBuffer {
         }
         self.displayed_text = displayed;
         BuiltScreen {
+            mouse_tracked: self.mouse_tracked,
             spans,
             cursor_row: -1,
             cursor_col: 0,
@@ -781,6 +793,7 @@ mod tests {
             sgr_buf: Vec::new(),
             interactive_echo_until: std::time::Instant::now(),
             json_format_output: false,
+            mouse_tracked: false,
         }
     }
 
@@ -967,6 +980,7 @@ mod tests {
             sgr_buf: Vec::new(),
             interactive_echo_until: std::time::Instant::now(),
             json_format_output: false,
+            mouse_tracked: false,
         };
         let mut input = Vec::new();
         for i in 0..60 {
@@ -1083,6 +1097,7 @@ mod real_file_overline_verify {
             sgr_buf: Vec::new(),
             interactive_echo_until: std::time::Instant::now(),
             json_format_output: false,
+            mouse_tracked: false,
         };
         // Feed in realistic 4 KiB chunks (cat / SSH behaviour).
         for chunk in data.chunks(4096) {
@@ -1142,6 +1157,7 @@ mod render_path_cube_tests {
             sgr_buf: Vec::new(),
             interactive_echo_until: std::time::Instant::now(),
             json_format_output: false,
+            mouse_tracked: false,
         }
     }
 

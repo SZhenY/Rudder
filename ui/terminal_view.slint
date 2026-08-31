@@ -273,6 +273,7 @@ export component TerminalView inherits Rectangle {
     in property <int> scroll-max;       // scrollback depth (max offset) (#103)
     in property <int> scroll-offset;    // current offset (0 = live bottom) (#103)
     in property <bool>   is-alt-screen;
+    in property <bool>   mouse-tracked;    // remote app wants mouse events (btop/htop/mc)
     in property <[TermMatch]> find-matches; // search-highlight rectangles
     in property <[TermMatch]> selection;    // drag-selection highlight rectangles
 
@@ -397,6 +398,11 @@ export component TerminalView inherits Rectangle {
     // mouse cell. Rust sends a mouse-wheel event if the app tracks the mouse, else
     // arrow keys (alternate-scroll).
     callback terminal-wheel(int /* dir */, int /* col */, int /* row */);
+    // Forward a mouse button event to the PTY for mouse-tracking TUI apps
+    // (btop/htop/mc, upstream d8eff40). kind: 0=press 1=release 2=drag-motion;
+    // button: 0=left 1=middle 2=right; col/row are grid cells. Returns true
+    // when the event was sent to the remote (caller skips local handling).
+    callback terminal-mouse(int /* kind */, int /* button */, int /* col */, int /* row */) -> bool;
     callback terminal-scroll-to(int);       // jump to an absolute scrollback offset (#103)
     callback select-start(int, int, bool, bool, bool); // row, col, left-half, ctrl, shift
     callback select-update(int, int, bool);       // extend drag-selection to (row, col, left-half)
@@ -704,6 +710,13 @@ export component TerminalView inherits Rectangle {
                                         root.ctx-x = self.mouse-x;
                                         root.ctx-y = self.mouse-y;
                                         ctx-menu.show();
+                                    } else if (ev.button == PointerEventButton.left
+                                            && root.mouse-tracked && !ev.modifiers.shift) {
+                                        // Mouse-tracking TUI: click goes to the remote app
+                                        // instead of starting a local drag-selection.
+                                        root.terminal-mouse(0, 0,
+                                            floor(self.mouse-x / root.cell-w),
+                                            floor(self.mouse-y / root.cell-h));
                                     } else if (ev.button == PointerEventButton.left) {
                                         root.selecting = true;
                                         root.select-start(
@@ -718,6 +731,11 @@ export component TerminalView inherits Rectangle {
                                         root.paste-from-clipboard();
                                         ime-input.focus();
                                     } else if (ev.button == PointerEventButton.left
+                                            && root.mouse-tracked && !ev.modifiers.shift) {
+                                        root.terminal-mouse(1, 0,
+                                            floor(self.mouse-x / root.cell-w),
+                                            floor(self.mouse-y / root.cell-h));
+                                    } else if (ev.button == PointerEventButton.left
                                             && root.selecting) {
                                         root.selecting = false;
                                         root.autoscroll-dir = 0;
@@ -726,7 +744,12 @@ export component TerminalView inherits Rectangle {
                                 }
                             }
                             moved => {
-                                if (root.selecting) {
+                                if (root.mouse-tracked && self.pressed) {
+                                    // Drag with button held → button code 35 (motion).
+                                    root.terminal-mouse(2, 0,
+                                        floor(self.mouse-x / root.cell-w),
+                                        floor(self.mouse-y / root.cell-h));
+                                } else if (root.selecting) {
                                     // Position of the cursor within the *visible*
                                     // viewport (body-touch sits on the grid Rectangle
                                     // at content y=8px; viewport-y offsets the scroll).

@@ -3474,6 +3474,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                 status: t("连接中...", "Connecting...").into(),
                 spans: ModelRc::from(std::rc::Rc::new(VecModel::<TermSpan>::default())),
                 cursor_row: 0,
+                mouse_tracked: false,
                 cursor_col: 0,
                 rows_used: 0,
                 scroll_max: 0,
@@ -3547,6 +3548,7 @@ fn wire_session_callbacks(ctx: SessionWireCtx) {
                     sgr_buf: Vec::new(),
                     interactive_echo_until: std::time::Instant::now(),
                     json_format_output: store.borrow().json_format_output(),
+                    mouse_tracked: false,
                 })),
             );
             render_gates.lock().unwrap_or_else(|e| e.into_inner()).insert(
@@ -4958,6 +4960,49 @@ fn wire_key_input(
                 h.send_raw(bytes);
             }
         });
+    }
+
+    // Mouse press / release / drag-motion forwarded to the PTY for
+    // mouse-tracking TUI apps (btop/htop/mc, upstream d8eff40). The Slint side
+    // only calls this when the remote enabled a mouse protocol
+    // (mouse_protocol_mode != None, cached as TermBuffer::mouse_tracked), so a
+    // click inside e.g. btop activates the widget under the pointer instead of
+    // starting a local drag-selection. Returns true when bytes were written,
+    // so the caller can skip its own local handling.
+    {
+        let bufs_mouse = bufs.clone();
+        let handles_mouse = handles.clone();
+        window.on_terminal_mouse(
+            move |tab_id: SharedString, kind: i32, button: i32, col: i32, row: i32| -> bool {
+                let tid = tab_id.to_string();
+                let Some(bytes) = term_buf(&bufs_mouse, &tid).map(|h| {
+                    let buf = h.lock().unwrap_or_else(|e| e.into_inner());
+                    if !buf.mouse_tracked {
+                        return None;
+                    }
+                    let encoding = crate::terminal::mouse_report(&buf.term);
+                    if encoding == crate::terminal::MouseReport::None {
+                        return None;
+                    }
+                    let (rows, cols) = crate::terminal::term_size(&buf.term);
+                    let (btn, release) = match kind {
+                        1 => (button as u8, true),  // release
+                        2 => (35, false),           // drag motion with button held
+                        _ => (button as u8, false), // press
+                    };
+                    Some(crate::terminal::encode_mouse_event(
+                        btn, release, col, row, cols, rows, encoding,
+                    ))
+                }) else {
+                    return false;
+                };
+                if let (Some(bytes), Some(h)) = (bytes, handles_mouse.borrow().get(&tid)) {
+                    h.send_raw(bytes);
+                    return true;
+                }
+                false
+            },
+        );
     }
 
     // Scrollbar drag → jump to an absolute scrollback offset (#103).

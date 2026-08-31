@@ -172,6 +172,7 @@ pub(super) fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &
         row.cursor_col = cc;
         row.rows_used = ru;
         row.is_alt_screen = alt;
+        row.mouse_tracked = b.mouse_tracked;
         row.find_matches = fm.clone();
         row.selection = sm.clone();
         row.scroll_max = smax;

@@ -66,6 +66,7 @@ export struct TerminalState {
     scroll-max: int,       // scrollback depth (max offset) — terminal scrollbar (#103)
     scroll-offset: int,    // current scrollback offset (0 = live bottom)
     is-alt-screen: bool,
+    mouse-tracked: bool,          // remote app wants mouse events (btop/htop/mc)
     find-matches: [TermMatch], // search-highlight rectangles
     selection: [TermMatch],    // drag-selection highlight rectangles
     // Per-session font-size override in px; 0 = follow the global setting.
@@ -949,6 +950,9 @@ export component AppWindow inherits Window {
     callback terminal-scroll(string /* tab-id */, int /* delta-lines */);
     // Wheel forwarded to an alt-screen program (#170): tab-id, dir (+1 up/-1 down), col, row.
     callback terminal-wheel(string, int, int, int);
+    // Forward mouse press/release/drag to the PTY (tab-id, kind, button, col, row);
+    // returns true when the bytes were written (caller skips local handling).
+    callback terminal-mouse(string, int, int, int, int) -> bool;
     callback terminal-scroll-to(string /* tab-id */, int /* offset */); // scrollbar drag (#103)
     // Drag-selection lifecycle (grid row/col coordinates).
     callback term-select-start(string /* tab-id */, int /* row */, int /* col */, bool /* left-half */, bool /* ctrl */, bool /* shift */);
@@ -1650,6 +1654,10 @@ export component AppWindow inherits Window {
                     scroll-max: term.scroll-max;
                     scroll-offset: term.scroll-offset;
                     is-alt-screen: term.is-alt-screen;
+                    mouse-tracked: term.mouse-tracked;
+                    terminal-mouse(kind, button, col, row) => {
+                        root.terminal-mouse(term.id, kind, button, col, row);
+                    }
                     find-matches: term.find-matches;
                     selection: term.selection;
                     sftp-panel-height: term.sftp-panel-height;

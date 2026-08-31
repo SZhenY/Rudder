@@ -34,6 +34,11 @@ pub(crate) struct TermBuffer {
     pub(crate) displayed_text: Vec<String>,
     pub(crate) csi_state: CsiState,
     pub(crate) csi_pending: Vec<u8>,
+    /// Whether the remote application is tracking the mouse (alacritty
+    /// `mouse_protocol_mode() != None`). When true, clicks and drags are
+    /// forwarded to the PTY instead of starting a local drag-selection, so
+    /// btop/htop/mc can be operated with the mouse (upstream d8eff40).
+    pub(crate) mouse_tracked: bool,
     pub(crate) raw: VecDeque<u8>,
     /// Row-level render cache: Some(line) when the live grid row has not
     /// changed since the last render, None for cold/invalidated rows.
@@ -156,6 +161,7 @@ pub(crate) struct BuiltScreen {
     pub(crate) is_alt: bool,
     pub(crate) scroll_max: i32,
     pub(crate) scroll_offset: i32,
+    pub(crate) mouse_tracked: bool,
 }
 
 /// Terminal colour, decoupled from the VT parser crate so presentation logic
