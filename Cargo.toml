@@ -64,6 +64,7 @@ unicode-segmentation = "1.12"
 # renderer without switching the whole Windows application to Skia (#269).
 twemoji-assets = { version = "1.5", default-features = false, features = ["png"] }
 russh-sftp = "2.4"
+ring = "0.17"
 rfd = "0.15"
 arboard = "3"
 # Zeroes password buffers on drop so plaintext credentials don't linger in

@@ -3,13 +3,40 @@ use super::types::WebDavAcceptAnyCertVerifier;
 impl ureq::rustls::client::danger::ServerCertVerifier for WebDavAcceptAnyCertVerifier {
     fn verify_server_cert(
         &self,
-        _end_entity: &ureq::rustls::pki_types::CertificateDer<'_>,
+        end_entity: &ureq::rustls::pki_types::CertificateDer<'_>,
         _intermediates: &[ureq::rustls::pki_types::CertificateDer<'_>],
         _server_name: &ureq::rustls::pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
         _now: ureq::rustls::pki_types::UnixTime,
     ) -> std::result::Result<ureq::rustls::client::danger::ServerCertVerified, ureq::rustls::Error>
     {
+        // Optional certificate pinning: when a fingerprint is configured,
+        // only a matching end-entity cert passes. This keeps the
+        // accept-invalid-certs escape hatch usable without silently trusting
+        // any MITM (#webdav-pin).
+        // Copy the 64-char fingerprint so no borrow of `self` escapes the
+        // method (the verifier trait callback's return type outlives `self`).
+        let pin: Option<String> = self
+            .pin
+            .clone()
+            .or_else(|| crate::webdav::webdav_cert_pin().map(str::to_string));
+        if let Some(pin) = pin {
+            use ring::digest::{Context, SHA256};
+            let mut ctx = Context::new(&SHA256);
+            ctx.update(end_entity.as_ref());
+            let hex: String = ctx
+                .finish()
+                .as_ref()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            if hex == pin {
+                return Ok(ureq::rustls::client::danger::ServerCertVerified::assertion());
+            }
+            return Err(ureq::rustls::Error::General(
+                "server certificate does not match the pinned fingerprint".into(),
+            ));
+        }
         Ok(ureq::rustls::client::danger::ServerCertVerified::assertion())
     }
 

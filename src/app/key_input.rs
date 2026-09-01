@@ -82,6 +82,16 @@ pub(crate) fn wire_key_input(
                 ) else {
                     return;
                 };
+                // Non-loopback bind → port is reachable from the LAN; an
+                // unauthenticated dynamic (SOCKS) forward is an open proxy.
+                if forward.bind_addr != "127.0.0.1" && forward.bind_addr != "localhost" {
+                    tracing::warn!(
+                        "runtime tunnel binds non-loopback {}:{} (LAN exposure: {})",
+                        forward.bind_addr,
+                        forward.bind_port,
+                        forward.kind
+                    );
+                }
                 if let Some(handle) = handles_rc.borrow().get(tab_id.as_str()) {
                     handle.add_tunnel(format!("runtime-{}", uuid::Uuid::new_v4()), forward);
                 }

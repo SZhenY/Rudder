@@ -814,6 +814,11 @@ pub struct ConfigFile {
     /// need remote copy support.
     #[serde(default = "default_true")]
     pub osc52_clipboard: bool,
+    /// Optional WebDAV TLS certificate SHA-256 fingerprint (lowercase hex).
+    /// Empty = the accept-invalid-certs toggle stays "accept any"; when set,
+    /// only a cert with this fingerprint passes even with the toggle on.
+    #[serde(default)]
+    pub webdav_cert_pin: String,
     /// Terminal insertion cursor shape: block (default), bar, or underline (#275).
     #[serde(default)]
     pub terminal_cursor_style: String,
@@ -1523,6 +1528,11 @@ impl ConfigStore {
     pub fn osc52_clipboard(&self) -> bool {
         self.cache.osc52_clipboard
     }
+
+    pub fn webdav_cert_pin(&self) -> String {
+        self.cache.webdav_cert_pin.clone()
+    }
+
     pub fn set_osc52_clipboard(&mut self, v: bool) {
         self.cache.osc52_clipboard = v;
     }

@@ -820,6 +820,7 @@ pub fn run() -> Result<()> {
         window.set_osc52_clipboard(s.osc52_clipboard());
         crate::terminal::vt_adapter::OSC52_ENABLED
             .store(s.osc52_clipboard(), std::sync::atomic::Ordering::Relaxed);
+        crate::webdav::set_webdav_cert_pin(s.webdav_cert_pin());
     }
     {
         let s = store.borrow();

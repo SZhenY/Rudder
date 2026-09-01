@@ -116,6 +116,16 @@ pub fn remember(host: &str, port: u16, key: &PublicKey) -> Result<()> {
     out.push(' ');
     out.push_str(&line);
     out.push('\n');
-    std::fs::write(&p, out).with_context(|| format!("write {}", p.display()))?;
+    // Atomic write: temp file + rename (mirrors ConfigStore::save). A plain
+    // overwrite could corrupt the file mid-crash and lose every known key;
+    // 0600 keeps host-key fingerprints owner-only (#atomic-known-hosts).
+    let tmp = p.with_extension("known_hosts.tmp");
+    std::fs::write(&tmp, out).with_context(|| format!("write {}", tmp.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+    std::fs::rename(&tmp, &p).with_context(|| format!("finalise {}", p.display()))?;
     Ok(())
 }

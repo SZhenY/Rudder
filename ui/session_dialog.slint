@@ -183,6 +183,14 @@ component PortForwardRow inherits VerticalLayout {
             edited(value) => { root.bind-port = value; root.notify-updated(); }
         }
     }
+    // Non-loopback binds expose the port on the local network (an unauthenticated
+    // SOCKS proxy when kind == "dynamic") — surface that risk right here (#F-001).
+    if root.bind-addr != "" && root.bind-addr != "127.0.0.1" && root.bind-addr != "localhost" : Text {
+        text: @tr("⚠ Non-loopback address exposes this port on the local network. Only use on trusted networks.");
+        color: Theme.warning;
+        font-size: Theme.fs-xs;
+        wrap: word-wrap;
+    }
     if root.kind != "dynamic" : HorizontalLayout {
         spacing: 6px;
         MiniInput {

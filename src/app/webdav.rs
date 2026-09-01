@@ -98,7 +98,7 @@ pub(super) fn webdav_agent(accept_invalid_certs: bool) -> ureq::Agent {
         .with_protocol_versions(&[&ureq::rustls::version::TLS12, &ureq::rustls::version::TLS13])
         .expect("rustls ring provider supports TLS 1.2 and TLS 1.3")
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(WebDavAcceptAnyCertVerifier))
+        .with_custom_certificate_verifier(Arc::new(WebDavAcceptAnyCertVerifier::default()))
         .with_no_client_auth();
         builder = builder.tls_config(Arc::new(tls_config));
     }
