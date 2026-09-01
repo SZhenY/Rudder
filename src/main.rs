@@ -19,7 +19,38 @@ mod ui;
 mod wallpaper;
 mod webdav;
 
+/// Install a panic hook that records crashes into `error.log` (beside the
+/// config) and stderr. With `panic = "abort"` in release, a background-task
+/// panic would otherwise silently kill the GUI with no trace (#panic-hook).
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "non-string panic".to_string()
+        };
+        let location = info
+            .location()
+            .map(|l| l.to_string())
+            .unwrap_or_default();
+        let msg = format!("panic: {payload}\n  at {location}");
+        eprintln!("{msg}");
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(crate::config::log_dir().join("error.log"))
+        {
+            use std::io::Write;
+            let _ = writeln!(f, "{msg}");
+        }
+    }));
+}
+
 fn main() -> anyhow::Result<()> {
+    install_panic_hook();
+
     if std::env::args().any(|arg| arg == "--version" || arg == "-V") {
         println!("rudder {}", env!("CARGO_PKG_VERSION"));
         return Ok(());

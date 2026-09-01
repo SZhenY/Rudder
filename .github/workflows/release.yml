@@ -47,9 +47,27 @@ jobs:
             exit 1
           fi
 
+  quality:
+    name: Test + lint gate
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      # fmt --check intentionally omitted: the tree has ~99 pre-existing
+      # formatting diffs (fmt was never run historically). Enabling the gate
+      # now would redline CI; formatting the whole tree is tracked separately.
+      - name: cargo clippy -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+      - name: cargo test --release
+        run: cargo test --release
+
   build:
     name: ${{ matrix.name }}
-    needs: check-version
+    needs: [check-version, quality]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

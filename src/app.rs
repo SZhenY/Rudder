@@ -2951,8 +2951,8 @@ mod key_tests {
         assert!(!paste_requires_large_review("short prompt\nsecond line"));
         assert!(!paste_requires_large_review(&"a".repeat(600)));
         assert!(paste_requires_large_review(&"a".repeat(601)));
-        assert!(!paste_requires_large_review(&vec!["line"; 12].join("\r\n")));
-        assert!(paste_requires_large_review(&vec!["line"; 13].join("\r\n")));
+        assert!(!paste_requires_large_review(&["line"; 12].join("\r\n")));
+        assert!(paste_requires_large_review(&["line"; 13].join("\r\n")));
     }
 
     #[test]
