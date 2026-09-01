@@ -492,4 +492,26 @@ mod tests {
         assert!(runs[0].strike);
         assert!(!runs[0].bold);
     }
+
+    #[test]
+    fn build_line_reports_wrapline_on_overflow() {
+        // A full row gets WRAPLINE when the next char wraps onto the
+        // following line; the follow-up row itself is not wrapped.
+        let (mut term, mut proc) = new_term(5, 10, 100);
+        process_bytes(&mut proc, &mut term, b"aaaaaaaaaaa"); // 11 > 10 cols
+        let (plain, _, wrapped) = build_row(&term, 0, 10, &[]);
+        assert_eq!(plain, "aaaaaaaaaa");
+        assert!(wrapped, "full row must carry the WRAPLINE flag");
+        let (_, _, wrapped_next) = build_row(&term, 1, 10, &[]);
+        assert!(!wrapped_next, "the overflow row itself must not be wrapped");
+    }
+
+    #[test]
+    fn build_line_returns_empty_for_a_clear_row() {
+        let (term, _proc) = new_term(5, 10, 100);
+        let (plain, runs, wrapped) = build_row(&term, 0, 10, &[]);
+        assert!(plain.is_empty());
+        assert!(runs.is_empty());
+        assert!(!wrapped);
+    }
 }

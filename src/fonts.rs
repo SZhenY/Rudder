@@ -47,6 +47,10 @@ pub(crate) fn external_fonts_dirs() -> Vec<PathBuf> {
     let mut dirs = vec![external_fonts_dir()];
     #[cfg(target_os = "macos")]
     if let Ok(exe) = std::env::current_exe() {
+        // User-chosen path: <exe>/config/fonts (e.g. …/Contents/MacOS/rudder/
+        // config/fonts). Note this is intentionally *under the executable
+        // file's* path, not its parent dir — the user explicitly asked for
+        // this layout in the 0.7.2 font-fallback discussion.
         let adjacent = exe.join("config").join("fonts");
         if adjacent != dirs[0] && !dirs.contains(&adjacent) {
             dirs.push(adjacent);
@@ -215,6 +219,36 @@ mod tests {
         assert!(
             dir.to_string_lossy().contains("config"),
             "Windows fonts must live under <exe_dir>/config/fonts, got {dir:?}"
+        );
+    }
+
+    #[test]
+    fn external_dirs_starts_with_the_primary_dir_and_has_no_duplicates() {
+        let dirs = external_fonts_dirs();
+        assert!(!dirs.is_empty(), "at least the primary dir is expected");
+        assert_eq!(dirs[0], external_fonts_dir(), "primary dir must come first");
+        let mut seen = std::collections::HashSet::new();
+        for dir in &dirs {
+            assert!(
+                seen.insert(dir.clone()),
+                "duplicate font dir in {dirs:?}: {dir:?}"
+            );
+        }
+    }
+
+    /// The macOS fallback is the user-requested `<exe>/config/fonts` (a
+    /// child of the executable *file* path: …/Contents/MacOS/rudder/config/
+    /// fonts) — this is what the user asked for in the 0.7.2 font-fallback
+    /// discussion, so guard it explicitly.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_fallback_dir_sits_under_the_executable_file_path() {
+        let dirs = external_fonts_dirs();
+        let exe = std::env::current_exe().expect("current_exe");
+        let intended = exe.join("config").join("fonts");
+        assert!(
+            dirs.contains(&intended),
+            "expected <exe>/config/fonts = {intended:?} in {dirs:?}"
         );
     }
 }

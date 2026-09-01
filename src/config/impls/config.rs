@@ -162,6 +162,13 @@ fn resolve_data_dir() -> PathBuf {
         && portable.exists()
         && !dir.join("sessions.json").exists()
     {
+        // If the per-user dir holds a secret.key but no sessions.json, that
+        // key may not decrypt the portable sessions (the two files are a
+        // pair). Drop the orphan key so migrate_legacy pulls the portable
+        // pair in as a unit, keeping sessions decryptable (#migration-consistency).
+        if dir.join("secret.key").exists() && portable.join("sessions.json").exists() {
+            let _ = fs::remove_file(dir.join("secret.key"));
+        }
         migrate_legacy(&portable, &dir);
     }
     dir
@@ -3007,6 +3014,170 @@ mod tests {
         let raw = r#"{"download_always_ask": true}"#;
         let cache: ConfigFile = serde_json::from_str(raw).unwrap();
         assert!(!cache.zen_mode);
+    }
+
+    // ── Data-dir migration (#141) ────────────────────────────────────────
+    //
+    // `migrate_legacy` is the one-shot copy that runs the first time a build
+    // lands on a new data dir. It is the only code that moves user secrets
+    // between directories, so its three guarantees are asserted here:
+    // copy everything, never clobber an existing destination, leave the
+    // originals in place.
+
+    #[test]
+    fn migrate_legacy_copies_all_three_data_files() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        for name in ["sessions.json", "secret.key", "known_hosts"] {
+            std::fs::write(src.path().join(name), format!("content:{name}")).unwrap();
+        }
+
+        migrate_legacy(src.path(), dst.path());
+
+        for name in ["sessions.json", "secret.key", "known_hosts"] {
+            assert_eq!(
+                std::fs::read_to_string(dst.path().join(name)).unwrap(),
+                format!("content:{name}"),
+                "{name} must be migrated"
+            );
+        }
+    }
+
+    #[test]
+    fn migrate_legacy_never_overwrites_an_existing_destination() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("sessions.json"), b"from-legacy").unwrap();
+        std::fs::write(dst.path().join("sessions.json"), b"already-there").unwrap();
+
+        migrate_legacy(src.path(), dst.path());
+
+        assert_eq!(
+            std::fs::read_to_string(dst.path().join("sessions.json")).unwrap(),
+            "already-there",
+            "an existing destination file must survive migration"
+        );
+    }
+
+    #[test]
+    fn migrate_legacy_leaves_the_source_files_in_place() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("secret.key"), b"original").unwrap();
+
+        migrate_legacy(src.path(), dst.path());
+
+        assert_eq!(
+            std::fs::read_to_string(src.path().join("secret.key")).unwrap(),
+            "original",
+            "migration copies, never moves"
+        );
+    }
+
+    #[test]
+    fn migrate_legacy_ignores_missing_source_files() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("known_hosts"), b"only-this-one").unwrap();
+
+        migrate_legacy(src.path(), dst.path());
+
+        assert!(dst.path().join("known_hosts").exists());
+        assert!(!dst.path().join("sessions.json").exists());
+        assert!(!dst.path().join("secret.key").exists());
+    }
+
+    #[test]
+    fn migrate_legacy_is_a_noop_for_the_same_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("sessions.json"), b"untouched").unwrap();
+
+        migrate_legacy(dir.path(), dir.path());
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("sessions.json")).unwrap(),
+            "untouched"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn migrate_legacy_makes_the_secret_key_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        let key = src.path().join("secret.key");
+        std::fs::write(&key, b"secret-bytes").unwrap();
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        migrate_legacy(src.path(), dst.path());
+
+        let mode = std::fs::metadata(dst.path().join("secret.key"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "secret.key must be 0600, got {mode:o}");
+    }
+
+    #[test]
+    fn dedup_sorted_sorts_case_insensitively_and_drops_exact_duplicates() {
+        // Stable sort by lowercase; exact-case duplicates are adjacent after
+        // the sort so `dedup()` removes them. Case-variants ("zeta" vs "ZETA")
+        // are NOT merged — this matches the pre-refactor behaviour this helper
+        // was extracted from (4 call sites did sort_by_key(lowercase)+dedup).
+        assert_eq!(
+            dedup_sorted(vec![
+                "zeta".into(),
+                "Alpha".into(),
+                "beta".into(),
+                "alpha".into(),
+                "ZETA".into(),
+            ]),
+            vec!["Alpha", "alpha", "beta", "zeta", "ZETA"]
+        );
+        assert!(dedup_sorted(Vec::new()).is_empty());
+
+        // Exact duplicates are removed regardless of case-grouping.
+        assert_eq!(
+            dedup_sorted(vec!["SSH".into(), "ssh".into(), "ftp".into(), "ssh".into()]),
+            vec!["ftp", "SSH", "ssh"]
+        );
+    }
+
+    /// macOS keeps every user file under one per-user directory: logs are a
+    /// subdir of the data dir (#macos-data-dir).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_log_dir_is_a_subdir_of_the_data_dir() {
+        let data = data_dir();
+        let log = log_dir();
+        assert!(
+            log.starts_with(&data),
+            "log dir {log:?} must live under data dir {data:?}"
+        );
+        assert_eq!(log.file_name().unwrap(), "log");
+        assert!(log.is_dir(), "log_dir() must create its directory");
+    }
+
+    /// The macOS branch must resolve to the per-user OS config dir — the
+    /// app bundle (/Applications) is shared and read-only, so no `config/`
+    /// folder may ever be created beside the executable.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_data_dir_is_the_per_user_os_dir_and_not_exe_adjacent() {
+        let data = data_dir();
+        assert_eq!(
+            data,
+            legacy_data_dir().expect("per-user OS config dir"),
+            "macOS must use the official per-user location"
+        );
+        if let Some(portable) = portable_data_dir() {
+            assert_ne!(
+                data, portable,
+                "macOS must not use the exe-adjacent portable dir"
+            );
+        }
     }
 }
 

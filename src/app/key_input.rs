@@ -1280,3 +1280,26 @@ pub(crate) fn redact_key(key: &str) -> String {
     }
     parts.join(",")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // key_input.rs shipped with zero self-contained tests after the stage-D
+    // move (420ab29): the full coverage for `parse_tunnel_forward` /
+    // `redact_key` lives in app.rs's `key_tests` module, which imports the
+    // functions from here. This module anchors the coverage next to the code
+    // and adds cases the app.rs tests don't cover (port/host whitespace).
+
+    #[test]
+    fn parse_tunnel_forward_trims_whitespace_in_bind_and_host() {
+        let f = parse_tunnel_forward(
+            "local", "", "  127.0.0.1  ", " 8080 ", "  db.internal ", " 5432 ",
+        )
+        .unwrap();
+        assert_eq!(f.bind_addr, "127.0.0.1");
+        assert_eq!(f.bind_port, 8080);
+        assert_eq!(f.host, "db.internal");
+        assert_eq!(f.host_port, 5432);
+    }
+}

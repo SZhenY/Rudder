@@ -48,11 +48,14 @@
           persist either that value or ARPINSTALLLOCATION. MainExecutable's
           generated component GUID in those packages was stable and is now
           pinned explicitly below.
+          NOTE: the registry search keeps the OLD key (Software\meatshell)
+          because it looks up installs created before the rename; the new
+          installer itself writes Software\Rudder.
         -->
         <Property Id="APPLICATIONFOLDER" Secure="yes">
             <RegistrySearch Id="PreviousInstallDirRegistry"
                 Root="HKLM"
-                Key="Software\Rudder"
+                Key="Software\meatshell"
                 Name="InstallDir"
                 Type="directory"
                 Win64="yes"/>
