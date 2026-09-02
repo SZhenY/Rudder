@@ -1,5 +1,5 @@
 use crate::terminal::{
-    BuiltScreen, CsiState, HistSpan, Line, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
+    BuiltScreen, CsiState, HistSpan, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
     ScrollLine, TermBuffer, build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
     process_bytes, refresh_overlines, render_term_span, resize_term, term_size,
 };
@@ -25,7 +25,6 @@ fn terminal_query(sequence: &[u8]) -> Option<TerminalQuery> {
 
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::Line as GridLine;
-use alacritty_terminal::term::TermDamage;
 
 /// Upper bound on cached scrollback lines. Roughly one screenful per entry, so
 /// this keeps the cache in the low hundreds of KiB; exceeding it clears rather
@@ -253,7 +252,6 @@ impl TermBuffer {
         // interceptor can read the exact cursor position where each SGR takes
         // effect (the grid is up to date for every segment we feed).
         self.ingest_segments(bytes);
-        let (rows, cols) = term_size(&self.term);
         let alt = is_alt(&self.term);
         if alt || is_fullscreen_refresh {
             // Alt-screen switch and full-screen redraws rewrite the whole

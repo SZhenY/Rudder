@@ -464,11 +464,16 @@ impl<'a, IO: ZmodemIo> Rx<'a, IO> {
 /// True for bytes that make up a ZMODEM hex close frame (ZFIN) or the "OO"
 /// over-and-out, used to drain the sender's lingering close frames without
 /// eating the shell prompt that follows (which starts with ESC/letters) (#76).
+///
+/// ZMODEM hex headers use UPPERCASE A-F, never lowercase a-f. Lowercase hex
+/// letters on the wire are almost always the shell prompt itself (`dev@host`,
+/// `admin@box`), so they must NOT be drained — otherwise the prompt loses its
+/// first characters after every `sz` (#zmodem-drain-prompt).
 fn is_close_byte(b: u8) -> bool {
     matches!(b,
         b'*' | ZDLE | b'A' | b'B' | b'C' | b'O'
         | b'\r' | b'\n' | 0x8a | 0x11
-        | b'0'..=b'9' | b'a'..=b'f')
+        | b'0'..=b'9')
 }
 
 /// Where received files go: the user's Downloads dir, else a temp fallback.

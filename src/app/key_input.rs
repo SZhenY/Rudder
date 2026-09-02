@@ -897,8 +897,13 @@ pub(crate) fn wire_key_input(
             std::thread::spawn(move || {
                 match arboard::Clipboard::new().and_then(|mut cb| cb.get_text()) {
                     Ok(text) => {
-                        if text.contains(['\r', '\n']) {
-                            let large = paste_requires_large_review(&text);
+                        // Review gate: multi-line pastes AND single-line pastes
+                        // longer than the compact limit (a 100 KB base64 line
+                        // used to stream straight into the PTY — past
+                        // #single-line-paste-review).
+                        if text.contains(['\r', '\n']) || paste_requires_large_review(&text) {
+                            let large = text.contains(['\r', '\n'])
+                                && paste_requires_large_review(&text);
                             let preview = text.clone();
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(w) = weak.upgrade() {
