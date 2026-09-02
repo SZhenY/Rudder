@@ -1014,6 +1014,44 @@ pub(crate) fn wire_key_input(
         });
     }
 
+    // Enter / Shift+Enter in the find bar → next / previous match (#find-nav).
+    {
+        let bufs_find = bufs.clone();
+        let weak = window.as_weak();
+        let nav = move |tab_id: &str, forward: bool| {
+            let tid = tab_id.to_string();
+            let moved = with_term_buf(&bufs_find, &tid, |buf| {
+                let q = buf.find_query.clone();
+                if q.is_empty() {
+                    return false;
+                }
+                if buf.scroll_to_find_match(&q, forward) {
+                    buf.render();
+                    true
+                } else {
+                    false
+                }
+            })
+            .unwrap_or(false);
+            if moved
+                && let Some(win) = weak.upgrade() {
+                    rebuild_tab_display(&win, &bufs_find, &tid);
+                    // Recompute the highlight rectangles for the new viewport.
+                    let matches = with_term_buf(&bufs_find, &tid, |buf| {
+                        compute_find_matches(&buf.displayed_text, &buf.find_query)
+                    })
+                    .unwrap_or_default();
+                    let model = ModelRc::from(Rc::new(VecModel::from(matches)));
+                    set_terminal_row(&win, &tid, |row| {
+                        row.find_matches = model.clone();
+                    });
+                }
+        };
+        let nav_next = nav.clone();
+        window.on_find_next(move |tab_id: SharedString| nav_next(&tab_id, true));
+        window.on_find_prev(move |tab_id: SharedString| nav(&tab_id, false));
+    }
+
     // Mouse-wheel → scroll the scrollback history.
     {
         let bufs_scroll = bufs.clone();

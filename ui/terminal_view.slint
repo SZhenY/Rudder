@@ -392,6 +392,8 @@ export component TerminalView inherits Rectangle {
     callback copy-terminal-text();
     callback clear-terminal();              // wipe this session's screen buffer
     callback find-query-changed(string);    // recompute search highlights
+    callback find-next();                   // jump to next match (Enter)
+    callback find-prev();                   // jump to previous match (Shift+Enter)
     callback terminal-scroll(int);          // scroll history by N lines (+ = up)
     // Wheel inside an alt-screen app (tmux/less/vim): forward to the program so it
     // scrolls, instead of doing nothing (#170). dir = +1 up / -1 down; col/row =
@@ -1250,6 +1252,14 @@ export component TerminalView inherits Rectangle {
                                     root.find-query-changed("");
                                     self.text = "";
                                     ime-input.focus();
+                                    accept
+                                } else if (e.text == "\u{000d}" || e.text == "\u{000a}") {
+                                    // Enter → next match; Shift+Enter → previous.
+                                    if (e.modifiers.shift) {
+                                        root.find-prev();
+                                    } else {
+                                        root.find-next();
+                                    }
                                     accept
                                 } else {
                                     reject

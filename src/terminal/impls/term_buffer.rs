@@ -124,6 +124,70 @@ impl TermBuffer {
         true
     }
 
+    /// Jump to the next (`forward`) or previous match of `query` measured
+    /// from the current view top, wrapping around the whole scrollback+live
+    /// range. Returns false when nothing matches or the view cannot move.
+    /// Line granularity, like `scroll_to_first_find_match` (#find-nav).
+    pub(crate) fn scroll_to_find_match(&mut self, query: &str, forward: bool) -> bool {
+        if query.is_empty() || is_alt(&self.term) {
+            return false;
+        }
+        let q = query.to_lowercase();
+        let (rows, cols) = term_size(&self.term);
+        let rows = rows as usize;
+        let hist_len = self
+            .term
+            .total_lines()
+            .saturating_sub(self.term.screen_lines());
+        let combined_len = hist_len + rows;
+        if combined_len == 0 {
+            return false;
+        }
+        // combined index i: i < hist_len → scrollback (oldest first);
+        // i >= hist_len → live rows.
+        let line_contains = |term: &crate::terminal::ATerm, i: usize| -> bool {
+            if i < hist_len {
+                build_line(
+                    term,
+                    GridLine(i as i32 - hist_len as i32),
+                    cols,
+                    &[],
+                )
+                .0
+            } else {
+                build_row(term, (i - hist_len) as u16, cols, &[]).0
+            }
+            .to_lowercase()
+            .contains(&q)
+        };
+        let mut hits: Vec<usize> = (0..combined_len)
+            .filter(|&i| line_contains(&self.term, i))
+            .collect();
+        if hits.is_empty() {
+            return false;
+        }
+        let cur_top = hist_len.saturating_sub(self.view_offset);
+        let target = if forward {
+            match hits.iter().position(|&i| i > cur_top) {
+                Some(p) => hits[p],
+                None => hits[0], // wrap to the first
+            }
+        } else {
+            match hits.iter().rposition(|&i| i < cur_top) {
+                Some(p) => hits[p],
+                None => hits[hits.len() - 1], // wrap to the last
+            }
+        };
+        hits.clear();
+        let clamped = target.min(combined_len.saturating_sub(rows));
+        let new_offset = combined_len.saturating_sub(rows + clamped);
+        if self.view_offset == new_offset {
+            return false;
+        }
+        self.view_offset = new_offset;
+        true
+    }
+
     /// Feed bytes to alacritty.  Scrollback is read on demand from the
     /// alacritty Grid via negative `Line` indices in `render()`, so we no
     /// longer need to capture scrolled-off lines into a separate history.
@@ -477,13 +541,28 @@ impl TermBuffer {
     }
 
     pub(crate) fn reflow(&mut self, new_rows: u16, new_cols: u16) {
+        let was_scrolled = self.view_offset > 0;
+        let old_offset = self.view_offset;
         resize_term(&mut self.term, new_rows, new_cols);
         self.rendered.clear();
         // A reflow rewraps every line: cached scrollback spans were built
         // against the old width and are meaningless now.
         self.scroll_cache.clear();
         self.render_gen = self.render_gen.wrapping_add(1);
-        self.view_offset = 0;
+        // Rows rewrap on resize, so the exact offset cannot be preserved —
+        // but snapping to the bottom while the user was reading history was
+        // jarring. Clamp the old offset into the new history so they stay
+        // roughly where they were (#reflow-keep-offset).
+        self.view_offset = if was_scrolled {
+            old_offset.min(
+                self.term
+                    .grid()
+                    .history_size()
+                    .saturating_sub(new_rows as usize),
+            )
+        } else {
+            0
+        };
         self.term.selection = None;
         self.clear_overlines();
     }

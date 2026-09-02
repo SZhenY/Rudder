@@ -391,7 +391,19 @@ pub(super) fn apply_session_event_to_window<'a>(
                 }
                 match found {
                     Some(i) => model.set_row_data(i, rec),
-                    None => model.insert(0, rec), // newest at top
+                    None => {
+                        model.insert(0, rec); // newest at top
+                        // Auto-evict the tail past the cap so a long session's
+                        // transfer history can't grow without bound. Newest
+                        // rows are at index 0, so keeping the head is correct.
+                        const MAX_TRANSFER_ROWS: usize = 200;
+                        if model.row_count() > MAX_TRANSFER_ROWS {
+                            let keep: Vec<TransferInfo> = (0..MAX_TRANSFER_ROWS)
+                                .filter_map(|i| model.row_data(i))
+                                .collect();
+                            model.set_vec(keep);
+                        }
+                    }
                 }
                 // Drive the breathing indicator on the Transfers toolbar button:
                 // `true` while any row is active (0) or preparing (3); flips back
