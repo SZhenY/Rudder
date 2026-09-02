@@ -116,6 +116,16 @@ pub(super) fn resolve_front_hostkey(win: &AppWindow, accept: bool) {
     }
 }
 
+/// Drop any cached credential reply for `session_id`. Called when
+/// authentication with a previously accepted (but wrong) password fails, so
+/// the next attempt shows the dialog again instead of silently reusing the
+/// bad credentials (#cred-cache-invalidate).
+pub(crate) fn invalidate_cred_cache(session_id: &str) {
+    CRED_DECIDED.with(|d| {
+        d.borrow_mut().remove(session_id);
+    });
+}
+
 pub(crate) fn enqueue_cred_prompt(
     win: &AppWindow,
     session_id: String,
@@ -178,9 +188,15 @@ pub(super) fn resolve_front_cred(win: &AppWindow, accept: bool) {
     let has_next = CRED_QUEUE.with(|q| {
         let mut q = q.borrow_mut();
         if let Some(p) = q.pop_front() {
-            CRED_DECIDED.with(|d| {
-                d.borrow_mut().insert(p.session_id.clone(), reply.clone());
-            });
+            // Only cache an ACCEPTED reply. A rejection must not poison the
+            // session: caching `None` made every later attempt for this
+            // session short-circuit to Cancelled without showing the dialog
+            // again (same class of bug as #152 on the host-key path).
+            if reply.is_some() {
+                CRED_DECIDED.with(|d| {
+                    d.borrow_mut().insert(p.session_id.clone(), reply.clone());
+                });
+            }
             if let Some((ref u, ref pw, true)) = reply {
                 persist_credentials(&p.session_id, u, pw, p.need_user, p.need_password);
             }

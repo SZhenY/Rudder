@@ -276,7 +276,15 @@ pub(crate) fn build_line(
         // Tab expansion — identical to `build_row`.
         if attr.contents == "\t" {
             let col_i = column as i32;
-            let (spaces, next_col) = tab_expansion(col_i);
+            let (spaces_raw, next_raw) = tab_expansion(col_i);
+            // Clamp the tab stop to the line end: a Tab landing in the last
+            // columns must not widen `plain` past `columns` (it broke full-screen
+            // copy and shifted find highlights, #tab-overflow). alacritty stops
+            // the cursor at the last column in that case, so the expansion ends
+            // there too.
+            let _ = spaces_raw;
+            let next_col = next_raw.min(columns as i32).max(col_i);
+            let spaces = (next_col - col_i) as usize;
             let text = " ".repeat(spaces);
             plain.push_str(&text);
             let mut advance = column + 1;

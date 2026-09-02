@@ -545,10 +545,7 @@ pub(crate) fn wire_key_input(
             // (DECCKM, set by nano/vim via \x1b[?1h). In that mode the terminal
             // must send \x1bOA/B/C/D instead of \x1b[A/B/C/D.
             let app_cursor = if let Some(h) = term_buf(&bufs, tab_id.as_str()) {
-                let mut b = h.lock().unwrap_or_else(|e| e.into_inner());
-                // Typing snaps the view back to the live bottom so the
-                // user always sees what they're entering.
-                b.view_offset = 0;
+                let b = h.lock().unwrap_or_else(|e| e.into_inner());
                 crate::terminal::app_cursor(&b.term)
             } else {
                 false
@@ -758,14 +755,22 @@ pub(crate) fn wire_key_input(
                     // Broadcast the same bytes to every online session (#78 pt.4).
                     for (target_id, handle) in h.iter() {
                         if let Some(buffer) = term_buf(&bufs, target_id) {
-                            buffer.lock().unwrap_or_else(|e| e.into_inner()).interactive_echo_until =
+                            let mut b = buffer.lock().unwrap_or_else(|e| e.into_inner());
+                            // Only keys that actually produce PTY bytes snap the
+                            // view back to the live bottom — a lone modifier
+                            // press must not discard the scrollback position
+                            // (#key-snapback).
+                            b.view_offset = 0;
+                            b.interactive_echo_until =
                                 std::time::Instant::now() + INTERACTIVE_ECHO_WINDOW;
                         }
                         handle.send_raw(bytes.clone());
                     }
                 } else if let Some(handle) = h.get(tab_id.as_str()) {
                     if let Some(buffer) = term_buf(&bufs, tab_id.as_str()) {
-                        buffer.lock().unwrap_or_else(|e| e.into_inner()).interactive_echo_until =
+                        let mut b = buffer.lock().unwrap_or_else(|e| e.into_inner());
+                        b.view_offset = 0;
+                        b.interactive_echo_until =
                             std::time::Instant::now() + INTERACTIVE_ECHO_WINDOW;
                     }
                     handle.send_raw(bytes);

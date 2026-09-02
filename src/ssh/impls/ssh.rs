@@ -1767,7 +1767,13 @@ pub async fn test_session_auth(
     let result = match auth {
         AuthResult::Success => Ok(()),
         AuthResult::Cancelled => Err(anyhow!("login cancelled")),
-        AuthResult::Failed => Err(anyhow!("authentication failed")),
+        AuthResult::Failed => {
+            // The (accepted-but-wrong) credentials cached for this session are
+            // now known bad — drop them so the next attempt shows the dialog
+            // again instead of silently reusing them (#cred-cache-invalidate).
+            crate::app::auth_dialogs::invalidate_cred_cache(&session.id);
+            Err(anyhow!("authentication failed"))
+        }
     };
 
     let _ = handle
@@ -2130,8 +2136,21 @@ async fn run_session(
                     let auxiliary_available = auxiliary_channel.is_some();
 
                     match kind {
-                        AuxiliaryChannelKind::Resources => mon_channel = auxiliary_channel,
-                        AuxiliaryChannelKind::Processes => proc_channel = auxiliary_channel,
+                        AuxiliaryChannelKind::Resources => {
+                            // Close the old channel before overwriting — russh
+                            // 0.49 Channel has no Drop, so a silent replacement
+                            // leaves the server-side monitor loop running.
+                            if let Some(old) = mon_channel.take() {
+                                let _ = old.close().await;
+                            }
+                            mon_channel = auxiliary_channel;
+                        }
+                        AuxiliaryChannelKind::Processes => {
+                            if let Some(old) = proc_channel.take() {
+                                let _ = old.close().await;
+                            }
+                            proc_channel = auxiliary_channel;
+                        }
                         AuxiliaryChannelKind::SystemInfo => sys_channel = auxiliary_channel,
                     }
                     auxiliary_startup.complete();
@@ -2180,25 +2199,24 @@ async fn run_session(
                             mon_buf.clear();
                             proc_buf.clear();
                         } else {
-                            // Resume: reopen fresh exec channels for both monitors.
-                            match handle.channel_open_session().await {
-                                Ok(monitor) => {
-                                    if monitor.exec(true, MON_CMD).await.is_ok() {
-                                        mon_channel = Some(monitor);
-                                    }
-                                }
-                                Err(error) => tracing::warn!("monitor resume failed: {error}"),
+                            // Resume: reopen fresh exec channels for both
+                            // monitors. Reuse open_auxiliary_channel so the 3s
+                            // timeout applies here too — awaiting the raw
+                            // channel_open inside this select branch used to
+                            // freeze output/input/resize for the whole keepalive
+                            // window when the server stopped responding
+                            // (#monitor-resume-timeout).
+                            if let Some(old) = mon_channel.take() {
+                                let _ = old.close().await;
                             }
-                            match handle.channel_open_session().await {
-                                Ok(processes) => {
-                                    if processes.exec(true, PROC_CMD).await.is_ok() {
-                                        proc_channel = Some(processes);
-                                    }
-                                }
-                                Err(error) => {
-                                    tracing::warn!("process monitor resume failed: {error}")
-                                }
+                            if let Some(old) = proc_channel.take() {
+                                let _ = old.close().await;
                             }
+                            mon_channel =
+                                open_auxiliary_channel(&handle, MON_CMD, "monitor").await;
+                            proc_channel =
+                                open_auxiliary_channel(&handle, PROC_CMD, "process monitor")
+                                    .await;
                             prev_cpu = None;
                             prev_net.clear();
                             prev_net_at = std::time::Instant::now();

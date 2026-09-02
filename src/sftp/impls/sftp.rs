@@ -646,7 +646,17 @@ async fn run_sftp(
                             t("下载文件夹", "Downloading folder"),
                             dirname
                         )));
-                        match download_dir(&sftp, &handle, &remote, &local_dir, &events).await {
+                        match download_dir(
+                            &sftp,
+                            &handle,
+                            &remote,
+                            &local_dir,
+                            &events,
+                            &file_id,
+                            &cancel,
+                        )
+                        .await
+                        {
                             Ok(_) => {
                                 let _ = events.send(SessionEvent::SftpStatus(format!(
                                     "{}: {}",
@@ -890,7 +900,16 @@ async fn run_sftp(
                             t("上传文件夹", "Uploading folder"),
                             dirname
                         )));
-                        let res = upload_dir(&handle, &sftp, &local, &remote_dir, &events).await;
+                        let res = upload_dir(
+                            &handle,
+                            &sftp,
+                            &local,
+                            &remote_dir,
+                            &events,
+                            &up_id,
+                            &cancel,
+                        )
+                        .await;
                         if let Ok(entries) = list_dir_impl(&sftp, &remote_dir).await {
                             let _ = events.send(SessionEvent::SftpEntries {
                                 path: remote_dir.clone(),
@@ -1348,6 +1367,13 @@ async fn run_sftp(
     let _ = handle
         .disconnect(Disconnect::ByApplication, "bye", "")
         .await;
+
+    // Clean up this session's external-editor scratch dir. Every connection
+    // created a fresh UUID dir under $TMPDIR/rudder that previously lived on
+    // until reboot — holding whatever remote files the user had opened
+    // (#external-edit-cleanup).
+    let _ = tokio::fs::remove_dir_all(&external_edit_dir).await;
+
     Ok(())
 }
 
@@ -1758,7 +1784,19 @@ async fn stage_remote_for_copy(
             .map(|entries| entries.is_empty())
             .unwrap_or(false);
         if !empty {
-            download_dir(sftp, handle, remote, &local_parent, events).await?;
+            // Editor fetch: not exposed in the transfer panel, so a throwaway
+            // never-set cancel flag is fine here.
+            let editor_cancel = Arc::new(AtomicBool::new(false));
+            download_dir(
+                sftp,
+                handle,
+                remote,
+                &local_parent,
+                events,
+                &Uuid::new_v4().to_string(),
+                &editor_cancel,
+            )
+            .await?;
         }
     } else {
         let local = local_path.to_string_lossy().to_string();
@@ -2094,10 +2132,9 @@ async fn download_dir(
     remote_root: &str,
     local_parent: &str,
     events: &UnboundedSender<SessionEvent>,
+    file_id: &str,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<()> {
-    // Folder transfers aren't individually cancellable from the UI; a throwaway
-    // never-set flag satisfies download_impl's signature.
-    let no_cancel = Arc::new(AtomicBool::new(false));
     let root_name = sanitize_filename(&base_name(remote_root));
     let root_local = format!("{}/{}", local_parent.trim_end_matches('/'), root_name);
     // (remote_dir, local_dir) pairs still to mirror.
@@ -2107,21 +2144,26 @@ async fn download_dir(
             .await
             .with_context(|| format!("create local dir {ldir}"))?;
         for entry in list_dir_impl(sftp, &rdir).await? {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(anyhow!("folder transfer cancelled"));
+            }
             if entry.is_dir {
                 let child_local = format!("{}/{}", ldir, sanitize_filename(&entry.name));
                 stack.push((entry.full_path, child_local));
             } else {
                 let fname = sanitize_filename(&entry.name);
                 let lpath = format!("{}/{}", ldir, fname);
-                let id = Uuid::new_v4().to_string();
+                // Reuse the folder's single id so the transfer panel keeps ONE
+                // aggregate row (updated per file) instead of one row per file
+                // — and the row's cancel button actually reaches us (#folder-cancel).
                 download_impl(
                     handle,
                     &entry.full_path,
                     &lpath,
                     &fname,
-                    &id,
+                    file_id,
                     events,
-                    &no_cancel,
+                    cancel,
                 )
                 .await?;
             }
@@ -2171,14 +2213,16 @@ async fn upload_dir(
     local_root: &Path,
     remote_parent: &str,
     events: &UnboundedSender<SessionEvent>,
+    file_id: &str,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<()> {
-    // Folder uploads aren't individually cancellable from the UI; a throwaway
-    // never-set flag satisfies upload_pipelined's signature.
-    let no_cancel = Arc::new(AtomicBool::new(false));
     let root_name = local_file_name_utf8(local_root)?;
     let remote_root = format!("{}/{}", remote_parent.trim_end_matches('/'), root_name);
     let mut stack = vec![(local_root.to_path_buf(), remote_root)];
     while let Some((ldir, rdir)) = stack.pop() {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(anyhow!("folder transfer cancelled"));
+        }
         // Best-effort mkdir; an error usually just means the dir already exists.
         let _ = sftp.create_dir(&rdir).await;
         let mut rd = tokio::fs::read_dir(&ldir)
@@ -2192,8 +2236,8 @@ async fn upload_dir(
             if ft.is_dir() {
                 stack.push((lpath, rchild));
             } else if ft.is_file() {
-                let id = Uuid::new_v4().to_string();
-                upload_pipelined(handle, &lpath, &rchild, &name, &id, events, &no_cancel).await?;
+                // Single aggregate row keyed by the folder's id (#folder-cancel).
+                upload_pipelined(handle, &lpath, &rchild, &name, file_id, events, cancel).await?;
             }
         }
     }

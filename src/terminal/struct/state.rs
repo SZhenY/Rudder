@@ -28,8 +28,7 @@ pub(crate) struct TermBuffer {
     pub(crate) output_highlight: OutputHighlightPreset,
     pub(crate) custom_highlight_rules: Vec<CompiledOutputRule>,
     /// Snapshot of visible lines from last ingest_chunk, used by damage-based
-    /// incremental rebuild (Partial → clone prev, overwrite damaged rows).
-    pub(crate) prev: Vec<Line>,
+
     pub(crate) view_offset: usize,
     pub(crate) displayed_text: Vec<String>,
     pub(crate) csi_state: CsiState,
@@ -243,7 +242,7 @@ impl UnderlineStyle {
 }
 
 /// One coloured run within a terminal line.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub(crate) struct HistSpan {
     pub(crate) text: String,
     pub(crate) fg: TermColor,

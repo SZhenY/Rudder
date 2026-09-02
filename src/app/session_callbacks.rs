@@ -1219,7 +1219,6 @@ pub(crate) fn wire_session_callbacks(ctx: SessionWireCtx) {
                     is_dark: is_dark_now,
                     output_highlight,
                     custom_highlight_rules,
-                    prev: Vec::new(),
                     view_offset: 0,
                     displayed_text: Vec::new(),
                     csi_state: CsiState::Normal,

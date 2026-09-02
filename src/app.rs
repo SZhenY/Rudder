@@ -184,7 +184,7 @@ use crate::terminal::{
 use crate::terminal::{CtrlKeySide, windows_process_ctrl_release};
 use crate::ui::*;
 use crate::webdav::WebDavAcceptAnyCertVerifier;
-mod auth_dialogs;
+pub(crate) mod auth_dialogs;
 mod port_forward;
 mod quick_commands;
 mod resource_ui;

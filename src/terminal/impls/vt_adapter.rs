@@ -211,10 +211,23 @@ pub(crate) fn process_bytes(processor: &mut Processor, term: &mut ATerm, bytes: 
 /// decoded payload if found.  Format: ESC ] 5 2 ; Pc ; base64 ST  where ST is
 /// BEL (\\x07) or ESC \\ (\\x1b\\x5c).
 fn osc52_extract(bytes: &[u8]) -> Option<String> {
-    // Fast path: no ESC byte at all → nothing to do.
-    let esc_pos = bytes.iter().position(|&b| b == 0x1b)?;
-    let rest = &bytes[esc_pos..];
+    // Scan every ESC position, not just the first one: an OSC 52 that is
+    // preceded by any other escape sequence in the same SSH chunk (e.g.
+    // `\x1b[32mgreen\x1b[0m\x1b]52;c;…`) used to be silently dropped
+    // because only the leading ESC was inspected (#osc52-first-esc).
+    let mut search_from = 0usize;
+    while let Some(esc_pos) = bytes[search_from..].iter().position(|&b| b == 0x1b) {
+        let rest = &bytes[search_from + esc_pos..];
+        if let Some(data) = osc52_extract_at(rest) {
+            return Some(data);
+        }
+        search_from += esc_pos + 1;
+    }
+    None
+}
 
+/// Try to parse an OSC 52 sequence anchored at `rest[0] == ESC`.
+fn osc52_extract_at(rest: &[u8]) -> Option<String> {
     if !rest.starts_with(b"\x1b]52;") {
         return None;
     }

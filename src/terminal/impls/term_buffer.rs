@@ -39,7 +39,6 @@ impl TermBuffer {
         let (rows, cols) = term_size(&self.term);
         (self.term, self.processor) = crate::terminal::new_term(rows, cols, scrollback_lines);
         self.rendered.clear();
-        self.prev.clear();
         self.displayed_text.clear();
         self.view_offset = 0;
         self.term.selection = None;
@@ -167,7 +166,6 @@ impl TermBuffer {
         };
         if let Some(end) = erase_saved_through {
             self.raw.drain(..end);
-            self.prev.clear();
             self.rendered.clear();
             self.view_offset = 0;
             self.term.selection = None;
@@ -264,43 +262,22 @@ impl TermBuffer {
         }
         if alt {
             self.view_offset = 0;
-            self.prev.clear();
             self.rendered.clear();
             return;
         }
         if is_fullscreen_refresh {
             self.view_offset = 0;
-            self.prev.clear();
             self.rendered.clear();
             return;
         }
 
-        // Build the current visible grid.  Use alacritty's built-in damage
-        // tracking to only rebuild lines that actually changed (a full-screen
-        // rebuild is still done when damage indicates a full redraw).
-        //
-        // display_offset is read *before* damage() to avoid conflicting
-        // with the mutable borrow held by the damage iterator.
-        let display_offset = self.term.grid().display_offset();
-        let curr: Vec<Line> = match self.term.damage() {
-            TermDamage::Full => (0..rows)
-                .map(|r| build_row(&self.term, r, cols, &self.overline_ranges))
-                .collect(),
-            TermDamage::Partial(damaged_lines) => {
-                let damaged_rows: Vec<usize> = damaged_lines
-                    .map(|b| b.line.saturating_sub(display_offset))
-                    .filter(|&r| r < rows as usize)
-                    .collect();
-                let mut cur = self.prev.clone();
-                cur.resize(rows as usize, (String::new(), Vec::new(), false));
-                for r in damaged_rows {
-                    cur[r] = build_row(&self.term, r as u16, cols, &self.overline_ranges);
-                }
-                cur
-            }
-        };
+        // Consume and reset alacritty's damage tracking. The actual line
+        // rebuild happens lazily in render() (damage informs nothing there —
+        // the per-line plain-text cache decides what to recompute), so
+        // building rows here was pure waste: every rebuilt line was dropped
+        // without ever being read (#prev-deadwork).
+        drop(self.term.damage());
         self.term.reset_damage();
-        self.prev = curr;
     }
 
     /// Feed a byte slice to the terminal, pausing at every complete SGR
@@ -373,15 +350,28 @@ impl TermBuffer {
         // trailing `;` behind (an empty SGR param would read as a reset).
         let mut parts: Vec<&[u8]> = Vec::with_capacity(4);
         let split: Vec<&[u8]> = params.split(|&b| b == b';').collect();
+        // Parameters that belong to an extended-colour prefix (38/48/58) and
+        // must NOT be interpreted as standalone SGR 21/53/reset codes. The
+        // previous lookup only recognised `38;5;N`/`48;5;N` (#cube53); a
+        // truecolour `38;2;R;G;B` with a component of exactly 21 or 53 (e.g.
+        // `38;2;53;100;200m`) slipped through and was rewritten/dropped, and
+        // `58;5;N` (underline colour) hit the same trap. A forward skip
+        // counter handles every prefix form (`5` = 1 colour arg, `2` = 3).
+        let mut skip = 0usize;
         for (i, part) in split.iter().enumerate() {
-            // 38;5;N / 48;5;N — the trailing N is the 256-colour *index*, not
-            // an independent SGR parameter. Treating it as SGR 21/53/reset
-            // would corrupt e.g. `48;5;53m` (dark magenta background) into a
-            // dropped/rewritten parameter → alacritty ignores it → the cell
-            // keeps its previous background (transparent) and the swatch
-            // renders as the theme background (#cube53-regression).
-            let is_color_index =
-                i >= 2 && split[i - 1] == b"5" && (split[i - 2] == b"38" || split[i - 2] == b"48");
+            if skip > 0 {
+                skip -= 1;
+                parts.push(part);
+                continue;
+            }
+            if matches!(&**part, b"38" | b"48" | b"58") {
+                match (split.get(i + 1).map(|v| &**v), split.get(i + 2).map(|v| &**v)) {
+                    (Some(b"5"), _) => skip = 2, // 38;5;N
+                    (Some(b"2"), _) => skip = 4, // 38;2;R;G;B
+                    _ => {}
+                }
+            }
+            let is_color_index = skip > 0;
             let is_21 = !is_color_index && *part == b"21";
             let is_53 = !is_color_index && *part == b"53";
             let is_reset = !is_color_index && matches!(*part, b"0" | b"22" | b"24" | b"29");
@@ -490,7 +480,6 @@ impl TermBuffer {
 
     pub(crate) fn reflow(&mut self, new_rows: u16, new_cols: u16) {
         resize_term(&mut self.term, new_rows, new_cols);
-        self.prev.clear();
         self.rendered.clear();
         // A reflow rewraps every line: cached scrollback spans were built
         // against the old width and are meaningless now.
@@ -545,7 +534,12 @@ impl TermBuffer {
                 // visible text but a new SGR-53 range (or a range pruned by
                 // the cap), and stale flags must not stick.
                 let line_spans: Vec<_> = if let Some(ref cached) = self.rendered[r as usize] {
-                    if cached.plain_key == display_key {
+                    // The plain-text key alone is not enough: a program can
+                    // rewrite the row with identical text but different SGR
+                    // attributes (highlight bars, colour changes) — comparing
+                    // the freshly built runs too keeps such restyles visible
+                    // (#cache-style-key).
+                    if cached.plain_key == display_key && cached.runs == runs {
                         let runs = refresh_overlines(
                             &cached.runs,
                             &self.overline_ranges,
@@ -755,7 +749,6 @@ mod tests {
             is_dark: true,
             output_highlight: OutputHighlightPreset::Off,
             custom_highlight_rules: Vec::new(),
-            prev: Vec::new(),
             view_offset: 0,
             displayed_text: Vec::new(),
             csi_state: CsiState::Normal,
@@ -942,7 +935,6 @@ mod tests {
             is_dark: true,
             output_highlight: OutputHighlightPreset::Off,
             custom_highlight_rules: Vec::new(),
-            prev: Vec::new(),
             view_offset: 0,
             displayed_text: Vec::new(),
             csi_state: CsiState::Normal,
@@ -1059,7 +1051,6 @@ mod real_file_overline_verify {
             is_dark: true,
             output_highlight: OutputHighlightPreset::Off,
             custom_highlight_rules: Vec::new(),
-            prev: Vec::new(),
             view_offset: 0,
             displayed_text: Vec::new(),
             csi_state: CsiState::Normal,
@@ -1119,7 +1110,6 @@ mod render_path_cube_tests {
             is_dark: true,
             output_highlight: OutputHighlightPreset::Off,
             custom_highlight_rules: Vec::new(),
-            prev: Vec::new(),
             view_offset: 0,
             displayed_text: Vec::new(),
             csi_state: CsiState::Normal,
