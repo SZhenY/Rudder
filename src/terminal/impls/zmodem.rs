@@ -117,15 +117,21 @@ pub async fn receive(
                     .and_then(|s| s.split_whitespace().next().map(str::to_owned))
                     .and_then(|s| s.parse::<u64>().ok())
                     .unwrap_or(0);
-                let path = dest.join(&name);
+                // Never clobber an existing file: pick `name.1`, `name.2`, …
+                // when the plain name is already taken (#zmodem-keepboth).
+                let path = available_zmodem_path(&dest, &name).await;
+                let display_name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| name.clone());
                 let file = tokio::fs::File::create(&path)
                     .await
                     .with_context(|| format!("create {}", path.display()))?;
                 let id = format!("zmodem-{}", uuid::Uuid::new_v4());
-                emit(events, &id, &name, false, 0, size, 0, "");
+                emit(events, &id, &display_name, false, 0, size, 0, "");
                 cur = Some(CurFile {
                     file,
-                    name,
+                    name: display_name,
                     id,
                     size,
                     written: 0,
@@ -469,6 +475,24 @@ impl<'a, IO: ZmodemIo> Rx<'a, IO> {
 /// letters on the wire are almost always the shell prompt itself (`dev@host`,
 /// `admin@box`), so they must NOT be drained — otherwise the prompt loses its
 /// first characters after every `sz` (#zmodem-drain-prompt).
+/// Pick a non-clobbering destination under `dest`: when `name` already
+/// exists, append `.1`, `.2`, … until a free name is found (mirrors SFTP
+/// "keep both"). Called before opening the receive file (#zmodem-keepboth).
+async fn available_zmodem_path(dest: &std::path::Path, name: &str) -> std::path::PathBuf {
+    // std::fs (sync) stat is fine here — one probe per received file.
+    let first = dest.join(name);
+    if !first.exists() {
+        return first;
+    }
+    for i in 1.. {
+        let alt = dest.join(format!("{name}.{i}"));
+        if !alt.exists() {
+            return alt;
+        }
+    }
+    first // unreachable in practice (the loop above always finds a gap)
+}
+
 fn is_close_byte(b: u8) -> bool {
     matches!(b,
         b'*' | ZDLE | b'A' | b'B' | b'C' | b'O'
