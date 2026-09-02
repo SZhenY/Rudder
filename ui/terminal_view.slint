@@ -407,6 +407,8 @@ export component TerminalView inherits Rectangle {
     callback terminal-mouse(int /* kind */, int /* button */, int /* col */, int /* row */) -> bool;
     callback terminal-scroll-to(int);       // jump to an absolute scrollback offset (#103)
     callback select-start(int, int, bool, bool, bool); // row, col, left-half, ctrl, shift
+    callback select-word(int, int);             // double-click → select whole word
+    callback select-line(int, int);             // triple-click → select whole line
     callback select-update(int, int, bool);       // extend drag-selection to (row, col, left-half)
     callback select-end();                  // finish selection → copy to clipboard
     callback select-autoscroll(int);        // auto-scroll while dragging past edge (dir: -1 up / +1 down)
@@ -423,6 +425,12 @@ export component TerminalView inherits Rectangle {
     // Auto-scroll direction while drag-selecting past the visible edge.
     // 0 = none, -1 = above top (scroll to older), +1 = below bottom (newer).
     property <int> autoscroll-dir: 0;
+    // Double/triple-click word/line selection: a streak of presses on the
+    // same cell within the interval upgrades the selection. A timer resets
+    // the streak once the interval elapses (#select-double-click).
+    private property <int> click-streak: 0;
+    private property <int> streak-row: -1;
+    private property <int> streak-col: -1;
     property <length> vis-y: 0px;   // scratch: cursor Y within the visible viewport
     // Defer ime-input.focus() to the next event-loop tick so AccessKit tree
     // construction (on new TerminalView instantiation) finishes before focus
@@ -463,6 +471,12 @@ export component TerminalView inherits Rectangle {
     // visible:false can skip font loading and fall back to a system font (e.g.
     // Consolas ~6.5 px/char instead of Meatshell Mono ~7.6 px/char), giving a
     // cell-w that is too narrow and a term-cols that is too large.
+    click-timer := Timer {
+        interval: 450ms;
+        running: root.click-streak > 0;
+        triggered => { root.click-streak = 0; }
+    }
+
     cell-probe := Text {
         text: "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM"; // exactly 50×M
         font-family: Theme.term-font-family;
@@ -723,12 +737,29 @@ export component TerminalView inherits Rectangle {
                                             floor(self.mouse-y / root.cell-h));
                                     } else if (ev.button == PointerEventButton.left) {
                                         root.selecting = true;
-                                        root.select-start(
-                                            floor(self.mouse-y / root.cell-h),
-                                            floor(self.mouse-x / root.cell-w),
-                                            self.mouse-x - root.cell-w * floor(self.mouse-x / root.cell-w) < root.cell-w / 2,
-                                            ev.modifiers.control,
-                                            ev.modifiers.shift);
+                                        let sr = floor(self.mouse-y / root.cell-h);
+                                        let sc = floor(self.mouse-x / root.cell-w);
+                                        if (root.streak-row == sr && root.streak-col == sc
+                                                && root.click-streak > 0) {
+                                            root.click-streak = root.click-streak + 1;
+                                        } else {
+                                            root.click-streak = 1;
+                                            root.streak-row = sr;
+                                            root.streak-col = sc;
+                                        }
+                                        if (root.click-streak >= 3) {
+                                            root.click-streak = 0;
+                                            root.selecting = false;
+                                            root.select-line(sr, sc);
+                                        } else if (root.click-streak == 2) {
+                                            root.select-word(sr, sc);
+                                        } else {
+                                            root.select-start(
+                                                sr, sc,
+                                                self.mouse-x - root.cell-w * floor(self.mouse-x / root.cell-w) < root.cell-w / 2,
+                                                ev.modifiers.control,
+                                                ev.modifiers.shift);
+                                        }
                                     }
                                 } else if (ev.kind == PointerEventKind.up) {
                                     if (ev.button == PointerEventButton.middle) {

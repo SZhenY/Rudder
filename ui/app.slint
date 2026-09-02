@@ -961,6 +961,8 @@ export component AppWindow inherits Window {
     callback term-select-update(string /* tab-id */, int /* row */, int /* col */, bool /* left-half */);
     callback term-select-end(string /* tab-id */);
     callback term-select-autoscroll(string /* tab-id */, int /* dir */);
+    callback term-select-word(string /* tab-id */, int /* row */, int /* col */);
+    callback term-select-line(string /* tab-id */, int /* row */, int /* col */);
 
     // Immersive wallpaper layer — painted behind everything, filling the window.
     // Panels/terminal frost over it (see Theme.frost). Only present when active.
@@ -1808,6 +1810,8 @@ export component AppWindow inherits Window {
                     terminal-wheel(d, c, r) => { root.terminal-wheel(term.id, d, c, r); }
                     terminal-scroll-to(o) => { root.terminal-scroll-to(term.id, o); }
                     select-start(r, c, lh, ctrl, shift) => { root.term-select-start(term.id, r, c, lh, ctrl, shift); }
+                    select-word(r, c) => { root.term-select-word(term.id, r, c); }
+                    select-line(r, c) => { root.term-select-line(term.id, r, c); }
                     select-update(r, c, lh) => { root.term-select-update(term.id, r, c, lh); }
                     select-end() => { root.term-select-end(term.id); }
                     select-autoscroll(dir) => { root.term-select-autoscroll(term.id, dir); }

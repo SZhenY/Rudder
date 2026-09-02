@@ -1217,6 +1217,57 @@ pub(crate) fn wire_key_input(
         );
     }
     {
+        // Double-click → word selection, triple-click → whole line. Both use
+        // alacritty's native Semantic/Lines selection kinds (#select-double-click).
+        let bufs_sel = bufs.clone();
+        let weak = window.as_weak();
+        let quick_select = move |tab_id: &str, row: i32, col: i32, ty| {
+            use alacritty_terminal::selection::SelectionType;
+            use alacritty_terminal::index::{Column, Line as GridLine, Point as GridPoint, Side};
+            let tid = tab_id.to_string();
+            with_term_buf(&bufs_sel, &tid, |buf| {
+                let (rows, cols) = crate::terminal::term_size(&buf.term);
+                let r = row.clamp(0, rows.saturating_sub(1) as i32);
+                let line = GridLine(r - buf.view_offset as i32);
+                let anchor_col = if ty == SelectionType::Lines {
+                    0usize
+                } else {
+                    col.clamp(0, cols.saturating_sub(1) as i32) as usize
+                };
+                let start = GridPoint { line, column: Column(anchor_col) };
+                let mut sel = alacritty_terminal::selection::Selection::new(
+                    ty,
+                    start,
+                    Side::Left,
+                );
+                // Extend by one cell so semantic/line expansion kicks in:
+                // word → expands to the whole word, line → to the full row.
+                let end_col = if ty == SelectionType::Lines {
+                    cols.saturating_sub(1) as usize
+                } else {
+                    anchor_col
+                };
+                sel.update(
+                    GridPoint { line, column: Column(end_col.saturating_add(1)) },
+                    Side::Right,
+                );
+                buf.term.selection = Some(sel);
+            });
+            if let Some(win) = weak.upgrade() {
+                refresh_terminal_selection(&win, &bufs_sel, &tid);
+            }
+        };
+        let qw = quick_select.clone();
+        window.on_term_select_word(move |tab_id: SharedString, row: i32, col: i32| {
+            use alacritty_terminal::selection::SelectionType;
+            qw(tab_id.as_str(), row, col, SelectionType::Semantic)
+        });
+        window.on_term_select_line(move |tab_id: SharedString, row: i32, col: i32| {
+            use alacritty_terminal::selection::SelectionType;
+            quick_select(tab_id.as_str(), row, col, SelectionType::Lines)
+        });
+    }
+    {
         let bufs_sel = bufs.clone();
         let weak = window.as_weak();
         window.on_term_select_update(move |tab_id, row: i32, col: i32, left_half: bool| {
