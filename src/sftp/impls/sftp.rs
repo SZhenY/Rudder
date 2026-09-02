@@ -1952,28 +1952,45 @@ async fn download_impl(
         .await
         .with_context(|| format!("open remote {remote}"))?
         .handle;
-    let mut local_file = tokio::fs::File::create(local)
-        .await
-        .with_context(|| format!("create local {local}"))?;
+
+    // Resume support (#resume-download): the read pipeline is offset-based,
+    // so when a partial local file already exists (smaller than the remote
+    // size) we continue from its current length instead of re-downloading.
+    // A full-size existing file is re-created as usual.
+    let continue_from = match tokio::fs::metadata(local).await {
+        Ok(m) if m.is_file() && total > 0 && m.len() < total => m.len(),
+        _ => 0,
+    };
+    let mut local_file = if continue_from > 0 {
+        tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(local)
+            .await
+            .with_context(|| format!("open local (resume) {local}"))?
+    } else {
+        tokio::fs::File::create(local)
+            .await
+            .with_context(|| format!("create local {local}"))?
+    };
 
     emit_transfer(TransferEmit {
         events,
         id,
         name,
         is_upload: false,
-        transferred: 0,
+        transferred: continue_from,
         total,
         state: 0,
-        msg: "",
+        msg: if continue_from > 0 { "resuming" } else { "" },
     });
 
-    let mut done: u64 = 0;
+    let mut done: u64 = continue_from;
     let mut last = Instant::now();
     let mut err: Option<anyhow::Error> = None;
     let mut cancelled = false;
 
     if total > 0 {
-        let mut next_off = 0u64;
+        let mut next_off = continue_from;
         let mut inflight = FuturesUnordered::new();
         loop {
             if cancel.load(Ordering::Relaxed) {
@@ -2086,14 +2103,24 @@ async fn download_impl(
 
     let _ = raw.close(fhandle).await;
 
+    // Partial files are deliberately KEPT on error/cancel when any byte was
+    // written: the next download of the same remote resumes from the current
+    // length (#resume-download). Only a zero-byte stub is cleaned up.
+    let written = done + continue_from;
+    let partial_kept = written > 0;
+
     if let Some(e) = err {
         drop(local_file);
-        let _ = tokio::fs::remove_file(local).await;
+        if !partial_kept {
+            let _ = tokio::fs::remove_file(local).await;
+        }
         return Err(e);
     }
     if cancelled {
         drop(local_file);
-        let _ = tokio::fs::remove_file(local).await;
+        if !partial_kept {
+            let _ = tokio::fs::remove_file(local).await;
+        }
         emit_transfer(TransferEmit {
             events,
             id,
@@ -2102,7 +2129,11 @@ async fn download_impl(
             transferred: done,
             total,
             state: 4,
-            msg: t("已取消", "Cancelled"),
+            msg: if partial_kept {
+                t("已取消（可续传）", "Cancelled (resume-able)")
+            } else {
+                t("已取消", "Cancelled")
+            },
         });
         return Ok(false);
     }
