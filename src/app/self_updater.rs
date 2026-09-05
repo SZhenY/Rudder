@@ -33,7 +33,13 @@ fn asset_keywords() -> &'static [&'static str] {
     if cfg!(target_os = "macos") {
         &["macos-14", "macos"]
     } else if cfg!(target_os = "windows") {
-        &["windows-x86_64", "windows"]
+        // Windows on ARM64 ships its own asset; the x86_64 keywords must not
+        // match there or an ARM64 user would be handed the emulated build.
+        if cfg!(target_arch = "aarch64") {
+            &["windows-aarch64", "windows-arm64"]
+        } else {
+            &["windows-x86_64", "windows"]
+        }
     } else if cfg!(target_arch = "aarch64") {
         &["linux-aarch64", "linux-arm64"]
     } else {
@@ -321,6 +327,7 @@ mod tests {
         let names = [
             "rudder-0.7.2-macos-14.zip",
             "rudder-0.7.2-windows-x86_64.zip",
+            "rudder-0.7.3-windows-aarch64.zip",
             "rudder-0.7.2-linux-x86_64.tar.gz",
             "rudder-0.7.2-linux-aarch64-glibc228.tar.gz",
         ];

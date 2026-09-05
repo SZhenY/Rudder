@@ -87,6 +87,10 @@ jobs:
             target: x86_64-pc-windows-msvc
             name: windows-x86_64
             bin: rudder.exe
+          - os: windows-11-arm           # native Windows on ARM64 runner (free for
+            target: aarch64-pc-windows-msvc  # public repos); MSI (WiX 3) stays x86_64-only
+            name: windows-aarch64
+            bin: rudder.exe
           - os: ubuntu-22.04            # build on the oldest supported runner for
             target: x86_64-unknown-linux-gnu   # broader glibc compatibility
             name: linux-x86_64
