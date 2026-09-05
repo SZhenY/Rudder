@@ -19,6 +19,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - **查找支持上下导航。** 查找栏 Enter 跳下一个匹配、Shift+Enter 跳上一个，循环回绕并刷新高亮。
 - **Find navigation.** Enter jumps to the next match, Shift+Enter to the previous one, wrapping around with refreshed highlights.
 
+- **新增 Windows on ARM64 构建（aarch64-pc-windows-msvc）。** 原生 ARM runner（windows-11-arm）产出 `rudder-<版本>-windows-aarch64.zip`；MSI 暂不支持 ARM64（WiX 3 限制），一键更新按架构匹配对应资产。
+- **Windows on ARM64 build (aarch64-pc-windows-msvc).** A native ARM runner (windows-11-arm) produces `rudder-<version>-windows-aarch64.zip`; MSI stays x86_64-only (WiX 3 limitation) and self-update picks the matching asset per architecture.
+
 ### 修复 / Fixed
 
 - **取消一次凭据对话框不再导致会话永久无法连接；输错密码（未记住）可重新弹出输入。**

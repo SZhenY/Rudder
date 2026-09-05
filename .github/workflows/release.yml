@@ -57,12 +57,20 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
-      # Explicit (not relying on the image preinstalling it) — protects the gate
-      # against runner image drift.
+      # Same dependency set as the Linux build jobs below (kept in sync by
+      # hand — Actions has no YAML anchors): clippy/test compile every
+      # build-script, so any missing -dev package redlines the gate
+      # (#ci-quality-deps: fontconfig, then libudev).
       - name: Install Linux build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake \
+            libfontconfig1-dev libfreetype6-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgtk-3-dev \
+            libudev-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
