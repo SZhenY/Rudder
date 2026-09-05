@@ -65,6 +65,15 @@ unicode-segmentation = "1.12"
 twemoji-assets = { version = "1.5", default-features = false, features = ["png"] }
 russh-sftp = "2.4"
 ring = "0.17"
+# In-app self-update from GitHub Releases (#self-update).
+# No progress-bar / default features: progress is surfaced in our own UI.
+self_update = { version = "1.3", default-features = false, features = [
+    "github", "rustls", "ureq",
+    "archive-tar", "compression-tar-gz",      # Linux .tar.gz
+    "archive-zip", "compression-zip-deflate", # macOS / Windows .zip
+] }
+tempfile = "3"
+self-replace = "1"
 rfd = "0.15"
 arboard = "3"
 # Zeroes password buffers on drop so plaintext credentials don't linger in

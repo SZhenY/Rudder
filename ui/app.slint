@@ -706,6 +706,13 @@ export component AppWindow inherits Window {
     in-out property <bool> update-available: false;
     in property <string> update-version;     // e.g. "v0.3.3"
     callback open-update-url();              // open the release page in a browser
+    // In-app self-update (#self-update): 0 idle / 1 downloading / 2 installing /
+    // 3 ready-to-restart / 4 failed. `update-progress` is 0.0..=1.0.
+    in-out property <int> update-state: 0;
+    in property <float> update-progress: 0;
+    in property <string> update-status: "";
+    callback run-self-update();              // download + install in place
+    callback restart-app();                  // re-launch with the new binary
 
     // --- Built-in file viewer/editor (#70) --------------------------------
     in-out property <bool> editor-open: false;
@@ -2094,52 +2101,110 @@ export component AppWindow inherits Window {
     // A dismissible top-centre banner; the app stays usable on the current
     // version. "Download" opens the GitHub release page in the browser.
     if root.update-available : Rectangle {
-        x: (parent.width - 384px) / 2;
+        x: (parent.width - 420px) / 2;
         y: 8px;
-        width: 384px;
-        height: 38px;
+        width: 420px;
+        // Grows a second row while an update is running (progress + status).
+        height: root.update-state == 0 ? 38px : 62px;
         background: Theme.accent;
         border-radius: Theme.radius-md;
         border-width: 1px;
         border-color: Theme.border-strong;
         drop-shadow-blur: 14px;
         drop-shadow-color: #00000060;
-        HorizontalLayout {
+        VerticalLayout {
             padding-left: 12px;
             padding-right: 6px;
-            spacing: 8px;
-            Text {
-                text: "🎉 " + @tr("Update available:") + " " + root.update-version;
-                color: #ffffff;
-                font-size: Theme.fs-sm;
-                font-family: Theme.ui-font-family;
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-                overflow: elide;
-            }
-            Rectangle {
-                width: 68px; height: 26px;
-                y: (parent.height - self.height) / 2;
-                border-radius: Theme.radius-sm;
-                background: upd-dl-ta.has-hover ? #ffffff45 : #ffffff28;
-                upd-dl-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.open-update-url(); }
+            padding-top: 4px;
+            padding-bottom: 4px;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "🎉 " + @tr("Update available:") + " " + root.update-version;
+                    color: #ffffff;
+                    font-size: Theme.fs-sm;
+                    font-family: Theme.ui-font-family;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
                 }
-                Text { text: @tr("Download"); color: #ffffff; font-size: Theme.fs-sm;
-                       horizontal-alignment: center; vertical-alignment: center; }
-            }
-            Rectangle {
-                width: 26px; height: 26px;
-                y: (parent.height - self.height) / 2;
-                border-radius: Theme.radius-sm;
-                background: upd-cl-ta.has-hover ? #ffffff45 : transparent;
-                upd-cl-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.update-available = false; }
+                // Idle / failed → offer the in-place update (failed falls back
+                // to the browser download).
+                if root.update-state == 0 || root.update-state == 4 : Rectangle {
+                    width: 84px; height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-sm;
+                    background: upd-now-ta.has-hover ? #ffffff55 : #ffffff38;
+                    upd-now-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.run-self-update(); }
+                    }
+                    Text { text: @tr("Update now"); color: #ffffff; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
                 }
-                Text { text: "\u{E5CD}"; font-family: "Material Icons"; color: #ffffff;
-                       font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
+                // Ready → restart into the freshly installed binary.
+                if root.update-state == 3 : Rectangle {
+                    width: 78px; height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-sm;
+                    background: upd-rs-ta.has-hover ? #ffffff55 : #ffffff38;
+                    upd-rs-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.restart-app(); }
+                    }
+                    Text { text: @tr("Restart"); color: #ffffff; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+                Rectangle {
+                    width: 68px; height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-sm;
+                    background: upd-dl-ta.has-hover ? #ffffff45 : #ffffff28;
+                    upd-dl-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.open-update-url(); }
+                    }
+                    Text { text: @tr("Download"); color: #ffffff; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+                Rectangle {
+                    width: 26px; height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-sm;
+                    background: upd-cl-ta.has-hover ? #ffffff45 : transparent;
+                    upd-cl-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.update-available = false; }
+                    }
+                    Text { text: "\u{E5CD}"; font-family: "Material Icons"; color: #ffffff;
+                           font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+            if root.update-state != 0 : HorizontalLayout {
+                spacing: 8px;
+                Rectangle {
+                    height: 5px;
+                    width: 210px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 3px;
+                    background: #ffffff30;
+                    Rectangle {
+                        x: 0; y: 0; height: 5px;
+                        width: parent.width * root.update-progress;
+                        border-radius: 3px;
+                        background: #ffffff;
+                    }
+                }
+                Text {
+                    text: root.update-status;
+                    color: #ffffff;
+                    font-size: Theme.fs-xs;
+                    font-family: Theme.ui-font-family;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
             }
         }
     }

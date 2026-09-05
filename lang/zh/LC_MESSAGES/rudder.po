@@ -692,3 +692,15 @@ msgstr "当预期文本出现时自动发送响应。响应保存在会话配置
 
 msgid "Windows-1252"
 msgstr "Windows-1252"
+
+msgid "Update available:"
+msgstr "有可用更新："
+
+msgid "Update now"
+msgstr "立即更新"
+
+msgid "Restart"
+msgstr "重启"
+
+msgid "Download"
+msgstr "下载"

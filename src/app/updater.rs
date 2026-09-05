@@ -71,6 +71,115 @@ pub(crate) fn wire_update_check(
         });
     }
 
+    // ── In-app self-update (#self-update) ─────────────────────────────────
+    // "Update now" downloads the matching release asset, extracts it and
+    // replaces the running binary in place; the user then restarts. Any failure
+    // falls back to the browser release page (the Download button stays put).
+    {
+        let weak = window.as_weak();
+        window.on_run_self_update(move || {
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let set = |state: i32, progress: f32, status: String| {
+                    let weak = weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = weak.upgrade() {
+                            w.set_update_state(state);
+                            w.set_update_progress(progress);
+                            w.set_update_status(status.into());
+                        }
+                    });
+                };
+                let current = crate::app::parse_version(env!("CARGO_PKG_VERSION"))
+                    .unwrap_or((0, 0, 0));
+                set(
+                    1,
+                    0.0,
+                    crate::i18n::t("正在检查更新…", "Checking for updates…").to_string(),
+                );
+                let cand = match crate::app::self_updater::latest_update(current) {
+                    Ok(Some(c)) => c,
+                    Ok(None) => {
+                        set(
+                            4,
+                            0.0,
+                            crate::i18n::t("已是最新版本", "Already up to date").to_string(),
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        tracing::warn!("self-update lookup failed: {e:#}");
+                        set(4, 0.0, format!("{e:#}"));
+                        return;
+                    }
+                };
+                set(
+                    1,
+                    0.0,
+                    crate::i18n::t("正在下载…", "Downloading…").to_string(),
+                );
+                let staged = {
+                    let weak = weak.clone();
+                    crate::app::self_updater::download_and_stage(&cand, move |p: f32| {
+                        let weak = weak.clone();
+                        let pct = (p * 100.0) as i32;
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = weak.upgrade() {
+                                w.set_update_state(1);
+                                w.set_update_progress(p);
+                                w.set_update_status(
+                                    format!(
+                                        "{} {pct}%",
+                                        crate::i18n::t("正在下载…", "Downloading…")
+                                    )
+                                    .into(),
+                                );
+                            }
+                        });
+                    })
+                };
+                let dir = match staged {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::warn!("self-update download failed: {e:#}");
+                        set(4, 0.0, format!("{e:#}"));
+                        return;
+                    }
+                };
+                set(
+                    2,
+                    1.0,
+                    crate::i18n::t("正在安装…", "Installing…").to_string(),
+                );
+                match crate::app::self_updater::install_staged(&dir) {
+                    Ok(()) => {
+                        tracing::info!("self-update installed {}", cand.version);
+                        set(
+                            3,
+                            1.0,
+                            crate::i18n::t(
+                                "更新已安装，点击“重启”生效",
+                                "Update installed — press Restart to apply",
+                            )
+                            .to_string(),
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!("self-update install failed: {e:#}");
+                        set(4, 1.0, format!("{e:#}"));
+                    }
+                }
+            });
+        });
+    }
+    {
+        window.on_restart_app(move || {
+            if let Err(e) = crate::app::self_updater::restart_app() {
+                tracing::warn!("restart after update failed: {e:#}");
+            }
+        });
+    }
+
     // Transfer records (download/upload progress + history) shown in the popup.
     let transfers_model: Rc<VecModel<TransferInfo>> = Rc::new(VecModel::default());
     window.set_transfers(ModelRc::from(transfers_model.clone()));
