@@ -50,9 +50,19 @@ jobs:
   quality:
     name: Test + lint gate
     needs: check-version
-    runs-on: ubuntu-latest
+    # Pin to the same Ubuntu the Linux release builds use: the gate must run in
+    # the environment we actually ship from. `ubuntu-latest` (24.04) lacks the
+    # fontconfig dev package, so `yeslogic-fontconfig-sys` (fontdb) failed to
+    # build and redlined this job (#ci-quality-deps).
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
+      # Explicit (not relying on the image preinstalling it) — protects the gate
+      # against runner image drift.
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
