@@ -3,6 +3,45 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [0.7.3] - 2026-09-05
+
+### 新增 / Added
+
+- **在线一键更新（self_update + GitHub Releases）。** 设置 → 新版本提示新增「手动检查更新」（独立于启动开关）；发现新版本后横幅可「立即更新」：下载（实时进度）→ 自动替换（macOS 整体替换 .app 保留签名，Windows/Linux 原子替换可执行文件）→ 点击重启生效。权限不足或下载失败自动回退浏览器下载，不自行提权。
+- **In-app one-click update (self_update + GitHub Releases).** Settings → New version prompt gains a manual "Check now" button (independent of the startup toggle); when a new release is found the banner offers "Update now": download with live progress, replace in place (macOS swaps the whole .app bundle to keep its signature; Windows/Linux atomically replace the executable), then press Restart. Unwritable paths or download failures fall back to the browser download; the app never self-elevates.
+
+- **SFTP 下载断点续传。** 下载被取消或出错时保留半截文件（面板标注「已取消（可续传）」），再次下载同一文件自动从断点继续。
+- **SFTP download resume.** Cancelled/failed downloads keep the partial file (marked "Cancelled (resume-able)") and the next download of the same file resumes from that offset.
+
+- **双击选词 / 三击选行。** 终端双击选中整词、三击选中整行（alacritty 原生语义选区）。
+- **Double-click word / triple-click line selection.** Native alacritty Semantic/Lines selection.
+
+- **查找支持上下导航。** 查找栏 Enter 跳下一个匹配、Shift+Enter 跳上一个，循环回绕并刷新高亮。
+- **Find navigation.** Enter jumps to the next match, Shift+Enter to the previous one, wrapping around with refreshed highlights.
+
+### 修复 / Fixed
+
+- **取消一次凭据对话框不再导致会话永久无法连接；输错密码（未记住）可重新弹出输入。**
+- **Cancelling the credential dialog no longer bricks the session; a wrong password (not remembered) re-prompts on retry.**
+
+- **文件夹传输可取消且显示聚合进度行**（原先取消按钮无效、每文件一行导致面板 O(n²) 卡顿）。
+- **Folder transfers are cancellable with a single aggregate progress row** (the cancel button was a no-op and one row per file stalled the panel).
+
+- **关闭会话清理外部编辑器临时目录**；资源监控恢复路径加 3s 超时并关闭被覆盖的旧通道（不再冻结约 90s 或泄漏服务端监控循环）。
+- **External-editor scratch dirs are cleaned on session close**; the resource-monitor resume path gains a 3s timeout and closes replaced channels (no more ~90s freeze or leaked server-side loops).
+
+- **终端渲染修复：** 同文换色（缓存增加样式比较）、SGR 真彩色分量 21/53 不再误判、Tab 展开截断到行尾、OSC 52 扫描全部 ESC（剪贴板不再随机失效）、单独按修饰键不再丢失回滚位置。
+- **Terminal rendering fixes:** same-text restyles now repaint (style-aware cache), true-colour SGR components 21/53 no longer misparse, tab stops clamp to the line end, OSC 52 scans every ESC (clipboard writes no longer randomly dropped), lone modifier presses no longer snap the scrollback away.
+
+- **zmodem：** 收尾不再吞掉提示符首字符（dev@host 不再变成 v@host）；接收同名文件自动加 .1/.2 序号不再覆盖。
+- **zmodem:** the closing drain no longer eats prompt characters (dev@host stays dev@host); same-name downloads get .1/.2 suffixes instead of overwriting.
+
+- **单行超长粘贴（如 100KB base64）现在也会弹确认审查**，不再直灌 PTY。
+- **Single-line oversized pastes (e.g. 100KB base64) now go through the review dialog** instead of streaming straight into the PTY.
+
+- **resize/reflow 后保持回滚位置**（clamp 到新历史），传输面板自动淘汰超过 200 行的已完成记录。
+- **Scrollback position survives resize/reflow** (clamped to the new history) and the transfer panel auto-evicts finished rows past 200.
+
 ## [0.7.2] - 2026-08-31
 
 ### 新增 / Added
