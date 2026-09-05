@@ -172,6 +172,56 @@ pub(crate) fn wire_update_check(
             });
         });
     }
+    // ── Settings → "Check now" (#self-update) ─────────────────────────────
+    // Manual check, independent of the startup toggle. Result is surfaced
+    // inline in the settings row; a new version additionally flips the banner.
+    {
+        let weak = window.as_weak();
+        window.on_check_update_now(move || {
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let set = |checking: bool, status: String, found: Option<String>| {
+                    let weak = weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = weak.upgrade() {
+                            w.set_update_checking(checking);
+                            w.set_update_check_status(status.into());
+                            if let Some(v) = found {
+                                w.set_update_version(v.into());
+                                w.set_update_available(true);
+                                w.set_update_state(0);
+                            }
+                        }
+                    });
+                };
+                set(true, String::new(), None);
+                let current =
+                    crate::app::parse_version(env!("CARGO_PKG_VERSION")).unwrap_or((0, 0, 0));
+                match crate::app::self_updater::latest_update(current) {
+                    Ok(Some(c)) => {
+                        let v = format!("v{}", c.version);
+                        set(
+                            false,
+                            crate::i18n::t("发现新版本", "New version found").to_string(),
+                            Some(v),
+                        );
+                    }
+                    Ok(None) => {
+                        set(
+                            false,
+                            crate::i18n::t("已是最新版本", "Already up to date").to_string(),
+                            None,
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!("manual update check failed: {e:#}");
+                        set(false, format!("{e:#}"), None);
+                    }
+                }
+            });
+        });
+    }
+
     {
         window.on_restart_app(move || {
             if let Err(e) = crate::app::self_updater::restart_app() {

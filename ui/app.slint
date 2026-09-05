@@ -713,6 +713,11 @@ export component AppWindow inherits Window {
     in property <string> update-status: "";
     callback run-self-update();              // download + install in place
     callback restart-app();                  // re-launch with the new binary
+    // Settings → 手动检查更新 button (#self-update): independent of the
+    // startup check toggle, result is shown inline in the settings row.
+    in property <string> update-check-status: "";
+    in property <bool> update-checking: false;
+    callback check-update-now();
 
     // --- Built-in file viewer/editor (#70) --------------------------------
     in-out property <bool> editor-open: false;
@@ -4523,6 +4528,8 @@ export component AppWindow inherits Window {
                     welcome-as-sidebar <=> root.welcome-as-sidebar;
                     quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
                     update-check-enabled <=> root.update-check-enabled;
+                    update-check-status: root.update-check-status;
+                    update-checking: root.update-checking;
                     wallpaper-overlay <=> root.wallpaper-overlay;
                     current-wallpaper: root.current-wallpaper;
                     custom-wallpaper-name: root.custom-wallpaper-name;
@@ -4578,6 +4585,7 @@ export component AppWindow inherits Window {
                         root.set-quick-commands-as-sidebar(v);
                     }
                     set-update-check-enabled(v) => { root.set-update-check-enabled(v); }
+                    check-update-now() => { root.check-update-now(); }
                     add-wsl-profile(name, distribution, directory) => { root.add-wsl-profile(name, distribution, directory); }
                     remove-wsl-profile(id) => { root.remove-wsl-profile(id); }
                     pick-wsl-directory => { root.pick-wsl-directory(); }

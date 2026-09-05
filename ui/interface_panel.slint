@@ -395,6 +395,10 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> welcome-as-sidebar;
     in-out property <bool> quick-commands-as-sidebar;
     in-out property <bool> update-check-enabled;
+    // Manual "check now" button next to the startup toggle (#self-update).
+    in property <string> update-check-status;
+    in property <bool> update-checking;
+    callback check-update-now();
     in-out property <float> wallpaper-overlay;   // frosted-panel opacity 0.30-1.00
     // Active wallpaper id: "" / "builtin:light" / "builtin:dark" / a file path.
     in property <string> current-wallpaper;
@@ -1568,10 +1572,50 @@ export component InterfacePanel inherits Rectangle {
                     desc: root.lang-en
                         ? "Off: Rudder no longer queries GitHub for releases and the update banner won't appear (takes effect next launch)."
                         : "关闭后:不再向 GitHub 查询新版本,也不会弹出更新提示(下次启动生效)。";
-                    show-divider: false;
                     Switch {
                         on: root.update-check-enabled;
                         toggled(v) => { root.update-check-enabled = v; root.set-update-check-enabled(v); }
+                    }
+                }
+                SettingRow {
+                    label: root.lang-en ? "Check for updates now" : "手动检查更新";
+                    desc: root.lang-en
+                        ? "Queries GitHub immediately; independent of the startup check setting."
+                        : "立即向 GitHub 查询新版本,不受上方开关影响。";
+                    show-divider: false;
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: center;
+                        if root.update-check-status != "" : Text {
+                            text: root.update-check-status;
+                            font-size: 11px * Theme.panel-font;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                        Rectangle {
+                            width: root.update-checking ? 76px : 64px;
+                            height: 28px;
+                            border-radius: Theme.radius-sm;
+                            background: upd-ck-ta.has-hover && !root.update-checking ? Theme.bg-hover : Theme.bg-elevated;
+                            border-width: 1px;
+                            border-color: Theme.border-strong;
+                            upd-ck-ta := TouchArea {
+                                enabled: !root.update-checking;
+                                mouse-cursor: root.update-checking ? default : pointer;
+                                clicked => { root.check-update-now(); }
+                            }
+                            Text {
+                                text: root.update-checking
+                                    ? (root.lang-en ? "Checking…" : "检查中…")
+                                    : (root.lang-en ? "Check now" : "检查");
+                                font-size: 12px * Theme.panel-font;
+                                color: Theme.text-primary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
                     }
                 }
             }
