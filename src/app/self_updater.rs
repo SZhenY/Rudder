@@ -77,10 +77,13 @@ fn macos_app_bundle(exe: &Path) -> Option<PathBuf> {
 /// macOS App Translocation：从带隔离属性的 dmg/zip 首次运行时，系统把 app
 /// 挂到只读的 `/private/var/folders/…/AppTranslocation/`，无法原地更新。
 fn is_translocated(exe: &Path) -> bool {
-    cfg!(target_os = "macos")
-        && exe
-            .to_string_lossy()
-            .contains("/AppTranslocation/")
+    cfg!(target_os = "macos") && translocated_path(exe)
+}
+
+/// Pure path-shape check, split from `is_translocated` so the test can run on
+/// every platform (the cfg! gate above would make the assert vacuous on CI).
+fn translocated_path(exe: &Path) -> bool {
+    exe.to_string_lossy().contains("/AppTranslocation/")
 }
 
 /// 查询 GitHub Releases，返回比 `current` 新的最新版本（无则 None）。
@@ -341,10 +344,12 @@ mod tests {
 
     #[test]
     fn translocated_paths_are_detected() {
-        assert!(is_translocated(Path::new(
+        // Path-shape logic is platform-independent (the macOS gate lives in
+        // is_translocated); testing the pure fn keeps this green on CI.
+        assert!(translocated_path(Path::new(
             "/private/var/folders/x/AppTranslocation/ABC/d/rudder.app/Contents/MacOS/rudder"
         )));
-        assert!(!is_translocated(Path::new(
+        assert!(!translocated_path(Path::new(
             "/Applications/rudder.app/Contents/MacOS/rudder"
         )));
     }
