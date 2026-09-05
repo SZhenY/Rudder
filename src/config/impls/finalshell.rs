@@ -141,7 +141,9 @@ fn decode_password(encoded: &str) -> Result<String> {
     let key = derive_des_key(head)?;
     let cipher = Des::new_from_slice(&key).expect("DES keys are always eight bytes");
     let mut plaintext = ciphertext.to_vec();
-    for block in plaintext.chunks_exact_mut(8) {
+    // `as_chunks_mut` over `chunks_exact_mut(8)`: same semantics, satisfies
+    // clippy::chunks_exact_to_as_chunks (rust-1.98 lint).
+    for block in plaintext.as_chunks_mut::<8>().0 {
         cipher.decrypt_block(GenericArray::from_mut_slice(block));
     }
     remove_pkcs5_padding(&mut plaintext)?;

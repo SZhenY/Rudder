@@ -44,7 +44,12 @@ pub(crate) fn external_fonts_dir() -> PathBuf {
 /// `/Applications` is typically not writable, so it is scanned only if the
 /// user created it by hand. Deduplicated so overlapping fonts load once.
 pub(crate) fn external_fonts_dirs() -> Vec<PathBuf> {
+    // The macOS branch below appends; other platforms never mutate, so the
+    // extra mut would trip `-D unused-mut` on their compilers.
+    #[cfg(target_os = "macos")]
     let mut dirs = vec![external_fonts_dir()];
+    #[cfg(not(target_os = "macos"))]
+    let dirs = vec![external_fonts_dir()];
     #[cfg(target_os = "macos")]
     if let Ok(exe) = std::env::current_exe() {
         // User-chosen path: <exe>/config/fonts (e.g. …/Contents/MacOS/rudder/

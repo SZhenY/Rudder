@@ -73,6 +73,10 @@ jobs:
             libudev-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
+          # Lock to the same toolchain the release builds use — newer stables
+          # keep adding lints and would redline the gate independently of the
+          # shipped code (#ci-quality-toolchain).
+          toolchain: 1.96
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       # fmt --check intentionally omitted: the tree has ~99 pre-existing
