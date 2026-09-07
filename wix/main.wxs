@@ -29,7 +29,7 @@
              Language="1033"
              Codepage="1252"
              Compressed="yes"
-             InstallerVersion="450">
+             InstallerVersion="500">
 
         <SummaryInformation Description="Rudder - lightweight Rust + Slint SSH/terminal client"
                             Manufacturer="Rudder contributors"/>
@@ -145,7 +145,9 @@
                       Value="[APPLICATIONFOLDER]"
                       Execute="immediate"/>
         <InstallExecuteSequence>
-            <Custom Action="SetARPInstallLocation" After="CostFinalize">NOT REMOVE</Custom>
+            <!-- WiX 4: the condition goes in the attribute, inner text is illegal
+                 (WIX0400). -->
+            <Custom Action="SetARPInstallLocation" After="CostFinalize" Condition="NOT REMOVE"/>
         </InstallExecuteSequence>
 
         <!-- "Choose install location" wizard page (needs WixToolset.UI.wixext). -->
