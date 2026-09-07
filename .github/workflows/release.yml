@@ -286,13 +286,20 @@ jobs:
         shell: pwsh
         run: |
           $VERSION = "$env:GITHUB_REF_NAME"; if (-not $VERSION) { $VERSION = "dev" }
+          # WiX's ProductVersion must be numeric — GITHUB_REF_NAME for a tag
+          # still carries the "v" prefix, and "v0.7.4" is rejected (WIX0104).
+          $MSI_VERSION = $VERSION.TrimStart("v")
           dotnet tool install --global wix --version 4.*
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
           wix --version
-          wix extension add WixToolset.UI.wixext --global
+          # The UI extension must be pinned and actually present in the local
+          # cache: `wix build -ext` only resolves it, it does not download it
+          # (WIX0144 when the cache entry is missing).
+          wix extension add WixToolset.UI.wixext/7.0.0 --global
+          wix extension list --global
           wix build wix\main.wxs `
             -arch "${{ matrix.arch }}" `
-            -d Version="$VERSION" `
+            -d Version="$MSI_VERSION" `
             -d CargoTargetBinDir="target\${{ matrix.target }}\release" `
             -d UpgradeCode="${{ matrix.upgrade-code }}" `
             -ext WixToolset.UI.wixext `
