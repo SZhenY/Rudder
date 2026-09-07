@@ -7,8 +7,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 新增 / Added
 
-- **Windows on ARM64 提供 MSI 安装包。** ARM64 版现随 `rudder-<版本>-windows-aarch64.msi` 一同发布，与 zip 并列。因 cargo-wix 驱动的 WiX 3 工具集不支持 ARM64，ARM64 安装包改用 **WiX 4 CLI**（`wix build -arch arm64`）与独立的 `wix/main.arm64.wxs` 构建；x86_64 的 MSI 仍走原有 WiX 3 + cargo-wix 路径，不受影响。安装包为 best-effort：工具链异常不会阻塞 zip 发布。
-- **MSI installer for Windows on ARM64.** ARM64 builds now ship `rudder-<version>-windows-aarch64.msi` alongside the zip. Because the WiX 3 toolset driven by cargo-wix has no ARM64 support, the ARM64 package is built with the **WiX 4 CLI** (`wix build -arch arm64`) from a dedicated `wix/main.arm64.wxs`; the x86_64 MSI keeps its existing WiX 3 + cargo-wix path untouched. MSI builds stay best-effort so a toolchain hiccup never blocks the .zip.
+- **Windows on ARM64 提供 MSI 安装包，且 x86_64 与 ARM64 统一改用 WiX 4。** ARM64 版现随 `rudder-<版本>-windows-aarch64.msi` 一同发布。因 cargo-wix 驱动的 WiX 3 工具集不支持 ARM64，安装包整体迁移到 **WiX 4 CLI**：`wix/main.wxs` 成为唯一的 WiX 4 定义文件（保留 v0.6.5 安装位置迁移逻辑与主程序组件的固定 GUID），x86_64 与 ARM64 通过 `-arch` 与各自的 UpgradeCode 构建；cargo-wix 与 WiX 3（choco wixtoolset）依赖已移除。安装包为 best-effort：工具链异常不会阻塞 zip 发布。
+- **MSI for Windows on ARM64, with x86_64 unified on WiX 4.** ARM64 builds now ship `rudder-<version>-windows-aarch64.msi`. Since the WiX 3 toolset driven by cargo-wix has no ARM64 support, packaging moved to the **WiX 4 CLI**: `wix/main.wxs` is now the single WiX 4 source (keeping the v0.6.5 install-location migration search and the pinned main-executable component GUID), and both architectures build from it via `-arch` plus their own UpgradeCode. The cargo-wix and WiX 3 (choco wixtoolset) dependencies are gone. MSI builds stay best-effort so a toolchain hiccup never blocks the .zip.
 
 ## [0.7.3] - 2026-09-05
 

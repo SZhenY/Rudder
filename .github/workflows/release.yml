@@ -99,10 +99,16 @@ jobs:
             target: x86_64-pc-windows-msvc
             name: windows-x86_64
             bin: rudder.exe
+            arch: x64
+            upgrade-code: 6E8F2A1B-3C4D-4E5F-9A0B-1C2D3E4F5A6B
           - os: windows-11-arm           # native Windows on ARM64 runner (free for
-            target: aarch64-pc-windows-msvc  # public repos); MSI (WiX 3) stays x86_64-only
+            target: aarch64-pc-windows-msvc  # public repos)
             name: windows-aarch64
             bin: rudder.exe
+            arch: arm64
+            # Distinct from x86_64: sharing one upgrade code risks a
+            # cross-architecture upgrade match.
+            upgrade-code: 9C4E7B21-5D8A-4F3B-B2E1-7A6D5C4F3E2B
           - os: ubuntu-22.04            # build on the oldest supported runner for
             target: x86_64-unknown-linux-gnu   # broader glibc compatibility
             name: linux-x86_64
@@ -270,33 +276,12 @@ jobs:
       # MSI installer with a "choose install location" wizard (WixUI_InstallDir).
       # Best-effort: if the WiX/cargo-wix tooling hiccups it must not block the
       # .zip release, hence continue-on-error.
-      - name: Cache cargo-wix
-        if: matrix.name == 'windows-x86_64'
-        id: wix-cache
-        uses: actions/cache@v5
-        with:
-          path: ~/.cargo/bin/cargo-wix
-          key: cargo-wix-windows-2026-08
-
-      - name: Build MSI installer (Windows)
-        if: matrix.name == 'windows-x86_64' && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') && !contains(github.ref, '-rc')
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $VERSION = "$env:GITHUB_REF_NAME"; if (-not $VERSION) { $VERSION = "dev" }
-          # WiX 3 toolset (candle/light) that cargo-wix drives.
-          choco install wixtoolset -y --no-progress
-          $candle = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*\bin\candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($candle) { $env:PATH = "$($candle.DirectoryName);$env:PATH" }
-          if (-not (Test-Path "$env:USERPROFILE\.cargo\bin\cargo-wix.exe")) { cargo install cargo-wix --locked }
-          cargo wix --no-build --nocapture --target ${{ matrix.target }} --output "rudder-$VERSION-windows-x86_64.msi"
-          echo "MSI=rudder-$VERSION-windows-x86_64.msi" >> $env:GITHUB_ENV
-
-      # Windows on ARM64 MSI — built with the WiX 4 CLI because the WiX 3
-      # toolset that cargo-wix drives has no ARM64 support. Best-effort too: a
-      # toolchain hiccup must not block the .zip asset.
-      - name: Build MSI installer (Windows ARM64 / WiX 4)
-        if: matrix.name == 'windows-aarch64' && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') && !contains(github.ref, '-rc')
+      # MSI installer, one step for every Windows target. Built with the WiX 4
+      # CLI: WiX 3 (which cargo-wix drives) has no ARM64 support, so keeping
+      # both architectures on WiX 4 avoids two toolchains and two syntaxes.
+      # Best-effort: a toolchain hiccup must not block the .zip asset.
+      - name: Build MSI installer (WiX 4)
+        if: startsWith(matrix.name, 'windows') && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') && !contains(github.ref, '-rc')
         continue-on-error: true
         shell: pwsh
         run: |
@@ -305,13 +290,14 @@ jobs:
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
           wix --version
           wix extension add WixToolset.UI.wixext --global
-          wix build wix\main.arm64.wxs `
-            -arch arm64 `
+          wix build wix\main.wxs `
+            -arch "${{ matrix.arch }}" `
             -d Version="$VERSION" `
-            -d CargoTargetBinDir="target\aarch64-pc-windows-msvc\release" `
+            -d CargoTargetBinDir="target\${{ matrix.target }}\release" `
+            -d UpgradeCode="${{ matrix.upgrade-code }}" `
             -ext WixToolset.UI.wixext `
-            -out "rudder-$VERSION-windows-aarch64.msi"
-          echo "MSI=rudder-$VERSION-windows-aarch64.msi" >> $env:GITHUB_ENV
+            -out "rudder-$VERSION-${{ matrix.name }}.msi"
+          echo "MSI=rudder-$VERSION-${{ matrix.name }}.msi" >> $env:GITHUB_ENV
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
@@ -327,7 +313,7 @@ jobs:
           path: ${{ env.APPIMAGE }}
 
       - name: Upload MSI artifact
-        if: (matrix.name == 'windows-x86_64' || matrix.name == 'windows-aarch64') && env.MSI != ''
+        if: startsWith(matrix.name, 'windows') && env.MSI != ''
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.name }}-msi
@@ -348,7 +334,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Attach MSI to GitHub Release
-        if: (matrix.name == 'windows-x86_64' || matrix.name == 'windows-aarch64') && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
+        if: startsWith(matrix.name, 'windows') && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.MSI }}

@@ -1,42 +1,44 @@
-<?xml version="1.0" encoding="windows-1252"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!--
-  WiX (v3) installer definition for Rudder, driven by `cargo wix`.
+  WiX v4 installer definition for Rudder (x86_64 and ARM64).
 
-  cargo-wix injects these preprocessor variables:
+  One source file for both architectures: the build passes the package
+  architecture via `wix build -arch` and the variables below with `-d`:
     $(var.Version)            crate version from Cargo.toml
     $(var.CargoTargetBinDir)  e.g. target\x86_64-pc-windows-msvc\release
+    $(var.UpgradeCode)        per-architecture upgrade code (see release.yml:
+                              x86_64 and ARM64 must not share one, otherwise a
+                              cross-architecture upgrade could match)
 
-  The `WixUI_InstallDir` UI (bottom) gives the user a "Browse..." page. AppSearch
-  restores the previous location before that page is shown, including v0.6.5
-  installations whose ARP InstallLocation value was left blank.
+  History: this file used to be the WiX 3 source driven by `cargo wix`.
+  WiX 3 has no ARM64 support, so ARM64 needed a separate copy — instead of
+  keeping two syntaxes alive everything moved to the WiX 4 CLI (0.7.x).
+  The v0.6.5 migration search below was carried over verbatim.
+
+  Package-wide 64-bitness comes from `-arch`, so the per-component `Win64`
+  attributes of the WiX 3 days are gone (WiX 4 derives them from the package).
 -->
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-    <Product
-        Id="*"
-        Name="Rudder"
-        UpgradeCode="6E8F2A1B-3C4D-4E5F-9A0B-1C2D3E4F5A6B"
-        Manufacturer="Rudder contributors"
-        Language="1033"
-        Codepage="1252"
-        Version="$(var.Version)">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
-        <Package Id="*"
-            Keywords="Installer"
-            Description="Rudder - lightweight Rust + Slint SSH/terminal client"
-            Manufacturer="Rudder contributors"
-            InstallerVersion="450"
-            Languages="1033"
-            Compressed="yes"
-            InstallScope="perMachine"
-            SummaryCodepage="1252"/>
+    <Package Name="Rudder"
+             Manufacturer="Rudder contributors"
+             Version="$(var.Version)"
+             UpgradeCode="$(var.UpgradeCode)"
+             Scope="perMachine"
+             Language="1033"
+             Codepage="1252"
+             Compressed="yes"
+             InstallerVersion="450">
+
+        <SummaryInformation Description="Rudder - lightweight Rust + Slint SSH/terminal client"
+                            Manufacturer="Rudder contributors"/>
 
         <!-- Replace an older install in place instead of erroring out. -->
-        <MajorUpgrade
-            Schedule="afterInstallInitialize"
-            DowngradeErrorMessage="A newer version of Rudder is already installed. Setup will now exit."/>
+        <MajorUpgrade Schedule="afterInstallInitialize"
+                      DowngradeErrorMessage="A newer version of Rudder is already installed. Setup will now exit."/>
 
-        <Media Id="1" Cabinet="media1.cab" EmbedCab="yes" DiskPrompt="CD-ROM #1"/>
-        <Property Id="DiskPrompt" Value="Rudder Installation"/>
+        <MediaTemplate EmbedCab="yes"/>
 
         <Icon Id="ProductICO" SourceFile="assets\rudder.ico"/>
         <Property Id="ARPPRODUCTICON" Value="ProductICO"/>
@@ -46,91 +48,88 @@
           New packages write Software\Rudder\InstallDir below. The component
           search is the migration fallback for v0.6.5-v0.6.7, which did not
           persist either that value or ARPINSTALLLOCATION. MainExecutable's
-          generated component GUID in those packages was stable and is now
-          pinned explicitly below.
+          generated component GUID in those packages was stable and is pinned
+          explicitly below.
           NOTE: the registry search keeps the OLD key (Software\meatshell)
           because it looks up installs created before the rename; the new
           installer itself writes Software\Rudder.
         -->
         <Property Id="APPLICATIONFOLDER" Secure="yes">
             <RegistrySearch Id="PreviousInstallDirRegistry"
-                Root="HKLM"
-                Key="Software\meatshell"
-                Name="InstallDir"
-                Type="directory"
-                Win64="yes"/>
+                            Root="HKLM"
+                            Key="Software\meatshell"
+                            Name="InstallDir"
+                            Type="directory"/>
             <ComponentSearch Id="PreviousMainExecutable"
-                Guid="{ECB1F8D7-7CC7-5A8A-A7CC-56A267A502DC}"
-                Type="file">
+                             Guid="{ECB1F8D7-7CC7-5A8A-A7CC-56A267A502DC}"
+                             Type="file">
                 <DirectorySearch Id="PreviousMainExecutableDirectory"
-                    AssignToProperty="yes"/>
+                                 AssignToProperty="yes"/>
             </ComponentSearch>
         </Property>
 
-        <Directory Id="TARGETDIR" Name="SourceDir">
-            <Directory Id="ProgramFiles64Folder">
-                <!-- Default path; the InstallDir UI lets the user change it. -->
-                <Directory Id="APPLICATIONFOLDER" Name="Rudder">
-                    <Component Id="MainExecutable"
-                               Guid="{ECB1F8D7-7CC7-5A8A-A7CC-56A267A502DC}">
-                        <File Id="rudderEXE"
-                              Name="rudder.exe"
-                              Source="$(var.CargoTargetBinDir)\rudder.exe"
-                              KeyPath="yes"/>
-                    </Component>
-                    <Component Id="ThirdPartyNotices" Guid="*">
-                        <File Id="thirdPartyNoticesFile"
-                              Name="THIRD_PARTY_NOTICES.md"
-                              Source="THIRD_PARTY_NOTICES.md"
-                              KeyPath="yes"/>
-                    </Component>
-                    <Component Id="InstallLocationRegistry"
-                               Guid="{E6877B59-AD5C-4CA3-A1F5-8F8E0CC6CC53}"
-                               Win64="yes">
-                        <RegistryValue Root="HKLM"
-                            Key="Software\Rudder"
-                            Name="InstallDir"
-                            Type="string"
-                            Value="[APPLICATIONFOLDER]"
-                            KeyPath="yes"/>
-                    </Component>
-                </Directory>
-            </Directory>
-            <Directory Id="ProgramMenuFolder">
-                <Component Id="ApplicationShortcut" Guid="*">
-                    <Shortcut Id="StartMenuShortcut"
-                        Name="Rudder"
-                        Description="Lightweight SSH/terminal client"
-                        Target="[APPLICATIONFOLDER]rudder.exe"
-                        WorkingDirectory="APPLICATIONFOLDER"
-                        Icon="ProductICO"/>
-                    <RemoveFolder Id="CleanUpShortCut" On="uninstall"/>
-                    <RegistryValue Root="HKCU"
-                        Key="Software\Rudder"
-                        Name="installed"
-                        Type="integer"
-                        Value="1"
-                        KeyPath="yes"/>
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <!-- Default path; the InstallDir UI lets the user change it. -->
+            <Directory Id="APPLICATIONFOLDER" Name="Rudder">
+                <Component Id="MainExecutable"
+                           Guid="{ECB1F8D7-7CC7-5A8A-A7CC-56A267A502DC}">
+                    <File Id="rudderEXE"
+                          Name="rudder.exe"
+                          Source="$(var.CargoTargetBinDir)\rudder.exe"
+                          KeyPath="yes"/>
+                </Component>
+                <Component Id="ThirdPartyNotices">
+                    <File Id="thirdPartyNoticesFile"
+                          Name="THIRD_PARTY_NOTICES.md"
+                          Source="THIRD_PARTY_NOTICES.md"
+                          KeyPath="yes"/>
+                </Component>
+                <Component Id="InstallLocationRegistry">
+                    <RegistryValue Root="HKLM"
+                                   Key="Software\Rudder"
+                                   Name="InstallDir"
+                                   Type="string"
+                                   Value="[APPLICATIONFOLDER]"
+                                   KeyPath="yes"/>
                 </Component>
             </Directory>
-            <Directory Id="DesktopFolder" Name="Desktop">
-                <Component Id="DesktopShortcut"
-                           Guid="{A034B952-E060-47C3-8D04-FCA147FBE3E5}">
-                    <Shortcut Id="DesktopShortcutLink"
-                        Name="Rudder"
-                        Description="Lightweight SSH/terminal client"
-                        Target="[APPLICATIONFOLDER]rudder.exe"
-                        WorkingDirectory="APPLICATIONFOLDER"
-                        Icon="ProductICO"/>
-                    <RegistryValue Root="HKCU"
-                        Key="Software\Rudder"
-                        Name="desktopShortcut"
-                        Type="integer"
-                        Value="1"
-                        KeyPath="yes"/>
-                </Component>
-            </Directory>
-        </Directory>
+        </StandardDirectory>
+
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Component Id="ApplicationShortcut">
+                <Shortcut Id="StartMenuShortcut"
+                          Name="Rudder"
+                          Description="Lightweight SSH/terminal client"
+                          Target="[APPLICATIONFOLDER]rudder.exe"
+                          WorkingDirectory="APPLICATIONFOLDER"
+                          Icon="ProductICO"/>
+                <RemoveFolder Id="CleanUpShortCut" On="uninstall"/>
+                <RegistryValue Root="HKCU"
+                               Key="Software\Rudder"
+                               Name="installed"
+                               Type="integer"
+                               Value="1"
+                               KeyPath="yes"/>
+            </Component>
+        </StandardDirectory>
+
+        <StandardDirectory Id="DesktopFolder">
+            <Component Id="DesktopShortcut"
+                       Guid="{A034B952-E060-47C3-8D04-FCA147FBE3E5}">
+                <Shortcut Id="DesktopShortcutLink"
+                          Name="Rudder"
+                          Description="Lightweight SSH/terminal client"
+                          Target="[APPLICATIONFOLDER]rudder.exe"
+                          WorkingDirectory="APPLICATIONFOLDER"
+                          Icon="ProductICO"/>
+                <RegistryValue Root="HKCU"
+                               Key="Software\Rudder"
+                               Name="desktopShortcut"
+                               Type="integer"
+                               Value="1"
+                               KeyPath="yes"/>
+            </Component>
+        </StandardDirectory>
 
         <Feature Id="MainProgram" Title="Rudder" Level="1">
             <ComponentRef Id="MainExecutable"/>
@@ -142,16 +141,14 @@
 
         <!-- Populate Programs and Features -> InstallLocation as well. -->
         <CustomAction Id="SetARPInstallLocation"
-            Property="ARPINSTALLLOCATION"
-            Value="[APPLICATIONFOLDER]"
-            Execute="immediate"/>
+                      Property="ARPINSTALLLOCATION"
+                      Value="[APPLICATIONFOLDER]"
+                      Execute="immediate"/>
         <InstallExecuteSequence>
             <Custom Action="SetARPInstallLocation" After="CostFinalize">NOT REMOVE</Custom>
         </InstallExecuteSequence>
 
-        <!-- "Choose install location" wizard page (needs WixUIExtension). -->
-        <Property Id="WIXUI_INSTALLDIR" Value="APPLICATIONFOLDER"/>
-        <UIRef Id="WixUI_InstallDir"/>
-        <UIRef Id="WixUI_ErrorProgressText"/>
-    </Product>
+        <!-- "Choose install location" wizard page (needs WixToolset.UI.wixext). -->
+        <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="APPLICATIONFOLDER"/>
+    </Package>
 </Wix>
