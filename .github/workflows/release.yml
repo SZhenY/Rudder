@@ -286,9 +286,13 @@ jobs:
         shell: pwsh
         run: |
           $VERSION = "$env:GITHUB_REF_NAME"; if (-not $VERSION) { $VERSION = "dev" }
-          # WiX's ProductVersion must be numeric — GITHUB_REF_NAME for a tag
-          # still carries the "v" prefix, and "v0.7.4" is rejected (WIX0104).
-          $MSI_VERSION = $VERSION.TrimStart("v")
+          # WiX's ProductVersion must be numeric: a tag ref still carries the
+          # "v" prefix and a workflow_dispatch run has no tag at all
+          # (GITHUB_REF_NAME == the branch), so read the real version from
+          # Cargo.toml — the single source of truth for both cases.
+          $MSI_VERSION = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' |
+            Select-Object -First 1).Matches[0].Groups[1].Value
+          if (-not $MSI_VERSION) { $MSI_VERSION = $VERSION.TrimStart("v") }
           dotnet tool install --global wix --version 4.*
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
           wix --version
