@@ -95,9 +95,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            name: windows-x86_64
+          - os: windows-2025-vs2026      # VS2026 toolchain, same generation as
+            target: x86_64-pc-windows-msvc  # the ARM64 image below so both
+            name: windows-x86_64                 # Windows builds compile alike
             bin: rudder.exe
             arch: x64
             upgrade-code: 6E8F2A1B-3C4D-4E5F-9A0B-1C2D3E4F5A6B
