@@ -101,8 +101,11 @@ jobs:
             bin: rudder.exe
             arch: x64
             upgrade-code: 6E8F2A1B-3C4D-4E5F-9A0B-1C2D3E4F5A6B
-          - os: windows-11-arm           # native Windows on ARM64 runner (free for
-            target: aarch64-pc-windows-msvc  # public repos)
+          - os: windows-11-vs2026-arm    # native Windows on ARM64 runner (free for
+            target: aarch64-pc-windows-msvc  # public repos). The -vs2026 image is
+            # chosen deliberately: plain `windows-11-arm` switches to the VS2026
+            # toolchain on 2026-09-21, so building on it now means we hit any
+            # MSVC breakage on our own schedule instead of mid-release.
             name: windows-aarch64
             bin: rudder.exe
             arch: arm64
