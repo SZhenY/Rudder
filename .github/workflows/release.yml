@@ -293,13 +293,15 @@ jobs:
           $MSI_VERSION = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' |
             Select-Object -First 1).Matches[0].Groups[1].Value
           if (-not $MSI_VERSION) { $MSI_VERSION = $VERSION.TrimStart("v") }
-          dotnet tool install --global wix --version 4.*
+          # CLI and extension versions must match: pinning the CLI to 4.x while
+          # resolving the extension to 7.0.0 left the cache entry "damaged"
+          # (WIX0144). Both are pinned to the same release here.
+          dotnet tool install --global wix --version 4.0.6
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
           wix --version
-          # The UI extension must be pinned and actually present in the local
-          # cache: `wix build -ext` only resolves it, it does not download it
-          # (WIX0144 when the cache entry is missing).
-          wix extension add WixToolset.UI.wixext/7.0.0 --global
+          # `wix build -ext` only resolves an extension, it does not download
+          # it — add it (pinned) first, then list for diagnostics.
+          wix extension add WixToolset.UI.wixext/4.0.6 --global
           wix extension list --global
           wix build wix\main.wxs `
             -arch "${{ matrix.arch }}" `
