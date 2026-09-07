@@ -292,6 +292,27 @@ jobs:
           cargo wix --no-build --nocapture --target ${{ matrix.target }} --output "rudder-$VERSION-windows-x86_64.msi"
           echo "MSI=rudder-$VERSION-windows-x86_64.msi" >> $env:GITHUB_ENV
 
+      # Windows on ARM64 MSI — built with the WiX 4 CLI because the WiX 3
+      # toolset that cargo-wix drives has no ARM64 support. Best-effort too: a
+      # toolchain hiccup must not block the .zip asset.
+      - name: Build MSI installer (Windows ARM64 / WiX 4)
+        if: matrix.name == 'windows-aarch64' && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') && !contains(github.ref, '-rc')
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $VERSION = "$env:GITHUB_REF_NAME"; if (-not $VERSION) { $VERSION = "dev" }
+          dotnet tool install --global wix --version 4.*
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+          wix --version
+          wix extension add WixToolset.UI.wixext --global
+          wix build wix\main.arm64.wxs `
+            -arch arm64 `
+            -d Version="$VERSION" `
+            -d CargoTargetBinDir="target\aarch64-pc-windows-msvc\release" `
+            -ext WixToolset.UI.wixext `
+            -out "rudder-$VERSION-windows-aarch64.msi"
+          echo "MSI=rudder-$VERSION-windows-aarch64.msi" >> $env:GITHUB_ENV
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
         with:
@@ -306,10 +327,10 @@ jobs:
           path: ${{ env.APPIMAGE }}
 
       - name: Upload MSI artifact
-        if: matrix.name == 'windows-x86_64' && env.MSI != ''
+        if: (matrix.name == 'windows-x86_64' || matrix.name == 'windows-aarch64') && env.MSI != ''
         uses: actions/upload-artifact@v6
         with:
-          name: windows-x86_64-msi
+          name: ${{ matrix.name }}-msi
           path: ${{ env.MSI }}
 
       - name: Attach to GitHub Release
@@ -327,7 +348,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Attach MSI to GitHub Release
-        if: matrix.name == 'windows-x86_64' && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
+        if: (matrix.name == 'windows-x86_64' || matrix.name == 'windows-aarch64') && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.MSI }}

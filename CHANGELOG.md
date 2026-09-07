@@ -3,6 +3,13 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [0.7.4] - 2026-09-06
+
+### 新增 / Added
+
+- **Windows on ARM64 提供 MSI 安装包。** ARM64 版现随 `rudder-<版本>-windows-aarch64.msi` 一同发布，与 zip 并列。因 cargo-wix 驱动的 WiX 3 工具集不支持 ARM64，ARM64 安装包改用 **WiX 4 CLI**（`wix build -arch arm64`）与独立的 `wix/main.arm64.wxs` 构建；x86_64 的 MSI 仍走原有 WiX 3 + cargo-wix 路径，不受影响。安装包为 best-effort：工具链异常不会阻塞 zip 发布。
+- **MSI installer for Windows on ARM64.** ARM64 builds now ship `rudder-<version>-windows-aarch64.msi` alongside the zip. Because the WiX 3 toolset driven by cargo-wix has no ARM64 support, the ARM64 package is built with the **WiX 4 CLI** (`wix build -arch arm64`) from a dedicated `wix/main.arm64.wxs`; the x86_64 MSI keeps its existing WiX 3 + cargo-wix path untouched. MSI builds stay best-effort so a toolchain hiccup never blocks the .zip.
+
 ## [0.7.3] - 2026-09-05
 
 ### 新增 / Added
