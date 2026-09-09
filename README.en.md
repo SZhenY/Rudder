@@ -115,7 +115,6 @@ open /Applications/meatshell.app
 - [x] Windows on ARM64 (zip + MSI installer)
 - [x] Platform visual adaptation: larger corner radii / hover scrollbars / softer card shadows on macOS, in one unified custom style
 
-Twemoji artwork from
 Color emoji graphics are provided by [Twemoji](https://github.com/jdecked/twemoji)
 under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full attribution.
