@@ -3,6 +3,41 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [0.7.5] - 2026-09-09
+
+### 新增 / Added
+
+- **在线一键更新（self_update + GitHub Releases）。** 设置 → 新版本提示新增「手动检查更新」（独立于启动开关）；发现新版本后横幅可「立即更新」：下载（实时进度）→ 自动替换（macOS 整体替换 .app 保留签名，Windows/Linux 原子替换可执行文件）→ 点击重启生效。权限不足或下载失败自动回退浏览器下载，不自行提权。
+- **In-app one-click update (self_update + GitHub Releases).** Settings gains a manual "Check now" button (independent of the startup toggle); the banner then offers "Update now": download with live progress, replace in place (macOS swaps the whole .app bundle to keep its signature; Windows/Linux atomically replace the executable), then press Restart. Failures fall back to the browser download; the app never self-elevates.
+
+- **Windows on ARM64 构建：zip + MSI 安装包。** 原生 ARM runner（windows-11-vs2026-arm）产出 zip 与 MSI，与 x86_64 并列。
+- **Windows on ARM64: zip and MSI.** A native ARM runner produces both the zip and the MSI alongside x86_64.
+
+- **连接失败时给出可读的原因分类与排查建议。** 认证失败 / 连接超时 / 连接被拒绝 / 网络不可达 / 域名解析失败 / 主机密钥校验失败 / 远端重置，各附行动指引（此前只显示原始错误链）。
+- **Readable, actionable connection-failure reasons.** Auth failure / timeout / refused / unreachable / DNS / host-key / reset are classified with next-step guidance instead of a raw error chain.
+
+- **命令输入框支持全选（Ctrl/Cmd+A）。** 多行输入此前没有内建全选，快捷键完全无响应。
+- **Select-all in the command input (Ctrl/Cmd+A).** A multi-line TextInput had no built-in select-all, so the shortcut did nothing.
+
+### 变更 / Changed
+
+- **内置壁纸精简为简约·浅 / 简约·暗两张（纯代码绘制，零解码内存），图片壁纸改为用户自行上传。** 移除内嵌 miku/ms 图片（二进制 -579 KB；解码后各 14.7 MB 常驻）与程序绘制的幻想 3048；默认壁纸改为简约·暗，已选旧壁纸的用户自动迁移。
+- **Built-in wallpapers trimmed to the two procedural ones (Light / Dark, zero decode memory); image wallpapers are now user-supplied.** The bundled miku/ms images (−579 KB binary; 14.7 MB decoded each) and the painted Fantasy 3048 are gone; the default is Minimal Dark and users of retired built-ins migrate automatically.
+
+- **Windows 构建统一 WiX 4 与 VS2026。** x86_64 与 ARM64 的 MSI 都用 WiX 4 CLI 从同一 main.wxs 构建（cargo-wix/WiX 3 已移除）；两个 Windows 构建均运行 VS2026 工具链镜像。
+- **Windows packaging unified on WiX 4 and VS2026.** Both architectures' MSIs build from one main.wxs via the WiX 4 CLI (cargo-wix/WiX 3 removed); both Windows builds run on VS2026 toolchain images.
+
+- **emoji 解码缓存升级为近似 LRU（上限 512，约 10 MiB）。** 此前无上限，滚动含大量不同 emoji 的输出会持续累积（全集可到 70 MiB+）。
+- **Emoji decode cache is now approximate-LRU (cap 512, ~10 MiB).** Previously unbounded, it accumulated across long sessions full of distinct emoji.
+
+- **依赖清理：移除未使用的 russh-keys 直接依赖。**
+- **Deps: removed the unused direct russh-keys dependency.**
+
+### 修复 / Fixed
+
+- **WiX 4 构建链修复**：UI 扩展缺失（WIX0144）、版本号含 v 前缀 / dispatch 时取分支名、Custom 条件语法（WIX0400）、ARM64 要求 InstallerVersion ≥ 500（WIX1143）。
+- **WiX 4 build chain fixes**: missing UI extension (WIX0144), version carried the "v" prefix / branch name on dispatch, Custom condition syntax (WIX0400), InstallerVersion < 500 rejected for ARM64 (WIX1143).
+
 ## [0.7.4] - 2026-09-06
 
 ### 新增 / Added
