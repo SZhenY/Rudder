@@ -396,11 +396,11 @@ fn default_wallpaper() -> String {
     // *existing* config that predates the field stays on tech — `migrate_defaults`
     // then advances default-following users through the migration chain. Brand-new
     // installs get the current default straight from `fresh_config`.
-    "builtin:tech".to_string()
+    "builtin:dark".to_string()
 }
 
 /// Bump when `migrate_defaults` gains a new one-time default-layout change.
-pub const DEFAULTS_REV: u32 = 3;
+pub const DEFAULTS_REV: u32 = 4;
 
 const PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY: f32 = 0.38;
 const PREVIOUS_DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY;
@@ -421,7 +421,7 @@ fn normalize_hex_color(value: &str) -> Option<String> {
 /// marks the migration done so it isn't re-applied.
 fn fresh_config() -> ConfigFile {
     ConfigFile {
-        wallpaper: "builtin:ms".to_string(),
+        wallpaper: "builtin:dark".to_string(),
         welcome_as_sidebar: true,
         sidebar_dock: "right".to_string(),
         wallpaper_overlay: DEFAULT_WALLPAPER_OVERLAY,
@@ -438,13 +438,17 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     if cfg.defaults_rev >= DEFAULTS_REV {
         return false;
     }
+    // Retired built-ins (tech/miku/ms) remap to dark regardless of rev: the
+    // ids no longer exist in the picker, so any stored reference would render
+    // nothing (#wallpaper-trim).
+    if matches!(
+        cfg.wallpaper.as_str(),
+        "builtin:tech" | "builtin:miku" | "builtin:ms"
+    ) {
+        cfg.wallpaper = "builtin:dark".to_string();
+    }
     // rev 1: miku / welcome-as-sidebar / right-docked resources / wallpaper overlay.
     if cfg.defaults_rev < 1 {
-        // Old default wallpaper → miku. A custom path, "none" (""), or any other
-        // built-in means the user chose it, so leave it.
-        if cfg.wallpaper == "builtin:tech" {
-            cfg.wallpaper = "builtin:miku".to_string();
-        }
         // Overlay still unset -> current default.
         if cfg.wallpaper_overlay <= 0.0 {
             cfg.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
@@ -843,7 +847,7 @@ pub struct ConfigFile {
     #[serde(default)]
     pub ui_scale: u32,
     /// Immersive wallpaper id: "" = none, "builtin:light" / "builtin:dark" /
-    /// "builtin:tech", or a filesystem path to a custom image. Drives the
+    /// "builtin:dark", or a filesystem path to a custom image. Drives the
     /// wallpaper + tinted theme. Defaults to the "幻想 3048" built-in.
     #[serde(default = "default_wallpaper")]
     pub wallpaper: String,
@@ -2732,11 +2736,11 @@ mod tests {
     fn wallpaper_defaults_to_ms_but_keeps_explicit_choice() {
         // Fresh install (no file).
         let fresh = fresh_config();
-        assert_eq!(fresh.wallpaper, "builtin:ms");
+        assert_eq!(fresh.wallpaper, "builtin:dark");
         assert!((fresh.wallpaper_overlay - 0.85).abs() < f32::EPSILON);
         // User upgrading from before the feature: JSON without the key.
         let cfg: ConfigFile = serde_json::from_str("{}").unwrap();
-        assert_eq!(cfg.wallpaper, "builtin:tech");
+        assert_eq!(cfg.wallpaper, "builtin:dark");
         // An explicit "无"/none (stored as "") is preserved, not re-defaulted.
         let cfg: ConfigFile = serde_json::from_str(r#"{"wallpaper":""}"#).unwrap();
         assert_eq!(cfg.wallpaper, "");
@@ -2744,13 +2748,14 @@ mod tests {
         let cfg: ConfigFile = serde_json::from_str(r#"{"wallpaper":"builtin:light"}"#).unwrap();
         assert_eq!(cfg.wallpaper, "builtin:light");
 
+        // Retired built-ins (tech/miku/ms) migrate to the dark wallpaper once.
         let mut cfg = ConfigFile {
             wallpaper: "builtin:miku".to_string(),
-            defaults_rev: DEFAULTS_REV,
+            defaults_rev: DEFAULTS_REV - 1,
             ..ConfigFile::default()
         };
-        assert!(!migrate_defaults(&mut cfg));
-        assert_eq!(cfg.wallpaper, "builtin:miku");
+        assert!(migrate_defaults(&mut cfg));
+        assert_eq!(cfg.wallpaper, "builtin:dark");
     }
 
     #[test]
