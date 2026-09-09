@@ -99,6 +99,14 @@ open /Applications/rudder.app
 - [x] 会话密码加密存储（ChaCha20-Poly1305）
 - [x] 已知主机（`known_hosts`）校验 + 首次连接确认
 - [x] 多标签页终端分屏
+- [x] **在线一键更新**：设置内手动检查更新，横幅「立即更新」→ 下载（实时进度）→ 自动替换 → 重启；失败自动回退浏览器下载
+- [x] **连接失败原因分类**：认证失败 / 超时 / 端口被拒 / 网络不可达 / 域名解析失败 / 主机密钥不符，附排查建议（不再只显示原始错误码）
+- [x] SFTP 下载断点续传（取消 / 失败保留半截文件，重试自动续传）
+- [x] 终端双击选词 / 三击选行；查找支持 Enter / Shift+Enter 上下导航
+- [x] 沉浸壁纸（内置简约·浅 / 暗，支持自定义图片）+ 主题色随壁纸派生
+- [x] 平台字体栈：UI 自动使用平台默认字体（macOS SF Pro/苹方、Windows Segoe UI/雅黑、Linux Ubuntu/Cantarell/Noto），终端默认 JetBrains Mono（含暗淡文本的 ExtraLight 变体）
+- [x] Windows on ARM64（zip + MSI 安装包）
+- [x] 平台视觉适配：macOS 更圆润的圆角 / 悬浮细滚动条 / 柔和卡片阴影，统一自绘风格
 
 彩色 emoji 图形来自 [Twemoji](https://github.com/jdecked/twemoji)，按
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 使用；完整署名见
@@ -215,6 +223,14 @@ rudder/
 ```
 
 脚本会更新 `Cargo.toml` / `Cargo.lock`，运行 `cargo check --locked`，验证 `rudder --version`，提交 `Release v0.6.0`，创建 annotated tag，并推送当前分支和 tag。更多细节见 [docs/release.md](docs/release.md)。
+
+## 开发方式
+
+Rudder 由维护者与 AI 编程助手（[WorkBuddy](https://www.workbuddy.cn)，GLM 模型）协作开发：
+
+- **维护者主导**：产品方向、架构决策、代码审查、实机验证与发布
+- **AI 完成**：功能实现、缺陷修复、测试编写、CI/CD 维护与文档——AI 根据维护者的需求描述生成全部变更
+- 所有改动均经过本地构建验证、GitHub Actions 6 平台构建矩阵与人工确认后才发布
 
 ## License
 
