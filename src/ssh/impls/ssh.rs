@@ -1381,7 +1381,8 @@ pub fn spawn_session(
         .await
         {
             tracing::warn!("ssh session ended with error: {err:#}");
-            let _ = evt_tx_for_task.send(SessionEvent::Closed(format!("{err:#}")));
+            let _ = evt_tx_for_task
+                .send(SessionEvent::Closed(classify_connect_failure(&err)));
         }
     });
 
@@ -1787,6 +1788,71 @@ pub async fn test_session_auth(
     result
 }
 
+/// Turn a connection-establishment failure into a user-readable, actionable
+/// reason. Matches keywords across the whole anyhow chain (inner io::Errors
+/// carry the precise kind: timeout / refused / unreachable / dns …). The
+/// technical error stays in the tracing log; the user gets the verdict plus
+/// what to check.
+pub(crate) fn classify_connect_failure(err: &anyhow::Error) -> String {
+    let joined: String = err
+        .chain()
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>()
+        .join(" | ")
+        .to_lowercase();
+
+    if joined.contains("authentication failed") || joined.contains("auth failed") {
+        t(
+            "认证失败：用户名、密码或密钥被服务器拒绝，请核对凭据后按 Enter 重试",
+            "Authentication failed: the username, password or key was rejected — check your credentials and press Enter to retry",
+        )
+        .to_string()
+    } else if joined.contains("timed out") || joined.contains("timeout") {
+        t(
+            "连接超时：服务器无响应，请检查网络连通性与防火墙",
+            "Timed out: the server did not respond — check network reachability and firewall",
+        )
+        .to_string()
+    } else if joined.contains("refused") {
+        t(
+            "连接被拒绝：目标端口可能未开放，请确认 IP 与端口",
+            "Connection refused: the port is likely closed — verify host and port",
+        )
+        .to_string()
+    } else if joined.contains("no route") || joined.contains("unreachable") {
+        t(
+            "网络不可达：无法路由到目标主机，请检查本机网络",
+            "Network unreachable: no route to the host — check local connectivity",
+        )
+        .to_string()
+    } else if joined.contains("nodename")
+        || joined.contains("name or service")
+        || joined.contains("resolve")
+        || joined.contains("getaddrinfo")
+        || joined.contains("failed to lookup")
+    {
+        t(
+            "域名解析失败：主机名无法解析，请检查拼写与 DNS",
+            "DNS lookup failed: the hostname could not be resolved — check spelling and DNS",
+        )
+        .to_string()
+    } else if joined.contains("host key") || joined.contains("known_hosts") {
+        t(
+            "主机密钥校验失败：服务器指纹与已知记录不符（可能重装或更换主机，需更新已知主机）",
+            "Host key verification failed: the fingerprint differs from the known record (server reinstalled or replaced?)",
+        )
+        .to_string()
+    } else if joined.contains("reset") || joined.contains("broken pipe") || joined.contains("eof") {
+        t(
+            "连接被远端重置：服务器在握手过程中断开了连接",
+            "Connection reset by the remote host during handshake",
+        )
+        .to_string()
+    } else {
+        format!("{}: {err:#}", t("连接失败", "Connection failed"))
+    }
+}
+
 async fn run_session(
     session: Session,
     jump: Option<Session>,
@@ -1845,7 +1911,11 @@ async fn run_session(
                 session.host
             );
             let _ = events.send(SessionEvent::Closed(
-                t("认证失败", "authentication failed").into(),
+                t(
+                    "认证失败：用户名、密码或密钥被服务器拒绝，请核对凭据后按 Enter 重试",
+                    "Authentication failed: the username, password or key was rejected — check your credentials and press Enter to retry",
+                )
+                .into(),
             ));
             let _ = handle
                 .disconnect(Disconnect::ByApplication, "auth failed", "")
@@ -4106,5 +4176,41 @@ mod mfa_tests {
         ] {
             assert!(looks_like_mfa(p), "missed an MFA prompt: {p:?}");
         }
+    }
+
+}
+
+#[cfg(test)]
+mod connect_failure_tests {
+    use super::classify_connect_failure;
+
+    #[test]
+    fn connect_failures_are_classified() {
+        use anyhow::anyhow;
+
+        // Assertions are bilingual: t() returns zh or en per runtime locale.
+
+        let auth = classify_connect_failure(&anyhow!("authentication failed"));
+        assert!(auth.contains("认证失败") || auth.contains("Authentication"));
+
+        let timeout = classify_connect_failure(&anyhow!(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "read timed out"
+        )));
+        assert!(timeout.contains("超时") || timeout.contains("Timed out"));
+
+        let refused = classify_connect_failure(&anyhow!(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused"
+        )));
+        assert!(refused.contains("拒绝") || refused.contains("refused"));
+
+        let dns = classify_connect_failure(&anyhow!(
+            "failed to lookup address information: Name or service not known"
+        ));
+        assert!(dns.contains("解析") || dns.contains("DNS"));
+
+        let hostkey = classify_connect_failure(&anyhow!("host key verification failed"));
+        assert!(hostkey.contains("主机密钥") || hostkey.contains("Host key"));
     }
 }
