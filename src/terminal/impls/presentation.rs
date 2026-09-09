@@ -312,21 +312,30 @@ thread_local! {
     /// output. A full 72x72 RGBA Twemoji is ~20 KiB; this avoids decoding on
     /// every redraw without eagerly allocating the entire emoji collection.
     ///
-    /// Bounded: the cache used to grow without limit, so scrolling through
-    /// output full of distinct emoji (logs, chat, test output) accumulated
-    /// ~20 KiB per glyph indefinitely. Past the cap the whole map is dropped —
-    /// cheap, and the working set stays small because emoji repeat heavily.
-    static TWEMOJI_CACHE: RefCell<HashMap<String, Option<slint::Image>>> =
+    /// Bounded + approximate LRU: the cache used to grow without limit, so
+    /// scrolling through output full of distinct emoji (logs, chat, test
+    /// output) accumulated ~20 KiB per glyph indefinitely. Over the cap, the
+    /// least-recently-used half is evicted — terminal access is dominated by
+    /// re-drawing the on-screen set every frame, so recency tracks the actual
+    /// working set. A monotonically increasing tick stamps each hit.
+    static TWEMOJI_CACHE: RefCell<HashMap<String, (Option<slint::Image>, u64)>> =
         RefCell::new(HashMap::new());
+    static TWEMOJI_TICK: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// Maximum decoded emoji images kept per thread (~256 x 20 KiB = ~5 MiB).
-const TWEMOJI_CACHE_CAP: usize = 256;
+/// Maximum decoded emoji images kept per thread (~512 x 20 KiB = ~10 MiB).
+const TWEMOJI_CACHE_CAP: usize = 512;
 
 fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
+    TWEMOJI_TICK.with(|t| t.set(t.get() + 1));
+    let now = TWEMOJI_TICK.with(|t| t.get());
     TWEMOJI_CACHE.with(|cache| {
-        if let Some(image) = cache.borrow().get(grapheme) {
-            return image.clone();
+        {
+            let mut cache = cache.borrow_mut();
+            if let Some((image, last_use)) = cache.get_mut(grapheme) {
+                *last_use = now; // touch for LRU bookkeeping
+                return image.clone();
+            }
         }
 
         // U+FE0E explicitly requests text presentation. U+FE0F requests emoji
@@ -354,9 +363,21 @@ fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
             });
         let mut cache = cache.borrow_mut();
         if cache.len() >= TWEMOJI_CACHE_CAP {
-            cache.clear();
+            // Evict the least-recently-used half, not all: a full clear makes
+            // a screen with more distinct emoji than the cap re-decode every
+            // glyph on every frame (thrash). The on-screen working set is
+            // touched every frame, so LRU keeps it hot while bounding growth.
+            let mut items: Vec<(String, u64)> = cache
+                .iter()
+                .map(|(k, (_, last))| (k.clone(), *last))
+                .collect();
+            items.sort_unstable_by_key(|(_, last)| *last);
+            let evict = items.len().div_ceil(2);
+            for (key, _) in items.into_iter().take(evict) {
+                cache.remove(&key);
+            }
         }
-        cache.insert(grapheme.to_string(), image.clone());
+        cache.insert(grapheme.to_string(), (image.clone(), now));
         image
     })
 }
