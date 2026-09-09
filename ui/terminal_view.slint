@@ -18,6 +18,7 @@ import "fonts/MeatshellMono-Bold.ttf";
 // matches via Slint's font-variant lookup.
 import "fonts/JetBrainsMono-Regular.ttf";
 import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
 // Large CJK fonts are runtime-loaded from the fonts dir (src/fonts.rs), not
 // embedded — the cell-probe falls back to a system font for unregistered
@@ -879,7 +880,10 @@ export component TerminalView inherits Rectangle {
                                 // variant (MapleMono ships Thin as its own
                                 // family) for a genuine light-weight look.
                                 font-family: (span.cjk && !Theme.term-font-cjk) ? Theme.ui-font-family
-                                           : span.dim ? Theme.term-font-family + " Thin"
+                                           : span.dim
+                                           ? (Theme.term-font-family == "JetBrains Mono"
+                                               ? Theme.term-font-family + " ExtraLight"
+                                               : Theme.term-font-family + " Thin")
                                            : Theme.term-font-family;
                                 font-size: root.term-font-size-px * 1px;
                                 font-weight: (Theme.term-font-bold || span.bold) ? 700 : 400;

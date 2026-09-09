@@ -61,6 +61,18 @@ pub(crate) fn resolve_ui_font_family() -> slint::SharedString {
     db.load_system_fonts();
     let face_count = db.faces().count();
 
+    // Latin/UI families first (platform default UI fonts), then a CJK-capable
+    // family for Chinese text — Slint resolves a comma-separated font-family
+    // list glyph by glyph, so Latin runs use the platform UI face and CJK runs
+    // fall through to the next family (#54). Unknown names are skipped by the
+    // renderer at zero cost, so the list may name fonts that aren't installed.
+    #[cfg(target_os = "macos")]
+    let latin_candidates: &[&str] = &["SF Pro Text", "SF NS Text", "Helvetica Neue"];
+    #[cfg(target_os = "windows")]
+    let latin_candidates: &[&str] = &["Segoe UI Variable Text", "Segoe UI"];
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let latin_candidates: &[&str] = &["Ubuntu", "Cantarell", "Noto Sans SC"];
+
     // CJK-capable system families, most-preferred first, per platform. The UI
     // default font must cover CJK because TextInput doesn't glyph-fallback (#54).
     //
@@ -115,7 +127,16 @@ pub(crate) fn resolve_ui_font_family() -> slint::SharedString {
                 font = name,
                 "ui-font: using system CJK font"
             );
-            return (*name).into();
+            // Platform UI stack: Latin families lead (per-platform defaults),
+            // the resolved CJK family carries Chinese, and the embedded
+            // Meatshell Mono is the last-resort fallback so the window can
+            // never go blank (#129).
+            return format!(
+                "{}, {}, Meatshell Mono",
+                latin_candidates.join(", "),
+                name
+            )
+            .into();
         }
     }
 
@@ -136,7 +157,7 @@ pub(crate) fn resolve_ui_font_family() -> slint::SharedString {
         faces = face_count,
         "ui-font: falling back to embedded 'Meatshell Mono' (system fonts unusable, #129)"
     );
-    "Meatshell Mono".into()
+    format!("{}, Meatshell Mono", latin_candidates.join(", ")).into()
 }
 /// Font picker list for Settings → Interface → Terminal font.
 ///
