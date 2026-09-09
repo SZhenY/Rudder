@@ -145,9 +145,13 @@ export global Theme {
     in-out property <bool> term-font-bold: false;
 
     // --- Geometry ----------------------------------------------------------
-    out property <length> radius-sm: 4px * root.ui-scale;
-    out property <length> radius-md: 6px * root.ui-scale;
-    out property <length> radius-lg: 10px * root.ui-scale;
+    // macOS 惯例更圆润；其他平台保持紧凑（统一视觉语言内的参数适配）
+    out property <length> radius-sm: (is-mac ? 5px : 4px) * root.ui-scale;
+    out property <length> radius-md: (is-mac ? 8px : 6px) * root.ui-scale;
+    out property <length> radius-lg: (is-mac ? 13px : 10px) * root.ui-scale;
+    // 卡片阴影：macOS 更柔和（blur 更大、alpha 更低）
+    out property <length> card-shadow-blur: is-mac ? 28px : 24px;
+    out property <brush> card-shadow-color: is-mac ? #00000060 : #00000080;
 
     out property <length> gap-xs: 4px * root.ui-scale;
     out property <length> gap-sm: 8px * root.ui-scale;

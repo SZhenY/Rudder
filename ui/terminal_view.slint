@@ -1205,7 +1205,7 @@ export component TerminalView inherits Rectangle {
             if root.scroll-max > 0 && !root.is-alt-screen : Rectangle {
                 x: flickable.x + flickable.width - 10px;
                 y: flickable.y + 4px;
-                width: 8px;
+                width: Theme.is-mac ? 6px : 8px;
                 height: flickable.height - 8px;
                 track-ta := TouchArea {
                     moved => {
@@ -1222,11 +1222,12 @@ export component TerminalView inherits Rectangle {
                 Rectangle {
                     property <float> total: root.scroll-max + root.term-rows;
                     x: 1px;
-                    width: 6px;
+                    width: Theme.is-mac ? 4px : 6px;
                     height: max(28px, parent.height * root.term-rows / total);
                     y: (parent.height - self.height) * (root.scroll-max - root.scroll-offset) / max(1, root.scroll-max);
                     background: track-ta.has-hover || track-ta.pressed
-                        ? Theme.text-secondary : Theme.border-strong;
+                        ? Theme.text-secondary
+                        : (Theme.is-mac ? #ffffff55 : Theme.border-strong);
                     border-radius: 3px;
                     animate background { duration: 100ms;
             easing: AnimationSettings.color;

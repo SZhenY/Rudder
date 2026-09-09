@@ -113,8 +113,8 @@ export component ConfirmDialog inherits Rectangle {
         border-radius: Theme.radius-lg;
         border-width: 1px;
         border-color: Theme.border-strong;
-        drop-shadow-blur: 24px;
-        drop-shadow-color: #00000080;
+        drop-shadow-blur: Theme.card-shadow-blur;
+        drop-shadow-color: Theme.card-shadow-color;
 
         // Swallow clicks inside the card so they don't hit the backdrop.
         TouchArea { width: 100%; height: 100%; }
