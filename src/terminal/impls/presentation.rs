@@ -311,9 +311,17 @@ thread_local! {
     /// Decoded images are retained only for emoji actually seen in terminal
     /// output. A full 72x72 RGBA Twemoji is ~20 KiB; this avoids decoding on
     /// every redraw without eagerly allocating the entire emoji collection.
+    ///
+    /// Bounded: the cache used to grow without limit, so scrolling through
+    /// output full of distinct emoji (logs, chat, test output) accumulated
+    /// ~20 KiB per glyph indefinitely. Past the cap the whole map is dropped —
+    /// cheap, and the working set stays small because emoji repeat heavily.
     static TWEMOJI_CACHE: RefCell<HashMap<String, Option<slint::Image>>> =
         RefCell::new(HashMap::new());
 }
+
+/// Maximum decoded emoji images kept per thread (~256 x 20 KiB = ~5 MiB).
+const TWEMOJI_CACHE_CAP: usize = 256;
 
 fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
     TWEMOJI_CACHE.with(|cache| {
@@ -344,9 +352,11 @@ fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
                 pixels.make_mut_bytes().copy_from_slice(rgba.as_raw());
                 slint::Image::from_rgba8(pixels)
             });
-        cache
-            .borrow_mut()
-            .insert(grapheme.to_string(), image.clone());
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= TWEMOJI_CACHE_CAP {
+            cache.clear();
+        }
+        cache.insert(grapheme.to_string(), image.clone());
         image
     })
 }
