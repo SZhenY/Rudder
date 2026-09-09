@@ -1418,6 +1418,13 @@ export component TerminalView inherits Rectangle {
                                 root.history-autocomplete = false;
                                 root.history-open = true;
                                 accept
+                            } else if ((Theme.is-mac ? e.modifiers.meta : e.modifiers.control)
+                                    && (e.text == "a" || e.text == "A" || e.text == "\u{0001}")) {
+                                // Select all: a multi-line TextInput has no
+                                // built-in select-all, so the shortcut used to
+                                // do nothing at all (#416).
+                                self.select-all();
+                                accept
                             } else if (e.text == Key.Escape) {
                                 if (root.history-open) { root.history-open = false; }
                                 else { ime-input.focus(); }   // back to the terminal
