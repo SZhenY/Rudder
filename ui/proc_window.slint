@@ -6,7 +6,7 @@
 // titlebar look of AppWindow (drag to move, ✕ to close) and reads its rows from
 // a model shared with the main window, so the table stays live.
 
-import { Theme } from "theme.slint";
+import { Theme, AnimationSettings } from "theme.slint";
 import { LabeledInput, GhostButton } from "widgets.slint";
 
 // One row in the process table. Lives here (not app.slint) so both the main
@@ -186,7 +186,9 @@ export component ProcWindow inherits Window {
                 Rectangle {
                     width: 46px;
                     background: close-ta.has-hover ? #e81123 : transparent;
-                    animate background { duration: 90ms; }
+                    animate background { duration: 90ms;
+            easing: AnimationSettings.color;
+        }
                     close-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.request-close(); }

@@ -135,7 +135,9 @@ component WinBtn inherits Rectangle {
     callback clicked();
     width: 46px;
     background: ta.has-hover ? (root.danger ? #e81123 : Theme.bg-hover) : transparent;
-    animate background { duration: 90ms; }
+    animate background { duration: 90ms;
+            easing: AnimationSettings.color;
+        }
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -198,6 +200,7 @@ component IconBtn inherits Rectangle {
             duration: 1400ms;
             iteration-count: -1;
             direction: alternate;
+            easing: AnimationSettings.breathing;
         }
     }
     ta := TouchArea {
@@ -1847,8 +1850,11 @@ export component AppWindow inherits Window {
             // TouchArea reaches ±5px beyond so it's easy to grab.
             for sp[si] in root.splitters : Rectangle {
                 x: sp.x; y: sp.y; width: sp.w; height: sp.h;
-                background: sp-ta.has-hover || sp-ta.pressed ? Theme.accent : Theme.border-strong;
-                animate background { duration: 100ms; }
+                background: sp-ta.has-hover || sp-ta.pressed ? Theme.accent : Theme.border-subtle;
+                animate background {
+                    duration: 100ms;
+                    easing: AnimationSettings.color;
+                }
                 sp-ta := TouchArea {
                     x: sp.vertical ? -5px : 0px;
                     y: sp.vertical ? 0px : -5px;

@@ -98,7 +98,9 @@ component Switch inherits Rectangle {
     height: 22px;
     border-radius: 11px;
     background: root.on ? Theme.accent : Theme.bg-active;
-    animate background { duration: 120ms; }
+    animate background { duration: 120ms;
+            easing: AnimationSettings.color;
+        }
     Rectangle {
         width: 16px;
         height: 16px;

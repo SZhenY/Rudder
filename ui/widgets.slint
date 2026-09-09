@@ -1,4 +1,4 @@
-import { Theme } from "theme.slint";
+import { Theme , AnimationSettings } from "theme.slint";
 
 // --- IconButton ------------------------------------------------------------
 // A small square action button that accepts a single-character glyph (or short text).
@@ -19,7 +19,9 @@ export component IconButton inherits Rectangle {
     height: size;
     border-radius: Theme.radius-sm;
     background: touch.has-hover ? Theme.bg-hover : transparent;
-    animate background { duration: 120ms; }
+    animate background { duration: 120ms;
+            easing: AnimationSettings.color;
+        }
 
     Text {
         text: glyph;
@@ -49,7 +51,9 @@ export component PrimaryButton inherits Rectangle {
         ? Theme.bg-elevated
         : (touch.pressed ? Theme.accent-pressed
            : (touch.has-hover ? Theme.accent-hover : Theme.accent));
-    animate background { duration: 120ms; }
+    animate background { duration: 120ms;
+            easing: AnimationSettings.color;
+        }
 
     HorizontalLayout {
         padding-left: 14px;
@@ -83,7 +87,9 @@ export component GhostButton inherits Rectangle {
     border-color: touch.has-hover ? Theme.border-strong : Theme.border-subtle;
     background: touch.pressed ? Theme.bg-active
         : (touch.has-hover ? Theme.bg-hover : Theme.bg-panel);
-    animate background, border-color { duration: 120ms; }
+    animate background, border-color { duration: 120ms;
+            easing: AnimationSettings.color;
+        }
 
     HorizontalLayout {
         padding-left: 14px;

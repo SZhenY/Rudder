@@ -157,4 +157,12 @@ export global Theme {
 
 export global AnimationSettings {
     in-out property <bool> enabled: true;
+
+    // ── 标准缓动曲线（全项目统一手感，调参改这一处）────────────
+    // hover/焦点等短时颜色与边框过渡
+    out property <easing> color: ease-out;
+    // 呼吸灯：正弦节奏最接近自然呼吸
+    out property <easing> breathing: ease-in-out-sine;
+    // 布局位移（侧栏/欢迎页/滚动条）：Material emphasize 曲线
+    out property <easing> layout: cubic-bezier(0.2, 0, 0, 1);
 }

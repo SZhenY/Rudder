@@ -1,4 +1,4 @@
-import { Theme } from "theme.slint";
+import { Theme , AnimationSettings } from "theme.slint";
 import { IconButton } from "widgets.slint";
 
 export struct TabInfo {
@@ -41,7 +41,9 @@ component SingleTab inherits Rectangle {
     background: dragging ? Theme.bg-active
         : (active ? Theme.tab-active-bg
         : (touch.has-hover ? Theme.bg-hover : transparent));
-    animate background { duration: 120ms; }
+    animate background { duration: 120ms;
+            easing: AnimationSettings.color;
+        }
 
     // Declared FIRST so the HorizontalLayout's children (close button) are at
     // a higher z-order and receive their own click events.

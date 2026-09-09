@@ -1224,7 +1224,9 @@ export component TerminalView inherits Rectangle {
                     background: track-ta.has-hover || track-ta.pressed
                         ? Theme.text-secondary : Theme.border-strong;
                     border-radius: 3px;
-                    animate background { duration: 100ms; }
+                    animate background { duration: 100ms;
+            easing: AnimationSettings.color;
+        }
                 }
             }
 

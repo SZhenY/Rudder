@@ -1,4 +1,4 @@
-import { Theme } from "theme.slint";
+import { Theme, AnimationSettings } from "theme.slint";
 import { PrimaryButton, GhostButton } from "widgets.slint";
 import { ScrollView } from "std-widgets.slint";
 
@@ -242,8 +242,12 @@ component SessionRow inherits Rectangle {
             : (touch.has-hover ? Theme.bg-hover : transparent);
         drop-shadow-blur: root.drag-target ? 14px : 0px;
         drop-shadow-color: root.drag-target ? #00000060 : transparent;
-        animate background { duration: 120ms; }
-        animate drop-shadow-blur { duration: 120ms; }
+        animate background { duration: 120ms;
+            easing: AnimationSettings.color;
+        }
+        animate drop-shadow-blur { duration: 120ms;
+            easing: AnimationSettings.color;
+        }
 
     HorizontalLayout {
         padding-left: 10px;

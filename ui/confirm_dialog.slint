@@ -1,4 +1,4 @@
-import { Theme } from "theme.slint";
+import { Theme , AnimationSettings } from "theme.slint";
 import { GhostButton } from "widgets.slint";
 import { ScrollView } from "std-widgets.slint";
 
@@ -10,7 +10,9 @@ component DangerButton inherits Rectangle {
     min-width: 80px;
     border-radius: Theme.radius-sm;
     background: touch.pressed ? #c44a4a : (touch.has-hover ? #ec6a6a : Theme.danger);
-    animate background { duration: 120ms; }
+    animate background { duration: 120ms;
+            easing: AnimationSettings.color;
+        }
     HorizontalLayout {
         padding-left: 14px;
         padding-right: 14px;
@@ -55,7 +57,15 @@ export component ConfirmDialog inherits Rectangle {
     callback confirm();
     callback cancel();
 
-    visible: is-open && !covered;
+    // 淡入淡出：常驻 + opacity 过渡；visible 跟随 opacity，淡出动画走完
+    // 才真正隐藏（Slint 无动画完成回调，这是标准替代）。
+    visible: self.opacity > 0.001;
+    opacity: (root.is-open && !root.covered) ? 1 : 0;
+    animate opacity {
+        duration: 180ms;
+        easing: ease-out;
+        enabled: AnimationSettings.enabled;
+    }
     background: #000000aa;
 
     // Enter confirms, but only where the caller opted in. The scope takes focus
@@ -80,7 +90,9 @@ export component ConfirmDialog inherits Rectangle {
     }
 
     // Backdrop click cancels — unless disabled for a must-decide prompt.
+    // Hidden期间 disabled：opacity 0 时不可再触发取消。
     TouchArea {
+        enabled: root.is-open && !root.covered;
         width: 100%;
         height: 100%;
         clicked => { if (root.dismiss-on-backdrop) { root.cancel(); } }
@@ -90,7 +102,13 @@ export component ConfirmDialog inherits Rectangle {
         width: root.large-detail ? min(parent.width - 40px, 1160px) : 380px;
         height: root.large-detail ? min(parent.height - 40px, 760px) : card.preferred-height;
         x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
+        y: (parent.height - self.height) / 2
+            + (root.is-open && !root.covered ? 0px : 12px);
+        animate y {
+            duration: 200ms;
+            easing: AnimationSettings.layout;
+            enabled: AnimationSettings.enabled;
+        }
         background: Theme.bg-panel;
         border-radius: Theme.radius-lg;
         border-width: 1px;
