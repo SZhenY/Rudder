@@ -397,12 +397,29 @@ pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
 
     // Drag-to-split: while a tab is dragged over the pane area, highlight the
     // drop zone the cursor is in (an edge band → split, the middle → move).
+    let drag_origin: Rc<Cell<Option<(f32, f32)>>> = Rc::new(Cell::new(None));
     {
         let weak = window.as_weak();
         let layout = layout.clone();
         let content_size = content_size.clone();
+        let move_origin = drag_origin.clone();
         window.on_tab_drag_move(move |_tab_id: SharedString, x: f32, y: f32| {
             if let Some(w) = weak.upgrade() {
+                // 单击/微小抖动不显示拖拽高亮：位移超过 6px 才认为在拖动
+                //（触摸板单击会带 1-2px 位移，旧逻辑会闪出高亮框）。
+                match move_origin.get() {
+                    None => {
+                        move_origin.set(Some((x, y)));
+                        w.set_drag_active(false);
+                        return;
+                    }
+                    Some((ox, oy)) => {
+                        if (x - ox).abs() < 6.0 && (y - oy).abs() < 6.0 {
+                            w.set_drag_active(false);
+                            return;
+                        }
+                    }
+                }
                 match drag_target(&layout.borrow(), content_size.get(), x, y) {
                     Some((_, _, (hx, hy, hw, hh))) => {
                         w.set_drag_active(true);
@@ -426,8 +443,10 @@ pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
         let panes_model = panes_model.clone();
+        let drop_origin = drag_origin.clone();
         let splitters_model = splitters_model.clone();
         window.on_tab_drag_drop(move |tab_id: SharedString, x: f32, y: f32| {
+            drop_origin.set(None);
             let tab_id = tab_id.to_string();
             let target = drag_target(&layout.borrow(), content_size.get(), x, y);
             if let Some((pane, zone, _)) = target {
