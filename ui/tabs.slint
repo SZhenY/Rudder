@@ -95,12 +95,9 @@ component SingleTab inherits Rectangle {
                 }
             }
         }
-        // Double-click duplicates the connection (#340); the Welcome tab has
-        // nothing to duplicate. Single-click selection and drag behavior above
-        // are unaffected.
-        double-clicked => {
-            if (info.kind != "welcome") { root.duplicated(); }
-        }
+        // Double-click intentionally does nothing: renaming lives in the
+        // context menu only, and the old duplicate-connection gesture (#340)
+        // was removed at the maintainer's request (2026-09-10).
     }
 
     HorizontalLayout {
