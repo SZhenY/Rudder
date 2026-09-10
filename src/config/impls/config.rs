@@ -372,6 +372,18 @@ impl SessionKind {
     }
 }
 
+fn default_output_highlight_preset() -> String {
+    "builtin".to_string()
+}
+
+fn default_convert_eol() -> bool {
+    true
+}
+
+fn default_font_family() -> String {
+    "JetBrains Mono".to_string()
+}
+
 fn default_baud() -> u32 {
     115_200
 }
@@ -422,7 +434,7 @@ fn normalize_hex_color(value: &str) -> Option<String> {
 fn fresh_config() -> ConfigFile {
     ConfigFile {
         wallpaper: "builtin:dark".to_string(),
-        welcome_as_sidebar: true,
+        welcome_as_sidebar: false,
         sidebar_dock: "right".to_string(),
         wallpaper_overlay: DEFAULT_WALLPAPER_OVERLAY,
         defaults_rev: DEFAULTS_REV,
@@ -794,7 +806,7 @@ pub struct ConfigFile {
     #[serde(default)]
     pub renderer_mode: String,
     /// Terminal font family. Empty = the built-in default ("Meatshell Mono").
-    #[serde(default)]
+    #[serde(default = "default_font_family")]
     pub font_family: String,
     /// UI font family for the application interface (menus, settings, dialogs).
     /// Empty = auto-detect the best system CJK font at startup.
@@ -811,7 +823,7 @@ pub struct ConfigFile {
     pub scrollback_lines: usize,
     /// Convert LF to CRLF in pasted / typed text for programs that expect
     /// Windows line endings (e.g. PowerShell ISE, legacy cmd.exe tools).
-    #[serde(default)]
+    #[serde(default = "default_convert_eol")]
     pub convert_eol: bool,
     /// Allow remote programs (zellij, tmux, vim, etc.) to write clipboard
     /// contents via OSC 52.  Disable for stricter security when you don't
@@ -838,7 +850,7 @@ pub struct ConfigFile {
     #[serde(default)]
     pub json_format_disabled: bool,
     /// Built-in output highlight preset: "builtin" (Rudder rules, default), "log", or "devops".
-    #[serde(default)]
+    #[serde(default = "default_output_highlight_preset")]
     pub output_highlight_preset: String,
     /// User-defined rules applied before the selected built-in preset.
     #[serde(default)]
