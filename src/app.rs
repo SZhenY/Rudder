@@ -1257,6 +1257,10 @@ pub fn run() -> Result<()> {
                 s.set_scrollback_lines(scrollback);
                 s.set_output_highlight_enabled(highlight);
                 s.set_output_highlight_preset(preset.clone());
+                // 终端页其余 A 类项：粘贴行尾 / OSC52 / JSON 格式化
+                s.set_convert_eol(d.convert_eol);
+                s.set_osc52_clipboard(d.osc52_clipboard);
+                s.set_json_format_output(!d.json_format_disabled);
                 // B 类：自定义规则数据保留，仅取消使用（enabled=false）
                 for index in 0..s.output_highlight_rules().len() {
                     s.set_output_highlight_rule_enabled(index, false);
@@ -1278,6 +1282,9 @@ pub fn run() -> Result<()> {
             w.set_output_highlight_enabled(highlight);
             w.set_output_highlight_preset(preset.clone().into());
             w.set_output_highlight_rules(output_highlight_rule_model(&store_guard));
+            w.set_convert_eol(d.convert_eol);
+            w.set_osc52_clipboard(d.osc52_clipboard);
+            w.set_json_format_output(!d.json_format_disabled);
             // 回滚变更 → 终端缓冲 reset（照 key_input.rs:499 的路径）
             for_each_buffer(&w, &st_bufs, |b| b.reset(scrollback));
             // 高亮应用（preset 回默认 + 自定义规则全禁用重编译）

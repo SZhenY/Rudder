@@ -926,7 +926,25 @@ export component InterfacePanel inherits Rectangle {
                         }
                     }
                 }
+            
+            // ── 还原本页默认（终端页最后一个设置项之后）────────────────
+            HorizontalLayout {
+                padding-top: 12px;
+                padding-bottom: 4px;
+                Rectangle { horizontal-stretch: 1; }
+                GhostButton {
+                    text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
+                    clicked => {
+                        if (root.reset-armed) {
+                            root.reset-armed = false;
+                            root.reset-page("terminal");
+                        } else {
+                            root.reset-armed = true;
+                        }
+                    }
+                }
             }
+}
 
             if root.ifd-page == "appearance" : VerticalLayout {
                 padding-left: 20px;
@@ -1571,29 +1589,6 @@ export component InterfacePanel inherits Rectangle {
                 }
             }
 
-                }
-            }
-            // ── 一键还原默认（固定 footer，不随内容滚动）────────────────
-            // WSL / 同步页不放（全是用户数据与账户配置，还原无意义）。
-            if (root.ifd-page == "terminal" || root.ifd-page == "appearance"
-                || root.ifd-page == "layout" || root.ifd-page == "transfer"
-                || root.ifd-page == "update") : Rectangle {
-                height: 48px;
-                Rectangle { y: 0px; height: 1px; background: Theme.border-subtle; }
-                HorizontalLayout {
-                    padding-left: 20px; padding-right: 20px;
-                    Rectangle { horizontal-stretch: 1; }
-                    GhostButton {
-                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
-                        clicked => {
-                            if (root.reset-armed) {
-                                root.reset-armed = false;
-                                root.reset-page(root.ifd-page);
-                            } else {
-                                root.reset-armed = true;
-                            }
-                        }
-                    }
                 }
             }
             }
