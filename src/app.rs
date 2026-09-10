@@ -1295,6 +1295,100 @@ pub fn run() -> Result<()> {
             drop(store_guard);
         });
     }
+
+    // ── 外观页还原（A 类：UI 缩放 / 面板字体 / 渲染后端；壁纸与遮罩不动）──
+    {
+        let weak = window.as_weak();
+        let ap_store = store.clone();
+        window.on_reset_page(move |page: slint::SharedString| {
+            if page.as_str() != "appearance" {
+                return;
+            }
+            let Some(w) = weak.upgrade() else { return };
+            let d = crate::config::ConfigFile::default();
+            {
+                let mut s = ap_store.borrow_mut();
+                s.set_ui_scale(d.ui_scale);
+                s.set_panel_font(d.panel_font);
+                s.set_renderer_mode(d.renderer_mode.clone());
+            }
+            // UI 刷新：ui-scale / panel-font 在 UI 侧是 float（percent / 100）
+            w.set_ui_scale(d.ui_scale as f32 / 100.0);
+            w.set_panel_font(d.panel_font as f32 / 100.0);
+            w.set_renderer_mode(d.renderer_mode.clone().into());
+            // 渲染后端切换下次启动生效——重启提示由 UI 侧既有逻辑显示
+        });
+    }
+
+    // ── 布局页还原（A 类：侧栏开关 / 默认折叠 / 停靠边）────────────────
+    // 注：侧栏宽度是拖拽产生的交互状态（设置页无对应控件），不纳入还原。
+    {
+        let weak = window.as_weak();
+        let ly_store = store.clone();
+        window.on_reset_page(move |page: slint::SharedString| {
+            if page.as_str() != "layout" {
+                return;
+            }
+            let Some(w) = weak.upgrade() else { return };
+            let d = crate::config::ConfigFile::default();
+            {
+                let mut s = ly_store.borrow_mut();
+                s.set_welcome_as_sidebar(d.welcome_as_sidebar);
+                s.set_quick_commands_as_sidebar(d.quick_commands_as_sidebar);
+                s.set_collapse_sidebar_default(d.collapse_sidebar_default);
+                s.set_collapse_sftp_default(d.collapse_sftp_default);
+                s.set_sidebar_dock(d.sidebar_dock.clone());
+            }
+            w.set_welcome_as_sidebar(d.welcome_as_sidebar);
+            w.set_quick_commands_as_sidebar(d.quick_commands_as_sidebar);
+            w.set_collapse_sidebar_default(d.collapse_sidebar_default);
+            w.set_collapse_sftp_default(d.collapse_sftp_default);
+            w.set_sidebar_dock(d.sidebar_dock.clone().into());
+        });
+    }
+
+    // ── 传输页还原（A 类：跟随 cd / 下载询问 / 隐藏特殊分区）────────────
+    // B 类保留：挂载点过滤（用户自定义）。
+    {
+        let weak = window.as_weak();
+        let tr_store = store.clone();
+        window.on_reset_page(move |page: slint::SharedString| {
+            if page.as_str() != "transfer" {
+                return;
+            }
+            let Some(w) = weak.upgrade() else { return };
+            let d = crate::config::ConfigFile::default();
+            // sftp_follow_cd 的存储字段是 sftp_no_follow_cd（语义反转）
+            let follow_cd = !d.sftp_no_follow_cd;
+            {
+                let mut s = tr_store.borrow_mut();
+                s.set_sftp_follow_cd(follow_cd);
+                s.set_download_always_ask(d.download_always_ask);
+                s.set_hide_special_partitions(d.hide_special_partitions);
+            }
+            w.set_sftp_follow_cd(follow_cd);
+            w.set_download_always_ask(d.download_always_ask);
+            w.set_hide_special_partitions(d.hide_special_partitions);
+        });
+    }
+
+    // ── 新版本提示页还原（A 类：启动检查开关）──────────────────────────
+    {
+        let weak = window.as_weak();
+        let up_store = store.clone();
+        window.on_reset_page(move |page: slint::SharedString| {
+            if page.as_str() != "update" {
+                return;
+            }
+            let Some(w) = weak.upgrade() else { return };
+            let d = crate::config::ConfigFile::default();
+            {
+                let mut s = up_store.borrow_mut();
+                s.set_update_check_enabled(!d.update_check_disabled);
+            }
+            w.set_update_check_enabled(!d.update_check_disabled);
+        });
+    }
     {
         let store = store.clone();
         let bufs = bufs.clone();

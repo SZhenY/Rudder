@@ -1266,7 +1266,27 @@ export component InterfacePanel inherits Rectangle {
                     }
                     }
                 }
-            }
+            
+                // ── 还原本页默认（外观页最后一个设置项之后）──────────────
+                // 只还原 A 类（缩放 / 面板字体 / 渲染后端）；壁纸与遮罩按
+                // 你的要求不还原（B 类用户选择）。
+                HorizontalLayout {
+                    padding-top: 12px;
+                    padding-bottom: 4px;
+                    Rectangle { horizontal-stretch: 1; }
+                    GhostButton {
+                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
+                        clicked => {
+                            if (root.reset-armed) {
+                                root.reset-armed = false;
+                                root.reset-page("appearance");
+                            } else {
+                                root.reset-armed = true;
+                            }
+                        }
+                    }
+                }
+}
 
             if root.ifd-page == "layout" : VerticalLayout {
                 padding-left: 20px;
@@ -1320,7 +1340,25 @@ export component InterfacePanel inherits Rectangle {
                         toggled(v) => { root.set-welcome-as-sidebar(v); }
                     }
                 }
-            }
+            
+                // ── 还原本页默认（布局页最后一个设置项之后）────────────────
+                HorizontalLayout {
+                    padding-top: 12px;
+                    padding-bottom: 4px;
+                    Rectangle { horizontal-stretch: 1; }
+                    GhostButton {
+                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
+                        clicked => {
+                            if (root.reset-armed) {
+                                root.reset-armed = false;
+                                root.reset-page("layout");
+                            } else {
+                                root.reset-armed = true;
+                            }
+                        }
+                    }
+                }
+}
 
             if root.ifd-page == "transfer" : VerticalLayout {
                 padding-left: 20px;
@@ -1352,7 +1390,25 @@ export component InterfacePanel inherits Rectangle {
                         toggled(v) => { root.download-always-ask = v; root.set-download-always-ask(v); }
                     }
                 }
-            }
+            
+                // ── 还原本页默认（传输页最后一个设置项之后（挂载过滤保留））────────────────
+                HorizontalLayout {
+                    padding-top: 12px;
+                    padding-bottom: 4px;
+                    Rectangle { horizontal-stretch: 1; }
+                    GhostButton {
+                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
+                        clicked => {
+                            if (root.reset-armed) {
+                                root.reset-armed = false;
+                                root.reset-page("transfer");
+                            } else {
+                                root.reset-armed = true;
+                            }
+                        }
+                    }
+                }
+}
 
             if root.ifd-page == "wsl" : VerticalLayout {
                 padding-left: 20px;
@@ -1587,7 +1643,25 @@ export component InterfacePanel inherits Rectangle {
                         }
                     }
                 }
-            }
+            
+                // ── 还原本页默认（更新页）────────────────
+                HorizontalLayout {
+                    padding-top: 12px;
+                    padding-bottom: 4px;
+                    Rectangle { horizontal-stretch: 1; }
+                    GhostButton {
+                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
+                        clicked => {
+                            if (root.reset-armed) {
+                                root.reset-armed = false;
+                                root.reset-page("update");
+                            } else {
+                                root.reset-armed = true;
+                            }
+                        }
+                    }
+                }
+}
 
                 }
             }
