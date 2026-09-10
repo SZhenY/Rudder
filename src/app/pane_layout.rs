@@ -61,7 +61,11 @@ pub(crate) fn tabs_eq(a: &ModelRc<TabInfo>, b: &ModelRc<TabInfo>) -> bool {
         return false;
     }
     (0..a.row_count()).all(|i| match (a.row_data(i), b.row_data(i)) {
-        (Some(x), Some(y)) => x.id == y.id,
+        // Title must be compared too: refresh_panes reuses the *existing* tab
+        // sub-model when this returns true, so an id-only comparison made a
+        // rename invisible on the tab strip (the stale model still carried the
+        // old title) — see #rename-invisible.
+        (Some(x), Some(y)) => x.id == y.id && x.title == y.title,
         _ => false,
     })
 }
