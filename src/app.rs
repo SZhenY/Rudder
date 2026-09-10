@@ -1231,6 +1231,63 @@ pub fn run() -> Result<()> {
             }
         });
     }
+    // ── Settings: per-page "restore defaults"（终端页样板）────────────
+    // A 类字段写回 ConfigFile::default()；B 类（自定义规则数据）保留，
+    // 仅把每条 enabled 置 false（"取消使用"而非删除）。
+    {
+        let weak = window.as_weak();
+        let st_store = store.clone();
+        let st_bufs = bufs.clone();
+        window.on_reset_page(move |page: slint::SharedString| {
+            if page.as_str() != "terminal" {
+                return;
+            }
+            let Some(w) = weak.upgrade() else { return };
+            let d = crate::config::ConfigFile::default();
+            let scrollback = d.scrollback_lines;
+            let highlight = !d.output_highlight_disabled;
+            let preset = d.output_highlight_preset.clone();
+            {
+                let mut s = st_store.borrow_mut();
+                s.set_font_family(d.font_family.clone());
+                s.set_font_size(d.font_size);
+                s.set_terminal_bold(d.terminal_bold);
+                s.set_terminal_cursor_style(d.terminal_cursor_style.clone());
+                s.set_terminal_cursor_color(&d.terminal_cursor_color);
+                s.set_scrollback_lines(scrollback);
+                s.set_output_highlight_enabled(highlight);
+                s.set_output_highlight_preset(preset.clone());
+                // B 类：自定义规则数据保留，仅取消使用（enabled=false）
+                for index in 0..s.output_highlight_rules().len() {
+                    s.set_output_highlight_rule_enabled(index, false);
+                }
+            }
+            let store_guard = st_store.borrow();
+            // UI 刷新（照初始化段的 set 清单）
+            w.set_term_font_family(d.font_family.clone().into()); // 空 = 默认 JetBrains Mono
+            w.set_term_font_size(d.font_size as f32);
+            w.set_term_font_bold(d.terminal_bold);
+            w.set_term_cursor_style(d.terminal_cursor_style.clone().into());
+            if let Some(color) = parse_hex_color(&d.terminal_cursor_color) {
+                w.set_term_cursor_color_hex(d.terminal_cursor_color.clone().into());
+                w.set_term_cursor_color(color);
+            } else {
+                w.set_term_cursor_color_hex("".into());
+            }
+            w.set_scrollback_lines(scrollback.to_string().into());
+            w.set_output_highlight_enabled(highlight);
+            w.set_output_highlight_preset(preset.clone().into());
+            w.set_output_highlight_rules(output_highlight_rule_model(&store_guard));
+            // 回滚变更 → 终端缓冲 reset（照 key_input.rs:499 的路径）
+            for_each_buffer(&w, &st_bufs, |b| b.reset(scrollback));
+            // 高亮应用（preset 回默认 + 自定义规则全禁用重编译）
+            apply_output_highlight(&w, &st_bufs, highlight, &preset);
+            let rules: Vec<crate::config::OutputHighlightRule> =
+                store_guard.output_highlight_rules().to_vec();
+            apply_custom_output_rules(&w, &st_bufs, &rules);
+            drop(store_guard);
+        });
+    }
     {
         let store = store.clone();
         let bufs = bufs.clone();

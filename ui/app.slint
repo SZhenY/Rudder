@@ -345,6 +345,7 @@ export component AppWindow inherits Window {
     callback win-minimize();
     callback win-maximize-toggle();
     callback win-close();
+    callback reset-page(string);   // settings: restore page defaults
     callback win-drag();          // start an OS window-move
     callback win-resize(int);     // start an OS resize; arg = direction code
     in-out property <bool> sidebar-collapsed: false; // left panel hidden
@@ -1012,8 +1013,27 @@ export component AppWindow inherits Window {
             height: 38px;
             background: Theme.bg-panel;
             tb-drag := TouchArea {
+                // 双击与拖拽共存：down 只"上膛"，位移超过 6px 才交给系统
+                // 移动窗口——down 立即 drag 会让系统接管指针，第一次 click
+                // 的 up 不再派发，double-clicked 永远无法满足。
+                property <length> press-x: 0px;
+                property <length> press-y: 0px;
+                property <bool> drag-armed: false;
+
                 pointer-event(e) => {
                     if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                        press-x = self.mouse-x;
+                        press-y = self.mouse-y;
+                        drag-armed = true;
+                    } else if (e.kind == PointerEventKind.up) {
+                        drag-armed = false;
+                    }
+                }
+                moved => {
+                    if (self.pressed && drag-armed
+                        && (abs(self.mouse-x - press-x) > 6px
+                            || abs(self.mouse-y - press-y) > 6px)) {
+                        drag-armed = false;
                         root.win-drag();
                     }
                 }
@@ -3919,24 +3939,41 @@ export component AppWindow inherits Window {
     Rectangle {
         width: parent.width;
         height: parent.height;
-        visible: root.about-open;
+        // 淡入淡出：常驻 + opacity 过渡，visible 跟随 opacity——淡出动画
+        // 走完才真正隐藏（复用 confirm_dialog 的样板）。
+        visible: self.opacity > 0.001;
+        opacity: root.about-open ? 1 : 0;
+        animate opacity {
+            duration: 180ms;
+            easing: ease-out;
+            enabled: AnimationSettings.enabled;
+        }
         background: #00000080;            // dim backdrop
-        TouchArea { clicked => { root.about-open = false; } }
+        TouchArea {
+            enabled: root.about-open;     // 隐藏期间禁命中
+            clicked => { root.about-open = false; }
+        }
 
         Rectangle {
             x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
+            y: (parent.height - self.height) / 2
+                + (root.about-open ? 0px : 12px);       // 进入上浮 / 退出下坠
             width: 540px;
             height: min(440px, parent.height - 40px);
             background: Theme.bg-panel;
             border-radius: Theme.radius-lg;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
+            drop-shadow-blur: Theme.card-shadow-blur;
+            drop-shadow-color: Theme.card-shadow-color;
+            animate y {
+                duration: 200ms;
+                easing: AnimationSettings.layout;
+                enabled: AnimationSettings.enabled;
+            }
 
             // Swallow clicks inside the card
-            TouchArea {}
+            TouchArea { enabled: root.about-open; }
 
             // Close (×) button
             Rectangle {
@@ -3979,11 +4016,18 @@ export component AppWindow inherits Window {
                                 font-size: 22px; font-weight: 700;
                                 vertical-alignment: center;
                             }
-                            Text {
-                                text: "v" + root.app-version;
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-sm;
-                                vertical-alignment: center;
+                            Rectangle {                       // 版本 pill 徽章
+                                border-radius: Theme.radius-sm;
+                                background: Theme.bg-panel-alt;
+                                HorizontalLayout {
+                                    padding-left: 7px; padding-right: 7px;
+                                    Text {
+                                        text: "v" + root.app-version;
+                                        color: Theme.text-secondary;
+                                        font-size: Theme.fs-xs;
+                                        vertical-alignment: center;
+                                    }
+                                }
                             }
                         }
                         Text {
@@ -4044,10 +4088,14 @@ export component AppWindow inherits Window {
                     // About card never overflows regardless of UI font size.
                     vertical-stretch: 1;
                     min-height: 0px;
-                    for lib[i] in root.about-libs : Text {
-                        text: lib;
-                        color: Theme.text-muted;
-                        font-size: Theme.fs-xs;
+                    for lib[i] in root.about-libs : Rectangle {
+                        min-height: 26px;      // 依赖行距：不再密集
+                        Text {
+                            text: lib;
+                            color: Theme.text-muted;
+                            font-size: Theme.fs-sm;   // fs-xs -> fs-sm
+                            vertical-alignment: center;
+                        }
                     }
                 }
             }
@@ -4532,6 +4580,7 @@ export component AppWindow inherits Window {
                     webdav-accept-invalid-certs <=> root.webdav-accept-invalid-certs;
                     webdav-status <=> root.webdav-status;
                     download-always-ask <=> root.download-always-ask;
+                    reset-page(page) => { root.reset-page(page); }
                     welcome-as-sidebar <=> root.welcome-as-sidebar;
                     quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
                     update-check-enabled <=> root.update-check-enabled;

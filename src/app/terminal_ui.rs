@@ -216,7 +216,7 @@ pub(super) fn theme_pref_is_dark(store: &ConfigStore) -> bool {
 /// they touch, so the walk lives here. Handles are collected under one short
 /// lock and each buffer is then locked individually: a poisoned buffer skips
 /// just itself instead of aborting the process (release uses panic = "abort").
-fn for_each_buffer(window: &AppWindow, bufs: &TermBuffers, apply: impl Fn(&mut TermBuffer)) {
+pub(super) fn for_each_buffer(window: &AppWindow, bufs: &TermBuffers, apply: impl Fn(&mut TermBuffer)) {
     let Ok(map) = bufs.lock() else {
         return;
     };

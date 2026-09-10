@@ -463,6 +463,9 @@ export component InterfacePanel inherits Rectangle {
     callback add-wsl-profile(string, string, string);
     callback remove-wsl-profile(string);
     callback pick-wsl-directory();
+    callback reset-page(string);   // 一键还原本页默认（page-id）
+    // 两段式还原确认状态：第一次点击"上膛"，再次点击执行（避免误触）
+    property <bool> reset-armed: false;
 
     HorizontalLayout {
         // --- Left nav ------------------------------------------------------
@@ -490,14 +493,14 @@ export component InterfacePanel inherits Rectangle {
                     clicked => { root.ifd-page = "appearance"; }
                 }
                 NavItem {
-                    icon: "\u{E5CB}"; label: root.lang-en ? "Layout" : "布局";
-                    active: root.ifd-page == "layout";
-                    clicked => { root.ifd-page = "layout"; }
-                }
-                NavItem {
                     icon: "\u{E2C7}"; label: root.lang-en ? "Transfer" : "传输";
                     active: root.ifd-page == "transfer";
                     clicked => { root.ifd-page = "transfer"; }
+                }
+                NavItem {
+                    icon: "\u{E5CB}"; label: root.lang-en ? "Layout" : "布局";
+                    active: root.ifd-page == "layout";
+                    clicked => { root.ifd-page = "layout"; }
                 }
                 if root.is-windows : NavItem {
                     icon: "\u{E30A}"; label: "WSL";
@@ -923,12 +926,45 @@ export component InterfacePanel inherits Rectangle {
                 }
             }
 
+
+            // ── 终端页还原（A 类：字体/光标/回滚/高亮；自定义规则数据保留）──
+            HorizontalLayout {
+                padding-left: 20px; padding-right: 20px; padding-top: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                GhostButton {
+                    text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
+                    clicked => {
+                        if (root.reset-armed) {
+                            root.reset-armed = false;
+                            root.reset-page("terminal");
+                        } else {
+                            root.reset-armed = true;
+                        }
+                    }
+                }
+            }
             if root.ifd-page == "appearance" : VerticalLayout {
                 padding-left: 20px;
                 padding-right: 20px;
                 padding-top: 14px;
                 spacing: 0;
                 alignment: start;
+
+                // ── 一键还原默认（A 类设置值；壁纸/自定义规则数据保留）──────
+                HorizontalLayout {
+                    Rectangle { horizontal-stretch: 1; }
+                    GhostButton {
+                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
+                        clicked => {
+                            if (root.reset-armed) {
+                                root.reset-armed = false;
+                                root.reset-page("appearance");
+                            } else {
+                                root.reset-armed = true;
+                            }
+                        }
+                    }
+                }
 
                 SectionHeader { text: root.lang-en ? "UI FONT" : "界面字体"; height: 24px; }
                 SettingRow {
