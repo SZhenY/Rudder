@@ -404,6 +404,15 @@ pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
         let content_size = content_size.clone();
         let move_origin = drag_origin.clone();
         window.on_tab_drag_move(move |_tab_id: SharedString, x: f32, y: f32| {
+            // ── 拖拽分屏/合并：暂时停用（维护者 2026-09-10）────────────
+            // 不显示 drop-zone 高亮（标签条上那个 6px 竖框）。
+            // 恢复：删除本 early-return 块即可——drag_target 与下面的
+            // 高亮逻辑保持完整。
+            if let Some(w) = weak.upgrade() {
+                w.set_drag_active(false);
+            }
+            return;
+            #[allow(unreachable_code)]
             if let Some(w) = weak.upgrade() {
                 // 单击/微小抖动不显示拖拽高亮：位移超过 6px 才认为在拖动
                 //（触摸板单击会带 1-2px 位移，旧逻辑会闪出高亮框）。
@@ -445,7 +454,11 @@ pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
         let panes_model = panes_model.clone();
         let drop_origin = drag_origin.clone();
         let splitters_model = splitters_model.clone();
-        window.on_tab_drag_drop(move |tab_id: SharedString, x: f32, y: f32| {
+        window.on_tab_drag_drop(move |_tab_id: SharedString, _x: f32, _y: f32| {
+            // ── 拖拽分屏/合并：暂时停用（维护者 2026-09-10）────────
+            // 恢复：删除本 early-return 即可。
+            return;
+            #[allow(unreachable_code)]
             drop_origin.set(None);
             let tab_id = tab_id.to_string();
             let target = drag_target(&layout.borrow(), content_size.get(), x, y);
