@@ -1002,6 +1002,14 @@ export component AppWindow inherits Window {
         if root.titlebar-inset > 0px : Rectangle {
             height: root.titlebar-inset;
             background: Theme.bg-panel;
+            // macOS：交通灯右侧这块留白此前是"死区"——为不干扰系统拖拽
+            // 而没有 TouchArea，导致双击毫无反应（既不在原生标题栏内，
+            // 也没有自己的双击处理）。补一个**只处理双击**的 TouchArea：
+            // 双击 → Zoom（winit set_maximized）；拖拽仍交给系统，不加
+            // win-drag，避免接管指针后双击失效（同 tb-drag 的教训）。
+            tb-mac-dbl := TouchArea {
+                double-clicked => { root.win-maximize-toggle(); }
+            }
         }
 
         // Immersive custom title bar (#119) — only on frameless platforms
