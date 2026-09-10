@@ -213,7 +213,7 @@ use sampler::spawn_system_sampler;
 use updater::wire_update_check;
 pub(crate) use fonts_ui::{FontEntry, family_from_label, font_choices, resolve_ui_font_family, term_font_covers_cjk};
 pub(crate) use pane_layout::{
-    drag_target, refresh_panes, save_layout, update_terminal_row,
+    refresh_panes, save_layout, update_terminal_row,
 };
 pub(crate) use window_geometry::{
     center_window, handle_file_drop, handle_macos_terminal_wheel,

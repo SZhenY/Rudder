@@ -174,49 +174,6 @@ pub(crate) fn refresh_panes(
         window.set_active_tab_id(fp.active.clone().into());
     }
 }
-/// middle drop into the pane's tab group.
-pub(crate) fn drag_target(
-    layout: &crate::layout::Layout,
-    content: (f32, f32),
-    x: f32,
-    y: f32,
-) -> Option<(u64, &'static str, PaneRect)> {
-    const STRIP: f32 = 36.0;
-    const EDGE: f32 = 0.30;
-    let (cw, ch) = (content.0.max(1.0), content.1.max(1.0));
-    let (panes, _) = layout.flatten(0.0, 0.0, cw, ch);
-    let p = panes
-        .iter()
-        .find(|p| x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h)?;
-    let body_top = p.y + STRIP;
-    if y < body_top {
-        let ix = x.clamp(p.x + 3.0, p.x + p.w - 3.0) - 3.0;
-        return Some((p.id, "tabstrip", (ix, p.y + 4.0, 6.0, STRIP - 8.0)));
-    }
-    let bw = p.w.max(1.0);
-    let bh = (p.h - STRIP).max(1.0);
-    let rx = (x - p.x) / bw;
-    let ry = (y - body_top) / bh;
-    let (dl, dr, dt, db) = (rx, 1.0 - rx, ry, 1.0 - ry);
-    let m = dl.min(dr).min(dt).min(db);
-    let (zone, rect) = if m > EDGE {
-        ("center", (p.x, p.y, p.w, p.h))
-    } else if m == dl {
-        ("left", (p.x, p.y, p.w * 0.5, p.h))
-    } else if m == dr {
-        ("right", (p.x + p.w * 0.5, p.y, p.w * 0.5, p.h))
-    } else if m == dt {
-        ("up", (p.x, p.y, p.w, p.h * 0.5))
-    } else {
-        ("down", (p.x, p.y + p.h * 0.5, p.w, p.h * 0.5))
-    };
-    Some((p.id, zone, rect))
-}
-/// Hit-test a drag point (pane-area coords) to a target pane + drop zone, plus
-/// the highlight rect the dropped tab would affect. Zone is one of
-/// "tabstrip"/"left"/"right"/"up"/"down"/"center"; `None` when the point is
-/// outside every pane. The 30% edge bands trigger a split; the tab strip and
-pub(crate) type PaneRect = (f32, f32, f32, f32);
 
 // ---------------------------------------------------------------------------
 // Tab callbacks
