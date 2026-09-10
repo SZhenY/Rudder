@@ -527,13 +527,13 @@ export component InterfacePanel inherits Rectangle {
             // wallpaper-opacity slider (items 6/7).
             background: transparent;
 
-            VerticalLayout {
             settings-scroll := ScrollView {
                 vertical-stretch: 1;
                 width: 100%;
                 height: 100%;
                 viewport-width: self.visible-width;
-                viewport-height: max(self.visible-height, settings-pages.preferred-height);
+                // 严格按内容高度：有多少设置就滚多少，不在末尾留空白
+                viewport-height: settings-pages.preferred-height;
 
                 settings-pages := VerticalLayout {
                     width: settings-scroll.visible-width;
@@ -1590,7 +1590,6 @@ export component InterfacePanel inherits Rectangle {
             }
 
                 }
-            }
             }
 
         }
