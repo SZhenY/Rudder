@@ -527,7 +527,9 @@ export component InterfacePanel inherits Rectangle {
             // wallpaper-opacity slider (items 6/7).
             background: transparent;
 
+            VerticalLayout {
             settings-scroll := ScrollView {
+                vertical-stretch: 1;
                 width: 100%;
                 height: 100%;
                 viewport-width: self.visible-width;
@@ -926,45 +928,12 @@ export component InterfacePanel inherits Rectangle {
                 }
             }
 
-
-            // ── 终端页还原（A 类：字体/光标/回滚/高亮；自定义规则数据保留）──
-            HorizontalLayout {
-                padding-left: 20px; padding-right: 20px; padding-top: 8px;
-                Rectangle { horizontal-stretch: 1; }
-                GhostButton {
-                    text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
-                    clicked => {
-                        if (root.reset-armed) {
-                            root.reset-armed = false;
-                            root.reset-page("terminal");
-                        } else {
-                            root.reset-armed = true;
-                        }
-                    }
-                }
-            }
             if root.ifd-page == "appearance" : VerticalLayout {
                 padding-left: 20px;
                 padding-right: 20px;
                 padding-top: 14px;
                 spacing: 0;
                 alignment: start;
-
-                // ── 一键还原默认（A 类设置值；壁纸/自定义规则数据保留）──────
-                HorizontalLayout {
-                    Rectangle { horizontal-stretch: 1; }
-                    GhostButton {
-                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
-                        clicked => {
-                            if (root.reset-armed) {
-                                root.reset-armed = false;
-                                root.reset-page("appearance");
-                            } else {
-                                root.reset-armed = true;
-                            }
-                        }
-                    }
-                }
 
                 SectionHeader { text: root.lang-en ? "UI FONT" : "界面字体"; height: 24px; }
                 SettingRow {
@@ -1604,6 +1573,31 @@ export component InterfacePanel inherits Rectangle {
 
                 }
             }
+            // ── 一键还原默认（固定 footer，不随内容滚动）────────────────
+            // WSL / 同步页不放（全是用户数据与账户配置，还原无意义）。
+            if (root.ifd-page == "terminal" || root.ifd-page == "appearance"
+                || root.ifd-page == "layout" || root.ifd-page == "transfer"
+                || root.ifd-page == "update") : Rectangle {
+                height: 48px;
+                Rectangle { y: 0px; height: 1px; background: Theme.border-subtle; }
+                HorizontalLayout {
+                    padding-left: 20px; padding-right: 20px;
+                    Rectangle { horizontal-stretch: 1; }
+                    GhostButton {
+                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
+                        clicked => {
+                            if (root.reset-armed) {
+                                root.reset-armed = false;
+                                root.reset-page(root.ifd-page);
+                            } else {
+                                root.reset-armed = true;
+                            }
+                        }
+                    }
+                }
+            }
+            }
+
         }
     }
 }
