@@ -614,11 +614,6 @@ export component AppWindow inherits Window {
     callback pick-wsl-directory();
     // Drag-resizable width of that welcome sidebar (logical px), persisted.
     in-out property <length> welcome-sidebar-width: 240px;
-    // 拖拽期间的视觉宽度（live）：moved 每帧只改 live——splitter 线即时跟随；
-    // 松手才把 live 写入 applied（welcome-sidebar-width），rest/终端一次重排，
-    // welcome-size 的既有 200ms 动画让 rest 平滑拉伸到位——避免拖拽期间
-    // 每帧触发终端 reflow（5000 行回滚全量重建）导致的卡顿。
-    in-out property <length> welcome-sidebar-width-live: 240px;
     callback persist-welcome-sidebar-width(float);
     in-out property <string> welcome-sidebar-dock: "left";
     property <bool> welcome-sidebar-horizontal:
@@ -1328,16 +1323,13 @@ export component AppWindow inherits Window {
                         dock-area.welcome-sidebar-dragging = true;
                     } else if (ev.kind == PointerEventKind.up) {
                         dock-area.welcome-sidebar-dragging = false;
-                        // 松手：applied 一次更新（rest/终端一次重排），
-                        // welcome-size 的既有 200ms 动画让 rest 平滑拉伸到位
-                        root.welcome-sidebar-width = root.welcome-sidebar-width-live;
-                        root.persist-welcome-sidebar-width(root.welcome-sidebar-width-live / 1px);
+                        root.persist-welcome-sidebar-width(root.welcome-sidebar-width / 1px);
                     }
                 }
                 moved => {
                     if (dock-area.welcome-sidebar-dragging) {
                         if (dock-area.welcome-horizontal) {
-                            root.welcome-sidebar-width-live = clamp(
+                            root.welcome-sidebar-width = clamp(
                                 root.welcome-sidebar-dock == "right"
                                     ? dock-area.absolute-position.x + dock-area.width
                                         - (self.absolute-position.x + self.mouse-x)
@@ -1345,7 +1337,7 @@ export component AppWindow inherits Window {
                                         - dock-area.absolute-position.x,
                                 160px, 480px);
                         } else {
-                            root.welcome-sidebar-width-live = clamp(
+                            root.welcome-sidebar-width = clamp(
                                 root.welcome-sidebar-dock == "bottom"
                                     ? dock-area.absolute-position.y + dock-area.height
                                         - (self.absolute-position.y + self.mouse-y)
