@@ -100,7 +100,7 @@ fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     w.set_wallpaper_overlay(s.wallpaper_overlay());
     w.set_update_check_enabled(s.update_check_enabled()); // #184
     // 动画开关此前是 Slint-only 全局、从不持久化；现在与其它偏好一样由 config 驱动。
-    w.global::<AnimationSettings>().set_enabled(s.animations_enabled());
+    w.set_animations_enabled(s.animations_enabled());
     if collapse_sftp {
         w.set_sftp_collapsed(true);
         w.set_sftp_saved_height(s.sftp_panel_height());
@@ -215,7 +215,7 @@ fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
     // 壁纸切换有完整的换肤 / 调色板派生流程，必须走 apply_wallpaper。
     apply_wallpaper(w, &store.borrow(), bufs, &d.wallpaper, false);
     // 动画开关没有后端持久化（Slint 全局，重启即回），还原即重新开启。
-    w.global::<AnimationSettings>().set_enabled(true);
+    w.set_animations_enabled(true);
 }
 
 /// 布局页：侧栏开关 / 默认折叠 / 停靠边。

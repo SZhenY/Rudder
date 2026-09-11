@@ -1,8 +1,5 @@
 // Embedded cross-platform fonts (compile-time): terminal monospace + UI icons.
 import { AnimationSettings } from "theme.slint";
-// 再导出：Rust 侧需要通过 `window.global::<AnimationSettings>()` 读写动画开关
-// （设置 → 外观 → 动画，以及「还原本页默认」要把它恢复为开启）。
-export { AnimationSettings }
 // Embedding means Windows / Linux / macOS all render the same glyphs without
 // relying on Consolas / Segoe MDL2 Assets being installed.
 //
@@ -506,6 +503,9 @@ export component AppWindow inherits Window {
     in-out property <bool> convert-eol: false;
     in-out property <bool> osc52-clipboard: true;
     in-out property <bool> hide-special-partitions: true;
+    // 动画开关的双向镜像：Rust 通过它读写 AnimationSettings.enabled，避免把整个
+    // 全局暴露到公共 API（easing 类型的属性无法跨公共 API，会产生编译告警）。
+    in-out property <bool> animations-enabled <=> AnimationSettings.enabled;
     in-out property <string> mount-filter: "";
     in-out property <string> output-highlight-preset: "log";
     in property <[OutputRuleItem]> output-highlight-rules;
