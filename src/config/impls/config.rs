@@ -1136,7 +1136,27 @@ impl ConfigStore {
                 key.copy_from_slice(&bytes);
                 return Ok(key);
             }
-            tracing::warn!("secret.key has wrong length — regenerating");
+            // Do NOT overwrite it in place. This file is the only thing that can
+            // decrypt the stored passwords, so a wrong-sized blob is still worth
+            // keeping: if the truncation was accidental (partial write, sync
+            // conflict) the user has something to recover from, whereas
+            // replacing it destroys that chance permanently and silently breaks
+            // every saved password.
+            let backup = key_path.with_extension("key.bad");
+            let _ = fs::remove_file(&backup);
+            match fs::rename(&key_path, &backup) {
+                Ok(()) => tracing::error!(
+                    "secret.key is {} bytes (expected 32) — kept as {}; \
+                     stored passwords can no longer be decrypted and must be re-entered",
+                    bytes.len(),
+                    backup.display()
+                ),
+                Err(e) => tracing::error!(
+                    "secret.key is {} bytes (expected 32) and could not be moved aside ({e}); \
+                     stored passwords can no longer be decrypted and must be re-entered",
+                    bytes.len()
+                ),
+            }
         }
 
         let mut key = [0u8; 32];
@@ -1183,18 +1203,42 @@ impl ConfigStore {
                 Ok(mut cfg) => {
                     // Decrypt any encrypted passwords; leave legacy plaintext
                     // values untouched (they will be encrypted on next save).
+                    // A value that still looks like a blob *after* a failed
+                    // decrypt means `secret.key` no longer matches the file —
+                    // count those so the failure is not silent (see below).
+                    let mut undecryptable = 0usize;
                     for session in &mut cfg.sessions {
                         if let Some(plain) = Self::try_decrypt(&key, session.password.as_str()) {
                             session.password = Secret::new(plain);
+                        } else if session.password.as_str().starts_with(Self::ENC_PREFIX) {
+                            undecryptable += 1;
                         }
                         if let Some(plain) =
                             Self::try_decrypt(&key, session.private_key_inline.as_str())
                         {
                             session.private_key_inline = Secret::new(plain);
                         }
+                        // Trigger responses share the password's on-disk format;
+                        // legacy plaintext values stay as-is and are encrypted by
+                        // the next `save()`.
+                        for trigger in &mut session.triggers {
+                            if let Some(plain) = Self::try_decrypt(&key, trigger.response.as_str())
+                            {
+                                trigger.response = Secret::new(plain);
+                            }
+                        }
                     }
                     if let Some(plain) = Self::try_decrypt(&key, cfg.webdav_password.as_str()) {
                         cfg.webdav_password = Secret::new(plain);
+                    }
+                    if undecryptable > 0 {
+                        // Nothing can recover these — `save()` skips values that
+                        // already carry the prefix, so the stale blobs would
+                        // otherwise be passed to the server as the password.
+                        tracing::error!(
+                            "{undecryptable} stored password(s) could not be decrypted — \
+                             secret.key was replaced or corrupt; re-enter them in the session settings"
+                        );
                     }
                     // Clean up any duplicate history accumulated before #113,
                     // keeping the last (most recent) occurrence of each command.
@@ -2261,6 +2305,19 @@ impl ConfigStore {
                 let enc = Self::encrypt(&self.key, session.private_key_inline.as_str())?;
                 session.private_key_inline = Secret::new(enc);
             }
+            // Trigger responses are credentials too — the documented use case
+            // is auto-answering a `Password:` prompt — so they get exactly the
+            // same at-rest treatment as the session password. `Secret` has no
+            // built-in encryption (it only zeroes on drop), so this has to be
+            // done here explicitly.
+            for trigger in &mut session.triggers {
+                if !trigger.response.is_empty()
+                    && !trigger.response.as_str().starts_with(Self::ENC_PREFIX)
+                {
+                    let enc = Self::encrypt(&self.key, trigger.response.as_str())?;
+                    trigger.response = Secret::new(enc);
+                }
+            }
         }
         if !disk.webdav_password.is_empty()
             && !disk.webdav_password.as_str().starts_with(Self::ENC_PREFIX)
@@ -2856,6 +2913,110 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&store.path);
+    }
+
+    #[test]
+    fn trigger_responses_are_encrypted_at_rest() {
+        // `SessionTrigger::response` documents itself as "stored encrypted like
+        // the session password" — the usual way a user fills it in is with the
+        // password that answers a `Password:` prompt, so a regression here
+        // silently writes a credential in the clear.
+        let mut store = temp_store();
+        let answer = "trigger-secret-hunter2";
+        store.cache.sessions.push(Session {
+            name: "prompt-answer".into(),
+            host: "10.0.0.9".into(),
+            triggers: vec![SessionTrigger {
+                expect: "Password:".into(),
+                response: Secret::new(answer),
+                ..SessionTrigger::default()
+            }],
+            ..Session::new_empty()
+        });
+
+        store.save().unwrap();
+        let raw = std::fs::read_to_string(&store.path).unwrap();
+        assert!(!raw.contains(answer));
+        let disk: ConfigFile = serde_json::from_str(&raw).unwrap();
+        let encrypted = disk.sessions[0].triggers[0].response.as_str();
+        assert!(encrypted.starts_with(ConfigStore::ENC_PREFIX));
+        assert_eq!(
+            ConfigStore::try_decrypt(&store.key, encrypted).as_deref(),
+            Some(answer)
+        );
+
+        let _ = std::fs::remove_file(&store.path);
+    }
+
+    #[test]
+    fn legacy_plaintext_trigger_response_is_encrypted_on_next_save() {
+        // Sessions written before trigger responses were encrypted hold a bare
+        // string. `load()` leaves it alone (try_decrypt returns None) so it
+        // reaches save() verbatim — which must then encrypt it, exactly like a
+        // legacy plaintext password.
+        let mut store = temp_store();
+        store.cache.sessions.push(Session {
+            name: "legacy".into(),
+            host: "10.0.0.10".into(),
+            triggers: vec![SessionTrigger {
+                expect: "yes/no".into(),
+                response: Secret::new("legacy-plaintext"),
+                ..SessionTrigger::default()
+            }],
+            ..Session::new_empty()
+        });
+        assert!(ConfigStore::try_decrypt(&store.key, "legacy-plaintext").is_none());
+
+        store.save().unwrap();
+        let raw = std::fs::read_to_string(&store.path).unwrap();
+        assert!(!raw.contains("legacy-plaintext"));
+        let disk: ConfigFile = serde_json::from_str(&raw).unwrap();
+        assert!(
+            disk.sessions[0].triggers[0]
+                .response
+                .as_str()
+                .starts_with(ConfigStore::ENC_PREFIX)
+        );
+
+        let _ = std::fs::remove_file(&store.path);
+    }
+
+    #[test]
+    fn a_wrong_sized_key_file_is_kept_aside_not_overwritten() {
+        // `secret.key` is the only thing that can decrypt the stored passwords,
+        // so a wrong-sized blob must survive rather than being replaced in place.
+        let dir = std::env::temp_dir().join(format!("ms-key-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let key_path = dir.join("secret.key");
+        std::fs::write(&key_path, b"too-short").unwrap();
+
+        let key = ConfigStore::load_or_create_key(&dir).unwrap();
+
+        // A fresh 32-byte key is generated and installed...
+        assert_eq!(key.len(), 32);
+        assert_eq!(std::fs::read(&key_path).unwrap().len(), 32);
+        // ...and the unusable original is preserved for recovery.
+        assert_eq!(
+            std::fs::read(dir.join("secret.key.bad")).unwrap(),
+            b"too-short"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_blob_from_a_different_key_is_detectable_as_undecryptable() {
+        // This is the condition `load()` counts to log its error: the value is
+        // still an `enc:v1:` blob, but the current key cannot open it.
+        let blob = ConfigStore::encrypt(&[9u8; 32], "hunter2").unwrap();
+        assert!(blob.starts_with(ConfigStore::ENC_PREFIX));
+        assert!(ConfigStore::try_decrypt(&[7u8; 32], &blob).is_none());
+        // With the right key it round-trips, so the negative above is the key
+        // mismatch and not a broken blob.
+        assert_eq!(
+            ConfigStore::try_decrypt(&[9u8; 32], &blob).as_deref(),
+            Some("hunter2")
+        );
     }
 
     #[test]

@@ -9,14 +9,12 @@ use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use tokio::runtime::Runtime;
-use crate::resource::{LocalSnap, NetHist, TabStatus, TabStatuses};
+use crate::resource::TabStatus;
 use crate::session::ConnectCtx;
-use crate::sftp::{SftpHandles, SftpLastCwd};
-use crate::ssh::{SessionEvent, SessionHandle, test_session_auth};
+use crate::ssh::{SessionEvent, test_session_auth};
 use crate::app::render_tickets::RENDER_MIN_INTERVAL;
 use crate::terminal::{
-    CsiState, OutputHighlightPreset, RenderGates, TabRenderGate, TermBuffer, TermBuffers, compile_output_rules, new_term,
+    CsiState, OutputHighlightPreset, TabRenderGate, TermBuffer, compile_output_rules, new_term,
 };
 use crate::ui::*;
 use crate::app::pane_layout::refresh_panes;
@@ -26,39 +24,17 @@ use crate::app::auth_dialogs::{enqueue_cred_prompt, enqueue_hostkey_prompt, enqu
 use crate::app::session_runtime::{resolve_jump, start_session_in_tab};
 use crate::app::session_trigger::{blank_trigger_draft, trigger_drafts, trigger_model, validated_triggers};
 use crate::app::{
-    split_proxy, sync_sessions_for_window,
+    AppContext, split_proxy, sync_sessions_for_window,
     tab_title_len,
 };
-use crate::config::{AuthMethod, ConfigStore, Secret, Session, SessionKind, is_reserved_session_group};
+use crate::config::{AuthMethod, Secret, Session, SessionKind, is_reserved_session_group};
 use crate::i18n::t;
 
-pub(crate) struct SessionWireCtx<'a> {
-    pub(crate) window: &'a AppWindow,
-    pub(crate) store: Rc<RefCell<ConfigStore>>,
-    pub(crate) sessions_model: Rc<VecModel<SessionInfo>>,
-    pub(crate) tabs_model: Rc<VecModel<TabInfo>>,
-    pub(crate) terminals_model: Rc<VecModel<TerminalState>>,
-    pub(crate) layout: Rc<RefCell<crate::layout::Layout>>,
-    pub(crate) content_size: Rc<std::cell::Cell<(f32, f32)>>,
-    pub(crate) panes_model: Rc<VecModel<PaneInfo>>,
-    pub(crate) splitters_model: Rc<VecModel<SplitterInfo>>,
-    pub(crate) handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
-    pub(crate) bufs: TermBuffers,
-    pub(crate) render_gates: RenderGates,
-    pub(crate) runtime: Arc<Runtime>,
-    pub(crate) last_term_size: Arc<Mutex<(u32, u32)>>,
-    pub(crate) sftp_handles: SftpHandles,
-    pub(crate) sftp_last_cwd: SftpLastCwd,
-    pub(crate) tab_statuses: TabStatuses,
-    pub(crate) local_snap: LocalSnap,
-    pub(crate) local_net_hist: NetHist,
-    pub(crate) sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
-    pub(crate) tab_titles: Rc<RefCell<HashMap<String, String>>>,
-}
-
-pub(crate) fn wire_session_callbacks(ctx: SessionWireCtx) {
-    let SessionWireCtx {
-        window,
+pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
+    // Read straight out of the shared context instead of a hand-maintained copy
+    // of its field list: the previous 21-field struct was missing fields twice,
+    // and a missing field in *this* copy is how a whole tab's cleanup got lost.
+    let AppContext {
         store,
         sessions_model,
         tabs_model,
@@ -79,6 +55,7 @@ pub(crate) fn wire_session_callbacks(ctx: SessionWireCtx) {
         local_net_hist,
         sftp_follow_cd,
         tab_titles,
+        ..
     } = ctx;
     // on_connect_session moves panes_model/splitters_model into its closure;
     // the rename handler below needs its own handle, so clone up front.
@@ -1077,6 +1054,11 @@ pub(crate) fn wire_session_callbacks(ctx: SessionWireCtx) {
         let terminals_model = terminals_model.clone();
         let layout = layout.clone();
         let content_size = content_size.clone();
+        // These two are read (not moved) inside the closure, so they must be
+        // owned clones: the bindings above are borrows of `ctx`, and capturing
+        // one would require the context to outlive the closure.
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
         let handles = handles.clone();
         let bufs = bufs.clone();
         let render_gates = render_gates.clone();
@@ -1285,9 +1267,11 @@ pub(crate) fn wire_session_callbacks(ctx: SessionWireCtx) {
         let layout = layout.clone();
         window.on_tab_duplicate(move |tab_id: SharedString| {
             let tab_id = tab_id.to_string();
+            // Recover a poisoned map: the entries are still valid and the
+            // alternative under panic = "abort" is losing the whole client.
             let session_id = tab_statuses
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .get(&tab_id)
                 .map(|s| s.session_id.clone())
                 .unwrap_or_default();
@@ -1358,7 +1342,7 @@ pub(crate) fn wire_session_callbacks(ctx: SessionWireCtx) {
                 tab_titles.borrow_mut().remove(&tab_id);
                 let session_id = tab_statuses
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .get(&tab_id)
                     .map(|s| s.session_id.clone())
                     .unwrap_or_default();

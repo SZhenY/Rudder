@@ -80,6 +80,19 @@ enum TnState {
     SubIac,  // inside subnegotiation, saw IAC (awaiting SE)
 }
 
+/// Escape `0xFF` (IAC) in outbound user data so the receiver sees a literal
+/// byte rather than the start of a command (RFC 854).
+fn escape_iac(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    for &b in bytes {
+        out.push(b);
+        if b == IAC {
+            out.push(IAC);
+        }
+    }
+    out
+}
+
 fn naws_subneg(cols: u32, rows: u32) -> Vec<u8> {
     let w = (cols.clamp(1, u16::MAX as u32)) as u16;
     let h = (rows.clamp(1, u16::MAX as u32)) as u16;
@@ -163,11 +176,7 @@ async fn run_telnet(
                         // Never log keystroke bytes — they can be passwords (#15).
                         tracing::debug!("telnet write len={} bytes", bytes.len());
                         // Escape IAC (0xFF) in user data per RFC 854.
-                        let mut out = Vec::with_capacity(bytes.len());
-                        for b in bytes {
-                            out.push(b);
-                            if b == IAC { out.push(IAC); }
-                        }
+                        let out = escape_iac(&bytes);
                         if wr.write_all(&out).await.is_err() {
                             let _ = events.send(SessionEvent::Closed(
                                 t("写入失败", "write failed").into()));
@@ -288,5 +297,142 @@ fn respond_negotiation(cmd: u8, opt: u8, replies: &mut Vec<u8>) {
         // Server says it won't — acknowledge.
         WONT => replies.extend_from_slice(&[IAC, DONT, opt]),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Drive one chunk through a fresh parser and return `(data, replies)`.
+    fn run(input: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let mut state = TnState::Data;
+        let (mut data, mut replies) = (Vec::new(), Vec::new());
+        process_incoming(input, &mut state, &mut data, &mut replies);
+        (data, replies)
+    }
+
+    #[test]
+    fn plain_data_passes_through_untouched() {
+        let (data, replies) = run(b"hello\r\n");
+        assert_eq!(data, b"hello\r\n");
+        assert!(replies.is_empty());
+    }
+
+    #[test]
+    fn escaped_iac_becomes_a_literal_0xff_in_the_data() {
+        let (data, replies) = run(&[IAC, IAC, b'a']);
+        assert_eq!(data, vec![IAC, b'a']);
+        assert!(replies.is_empty(), "an escaped IAC owes no reply");
+    }
+
+    #[test]
+    fn standalone_commands_are_ignored() {
+        // IAC GA (249) has no option byte, so it must be swallowed whole.
+        let (data, replies) = run(&[b'x', IAC, 249, b'y']);
+        assert_eq!(data, b"xy");
+        assert!(replies.is_empty());
+    }
+
+    #[test]
+    fn do_sga_is_accepted_but_do_echo_is_refused() {
+        // We suppress go-ahead ourselves, so we are willing to do it.
+        let (_, replies) = run(&[IAC, DO, OPT_SGA]);
+        assert_eq!(replies, vec![IAC, WILL, OPT_SGA]);
+        // We never offer to echo on the server's behalf.
+        let (_, replies) = run(&[IAC, DO, OPT_ECHO]);
+        assert_eq!(replies, vec![IAC, WONT, OPT_ECHO]);
+    }
+
+    #[test]
+    fn will_echo_and_sga_are_accepted_but_will_naws_is_refused() {
+        // Let the server echo and run in character mode.
+        let (_, replies) = run(&[IAC, WILL, OPT_ECHO]);
+        assert_eq!(replies, vec![IAC, DO, OPT_ECHO]);
+        let (_, replies) = run(&[IAC, WILL, OPT_SGA]);
+        assert_eq!(replies, vec![IAC, DO, OPT_SGA]);
+        // NAWS is ours to advertise; the server must not negotiate it.
+        let (_, replies) = run(&[IAC, WILL, OPT_NAWS]);
+        assert_eq!(replies, vec![IAC, DONT, OPT_NAWS]);
+    }
+
+    #[test]
+    fn dont_and_wont_are_always_acknowledged() {
+        let (_, replies) = run(&[IAC, DONT, OPT_ECHO]);
+        assert_eq!(replies, vec![IAC, WONT, OPT_ECHO]);
+        let (_, replies) = run(&[IAC, WONT, OPT_ECHO]);
+        assert_eq!(replies, vec![IAC, DONT, OPT_ECHO]);
+    }
+
+    #[test]
+    fn subnegotiation_payload_is_swallowed() {
+        let (data, replies) = run(&[b'a', IAC, SB, OPT_NAWS, 0x00, 0x50, IAC, SE, b'b']);
+        assert_eq!(data, b"ab", "the SB payload must not reach the terminal");
+        assert!(replies.is_empty());
+    }
+
+    #[test]
+    fn escaped_iac_inside_subnegotiation_does_not_end_the_block() {
+        // IAC IAC inside SB is a literal 0xFF, not a way out of the block.
+        let (data, _) = run(&[IAC, SB, 0x01, IAC, IAC, 0x02, IAC, SE, b'z']);
+        assert_eq!(data, b"z");
+    }
+
+    /// TCP gives no framing guarantees, so a negotiation can be split anywhere.
+    /// This is the reason the parser carries `TnState` across reads at all.
+    #[test]
+    fn parser_state_survives_chunk_boundaries() {
+        let mut state = TnState::Data;
+        let (mut data, mut replies) = (Vec::new(), Vec::new());
+
+        for b in [b'h', b'i', IAC, DO, OPT_SGA, b'!'] {
+            process_incoming(&[b], &mut state, &mut data, &mut replies);
+        }
+
+        assert_eq!(data, b"hi!", "data around the split sequence must survive");
+        assert_eq!(replies, vec![IAC, WILL, OPT_SGA]);
+    }
+
+    #[test]
+    fn subnegotiation_split_across_chunks_is_still_swallowed() {
+        let mut state = TnState::Data;
+        let (mut data, mut replies) = (Vec::new(), Vec::new());
+
+        process_incoming(&[b'a', IAC, SB], &mut state, &mut data, &mut replies);
+        process_incoming(&[0x00, 0x50], &mut state, &mut data, &mut replies);
+        process_incoming(&[IAC], &mut state, &mut data, &mut replies);
+        process_incoming(&[SE, b'b'], &mut state, &mut data, &mut replies);
+
+        assert_eq!(data, b"ab");
+        assert!(replies.is_empty());
+    }
+
+    #[test]
+    fn naws_frame_carries_big_endian_dimensions() {
+        assert_eq!(
+            naws_subneg(80, 24),
+            vec![IAC, SB, OPT_NAWS, 0x00, 0x50, 0x00, 0x18, IAC, SE]
+        );
+    }
+
+    #[test]
+    fn naws_doubles_0xff_and_clamps_to_at_least_one() {
+        // 255 is IAC itself, so both dimensions must be doubled.
+        assert_eq!(
+            naws_subneg(255, 255),
+            vec![IAC, SB, OPT_NAWS, 0x00, IAC, IAC, 0x00, IAC, IAC, IAC, SE]
+        );
+        // Zero is clamped up to 1 so the server never sees a 0x0 window.
+        assert_eq!(
+            naws_subneg(0, 0),
+            vec![IAC, SB, OPT_NAWS, 0x00, 0x01, 0x00, 0x01, IAC, SE]
+        );
+    }
+
+    #[test]
+    fn outbound_0xff_bytes_are_doubled() {
+        assert_eq!(escape_iac(&[b'a', IAC, b'b']), vec![b'a', IAC, IAC, b'b']);
+        assert_eq!(escape_iac(b"plain"), b"plain");
+        assert!(escape_iac(&[]).is_empty());
     }
 }

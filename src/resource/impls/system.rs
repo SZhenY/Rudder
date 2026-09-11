@@ -9,6 +9,16 @@ use sysinfo::{Disks, Networks, System};
 
 use super::types::{SystemSampler, SystemSnapshot};
 
+/// How many sampling ticks to wait before re-enumerating mounted filesystems.
+///
+/// Measured with samply on macOS (see `rudder-fix-plan.md` 阶段 3 实测结果):
+/// `Disks::refresh` costs ~27 ms per call — it `statfs()`es every mount point —
+/// which is **92% of a whole sampling tick** and showed up as a ~28 ms stall on
+/// the UI thread once a second. CPU / memory / network still refresh every tick,
+/// so the only visible effect is that a newly mounted volume takes up to
+/// `DISK_REFRESH_EVERY` seconds to appear.
+const DISK_REFRESH_EVERY: u32 = 10;
+
 impl SystemSampler {
     pub fn new() -> Self {
         let mut sys = System::new_all();
@@ -21,6 +31,7 @@ impl SystemSampler {
             sys,
             nets,
             disks,
+            disk_tick: 0,
             last_rx_total,
             last_tx_total,
             last_instant: std::time::Instant::now(),
@@ -71,8 +82,13 @@ impl SystemSampler {
         let net_rx_per_sec = (rx_delta as f64 / elapsed) as u64;
         let net_tx_per_sec = (tx_delta as f64 / elapsed) as u64;
 
-        // Local filesystems (slow-changing, but cheap to refresh).
-        self.disks.refresh(true);
+        // Local filesystems. Re-enumerated only every Nth tick: it is the most
+        // expensive part of a sample by far (see `DISK_REFRESH_EVERY`) and the
+        // list barely changes. The previous list is reused in between.
+        if self.disk_tick == 0 || self.disks.is_empty() {
+            self.disks.refresh(true);
+        }
+        self.disk_tick = (self.disk_tick + 1) % DISK_REFRESH_EVERY;
         let disks: Vec<(String, u64, u64)> = self
             .disks
             .iter()

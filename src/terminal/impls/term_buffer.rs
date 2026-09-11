@@ -1115,11 +1115,14 @@ mod real_file_overline_verify {
     fn real_chars_file_overline_renders_when_scrolled_back() {
         // The user's actual scenario: cat the 206-line char test file on a
         // 30x100 terminal, then scroll back to the [4] overline row.
-        // Skip gracefully when the file isn't present (fresh checkouts).
-        let Ok(data) = std::fs::read("../terminal_chars_test.txt") else {
-            eprintln!("skipping: terminal_chars_test.txt not found");
-            return;
-        };
+        //
+        // The fixture is embedded at compile time so the test cannot silently
+        // skip. It used to be `fs::read("../terminal_chars_test.txt")`, which
+        // resolves against the *process* CWD — cargo runs tests with the CWD set
+        // to the package root, i.e. one level above the repo's `tests/` dir — so
+        // the read never succeeded and the test returned without asserting
+        // anything. `ppk.rs` embeds its fixtures the same way.
+        const DATA: &[u8] = include_bytes!("../../../tests/terminal_chars_test.txt");
         let (term, processor) = new_term(30, 100, 5000);
         let mut buf = TermBuffer {
             term,
@@ -1145,7 +1148,7 @@ mod real_file_overline_verify {
             mouse_tracked: false,
         };
         // Feed in realistic 4 KiB chunks (cat / SSH behaviour).
-        for chunk in data.chunks(4096) {
+        for chunk in DATA.chunks(4096) {
             buf.ingest(chunk);
         }
         eprintln!(

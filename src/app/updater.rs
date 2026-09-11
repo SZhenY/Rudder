@@ -1,22 +1,17 @@
 //! In-app update check (#48).
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::config::ConfigStore;
-use crate::sftp::SftpHandles;
 use slint::{ComponentHandle as _, ModelRc, SharedString, VecModel};
 
 use crate::ui::{AppWindow, TransferInfo};
 
-use super::{parse_version, DEP_VERSIONS};
+use super::{AppContext, parse_version, DEP_VERSIONS};
 
 /// Wire the in-app update-check banner (#48): download opens the releases page.
-pub(crate) fn wire_update_check(
-    window: &AppWindow,
-    store: &Rc<RefCell<ConfigStore>>,
-    sftp_handles: &SftpHandles,
-) {
+pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
+    let store = &ctx.store;
+    let sftp_handles = &ctx.sftp_handles;
     // "Download" on the banner opens the latest-release page in the browser.
     window.on_open_update_url(move || {
         let url = "https://github.com/SZhenY/Rudder/releases/latest";

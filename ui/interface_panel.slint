@@ -1548,8 +1548,8 @@ export component InterfacePanel inherits Rectangle {
                 SettingRow {
                     label: root.lang-en ? "Trust self-signed / intranet certs" : "信任自签名/内网证书";
                     desc: root.lang-en
-                        ? "Use only for trusted NAS or LAN WebDAV over HTTPS."
-                        : "仅用于可信 NAS 或局域网 HTTPS WebDAV。";
+                        ? "Stops verifying the server certificate — the connection can be impersonated. Trusted LAN only."
+                        : "将不再校验服务器证书，连接可能被中间人冒充；仅建议在可信局域网内开启。";
                     show-divider: false;
                     Switch {
                         on: root.webdav-accept-invalid-certs;

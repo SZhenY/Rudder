@@ -10,11 +10,10 @@ use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use crate::config::ConfigStore;
 use crate::session::ConnectCtx;
-use crate::ssh::{SessionCommand, SessionHandle};
+use crate::ssh::SessionCommand;
 use crate::terminal::{
-    TermBuffers, bare_ctrl_marker_workaround_enabled, encode_command_bar_input,
+    bare_ctrl_marker_workaround_enabled, encode_command_bar_input,
     encode_pasted_text, key_to_pty_bytes, paste_requires_large_review,
     should_drop_bare_ctrl_marker, terminal_uses_bracketed_paste,
 };
@@ -24,7 +23,7 @@ use crate::ui::{AppWindow, TermMatch, TermSpan};
 use crate::app::quick_commands::{all_quick_group_names, quick_cmd_model, reorder_quick_command};
 use crate::app::pane_layout::zoom_term_font;
 use crate::app::session_runtime::start_session_in_tab;
-use crate::app::{INTERACTIVE_ECHO_WINDOW, clipboard_set_text, convert_eol, set_terminal_row, term_buf, with_term_buf};
+use crate::app::{AppContext, INTERACTIVE_ECHO_WINDOW, clipboard_set_text, convert_eol, set_terminal_row, term_buf, with_term_buf};
 use crate::app::terminal_ui::{apply_terminal_resize, compute_find_matches, history_model, history_view_model, rebuild_tab_display, refresh_terminal_selection};
 
 /// Parse a runtime tunnel forward from the SSH dialog fields (#206).
@@ -57,14 +56,29 @@ pub(crate) fn parse_tunnel_forward(
     })
 }
 
-pub(crate) fn wire_key_input(
-    window: &AppWindow,
-    handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
-    bufs: TermBuffers,
-    last_term_size: Arc<Mutex<(u32, u32)>>,
-    store: Rc<RefCell<ConfigStore>>,
-    ctx: ConnectCtx,
-) {
+pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
+    // Runtime context for starting / reconnecting a session. Assembled here
+    // from the app-wide context rather than passed in twice: the caller used to
+    // hand over `store` both as its own argument and inside this struct.
+    let ctx = ConnectCtx {
+        weak: window.as_weak(),
+        runtime: app.runtime.clone(),
+        handles: app.handles.clone(),
+        sftp_handles: app.sftp_handles.clone(),
+        sftp_last_cwd: app.sftp_last_cwd.clone(),
+        bufs: app.bufs.clone(),
+        render_gates: app.render_gates.clone(),
+        tab_statuses: app.tab_statuses.clone(),
+        local_snap: app.local_snap.clone(),
+        local_net_hist: app.local_net_hist.clone(),
+        last_term_size: app.last_term_size.clone(),
+        sftp_follow_cd: app.sftp_follow_cd.clone(),
+        store: app.store.clone(),
+    };
+    let handles = app.handles.clone();
+    let bufs = app.bufs.clone();
+    let store = app.store.clone();
+    let last_term_size = app.last_term_size.clone();
     // Runtime SSH tunnel panel (#206). These tunnels live only for the active
     // connection; saved session configuration remains unchanged.
     {
@@ -568,7 +582,7 @@ pub(crate) fn wire_key_input(
                 let codepoints = redact_key(key.as_str());
                 let elapsed_ms = last_shift_time
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .map(|t| format!("{}ms ago", t.elapsed().as_millis()))
                     .unwrap_or_else(|| "never".to_string());
                 tracing::info!(

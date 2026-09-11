@@ -1,8 +1,10 @@
 use super::*;
 
-pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
-    let TabWireCtx {
-        window,
+pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
+    // Take the handles straight from the one shared context rather than a
+    // hand-maintained copy of its field list — a field missing from that copy
+    // is how the closed-tab `tab_statuses` leak arose.
+    let AppContext {
         tabs_model,
         terminals_model,
         layout,
@@ -15,6 +17,8 @@ pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
         sftp_handles,
         sftp_last_cwd,
         tab_titles,
+        tab_statuses,
+        ..
     } = ctx;
     // Ctrl+Tab / Ctrl+Shift+Tab cycle within the currently focused pane (#294).
     {
@@ -137,6 +141,7 @@ pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
         let panes_model = panes_model.clone();
         let splitters_model = splitters_model.clone();
         let tab_titles = tab_titles.clone();
+        let tab_statuses = tab_statuses.clone();
         window.on_pane_tab_closed(move |_pane_id: i32, id: SharedString| {
             let id = id.to_string();
             if id == "welcome" {
@@ -166,6 +171,12 @@ pub(super) fn wire_tab_callbacks(ctx: TabWireCtx) {
             }
             if let Ok(mut b) = bufs.lock() {
                 b.remove(&id);
+            }
+            // The status entry carries the tab's process list, network history
+            // and disk rows. Nothing else in the app removes one, so leaving it
+            // behind would retain all of that for the rest of the process run.
+            if let Ok(mut s) = tab_statuses.lock() {
+                s.remove(&id);
             }
 
             // Remove from tabs + terminals models.

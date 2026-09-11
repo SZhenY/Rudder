@@ -30,6 +30,8 @@ pub(crate) struct SystemSampler {
     pub(crate) sys: System,
     pub(crate) nets: Networks,
     pub(crate) disks: Disks,
+    /// Counts down to the next disk re-enumeration; see `DISK_REFRESH_EVERY`.
+    pub(crate) disk_tick: u32,
     pub(crate) last_rx_total: u64,
     pub(crate) last_tx_total: u64,
     pub(crate) last_instant: std::time::Instant,

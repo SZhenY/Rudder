@@ -10,14 +10,38 @@ pub(crate) struct WebDavAcceptAnyCertVerifier {
 /// OSC52_ENABLED pattern) so `webdav_agent` call sites need no signature churn.
 pub(crate) static WEBDAV_CERT_PIN: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 
-pub(crate) fn set_webdav_cert_pin(pin: String) {
-    let _ = WEBDAV_CERT_PIN.set(if pin.trim().is_empty() {
+/// Normalise a user-supplied fingerprint: trim surrounding whitespace, fold to
+/// lowercase (the verifier compares against lowercase hex), and treat an empty
+/// string as "no pin".
+fn normalize_pin(pin: &str) -> Option<String> {
+    let trimmed = pin.trim();
+    if trimmed.is_empty() {
         None
     } else {
-        Some(pin.trim().to_lowercase())
-    });
+        Some(trimmed.to_lowercase())
+    }
+}
+
+pub(crate) fn set_webdav_cert_pin(pin: String) {
+    let _ = WEBDAV_CERT_PIN.set(normalize_pin(&pin));
 }
 
 pub(crate) fn webdav_cert_pin() -> Option<&'static str> {
-    WEBDAV_CERT_PIN.get_or_init(|| None).as_deref()
+    // `get()` rather than `get_or_init(|| None)`: with the latter, any read
+    // that happened before `set_webdav_cert_pin` ran at startup would freeze
+    // the cell to `None` permanently, silently disabling pinning for the rest
+    // of the process. `get()` simply reports "not set yet" instead.
+    WEBDAV_CERT_PIN.get().and_then(|v| v.as_deref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pin_normalisation_trims_and_lowercases() {
+        assert_eq!(normalize_pin("  AB:CD:EF  ").as_deref(), Some("ab:cd:ef"));
+        assert_eq!(normalize_pin(""), None);
+        assert_eq!(normalize_pin("   "), None);
+    }
 }

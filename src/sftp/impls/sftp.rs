@@ -612,9 +612,14 @@ async fn run_sftp(
                 // CancelTransfer arriving mid-download can flip it (#100).
                 let file_id = Uuid::new_v4().to_string();
                 let cancel = Arc::new(AtomicBool::new(false));
+                // A poisoned mutex only marks the map as suspect — the entries
+                // themselves are fine, so take them instead of panicking. Under
+                // `panic = "abort"` (release) the old `unwrap()` would have taken
+                // the whole client down; the other `cancels` uses below already
+                // recover this way.
                 cancels
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .insert(file_id.clone(), cancel.clone());
                 let cancels_done = cancels.clone();
                 tokio::spawn(async move {
@@ -869,9 +874,11 @@ async fn run_sftp(
                 // CancelTransfer arriving mid-upload can flip it (#100).
                 let up_id = Uuid::new_v4().to_string();
                 let cancel = Arc::new(AtomicBool::new(false));
+                // See the Download arm above: recover a poisoned map rather
+                // than aborting the process.
                 cancels
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .insert(up_id.clone(), cancel.clone());
                 let cancels_done = cancels.clone();
                 tokio::spawn(async move {

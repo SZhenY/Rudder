@@ -1025,12 +1025,12 @@ mod real_file_cube_tests {
     /// background, never black.
     #[test]
     fn real_file_cube_53_is_magenta() {
-        let Ok(data) = std::fs::read("../terminal_chars_test.txt") else {
-            eprintln!("skipping: terminal_chars_test.txt not found");
-            return;
-        };
+        // Embedded at compile time — see the note in `real_file_overline_verify`
+        // (term_buffer.rs): a CWD-relative read here always failed, so this test
+        // never actually ran.
+        const DATA: &[u8] = include_bytes!("../../../tests/terminal_chars_test.txt");
         let (mut term, mut proc) = new_term(40, 100, 2000);
-        process_bytes(&mut proc, &mut term, &data);
+        process_bytes(&mut proc, &mut term, DATA);
         let (rows, cols) = term_size(&term);
         let mut found = false;
         // [2] lives in scrollback after the whole file is fed; scan every

@@ -86,11 +86,11 @@ fn editor_find_next(
     }
 }
 
-pub(super) fn wire_sftp_callbacks(
-    window: &AppWindow,
-    sftp_handles: SftpHandles,
-    sftp_last_cwd: SftpLastCwd,
-) {    // Navigate to a remote path (or ".." to go up one level).
+pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
+    let sftp_handles = ctx.sftp_handles.clone();
+    let sftp_last_cwd = ctx.sftp_last_cwd.clone();
+
+    // Navigate to a remote path (or ".." to go up one level).
     {
         let sftp_handles = sftp_handles.clone();
         let sftp_last_cwd = sftp_last_cwd.clone();

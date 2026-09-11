@@ -1801,7 +1801,15 @@ pub(crate) fn classify_connect_failure(err: &anyhow::Error) -> String {
         .join(" | ")
         .to_lowercase();
 
-    if joined.contains("authentication failed") || joined.contains("auth failed") {
+    if joined.contains("https proxy requires tls") {
+        // Raised by `proxy::connect` for an `https://` proxy. Surfaced here so
+        // the user gets the two working alternatives instead of a raw error.
+        t(
+            "HTTPS 代理不受支持：无法与代理建立 TLS 连接。请改用 socks5://（加密传输）或 http://（明文 CONNECT）",
+            "HTTPS proxy is not supported: Rudder cannot speak TLS to a proxy. Use socks5:// (encrypted) or http:// (plaintext CONNECT)",
+        )
+        .to_string()
+    } else if joined.contains("authentication failed") || joined.contains("auth failed") {
         t(
             "认证失败：用户名、密码或密钥被服务器拒绝，请核对凭据后按 Enter 重试",
             "Authentication failed: the username, password or key was rejected — check your credentials and press Enter to retry",

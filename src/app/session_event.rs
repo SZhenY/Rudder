@@ -25,14 +25,19 @@ pub(super) fn apply_session_event_to_window<'a>(
     let tabs_rc = win.get_tabs();
     let terminals_rc = win.get_terminals();
     // `ModelRc::as_any` lets us downcast to the concrete `VecModel<T>`.
-    let tabs = tabs_rc
-        .as_any()
-        .downcast_ref::<VecModel<TabInfo>>()
-        .expect("tabs model must be a VecModel");
-    let terminals = terminals_rc
+    // Downgrade instead of `expect()`: this runs for every session event, and
+    // release builds use panic = "abort", so an unexpected model type would
+    // kill the client rather than drop one event. The `panes` lookups further
+    // down already degrade the same way.
+    let Some(tabs) = tabs_rc.as_any().downcast_ref::<VecModel<TabInfo>>() else {
+        return;
+    };
+    let Some(terminals) = terminals_rc
         .as_any()
         .downcast_ref::<VecModel<TerminalState>>()
-        .expect("terminals model must be a VecModel");
+    else {
+        return;
+    };
 
     let update_terminal = |mutator: &dyn Fn(&mut TerminalState)| {
         for i in 0..terminals.row_count() {
