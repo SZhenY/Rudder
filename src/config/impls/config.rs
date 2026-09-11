@@ -412,11 +412,13 @@ fn default_wallpaper() -> String {
 }
 
 /// Bump when `migrate_defaults` gains a new one-time default-layout change.
-pub const DEFAULTS_REV: u32 = 4;
+pub const DEFAULTS_REV: u32 = 5;
 
 const PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY: f32 = 0.38;
 const PREVIOUS_DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY;
-const DEFAULT_WALLPAPER_TRANSPARENCY: f32 = 0.15;
+/// 上一个出厂默认：15%（overlay 0.85）。rev 5 迁移用它识别仍停留在旧默认的用户。
+const PREVIOUS_DEFAULT_WALLPAPER_OVERLAY_015: f32 = 0.85;
+const DEFAULT_WALLPAPER_TRANSPARENCY: f32 = 0.30;
 const DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - DEFAULT_WALLPAPER_TRANSPARENCY;
 
 fn normalize_hex_color(value: &str) -> Option<String> {
@@ -431,12 +433,43 @@ fn normalize_hex_color(value: &str) -> Option<String> {
 /// new-user default layout (#new-user-defaults): ms wallpaper, welcome page as
 /// a left sidebar, resource panel docked right, 15% wallpaper transparency, and
 /// marks the migration done so it isn't re-applied.
-fn fresh_config() -> ConfigFile {
+pub(crate) fn fresh_config() -> ConfigFile {
     ConfigFile {
+        // ── 终端页 ──
+        // 注意：这里必须显式写出每一项。`..ConfigFile::default()` 是派生 Default
+        //（bool=false / 数值=0 / 字符串=""），不是出厂默认 —— font_size=0 虽有
+        // getter 兜底成 13，但 scrollback_lines=0 会被 setter clamp 成 100、
+        // convert_eol/osc52 会变成关闭。
+        font_family: "JetBrains Mono".to_string(),
+        font_size: 13,
+        terminal_bold: false,
+        terminal_cursor_style: "bar".to_string(),
+        terminal_cursor_color: "#FFFFFF".to_string(),
+        scrollback_lines: 5000,
+        convert_eol: true,
+        osc52_clipboard: true,
+        output_highlight_disabled: false,
+        json_format_disabled: false,
+        output_highlight_preset: "builtin".to_string(),
+        // ── 外观页 ──
+        ui_font_family: String::new(), // 空 = 按平台默认字体
         wallpaper: "builtin:dark".to_string(),
-        welcome_as_sidebar: false,
-        sidebar_dock: "right".to_string(),
         wallpaper_overlay: DEFAULT_WALLPAPER_OVERLAY,
+        renderer_mode: String::new(), // 空 = 平台默认（macOS → femtovg）
+        ui_scale: 100,
+        panel_font: 100,
+        hide_special_partitions: true,
+        animations_disabled: false,
+        // ── 传输页 ──
+        sftp_no_follow_cd: false, // 存储 反义：false = 跟随 cd 开启
+        download_always_ask: false,
+        // ── 布局页 ──
+        collapse_sidebar_default: false,
+        collapse_sftp_default: false,
+        quick_commands_as_sidebar: false,
+        welcome_as_sidebar: false,
+        // ── 布局/其它 ──
+        sidebar_dock: "right".to_string(),
         defaults_rev: DEFAULTS_REV,
         ..ConfigFile::default()
     }
@@ -485,6 +518,13 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     // users still on the previous default; preserve every custom slider value.
     if cfg.defaults_rev < 3
         && (cfg.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_OVERLAY).abs() < 0.005
+    {
+        cfg.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
+    }
+    // rev 5: 壁纸遮罩透明度出厂默认 15% → 30%。只迁移仍停留在旧默认（overlay
+    // 0.85）的用户；自定义滑条值一律保留。
+    if cfg.defaults_rev < 5
+        && (cfg.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_OVERLAY_015).abs() < 0.005
     {
         cfg.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
     }
@@ -989,6 +1029,11 @@ pub struct ConfigFile {
     /// it on stops the GitHub releases query and the banner.
     #[serde(default)]
     pub update_check_disabled: bool,
+    /// Disable all sidebar / panel animations (Interface › Animations). Stored
+    /// inverted so missing/legacy config keeps animations enabled. Before this
+    /// field existed the toggle was a Slint-only global and never persisted.
+    #[serde(default)]
+    pub animations_disabled: bool,
     /// Hide EFI / temporary / swap pseudo-filesystems and very small partitions
     /// in the system resource panel so they don't clutter the disk view.
     #[serde(default = "default_true")]
@@ -1602,6 +1647,13 @@ impl ConfigStore {
     }
     pub fn set_hide_special_partitions(&mut self, v: bool) {
         self.cache.hide_special_partitions = v;
+    }
+    /// All sidebar / panel animations enabled (Interface › Animations).
+    pub fn animations_enabled(&self) -> bool {
+        !self.cache.animations_disabled
+    }
+    pub fn set_animations_enabled(&mut self, v: bool) {
+        self.cache.animations_disabled = !v;
     }
     /// Mount-point filter for the resource panel.
     pub fn mount_filter(&self) -> &str {
@@ -2806,7 +2858,7 @@ mod tests {
         // Fresh install (no file).
         let fresh = fresh_config();
         assert_eq!(fresh.wallpaper, "builtin:dark");
-        assert!((fresh.wallpaper_overlay - 0.85).abs() < f32::EPSILON);
+        assert!((fresh.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs() < f32::EPSILON);
         // User upgrading from before the feature: JSON without the key.
         let cfg: ConfigFile = serde_json::from_str("{}").unwrap();
         assert_eq!(cfg.wallpaper, "builtin:dark");
@@ -2835,15 +2887,16 @@ mod tests {
             ..ConfigFile::default()
         };
         assert!(migrate_defaults(&mut old_default));
-        assert!((old_default.wallpaper_overlay - 0.85).abs() < f32::EPSILON);
+        assert!((old_default.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs() < f32::EPSILON);
 
+        // 自定义滑条值不被迁移覆盖（取一个不与新默认重合的值）。
         let mut custom = ConfigFile {
-            wallpaper_overlay: 0.70,
+            wallpaper_overlay: 0.95,
             defaults_rev: 2,
             ..ConfigFile::default()
         };
         assert!(migrate_defaults(&mut custom));
-        assert!((custom.wallpaper_overlay - 0.70).abs() < f32::EPSILON);
+        assert!((custom.wallpaper_overlay - 0.95).abs() < f32::EPSILON);
     }
 
     #[test]

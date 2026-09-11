@@ -27,7 +27,6 @@ pub(crate) enum SettingsPage {
     Appearance,
     Layout,
     Transfer,
-    Update,
 }
 
 impl SettingsPage {
@@ -37,7 +36,6 @@ impl SettingsPage {
             "appearance" => Some(Self::Appearance),
             "layout" => Some(Self::Layout),
             "transfer" => Some(Self::Transfer),
-            "update" => Some(Self::Update),
             _ => None,
         }
     }
@@ -101,6 +99,8 @@ fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     w.set_sidebar_collapsed(sidebar_collapsed);
     w.set_wallpaper_overlay(s.wallpaper_overlay());
     w.set_update_check_enabled(s.update_check_enabled()); // #184
+    // 动画开关此前是 Slint-only 全局、从不持久化；现在与其它偏好一样由 config 驱动。
+    w.global::<AnimationSettings>().set_enabled(s.animations_enabled());
     if collapse_sftp {
         w.set_sftp_collapsed(true);
         w.set_sftp_saved_height(s.sftp_panel_height());
@@ -124,19 +124,15 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &LayoutRef
     };
     match page {
         SettingsPage::Terminal => reset_terminal_page(w, store, bufs),
-        SettingsPage::Appearance => reset_appearance_page(w, store),
+        SettingsPage::Appearance => reset_appearance_page(w, store, bufs),
         SettingsPage::Layout => reset_layout_page(w, store, refs),
         SettingsPage::Transfer => reset_transfer_page(w, store),
-        SettingsPage::Update => reset_update_page(w, store),
     }
 }
 
 /// 终端页：字体 / 光标 / 回滚 / 高亮 / 粘贴行尾 / OSC52 / JSON 格式化
 fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
-    let d = crate::config::ConfigFile::default();
-    let scrollback = d.scrollback_lines;
-    let highlight = !d.output_highlight_disabled;
-    let preset = d.output_highlight_preset.clone();
+    let d = crate::config::fresh_config();
     {
         let mut s = store.borrow_mut();
         s.set_font_family(d.font_family.clone());
@@ -144,9 +140,9 @@ fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
         s.set_terminal_bold(d.terminal_bold);
         s.set_terminal_cursor_style(d.terminal_cursor_style.clone());
         s.set_terminal_cursor_color(&d.terminal_cursor_color);
-        s.set_scrollback_lines(scrollback);
-        s.set_output_highlight_enabled(highlight);
-        s.set_output_highlight_preset(preset.clone());
+        s.set_scrollback_lines(d.scrollback_lines);
+        s.set_output_highlight_enabled(!d.output_highlight_disabled);
+        s.set_output_highlight_preset(d.output_highlight_preset.clone());
         // 终端页其余 A 类项：粘贴行尾 / OSC52 / JSON 格式化
         s.set_convert_eol(d.convert_eol);
         s.set_osc52_clipboard(d.osc52_clipboard);
@@ -155,50 +151,71 @@ fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
         for index in 0..s.output_highlight_rules().len() {
             s.set_output_highlight_rule_enabled(index, false);
         }
+        if let Err(error) = s.save() {
+            tracing::warn!("failed to save config: {error:#}");
+        }
     }
-    let store_guard = store.borrow();
-    // UI 刷新（照初始化段的 set 清单）
-    w.set_term_font_family(d.font_family.clone().into()); // 空 = 默认 JetBrains Mono
-    w.set_term_font_size(d.font_size as f32);
-    w.set_term_font_bold(d.terminal_bold);
-    w.set_term_cursor_style(d.terminal_cursor_style.clone().into());
-    if let Some(color) = parse_hex_color(&d.terminal_cursor_color) {
-        w.set_term_cursor_color_hex(d.terminal_cursor_color.clone().into());
-        w.set_term_cursor_color(color);
-    } else {
-        w.set_term_cursor_color_hex("".into());
+    // UI 刷新走 getter（带 0 → 默认 的哨兵映射），保证显示的就是真实生效值，
+    // 而不是把派生 Default 的 0 / "" 原样写进控件。
+    let rules;
+    {
+        let s = store.borrow();
+        w.set_term_font_family(s.font_family().into());
+        w.set_term_font_size(s.font_size() as f32);
+        w.set_term_font_bold(s.terminal_bold());
+        w.set_term_cursor_style(s.terminal_cursor_style().into());
+        w.set_term_cursor_color_hex(s.terminal_cursor_color().into());
+        if let Some(color) = parse_hex_color(s.terminal_cursor_color()) {
+            w.set_term_cursor_color(color);
+        }
+        w.set_scrollback_lines(s.scrollback_lines().to_string().into());
+        w.set_output_highlight_enabled(s.output_highlight_enabled());
+        w.set_output_highlight_preset(s.output_highlight_preset().into());
+        w.set_output_highlight_rules(output_highlight_rule_model(&s));
+        w.set_convert_eol(s.convert_eol());
+        w.set_osc52_clipboard(s.osc52_clipboard());
+        w.set_json_format_output(s.json_format_output());
+        rules = s.output_highlight_rules().to_vec();
     }
-    w.set_scrollback_lines(scrollback.to_string().into());
-    w.set_output_highlight_enabled(highlight);
-    w.set_output_highlight_preset(preset.clone().into());
-    w.set_output_highlight_rules(output_highlight_rule_model(&store_guard));
-    w.set_convert_eol(d.convert_eol);
-    w.set_osc52_clipboard(d.osc52_clipboard);
-    w.set_json_format_output(!d.json_format_disabled);
-    // 回滚变更 → 终端缓冲 reset（照 key_input.rs:499 的路径）
-    for_each_buffer(w, bufs, |b| b.reset(scrollback));
-    // 高亮应用（preset 回默认 + 自定义规则全禁用重编译）
-    apply_output_highlight(w, bufs, highlight, &preset);
-    let rules: Vec<crate::config::OutputHighlightRule> =
-        store_guard.output_highlight_rules().to_vec();
+    // 回滚行数变更 → 终端缓冲 reset；高亮按新 preset / 规则重编译。
+    for_each_buffer(w, bufs, |b| b.reset(d.scrollback_lines));
+    apply_output_highlight(w, bufs, !d.output_highlight_disabled, &d.output_highlight_preset);
     apply_custom_output_rules(w, bufs, &rules);
-    drop(store_guard);
 }
 
-/// 外观页：A 类 = UI 缩放 / 面板字体 / 渲染后端；壁纸与遮罩（B 类）不动。
-fn reset_appearance_page(w: &AppWindow, store: &Store) {
-    let d = crate::config::ConfigFile::default();
+/// 外观页：UI 字体 / 壁纸 / 遮罩透明度 / 渲染后端 / 动画 / 缩放 / 面板字体 /
+/// 隐藏特殊分区。
+///
+/// 注意两点：其一，「隐藏特殊分区」的控件在 UI 上位于本页（此前误归到传输页的
+/// 还原里）；其二，壁纸与遮罩透明度按规格也在还原范围内（此前被当作 B 类跳过）。
+fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
+    let d = crate::config::fresh_config();
     {
         let mut s = store.borrow_mut();
+        s.set_ui_font_family(d.ui_font_family.clone());
         s.set_ui_scale(d.ui_scale);
         s.set_panel_font(d.panel_font);
         s.set_renderer_mode(d.renderer_mode.clone());
+        s.set_wallpaper(d.wallpaper.clone());
+        s.set_wallpaper_overlay(d.wallpaper_overlay);
+        s.set_hide_special_partitions(d.hide_special_partitions);
+        if let Err(error) = s.save() {
+            tracing::warn!("failed to save config: {error:#}");
+        }
     }
-    // UI 刷新：ui-scale / panel-font 在 UI 侧是 float（percent / 100）
-    w.set_ui_scale(d.ui_scale as f32 / 100.0);
-    w.set_panel_font(d.panel_font as f32 / 100.0);
-    w.set_renderer_mode(d.renderer_mode.clone().into());
-    // 渲染后端切换下次启动生效——重启提示由 UI 侧既有逻辑显示
+    // UI 刷新走 getter（0 → 默认 / 平台默认）。
+    let s = store.borrow();
+    w.set_ui_font_family(resolve_ui_font_family());
+    w.set_ui_scale(s.ui_scale() as f32 / 100.0);
+    w.set_panel_font(s.panel_font() as f32 / 100.0);
+    w.set_renderer_mode(s.renderer_mode().into());
+    w.set_wallpaper_overlay(s.wallpaper_overlay());
+    w.set_hide_special_partitions(s.hide_special_partitions());
+    drop(s);
+    // 壁纸切换有完整的换肤 / 调色板派生流程，必须走 apply_wallpaper。
+    apply_wallpaper(w, &store.borrow(), bufs, &d.wallpaper, false);
+    // 动画开关没有后端持久化（Slint 全局，重启即回），还原即重新开启。
+    w.global::<AnimationSettings>().set_enabled(true);
 }
 
 /// 布局页：侧栏开关 / 默认折叠 / 停靠边。
@@ -248,31 +265,24 @@ fn reset_layout_page(w: &AppWindow, store: &Store, refs: &LayoutRefs) {
     });
 }
 
-/// 传输页：A 类 = 跟随 cd / 下载询问 / 隐藏特殊分区。B 类保留：挂载点过滤。
+/// 传输页：A 类 = 跟随 cd / 总是询问保存位置。B 类保留：挂载点过滤、下载目录。
+/// 注意：「隐藏特殊分区」的控件在 UI 上位于外观页，其还原也归外观页。
 fn reset_transfer_page(w: &AppWindow, store: &Store) {
-    let d = crate::config::ConfigFile::default();
+    let d = crate::config::fresh_config();
     // sftp_follow_cd 的存储字段是 sftp_no_follow_cd（语义反转）
     let follow_cd = !d.sftp_no_follow_cd;
     {
         let mut s = store.borrow_mut();
         s.set_sftp_follow_cd(follow_cd);
         s.set_download_always_ask(d.download_always_ask);
-        s.set_hide_special_partitions(d.hide_special_partitions);
+        if let Err(error) = s.save() {
+            tracing::warn!("failed to save config: {error:#}");
+        }
     }
     w.set_sftp_follow_cd(follow_cd);
     w.set_download_always_ask(d.download_always_ask);
-    w.set_hide_special_partitions(d.hide_special_partitions);
 }
 
-/// 新版本提示页：A 类 = 启动检查开关。
-fn reset_update_page(w: &AppWindow, store: &Store) {
-    let d = crate::config::ConfigFile::default();
-    {
-        let mut s = store.borrow_mut();
-        s.set_update_check_enabled(!d.update_check_disabled);
-    }
-    w.set_update_check_enabled(!d.update_check_disabled);
-}
 
 pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &AppContext) {
     let AppContext {
@@ -521,6 +531,16 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             let mut s = store.borrow_mut();
             s.set_collapse_sidebar_default(v);
             let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_set_animations_enabled(move |v| {
+            let mut s = store.borrow_mut();
+            s.set_animations_enabled(v);
+            if let Err(error) = s.save() {
+                tracing::warn!("failed to save config: {error:#}");
+            }
         });
     }
     {
@@ -1420,12 +1440,15 @@ mod tests {
     }
 
     /// 反向保障：已知的页面 id 不能写错（否则 UI 传来的字符串永远匹配不上）。
+    ///
+    /// 注意规格：WSL / 同步 / 新版本提示三页没有「还原本页默认」按钮 ——
+    /// "update" 因此必须**不可**解析（曾经存在，2026-09 按规格移除）。
     #[test]
     fn known_page_ids_round_trip() {
-        for id in ["terminal", "appearance", "layout", "transfer", "update"] {
+        for id in ["terminal", "appearance", "layout", "transfer"] {
             assert!(SettingsPage::parse(id).is_some(), "{id} 应当可解析");
         }
-        for id in ["", "wsl", "sync", "Terminal", "terminals"] {
+        for id in ["", "wsl", "sync", "update", "Terminal", "terminals"] {
             assert!(SettingsPage::parse(id).is_none(), "{id} 不应可解析");
         }
     }

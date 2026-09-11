@@ -466,6 +466,8 @@ export component InterfacePanel inherits Rectangle {
     callback reset-page(string);   // 一键还原本页默认（page-id）
     // 两段式还原确认状态：第一次点击"上膛"，再次点击执行（避免误触）
     property <bool> reset-armed: false;
+    // 动画开关此前只写 Slint 全局、从不持久化；现在同时通知 Rust 存入 config。
+    callback set-animations-enabled(bool);
 
     HorizontalLayout {
         // --- Left nav ------------------------------------------------------
@@ -1213,6 +1215,8 @@ export component InterfacePanel inherits Rectangle {
                         on: AnimationSettings.enabled;
                         toggled => {
                             AnimationSettings.enabled = !AnimationSettings.enabled;
+                            // 持久化：此前这个开关只改 Slint 全局，重启即回。
+                            root.set-animations-enabled(AnimationSettings.enabled);
                         }
                     }
                 }
@@ -1639,24 +1643,6 @@ export component InterfacePanel inherits Rectangle {
                                 color: Theme.text-primary;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
-                            }
-                        }
-                    }
-                }
-            
-                // ── 还原本页默认（更新页）────────────────
-                HorizontalLayout {
-                    padding-top: 12px;
-                    padding-bottom: 4px;
-                    Rectangle { horizontal-stretch: 1; }
-                    GhostButton {
-                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
-                        clicked => {
-                            if (root.reset-armed) {
-                                root.reset-armed = false;
-                                root.reset-page("update");
-                            } else {
-                                root.reset-armed = true;
                             }
                         }
                     }

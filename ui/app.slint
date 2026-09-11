@@ -1,5 +1,8 @@
 // Embedded cross-platform fonts (compile-time): terminal monospace + UI icons.
 import { AnimationSettings } from "theme.slint";
+// 再导出：Rust 侧需要通过 `window.global::<AnimationSettings>()` 读写动画开关
+// （设置 → 外观 → 动画，以及「还原本页默认」要把它恢复为开启）。
+export { AnimationSettings }
 // Embedding means Windows / Linux / macOS all render the same glyphs without
 // relying on Consolas / Segoe MDL2 Assets being installed.
 //
@@ -573,6 +576,7 @@ export component AppWindow inherits Window {
     callback set-convert-eol(bool);                 // persist LF→CRLF
     callback set-osc52-clipboard(bool);             // persist OSC 52 toggle
     callback set-hide-special-partitions(bool);      // persist partition hiding
+    callback set-animations-enabled(bool);           // persist Interface › Animations
     callback set-mount-filter(string);               // persist mount point filter
     callback add-output-highlight-rule(string, bool, bool, bool, string) -> bool;
     callback remove-output-highlight-rule(int);
@@ -1713,7 +1717,10 @@ export component AppWindow inherits Window {
                     tunnels: term.tunnels;
                     quick-commands: root.quick-commands;
                     quick-sidebar-enabled: root.quick-commands-as-sidebar;
-                    quick-panel-docked: root.quick-panel-open;
+                    // Quick 入口按钮只在「快捷命令未停靠为侧栏」时显示。
+                    // 此前误绑 quick-panel-open：布局还原把 as-sidebar 关掉之后，
+                    // 侧栏消失而入口按钮仍被隐藏，快捷命令就彻底无法访问了。
+                    quick-panel-docked: root.quick-commands-as-sidebar && root.quick-panel-open;
                     cmd-bar-hidden: root.cmd-bar-hidden;
                     // Per-session zoom override wins over the global size.
                     term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : root.term-font-size / 1px;
@@ -4586,6 +4593,7 @@ export component AppWindow inherits Window {
                     set-convert-eol(v) => { root.set-convert-eol(v); }
                     set-osc52-clipboard(v) => { root.set-osc52-clipboard(v); }
                     set-hide-special-partitions(v) => { root.set-hide-special-partitions(v); }
+                    set-animations-enabled(v) => { root.set-animations-enabled(v); }
                     set-mount-filter(v) => { root.set-mount-filter(v); }
                     add-output-highlight-rule(pattern, regex, case-sensitive, whole-line, color) => {
                         root.add-output-highlight-rule(
