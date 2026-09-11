@@ -3,6 +3,12 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [Unreleased]
+
+### 修复 / Fixed
+
+- **修复：设置 → 布局 → 「还原本页默认」会导致布局错乱（面板相互重叠）。** 布局是派生状态：`sidebar_dock` / `welcome_as_sidebar` 变更之后，面板停靠边的冲突消解、各面板几何量与窗格树都必须重算。此前还原只写入了 5 个属性 —— 既没做停靠冲突消解（两个展开面板可能挤到同一条边），也没把 welcome 页在侧栏与窗格树之间迁移，更没触发 `refresh_panes`；此外还原根本没有写盘，重启即回退。现在抽取启动时的布局播种为 `apply_layout_prefs` 并在还原时复用（含停靠冲突消解），整个视觉迁移按运行时开关的既有模式延迟一帧执行（规避 #323 的递归销毁），并补上持久化。**Fixed: resetting Settings → Layout corrupted the layout (panels overlapped).** Layout is derived state: after `sidebar_dock` / `welcome_as_sidebar` change, the dock-edge conflict resolution, per-panel geometry and the pane tree must all be recomputed. The reset only wrote five properties — no dock-conflict resolution (two expanded panels could land on the same edge), no moving of the welcome page between the sidebar and the pane tree, and no `refresh_panes`; it also never persisted, so a restart silently reverted it. The startup layout seeding is now extracted as `apply_layout_prefs` and reused by the reset, the whole visual transition is deferred by one frame following the established runtime-toggle pattern (avoiding #323's recursive teardown), and the change is persisted.
+
 ## [0.7.6] - 2026-09-11
 
 ### 新增 / Added

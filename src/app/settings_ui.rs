@@ -44,7 +44,80 @@ impl SettingsPage {
 }
 
 /// Dispatch one `reset-page` request from the UI to the page that owns it.
-fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, page: &str) {
+/// Re-apply the persisted layout preferences to the live window: panel docking
+/// sides and sizes, collapse states, and — critically — the conflict resolution
+/// between panels that would otherwise share the same dock edge. Two expanded
+/// panels docked on one side overlap, which is exactly the "broken layout"
+/// reported after resetting the layout page.
+///
+/// Shared by startup seeding and by the layout page's "restore defaults".
+fn apply_layout_prefs(w: &AppWindow, store: &Store) {
+    let s = store.borrow();
+    let collapse_sidebar = s.collapse_sidebar_default();
+    let collapse_sftp = s.collapse_sftp_default();
+    let sidebar_dock = s.sidebar_dock();
+    let welcome_as_sidebar = s.welcome_as_sidebar();
+    let quick_commands_as_sidebar = s.quick_commands_as_sidebar();
+    let quick_panel_open = quick_commands_as_sidebar && s.quick_panel_open();
+    let quick_panel_collapsed = s.quick_panel_collapsed();
+    let quick_panel_dock = s.quick_panel_dock();
+    let welcome_sidebar_dock = s.welcome_sidebar_dock();
+    let mut sidebar_collapsed = s.sidebar_collapsed().unwrap_or(collapse_sidebar);
+    let mut welcome_collapsed = s.welcome_collapsed().unwrap_or(false);
+    if welcome_as_sidebar
+        && sidebar_dock == welcome_sidebar_dock
+        && !sidebar_collapsed
+        && !welcome_collapsed
+    {
+        sidebar_collapsed = true;
+    }
+    if quick_panel_open && !quick_panel_collapsed {
+        if sidebar_dock == quick_panel_dock {
+            sidebar_collapsed = true;
+        }
+        if welcome_as_sidebar && welcome_sidebar_dock == quick_panel_dock {
+            welcome_collapsed = true;
+        }
+    }
+    w.set_collapse_sidebar_default(collapse_sidebar);
+    w.set_collapse_sftp_default(collapse_sftp);
+    // Restore the persisted panel docking layout (#dock).
+    w.set_sidebar_width(s.sidebar_width());
+    w.set_sidebar_height(s.sidebar_height());
+    w.set_sidebar_dock(sidebar_dock.into());
+    w.set_sftp_panel_width(s.sftp_panel_width());
+    w.set_sftp_panel_height(s.sftp_panel_height());
+    w.set_sftp_dock(s.sftp_dock().into());
+    w.set_quick_commands_as_sidebar(quick_commands_as_sidebar);
+    w.set_quick_panel_open(quick_panel_open);
+    w.set_quick_panel_collapsed(quick_panel_collapsed);
+    w.set_quick_panel_width(s.quick_panel_width());
+    w.set_quick_panel_height(s.quick_panel_height());
+    w.set_quick_panel_dock(quick_panel_dock.into());
+    w.set_welcome_as_sidebar(welcome_as_sidebar);
+    w.set_welcome_sidebar_width(s.welcome_sidebar_width());
+    w.set_welcome_sidebar_dock(welcome_sidebar_dock.into());
+    w.set_welcome_collapsed(welcome_collapsed);
+    w.set_sidebar_collapsed(sidebar_collapsed);
+    w.set_wallpaper_overlay(s.wallpaper_overlay());
+    w.set_update_check_enabled(s.update_check_enabled()); // #184
+    if collapse_sftp {
+        w.set_sftp_collapsed(true);
+        w.set_sftp_saved_height(s.sftp_panel_height());
+    }
+}
+
+/// 布局迁移需要的句柄（全是 `Rc`，克隆廉价）。
+#[derive(Clone)]
+struct LayoutRefs {
+    layout: Rc<RefCell<crate::layout::Layout>>,
+    content_size: Rc<std::cell::Cell<(f32, f32)>>,
+    tabs_model: Rc<VecModel<TabInfo>>,
+    panes_model: Rc<VecModel<PaneInfo>>,
+    splitters_model: Rc<VecModel<SplitterInfo>>,
+}
+
+fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &LayoutRefs, page: &str) {
     let Some(page) = SettingsPage::parse(page) else {
         tracing::warn!("reset-page: unknown settings page {page:?}");
         return;
@@ -52,7 +125,7 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, page: &str) {
     match page {
         SettingsPage::Terminal => reset_terminal_page(w, store, bufs),
         SettingsPage::Appearance => reset_appearance_page(w, store),
-        SettingsPage::Layout => reset_layout_page(w, store),
+        SettingsPage::Layout => reset_layout_page(w, store, refs),
         SettingsPage::Transfer => reset_transfer_page(w, store),
         SettingsPage::Update => reset_update_page(w, store),
     }
@@ -130,7 +203,7 @@ fn reset_appearance_page(w: &AppWindow, store: &Store) {
 
 /// 布局页：侧栏开关 / 默认折叠 / 停靠边。
 /// 注：侧栏宽度是拖拽产生的交互状态（设置页无对应控件），不纳入还原。
-fn reset_layout_page(w: &AppWindow, store: &Store) {
+fn reset_layout_page(w: &AppWindow, store: &Store, refs: &LayoutRefs) {
     let d = crate::config::ConfigFile::default();
     {
         let mut s = store.borrow_mut();
@@ -139,12 +212,40 @@ fn reset_layout_page(w: &AppWindow, store: &Store) {
         s.set_collapse_sidebar_default(d.collapse_sidebar_default);
         s.set_collapse_sftp_default(d.collapse_sftp_default);
         s.set_sidebar_dock(d.sidebar_dock.clone());
+        if let Err(error) = s.save() {
+            tracing::warn!("failed to save config: {error:#}");
+        }
     }
-    w.set_welcome_as_sidebar(d.welcome_as_sidebar);
-    w.set_quick_commands_as_sidebar(d.quick_commands_as_sidebar);
-    w.set_collapse_sidebar_default(d.collapse_sidebar_default);
-    w.set_collapse_sftp_default(d.collapse_sftp_default);
-    w.set_sidebar_dock(d.sidebar_dock.clone().into());
+    // 布局是派生状态：sidebar_dock / welcome_as_sidebar 变了之后，dock 冲突消解、
+    // 各面板几何量、窗格树都必须重算 —— 只 set 属性会留下陈旧的窗格模型，表现为
+    // 面板相互重叠（用户报告的布局错乱）。而 welcome_as_sidebar 又是双向绑定
+    // 属性，在回调里直接改会递归销毁 Welcome 子树（#323），所以整个视觉迁移
+    // 延迟一帧执行 —— 与运行时开关 on_set_welcome_as_sidebar 同一套路。
+    let weak = w.as_weak();
+    let r_store = (*store).clone();
+    let r = refs.clone();
+    slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+        let Some(w) = weak.upgrade() else { return };
+        apply_layout_prefs(&w, &r_store);
+        // welcome 页在侧栏与窗格树之间迁移，必须与属性保持一致。
+        let welcome = r_store.borrow().welcome_as_sidebar();
+        {
+            let mut lay = r.layout.borrow_mut();
+            if welcome {
+                lay.remove_tab("welcome");
+            } else if lay.leaf_of_tab("welcome").is_none() {
+                lay.add_tab("welcome".into());
+            }
+        }
+        refresh_panes(
+            &w,
+            &r.layout.borrow(),
+            r.content_size.get(),
+            &r.tabs_model,
+            &r.panes_model,
+            &r.splitters_model,
+        );
+    });
 }
 
 /// 传输页：A 类 = 跟随 cd / 下载询问 / 隐藏特殊分区。B 类保留：挂载点过滤。
@@ -404,63 +505,12 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
 
     // Interface setting: collapse the sidebars by default (#78). Seed the
     // checkboxes, apply the collapsed state once at startup, and persist toggles.
+    apply_layout_prefs(window, store);
+    // Capture the user's preferred size. The first native Resized event
+    // drives restoration below; this is deterministic and avoids guessing
+    // how long Slint/window-manager initialization takes (#278).
     {
         let s = store.borrow();
-        let collapse_sidebar = s.collapse_sidebar_default();
-        let collapse_sftp = s.collapse_sftp_default();
-        let sidebar_dock = s.sidebar_dock();
-        let welcome_as_sidebar = s.welcome_as_sidebar();
-        let quick_commands_as_sidebar = s.quick_commands_as_sidebar();
-        let quick_panel_open = quick_commands_as_sidebar && s.quick_panel_open();
-        let quick_panel_collapsed = s.quick_panel_collapsed();
-        let quick_panel_dock = s.quick_panel_dock();
-        let welcome_sidebar_dock = s.welcome_sidebar_dock();
-        let mut sidebar_collapsed = s.sidebar_collapsed().unwrap_or(collapse_sidebar);
-        let mut welcome_collapsed = s.welcome_collapsed().unwrap_or(false);
-        if welcome_as_sidebar
-            && sidebar_dock == welcome_sidebar_dock
-            && !sidebar_collapsed
-            && !welcome_collapsed
-        {
-            sidebar_collapsed = true;
-        }
-        if quick_panel_open && !quick_panel_collapsed {
-            if sidebar_dock == quick_panel_dock {
-                sidebar_collapsed = true;
-            }
-            if welcome_as_sidebar && welcome_sidebar_dock == quick_panel_dock {
-                welcome_collapsed = true;
-            }
-        }
-        window.set_collapse_sidebar_default(collapse_sidebar);
-        window.set_collapse_sftp_default(collapse_sftp);
-        // Restore the persisted panel docking layout (#dock).
-        window.set_sidebar_width(s.sidebar_width());
-        window.set_sidebar_height(s.sidebar_height());
-        window.set_sidebar_dock(sidebar_dock.into());
-        window.set_sftp_panel_width(s.sftp_panel_width());
-        window.set_sftp_panel_height(s.sftp_panel_height());
-        window.set_sftp_dock(s.sftp_dock().into());
-        window.set_quick_commands_as_sidebar(quick_commands_as_sidebar);
-        window.set_quick_panel_open(quick_panel_open);
-        window.set_quick_panel_collapsed(quick_panel_collapsed);
-        window.set_quick_panel_width(s.quick_panel_width());
-        window.set_quick_panel_height(s.quick_panel_height());
-        window.set_quick_panel_dock(quick_panel_dock.into());
-        window.set_welcome_as_sidebar(welcome_as_sidebar);
-        window.set_welcome_sidebar_width(s.welcome_sidebar_width());
-        window.set_welcome_sidebar_dock(welcome_sidebar_dock.into());
-        window.set_welcome_collapsed(welcome_collapsed);
-        window.set_sidebar_collapsed(sidebar_collapsed);
-        window.set_wallpaper_overlay(s.wallpaper_overlay());
-        window.set_update_check_enabled(s.update_check_enabled()); // #184
-        if collapse_sftp {
-            window.set_sftp_collapsed(true);
-            window.set_sftp_saved_height(s.sftp_panel_height());
-        }
-        // Capture the user's preferred size. The first native Resized event
-        // drives restoration below; this is deterministic and avoids guessing
-        // how long Slint/window-manager initialization takes (#278).
         let (ww, wh) = s.window_size();
         let preferred = (ww > 0.0 && wh > 0.0).then_some((ww, wh));
         pending_window_size_restore.set(preferred);
@@ -818,9 +868,16 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         let weak = window.as_weak();
         let r_store = store.clone();
         let r_bufs = bufs.clone();
+        let r_refs = LayoutRefs {
+            layout: layout.clone(),
+            content_size: content_size.clone(),
+            tabs_model: tabs_model.clone(),
+            panes_model: panes_model.clone(),
+            splitters_model: splitters_model.clone(),
+        };
         window.on_reset_page(move |page: slint::SharedString| {
             let Some(w) = weak.upgrade() else { return };
-            reset_page(&w, &r_store, &r_bufs, page.as_str());
+            reset_page(&w, &r_store, &r_bufs, &r_refs, page.as_str());
         });
     }
     {
