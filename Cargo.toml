@@ -1,6 +1,6 @@
 [package]
 name = "rudder"
-version = "0.7.5"
+version = "0.7.6"
 edition = "2024"
 authors = ["Rudder contributors"]
 description = "A lightweight FinalShell-style SSH/terminal client written in Rust + Slint"
@@ -164,6 +164,21 @@ opt-level = 3
 opt-level = 3
 [profile.release.package.alacritty_terminal]
 opt-level = 3
+
+# ── Profiling (phase-3 flame graphs) ─────────────────────────────────────────
+# `cargo build --profile profiling` produces a binary that behaves exactly like
+# the release build (same LTO / codegen-units / opt-level) but keeps debug
+# symbols, which `strip = true` would otherwise remove — without them every
+# frame in a flame graph reads `[unknown]`.
+#
+#   cargo build --profile profiling
+#   samply record ./target/profiling/rudder
+#
+# Do NOT profile the default `release` binary: it is stripped on purpose.
+[profile.profiling]
+inherits = "release"
+debug = 2
+strip = false
 
 [profile.dev]
 opt-level = 0
