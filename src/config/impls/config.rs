@@ -36,6 +36,8 @@ use chacha20poly1305::{
 use directories::ProjectDirs;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+
+use super::settings::{AppearanceSettings, LayoutSettings, SyncSettings, TerminalSettings, TransferSettings, UpdateSettings};
 use uuid::Uuid;
 use zeroize::Zeroize;
 
@@ -372,17 +374,8 @@ impl SessionKind {
     }
 }
 
-fn default_output_highlight_preset() -> String {
-    "builtin".to_string()
-}
 
-fn default_convert_eol() -> bool {
-    true
-}
 
-fn default_font_family() -> String {
-    "JetBrains Mono".to_string()
-}
 
 fn default_baud() -> u32 {
     115_200
@@ -396,20 +389,6 @@ fn default_stop_bits() -> u8 {
 fn default_parity() -> String {
     "none".to_string()
 }
-fn default_scrollback_lines() -> usize {
-    5000
-}
-/// Ships with the "幻想 3048" sci-fi wallpaper on by default (a dark theme). New
-/// installs and users upgrading from before the wallpaper feature get it; once
-/// the user picks anything (including "无"/none, stored as ""), their choice is
-/// saved and sticks.
-fn default_wallpaper() -> String {
-    // Serde default for the `wallpaper` field: kept at the old "幻想 3048" so an
-    // *existing* config that predates the field stays on tech — `migrate_defaults`
-    // then advances default-following users through the migration chain. Brand-new
-    // installs get the current default straight from `fresh_config`.
-    "builtin:dark".to_string()
-}
 
 /// Bump when `migrate_defaults` gains a new one-time default-layout change.
 pub const DEFAULTS_REV: u32 = 5;
@@ -419,7 +398,7 @@ const PREVIOUS_DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - PREVIOUS_DEFAULT_WALLPAPER
 /// 上一个出厂默认：15%（overlay 0.85）。rev 5 迁移用它识别仍停留在旧默认的用户。
 const PREVIOUS_DEFAULT_WALLPAPER_OVERLAY_015: f32 = 0.85;
 const DEFAULT_WALLPAPER_TRANSPARENCY: f32 = 0.30;
-const DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - DEFAULT_WALLPAPER_TRANSPARENCY;
+pub(crate) const DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - DEFAULT_WALLPAPER_TRANSPARENCY;
 
 fn normalize_hex_color(value: &str) -> Option<String> {
     let digits = value.trim().strip_prefix('#').unwrap_or(value.trim());
@@ -429,47 +408,17 @@ fn normalize_hex_color(value: &str) -> Option<String> {
     Some(format!("#{}", digits.to_ascii_uppercase()))
 }
 
-/// A brand-new config (no file yet, or the old one was corrupt). Seeds the
-/// new-user default layout (#new-user-defaults): ms wallpaper, welcome page as
-/// a left sidebar, resource panel docked right, 15% wallpaper transparency, and
-/// marks the migration done so it isn't re-applied.
+/// 全新配置（文件不存在，或原文件损坏）。
+///
+/// 分域之后这里只剩"与具体设置无关"的两件事：
+/// * 各个设置域的出厂默认由 `TerminalSettings::default()` 等**唯一出处**提供，
+///   `ConfigFile::default()`（派生）会转发到它们；
+/// * 这里只负责标记默认值迁移已完成。
+///
+/// 此前这个函数要手工罗列 20 多个字段，而漏掉任何一项都会退回派生 Default 的
+/// 0 / false / 空串 —— 「还原本页默认」出现过的白纸化 bug 正是这么来的。
 pub(crate) fn fresh_config() -> ConfigFile {
     ConfigFile {
-        // ── 终端页 ──
-        // 注意：这里必须显式写出每一项。`..ConfigFile::default()` 是派生 Default
-        //（bool=false / 数值=0 / 字符串=""），不是出厂默认 —— font_size=0 虽有
-        // getter 兜底成 13，但 scrollback_lines=0 会被 setter clamp 成 100、
-        // convert_eol/osc52 会变成关闭。
-        font_family: "JetBrains Mono".to_string(),
-        font_size: 13,
-        terminal_bold: false,
-        terminal_cursor_style: "bar".to_string(),
-        terminal_cursor_color: "#FFFFFF".to_string(),
-        scrollback_lines: 5000,
-        convert_eol: true,
-        osc52_clipboard: true,
-        output_highlight_disabled: false,
-        json_format_disabled: false,
-        output_highlight_preset: "builtin".to_string(),
-        // ── 外观页 ──
-        ui_font_family: String::new(), // 空 = 按平台默认字体
-        wallpaper: "builtin:dark".to_string(),
-        wallpaper_overlay: DEFAULT_WALLPAPER_OVERLAY,
-        renderer_mode: String::new(), // 空 = 平台默认（macOS → femtovg）
-        ui_scale: 100,
-        panel_font: 100,
-        hide_special_partitions: true,
-        animations_disabled: false,
-        // ── 传输页 ──
-        sftp_no_follow_cd: false, // 存储 反义：false = 跟随 cd 开启
-        download_always_ask: false,
-        // ── 布局页 ──
-        collapse_sidebar_default: false,
-        collapse_sftp_default: false,
-        quick_commands_as_sidebar: false,
-        welcome_as_sidebar: false,
-        // ── 布局/其它 ──
-        sidebar_dock: "right".to_string(),
         defaults_rev: DEFAULTS_REV,
         ..ConfigFile::default()
     }
@@ -487,46 +436,46 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     // ids no longer exist in the picker, so any stored reference would render
     // nothing (#wallpaper-trim).
     if matches!(
-        cfg.wallpaper.as_str(),
+        cfg.appearance.wallpaper.as_str(),
         "builtin:tech" | "builtin:miku" | "builtin:ms"
     ) {
-        cfg.wallpaper = "builtin:dark".to_string();
+        cfg.appearance.wallpaper = "builtin:dark".to_string();
     }
     // rev 1: miku / welcome-as-sidebar / right-docked resources / wallpaper overlay.
     if cfg.defaults_rev < 1 {
         // Overlay still unset -> current default.
-        if cfg.wallpaper_overlay <= 0.0 {
-            cfg.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
+        if cfg.appearance.wallpaper_overlay <= 0.0 {
+            cfg.appearance.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
         }
         // Never enabled the welcome sidebar → enable it.
-        if !cfg.welcome_as_sidebar {
-            cfg.welcome_as_sidebar = true;
+        if !cfg.layout.welcome_as_sidebar {
+            cfg.layout.welcome_as_sidebar = true;
         }
         // Never moved the resource panel (empty = the old left default) → right.
-        if cfg.sidebar_dock.trim().is_empty() {
-            cfg.sidebar_dock = "right".to_string();
+        if cfg.layout.sidebar_dock.trim().is_empty() {
+            cfg.layout.sidebar_dock = "right".to_string();
         }
     }
     // rev 2: settings show wallpaper transparency, while rev 1 accidentally
     // stored the default as panel alpha 0.38, so it displayed as ~62%.
     if cfg.defaults_rev < 2
-        && (cfg.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY).abs() < 0.005
+        && (cfg.appearance.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY).abs() < 0.005
     {
-        cfg.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
+        cfg.appearance.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
     }
     // rev 3: reduce the default transparency from 38% to 15%. Only advance
     // users still on the previous default; preserve every custom slider value.
     if cfg.defaults_rev < 3
-        && (cfg.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_OVERLAY).abs() < 0.005
+        && (cfg.appearance.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_OVERLAY).abs() < 0.005
     {
-        cfg.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
+        cfg.appearance.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
     }
     // rev 5: 壁纸遮罩透明度出厂默认 15% → 30%。只迁移仍停留在旧默认（overlay
     // 0.85）的用户；自定义滑条值一律保留。
     if cfg.defaults_rev < 5
-        && (cfg.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_OVERLAY_015).abs() < 0.005
+        && (cfg.appearance.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_OVERLAY_015).abs() < 0.005
     {
-        cfg.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
+        cfg.appearance.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
     }
     cfg.defaults_rev = DEFAULTS_REV;
     true
@@ -832,77 +781,6 @@ pub struct ConfigFile {
     /// default WSL entry for backwards compatibility.
     #[serde(default)]
     pub wsl_profiles: Vec<WslProfile>,
-    /// Preset SFTP download directory. Empty = ask each time.
-    #[serde(default)]
-    pub download_dir: String,
-    /// UI language code: "zh" (default) or "en".
-    #[serde(default)]
-    pub language: String,
-    /// Theme preference: "system" (default) | "dark" | "light".
-    #[serde(default)]
-    pub theme_pref: String,
-    /// Platform renderer preference. Windows uses software/auto/gpu; macOS uses
-    /// femtovg/skia. Missing or foreign-platform values use the platform default.
-    #[serde(default)]
-    pub renderer_mode: String,
-    /// Terminal font family. Empty = the built-in default ("Meatshell Mono").
-    #[serde(default = "default_font_family")]
-    pub font_family: String,
-    /// UI font family for the application interface (menus, settings, dialogs).
-    /// Empty = auto-detect the best system CJK font at startup.
-    #[serde(default)]
-    pub ui_font_family: String,
-    /// Terminal font size in px. 0 = the built-in default.
-    #[serde(default)]
-    pub font_size: u32,
-    /// Force regular terminal text to render with a bold face (#262).
-    #[serde(default)]
-    pub terminal_bold: bool,
-    /// Terminal scrollback lines (0 = no scrollback). Default 100000.
-    #[serde(default = "default_scrollback_lines")]
-    pub scrollback_lines: usize,
-    /// Convert LF to CRLF in pasted / typed text for programs that expect
-    /// Windows line endings (e.g. PowerShell ISE, legacy cmd.exe tools).
-    #[serde(default = "default_convert_eol")]
-    pub convert_eol: bool,
-    /// Allow remote programs (zellij, tmux, vim, etc.) to write clipboard
-    /// contents via OSC 52.  Disable for stricter security when you don't
-    /// need remote copy support.
-    #[serde(default = "default_true")]
-    pub osc52_clipboard: bool,
-    /// Optional WebDAV TLS certificate SHA-256 fingerprint (lowercase hex).
-    /// Empty = the accept-invalid-certs toggle stays "accept any"; when set,
-    /// only a cert with this fingerprint passes even with the toggle on.
-    #[serde(default)]
-    pub webdav_cert_pin: String,
-    /// Terminal insertion cursor shape: block (default), bar, or underline (#275).
-    #[serde(default)]
-    pub terminal_cursor_style: String,
-    /// Custom terminal cursor colour as #RRGGBB. Empty follows the theme (#275).
-    #[serde(default)]
-    pub terminal_cursor_color: String,
-    /// Stored inverted so missing/legacy config keeps the automatic plain-text
-    /// output highlighter enabled by default.
-    #[serde(default)]
-    pub output_highlight_disabled: bool,
-    /// Stored inverted so complete JSON lines are formatted and syntax-coloured
-    /// by default while still allowing users to preserve byte-for-byte display.
-    #[serde(default)]
-    pub json_format_disabled: bool,
-    /// Built-in output highlight preset: "builtin" (Rudder rules, default), "log", or "devops".
-    #[serde(default = "default_output_highlight_preset")]
-    pub output_highlight_preset: String,
-    /// User-defined rules applied before the selected built-in preset.
-    #[serde(default)]
-    pub output_highlight_rules: Vec<OutputHighlightRule>,
-    /// Global UI scale in percent (#100). 0 = default (100%).
-    #[serde(default)]
-    pub ui_scale: u32,
-    /// Immersive wallpaper id: "" = none, "builtin:light" / "builtin:dark" /
-    /// "builtin:dark", or a filesystem path to a custom image. Drives the
-    /// wallpaper + tinted theme. Defaults to the "幻想 3048" built-in.
-    #[serde(default = "default_wallpaper")]
-    pub wallpaper: String,
     /// Explicit session groups/folders (#41), including empty ones so a folder
     /// can exist before any session is moved into it. "default" is implicit and
     /// not stored here.
@@ -913,21 +791,6 @@ pub struct ConfigFile {
     /// `Some([])` means the user explicitly expanded every folder.
     #[serde(default)]
     pub collapsed_session_groups: Option<Vec<String>>,
-    /// Stored inverted ("don't follow") so both serde and the Default derive
-    /// yield `false` = the feature defaults to ON: the SFTP panel follows the
-    /// terminal's cd (OSC 7) unless the user opts out in Interface settings.
-    #[serde(default)]
-    pub sftp_no_follow_cd: bool,
-    /// Always prompt for the save location on each download instead of using the
-    /// preset download dir. Defaults to false (#87).
-    #[serde(default)]
-    pub download_always_ask: bool,
-    /// Hide the quick-command bar under the terminal. Defaults to false.
-    #[serde(default)]
-    pub hide_cmd_bar: bool,
-    /// Zen (focus) mode: sidebar + tab strip hidden. Defaults to false.
-    #[serde(default)]
-    pub zen_mode: bool,
     /// Saved quick commands (#55).
     #[serde(default)]
     pub quick_commands: Vec<QuickCommand>,
@@ -935,119 +798,31 @@ pub struct ConfigFile {
     /// empty quick-command groups survive and can be renamed/deleted (#55).
     #[serde(default)]
     pub quick_groups: Vec<String>,
-    /// Opt-in docked quick-command sidebar (#215). The command-bar popup remains
-    /// available until the user actually drags it into the main dock layer.
-    #[serde(default)]
-    pub quick_commands_as_sidebar: bool,
-    #[serde(default)]
-    pub quick_panel_open: bool,
-    #[serde(default)]
-    pub quick_panel_collapsed: bool,
-    #[serde(default = "default_quick_panel_width")]
-    pub quick_panel_width: f32,
-    #[serde(default = "default_quick_panel_height")]
-    pub quick_panel_height: f32,
-    #[serde(default)]
-    pub quick_panel_dock: String,
     /// Recent commands sent from the command box, oldest first, capped (#55).
     #[serde(default)]
     pub command_history: Vec<String>,
-    /// Collapse the left resource sidebar on startup (#78).
-    #[serde(default)]
-    pub collapse_sidebar_default: bool,
-    /// Last resource-sidebar collapsed state. None means fall back to
-    /// `collapse_sidebar_default` for older configs.
-    #[serde(default)]
-    pub sidebar_collapsed: Option<bool>,
-    /// User-adjustable width of the left resource sidebar, in logical pixels.
-    /// Persisted across restarts so the drag-resized width sticks.
-    #[serde(default = "default_sidebar_width")]
-    pub sidebar_width: f32,
-    /// Resource-panel docking: size when docked top/bottom, and which edge it is
-    /// docked to (left|right|top|bottom). Persisted so the layout sticks (#dock).
-    #[serde(default = "default_sidebar_height")]
-    pub sidebar_height: f32,
-    #[serde(default)]
-    pub sidebar_dock: String,
-    /// SFTP-panel docking: extents (px) and docked edge, persisted (#dock).
-    #[serde(default = "default_sftp_width")]
-    pub sftp_panel_width: f32,
-    #[serde(default = "default_sftp_height")]
-    pub sftp_panel_height: f32,
-    #[serde(default)]
-    pub sftp_dock: String,
-    /// Last window size in logical px (0 = unset → use the built-in default).
-    /// Lets users keep their preferred window size across restarts.
-    #[serde(default)]
-    pub window_width: f32,
-    #[serde(default)]
-    pub window_height: f32,
-    /// Collapse the bottom SFTP panel on startup (#78).
-    #[serde(default)]
-    pub collapse_sftp_default: bool,
-    /// When session-sync is on, also mirror SFTP uploads to the other online
-    /// sessions (same path, falling back to each panel's current dir).
-    #[serde(default)]
-    pub sync_upload: bool,
-    /// WebDAV sync settings (#185). Password is encrypted at rest like session
-    /// passwords; remote_path is the JSON export object path under the endpoint.
-    #[serde(default)]
-    pub webdav_enabled: bool,
-    #[serde(default)]
-    pub webdav_url: String,
-    #[serde(default)]
-    pub webdav_username: String,
-    #[serde(default)]
-    pub webdav_password: Secret,
-    #[serde(default)]
-    pub webdav_remote_path: String,
-    #[serde(default)]
-    pub webdav_accept_invalid_certs: bool,
-    /// Render the welcome page (session list) as a docked left sidebar instead of
-    /// a "New tab" tab (v0.5). Persisted so the layout choice sticks.
-    #[serde(default)]
-    pub welcome_as_sidebar: bool,
-    /// Width (logical px) of the welcome/session sidebar when docked (v0.5).
-    #[serde(default)]
-    pub welcome_sidebar_width: f32,
-    /// Welcome/session sidebar dock edge (left|right|top|bottom).
-    #[serde(default)]
-    pub welcome_sidebar_dock: String,
-    /// Welcome sidebar collapsed to the edge icon strip (IDEA-style) (v0.5).
-    /// None means the user has not explicitly collapsed/expanded it yet.
-    #[serde(default)]
-    pub welcome_collapsed: Option<bool>,
-    /// Frosted-panel opacity over a wallpaper (0.30–1.00); user-adjustable via the
-    /// Interface › Wallpaper opacity slider. 0 = use the current default.
-    #[serde(default)]
-    pub wallpaper_overlay: f32,
-    /// Settings-panel font scale, percent (80–160). 0 = 100% default (v0.5).
-    #[serde(default)]
-    pub panel_font: u32,
-    /// Disable the startup "new version available" check (#184). Default false =
-    /// keep checking (preserves existing behaviour for upgrading users); turning
-    /// it on stops the GitHub releases query and the banner.
-    #[serde(default)]
-    pub update_check_disabled: bool,
-    /// Disable all sidebar / panel animations (Interface › Animations). Stored
-    /// inverted so missing/legacy config keeps animations enabled. Before this
-    /// field existed the toggle was a Slint-only global and never persisted.
-    #[serde(default)]
-    pub animations_disabled: bool,
-    /// Hide EFI / temporary / swap pseudo-filesystems and very small partitions
-    /// in the system resource panel so they don't clutter the disk view.
-    #[serde(default = "default_true")]
-    pub hide_special_partitions: bool,
-    /// Only list the given mount points (space / comma / semicolon delimited).
-    /// Empty = show all detected mounts.
-    #[serde(default)]
-    pub mount_filter: String,
     /// One-time default-layout migration marker (#new-user-defaults). 0 = config
     /// predates the migration. `migrate_defaults` bumps it to `DEFAULTS_REV` after
     /// pushing the new look (default wallpaper / welcome-as-sidebar / right-docked
     /// resource panel / wallpaper overlay) to users still sitting on old defaults.
     #[serde(default)]
     pub defaults_rev: u32,
+
+    /// ── 分域设置 ────────────────────────────────────────────────────────
+    /// 每个域一个结构体，出厂默认在它自己的 `Default` 里（唯一出处）。
+    /// `flatten` 让 on-disk 仍然是平铺 key-value —— 老配置零迁移。
+    #[serde(flatten)]
+    pub terminal: TerminalSettings,
+    #[serde(flatten)]
+    pub appearance: AppearanceSettings,
+    #[serde(flatten)]
+    pub layout: LayoutSettings,
+    #[serde(flatten)]
+    pub transfer: TransferSettings,
+    #[serde(flatten)]
+    pub sync: SyncSettings,
+    #[serde(flatten)]
+    pub update: UpdateSettings,
 }
 
 /// Portable export file (issue #46): sessions with everything in plaintext
@@ -1273,8 +1048,8 @@ impl ConfigStore {
                             }
                         }
                     }
-                    if let Some(plain) = Self::try_decrypt(&key, cfg.webdav_password.as_str()) {
-                        cfg.webdav_password = Secret::new(plain);
+                    if let Some(plain) = Self::try_decrypt(&key, cfg.sync.webdav_password.as_str()) {
+                        cfg.sync.webdav_password = Secret::new(plain);
                     }
                     if undecryptable > 0 {
                         // Nothing can recover these — `save()` skips values that
@@ -1480,43 +1255,43 @@ impl ConfigStore {
     }
 
     pub fn download_dir(&self) -> &str {
-        &self.cache.download_dir
+        &self.cache.transfer.download_dir
     }
 
     pub fn set_download_dir(&mut self, dir: String) {
-        self.cache.download_dir = dir;
+        self.cache.transfer.download_dir = dir;
     }
 
     /// UI language code ("zh" default / "en").
     pub fn language(&self) -> &str {
-        if self.cache.language.is_empty() {
+        if self.cache.appearance.language.is_empty() {
             "zh"
         } else {
-            &self.cache.language
+            &self.cache.appearance.language
         }
     }
 
     pub fn set_language(&mut self, lang: String) {
-        self.cache.language = lang;
+        self.cache.appearance.language = lang;
     }
 
     /// Theme preference: "system" (default) | "dark" | "light".
     pub fn theme_pref(&self) -> &str {
-        if self.cache.theme_pref.is_empty() {
+        if self.cache.appearance.theme_pref.is_empty() {
             "system"
         } else {
-            &self.cache.theme_pref
+            &self.cache.appearance.theme_pref
         }
     }
 
     pub fn set_theme_pref(&mut self, pref: String) {
-        self.cache.theme_pref = pref;
+        self.cache.appearance.theme_pref = pref;
     }
 
     /// Renderer preference for the current platform.
     #[cfg(target_os = "macos")]
     pub fn renderer_mode(&self) -> &str {
-        match self.cache.renderer_mode.as_str() {
+        match self.cache.appearance.renderer_mode.as_str() {
             "skia" => "skia",
             _ => "femtovg",
         }
@@ -1526,7 +1301,7 @@ impl ConfigStore {
     /// preserve the high-DPI/VM compatibility from #224.
     #[cfg(target_os = "windows")]
     pub fn renderer_mode(&self) -> &str {
-        match self.cache.renderer_mode.as_str() {
+        match self.cache.appearance.renderer_mode.as_str() {
             "auto" => "auto",
             "gpu" => "gpu",
             _ => "software",
@@ -1537,7 +1312,7 @@ impl ConfigStore {
     /// settings entry. Keep that behaviour for existing configurations.
     #[cfg(target_os = "linux")]
     pub fn renderer_mode(&self) -> &str {
-        match self.cache.renderer_mode.as_str() {
+        match self.cache.appearance.renderer_mode.as_str() {
             "gpu" => "gpu",
             "software" => "software",
             _ => "auto",
@@ -1546,7 +1321,7 @@ impl ConfigStore {
 
     #[cfg(target_os = "macos")]
     pub fn set_renderer_mode(&mut self, mode: String) {
-        self.cache.renderer_mode = match mode.as_str() {
+        self.cache.appearance.renderer_mode = match mode.as_str() {
             "skia" => "skia".into(),
             _ => "femtovg".into(),
         };
@@ -1554,7 +1329,7 @@ impl ConfigStore {
 
     #[cfg(target_os = "windows")]
     pub fn set_renderer_mode(&mut self, mode: String) {
-        self.cache.renderer_mode = match mode.as_str() {
+        self.cache.appearance.renderer_mode = match mode.as_str() {
             "auto" => "auto".into(),
             "gpu" => "gpu".into(),
             _ => "software".into(),
@@ -1563,7 +1338,7 @@ impl ConfigStore {
 
     #[cfg(target_os = "linux")]
     pub fn set_renderer_mode(&mut self, mode: String) {
-        self.cache.renderer_mode = match mode.as_str() {
+        self.cache.appearance.renderer_mode = match mode.as_str() {
             "gpu" => "gpu".into(),
             "software" => "software".into(),
             _ => "auto".into(),
@@ -1572,118 +1347,121 @@ impl ConfigStore {
 
     /// Terminal font family ("" = built-in default).
     pub fn font_family(&self) -> &str {
-        &self.cache.font_family
+        &self.cache.terminal.font_family
     }
 
     pub fn set_font_family(&mut self, family: String) {
-        self.cache.font_family = family;
+        self.cache.terminal.font_family = family;
     }
 
     /// UI font family (empty = auto-detect at startup).
     pub fn ui_font_family(&self) -> &str {
-        if self.cache.ui_font_family.is_empty() {
+        if self.cache.appearance.ui_font_family.is_empty() {
             ""
         } else {
-            &self.cache.ui_font_family
+            &self.cache.appearance.ui_font_family
         }
     }
 
     pub fn set_ui_font_family(&mut self, family: String) {
-        self.cache.ui_font_family = family;
+        self.cache.appearance.ui_font_family = family;
     }
 
     /// Terminal font size in px (falls back to 13 when unset).
     pub fn font_size(&self) -> u32 {
-        if self.cache.font_size == 0 {
+        if self.cache.terminal.font_size == 0 {
             13
         } else {
-            self.cache.font_size
+            self.cache.terminal.font_size
         }
     }
 
     pub fn set_font_size(&mut self, size: u32) {
-        self.cache.font_size = size.clamp(8, 32);
+        self.cache.terminal.font_size = size.clamp(8, 32);
     }
 
     /// Force regular terminal text to render with a bold face (#262).
     pub fn terminal_bold(&self) -> bool {
-        self.cache.terminal_bold
+        self.cache.terminal.terminal_bold
     }
 
     pub fn set_terminal_bold(&mut self, bold: bool) {
-        self.cache.terminal_bold = bold;
+        self.cache.terminal.terminal_bold = bold;
     }
 
     pub fn scrollback_lines(&self) -> usize {
-        self.cache.scrollback_lines
+        self.cache.terminal.scrollback_lines
     }
 
     pub fn set_scrollback_lines(&mut self, lines: usize) {
-        self.cache.scrollback_lines = lines.clamp(100, 1_000_000);
+        self.cache.terminal.scrollback_lines = lines.clamp(100, 1_000_000);
     }
 
     /// Convert LF to CRLF in pasted/typed text.
     pub fn convert_eol(&self) -> bool {
-        self.cache.convert_eol
+        self.cache.terminal.convert_eol
     }
     pub fn set_convert_eol(&mut self, v: bool) {
-        self.cache.convert_eol = v;
+        self.cache.terminal.convert_eol = v;
     }
     /// Allow OSC 52 clipboard writes from remote programs.
     pub fn osc52_clipboard(&self) -> bool {
-        self.cache.osc52_clipboard
+        self.cache.terminal.osc52_clipboard
     }
 
     pub fn webdav_cert_pin(&self) -> String {
-        self.cache.webdav_cert_pin.clone()
+        self.cache.sync.webdav_cert_pin.clone()
     }
 
     pub fn set_osc52_clipboard(&mut self, v: bool) {
-        self.cache.osc52_clipboard = v;
+        self.cache.terminal.osc52_clipboard = v;
     }
     /// Hide special partitions in the resource panel.
     pub fn hide_special_partitions(&self) -> bool {
-        self.cache.hide_special_partitions
+        self.cache.appearance.hide_special_partitions
     }
     pub fn set_hide_special_partitions(&mut self, v: bool) {
-        self.cache.hide_special_partitions = v;
+        self.cache.appearance.hide_special_partitions = v;
     }
     /// All sidebar / panel animations enabled (Interface › Animations).
     pub fn animations_enabled(&self) -> bool {
-        !self.cache.animations_disabled
+        !self.cache.appearance.animations_disabled
     }
     pub fn set_animations_enabled(&mut self, v: bool) {
-        self.cache.animations_disabled = !v;
+        self.cache.appearance.animations_disabled = !v;
     }
     /// Mount-point filter for the resource panel.
     pub fn mount_filter(&self) -> &str {
-        &self.cache.mount_filter
+        &self.cache.appearance.mount_filter
     }
     pub fn set_mount_filter(&mut self, v: String) {
-        self.cache.mount_filter = v;
+        self.cache.appearance.mount_filter = v;
     }
 
     /// Selected terminal insertion cursor shape. Legacy and invalid values use
     /// the existing block cursor so upgrades preserve the current appearance.
     pub fn terminal_cursor_style(&self) -> &str {
-        match self.cache.terminal_cursor_style.as_str() {
-            "bar" => "bar",
+        match self.cache.terminal.terminal_cursor_style.as_str() {
+            "block" => "block",
             "underline" => "underline",
-            _ => "block",
+            // 未知值回到出厂默认（竖线），不再硬编码成另一种形状 ——
+            // 否则"默认值"与"非法值兜底"会是两个不同的答案。
+            _ => "bar",
         }
     }
 
     pub fn set_terminal_cursor_style(&mut self, style: String) {
-        self.cache.terminal_cursor_style = match style.as_str() {
-            "bar" => "bar".into(),
+        self.cache.terminal.terminal_cursor_style = match style.as_str() {
+            "block" => "block".into(),
             "underline" => "underline".into(),
-            _ => "block".into(),
+            // 非法值回落出厂默认（竖线），与 getter 的兜底保持一致。
+            _ => "bar".into(),
         };
     }
 
     pub fn terminal_cursor_color(&self) -> &str {
-        if normalize_hex_color(&self.cache.terminal_cursor_color).is_some() {
-            &self.cache.terminal_cursor_color
+        if normalize_hex_color(&self.cache.terminal.terminal_cursor_color).is_some() {
+            &self.cache.terminal.terminal_cursor_color
         } else {
             ""
         }
@@ -1693,33 +1471,33 @@ impl ConfigStore {
         let Some(normalized) = normalize_hex_color(color) else {
             return false;
         };
-        self.cache.terminal_cursor_color = normalized;
+        self.cache.terminal.terminal_cursor_color = normalized;
         true
     }
 
     /// Whether client-side highlighting of otherwise unstyled output is active.
     pub fn output_highlight_enabled(&self) -> bool {
-        !self.cache.output_highlight_disabled
+        !self.cache.terminal.output_highlight_disabled
     }
 
     pub fn set_output_highlight_enabled(&mut self, enabled: bool) {
-        self.cache.output_highlight_disabled = !enabled;
+        self.cache.terminal.output_highlight_disabled = !enabled;
     }
 
     /// Whether complete JSON lines are pretty-printed and syntax-coloured
     /// (#338). Stored inverted so formatting is on by default.
     pub fn json_format_output(&self) -> bool {
-        !self.cache.json_format_disabled
+        !self.cache.terminal.json_format_disabled
     }
 
     pub fn set_json_format_output(&mut self, enabled: bool) {
-        self.cache.json_format_disabled = !enabled;
+        self.cache.terminal.json_format_disabled = !enabled;
     }
 
     /// Selected built-in rule set. The default is the Rudder built-in
     /// (tailspin-style) rule set; unknown values fall back to it as well.
     pub fn output_highlight_preset(&self) -> &str {
-        match self.cache.output_highlight_preset.as_str() {
+        match self.cache.terminal.output_highlight_preset.as_str() {
             "devops" => "devops",
             "log" => "log",
             _ => "builtin",
@@ -1727,7 +1505,7 @@ impl ConfigStore {
     }
 
     pub fn set_output_highlight_preset(&mut self, preset: String) {
-        self.cache.output_highlight_preset = match preset.as_str() {
+        self.cache.terminal.output_highlight_preset = match preset.as_str() {
             "devops" => "devops".to_string(),
             "log" => "log".to_string(),
             _ => "builtin".to_string(),
@@ -1735,56 +1513,56 @@ impl ConfigStore {
     }
 
     pub fn output_highlight_rules(&self) -> &[OutputHighlightRule] {
-        &self.cache.output_highlight_rules
+        &self.cache.terminal.output_highlight_rules
     }
 
     pub fn add_output_highlight_rule(&mut self, mut rule: OutputHighlightRule) {
         rule.pattern = rule.pattern.trim().to_string();
         rule.color = normalize_highlight_color(&rule.color).to_string();
-        self.cache.output_highlight_rules.push(rule);
+        self.cache.terminal.output_highlight_rules.push(rule);
     }
 
     pub fn remove_output_highlight_rule(&mut self, index: usize) {
-        if index < self.cache.output_highlight_rules.len() {
-            self.cache.output_highlight_rules.remove(index);
+        if index < self.cache.terminal.output_highlight_rules.len() {
+            self.cache.terminal.output_highlight_rules.remove(index);
         }
     }
 
     pub fn set_output_highlight_rule_enabled(&mut self, index: usize, enabled: bool) {
-        if let Some(rule) = self.cache.output_highlight_rules.get_mut(index) {
+        if let Some(rule) = self.cache.terminal.output_highlight_rules.get_mut(index) {
             rule.enabled = enabled;
         }
     }
 
     /// Global UI scale in percent (#100). Defaults to 100.
     pub fn ui_scale(&self) -> u32 {
-        if self.cache.ui_scale == 0 {
+        if self.cache.appearance.ui_scale == 0 {
             100
         } else {
-            self.cache.ui_scale
+            self.cache.appearance.ui_scale
         }
     }
 
     pub fn set_ui_scale(&mut self, percent: u32) {
-        self.cache.ui_scale = percent.clamp(80, 200);
+        self.cache.appearance.ui_scale = percent.clamp(80, 200);
     }
 
     /// Immersive wallpaper id ("" = none).
     pub fn wallpaper(&self) -> &str {
-        &self.cache.wallpaper
+        &self.cache.appearance.wallpaper
     }
 
     pub fn set_wallpaper(&mut self, id: impl Into<String>) {
-        self.cache.wallpaper = id.into();
+        self.cache.appearance.wallpaper = id.into();
     }
 
     /// Whether the SFTP panel follows the terminal's cd (default true).
     pub fn sftp_follow_cd(&self) -> bool {
-        !self.cache.sftp_no_follow_cd
+        !self.cache.transfer.sftp_no_follow_cd
     }
 
     pub fn set_sftp_follow_cd(&mut self, follow: bool) {
-        self.cache.sftp_no_follow_cd = !follow;
+        self.cache.transfer.sftp_no_follow_cd = !follow;
     }
 
     /// Saved quick commands (#55).
@@ -1822,34 +1600,34 @@ impl ConfigStore {
     }
 
     pub fn quick_panel_open(&self) -> bool {
-        self.cache.quick_panel_open
+        self.cache.layout.quick_panel_open
     }
 
     pub fn quick_commands_as_sidebar(&self) -> bool {
-        self.cache.quick_commands_as_sidebar
+        self.cache.layout.quick_commands_as_sidebar
     }
 
     pub fn set_quick_commands_as_sidebar(&mut self, enabled: bool) {
-        self.cache.quick_commands_as_sidebar = enabled;
+        self.cache.layout.quick_commands_as_sidebar = enabled;
         if !enabled {
-            self.cache.quick_panel_open = false;
+            self.cache.layout.quick_panel_open = false;
         }
     }
 
     pub fn set_quick_panel_open(&mut self, open: bool) {
-        self.cache.quick_panel_open = open;
+        self.cache.layout.quick_panel_open = open;
     }
 
     pub fn quick_panel_collapsed(&self) -> bool {
-        self.cache.quick_panel_collapsed
+        self.cache.layout.quick_panel_collapsed
     }
 
     pub fn set_quick_panel_collapsed(&mut self, collapsed: bool) {
-        self.cache.quick_panel_collapsed = collapsed;
+        self.cache.layout.quick_panel_collapsed = collapsed;
     }
 
     pub fn quick_panel_width(&self) -> f32 {
-        let width = self.cache.quick_panel_width;
+        let width = self.cache.layout.quick_panel_width;
         if width <= 0.0 {
             default_quick_panel_width()
         } else {
@@ -1858,11 +1636,11 @@ impl ConfigStore {
     }
 
     pub fn set_quick_panel_width(&mut self, width: f32) {
-        self.cache.quick_panel_width = width;
+        self.cache.layout.quick_panel_width = width;
     }
 
     pub fn quick_panel_height(&self) -> f32 {
-        let height = self.cache.quick_panel_height;
+        let height = self.cache.layout.quick_panel_height;
         if height <= 0.0 {
             default_quick_panel_height()
         } else {
@@ -1871,18 +1649,18 @@ impl ConfigStore {
     }
 
     pub fn set_quick_panel_height(&mut self, height: f32) {
-        self.cache.quick_panel_height = height;
+        self.cache.layout.quick_panel_height = height;
     }
 
     pub fn quick_panel_dock(&self) -> String {
-        match self.cache.quick_panel_dock.trim() {
-            "left" | "right" | "top" | "bottom" => self.cache.quick_panel_dock.clone(),
+        match self.cache.layout.quick_panel_dock.trim() {
+            "left" | "right" | "top" | "bottom" => self.cache.layout.quick_panel_dock.clone(),
             _ => "right".into(),
         }
     }
 
     pub fn set_quick_panel_dock(&mut self, dock: String) {
-        self.cache.quick_panel_dock = dock;
+        self.cache.layout.quick_panel_dock = dock;
     }
 
     /// Explicit quick-command groups (#55) — parallels [`groups`](Self::groups).
@@ -1972,29 +1750,29 @@ impl ConfigStore {
 
     /// Collapse the resource sidebar on startup (default false) (#78).
     pub fn collapse_sidebar_default(&self) -> bool {
-        self.cache.collapse_sidebar_default
+        self.cache.layout.collapse_sidebar_default
     }
 
     pub fn set_collapse_sidebar_default(&mut self, v: bool) {
-        self.cache.collapse_sidebar_default = v;
+        self.cache.layout.collapse_sidebar_default = v;
     }
 
     /// Persisted sidebar width in logical px. Falls back to the default when the
     /// stored value is unset/zero (e.g. a config created via `Default`).
     pub fn sidebar_width(&self) -> f32 {
-        let w = self.cache.sidebar_width;
+        let w = self.cache.layout.sidebar_width;
         if w <= 0.0 { default_sidebar_width() } else { w }
     }
 
     pub fn set_sidebar_width(&mut self, v: f32) {
-        self.cache.sidebar_width = v;
+        self.cache.layout.sidebar_width = v;
     }
 
     /// Resource / SFTP panel docking geometry, persisted across restarts (#dock).
     /// Sizes fall back to their defaults when unset/zero; docks fall back to a
     /// sensible edge when the stored string is empty.
     pub fn sidebar_height(&self) -> f32 {
-        let h = self.cache.sidebar_height;
+        let h = self.cache.layout.sidebar_height;
         if h <= 0.0 {
             default_sidebar_height()
         } else {
@@ -2002,10 +1780,10 @@ impl ConfigStore {
         }
     }
     pub fn set_sidebar_height(&mut self, v: f32) {
-        self.cache.sidebar_height = v;
+        self.cache.layout.sidebar_height = v;
     }
     pub fn sidebar_dock(&self) -> String {
-        let d = self.cache.sidebar_dock.trim();
+        let d = self.cache.layout.sidebar_dock.trim();
         if d.is_empty() {
             "left".into()
         } else {
@@ -2013,29 +1791,29 @@ impl ConfigStore {
         }
     }
     pub fn set_sidebar_dock(&mut self, v: String) {
-        self.cache.sidebar_dock = v;
+        self.cache.layout.sidebar_dock = v;
     }
     pub fn sidebar_collapsed(&self) -> Option<bool> {
-        self.cache.sidebar_collapsed
+        self.cache.layout.sidebar_collapsed
     }
     pub fn set_sidebar_collapsed(&mut self, v: bool) {
-        self.cache.sidebar_collapsed = Some(v);
+        self.cache.layout.sidebar_collapsed = Some(v);
     }
     pub fn welcome_as_sidebar(&self) -> bool {
-        self.cache.welcome_as_sidebar
+        self.cache.layout.welcome_as_sidebar
     }
     pub fn set_welcome_as_sidebar(&mut self, v: bool) {
-        self.cache.welcome_as_sidebar = v;
+        self.cache.layout.welcome_as_sidebar = v;
     }
     pub fn welcome_sidebar_width(&self) -> f32 {
-        let w = self.cache.welcome_sidebar_width;
+        let w = self.cache.layout.welcome_sidebar_width;
         if w <= 0.0 { 240.0 } else { w }
     }
     pub fn set_welcome_sidebar_width(&mut self, v: f32) {
-        self.cache.welcome_sidebar_width = v;
+        self.cache.layout.welcome_sidebar_width = v;
     }
     pub fn welcome_sidebar_dock(&self) -> String {
-        let d = self.cache.welcome_sidebar_dock.trim();
+        let d = self.cache.layout.welcome_sidebar_dock.trim();
         if d.is_empty() {
             "left".into()
         } else {
@@ -2043,23 +1821,23 @@ impl ConfigStore {
         }
     }
     pub fn set_welcome_sidebar_dock(&mut self, v: String) {
-        self.cache.welcome_sidebar_dock = v;
+        self.cache.layout.welcome_sidebar_dock = v;
     }
     pub fn welcome_collapsed(&self) -> Option<bool> {
-        self.cache.welcome_collapsed
+        self.cache.layout.welcome_collapsed
     }
     pub fn set_welcome_collapsed(&mut self, v: bool) {
-        self.cache.welcome_collapsed = Some(v);
+        self.cache.layout.welcome_collapsed = Some(v);
     }
     /// Whether the startup new-version check is enabled (#184).
     pub fn update_check_enabled(&self) -> bool {
-        !self.cache.update_check_disabled
+        !self.cache.update.update_check_disabled
     }
     pub fn set_update_check_enabled(&mut self, enabled: bool) {
-        self.cache.update_check_disabled = !enabled;
+        self.cache.update.update_check_disabled = !enabled;
     }
     pub fn wallpaper_overlay(&self) -> f32 {
-        let a = self.cache.wallpaper_overlay;
+        let a = self.cache.appearance.wallpaper_overlay;
         // Floor lowered 0.40 -> 0.30 so more see-through panels are reachable.
         if a <= 0.0 {
             DEFAULT_WALLPAPER_OVERLAY
@@ -2068,34 +1846,34 @@ impl ConfigStore {
         }
     }
     pub fn set_wallpaper_overlay(&mut self, v: f32) {
-        self.cache.wallpaper_overlay = v.clamp(0.30, 1.0);
+        self.cache.appearance.wallpaper_overlay = v.clamp(0.30, 1.0);
     }
     pub fn panel_font(&self) -> u32 {
-        if self.cache.panel_font == 0 {
+        if self.cache.appearance.panel_font == 0 {
             100
         } else {
-            self.cache.panel_font
+            self.cache.appearance.panel_font
         }
     }
     pub fn set_panel_font(&mut self, percent: u32) {
-        self.cache.panel_font = percent.clamp(80, 160);
+        self.cache.appearance.panel_font = percent.clamp(80, 160);
     }
     pub fn sftp_panel_width(&self) -> f32 {
-        let w = self.cache.sftp_panel_width;
+        let w = self.cache.layout.sftp_panel_width;
         if w <= 0.0 { default_sftp_width() } else { w }
     }
     pub fn set_sftp_panel_width(&mut self, v: f32) {
-        self.cache.sftp_panel_width = v;
+        self.cache.layout.sftp_panel_width = v;
     }
     pub fn sftp_panel_height(&self) -> f32 {
-        let h = self.cache.sftp_panel_height;
+        let h = self.cache.layout.sftp_panel_height;
         if h <= 0.0 { default_sftp_height() } else { h }
     }
     pub fn set_sftp_panel_height(&mut self, v: f32) {
-        self.cache.sftp_panel_height = v;
+        self.cache.layout.sftp_panel_height = v;
     }
     pub fn sftp_dock(&self) -> String {
-        let d = self.cache.sftp_dock.trim();
+        let d = self.cache.layout.sftp_dock.trim();
         if d.is_empty() {
             "bottom".into()
         } else {
@@ -2103,62 +1881,62 @@ impl ConfigStore {
         }
     }
     pub fn set_sftp_dock(&mut self, v: String) {
-        self.cache.sftp_dock = v;
+        self.cache.layout.sftp_dock = v;
     }
     /// Last window size in logical px; `(0,0)` means unset (use the default).
     pub fn window_size(&self) -> (f32, f32) {
-        (self.cache.window_width, self.cache.window_height)
+        (self.cache.layout.window_width, self.cache.layout.window_height)
     }
     pub fn set_window_size(&mut self, w: f32, h: f32) {
-        self.cache.window_width = w;
-        self.cache.window_height = h;
+        self.cache.layout.window_width = w;
+        self.cache.layout.window_height = h;
     }
 
     /// Collapse the SFTP panel on startup (default false) (#78).
     pub fn collapse_sftp_default(&self) -> bool {
-        self.cache.collapse_sftp_default
+        self.cache.layout.collapse_sftp_default
     }
 
     pub fn set_collapse_sftp_default(&mut self, v: bool) {
-        self.cache.collapse_sftp_default = v;
+        self.cache.layout.collapse_sftp_default = v;
     }
 
     /// Mirror SFTP uploads to other sessions while session-sync is on (default
     /// false). Only has effect when the session-sync toggle is on.
     pub fn sync_upload(&self) -> bool {
-        self.cache.sync_upload
+        self.cache.sync.sync_upload
     }
 
     pub fn set_sync_upload(&mut self, v: bool) {
-        self.cache.sync_upload = v;
+        self.cache.sync.sync_upload = v;
     }
 
     pub fn webdav_enabled(&self) -> bool {
-        self.cache.webdav_enabled
+        self.cache.sync.webdav_enabled
     }
 
     pub fn webdav_url(&self) -> &str {
-        &self.cache.webdav_url
+        &self.cache.sync.webdav_url
     }
 
     pub fn webdav_username(&self) -> &str {
-        &self.cache.webdav_username
+        &self.cache.sync.webdav_username
     }
 
     pub fn webdav_password(&self) -> &str {
-        self.cache.webdav_password.as_str()
+        self.cache.sync.webdav_password.as_str()
     }
 
     pub fn webdav_remote_path(&self) -> &str {
-        if self.cache.webdav_remote_path.trim().is_empty() {
+        if self.cache.sync.webdav_remote_path.trim().is_empty() {
             "rudder-connections.json"
         } else {
-            &self.cache.webdav_remote_path
+            &self.cache.sync.webdav_remote_path
         }
     }
 
     pub fn webdav_accept_invalid_certs(&self) -> bool {
-        self.cache.webdav_accept_invalid_certs
+        self.cache.sync.webdav_accept_invalid_certs
     }
 
     pub fn set_webdav_settings(
@@ -2170,43 +1948,43 @@ impl ConfigStore {
         remote_path: String,
         accept_invalid_certs: bool,
     ) {
-        self.cache.webdav_enabled = enabled;
-        self.cache.webdav_url = url.trim().trim_end_matches('/').to_string();
-        self.cache.webdav_username = username.trim().to_string();
-        self.cache.webdav_password = Secret::new(password);
-        self.cache.webdav_remote_path = if remote_path.trim().is_empty() {
+        self.cache.sync.webdav_enabled = enabled;
+        self.cache.sync.webdav_url = url.trim().trim_end_matches('/').to_string();
+        self.cache.sync.webdav_username = username.trim().to_string();
+        self.cache.sync.webdav_password = Secret::new(password);
+        self.cache.sync.webdav_remote_path = if remote_path.trim().is_empty() {
             "rudder-connections.json".to_string()
         } else {
             remote_path.trim().trim_start_matches('/').to_string()
         };
-        self.cache.webdav_accept_invalid_certs = accept_invalid_certs;
+        self.cache.sync.webdav_accept_invalid_certs = accept_invalid_certs;
     }
 
     /// Whether each download prompts for a save location (default false) (#87).
     pub fn download_always_ask(&self) -> bool {
-        self.cache.download_always_ask
+        self.cache.transfer.download_always_ask
     }
 
     pub fn set_download_always_ask(&mut self, ask: bool) {
-        self.cache.download_always_ask = ask;
+        self.cache.transfer.download_always_ask = ask;
     }
 
     /// Whether the quick-command bar under the terminal is hidden.
     pub fn cmd_bar_hidden(&self) -> bool {
-        self.cache.hide_cmd_bar
+        self.cache.layout.hide_cmd_bar
     }
 
     pub fn set_cmd_bar_hidden(&mut self, hidden: bool) {
-        self.cache.hide_cmd_bar = hidden;
+        self.cache.layout.hide_cmd_bar = hidden;
     }
 
     /// Zen (focus) mode: sidebar and tab strip hidden.
     pub fn zen_mode(&self) -> bool {
-        self.cache.zen_mode
+        self.cache.layout.zen_mode
     }
 
     pub fn set_zen_mode(&mut self, enabled: bool) {
-        self.cache.zen_mode = enabled;
+        self.cache.layout.zen_mode = enabled;
     }
 
     // ── Session groups / folders (#41) ────────────────────────────────────
@@ -2371,11 +2149,11 @@ impl ConfigStore {
                 }
             }
         }
-        if !disk.webdav_password.is_empty()
-            && !disk.webdav_password.as_str().starts_with(Self::ENC_PREFIX)
+        if !disk.sync.webdav_password.is_empty()
+            && !disk.sync.webdav_password.as_str().starts_with(Self::ENC_PREFIX)
         {
-            let enc = Self::encrypt(&self.key, disk.webdav_password.as_str())?;
-            disk.webdav_password = Secret::new(enc);
+            let enc = Self::encrypt(&self.key, disk.sync.webdav_password.as_str())?;
+            disk.sync.webdav_password = Secret::new(enc);
         }
         let raw = serde_json::to_string_pretty(&disk)?;
         // Write to a sibling temp file then rename — cheap atomicity.
@@ -2622,17 +2400,19 @@ mod tests {
     #[test]
     fn terminal_cursor_style_defaults_and_validates() {
         let mut store = temp_store();
-        assert_eq!(store.terminal_cursor_style(), "block");
-
-        store.set_terminal_cursor_style("bar".into());
+        // 出厂默认 = 竖线（与终端页「还原本页默认」一致）。
         assert_eq!(store.terminal_cursor_style(), "bar");
+
+        store.set_terminal_cursor_style("block".into());
+        assert_eq!(store.terminal_cursor_style(), "block");
         store.set_terminal_cursor_style("underline".into());
         assert_eq!(store.terminal_cursor_style(), "underline");
+        // 非法值回落到出厂默认，而不是另一个硬编码的形状。
         store.set_terminal_cursor_style("unexpected".into());
-        assert_eq!(store.terminal_cursor_style(), "block");
+        assert_eq!(store.terminal_cursor_style(), "bar");
 
         store.cache = serde_json::from_str("{}").expect("legacy config must deserialize");
-        assert_eq!(store.terminal_cursor_style(), "block");
+        assert_eq!(store.terminal_cursor_style(), "bar");
     }
 
     #[test]
@@ -2781,7 +2561,8 @@ mod tests {
     #[test]
     fn terminal_cursor_color_normalizes_and_rejects_invalid_values() {
         let mut store = temp_store();
-        assert_eq!(store.terminal_cursor_color(), "");
+        // 出厂默认 = #FFFFFF（此前是空串=跟随主题，按规格改为显式白色）。
+        assert_eq!(store.terminal_cursor_color(), "#FFFFFF");
 
         assert!(store.set_terminal_cursor_color("#1a2B3c"));
         assert_eq!(store.terminal_cursor_color(), "#1A2B3C");
@@ -2857,46 +2638,55 @@ mod tests {
     fn wallpaper_defaults_to_ms_but_keeps_explicit_choice() {
         // Fresh install (no file).
         let fresh = fresh_config();
-        assert_eq!(fresh.wallpaper, "builtin:dark");
-        assert!((fresh.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs() < f32::EPSILON);
+        assert_eq!(fresh.appearance.wallpaper, "builtin:dark");
+        assert!((fresh.appearance.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs() < f32::EPSILON);
         // User upgrading from before the feature: JSON without the key.
         let cfg: ConfigFile = serde_json::from_str("{}").unwrap();
-        assert_eq!(cfg.wallpaper, "builtin:dark");
+        assert_eq!(cfg.appearance.wallpaper, "builtin:dark");
         // An explicit "无"/none (stored as "") is preserved, not re-defaulted.
         let cfg: ConfigFile = serde_json::from_str(r#"{"wallpaper":""}"#).unwrap();
-        assert_eq!(cfg.wallpaper, "");
+        assert_eq!(cfg.appearance.wallpaper, "");
         // A custom choice is preserved.
         let cfg: ConfigFile = serde_json::from_str(r#"{"wallpaper":"builtin:light"}"#).unwrap();
-        assert_eq!(cfg.wallpaper, "builtin:light");
+        assert_eq!(cfg.appearance.wallpaper, "builtin:light");
 
         // Retired built-ins (tech/miku/ms) migrate to the dark wallpaper once.
         let mut cfg = ConfigFile {
-            wallpaper: "builtin:miku".to_string(),
+            appearance: AppearanceSettings {
+                wallpaper: "builtin:miku".to_string(),
+                ..Default::default()
+            },
             defaults_rev: DEFAULTS_REV - 1,
             ..ConfigFile::default()
         };
         assert!(migrate_defaults(&mut cfg));
-        assert_eq!(cfg.wallpaper, "builtin:dark");
+        assert_eq!(cfg.appearance.wallpaper, "builtin:dark");
     }
 
     #[test]
     fn wallpaper_transparency_default_migrates_without_overwriting_custom_value() {
         let mut old_default = ConfigFile {
-            wallpaper_overlay: PREVIOUS_DEFAULT_WALLPAPER_OVERLAY,
+            appearance: AppearanceSettings {
+                wallpaper_overlay: PREVIOUS_DEFAULT_WALLPAPER_OVERLAY,
+                ..Default::default()
+            },
             defaults_rev: 2,
             ..ConfigFile::default()
         };
         assert!(migrate_defaults(&mut old_default));
-        assert!((old_default.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs() < f32::EPSILON);
+        assert!((old_default.appearance.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs() < f32::EPSILON);
 
         // 自定义滑条值不被迁移覆盖（取一个不与新默认重合的值）。
         let mut custom = ConfigFile {
-            wallpaper_overlay: 0.95,
+            appearance: AppearanceSettings {
+                wallpaper_overlay: 0.95,
+                ..Default::default()
+            },
             defaults_rev: 2,
             ..ConfigFile::default()
         };
         assert!(migrate_defaults(&mut custom));
-        assert!((custom.wallpaper_overlay - 0.95).abs() < f32::EPSILON);
+        assert!((custom.appearance.wallpaper_overlay - 0.95).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -3247,14 +3037,14 @@ mod tests {
         // Persisted form stays compatible with configs written before zen.
         let raw = serde_json::to_string(&store.cache).unwrap();
         let back: ConfigFile = serde_json::from_str(&raw).unwrap();
-        assert!(back.zen_mode);
+        assert!(back.layout.zen_mode);
     }
 
     #[test]
     fn legacy_config_without_zen_field_still_loads() {
         let raw = r#"{"download_always_ask": true}"#;
         let cache: ConfigFile = serde_json::from_str(raw).unwrap();
-        assert!(!cache.zen_mode);
+        assert!(!cache.layout.zen_mode);
     }
 
     // ── Data-dir migration (#141) ────────────────────────────────────────
@@ -3419,6 +3209,160 @@ mod tests {
                 "macOS must not use the exe-adjacent portable dir"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod domain_split_compat_tests {
+    use super::*;
+
+    /// 分域改造前后 on-disk 格式必须完全一致：仍是**平铺** key-value。
+    ///
+    /// 这是整个重构的成败点 —— `#[serde(flatten)]` 一旦不生效，用户现有的
+    /// sessions.json 会整体读不出来（等于丢配置）。所以这里同时验两件事：
+    /// 老格式能读进来、写出去还是老格式。
+    #[test]
+    fn flat_json_round_trips_through_the_domain_structs() {
+        // 一份"改造前"形态的配置：所有设置都平铺在顶层。
+        let legacy = r##"{
+            "font_family": "Maple Mono",
+            "font_size": 15,
+            "terminal_bold": true,
+            "scrollback_lines": 12000,
+            "convert_eol": false,
+            "osc52_clipboard": false,
+            "terminal_cursor_style": "underline",
+            "terminal_cursor_color": "#1A2B3C",
+            "output_highlight_preset": "devops",
+            "ui_scale": 120,
+            "panel_font": 90,
+            "wallpaper": "builtin:light",
+            "wallpaper_overlay": 0.8,
+            "hide_special_partitions": false,
+            "mount_filter": "/data /home",
+            "renderer_mode": "skia",
+            "sftp_no_follow_cd": true,
+            "download_always_ask": true,
+            "download_dir": "/tmp/dl",
+            "collapse_sidebar_default": true,
+            "welcome_as_sidebar": true,
+            "quick_commands_as_sidebar": true,
+            "sidebar_dock": "left",
+            "welcome_sidebar_width": 321.0,
+            "window_width": 1440.0,
+            "sync_upload": true,
+            "webdav_url": "https://dav.example/x",
+            "webdav_username": "bob",
+            "update_check_disabled": true,
+            "animations_disabled": true,
+            "defaults_rev": 5
+        }"##;
+        let cfg: ConfigFile =
+            serde_json::from_str(legacy).expect("老的平铺配置必须仍能读入");
+
+        // 每个域都取到了自己的字段。
+        assert_eq!(cfg.terminal.font_family, "Maple Mono");
+        assert_eq!(cfg.terminal.font_size, 15);
+        assert_eq!(cfg.terminal.scrollback_lines, 12000);
+        assert!(!cfg.terminal.convert_eol);
+        assert_eq!(cfg.terminal.terminal_cursor_style, "underline");
+        assert_eq!(cfg.appearance.ui_scale, 120);
+        assert_eq!(cfg.appearance.wallpaper, "builtin:light");
+        assert_eq!(cfg.appearance.mount_filter, "/data /home");
+        assert_eq!(cfg.appearance.renderer_mode, "skia");
+        assert!(cfg.appearance.animations_disabled);
+        assert!(cfg.transfer.sftp_no_follow_cd);
+        assert_eq!(cfg.transfer.download_dir, "/tmp/dl");
+        assert_eq!(cfg.layout.sidebar_dock, "left");
+        assert_eq!(cfg.layout.welcome_sidebar_width, 321.0);
+        assert_eq!(cfg.layout.window_width, 1440.0);
+        assert_eq!(cfg.sync.webdav_url, "https://dav.example/x");
+        assert!(cfg.update.update_check_disabled);
+
+        // ── 写出去必须还是平铺格式（不能出现 "terminal": {...} 这种嵌套）──
+        let out = serde_json::to_string(&cfg).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let obj = v.as_object().expect("顶层必须是对象");
+        for nested in ["terminal", "appearance", "layout", "transfer", "sync", "update"] {
+            assert!(
+                !obj.contains_key(nested),
+                "分域结构体被序列化成了嵌套对象 {nested:?} —— flatten 失效，用户配置会读不出来"
+            );
+        }
+        for key in [
+            "font_family", "scrollback_lines", "ui_scale", "wallpaper_overlay",
+            "sidebar_dock", "download_dir", "webdav_url", "update_check_disabled",
+        ] {
+            assert!(obj.contains_key(key), "平铺键 {key:?} 丢失");
+        }
+        assert_eq!(obj["font_family"], "Maple Mono");
+        assert_eq!(obj["window_width"], 1440.0);
+    }
+
+    /// 三处默认值来源合一：serde 缺字段、`ConfigFile::default()`、各域 `Default`。
+    ///
+    /// 改造前它们是三套互不一致的答案（serde fn / 派生 Default / getter 哨兵），
+    /// 「还原本页默认」取错了一处就还原成白纸 —— 这是实际发生过的 bug。
+    ///
+    /// 逐字段比较而非 `assert_eq!` 整个结构体：`SyncSettings` 含 `Secret`，
+    /// 不应为了测试方便给口令类型派发 `PartialEq`。
+    #[test]
+    fn all_three_default_sources_agree() {
+        let from_missing: ConfigFile = serde_json::from_str("{}").unwrap();
+        let from_default = ConfigFile::default();
+        let fresh = fresh_config();
+
+        let d = TerminalSettings::default();
+        let a = AppearanceSettings::default();
+        let l = LayoutSettings::default();
+
+        for cfg in [&from_missing, &from_default, &fresh] {
+            // 终端域：这几项是"曾经还原成白纸"的重灾区，必须逐个钉住。
+            assert_eq!(cfg.terminal.font_family, d.font_family);
+            assert_eq!(cfg.terminal.font_size, d.font_size);
+            assert_eq!(cfg.terminal.scrollback_lines, d.scrollback_lines);
+            assert_eq!(cfg.terminal.convert_eol, d.convert_eol);
+            assert_eq!(cfg.terminal.osc52_clipboard, d.osc52_clipboard);
+            assert_eq!(cfg.terminal.terminal_cursor_style, d.terminal_cursor_style);
+            assert_eq!(cfg.terminal.terminal_cursor_color, d.terminal_cursor_color);
+            assert_eq!(cfg.terminal.output_highlight_preset, d.output_highlight_preset);
+
+            assert_eq!(cfg.appearance.wallpaper, a.wallpaper);
+            assert_eq!(cfg.appearance.wallpaper_overlay, a.wallpaper_overlay);
+            assert_eq!(cfg.appearance.ui_scale, a.ui_scale);
+            assert_eq!(cfg.appearance.panel_font, a.panel_font);
+            assert_eq!(cfg.appearance.hide_special_partitions, a.hide_special_partitions);
+
+            assert_eq!(cfg.layout.sidebar_dock, l.sidebar_dock);
+            assert_eq!(cfg.layout.collapse_sidebar_default, l.collapse_sidebar_default);
+            assert_eq!(cfg.layout.welcome_as_sidebar, l.welcome_as_sidebar);
+
+            assert!(!cfg.transfer.sftp_no_follow_cd, "存储取反：默认跟随 cd");
+            assert!(!cfg.transfer.download_always_ask);
+            assert!(cfg.sync.webdav_url.is_empty());
+            assert!(!cfg.update.update_check_disabled, "默认开启启动检查");
+        }
+    }
+
+    /// 还原一页 = 替换该域为默认，且**不影响其它域**。
+    #[test]
+    fn resetting_one_domain_leaves_the_others_alone() {
+        let mut cfg = ConfigFile {
+            terminal: TerminalSettings {
+                font_family: "Comic Sans".into(),
+                ..Default::default()
+            },
+            appearance: AppearanceSettings {
+                ui_scale: 150,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        cfg.terminal = TerminalSettings::default();
+
+        assert_eq!(cfg.terminal.font_family, "JetBrains Mono");
+        assert_eq!(cfg.appearance.ui_scale, 150, "还原终端页不得动外观页");
     }
 }
 

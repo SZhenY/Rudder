@@ -176,18 +176,18 @@ fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &
     let d = crate::config::fresh_config();
     {
         let mut s = store.borrow_mut();
-        s.set_font_family(d.font_family.clone());
-        s.set_font_size(d.font_size);
-        s.set_terminal_bold(d.terminal_bold);
-        s.set_terminal_cursor_style(d.terminal_cursor_style.clone());
-        s.set_terminal_cursor_color(&d.terminal_cursor_color);
-        s.set_scrollback_lines(d.scrollback_lines);
-        s.set_output_highlight_enabled(!d.output_highlight_disabled);
-        s.set_output_highlight_preset(d.output_highlight_preset.clone());
+        s.set_font_family(d.terminal.font_family.clone());
+        s.set_font_size(d.terminal.font_size);
+        s.set_terminal_bold(d.terminal.terminal_bold);
+        s.set_terminal_cursor_style(d.terminal.terminal_cursor_style.clone());
+        s.set_terminal_cursor_color(&d.terminal.terminal_cursor_color);
+        s.set_scrollback_lines(d.terminal.scrollback_lines);
+        s.set_output_highlight_enabled(!d.terminal.output_highlight_disabled);
+        s.set_output_highlight_preset(d.terminal.output_highlight_preset.clone());
         // 终端页其余 A 类项：粘贴行尾 / OSC52 / JSON 格式化
-        s.set_convert_eol(d.convert_eol);
-        s.set_osc52_clipboard(d.osc52_clipboard);
-        s.set_json_format_output(!d.json_format_disabled);
+        s.set_convert_eol(d.terminal.convert_eol);
+        s.set_osc52_clipboard(d.terminal.osc52_clipboard);
+        s.set_json_format_output(!d.terminal.json_format_disabled);
         // B 类：自定义规则数据保留，仅取消使用（enabled=false）
         for index in 0..s.output_highlight_rules().len() {
             s.set_output_highlight_rule_enabled(index, false);
@@ -224,8 +224,8 @@ fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &
         rules = s.output_highlight_rules().to_vec();
     }
     // 回滚行数变更 → 终端缓冲 reset；高亮按新 preset / 规则重编译。
-    for_each_buffer(w, bufs, |b| b.reset(d.scrollback_lines));
-    apply_output_highlight(w, bufs, !d.output_highlight_disabled, &d.output_highlight_preset);
+    for_each_buffer(w, bufs, |b| b.reset(d.terminal.scrollback_lines));
+    apply_output_highlight(w, bufs, !d.terminal.output_highlight_disabled, &d.terminal.output_highlight_preset);
     apply_custom_output_rules(w, bufs, &rules);
 }
 
@@ -238,13 +238,13 @@ fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs:
     let d = crate::config::fresh_config();
     {
         let mut s = store.borrow_mut();
-        s.set_ui_font_family(d.ui_font_family.clone());
-        s.set_ui_scale(d.ui_scale);
-        s.set_panel_font(d.panel_font);
-        s.set_renderer_mode(d.renderer_mode.clone());
-        s.set_wallpaper(d.wallpaper.clone());
-        s.set_wallpaper_overlay(d.wallpaper_overlay);
-        s.set_hide_special_partitions(d.hide_special_partitions);
+        s.set_ui_font_family(d.appearance.ui_font_family.clone());
+        s.set_ui_scale(d.appearance.ui_scale);
+        s.set_panel_font(d.appearance.panel_font);
+        s.set_renderer_mode(d.appearance.renderer_mode.clone());
+        s.set_wallpaper(d.appearance.wallpaper.clone());
+        s.set_wallpaper_overlay(d.appearance.wallpaper_overlay);
+        s.set_hide_special_partitions(d.appearance.hide_special_partitions);
         if let Err(error) = s.save() {
             tracing::warn!("failed to save config: {error:#}");
         }
@@ -261,7 +261,7 @@ fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs:
     w.set_hide_special_partitions(s.hide_special_partitions());
     drop(s);
     // 壁纸切换有完整的换肤 / 调色板派生流程，必须走 apply_wallpaper。
-    apply_wallpaper(w, &store.borrow(), bufs, &d.wallpaper, false);
+    apply_wallpaper(w, &store.borrow(), bufs, &d.appearance.wallpaper, false);
     // 动画开关没有后端持久化（Slint 全局，重启即回），还原即重新开启。
     w.set_animations_enabled(true);
 }
@@ -272,11 +272,11 @@ fn reset_layout_page(w: &AppWindow, store: &Store, refs: &ResetRefs) {
     let d = crate::config::ConfigFile::default();
     {
         let mut s = store.borrow_mut();
-        s.set_welcome_as_sidebar(d.welcome_as_sidebar);
-        s.set_quick_commands_as_sidebar(d.quick_commands_as_sidebar);
-        s.set_collapse_sidebar_default(d.collapse_sidebar_default);
-        s.set_collapse_sftp_default(d.collapse_sftp_default);
-        s.set_sidebar_dock(d.sidebar_dock.clone());
+        s.set_welcome_as_sidebar(d.layout.welcome_as_sidebar);
+        s.set_quick_commands_as_sidebar(d.layout.quick_commands_as_sidebar);
+        s.set_collapse_sidebar_default(d.layout.collapse_sidebar_default);
+        s.set_collapse_sftp_default(d.layout.collapse_sftp_default);
+        s.set_sidebar_dock(d.layout.sidebar_dock.clone());
         if let Err(error) = s.save() {
             tracing::warn!("failed to save config: {error:#}");
         }
@@ -318,11 +318,11 @@ fn reset_layout_page(w: &AppWindow, store: &Store, refs: &ResetRefs) {
 fn reset_transfer_page(w: &AppWindow, store: &Store, refs: &ResetRefs) {
     let d = crate::config::fresh_config();
     // sftp_follow_cd 的存储字段是 sftp_no_follow_cd（语义反转）
-    let follow_cd = !d.sftp_no_follow_cd;
+    let follow_cd = !d.transfer.sftp_no_follow_cd;
     {
         let mut s = store.borrow_mut();
         s.set_sftp_follow_cd(follow_cd);
-        s.set_download_always_ask(d.download_always_ask);
+        s.set_download_always_ask(d.transfer.download_always_ask);
         if let Err(error) = s.save() {
             tracing::warn!("failed to save config: {error:#}");
         }
@@ -332,7 +332,7 @@ fn reset_transfer_page(w: &AppWindow, store: &Store, refs: &ResetRefs) {
     refs.sftp_follow_cd
         .store(follow_cd, std::sync::atomic::Ordering::Relaxed);
     w.set_sftp_follow_cd(follow_cd);
-    w.set_download_always_ask(d.download_always_ask);
+    w.set_download_always_ask(d.transfer.download_always_ask);
 }
 
 
