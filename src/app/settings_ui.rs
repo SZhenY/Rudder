@@ -99,7 +99,7 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
     };
     match page {
         SettingsPage::Terminal => reset_terminal_page(w, store, bufs, refs),
-        SettingsPage::Appearance => reset_appearance_page(w, store, bufs, refs),
+        SettingsPage::Appearance => settings::appearance::reset(w, store, bufs),
         SettingsPage::Layout => settings::layout::reset(w, store, &refs.panes),
         SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
     }
@@ -163,42 +163,6 @@ fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &
     apply_custom_output_rules(w, bufs, &rules);
 }
 
-/// 外观页：UI 字体 / 壁纸 / 遮罩透明度 / 渲染后端 / 动画 / 缩放 / 面板字体 /
-/// 隐藏特殊分区。
-///
-/// 注意两点：其一，「隐藏特殊分区」的控件在 UI 上位于本页（此前误归到传输页的
-/// 还原里）；其二，壁纸与遮罩透明度按规格也在还原范围内（此前被当作 B 类跳过）。
-fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs) {
-    let d = crate::config::fresh_config();
-    {
-        let mut s = store.borrow_mut();
-        s.set_ui_font_family(d.appearance.ui_font_family.clone());
-        s.set_ui_scale(d.appearance.ui_scale);
-        s.set_panel_font(d.appearance.panel_font);
-        s.set_renderer_mode(d.appearance.renderer_mode.clone());
-        s.set_wallpaper(d.appearance.wallpaper.clone());
-        s.set_wallpaper_overlay(d.appearance.wallpaper_overlay);
-        s.set_hide_special_partitions(d.appearance.hide_special_partitions);
-        if let Err(error) = s.save() {
-            tracing::warn!("failed to save config: {error:#}");
-        }
-    }
-    // UI 刷新走 getter（0 → 默认 / 平台默认）。
-    let s = store.borrow();
-    w.set_ui_font_family(resolve_ui_font_family());
-    // 同样要把选择器索引同步过去（空串 = auto，落在列表第 0 项）。
-    w.set_ui_font_index(refs.fonts.ui_index(""));
-    w.set_ui_scale(s.ui_scale() as f32 / 100.0);
-    w.set_panel_font(s.panel_font() as f32 / 100.0);
-    w.set_renderer_mode(s.renderer_mode().into());
-    w.set_wallpaper_overlay(s.wallpaper_overlay());
-    w.set_hide_special_partitions(s.hide_special_partitions());
-    drop(s);
-    // 壁纸切换有完整的换肤 / 调色板派生流程，必须走 apply_wallpaper。
-    apply_wallpaper(w, &store.borrow(), bufs, &d.appearance.wallpaper, false);
-    // 动画开关没有后端持久化（Slint 全局，重启即回），还原即重新开启。
-    w.set_animations_enabled(true);
-}
 
 
 
@@ -336,6 +300,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
 
     settings::transfer::bind(window, store, sftp_follow_cd);
     settings::sync::bind(window, store, sessions_model);
+    settings::appearance::bind(window, store, bufs, proc_win);
     settings::layout::bind(
         window,
         store,
@@ -387,41 +352,16 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         pending_window_size_restore.set(preferred);
     }
 
-    {
-        let store = store.clone();
-        window.on_set_animations_enabled(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_animations_enabled(v);
-            if let Err(error) = s.save() {
-                tracing::warn!("failed to save config: {error:#}");
-            }
-        });
-    }
+
 
     settings::update::bind(window, store);
-    {
-        // Renderer selection is consumed before the first native window exists,
-        // so persist it now and apply it on the next launch (#280).
-        let store = store.clone();
-        window.on_set_renderer_mode(move |mode: SharedString| {
-            let mut s = store.borrow_mut();
-            s.set_renderer_mode(mode.to_string());
-            let _ = s.save();
-        });
-    }
 
 
 
 
 
-    {
-        let store = store.clone();
-        window.on_persist_wallpaper_overlay(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_wallpaper_overlay(v);
-            let _ = s.save();
-        });
-    }
+
+
 
 
     // Session-sync upload setting (#sync). Persisted; only has effect while the
@@ -552,23 +492,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             }
         });
     }
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        window.on_set_ui_font(move |label: SharedString| {
-            let Some(family) = family_from_label(&label) else {
-                return;
-            };
-            {
-                let mut s = store.borrow_mut();
-                s.set_ui_font_family(family.to_string());
-                let _ = s.save();
-            }
-            if let Some(w) = weak.upgrade() {
-                w.set_ui_font_family(family.into());
-            }
-        });
-    }
+
     // Output highlighting: persist the switch/preset and immediately rebuild
     // every open terminal, including scrollback captured before the change.
     {
@@ -703,22 +627,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
                 .store(v, std::sync::atomic::Ordering::Relaxed);
         });
     }
-    {
-        let store = store.clone();
-        window.on_set_hide_special_partitions(move |v: bool| {
-            let mut s = store.borrow_mut();
-            s.set_hide_special_partitions(v);
-            let _ = s.save();
-        });
-    }
-    {
-        let store = store.clone();
-        window.on_set_mount_filter(move |v: slint::SharedString| {
-            let mut s = store.borrow_mut();
-            s.set_mount_filter(v.to_string());
-            let _ = s.save();
-        });
-    }
+
+
     {
         let weak = window.as_weak();
         let store = store.clone();
@@ -735,92 +645,11 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             }
         });
     }
-    // Global UI scale (#100): persist the percent and apply it live.
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        window.on_set_ui_scale(move |percent: i32| {
-            let clamped = (percent.max(0) as u32).clamp(80, 200);
-            {
-                let mut s = store.borrow_mut();
-                s.set_ui_scale(clamped);
-                let _ = s.save();
-            }
-            if let Some(w) = weak.upgrade() {
-                w.set_ui_scale(clamped as f32 / 100.0);
-            }
-        });
-    }
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        window.on_set_panel_font(move |percent: i32| {
-            let clamped = (percent.max(0) as u32).clamp(80, 160);
-            {
-                let mut s = store.borrow_mut();
-                s.set_panel_font(clamped);
-                let _ = s.save();
-            }
-            if let Some(w) = weak.upgrade() {
-                w.set_panel_font(clamped as f32 / 100.0);
-            }
-        });
-    }
 
-    // Wallpaper: pick a built-in / none, or open the file dialog for a custom one.
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        let bufs_wp = bufs.clone();
-        let proc_weak = proc_win.as_weak();
-        window.on_set_wallpaper(move |id: SharedString| {
-            let id = id.to_string();
-            let mut selected_builtin_theme = None;
-            if let Some(w) = weak.upgrade() {
-                apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, true);
-                if crate::wallpaper::is_builtin(&id) {
-                    selected_builtin_theme = Some(w.get_dark_mode());
-                }
-                // Keep an already-open process window in sync with the change.
-                if let Some(p) = proc_weak.upgrade() {
-                    sync_proc_theme(&w, &p);
-                }
-            }
-            let mut s = store.borrow_mut();
-            s.set_wallpaper(id);
-            // Choosing a built-in wallpaper applies its recommended palette once;
-            // persist that result so it too survives the next launch. A later
-            // manual theme toggle will overwrite this preference as expected.
-            if let Some(dark) = selected_builtin_theme {
-                s.set_theme_pref(if dark { "dark" } else { "light" }.to_string());
-            }
-            let _ = s.save();
-        });
-    }
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        let bufs_wp = bufs.clone();
-        let proc_weak = proc_win.as_weak();
-        window.on_pick_wallpaper_file(move || {
-            let picked = rfd::FileDialog::new()
-                .set_title(t("选择壁纸", "Choose wallpaper"))
-                .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp"])
-                .pick_file();
-            if let Some(path) = picked {
-                let id = path.to_string_lossy().to_string();
-                if let Some(w) = weak.upgrade() {
-                    apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, false);
-                    if let Some(p) = proc_weak.upgrade() {
-                        sync_proc_theme(&w, &p);
-                    }
-                }
-                let mut s = store.borrow_mut();
-                s.set_wallpaper(id);
-                let _ = s.save();
-            }
-        });
-    }
+
+
+
+
 
     window.set_wsl_profiles(wsl_profile_model(&store.borrow()));
     {
@@ -1158,7 +987,7 @@ mod wiring_tests {
         // 不会静默放过）。
         let pages = [
             ("terminal", include_str!("settings_ui.rs"), "reset_terminal_page"),
-            ("appearance", include_str!("settings_ui.rs"), "reset_appearance_page"),
+            ("appearance", include_str!("settings/appearance.rs"), "reset"),
             ("layout", include_str!("settings/layout.rs"), "reset"),
             ("transfer", include_str!("settings/transfer.rs"), "reset"),
         ];
