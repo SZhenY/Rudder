@@ -15,6 +15,7 @@
 //! 拆成模块后，新增一项设置只改一个文件；`settings_ui.rs` 的页-属性契约测试
 //! （`wiring_tests`）再从外部钉住"还原不能漏"。
 
+pub(super) mod layout;
 pub(super) mod transfer;
 pub(super) mod update;
 
