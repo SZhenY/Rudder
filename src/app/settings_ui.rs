@@ -1497,3 +1497,132 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod wiring_tests {
+
+
+    /// UI 上位于本页、但**有意不由还原处理**的属性。每一条都要写清原因。
+    const UI_ONLY: &[&str] = &[
+        // 平台 / 语言 / 交互态
+        "lang-en", "is-mac", "is-windows", "ifd-page", "reset-armed", "current-index",
+        // 子组件内部属性（SettingRow / Switch / Stepper / 颜色按钮 …）
+        "value", "text", "icon", "label", "active", "desc", "on", "selected", "hex",
+        "swatch-color", "preview-color", "cursor-kind", "minimum", "maximum", "step", "unit",
+        // 由输入内容派生的 Slint 内部状态
+        "scrollback-valid",
+        // 一次性瞬态
+        "renderer-restart-required",
+        // 选择器数据源（列表本身不随还原变化）
+        "term-fonts", "ui-fonts",
+        // 自定义高亮规则的编辑草稿（非持久化字段）
+        "new-rule-pattern", "new-rule-regex", "new-rule-case-sensitive",
+        "new-rule-whole-line", "new-rule-color",
+    ];
+
+    /// 本页显示、但**有意不还原**的项 —— B 类用户数据。
+    const NOT_RESET_BY_DESIGN: &[(&str, &str)] = &[(
+        "mount-filter",
+        "挂载点过滤是用户自定义数据（B 类），与自定义高亮规则一样只保留不还原",
+    )];
+
+    /// 由还原函数**调用到的辅助函数**间接落地的属性。
+    const COVERED_BY_HELPER: &[(&str, &str)] = &[
+        ("current-wallpaper", "apply_wallpaper 内写入"),
+        ("custom-wallpaper-name", "apply_wallpaper 内写入"),
+        ("wp-is-custom", "apply_wallpaper 内写入"),
+    ];
+
+    fn snake(kebab: &str) -> String {
+        kebab.replace('-', "_")
+    }
+
+    /// 某一页区块里 **root.<prop>** 形式的属性引用（排除回调调用）。
+    fn props_on_page(ui: &str, page: &str) -> std::collections::BTreeSet<String> {
+        let marker = format!("if root.ifd-page == \"{page}\"");
+        let start = ui.find(&marker).unwrap_or_else(|| panic!("找不到 {page} 页"));
+        let rest = &ui[start..];
+        let end = rest[marker.len()..]
+            .find("\n            if root.ifd-page ==")
+            .map(|i| i + marker.len())
+            .unwrap_or(rest.len());
+        let block = &rest[..end];
+
+        let mut out = std::collections::BTreeSet::new();
+        let mut from = 0;
+        while let Some(i) = block[from..].find("root.") {
+            let s = from + i + "root.".len();
+            let name: String = block[s..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            // 后接 '(' 的是回调调用，不是属性引用。
+            let is_call = block[s + name.len()..].starts_with('(');
+            let advance = s + name.len().max(1);
+            if !name.is_empty() && !is_call {
+                out.insert(name);
+            }
+            from = advance;
+        }
+        out
+    }
+
+    fn fn_body(src: &str, name: &str) -> String {
+        let sig = format!("fn {name}(");
+        let start = src.find(&sig).unwrap_or_else(|| panic!("找不到函数 {name}"));
+        let rest = &src[start..];
+        let end = rest.find("\n}\n").map(|i| i + 3).unwrap_or(rest.len());
+        rest[..end].to_string()
+    }
+
+    /// **每页还原必须覆盖该页绑定的每一个设置属性。**
+    ///
+    /// 锁的是一类真实 bug：还原只写了配置字段与控件属性，漏掉派生状态 ——
+    /// 字体选择器索引（G1/G2）、SFTP 跟随的原子标志（G3）、规则状态文案（G4）。
+    /// 它们的共同特征是"UI 显示已还原、实际没生效"，人工 review 极难发现。
+    #[test]
+    fn every_page_property_is_covered_by_its_reset() {
+        const UI: &str = include_str!("../../ui/interface_panel.slint");
+        const SRC: &str = include_str!("settings_ui.rs");
+
+        let pages = [
+            ("terminal", "reset_terminal_page"),
+            ("appearance", "reset_appearance_page"),
+            ("layout", "reset_layout_page"),
+            ("transfer", "reset_transfer_page"),
+        ];
+
+        let mut uncovered = Vec::new();
+        for (page, reset_fn) in pages {
+            let body = fn_body(SRC, reset_fn);
+            for prop in props_on_page(UI, page) {
+                if UI_ONLY.contains(&prop.as_str())
+                    || NOT_RESET_BY_DESIGN.iter().any(|(p, _)| *p == prop)
+                    || COVERED_BY_HELPER.iter().any(|(p, _)| *p == prop)
+                {
+                    continue;
+                }
+                if !body.contains(&snake(&prop)) {
+                    uncovered.push(format!("{page}: {prop}"));
+                }
+            }
+        }
+        assert!(
+            uncovered.is_empty(),
+            "以下设置项在本页绑定，但「还原本页默认」没有处理：\n  {}",
+            uncovered.join("\n  ")
+        );
+    }
+
+    /// 防漏：允许名单里不应出现已经不在 UI 上的属性（名单会腐化）。
+    #[test]
+    fn allowlists_only_mention_pages_that_exist() {
+        const UI: &str = include_str!("../../ui/interface_panel.slint");
+        for page in ["terminal", "appearance", "layout", "transfer"] {
+            assert!(
+                !props_on_page(UI, page).is_empty(),
+                "{page} 页解析不到任何属性 —— 测试的解析逻辑已失效"
+            );
+        }
+    }
+}
