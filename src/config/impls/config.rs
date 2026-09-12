@@ -214,7 +214,7 @@ fn migrate_legacy(legacy: &Path, portable: &Path) {
     if legacy == portable {
         return;
     }
-    for name in ["sessions.json", "secret.key", "known_hosts"] {
+    for name in [SESSIONS_FILE, SETTINGS_FILE, "secret.key", "known_hosts"] {
         let src = legacy.join(name);
         let dst = portable.join(name);
         if src.exists() && !dst.exists() {
@@ -255,15 +255,15 @@ fn restore_user_backup_if_needed(primary_dir: &Path, backup_dir: &Path) {
     if primary_dir == backup_dir {
         return;
     }
-    let primary_sessions = primary_dir.join("sessions.json");
-    let backup_sessions = backup_dir.join("sessions.json");
+    let primary_sessions = primary_dir.join(SESSIONS_FILE);
+    let backup_sessions = backup_dir.join(SESSIONS_FILE);
     if sessions_file_has_connections(&primary_sessions)
         || !sessions_file_has_connections(&backup_sessions)
     {
         return;
     }
     let _ = fs::create_dir_all(primary_dir);
-    for name in ["sessions.json", "secret.key", "known_hosts"] {
+    for name in [SESSIONS_FILE, SETTINGS_FILE, "secret.key", "known_hosts"] {
         let src = backup_dir.join(name);
         let dst = primary_dir.join(name);
         if src.exists() {
@@ -393,6 +393,11 @@ fn default_parity() -> String {
 /// Bump when `migrate_defaults` gains a new one-time default-layout change.
 pub const DEFAULTS_REV: u32 = 5;
 
+/// 配置目录里的两个数据文件（**同目录**，共享 `secret.key`）：
+/// 会话与用户数据 / 设置。拆分前设置也写在 `SESSIONS_FILE` 里。
+pub(crate) const SESSIONS_FILE: &str = "sessions.json";
+pub(crate) const SETTINGS_FILE: &str = "settings.json";
+
 const PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY: f32 = 0.38;
 const PREVIOUS_DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY;
 /// 上一个出厂默认：15%（overlay 0.85）。rev 5 迁移用它识别仍停留在旧默认的用户。
@@ -451,9 +456,12 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
         if !cfg.layout.welcome_as_sidebar {
             cfg.layout.welcome_as_sidebar = true;
         }
-        // Never moved the resource panel (empty = the old left default) → right.
+        // Never moved the resource panel (empty = never explicitly docked).
+        // rev 1 曾把它定为 "right"，但出厂默认（含新装与「还原本页默认」）已经
+        // 回到 "left"：空白停靠边的老配置同样应落到左，否则同一份默认值会有
+        // 两种表现。
         if cfg.layout.sidebar_dock.trim().is_empty() {
-            cfg.layout.sidebar_dock = "right".to_string();
+            cfg.layout.sidebar_dock = "left".to_string();
         }
     }
     // rev 2: settings show wallpaper transparency, while rev 1 accidentally
@@ -825,6 +833,99 @@ pub struct ConfigFile {
     pub update: UpdateSettings,
 }
 
+/// 落盘形态之一：会话与用户数据 → `sessions.json`。
+///
+/// 拆分前设置与会话混在同一个文件里，于是每动一个开关都要把含加密口令的全部
+/// 会话重新序列化、重新加密再整体重写一遍（拖动滑块时是每帧一次）。拆开之后
+/// 这个文件只在会话 / 分组 / 命令历史这类数据变化时才写。
+///
+/// ⚠️ 给 `ConfigFile` 加字段时必须同步到这里或 `SettingsFile`，否则它永远不会
+/// 落盘 —— `the_two_disk_files_cover_every_config_field` 会拦住这种遗漏。
+///
+/// 读取旧文件也走这里：合并前的 `sessions.json` 里那些设置键被 serde 忽略，
+/// 因此老配置无需迁移即可读入（只是设置部分改由 `settings.json` 提供）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SessionsFile {
+    #[serde(default)]
+    pub sessions: Vec<Session>,
+    #[serde(default)]
+    pub wsl_profiles: Vec<WslProfile>,
+    #[serde(default)]
+    pub groups: Vec<String>,
+    #[serde(default)]
+    pub collapsed_session_groups: Option<Vec<String>>,
+    #[serde(default)]
+    pub quick_commands: Vec<QuickCommand>,
+    #[serde(default)]
+    pub quick_groups: Vec<String>,
+    #[serde(default)]
+    pub command_history: Vec<String>,
+}
+
+/// 落盘形态之二：设置（6 个分域 + 迁移标记）→ `settings.json`。
+///
+/// on-disk 仍是平铺 key-value（各域 `flatten`），与拆分前完全一致，所以
+/// `settings.json` 也能直接承载一份"合并前"的旧配置。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SettingsFile {
+    #[serde(default)]
+    pub defaults_rev: u32,
+    #[serde(flatten)]
+    pub terminal: TerminalSettings,
+    #[serde(flatten)]
+    pub appearance: AppearanceSettings,
+    #[serde(flatten)]
+    pub layout: LayoutSettings,
+    #[serde(flatten)]
+    pub transfer: TransferSettings,
+    #[serde(flatten)]
+    pub sync: SyncSettings,
+    #[serde(flatten)]
+    pub update: UpdateSettings,
+}
+
+impl SessionsFile {
+    /// 从内存态取会话侧的一份拷贝（落盘前调用，随后就地加密）。
+    fn from_cache(cache: &ConfigFile) -> Self {
+        Self {
+            sessions: cache.sessions.clone(),
+            wsl_profiles: cache.wsl_profiles.clone(),
+            groups: cache.groups.clone(),
+            collapsed_session_groups: cache.collapsed_session_groups.clone(),
+            quick_commands: cache.quick_commands.clone(),
+            quick_groups: cache.quick_groups.clone(),
+            command_history: cache.command_history.clone(),
+        }
+    }
+
+}
+
+impl SettingsFile {
+    fn from_cache(cache: &ConfigFile) -> Self {
+        Self {
+            defaults_rev: cache.defaults_rev,
+            terminal: cache.terminal.clone(),
+            appearance: cache.appearance.clone(),
+            layout: cache.layout.clone(),
+            transfer: cache.transfer.clone(),
+            sync: cache.sync.clone(),
+            update: cache.update.clone(),
+        }
+    }
+
+    /// 设置以 `settings.json` 为准：合并前的旧 `sessions.json` 里也带着一份设置，
+    /// 只有在没有 `settings.json` 时才用那份（见 `ConfigStore::load`）。
+    fn apply_to(self, cfg: &mut ConfigFile) {
+        cfg.defaults_rev = self.defaults_rev;
+        cfg.terminal = self.terminal;
+        cfg.appearance = self.appearance;
+        cfg.layout = self.layout;
+        cfg.transfer = self.transfer;
+        cfg.sync = self.sync;
+        cfg.update = self.update;
+    }
+}
+
 /// Portable export file (issue #46): sessions with everything in plaintext
 /// **except** the password, which is encrypted with a fixed key baked into the
 /// binary so the file opens on *any* machine running Rudder.
@@ -840,9 +941,14 @@ struct ExportFile {
 }
 
 pub struct ConfigStore {
+    /// `sessions.json`：会话与用户数据。
     path: PathBuf,
+    /// `settings.json`：设置。与 `path` **同目录**（密钥与备份都按目录组织）。
+    settings_path: PathBuf,
     backup_dir: Option<PathBuf>,
     cache: ConfigFile,
+    /// 有改动尚未落盘（防抖写盘：见 `save_debounced` / `flush`）。
+    pending: bool,
     /// ChaCha20-Poly1305 key loaded from (or freshly generated into)
     /// `secret.key` in the same directory as `sessions.json`.
     key: [u8; 32],
@@ -1000,6 +1106,7 @@ impl ConfigStore {
     /// crashing at launch.
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
+        let settings_path = Self::settings_path()?;
         let config_dir = path
             .parent()
             .context("config path has no parent directory")?
@@ -1015,63 +1122,22 @@ impl ConfigStore {
 
         let key = Self::load_or_create_key(&config_dir)?;
 
+        // 设置以 `settings.json` 为准。它不存在有两种可能：全新安装，或**合并前
+        // 的老配置**（那时设置也写在 `sessions.json` 里，由下面的会话解析兜底读出）。
+        // 两种情况都要在本次载入后把 `settings.json` 写出来，之后两文件各自独立。
+        let split_pending = !settings_path.exists();
+        let settings_file = if split_pending {
+            None
+        } else {
+            Self::read_settings_file(&settings_path)
+        };
+
         let mut migrated = false;
-        let cache = if path.exists() {
+        let mut cache = if path.exists() {
             let raw = fs::read_to_string(&path)
                 .with_context(|| format!("failed to read {}", path.display()))?;
             match serde_json::from_str::<ConfigFile>(&raw) {
-                Ok(mut cfg) => {
-                    // Decrypt any encrypted passwords; leave legacy plaintext
-                    // values untouched (they will be encrypted on next save).
-                    // A value that still looks like a blob *after* a failed
-                    // decrypt means `secret.key` no longer matches the file —
-                    // count those so the failure is not silent (see below).
-                    let mut undecryptable = 0usize;
-                    for session in &mut cfg.sessions {
-                        if let Some(plain) = Self::try_decrypt(&key, session.password.as_str()) {
-                            session.password = Secret::new(plain);
-                        } else if session.password.as_str().starts_with(Self::ENC_PREFIX) {
-                            undecryptable += 1;
-                        }
-                        if let Some(plain) =
-                            Self::try_decrypt(&key, session.private_key_inline.as_str())
-                        {
-                            session.private_key_inline = Secret::new(plain);
-                        }
-                        // Trigger responses share the password's on-disk format;
-                        // legacy plaintext values stay as-is and are encrypted by
-                        // the next `save()`.
-                        for trigger in &mut session.triggers {
-                            if let Some(plain) = Self::try_decrypt(&key, trigger.response.as_str())
-                            {
-                                trigger.response = Secret::new(plain);
-                            }
-                        }
-                    }
-                    if let Some(plain) = Self::try_decrypt(&key, cfg.sync.webdav_password.as_str()) {
-                        cfg.sync.webdav_password = Secret::new(plain);
-                    }
-                    if undecryptable > 0 {
-                        // Nothing can recover these — `save()` skips values that
-                        // already carry the prefix, so the stale blobs would
-                        // otherwise be passed to the server as the password.
-                        tracing::error!(
-                            "{undecryptable} stored password(s) could not be decrypted — \
-                             secret.key was replaced or corrupt; re-enter them in the session settings"
-                        );
-                    }
-                    // Clean up any duplicate history accumulated before #113,
-                    // keeping the last (most recent) occurrence of each command.
-                    dedup_keep_last(&mut cfg.command_history);
-                    // `system` and `default` are display-only group names. Older
-                    // builds allowed moving saved servers into `system`, creating
-                    // a duplicate empty-menu folder (#324).
-                    migrated |= normalize_reserved_session_groups(&mut cfg);
-                    // One-time push of the new default layout to existing users
-                    // (only for items they never changed). (#new-user-defaults)
-                    migrated |= migrate_defaults(&mut cfg);
-                    cfg
-                }
+                Ok(cfg) => cfg,
                 Err(err) => {
                     let backup = path.with_extension("json.broken");
                     let _ = fs::rename(&path, &backup);
@@ -1085,23 +1151,107 @@ impl ConfigStore {
         } else {
             fresh_config()
         };
+        if let Some(settings) = settings_file {
+            settings.apply_to(&mut cache);
+        }
+        // 解密必须在合并设置**之后**：`webdav_password` 属于 sync 域，它可能来自
+        // `settings.json` 而不是 `sessions.json`。
+        Self::decrypt_into(&mut cache, &key);
+        // Clean up any duplicate history accumulated before #113,
+        // keeping the last (most recent) occurrence of each command.
+        dedup_keep_last(&mut cache.command_history);
+        // `system` and `default` are display-only group names. Older
+        // builds allowed moving saved servers into `system`, creating
+        // a duplicate empty-menu folder (#324).
+        migrated |= normalize_reserved_session_groups(&mut cache);
+        // One-time push of the new default layout to existing users
+        // (only for items they never changed). (#new-user-defaults)
+        migrated |= migrate_defaults(&mut cache);
 
         let store = Self {
             path,
+            settings_path,
             backup_dir,
             cache,
+            pending: false,
             key,
         };
         // Persist the migration so it runs exactly once (and so a later opt-out —
         // e.g. turning the welcome sidebar back off — isn't reverted next launch).
-        if migrated && let Err(e) = store.save() {
-            tracing::warn!("failed to persist default-layout migration: {e:#}");
+        // `split_pending` 同理：老配置在这里被拆成两个文件，只此一次。
+        if (migrated || split_pending) && let Err(e) = store.save() {
+            tracing::warn!("failed to persist config migration: {e:#}");
         }
         Ok(store)
     }
 
+    /// 读 `settings.json`。坏文件与 `sessions.json` 一视同仁：改名留档，回落默认。
+    fn read_settings_file(path: &Path) -> Option<SettingsFile> {
+        let raw = match fs::read_to_string(path) {
+            Ok(raw) => raw,
+            Err(e) => {
+                tracing::warn!("failed to read {}: {e}", path.display());
+                return None;
+            }
+        };
+        match serde_json::from_str::<SettingsFile>(&raw) {
+            Ok(settings) => Some(settings),
+            Err(err) => {
+                let backup = path.with_extension("json.broken");
+                let _ = fs::rename(path, &backup);
+                tracing::warn!(
+                    "settings file was corrupt ({err}); backed up to {}",
+                    backup.display()
+                );
+                None
+            }
+        }
+    }
+
+    /// Decrypt every at-rest secret in place; leave legacy plaintext values
+    /// untouched (they will be encrypted on next save). A value that still looks
+    /// like a blob *after* a failed decrypt means `secret.key` no longer matches
+    /// the file — count those so the failure is not silent.
+    fn decrypt_into(cfg: &mut ConfigFile, key: &[u8; 32]) {
+        let mut undecryptable = 0usize;
+        for session in &mut cfg.sessions {
+            if let Some(plain) = Self::try_decrypt(key, session.password.as_str()) {
+                session.password = Secret::new(plain);
+            } else if session.password.as_str().starts_with(Self::ENC_PREFIX) {
+                undecryptable += 1;
+            }
+            if let Some(plain) = Self::try_decrypt(key, session.private_key_inline.as_str()) {
+                session.private_key_inline = Secret::new(plain);
+            }
+            // Trigger responses share the password's on-disk format;
+            // legacy plaintext values stay as-is and are encrypted by
+            // the next `save()`.
+            for trigger in &mut session.triggers {
+                if let Some(plain) = Self::try_decrypt(key, trigger.response.as_str()) {
+                    trigger.response = Secret::new(plain);
+                }
+            }
+        }
+        if let Some(plain) = Self::try_decrypt(key, cfg.sync.webdav_password.as_str()) {
+            cfg.sync.webdav_password = Secret::new(plain);
+        }
+        if undecryptable > 0 {
+            // Nothing can recover these — `save()` skips values that
+            // already carry the prefix, so the stale blobs would
+            // otherwise be passed to the server as the password.
+            tracing::error!(
+                "{undecryptable} stored password(s) could not be decrypted — \
+                 secret.key was replaced or corrupt; re-enter them in the session settings"
+            );
+        }
+    }
+
     fn config_path() -> Result<PathBuf> {
-        Ok(data_dir().join("sessions.json"))
+        Ok(data_dir().join(SESSIONS_FILE))
+    }
+
+    fn settings_path() -> Result<PathBuf> {
+        Ok(data_dir().join(SETTINGS_FILE))
     }
 
     pub fn sessions(&self) -> &[Session] {
@@ -2116,10 +2266,15 @@ impl ConfigStore {
         self.cache.groups.dedup();
     }
 
+    /// 立即落盘（写两个文件）。
+    ///
+    /// 保持同步写不变 —— 47 处调用方的语义各不相同（导入/导出、迁移、退出），
+    /// 改动它们的时序风险大于收益。高频路径（滑块、命令历史）请走
+    /// `save_debounced` + `flush`。
     pub fn save(&self) -> Result<()> {
-        // Build a disk copy where every non-empty password is encrypted.
-        let mut disk = self.cache.clone();
-        for session in &mut disk.sessions {
+        // Build disk copies where every non-empty password is encrypted.
+        let mut sessions_disk = SessionsFile::from_cache(&self.cache);
+        for session in &mut sessions_disk.sessions {
             if !session.password.is_empty()
                 && !session.password.as_str().starts_with(Self::ENC_PREFIX)
             {
@@ -2149,16 +2304,47 @@ impl ConfigStore {
                 }
             }
         }
-        if !disk.sync.webdav_password.is_empty()
-            && !disk.sync.webdav_password.as_str().starts_with(Self::ENC_PREFIX)
+        let mut settings_disk = SettingsFile::from_cache(&self.cache);
+        if !settings_disk.sync.webdav_password.is_empty()
+            && !settings_disk
+                .sync
+                .webdav_password
+                .as_str()
+                .starts_with(Self::ENC_PREFIX)
         {
-            let enc = Self::encrypt(&self.key, disk.sync.webdav_password.as_str())?;
-            disk.sync.webdav_password = Secret::new(enc);
+            let enc = Self::encrypt(&self.key, settings_disk.sync.webdav_password.as_str())?;
+            settings_disk.sync.webdav_password = Secret::new(enc);
         }
-        let raw = serde_json::to_string_pretty(&disk)?;
-        // Write to a sibling temp file then rename — cheap atomicity.
-        let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, &raw).with_context(|| format!("failed to write {}", tmp.display()))?;
+        let settings_raw = serde_json::to_string_pretty(&settings_disk)?;
+        let sessions_raw = serde_json::to_string_pretty(&sessions_disk)?;
+        // **先写 settings.json**。合并前的 sessions.json 里也带着一份设置，所以
+        // 即便写 sessions.json 时崩溃，设置也已经安全落地；反过来（先写 sessions）
+        // 则会在崩溃时丢掉全部设置 —— 那时 sessions.json 里的设置已被覆盖成新格式
+        // （不再含设置），而 settings.json 还没写出来。
+        Self::write_atomic(&self.settings_path, &settings_raw)?;
+        Self::write_atomic(&self.path, &sessions_raw)?;
+        self.sync_backup(&sessions_raw, &settings_raw);
+        Ok(())
+    }
+
+    /// 标记"有改动待落盘"；真正的写入由 `flush` 在防抖窗口结束后执行。
+    pub fn save_debounced(&mut self) {
+        self.pending = true;
+    }
+
+    /// 落盘挂起的改动。没有挂起时是空操作 —— 退出路径可以无条件调用。
+    pub fn flush(&mut self) -> Result<()> {
+        if !self.pending {
+            return Ok(());
+        }
+        self.pending = false;
+        self.save()
+    }
+
+    /// 写兄弟临时文件 → 0600 → rename：廉价的原子发布。
+    fn write_atomic(path: &Path, raw: &str) -> Result<()> {
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, raw).with_context(|| format!("failed to write {}", tmp.display()))?;
         // Restrict to owner-only before publishing (#34): sessions.json holds
         // (encrypted) credentials, so it shouldn't be world-readable. Set 0600
         // on the temp file so the permission is already in place at rename.
@@ -2169,13 +2355,11 @@ impl ConfigStore {
             fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))
                 .with_context(|| format!("failed to set permissions on {}", tmp.display()))?;
         }
-        fs::rename(&tmp, &self.path)
-            .with_context(|| format!("failed to finalise {}", self.path.display()))?;
-        self.sync_backup(&raw);
+        fs::rename(&tmp, path).with_context(|| format!("failed to finalise {}", path.display()))?;
         Ok(())
     }
 
-    fn sync_backup(&self, raw: &str) {
+    fn sync_backup(&self, sessions_raw: &str, settings_raw: &str) {
         let Some(backup_dir) = &self.backup_dir else {
             return;
         };
@@ -2187,19 +2371,24 @@ impl ConfigStore {
             return;
         }
 
-        let backup_sessions = backup_dir.join("sessions.json");
-        let tmp = backup_sessions.with_extension("json.tmp");
-        if let Err(e) = fs::write(&tmp, raw) {
-            tracing::warn!("failed to write {}: {e}", tmp.display());
-            return;
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
-        }
-        if let Err(e) = fs::rename(&tmp, &backup_sessions) {
-            tracing::warn!("failed to finalise {}: {e}", backup_sessions.display());
+        for (name, raw) in [
+            (SESSIONS_FILE, sessions_raw),
+            (SETTINGS_FILE, settings_raw),
+        ] {
+            let dst = backup_dir.join(name);
+            let tmp = dst.with_extension("json.tmp");
+            if let Err(e) = fs::write(&tmp, raw) {
+                tracing::warn!("failed to write {}: {e}", tmp.display());
+                continue;
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
+            }
+            if let Err(e) = fs::rename(&tmp, &dst) {
+                tracing::warn!("failed to finalise {}: {e}", dst.display());
+            }
         }
 
         if let Some(config_dir) = self.path.parent() {
@@ -2357,11 +2546,14 @@ mod tests {
     use super::*;
 
     fn temp_store() -> ConfigStore {
-        let path = std::env::temp_dir().join(format!("ms-test-{}.json", Uuid::new_v4()));
+        let dir = std::env::temp_dir();
+        let id = Uuid::new_v4();
         ConfigStore {
-            path,
+            path: dir.join(format!("ms-test-{id}-sessions.json")),
+            settings_path: dir.join(format!("ms-test-{id}-settings.json")),
             backup_dir: None,
             cache: ConfigFile::default(),
+            pending: false,
             key: [7u8; 32],
         }
     }
@@ -2615,11 +2807,13 @@ mod tests {
 
         let store = ConfigStore {
             path: primary.join("sessions.json"),
+            settings_path: primary.join("settings.json"),
             backup_dir: Some(backup.clone()),
             cache: ConfigFile {
                 sessions: vec![sample_session("new")],
                 ..ConfigFile::default()
             },
+            pending: false,
             key: [7u8; 32],
         };
         std::fs::write(primary.join("secret.key"), [7u8; 32]).unwrap();
@@ -3344,6 +3538,38 @@ mod domain_split_compat_tests {
         }
     }
 
+    /// 布局的出厂默认必须与 `ui/app.slint` 声明的默认值一致。
+    ///
+    /// 二者长期分叉过：Rust 的 `LayoutSettings::default()` 是 `"right"`，而 Slint
+    /// 里 `sidebar-dock` 声明的是 `"left"`。因为播种与「还原本页默认」都取 Rust
+    /// 这一侧的值，用户点「还原」后运行状态侧栏就从左边跳到了右边 —— 而 UI 自己
+    /// 声明的默认是左边。默认值只能有一处，这里从外部钉住。
+    #[test]
+    fn layout_default_matches_slint_declaration() {
+        const UI: &str = include_str!("../../../ui/app.slint");
+
+        let declared = UI
+            .lines()
+            .filter(|l| !l.contains("welcome-"))
+            .find_map(|l| {
+                let (_, rest) = l.split_once("sidebar-dock:")?;
+                Some(rest.split('"').nth(1)?.to_string())
+            })
+            .unwrap_or_else(|| {
+                panic!("ui/app.slint 里解析不到 sidebar-dock 的声明值 —— 测试解析逻辑已失效")
+            });
+
+        assert!(
+            matches!(declared.as_str(), "left" | "right" | "top" | "bottom"),
+            "解析到非法的停靠边 {declared:?}"
+        );
+        assert_eq!(
+            LayoutSettings::default().sidebar_dock,
+            declared,
+            "布局出厂默认与 ui/app.slint 声明的 sidebar-dock 不一致 —— 「还原本页默认」会把侧栏挪到另一边"
+        );
+    }
+
     /// 还原一页 = 替换该域为默认，且**不影响其它域**。
     #[test]
     fn resetting_one_domain_leaves_the_others_alone() {
@@ -3406,4 +3632,168 @@ mod session_trigger_tests {
         assert!(!back.triggers[0].repeat);
     }
 
+}
+
+#[cfg(test)]
+mod split_file_tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("ms-split-{tag}-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn store_in(dir: &std::path::Path) -> ConfigStore {
+        ConfigStore {
+            path: dir.join(SESSIONS_FILE),
+            settings_path: dir.join(SETTINGS_FILE),
+            backup_dir: None,
+            cache: ConfigFile::default(),
+            pending: false,
+            key: [7u8; 32],
+        }
+    }
+
+    fn session_named(name: &str) -> Session {
+        let mut s = Session::new_empty();
+        s.name = name.into();
+        s
+    }
+
+    /// 一份"合并前"形态的老配置：会话与设置挤在同一个文件里。
+    const COMBINED: &str = r#"{
+        "sessions": [{"id":"legacy-1","name":"old box","host":"192.0.2.30","port":22,"user":"root","auth":"password","password":""}],
+        "font_family": "Comic Sans",
+        "defaults_rev": 5
+    }"#;
+
+    /// 设置落 `settings.json`、会话落 `sessions.json`，互不串门。
+    #[test]
+    fn settings_and_sessions_are_written_to_separate_files() {
+        let dir = temp_dir("two-files");
+        let mut store = store_in(&dir);
+        store.cache.terminal.font_family = "Maple Mono".into();
+        store.cache.sessions.push(session_named("a"));
+        store.save().unwrap();
+
+        let settings_raw = fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();
+        let sessions_raw = fs::read_to_string(dir.join(SESSIONS_FILE)).unwrap();
+
+        let settings: SettingsFile = serde_json::from_str(&settings_raw).unwrap();
+        let sessions: SessionsFile = serde_json::from_str(&sessions_raw).unwrap();
+        assert_eq!(settings.terminal.font_family, "Maple Mono");
+        assert_eq!(sessions.sessions.len(), 1);
+
+        // 两个文件都不该带上对方的键 —— 否则等于没拆（改设置还是要重写会话）。
+        assert!(
+            !settings_raw.contains("\"sessions\""),
+            "settings.json 不该含会话数据"
+        );
+        assert!(
+            !sessions_raw.contains("font_family"),
+            "sessions.json 不该含设置"
+        );
+    }
+
+    /// 合并前的老 `sessions.json` 两个视图都读得出来，且各取所需 —— 这就是
+    /// "老配置零迁移"的依据：首次载入时把设置那半边另存成 `settings.json`。
+    #[test]
+    fn legacy_combined_file_is_readable_by_both_views() {
+        let sessions: SessionsFile = serde_json::from_str(COMBINED).unwrap();
+        let settings: SettingsFile = serde_json::from_str(COMBINED).unwrap();
+        assert_eq!(sessions.sessions.len(), 1, "老文件里的会话必须仍在");
+        assert_eq!(
+            settings.terminal.font_family, "Comic Sans",
+            "老文件里的设置也要能读出 —— 首次拆分靠它"
+        );
+    }
+
+    /// `settings.json` 存在时以它为准，覆盖老 `sessions.json` 里残留的那份设置。
+    #[test]
+    fn settings_file_wins_over_settings_carried_in_the_sessions_file() {
+        let mut cfg: ConfigFile = serde_json::from_str(COMBINED).unwrap();
+        assert_eq!(cfg.terminal.font_family, "Comic Sans");
+        let settings: SettingsFile =
+            serde_json::from_str(r#"{"font_family":"JetBrains Mono","defaults_rev":5}"#).unwrap();
+        settings.apply_to(&mut cfg);
+        assert_eq!(
+            cfg.terminal.font_family, "JetBrains Mono",
+            "settings.json 必须覆盖老文件里的设置"
+        );
+        assert_eq!(cfg.sessions.len(), 1, "覆盖设置不得动会话");
+    }
+
+    /// 两个文件的键之并集 == `ConfigFile` 的全部键。
+    ///
+    /// 防的是"给 ConfigFile 加了字段却忘了同步到落盘视图" —— 那等于这项设置
+    /// 永远不会保存，而且没有任何编译错误。
+    #[test]
+    fn the_two_disk_files_cover_every_config_field() {
+        let cfg = ConfigFile::default();
+        let whole = serde_json::to_value(&cfg).unwrap();
+        let mut got: Vec<String> = Vec::new();
+        for value in [
+            serde_json::to_value(SessionsFile::from_cache(&cfg)).unwrap(),
+            serde_json::to_value(SettingsFile::from_cache(&cfg)).unwrap(),
+        ] {
+            for key in value.as_object().unwrap().keys() {
+                got.push(key.clone());
+            }
+        }
+        got.sort();
+        let mut want: Vec<String> = whole.as_object().unwrap().keys().cloned().collect();
+        want.sort();
+        assert_eq!(got, want, "落盘视图与 ConfigFile 的字段集不一致");
+    }
+
+    /// 加密后的口令各回各家：会话口令在 `sessions.json`，WebDAV 口令（sync 域）
+    /// 在 `settings.json`；两边都不得出现明文。
+    #[test]
+    fn secrets_are_encrypted_into_the_file_that_owns_them() {
+        let dir = temp_dir("secrets");
+        let mut store = store_in(&dir);
+        let mut session = session_named("a");
+        session.password = Secret::new("pw");
+        store.cache.sessions.push(session);
+        store.cache.sync.webdav_password = Secret::new("dav");
+        store.save().unwrap();
+
+        let sessions_raw = fs::read_to_string(dir.join(SESSIONS_FILE)).unwrap();
+        let settings_raw = fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();
+        assert!(sessions_raw.contains(ConfigStore::ENC_PREFIX));
+        assert!(!sessions_raw.contains("\"pw\""));
+        assert!(settings_raw.contains(ConfigStore::ENC_PREFIX));
+        assert!(!settings_raw.contains("\"dav\""));
+    }
+
+    /// 防抖语义：挂起期间不落盘，`flush` 才写；没有挂起时 `flush` 是空操作。
+    #[test]
+    fn debounced_save_only_writes_on_flush() {
+        let dir = temp_dir("debounce");
+        let mut store = store_in(&dir);
+        store.cache.terminal.font_size = 20;
+        store.save_debounced();
+        assert!(
+            !dir.join(SETTINGS_FILE).exists(),
+            "挂起期间不应写盘 —— 否则拖动滑条仍是每帧一次"
+        );
+
+        store.flush().unwrap();
+        assert!(
+            fs::read_to_string(dir.join(SETTINGS_FILE))
+                .unwrap()
+                .contains("20")
+        );
+
+        // 再改一次但不标记挂起 → flush 必须什么都不做（退出路径会无条件调用）。
+        store.cache.terminal.font_size = 30;
+        store.flush().unwrap();
+        assert!(
+            fs::read_to_string(dir.join(SETTINGS_FILE))
+                .unwrap()
+                .contains("20"),
+            "无挂起时 flush 必须是空操作"
+        );
+    }
 }

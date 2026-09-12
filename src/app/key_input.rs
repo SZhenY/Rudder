@@ -144,8 +144,9 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 {
                     let mut s = store_rc.borrow_mut();
                     s.push_command_history(line);
-                    let _ = s.save();
                 }
+                // 每执行一条命令都全量写盘不划算（还要重新加密口令）→ 防抖。
+                crate::app::settings::debounced_save(&store_rc);
                 if let Some(w) = weak.upgrade() {
                     w.set_command_history(history_model(&store_rc.borrow()));
                 }

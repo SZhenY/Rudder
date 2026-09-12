@@ -6,7 +6,7 @@
 
 use slint::{ComponentHandle, SharedString};
 
-use super::{Store, persist};
+use super::{FontCatalog, Store, persist};
 use crate::app::apply_wallpaper;
 use crate::app::fonts_ui::{family_from_label, resolve_ui_font_family};
 use crate::app::resource_ui::sync_proc_theme;
@@ -175,7 +175,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
 ///
 /// 注意两点：其一，「隐藏特殊分区」的控件在 UI 上位于本页（此前误归到传输页的
 /// 还原里）；其二，壁纸与遮罩透明度按规格也在还原范围内（此前被当作 B 类跳过）。
-pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
+pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &FontCatalog) {
     let d = crate::config::fresh_config();
     {
         persist(store, |s| {
@@ -190,9 +190,12 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
     }
     // UI 刷新走 getter（0 → 默认 / 平台默认）。
     let s = store.borrow();
-    w.set_ui_font_family(resolve_ui_font_family());
-    // 同样要把选择器索引同步过去（空串 = auto，落在列表第 0 项）。
-    w.set_ui_font_index(0); // 空串 = auto，恒为字体列表第 0 项
+    // 出厂默认是**空串 = auto**，而 auto 的实际取值随平台而变（一个逗号分隔的
+    // 字体栈）。选择器必须指向那个平台默认家族，不能写死下标 0 —— 0 是分组标题
+    // `▍内嵌字体`，写死就会让"界面字体"一栏显示出标题而不是字体名。
+    let ui_family = resolve_ui_font_family().to_string();
+    w.set_ui_font_family(ui_family.as_str().into());
+    w.set_ui_font_index(fonts.ui_index(&ui_family));
     w.set_ui_scale(s.ui_scale() as f32 / 100.0);
     w.set_panel_font(s.panel_font() as f32 / 100.0);
     w.set_renderer_mode(s.renderer_mode().into());

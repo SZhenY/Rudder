@@ -1211,6 +1211,8 @@ pub fn run() -> Result<()> {
                 }
                 sftp.clear();
             }
+            // 防抖的写盘必须在这里收尾：事件循环一停，挂起的设置改动就没机会落盘了。
+            let _ = cc_store.borrow_mut().flush();
             let _ = slint::quit_event_loop();
         });
     }
@@ -1218,6 +1220,8 @@ pub fn run() -> Result<()> {
     wire_window_chrome(&window, &handles, &store, &exit_confirmed);
 
     window.run().context("event loop exited with error")?;
+    // 同上：退出前把防抖窗口内未落盘的设置改动写出去。
+    let _ = store.borrow_mut().flush();
     Ok(())
 }
 

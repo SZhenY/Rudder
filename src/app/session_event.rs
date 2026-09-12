@@ -468,8 +468,9 @@ pub(super) fn apply_session_event_to_window<'a>(
                     {
                         let mut st = store.borrow_mut();
                         st.push_command_history(cmd);
-                        let _ = st.save();
                     }
+                    // 同上：命令历史走防抖出口。
+                    crate::app::settings::debounced_save(store);
                     win.set_command_history(history_model(&store.borrow()));
                 }
             });

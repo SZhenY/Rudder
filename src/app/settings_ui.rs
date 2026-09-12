@@ -65,7 +65,7 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
     };
     match page {
         SettingsPage::Terminal => settings::terminal::reset(w, store, bufs, &refs.fonts),
-        SettingsPage::Appearance => settings::appearance::reset(w, store, bufs),
+        SettingsPage::Appearance => settings::appearance::reset(w, store, bufs, &refs.fonts),
         SettingsPage::Layout => settings::layout::reset(w, store, &refs.panes),
         SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
     }
@@ -195,8 +195,11 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     };
     let saved_family = store.borrow().font_family().to_string();
     window.set_term_font_index(fonts.term_index(&saved_family));
-    let ui_saved = store.borrow().ui_font_family().to_string();
-    window.set_ui_font_index(fonts.ui_index(&ui_saved));
+    // 索引必须与「实际生效的字体」对应：未设置时 `ui_font_family()` 返回空串，
+    // 而真正生效的是平台默认（一个字体栈）。用解析后的值换算，才能与「还原本页
+    // 默认」走到同一个结果 —— 否则启动显示与还原显示会不一致。
+    let ui_effective = resolve_ui_font_family().to_string();
+    window.set_ui_font_index(fonts.ui_index(&ui_effective));
 
     // Command bar (#55): seed quick commands + history from the config. Groups
     // start collapsed by default (#55).
@@ -210,7 +213,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     settings::transfer::bind(window, store, sftp_follow_cd);
     settings::sync::bind(window, store, sessions_model);
     settings::appearance::bind(window, store, bufs, proc_win);
-    settings::terminal::bind(window, store, bufs);
     settings::terminal::bind(window, store, bufs);
     settings::layout::bind(
         window,
@@ -526,6 +528,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::FontEntry;
 
     /// Collect every `root.reset-page("…")` id the UI actually emits.
     fn reset_page_ids_from_ui() -> std::collections::BTreeSet<String> {
@@ -578,6 +581,54 @@ mod tests {
         for id in ["", "wsl", "sync", "update", "Terminal", "terminals"] {
             assert!(SettingsPage::parse(id).is_none(), "{id} 不应可解析");
         }
+    }
+
+    /// 与真实字体列表同构的目录：下标 0 是分组标题，其后才是可选家族。
+    fn test_catalog() -> FontCatalog {
+        FontCatalog {
+            term: Rc::new(vec![
+                FontEntry::Header("内嵌字体"),
+                FontEntry::Family("JetBrains Mono".into()),
+                FontEntry::Family("Meatshell Mono".into()),
+            ]),
+            ui: Rc::new(vec![
+                FontEntry::Header("内嵌字体"),
+                FontEntry::Family("JetBrains Mono".into()),
+                FontEntry::Family("Heiti SC".into()),
+                FontEntry::Family("Helvetica Neue".into()),
+            ]),
+        }
+    }
+
+    /// 界面字体索引**永远不能落在分组标题上**。
+    ///
+    /// 锁的是一次真实回归：auto（空串）被硬性映射到下标 0，而 0 是 `▍内嵌字体`
+    /// 这条不可选的分组标题，于是「界面字体」一栏显示成了"内嵌字体"。
+    #[test]
+    fn ui_index_never_lands_on_a_group_header() {
+        let fonts = test_catalog();
+        // 空串 = auto；未安装 / 解析不到的家族也会走同一条回退路径。
+        for input in ["", "不存在的字体", "Noto Sans Xyz"] {
+            let i = fonts.ui_index(input);
+            assert!(
+                matches!(fonts.ui[i as usize], FontEntry::Family(_)),
+                "ui_index({input:?}) = {i} 落在分组标题上 —— 选择器会显示标题而不是字体名"
+            );
+        }
+    }
+
+    /// auto 解析出来的是**平台默认字体栈**（逗号分隔），索引要指向栈里第一个
+    /// 真实存在的家族 —— 拿整串去比对永远匹配不上。
+    #[test]
+    fn ui_index_resolves_the_first_usable_family_of_a_platform_stack() {
+        let fonts = test_catalog();
+        // "SF Pro Text" 不在列表里 → 继续往后找，"Helvetica Neue" 命中。
+        let i = fonts.ui_index("SF Pro Text, Helvetica Neue, Heiti SC, Meatshell Mono");
+        assert_eq!(i, 3, "应命中栈里的 Helvetica Neue");
+        assert!(matches!(&fonts.ui[i as usize], FontEntry::Family(f) if f == "Helvetica Neue"));
+
+        // 用户显式选过字体时，值就是一个裸家族名。
+        assert_eq!(fonts.ui_index("Heiti SC"), 2);
     }
 }
 
@@ -710,4 +761,5 @@ mod wiring_tests {
             );
         }
     }
+
 }

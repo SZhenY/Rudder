@@ -186,11 +186,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
         let weak = window.as_weak();
         let store = store.clone();
         window.on_set_term_font_size(move |size: i32| {
-            {
-                let mut s = store.borrow_mut();
-                s.set_font_size(size as u32);
-                let _ = s.save();
-            }
+            // 字号滑条是逐帧触发的 → 走防抖出口（见 `settings::persist`）。
+            super::persist(&store, |s| s.set_font_size(size as u32));
             if let Some(w) = weak.upgrade() {
                 w.set_term_font_size(size as f32);
             }
@@ -278,6 +275,12 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
 /// 终端页：字体 / 光标 / 回滚 / 高亮 / 粘贴行尾 / OSC52 / JSON 格式化
 pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &FontCatalog) {
     let d = crate::config::fresh_config();
+    // 回滚行数是 `Term` 的**构造期**参数：改它必须重建 alacritty 的网格，代价是
+    // 屏幕与回滚全部清空。还原时它通常本来就等于默认值 —— 那种情况下重建只会把
+    // 一个正在使用的会话清成空白（用户看到的就是"还原后终端一片黑，动一下字号
+    // 才回来"，因为改字号触发 resize、shell 收到 SIGWINCH 才重绘）。
+    // 所以只有值真的变了才重建。
+    let prev_scrollback = store.borrow().scrollback_lines();
     {
         let mut s = store.borrow_mut();
         s.set_font_family(d.terminal.font_family.clone());
@@ -327,8 +330,10 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &Fo
         w.set_json_format_output(s.json_format_output());
         rules = s.output_highlight_rules().to_vec();
     }
-    // 回滚行数变更 → 终端缓冲 reset；高亮按新 preset / 规则重编译。
-    for_each_buffer(w, bufs, |b| b.reset(d.terminal.scrollback_lines));
+    // 回滚行数**变更** → 终端缓冲 reset；高亮按新 preset / 规则重编译。
+    if prev_scrollback != d.terminal.scrollback_lines {
+        for_each_buffer(w, bufs, |b| b.reset(d.terminal.scrollback_lines));
+    }
     apply_output_highlight(
         w,
         bufs,

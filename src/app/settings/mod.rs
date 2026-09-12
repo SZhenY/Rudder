@@ -31,17 +31,50 @@ use crate::config::ConfigStore;
 /// 配置存储句柄（UI 线程独占）。
 pub(super) type Store = Rc<RefCell<ConfigStore>>;
 
+/// 写盘防抖窗口。
+///
+/// 缩放 / 面板字号这类滑条是 `changed(v)` 逐帧触发的 —— 不防抖的话一次拖动会
+/// 产生几十次全量写盘（每次都要重新加密口令、重写整个文件）。250 ms 足够让
+/// 一次连续拖动只落一次盘，又在手感上察觉不到延迟。
+const SAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(250);
+
+thread_local! {
+    /// 只保留**最后一个**定时器：替换 `Option` 里的旧定时器即取消它（trailing 防抖，
+    /// 连续改动只会顺延，不会积累成一串定时写盘）。
+    static PENDING_FLUSH: RefCell<Option<slint::Timer>> = const { RefCell::new(None) };
+}
+
 /// 改一个设置并写盘 —— **全项目统一的持久化出口**。
 ///
 /// 集中在这里的原因：此前 40 多个回调各写一遍 `borrow_mut() + save()`，错误处理
 /// 还分成两种（少数 `tracing::warn!`、多数 `let _ =` 静默吞掉），写盘失败既没有
 /// 日志也没有 UI 反馈。现在只有这一处策略。
+///
+/// 这里走**防抖**写盘：设置是"丢了最多退回上一次的值"的数据，不值得为它每帧
+/// 写一次。退出路径负责 `flush`（见 `app.rs` 的关闭与 `run()` 返回处）。
 pub(super) fn persist(store: &Store, set: impl FnOnce(&mut ConfigStore)) {
-    let mut s = store.borrow_mut();
-    set(&mut s);
-    if let Err(error) = s.save() {
-        tracing::warn!("failed to save config: {error:#}");
+    {
+        let mut s = store.borrow_mut();
+        set(&mut s);
     }
+    debounced_save(store);
+}
+
+/// 标记挂起并重置防抖定时器。窗口内再次调用只会把写盘时间往后推。
+pub(super) fn debounced_save(store: &Store) {
+    store.borrow_mut().save_debounced();
+
+    let weak = Rc::downgrade(store);
+    let timer = slint::Timer::default();
+    timer.start(slint::TimerMode::SingleShot, SAVE_DEBOUNCE, move || {
+        let Some(store) = weak.upgrade() else {
+            return;
+        };
+        if let Err(error) = store.borrow_mut().flush() {
+            tracing::warn!("failed to save config: {error:#}");
+        }
+    });
+    PENDING_FLUSH.with(|slot| *slot.borrow_mut() = Some(timer));
 }
 
 /// 字体选择器的条目表。枚举系统字体（fontdb）代价不低，所以启动时算一次，
@@ -66,14 +99,35 @@ impl FontCatalog {
             .unwrap_or(0) as i32
     }
 
-    /// 界面字体列表中该 family 的索引；空串 = "auto"（列表第 0 项）。
+    /// 界面字体列表中该 family 的索引。
+    ///
+    /// 与终端字体有两处不同，都来自"界面字体的默认值是**平台相关**的"：
+    ///
+    /// * 传入值可能是**逗号分隔的字体栈**（`resolve_ui_font_family` 在 auto 下
+    ///   返回的就是 `"SF Pro Text, …, Heiti SC, Meatshell Mono"`）—— 逐个分量找，
+    ///   命中第一个在列表里的家族；
+    /// * 空串 = auto，解析后同样是一个栈，因此与上面走同一条路径。
+    ///
+    /// **找不到时回退到第一个可选家族，绝不回退到下标 0** —— 下标 0 是分组标题
+    /// （`▍内嵌字体`），把标题当作当前选中项显示出来，就是"界面字体一栏显示
+    /// 内嵌字体"这个 bug。
     pub(super) fn ui_index(&self, family: &str) -> i32 {
-        if family.is_empty() {
-            return 0;
+        for part in family.split(',') {
+            let name = part.trim();
+            if name.is_empty() {
+                continue;
+            }
+            if let Some(i) = self
+                .ui
+                .iter()
+                .position(|e| matches!(e, FontEntry::Family(f) if f == name))
+            {
+                return i as i32;
+            }
         }
         self.ui
             .iter()
-            .position(|e| matches!(e, FontEntry::Family(f) if f == family))
+            .position(|e| matches!(e, FontEntry::Family(_)))
             .unwrap_or(0) as i32
     }
 }
