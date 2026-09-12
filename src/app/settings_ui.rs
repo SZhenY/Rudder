@@ -107,31 +107,72 @@ fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     }
 }
 
-/// 布局迁移需要的句柄（全是 `Rc`，克隆廉价）。
+/// 字体选择器的条目表。枚举系统字体（fontdb）代价不低，所以启动时算一次，
+/// 「还原本页默认」需要把 family 反查回选择器索引时复用它 —— 不能每次重枚举。
 #[derive(Clone)]
-struct LayoutRefs {
+struct FontCatalog {
+    term: Rc<Vec<FontEntry>>,
+    ui: Rc<Vec<FontEntry>>,
+}
+
+impl FontCatalog {
+    /// 终端等宽字体列表中该 family 的索引（找不到时回退到第一个可选家族）。
+    fn term_index(&self, family: &str) -> i32 {
+        self.term
+            .iter()
+            .position(|e| matches!(e, FontEntry::Family(f) if f == family))
+            .or_else(|| {
+                self.term
+                    .iter()
+                    .position(|e| matches!(e, FontEntry::Family(_)))
+            })
+            .unwrap_or(0) as i32
+    }
+
+    /// 界面字体列表中该 family 的索引；空串 = "auto"（列表第 0 项）。
+    fn ui_index(&self, family: &str) -> i32 {
+        if family.is_empty() {
+            return 0;
+        }
+        self.ui
+            .iter()
+            .position(|e| matches!(e, FontEntry::Family(f) if f == family))
+            .unwrap_or(0) as i32
+    }
+}
+
+/// 「还原本页默认」需要的全部句柄（`Rc` / `Arc`，克隆廉价）。
+///
+/// 存在的意义是把「一项设置的全部落点」集中起来：除了配置字段与控件属性，
+/// 还有派生 UI 状态（字体选择器索引）、运行时镜像（SFTP 跟随标志）等。
+#[derive(Clone)]
+struct ResetRefs {
     layout: Rc<RefCell<crate::layout::Layout>>,
     content_size: Rc<std::cell::Cell<(f32, f32)>>,
     tabs_model: Rc<VecModel<TabInfo>>,
     panes_model: Rc<VecModel<PaneInfo>>,
     splitters_model: Rc<VecModel<SplitterInfo>>,
+    fonts: FontCatalog,
+    /// 泵线程读取的「SFTP 跟随 cd」实时标志。还原必须同时更新它，否则配置与
+    /// 界面都变了、**已打开会话的行为却没变** —— 表现为"还原不生效"。
+    sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
 }
 
-fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &LayoutRefs, page: &str) {
+fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs, page: &str) {
     let Some(page) = SettingsPage::parse(page) else {
         tracing::warn!("reset-page: unknown settings page {page:?}");
         return;
     };
     match page {
-        SettingsPage::Terminal => reset_terminal_page(w, store, bufs),
-        SettingsPage::Appearance => reset_appearance_page(w, store, bufs),
+        SettingsPage::Terminal => reset_terminal_page(w, store, bufs, refs),
+        SettingsPage::Appearance => reset_appearance_page(w, store, bufs, refs),
         SettingsPage::Layout => reset_layout_page(w, store, refs),
-        SettingsPage::Transfer => reset_transfer_page(w, store),
+        SettingsPage::Transfer => reset_transfer_page(w, store, refs),
     }
 }
 
 /// 终端页：字体 / 光标 / 回滚 / 高亮 / 粘贴行尾 / OSC52 / JSON 格式化
-fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
+fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs) {
     let d = crate::config::fresh_config();
     {
         let mut s = store.borrow_mut();
@@ -161,6 +202,9 @@ fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
     {
         let s = store.borrow();
         w.set_term_font_family(s.font_family().into());
+        // 选择器索引必须跟着 family 一起还原，否则下拉框停在旧项：显示与实际
+        // 字体不符，用户再动一次选择器还会用旧索引反推回旧字体。
+        w.set_term_font_index(refs.fonts.term_index(s.font_family()));
         w.set_term_font_size(s.font_size() as f32);
         w.set_term_font_bold(s.terminal_bold());
         w.set_term_cursor_style(s.terminal_cursor_style().into());
@@ -172,6 +216,8 @@ fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
         w.set_output_highlight_enabled(s.output_highlight_enabled());
         w.set_output_highlight_preset(s.output_highlight_preset().into());
         w.set_output_highlight_rules(output_highlight_rule_model(&s));
+        // 规则清单变了，上一次的"规则已添加/已删除"提示文案必须清掉。
+        w.set_output_highlight_rule_status("".into());
         w.set_convert_eol(s.convert_eol());
         w.set_osc52_clipboard(s.osc52_clipboard());
         w.set_json_format_output(s.json_format_output());
@@ -188,7 +234,7 @@ fn reset_terminal_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
 ///
 /// 注意两点：其一，「隐藏特殊分区」的控件在 UI 上位于本页（此前误归到传输页的
 /// 还原里）；其二，壁纸与遮罩透明度按规格也在还原范围内（此前被当作 B 类跳过）。
-fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
+fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs) {
     let d = crate::config::fresh_config();
     {
         let mut s = store.borrow_mut();
@@ -206,6 +252,8 @@ fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
     // UI 刷新走 getter（0 → 默认 / 平台默认）。
     let s = store.borrow();
     w.set_ui_font_family(resolve_ui_font_family());
+    // 同样要把选择器索引同步过去（空串 = auto，落在列表第 0 项）。
+    w.set_ui_font_index(refs.fonts.ui_index(""));
     w.set_ui_scale(s.ui_scale() as f32 / 100.0);
     w.set_panel_font(s.panel_font() as f32 / 100.0);
     w.set_renderer_mode(s.renderer_mode().into());
@@ -220,7 +268,7 @@ fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers) {
 
 /// 布局页：侧栏开关 / 默认折叠 / 停靠边。
 /// 注：侧栏宽度是拖拽产生的交互状态（设置页无对应控件），不纳入还原。
-fn reset_layout_page(w: &AppWindow, store: &Store, refs: &LayoutRefs) {
+fn reset_layout_page(w: &AppWindow, store: &Store, refs: &ResetRefs) {
     let d = crate::config::ConfigFile::default();
     {
         let mut s = store.borrow_mut();
@@ -267,7 +315,7 @@ fn reset_layout_page(w: &AppWindow, store: &Store, refs: &LayoutRefs) {
 
 /// 传输页：A 类 = 跟随 cd / 总是询问保存位置。B 类保留：挂载点过滤、下载目录。
 /// 注意：「隐藏特殊分区」的控件在 UI 上位于外观页，其还原也归外观页。
-fn reset_transfer_page(w: &AppWindow, store: &Store) {
+fn reset_transfer_page(w: &AppWindow, store: &Store, refs: &ResetRefs) {
     let d = crate::config::fresh_config();
     // sftp_follow_cd 的存储字段是 sftp_no_follow_cd（语义反转）
     let follow_cd = !d.sftp_no_follow_cd;
@@ -279,6 +327,10 @@ fn reset_transfer_page(w: &AppWindow, store: &Store) {
             tracing::warn!("failed to save config: {error:#}");
         }
     }
+    // 泵线程读的是这个原子标志而不是配置：只改配置与控件的话，已打开会话仍按
+    // 旧值跟随（或不跟随）cd —— 用户看到"还原了但没生效"。
+    refs.sftp_follow_cd
+        .store(follow_cd, std::sync::atomic::Ordering::Relaxed);
     w.set_sftp_follow_cd(follow_cd);
     w.set_download_always_ask(d.download_always_ask);
 }
@@ -389,38 +441,22 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         fonts_dirs.iter().map(|d| d.display().to_string()).collect::<Vec<_>>().join(", ")
     );
     let external_fonts = crate::fonts::load_external_fonts(&fonts_dirs);
-    // Populate the Interface font picker: embedded first, external next,
-    // system monospace families last, each labelled with its source.
+    // Populate the font pickers: embedded first, external next, system families
+    // last, each labelled with its source.
     let (font_labels, font_entries) = font_choices(&external_fonts, true);
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(font_labels))));
-    // Restore the saved family: find its index in the picker list (fall back
-    // to the first selectable family when it isn't listed).
-    let saved_family = store.borrow().font_family().to_string();
-    let font_index = font_entries
-        .iter()
-        .position(|e| matches!(e, FontEntry::Family(f) if *f == saved_family))
-        .or_else(|| {
-            font_entries
-                .iter()
-                .position(|e| matches!(e, FontEntry::Family(_)))
-        })
-        .unwrap_or(0);
-    window.set_term_font_index(font_index as i32);
-
-    // UI font picker: embedded + external + system (proportional fonts allowed).
     let (ui_labels, ui_entries) = font_choices(&external_fonts, false);
     window.set_ui_fonts(ModelRc::from(Rc::new(VecModel::from(ui_labels))));
-    // Restore saved UI font index (empty string = auto-detect).
-    let ui_saved = store.borrow().ui_font_family().to_string();
-    let ui_index = if ui_saved.is_empty() {
-        0 // "auto" position — first header
-    } else {
-        ui_entries
-            .iter()
-            .position(|e| matches!(e, FontEntry::Family(f) if *f == ui_saved))
-            .unwrap_or(0)
+    // 索引换算统一走 FontCatalog，启动播种与「还原本页默认」共用同一套规则
+    // —— 否则还原时极易漏掉索引，导致选择器停在旧项、显示与实际字体不符。
+    let fonts = FontCatalog {
+        term: Rc::new(font_entries),
+        ui: Rc::new(ui_entries),
     };
-    window.set_ui_font_index(ui_index as i32);
+    let saved_family = store.borrow().font_family().to_string();
+    window.set_term_font_index(fonts.term_index(&saved_family));
+    let ui_saved = store.borrow().ui_font_family().to_string();
+    window.set_ui_font_index(fonts.ui_index(&ui_saved));
 
     // Command bar (#55): seed quick commands + history from the config. Groups
     // start collapsed by default (#55).
@@ -782,6 +818,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
                     });
                     let _ = s.save();
                     w.set_output_highlight_rules(output_highlight_rule_model(&s));
+        // 规则清单变了，上一次的"规则已添加/已删除"提示文案必须清掉。
+        w.set_output_highlight_rule_status("".into());
                     apply_custom_output_rules(&w, &bufs, s.output_highlight_rules());
                 }
                 w.set_output_highlight_rule_status("".into());
@@ -799,6 +837,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             s.remove_output_highlight_rule(index.max(0) as usize);
             let _ = s.save();
             w.set_output_highlight_rules(output_highlight_rule_model(&s));
+        // 规则清单变了，上一次的"规则已添加/已删除"提示文案必须清掉。
+        w.set_output_highlight_rule_status("".into());
             apply_custom_output_rules(&w, &bufs, s.output_highlight_rules());
             w.set_output_highlight_rule_status("".into());
         });
@@ -813,6 +853,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             s.set_output_highlight_rule_enabled(index.max(0) as usize, enabled);
             let _ = s.save();
             w.set_output_highlight_rules(output_highlight_rule_model(&s));
+        // 规则清单变了，上一次的"规则已添加/已删除"提示文案必须清掉。
+        w.set_output_highlight_rule_status("".into());
             apply_custom_output_rules(&w, &bufs, s.output_highlight_rules());
         });
     }
@@ -888,12 +930,14 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         let weak = window.as_weak();
         let r_store = store.clone();
         let r_bufs = bufs.clone();
-        let r_refs = LayoutRefs {
+        let r_refs = ResetRefs {
             layout: layout.clone(),
             content_size: content_size.clone(),
             tabs_model: tabs_model.clone(),
             panes_model: panes_model.clone(),
             splitters_model: splitters_model.clone(),
+            fonts: fonts.clone(),
+            sftp_follow_cd: sftp_follow_cd.clone(),
         };
         window.on_reset_page(move |page: slint::SharedString| {
             let Some(w) = weak.upgrade() else { return };
