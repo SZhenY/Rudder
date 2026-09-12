@@ -18,12 +18,14 @@
 pub(super) mod appearance;
 pub(super) mod layout;
 pub(super) mod sync;
+pub(super) mod terminal;
 pub(super) mod transfer;
 pub(super) mod update;
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::app::FontEntry;
 use crate::config::ConfigStore;
 
 /// 配置存储句柄（UI 线程独占）。
@@ -39,5 +41,39 @@ pub(super) fn persist(store: &Store, set: impl FnOnce(&mut ConfigStore)) {
     set(&mut s);
     if let Err(error) = s.save() {
         tracing::warn!("failed to save config: {error:#}");
+    }
+}
+
+/// 字体选择器的条目表。枚举系统字体（fontdb）代价不低，所以启动时算一次，
+/// 「还原本页默认」需要把 family 反查回选择器索引时复用它 —— 不能每次重枚举。
+#[derive(Clone)]
+pub(super) struct FontCatalog {
+    pub(super) term: Rc<Vec<FontEntry>>,
+    pub(super) ui: Rc<Vec<FontEntry>>,
+}
+
+impl FontCatalog {
+    /// 终端等宽字体列表中该 family 的索引（找不到时回退到第一个可选家族）。
+    pub(super) fn term_index(&self, family: &str) -> i32 {
+        self.term
+            .iter()
+            .position(|e| matches!(e, FontEntry::Family(f) if f == family))
+            .or_else(|| {
+                self.term
+                    .iter()
+                    .position(|e| matches!(e, FontEntry::Family(_)))
+            })
+            .unwrap_or(0) as i32
+    }
+
+    /// 界面字体列表中该 family 的索引；空串 = "auto"（列表第 0 项）。
+    pub(super) fn ui_index(&self, family: &str) -> i32 {
+        if family.is_empty() {
+            return 0;
+        }
+        self.ui
+            .iter()
+            .position(|e| matches!(e, FontEntry::Family(f) if f == family))
+            .unwrap_or(0) as i32
     }
 }

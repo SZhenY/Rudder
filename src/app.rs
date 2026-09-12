@@ -213,7 +213,7 @@ mod window_chrome;
 use window_chrome::wire_window_chrome;
 use sampler::spawn_system_sampler;
 use updater::wire_update_check;
-pub(crate) use fonts_ui::{FontEntry, family_from_label, font_choices, resolve_ui_font_family, term_font_covers_cjk};
+pub(crate) use fonts_ui::{FontEntry, font_choices, resolve_ui_font_family, term_font_covers_cjk};
 pub(crate) use pane_layout::{
     refresh_panes, save_layout, update_terminal_row,
 };
@@ -2244,7 +2244,8 @@ mod log_highlight_tests {
 
 #[cfg(test)]
 mod font_choice_tests {
-    use super::{FontEntry, family_from_label, font_choices};
+    use super::fonts_ui::family_from_label;
+    use super::{FontEntry, font_choices};
 
     #[test]
     fn label_strips_indent_and_rejects_headers() {
