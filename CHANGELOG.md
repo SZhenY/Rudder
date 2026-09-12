@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-09-12
+
 ### 修复 / Fixed
 
 - **修复：终端页「还原本页默认」会清空已连接会话的屏幕。** 回滚行数是 alacritty 网格的**构造期**参数，改它必须重建网格、屏幕与回滚一并清空；而还原时该值通常本来就等于默认值，于是"还原"把一个正在使用的 SSH 会话清成了空白（改动字号才回来，是因为 resize 触发 SIGWINCH、shell 重新绘制）。现在只有回滚行数真的变化时才重建网格。**Fixed: restoring Terminal defaults blanked the screen of live sessions.** Scrollback is a construction-time parameter of the alacritty grid, so changing it must rebuild the grid and thereby clear the screen — but on restore it usually already equals the default, so a live SSH session was wiped for nothing (changing the font size brought content back only because the resize makes the shell repaint). The grid is now rebuilt only when the scrollback value actually changes.
