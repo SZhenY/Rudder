@@ -13,7 +13,8 @@
 use super::*;
 
 /// Shared config-store handle (`Rc<RefCell<ConfigStore>>`).
-type Store = Rc<RefCell<ConfigStore>>;
+// 配置存储句柄：与 `super::settings` 共用同一个别名定义。
+use super::settings::Store;
 
 /// Settings pages that expose a "restore this page's defaults" button.
 ///
@@ -167,7 +168,7 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
         SettingsPage::Terminal => reset_terminal_page(w, store, bufs, refs),
         SettingsPage::Appearance => reset_appearance_page(w, store, bufs, refs),
         SettingsPage::Layout => reset_layout_page(w, store, refs),
-        SettingsPage::Transfer => reset_transfer_page(w, store, refs),
+        SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
     }
 }
 
@@ -313,27 +314,6 @@ fn reset_layout_page(w: &AppWindow, store: &Store, refs: &ResetRefs) {
     });
 }
 
-/// 传输页：A 类 = 跟随 cd / 总是询问保存位置。B 类保留：挂载点过滤、下载目录。
-/// 注意：「隐藏特殊分区」的控件在 UI 上位于外观页，其还原也归外观页。
-fn reset_transfer_page(w: &AppWindow, store: &Store, refs: &ResetRefs) {
-    let d = crate::config::fresh_config();
-    // sftp_follow_cd 的存储字段是 sftp_no_follow_cd（语义反转）
-    let follow_cd = !d.transfer.sftp_no_follow_cd;
-    {
-        let mut s = store.borrow_mut();
-        s.set_sftp_follow_cd(follow_cd);
-        s.set_download_always_ask(d.transfer.download_always_ask);
-        if let Err(error) = s.save() {
-            tracing::warn!("failed to save config: {error:#}");
-        }
-    }
-    // 泵线程读的是这个原子标志而不是配置：只改配置与控件的话，已打开会话仍按
-    // 旧值跟随（或不跟随）cd —— 用户看到"还原了但没生效"。
-    refs.sftp_follow_cd
-        .store(follow_cd, std::sync::atomic::Ordering::Relaxed);
-    w.set_sftp_follow_cd(follow_cd);
-    w.set_download_always_ask(d.transfer.download_always_ask);
-}
 
 
 pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &AppContext) {
@@ -467,31 +447,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     window.set_command_history(history_model(&store.borrow()));
     window.set_history_view(history_view_model(&store.borrow(), "")); // #101
 
-    // Interface setting: SFTP follows the terminal's cd (the flag itself lives
-    // in `AppContext`; see the note in the pump).
-    window.set_sftp_follow_cd(store.borrow().sftp_follow_cd());
-    {
-        let store = store.clone();
-        let flag = sftp_follow_cd.clone();
-        window.on_set_sftp_follow_cd(move |follow| {
-            flag.store(follow, std::sync::atomic::Ordering::Relaxed);
-            let mut s = store.borrow_mut();
-            s.set_sftp_follow_cd(follow);
-            let _ = s.save();
-        });
-    }
+    settings::transfer::bind(window, store, sftp_follow_cd);
 
-    // Interface setting: always ask where to save on download (#87). Read live
-    // by the download handler from the window property, so just set + persist.
-    window.set_download_always_ask(store.borrow().download_always_ask());
-    {
-        let store = store.clone();
-        window.on_set_download_always_ask(move |ask| {
-            let mut s = store.borrow_mut();
-            s.set_download_always_ask(ask);
-            let _ = s.save();
-        });
-    }
 
     // Toolbar toggle: hide/show the quick-command bar (persisted globally).
     window.set_cmd_bar_hidden(store.borrow().cmd_bar_hidden());
@@ -587,16 +544,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             let _ = s.save();
         });
     }
-    {
-        // Toggle the startup new-version check (#184). Takes effect next launch
-        // for the check itself; the banner just won't appear once it's off.
-        let store = store.clone();
-        window.on_set_update_check_enabled(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_update_check_enabled(v);
-            let _ = s.save();
-        });
-    }
+    settings::update::bind(window, store);
     {
         // Renderer selection is consumed before the first native window exists,
         // so persist it now and apply it on the next launch (#280).
@@ -1583,18 +1531,20 @@ mod wiring_tests {
     #[test]
     fn every_page_property_is_covered_by_its_reset() {
         const UI: &str = include_str!("../../ui/interface_panel.slint");
-        const SRC: &str = include_str!("settings_ui.rs");
 
+        // 每页指向承载其还原逻辑的源文件。阶段 B 按页拆分后，还原函数会逐步
+        // 搬进 `settings/<page>.rs` —— 路径写错会 panic「找不到函数」（明确的失败，
+        // 不会静默放过）。
         let pages = [
-            ("terminal", "reset_terminal_page"),
-            ("appearance", "reset_appearance_page"),
-            ("layout", "reset_layout_page"),
-            ("transfer", "reset_transfer_page"),
+            ("terminal", include_str!("settings_ui.rs"), "reset_terminal_page"),
+            ("appearance", include_str!("settings_ui.rs"), "reset_appearance_page"),
+            ("layout", include_str!("settings_ui.rs"), "reset_layout_page"),
+            ("transfer", include_str!("settings/transfer.rs"), "reset"),
         ];
 
         let mut uncovered = Vec::new();
-        for (page, reset_fn) in pages {
-            let body = fn_body(SRC, reset_fn);
+        for (page, src, reset_fn) in pages {
+            let body = fn_body(src, reset_fn);
             for prop in props_on_page(UI, page) {
                 if UI_ONLY.contains(&prop.as_str())
                     || NOT_RESET_BY_DESIGN.iter().any(|(p, _)| *p == prop)

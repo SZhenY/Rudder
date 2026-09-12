@@ -207,6 +207,7 @@ mod pane_layout;
 mod fonts_ui;
 mod updater;
 mod sampler;
+mod settings;
 mod settings_ui;
 mod window_chrome;
 use window_chrome::wire_window_chrome;
