@@ -84,11 +84,8 @@ impl FontCatalog {
 /// 还有派生 UI 状态（字体选择器索引）、运行时镜像（SFTP 跟随标志）等。
 #[derive(Clone)]
 struct ResetRefs {
-    layout: Rc<RefCell<crate::layout::Layout>>,
-    content_size: Rc<std::cell::Cell<(f32, f32)>>,
-    tabs_model: Rc<VecModel<TabInfo>>,
-    panes_model: Rc<VecModel<PaneInfo>>,
-    splitters_model: Rc<VecModel<SplitterInfo>>,
+    /// 窗格与模型句柄（布局页还原时做窗格树迁移用）。
+    panes: settings::layout::PaneHandles,
     fonts: FontCatalog,
     /// 泵线程读取的「SFTP 跟随 cd」实时标志。还原必须同时更新它，否则配置与
     /// 界面都变了、**已打开会话的行为却没变** —— 表现为"还原不生效"。
@@ -103,7 +100,7 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
     match page {
         SettingsPage::Terminal => reset_terminal_page(w, store, bufs, refs),
         SettingsPage::Appearance => reset_appearance_page(w, store, bufs, refs),
-        SettingsPage::Layout => reset_layout_page(w, store, refs),
+        SettingsPage::Layout => settings::layout::reset(w, store, &refs.panes),
         SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
     }
 }
@@ -203,52 +200,6 @@ fn reset_appearance_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs:
     w.set_animations_enabled(true);
 }
 
-/// 布局页：侧栏开关 / 默认折叠 / 停靠边。
-/// 注：侧栏宽度是拖拽产生的交互状态（设置页无对应控件），不纳入还原。
-fn reset_layout_page(w: &AppWindow, store: &Store, refs: &ResetRefs) {
-    let d = crate::config::ConfigFile::default();
-    {
-        let mut s = store.borrow_mut();
-        s.set_welcome_as_sidebar(d.layout.welcome_as_sidebar);
-        s.set_quick_commands_as_sidebar(d.layout.quick_commands_as_sidebar);
-        s.set_collapse_sidebar_default(d.layout.collapse_sidebar_default);
-        s.set_collapse_sftp_default(d.layout.collapse_sftp_default);
-        s.set_sidebar_dock(d.layout.sidebar_dock.clone());
-        if let Err(error) = s.save() {
-            tracing::warn!("failed to save config: {error:#}");
-        }
-    }
-    // 布局是派生状态：sidebar_dock / welcome_as_sidebar 变了之后，dock 冲突消解、
-    // 各面板几何量、窗格树都必须重算 —— 只 set 属性会留下陈旧的窗格模型，表现为
-    // 面板相互重叠（用户报告的布局错乱）。而 welcome_as_sidebar 又是双向绑定
-    // 属性，在回调里直接改会递归销毁 Welcome 子树（#323），所以整个视觉迁移
-    // 延迟一帧执行 —— 与运行时开关 on_set_welcome_as_sidebar 同一套路。
-    let weak = w.as_weak();
-    let r_store = (*store).clone();
-    let r = refs.clone();
-    slint::Timer::single_shot(std::time::Duration::ZERO, move || {
-        let Some(w) = weak.upgrade() else { return };
-        apply_layout_prefs(&w, &r_store);
-        // welcome 页在侧栏与窗格树之间迁移，必须与属性保持一致。
-        let welcome = r_store.borrow().welcome_as_sidebar();
-        {
-            let mut lay = r.layout.borrow_mut();
-            if welcome {
-                lay.remove_tab("welcome");
-            } else if lay.leaf_of_tab("welcome").is_none() {
-                lay.add_tab("welcome".into());
-            }
-        }
-        refresh_panes(
-            &w,
-            &r.layout.borrow(),
-            r.content_size.get(),
-            &r.tabs_model,
-            &r.panes_model,
-            &r.splitters_model,
-        );
-    });
-}
 
 
 
@@ -385,48 +336,28 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
 
     settings::transfer::bind(window, store, sftp_follow_cd);
     settings::sync::bind(window, store, sessions_model);
+    settings::layout::bind(
+        window,
+        store,
+        handles,
+        &settings::layout::PaneHandles {
+            layout: layout.clone(),
+            content_size: content_size.clone(),
+            tabs_model: tabs_model.clone(),
+            panes_model: panes_model.clone(),
+            splitters_model: splitters_model.clone(),
+        },
+    );
 
 
     // Toolbar toggle: hide/show the quick-command bar (persisted globally).
     window.set_cmd_bar_hidden(store.borrow().cmd_bar_hidden());
-    {
-        let store = store.clone();
-        window.on_set_cmd_bar_hidden(move |hidden| {
-            let mut s = store.borrow_mut();
-            s.set_cmd_bar_hidden(hidden);
-            if let Err(error) = s.save() {
-                tracing::warn!("failed to save config: {error:#}");
-            }
-        });
-    }
+
 
     // Zen (focus) mode: sidebar + tab strip hidden, persisted across launches.
     window.set_zen_mode(store.borrow().zen_mode());
-    {
-        let store = store.clone();
-        window.on_set_zen_mode(move |enabled| {
-            let mut s = store.borrow_mut();
-            s.set_zen_mode(enabled);
-            if let Err(error) = s.save() {
-                tracing::warn!("failed to save config: {error:#}");
-            }
-        });
-    }
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        window.on_toggle_zen_key(move || {
-            if let Some(w) = weak.upgrade() {
-                let next = !w.get_zen_mode();
-                let mut s = store.borrow_mut();
-                s.set_zen_mode(next);
-                if let Err(error) = s.save() {
-                    tracing::warn!("failed to save config: {error:#}");
-                }
-                w.set_zen_mode(next);
-            }
-        });
-    }
+
+
 
     // Terminal: EOL conversion + OSC 52 clipboard.  Read-once seed + persist.
     {
@@ -455,14 +386,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         let preferred = (ww > 0.0 && wh > 0.0).then_some((ww, wh));
         pending_window_size_restore.set(preferred);
     }
-    {
-        let store = store.clone();
-        window.on_set_collapse_sidebar_default(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_collapse_sidebar_default(v);
-            let _ = s.save();
-        });
-    }
+
     {
         let store = store.clone();
         window.on_set_animations_enabled(move |v| {
@@ -473,14 +397,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             }
         });
     }
-    {
-        let store = store.clone();
-        window.on_set_quick_commands_as_sidebar(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_quick_commands_as_sidebar(v);
-            let _ = s.save();
-        });
-    }
+
     settings::update::bind(window, store);
     {
         // Renderer selection is consumed before the first native window exists,
@@ -492,52 +409,11 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             let _ = s.save();
         });
     }
-    {
-        let store = store.clone();
-        window.on_persist_sidebar_width(move |w| {
-            let mut s = store.borrow_mut();
-            s.set_sidebar_width(w);
-            let _ = s.save();
-        });
-    }
-    {
-        let store = store.clone();
-        let handles = handles.clone();
-        window.on_set_sidebar_collapsed(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_sidebar_collapsed(v);
-            let _ = s.save();
-            // Pause resource monitoring for every live session while the
-            // sidebar is hidden; resume when it comes back (upstream b17da25).
-            for handle in handles.borrow().values() {
-                handle.set_resource_monitoring(!v);
-            }
-        });
-    }
-    {
-        let store = store.clone();
-        window.on_persist_welcome_sidebar_width(move |w| {
-            let mut s = store.borrow_mut();
-            s.set_welcome_sidebar_width(w);
-            let _ = s.save();
-        });
-    }
-    {
-        let store = store.clone();
-        window.on_persist_welcome_sidebar_dock(move |dock| {
-            let mut s = store.borrow_mut();
-            s.set_welcome_sidebar_dock(dock.to_string());
-            let _ = s.save();
-        });
-    }
-    {
-        let store = store.clone();
-        window.on_set_welcome_collapsed(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_welcome_collapsed(v);
-            let _ = s.save();
-        });
-    }
+
+
+
+
+
     {
         let store = store.clone();
         window.on_persist_wallpaper_overlay(move |v| {
@@ -546,14 +422,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             let _ = s.save();
         });
     }
-    {
-        let store = store.clone();
-        window.on_set_collapse_sftp_default(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_collapse_sftp_default(v);
-            let _ = s.save();
-        });
-    }
+
 
     // Session-sync upload setting (#sync). Persisted; only has effect while the
     // session-sync toggle is on. Read live from the window in the upload handler.
@@ -734,11 +603,13 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         let r_store = store.clone();
         let r_bufs = bufs.clone();
         let r_refs = ResetRefs {
-            layout: layout.clone(),
-            content_size: content_size.clone(),
-            tabs_model: tabs_model.clone(),
-            panes_model: panes_model.clone(),
-            splitters_model: splitters_model.clone(),
+            panes: settings::layout::PaneHandles {
+                layout: layout.clone(),
+                content_size: content_size.clone(),
+                tabs_model: tabs_model.clone(),
+                panes_model: panes_model.clone(),
+                splitters_model: splitters_model.clone(),
+            },
             fonts: fonts.clone(),
             sftp_follow_cd: sftp_follow_cd.clone(),
         };
@@ -1017,61 +888,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             }
         });
     }
-    // Toggle welcome-as-sidebar at runtime: persist, then move the welcome tab in
-    // or out of the split-tree (sidebar mode = no welcome tab) and re-flatten.
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        let layout = layout.clone();
-        let content_size = content_size.clone();
-        let tabs_model = tabs_model.clone();
-        let panes_model = panes_model.clone();
-        let splitters_model = splitters_model.clone();
-        window.on_set_welcome_as_sidebar(move |v| {
-            // Persist first: saving config never touches the Slint tree, and
-            // doing it synchronously means an immediate window close cannot
-            // lose the preference. Only the property/layout transition has to
-            // wait — it is two-way-bound through InterfacePanel and changing it
-            // destroys/recreates the Welcome subtree that owns the Switch, so
-            // defer the *entire* transition until this callback has returned;
-            // deferring only refresh_panes still destroys the component tree
-            // recursively on Windows (#323).
-            {
-                let mut s = store.borrow_mut();
-                s.set_welcome_as_sidebar(v);
-                if let Err(error) = s.save() {
-                    tracing::warn!("failed to save config: {error:#}");
-                }
-            }
-            let weak = weak.clone();
-            let layout = layout.clone();
-            let content_size = content_size.clone();
-            let tabs_model = tabs_model.clone();
-            let panes_model = panes_model.clone();
-            let splitters_model = splitters_model.clone();
-            slint::Timer::single_shot(std::time::Duration::ZERO, move || {
-                if let Some(w) = weak.upgrade() {
-                    w.set_welcome_as_sidebar(v);
-                    {
-                        let mut lay = layout.borrow_mut();
-                        if v {
-                            lay.remove_tab("welcome");
-                        } else if lay.leaf_of_tab("welcome").is_none() {
-                            lay.add_tab("welcome".into());
-                        }
-                    }
-                    refresh_panes(
-                        &w,
-                        &layout.borrow(),
-                        content_size.get(),
-                        &tabs_model,
-                        &panes_model,
-                        &splitters_model,
-                    );
-                }
-            });
-        });
-    }
+
     // Per-session SFTP state: collapse + sizes live in each tab's TerminalState so
     // split panes / other tabs each keep their own (resizing/collapsing one no
     // longer bleeds onto the rest) (#v0.5).
@@ -1342,7 +1159,7 @@ mod wiring_tests {
         let pages = [
             ("terminal", include_str!("settings_ui.rs"), "reset_terminal_page"),
             ("appearance", include_str!("settings_ui.rs"), "reset_appearance_page"),
-            ("layout", include_str!("settings_ui.rs"), "reset_layout_page"),
+            ("layout", include_str!("settings/layout.rs"), "reset"),
             ("transfer", include_str!("settings/transfer.rs"), "reset"),
         ];
 

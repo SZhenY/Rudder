@@ -18,12 +18,7 @@ use crate::ui::{AppWindow, SessionInfo};
 /// `sessions_model` 用于 WebDAV 下载后刷新欢迎页的会话列表。传 `&Rc<..>` 而不是
 /// `&VecModel<..>`：`VecModel` 不是 `Clone`，对引用调 `.clone()` 得到的还是引用，
 /// 被 `move` 闭包捕获会逃逸出函数体。
-pub(crate) fn bind(
-    window: &AppWindow,
-    store: &Store,
-    sessions_model: &Rc<VecModel<SessionInfo>>,
-) {
-
+pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecModel<SessionInfo>>) {
     {
         let store = store.clone();
         window.on_set_sync_upload_enabled(move |v| {
@@ -167,5 +162,4 @@ pub(crate) fn bind(
     }
 
     window.set_sync_upload_enabled(store.borrow().sync_upload());
-
 }
