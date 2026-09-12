@@ -384,6 +384,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     window.set_history_view(history_view_model(&store.borrow(), "")); // #101
 
     settings::transfer::bind(window, store, sftp_follow_cd);
+    settings::sync::bind(window, store, sessions_model);
 
 
     // Toolbar toggle: hide/show the quick-command bar (persisted globally).
@@ -556,95 +557,13 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
 
     // Session-sync upload setting (#sync). Persisted; only has effect while the
     // session-sync toggle is on. Read live from the window in the upload handler.
-    window.set_sync_upload_enabled(store.borrow().sync_upload());
-    {
-        let store = store.clone();
-        window.on_set_sync_upload_enabled(move |v| {
-            let mut s = store.borrow_mut();
-            s.set_sync_upload(v);
-            let _ = s.save();
-        });
-    }
+
 
     // WebDAV config sync (#185): manual upload/download of the portable session
     // export JSON. It is intentionally not automatic on startup.
-    {
-        let s = store.borrow();
-        window.set_webdav_enabled(s.webdav_enabled());
-        window.set_webdav_url(s.webdav_url().into());
-        window.set_webdav_username(s.webdav_username().into());
-        window.set_webdav_password(s.webdav_password().into());
-        window.set_webdav_remote_path(s.webdav_remote_path().into());
-        window.set_webdav_accept_invalid_certs(s.webdav_accept_invalid_certs());
-        window.set_webdav_status(String::new().into());
-    }
-    {
-        let store = store.clone();
-        window.on_save_webdav_settings(
-            move |enabled: bool,
-                  url: SharedString,
-                  username: SharedString,
-                  password: SharedString,
-                  remote_path: SharedString,
-                  accept_invalid_certs: bool| {
-                let mut s = store.borrow_mut();
-                s.set_webdav_settings(
-                    enabled,
-                    url.to_string(),
-                    username.to_string(),
-                    password.to_string(),
-                    remote_path.to_string(),
-                    accept_invalid_certs,
-                );
-                let _ = s.save();
-            },
-        );
-    }
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        window.on_webdav_upload(move || {
-            let Some(w) = weak.upgrade() else { return };
-            let enabled = w.get_webdav_enabled();
-            let url = w.get_webdav_url().to_string();
-            let username = w.get_webdav_username().to_string();
-            let password = w.get_webdav_password().to_string();
-            let remote_path = w.get_webdav_remote_path().to_string();
-            let accept_invalid_certs = w.get_webdav_accept_invalid_certs();
-            {
-                let mut s = store.borrow_mut();
-                s.set_webdav_settings(
-                    enabled,
-                    url.clone(),
-                    username.clone(),
-                    password.clone(),
-                    remote_path.clone(),
-                    accept_invalid_certs,
-                );
-                let _ = s.save();
-            }
-            if !enabled {
-                w.set_webdav_status(t("请先启用 WebDAV 同步", "enable WebDAV sync first").into());
-                return;
-            }
-            let res = store.borrow().export_json().and_then(|(json, count)| {
-                webdav_put_json(
-                    &url,
-                    &remote_path,
-                    &username,
-                    &password,
-                    accept_invalid_certs,
-                    json,
-                )
-                .map(|_| count)
-            });
-            let msg = match res {
-                Ok(n) => format!("{} {}", t("已上传连接", "uploaded connections"), n),
-                Err(e) => format!("{}: {}", t("上传失败", "upload failed"), e),
-            };
-            w.set_webdav_status(msg.into());
-        });
-    }
+
+
+
     {
         let weak = window.as_weak();
         let store = store.clone();
@@ -1075,58 +994,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             }
         });
     }
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        let sessions_model = sessions_model.clone();
-        window.on_webdav_download(move || {
-            let Some(w) = weak.upgrade() else { return };
-            let enabled = w.get_webdav_enabled();
-            let url = w.get_webdav_url().to_string();
-            let username = w.get_webdav_username().to_string();
-            let password = w.get_webdav_password().to_string();
-            let remote_path = w.get_webdav_remote_path().to_string();
-            let accept_invalid_certs = w.get_webdav_accept_invalid_certs();
-            {
-                let mut s = store.borrow_mut();
-                s.set_webdav_settings(
-                    enabled,
-                    url.clone(),
-                    username.clone(),
-                    password.clone(),
-                    remote_path.clone(),
-                    accept_invalid_certs,
-                );
-                let _ = s.save();
-            }
-            if !enabled {
-                w.set_webdav_status(t("请先启用 WebDAV 同步", "enable WebDAV sync first").into());
-                return;
-            }
-            let res = webdav_get_json(
-                &url,
-                &remote_path,
-                &username,
-                &password,
-                accept_invalid_certs,
-            )
-            .and_then(|json| store.borrow_mut().import_json(&json));
-            let msg = match res {
-                Ok((added, skipped)) => {
-                    sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
-                    format!(
-                        "{} {}, {} {}",
-                        t("已导入", "imported"),
-                        added,
-                        t("跳过", "skipped"),
-                        skipped
-                    )
-                }
-                Err(e) => format!("{}: {}", t("下载失败", "download failed"), e),
-            };
-            w.set_webdav_status(msg.into());
-        });
-    }
+
 
     {
         let weak = window.as_weak();

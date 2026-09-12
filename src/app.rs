@@ -233,7 +233,6 @@ use self::sftp_ui::*;
 use self::sidebar::*;
 use self::tab_callbacks::*;
 use self::terminal_ui::*;
-use self::webdav::*;
 use self::window::*;
 
 fn tab_title_len(title: &str) -> i32 {

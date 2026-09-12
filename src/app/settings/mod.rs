@@ -16,6 +16,7 @@
 //! （`wiring_tests`）再从外部钉住"还原不能漏"。
 
 pub(super) mod layout;
+pub(super) mod sync;
 pub(super) mod transfer;
 pub(super) mod update;
 
