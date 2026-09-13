@@ -1,0 +1,400 @@
+// 设置页：appearance
+//
+// 由 interface_panel.slint 按页拆分而来（阶段 B）。页面只声明自己用到的
+// 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
+// 因此可以保持与改造前逐字一致。
+
+import { Theme, AnimationSettings } from "../../theme.slint";
+import { SettingRow, Stepper, WallpaperSwatch } from "../chrome.slint";
+import { SettingsSection } from "../section.slint";
+import { ResetBar } from "../reset_bar.slint";
+import { ComboBox, ScrollView, Slider, Switch } from "std-widgets.slint";
+
+export component AppearancePage inherits VerticalLayout {
+    in property <string> current-wallpaper;
+    // 页面私有状态（原为 InterfacePanel 的私有 property，随页面一起搬过来）：
+    // “当前壁纸是不是自定义图片”与“换渲染后端需重启才生效”。
+    property <bool> renderer-restart-required;
+    property <bool> wp-is-custom:
+        root.current-wallpaper != "" && root.current-wallpaper != "builtin:light"
+        && root.current-wallpaper != "builtin:dark" && root.current-wallpaper != "builtin:tech"
+        && root.current-wallpaper != "builtin:miku" && root.current-wallpaper != "builtin:ms";
+
+    in property <string> custom-wallpaper-name;
+    in-out property <bool> hide-special-partitions;
+    in property <bool> lang-en;
+    in-out property <string> mount-filter;
+    in-out property <string> renderer-mode;
+    in-out property <int> ui-font-index;
+    in property <[string]> ui-fonts;
+    in property <float> ui-scale;
+    in-out property <float> wallpaper-overlay;
+    callback persist-wallpaper-overlay(float);
+    callback pick-wallpaper-file();
+    callback reset-page(string);
+    callback set-animations-enabled(bool);
+    callback set-hide-special-partitions(bool);
+    callback set-mount-filter(string);
+    callback set-panel-font(int);
+    callback set-renderer-mode(string);
+    callback set-ui-font(string);
+    callback set-ui-scale(int);
+    callback set-wallpaper(string);
+
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 14px;
+    spacing: 0;
+    alignment: start;
+
+    SettingsSection {
+        section-id: "appearance.ui-font";
+        lang-en: root.lang-en;
+        title-zh: "界面字体";
+        title-en: "UI FONT";
+        title-height: 24px;
+        SettingRow {
+            label: root.lang-en ? "UI font" : "界面字体";
+            desc: root.lang-en
+                ? "Choose a font for menus, settings and dialogs. Changes take effect immediately."
+                : "选择菜单、设置和对话框的字体。修改后即时生效。";
+            ComboBox {
+                width: 220px;
+                model: root.ui-fonts;
+                current-index <=> root.ui-font-index;
+                selected(v) => { root.set-ui-font(v); }
+            }
+        }
+
+    }
+    SettingsSection {
+        section-id: "appearance.wallpaper";
+        lang-en: root.lang-en;
+        title-zh: "壁纸";
+        title-en: "WALLPAPER";
+        title-height: 24px;
+        Text {
+            text: root.lang-en
+                ? "Pick a wallpaper — the interface tints itself to match (accent, panels, light/dark)."
+                : "选一张壁纸,界面会沉浸式地适配它的颜色(强调色、面板、深浅)。";
+            color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
+        }
+        Rectangle { height: 12px; }
+
+        // Built-in choices: keep this row horizontally scrollable as
+        // bundled wallpapers grow.
+        builtin-wallpapers-scroll := ScrollView {
+            height: 106px;
+            width: 100%;
+            viewport-width: max(self.visible-width, builtin-wallpapers-row.preferred-width);
+            viewport-height: self.visible-height;
+
+            builtin-wallpapers-row := HorizontalLayout {
+                spacing: 11px;
+                alignment: start;
+            VerticalLayout {
+                spacing: 5px;
+                WallpaperSwatch {
+                    width: 100px;
+                    selected: root.current-wallpaper == "";
+                    clicked => { root.set-wallpaper(""); }
+                    Rectangle {
+                        width: 100%; height: 100%;
+                        background: Theme.window-base;
+                        Text {
+                            text: "\u{E14C}"; // clear / none
+                            font-family: "Material Icons"; color: Theme.text-muted;
+                            font-size: 22px * Theme.panel-font;
+                            width: 100%; height: 100%;
+                            horizontal-alignment: center; vertical-alignment: center;
+                        }
+                    }
+                }
+                Text { text: root.lang-en ? "None" : "无"; font-size: 11px * Theme.panel-font;
+                       color: Theme.text-secondary; horizontal-alignment: center; }
+            }
+            VerticalLayout {
+                spacing: 5px;
+                WallpaperSwatch {
+                    width: 100px;
+                    selected: root.current-wallpaper == "builtin:light";
+                    clicked => { root.set-wallpaper("builtin:light"); }
+                    Rectangle {
+                        width: 100%; height: 100%;
+                        background: @linear-gradient(135deg, #eff3fb 0%, #d5e1f2 100%);
+                        Rectangle {
+                            x: parent.width * 0.66; y: -parent.height * 0.2;
+                            width: 56px; height: 56px; border-radius: 28px;
+                            background: #4a90e2; opacity: 0.30;
+                        }
+                    }
+                }
+                Text { text: root.lang-en ? "Meat Light" : "简约·浅"; font-size: 11px * Theme.panel-font;
+                       color: Theme.text-secondary; horizontal-alignment: center; }
+            }
+            VerticalLayout {
+                spacing: 5px;
+                WallpaperSwatch {
+                    width: 100px;
+                    selected: root.current-wallpaper == "builtin:dark";
+                    clicked => { root.set-wallpaper("builtin:dark"); }
+                    Rectangle {
+                        width: 100%; height: 100%;
+                        background: @linear-gradient(135deg, #10131a 0%, #1b2233 100%);
+                        Rectangle {
+                            x: parent.width * 0.66; y: -parent.height * 0.2;
+                            width: 56px; height: 56px; border-radius: 28px;
+                            background: #4a6ce0; opacity: 0.40;
+                        }
+                    }
+                }
+                Text { text: root.lang-en ? "Meat Dark" : "简约·暗"; font-size: 11px * Theme.panel-font;
+                       color: Theme.text-secondary; horizontal-alignment: center; }
+            }
+            }
+        }
+
+        Rectangle { height: 16px; }
+    }
+    SettingsSection {
+        section-id: "appearance.custom";
+        lang-en: root.lang-en;
+        title-zh: "自定义";
+        title-en: "CUSTOM";
+        title-height: 22px;
+        HorizontalLayout {
+            spacing: 14px;
+            alignment: start;
+            WallpaperSwatch {
+                selected: root.wp-is-custom;
+                clicked => { root.pick-wallpaper-file(); }
+                // Show the real image when a custom one is active, else a
+                // "choose a file" placeholder.
+                if root.wp-is-custom : Image {
+                    width: 100%; height: 100%;
+                    source: Theme.wallpaper;
+                    image-fit: cover;
+                }
+                if !root.wp-is-custom : Rectangle {
+                    width: 100%; height: 100%;
+                    background: Theme.bg-elevated;
+                    Text {
+                        text: "\u{E2C6}"; // folder-open
+                        font-family: "Material Icons"; color: Theme.text-secondary;
+                        font-size: 22px * Theme.panel-font;
+                        width: 100%; height: 100%;
+                        horizontal-alignment: center; vertical-alignment: center;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 6px;
+                Rectangle {
+                    width: 130px; height: 30px;
+                    border-radius: 6px;
+                    background: pick-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                    pick-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.pick-wallpaper-file(); }
+                    }
+                    Text {
+                        text: root.lang-en ? "Choose file…" : "选择文件…";
+                        color: white; font-size: 12px * Theme.panel-font;
+                        width: 100%; height: 100%;
+                        horizontal-alignment: center; vertical-alignment: center;
+                    }
+                }
+                if root.wp-is-custom : Text {
+                    text: root.custom-wallpaper-name;
+                    color: Theme.text-muted; font-size: 11px * Theme.panel-font;
+                    width: 150px; overflow: elide;
+                }
+            }
+        }
+
+        Rectangle { height: 16px; }
+    }
+    SettingsSection {
+        section-id: "appearance.overlay";
+        lang-en: root.lang-en;
+        title-zh: "遮罩";
+        title-en: "OVERLAY";
+        title-height: 22px;
+        SettingRow {
+            label: root.lang-en ? "Wallpaper transparency" : "壁纸遮罩透明度";
+            desc: root.lang-en
+                ? "How much the wallpaper shows through panels and the terminal (no effect without a wallpaper)."
+                : "壁纸透过面板 / 终端背景的程度,越往右越透;没设壁纸时不生效。";
+            show-divider: false;
+            HorizontalLayout {
+                spacing: 8px;
+                Slider {
+                    width: 150px;
+                    minimum: 0;
+                    // Up to 70% transparency (overlay floor 0.30).
+                    maximum: 70;
+                    value: (1.0 - root.wallpaper-overlay) * 100;
+                    changed(v) => { root.wallpaper-overlay = 1.0 - v / 100; }
+                    released(v) => { root.persist-wallpaper-overlay(1.0 - v / 100); }
+                }
+                Text {
+                    text: "\{round((1.0 - root.wallpaper-overlay) * 100)}%";
+                    color: Theme.text-secondary;
+                    font-size: 12px * Theme.panel-font;
+                    vertical-alignment: center;
+                    width: 34px;
+                }
+            }
+        }
+
+    }
+    SettingsSection {
+        section-id: "appearance.rendering";
+        lang-en: root.lang-en;
+        title-zh: "渲染";
+        title-en: "RENDERING";
+        title-height: 24px;
+        SettingRow {
+            label: root.lang-en ? "Renderer" : "渲染器";
+            desc: Theme.is-mac
+                ? (root.lang-en
+                    ? "FemtoVG is the default. Try Skia when text is missing or rendered incorrectly on macOS."
+                    : "FemtoVG 是默认渲染器；如果 macOS 上文字缺失或显示异常，可以尝试 Skia。")
+                : (root.lang-en
+                    ? "Auto tries GPU acceleration and lets Slint fall back to software. Software is best for VMs and compatibility."
+                    : "自动模式会尝试 GPU 加速，并由 Slint 在初始化失败时回退到软件渲染；虚拟机或兼容性优先时请选择软件。");
+            show-divider: false;
+            ComboBox {
+                width: 150px;
+                model: Theme.is-mac
+                    ? ["FemtoVG", "Skia"]
+                    : (root.lang-en
+                        ? ["Automatic", "GPU", "Software"]
+                        : ["自动", "GPU", "软件"]);
+                current-value: Theme.is-mac
+                    ? (root.renderer-mode == "skia" ? "Skia" : "FemtoVG")
+                    : (root.renderer-mode == "auto"
+                        ? (root.lang-en ? "Automatic" : "自动")
+                        : root.renderer-mode == "gpu"
+                            ? "GPU"
+                            : (root.lang-en ? "Software" : "软件"));
+                selected(v) => {
+                    if (Theme.is-mac && v == "FemtoVG"
+                            && root.renderer-mode != "femtovg") {
+                        root.renderer-mode = "femtovg";
+                        root.set-renderer-mode("femtovg");
+                        root.renderer-restart-required = true;
+                    } else if (Theme.is-mac && v == "Skia"
+                            && root.renderer-mode != "skia") {
+                        root.renderer-mode = "skia";
+                        root.set-renderer-mode("skia");
+                        root.renderer-restart-required = true;
+                    } else if (!Theme.is-mac && (v == "Automatic" || v == "自动")
+                            && root.renderer-mode != "auto") {
+                        root.renderer-mode = "auto";
+                        root.set-renderer-mode("auto");
+                        root.renderer-restart-required = true;
+                    } else if (!Theme.is-mac && v == "GPU" && root.renderer-mode != "gpu") {
+                        root.renderer-mode = "gpu";
+                        root.set-renderer-mode("gpu");
+                        root.renderer-restart-required = true;
+                    } else if (!Theme.is-mac && (v == "Software" || v == "软件")
+                            && root.renderer-mode != "software") {
+                        root.renderer-mode = "software";
+                        root.set-renderer-mode("software");
+                        root.renderer-restart-required = true;
+                    }
+                }
+            }
+        }
+        Rectangle { height: 10px; }
+        Text {
+            text: root.renderer-restart-required
+                ? (root.lang-en
+                    ? "Restart Rudder to apply the renderer change."
+                    : "重启 Rudder 后渲染器设置才会生效。")
+                : (root.lang-en
+                    ? (Theme.is-mac
+                        ? "FemtoVG remains the default renderer on macOS."
+                        : "Software remains the compatibility default for existing installations.")
+                    : (Theme.is-mac
+                        ? "macOS 默认继续使用 FemtoVG 渲染器。"
+                        : "现有安装继续默认使用兼容性更好的软件渲染。"));
+            color: root.renderer-restart-required ? Theme.accent : Theme.text-muted;
+            font-size: 11px * Theme.panel-font;
+            wrap: word-wrap;
+        }
+        Rectangle { height: 12px; }
+        SettingRow {
+            show-divider: false;
+            label: root.lang-en ? "Animations" : "动画";
+            desc: root.lang-en
+                ? "Enable or disable all sidebar and panel animations."
+                : "启用或禁用所有侧边栏和面板动画。";
+            Switch {
+                checked <=> AnimationSettings.enabled;
+                toggled => {
+                    // 持久化：此前这个开关只改 Slint 全局，重启即回。
+                    root.set-animations-enabled(AnimationSettings.enabled);
+                }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "UI scale" : "界面缩放";
+            desc: root.lang-en ? "Zooms the whole interface (not this panel)."
+                               : "缩放整个界面(不影响本面板)。";
+            Stepper {
+                value: round(root.ui-scale * 100); minimum: 80; maximum: 200; step: 10; unit: "%";
+                changed(v) => { root.set-ui-scale(v); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Settings font size" : "界面字体大小";
+            desc: root.lang-en ? "Enlarges this settings panel (font + window)."
+                               : "放大本设置面板的字体和窗口。";
+            show-divider: false;
+            Stepper {
+                value: round(Theme.panel-font * 100); minimum: 80; maximum: 160; step: 10; unit: "%";
+                changed(v) => { root.set-panel-font(v); }
+            }
+        }
+
+        Rectangle { height: 14px; }
+        SettingRow {
+            label: root.lang-en ? "Hide special partitions" : "隐藏特殊分区";
+            desc: root.lang-en
+                ? "Hide EFI / swap / temporary pseudo-file-systems and very small partitions in the resource panel."
+                : "在资源面板中隐藏 EFI / swap / 临时文件系统等伪分区，避免误导。";
+            Switch {
+                checked <=> root.hide-special-partitions;
+                toggled => { root.set-hide-special-partitions(root.hide-special-partitions); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Mount filter" : "挂载点过滤";
+            desc: root.lang-en
+                ? "Only show these mount points (space/comma/semicolon separated). Leave empty to show all."
+                : "仅显示这些挂载点的磁盘信息（空格/逗号/分号分隔）。留空表示显示全部。";
+            Rectangle {
+                width: 208px; height: 30px;
+                border-radius: 6px; border-width: 1px;
+                border-color: Theme.border-subtle;
+                background: Theme.bg-elevated;
+                TextInput {
+                    width: parent.width - 8px; x: 4px;
+                    height: parent.height; vertical-alignment: center;
+                    color: Theme.text-primary;
+                    text <=> root.mount-filter;
+                accepted => { root.set-mount-filter(root.mount-filter); }
+            }
+            }
+        }
+            
+        // 还原本页默认（本页最后一个设置项之后）
+    }
+    ResetBar {
+        page-id: "appearance";
+        reset-page(p) => { root.reset-page(p); }
+    }
+}

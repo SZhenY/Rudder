@@ -1,0 +1,36 @@
+// 「还原本页默认」——两段式确认：第一下"上膛"，第二下才执行。
+//
+// armed 状态**归组件自己**（`property` 是 Slint 的组件内私有状态，生命周期随实例）。
+// 此前 4 个还原按钮共用 InterfacePanel 上的一个 `reset-armed`：在终端页点一下上膛、
+// 切到外观页，按钮会直接显示「确认还原？」—— 一次误点就还原掉了另一页。
+//
+// 用法（Slint 的 `<=>` 双向绑定只适用于**属性**；callback 必须用 `=>` 显式转发）：
+//
+//     ResetBar { page-id: "terminal"; reset-page(p) => { root.reset-page(p); } }
+//
+import { GhostButton } from "../widgets.slint";
+
+export component ResetBar inherits HorizontalLayout {
+    /// 传给上层 `reset-page(page-id)` 的页面标识，需与 Rust 侧 `SettingsPage` 一致。
+    in property <string> page-id;
+    in property <string> label: @tr("还原本页默认");
+    in property <string> label-armed: @tr("确认还原？");
+    callback reset-page(string);
+
+    property <bool> armed: false;
+
+    padding-top: 12px;
+    padding-bottom: 4px;
+    Rectangle { horizontal-stretch: 1; }
+    GhostButton {
+        text: root.armed ? root.label-armed : root.label;
+        clicked => {
+            if (root.armed) {
+                root.armed = false;
+                root.reset-page(root.page-id);
+            } else {
+                root.armed = true;
+            }
+        }
+    }
+}

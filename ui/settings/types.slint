@@ -1,0 +1,21 @@
+// 设置页与其他 UI 共享的数据结构（Slint 官方 `struct` + 跨文件 import）。
+//
+// 从 interface_panel.slint 抽出（阶段 B）：Rust 侧直接把这些结构体填进模型，
+// 因此它们属于**跨组件的公共契约**，不该绑在某一个页面文件里。
+//
+// 注意：改字段名会同时影响 Rust 侧（`include_modules!` 生成的同名类型）。
+export struct OutputRuleItem {
+    pattern: string,
+    regex: bool,
+    case-sensitive: bool,
+    whole-line: bool,
+    color: string,
+    enabled: bool,
+}
+
+export struct WslProfileInfo {
+    id: string,
+    name: string,
+    distribution: string,
+    directory: string,
+}

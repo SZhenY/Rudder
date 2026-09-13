@@ -1,0 +1,135 @@
+// 设置页：sync
+//
+// 由 interface_panel.slint 按页拆分而来（阶段 B）。页面只声明自己用到的
+// 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
+// 因此可以保持与改造前逐字一致。
+
+import { Theme } from "../../theme.slint";
+import { SettingsSection } from "../section.slint";
+import { SettingRow } from "../chrome.slint";
+import { GhostButton, LabeledInput, PrimaryButton } from "../../widgets.slint";
+import { Switch } from "std-widgets.slint";
+
+export component SyncPage inherits VerticalLayout {
+    in property <bool> lang-en;
+    in-out property <bool> sync-upload-enabled;
+    in-out property <bool> webdav-accept-invalid-certs;
+    in-out property <bool> webdav-enabled;
+    in-out property <string> webdav-password;
+    in-out property <string> webdav-remote-path;
+    in-out property <string> webdav-status;
+    in-out property <string> webdav-url;
+    in-out property <string> webdav-username;
+    callback save-webdav-settings(bool, string, string, string, string, bool);
+    callback set-sync-upload-enabled(bool);
+    callback webdav-download();
+    callback webdav-upload();
+
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 14px;
+    spacing: 0;
+    alignment: start;
+    SettingsSection {
+        section-id: "sync.session-sync";
+        lang-en: root.lang-en;
+        title-zh: "会话同步";
+        title-en: "SESSION SYNC";
+        title-height: 24px;
+        SettingRow {
+            label: root.lang-en ? "Sync file uploads" : "文件上传同步";
+            desc: root.lang-en
+                ? "While session sync is on, an upload goes to the same path on each session; if missing, to that session's current SFTP directory."
+                : "会话同步开启时,上传会发往各会话的相同路径;路径不存在则发往该会话当前 SFTP 目录。";
+            show-divider: false;
+            Switch {
+                checked <=> root.sync-upload-enabled;
+                toggled => { root.set-sync-upload-enabled(root.sync-upload-enabled); }
+            }
+        }
+        Rectangle { height: 6px; }
+        Text {
+            text: root.lang-en
+                ? "Session sync itself is toggled from the sync icon in the top-right bar."
+                : "会话同步本身从右上角的同步图标开关。";
+            color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
+        }
+    }
+    SettingsSection {
+        section-id: "sync.webdav";
+        lang-en: root.lang-en;
+        title-zh: "WEBDAV";
+        title-en: "WEBDAV";
+        title-height: 24px;
+        SettingRow {
+            label: root.lang-en ? "Enable WebDAV sync" : "启用 WebDAV 同步";
+            desc: root.lang-en
+                ? "Manual upload/download only; Rudder will not connect on startup."
+                : "仅手动上传/下载;Rudder 启动时不会自动连接。";
+            show-divider: false;
+            Switch {
+                checked <=> root.webdav-enabled;
+                toggled => {}
+            }
+        }
+        LabeledInput {
+            label: root.lang-en ? "Endpoint URL" : "WebDAV 地址";
+            placeholder: "https://nas:5006/all/ or https://nas:5006/all/rudder-connections.json";
+            value <=> root.webdav-url;
+        }
+        LabeledInput {
+            label: root.lang-en ? "Username" : "用户名";
+            placeholder: root.lang-en ? "Optional" : "可选";
+            value <=> root.webdav-username;
+        }
+        LabeledInput {
+            label: root.lang-en ? "Password / app token" : "密码 / 应用令牌";
+            placeholder: root.lang-en ? "Optional" : "可选";
+            password: true;
+            value <=> root.webdav-password;
+        }
+        LabeledInput {
+            label: root.lang-en ? "Remote file" : "远端文件";
+            placeholder: "rudder-connections.json";
+            value <=> root.webdav-remote-path;
+        }
+        SettingRow {
+            label: root.lang-en ? "Trust self-signed / intranet certs" : "信任自签名/内网证书";
+            desc: root.lang-en
+                ? "Stops verifying the server certificate — the connection can be impersonated. Trusted LAN only."
+                : "将不再校验服务器证书，连接可能被中间人冒充；仅建议在可信局域网内开启。";
+            show-divider: false;
+            Switch {
+                checked <=> root.webdav-accept-invalid-certs;
+                toggled => {}
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            GhostButton {
+                text: root.lang-en ? "Save" : "保存";
+                clicked => {
+                    root.save-webdav-settings(
+                        root.webdav-enabled, root.webdav-url, root.webdav-username,
+                        root.webdav-password, root.webdav-remote-path,
+                        root.webdav-accept-invalid-certs);
+                }
+            }
+            GhostButton {
+                text: root.lang-en ? "Download" : "下载";
+                clicked => { root.webdav-download(); }
+            }
+            PrimaryButton {
+                text: root.lang-en ? "Upload" : "上传";
+                clicked => { root.webdav-upload(); }
+            }
+        }
+        Text {
+            text: root.webdav-status;
+            color: Theme.text-muted;
+            font-size: 11px * Theme.panel-font;
+            wrap: word-wrap;
+        }
+    }
+}

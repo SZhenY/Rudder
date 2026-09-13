@@ -99,35 +99,30 @@ impl FontCatalog {
             .unwrap_or(0) as i32
     }
 
-    /// 界面字体列表中该 family 的索引。
+    /// 界面字体列表中该**存储值**的索引。
     ///
-    /// 与终端字体有两处不同，都来自"界面字体的默认值是**平台相关**的"：
+    /// * 空串 = auto（出厂默认）→ 指向「跟随系统（自动）」条目；
+    /// * 其余是单个家族名（`resolve_ui_font_family` 不再产生逗号栈，见那里的 ⚠️），
+    ///   精确匹配即可。
     ///
-    /// * 传入值可能是**逗号分隔的字体栈**（`resolve_ui_font_family` 在 auto 下
-    ///   返回的就是 `"SF Pro Text, …, Heiti SC, Meatshell Mono"`）—— 逐个分量找，
-    ///   命中第一个在列表里的家族；
-    /// * 空串 = auto，解析后同样是一个栈，因此与上面走同一条路径。
-    ///
-    /// **找不到时回退到第一个可选家族，绝不回退到下标 0** —— 下标 0 是分组标题
-    /// （`▍内嵌字体`），把标题当作当前选中项显示出来，就是"界面字体一栏显示
-    /// 内嵌字体"这个 bug。
+    /// **找不到时不假定下标 0 可选** —— 曾经的 0 是分组标题（`▍内嵌字体`），把标题
+    /// 当成当前选中项显示出来，就是"界面字体一栏显示内嵌字体"那个 bug；现在 0 是
+    /// `Auto`，回退依然只回退到真正可选的条目。
     pub(super) fn ui_index(&self, family: &str) -> i32 {
-        for part in family.split(',') {
-            let name = part.trim();
-            if name.is_empty() {
-                continue;
-            }
-            if let Some(i) = self
-                .ui
-                .iter()
-                .position(|e| matches!(e, FontEntry::Family(f) if f == name))
-            {
-                return i as i32;
-            }
+        if family.trim().is_empty()
+            && let Some(i) = self.ui.iter().position(|e| matches!(e, FontEntry::Auto))
+        {
+            return i as i32;
         }
+        // 回退：第一个**可选**条目 —— `Auto` 与普通家族都算可选，分组标题不算。
         self.ui
             .iter()
-            .position(|e| matches!(e, FontEntry::Family(_)))
+            .position(|e| matches!(e, FontEntry::Family(f) if f == family))
+            .or_else(|| {
+                self.ui
+                    .iter()
+                    .position(|e| matches!(e, FontEntry::Auto | FontEntry::Family(_)))
+            })
             .unwrap_or(0) as i32
     }
 }

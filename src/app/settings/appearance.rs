@@ -163,7 +163,11 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 });
             }
             if let Some(w) = weak.upgrade() {
-                w.set_ui_font_family(family.into());
+                // 写回**解析后**的值：显式选择的家族原样透传，选中「跟随系统（自动）」
+                // 时存储的是空串、解析出来也是空串 → Slint 用它自己的平台默认字体。
+                // ⚠️ 不能是逗号分隔的字体栈：Slint 的 `font-family` 是单个家族名，
+                // 整串会被当成一个不存在的家族，界面看起来毫无变化。
+                w.set_ui_font_family(resolve_ui_font_family());
             }
         });
     }
@@ -175,7 +179,13 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
 ///
 /// 注意两点：其一，「隐藏特殊分区」的控件在 UI 上位于本页（此前误归到传输页的
 /// 还原里）；其二，壁纸与遮罩透明度按规格也在还原范围内（此前被当作 B 类跳过）。
-pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &FontCatalog) {
+pub(crate) fn reset(
+    w: &AppWindow,
+    store: &Store,
+    bufs: &TermBuffers,
+    fonts: &FontCatalog,
+    proc_win: &slint::Weak<ProcWindow>,
+) {
     let d = crate::config::fresh_config();
     {
         persist(store, |s| {
@@ -190,12 +200,13 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &Fo
     }
     // UI 刷新走 getter（0 → 默认 / 平台默认）。
     let s = store.borrow();
-    // 出厂默认是**空串 = auto**，而 auto 的实际取值随平台而变（一个逗号分隔的
-    // 字体栈）。选择器必须指向那个平台默认家族，不能写死下标 0 —— 0 是分组标题
-    // `▍内嵌字体`，写死就会让"界面字体"一栏显示出标题而不是字体名。
-    let ui_family = resolve_ui_font_family().to_string();
-    w.set_ui_font_family(ui_family.as_str().into());
-    w.set_ui_font_index(fonts.ui_index(&ui_family));
+    // 出厂默认是**空串 = auto**，还原后必须回到「跟随系统（自动）」条目。
+    //
+    // 索引按**存储值**算（空串 → Auto 条目）：拿解析后的值去算会落到某个具体家族
+    // 条目上，而实际状态明明是 auto。
+    let ui_stored = s.ui_font_family().to_string();
+    w.set_ui_font_family(resolve_ui_font_family());
+    w.set_ui_font_index(fonts.ui_index(&ui_stored));
     w.set_ui_scale(s.ui_scale() as f32 / 100.0);
     w.set_panel_font(s.panel_font() as f32 / 100.0);
     w.set_renderer_mode(s.renderer_mode().into());
@@ -203,7 +214,23 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &Fo
     w.set_hide_special_partitions(s.hide_special_partitions());
     drop(s);
     // 壁纸切换有完整的换肤 / 调色板派生流程，必须走 apply_wallpaper。
-    apply_wallpaper(w, &store.borrow(), bufs, &d.appearance.wallpaper, false);
+    //
+    // ⚠️ 这里的 `apply_builtin_theme` 必须是 **true**。出厂默认壁纸是 `builtin:dark`，
+    // 而用户此前可能停在"简约·浅"：只换图、不套用它推荐的深浅色，就会得到
+    // "背景已经变暗、外层还罩着一层白"的错配 —— 而且重启也不会自愈，因为
+    // `theme_pref` 仍是浅色。与"用户手选内置壁纸"完全同一套规则。
+    apply_wallpaper(w, &store.borrow(), bufs, &d.appearance.wallpaper, true);
+    if crate::wallpaper::is_builtin(&d.appearance.wallpaper) {
+        // 把刚套用的深浅色持久化（同 on_set_wallpaper），否则下次启动又回到旧偏好。
+        let dark = w.get_dark_mode();
+        persist(store, |s| {
+            s.set_theme_pref(if dark { "dark" } else { "light" }.to_string());
+        });
+    }
+    // 已打开的进程监视窗要跟着换肤（窗口可能没开，upgrade 失败就跳过）。
+    if let Some(p) = proc_win.upgrade() {
+        sync_proc_theme(w, &p);
+    }
     // 动画开关没有后端持久化（Slint 全局，重启即回），还原即重新开启。
     w.set_animations_enabled(true);
 }

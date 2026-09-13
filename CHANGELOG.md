@@ -5,6 +5,24 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.7-fix2] - 2026-09-13
+
+### 修复 / Fixed
+
+- **修复：切换「界面字体」不生效（选了之后界面毫无变化）。** 传给 Slint 的 `font-family` 曾是一个**逗号分隔的字体栈**（所选家族 + 中文回退段 + 内嵌兜底），而 Slint 1.17 的 `font-family` 是**单个**家族名 —— 布局时整串原样交给 parley、**不拆逗号**，于是它被当成一个不存在的家族，整体落到平台默认字体上：在设置里换字体自然看不出任何变化（选「跟随系统（自动）」时同理）。现在显式选择**原样透传**，auto 交回 Slint 的平台默认字体，缺字（中文 / emoji）由 parley 按脚本自动回退 —— 既不需要、也无法用逗号链编排回退。**Fixed: switching the UI font had no effect.** The value handed to Slint used to be a comma-separated font *stack* (chosen family + CJK fallback + embedded last resort), but Slint's `font-family` is a single family name: the whole string goes to parley verbatim, without splitting on commas, so it matched no family and everything silently fell back to the platform default. An explicit choice is now passed through as-is, and "follow system (auto)" hands control back to Slint's platform default; missing glyphs are covered by parley's per-script fallback.
+
+- **修复：界面字体的默认项显示成 Helvetica Neue 之类，与实际不符。** 选择器此前只能显示"字体栈里第一个可枚举的家族"：macOS 上 SF Pro Text 不在 fontdb 的枚举结果里，于是显示成 Helvetica Neue，而实际渲染同样落在那条链上。现在列表最前面有一项明确的**「跟随系统（自动）」**，出厂默认选中的就是它，存储值为空串（= 交给系统）。**Fixed: the UI font default displayed as e.g. Helvetica Neue.** The picker could only show "the first enumerable family in the stack" — on macOS `SF Pro Text` isn't in fontdb's enumeration, so it showed Helvetica Neue. The list now starts with an explicit **"System default (auto)"** entry, which the factory default selects (stored as an empty string, i.e. "let the system decide").
+
+- **修复：「还原本页默认」后界面字体没有回到「跟随系统（自动）」。** 选择器索引此前按**展开后的值**计算，于是落到那个具体的家族条目上；而还原后存储值明明是空串（= auto）。现在索引按**存储值**算：空串 → 自动条目。**Fixed: restoring Appearance defaults didn't return the UI font to "System default (auto)".** The picker index was derived from the *expanded* value, so it landed on a concrete family even though the stored value was empty (= auto). The index now comes from the stored value: empty → the auto entry.
+
+- **修复：外观页「还原本页默认」后界面仍罩着一层亮色。** 还原走的是 `apply_wallpaper(..., apply_builtin_theme = false)` —— 只换壁纸图、不套用它推荐的深浅色。用户此前若停在「简约·浅」，还原到默认的暗色壁纸后，背景变暗而主题仍是浅色，于是外层保留了一层白色磨砂；且 `theme_pref` 也没更新，重启不会自愈。现在与"用户手选内置壁纸"完全同一套规则：套用推荐配色 + 持久化 `theme_pref` + 同步已打开的进程监视窗。**Fixed: restoring Appearance defaults left a bright veil over the UI.** The reset called `apply_wallpaper(..., apply_builtin_theme = false)` — it swapped the wallpaper image but not the light/dark theme the built-in recommends. A user sitting on "Minimal · Light" ended up with the default dark wallpaper behind a still-light UI, and `theme_pref` was left stale so a restart didn't heal it. Reset now follows the same rule as manually picking a built-in wallpaper: apply the recommended palette, persist `theme_pref`, and keep an open process-monitor window in sync.
+
+### 内部 / Internal
+
+- **设置面板（Slint 侧）按页拆分。** `interface_panel.slint` 从 1666 行降到 334 行，只保留外壳（左侧导航 + 内容区 + 滚动视口）；7 个设置页各自成为 `ui/settings/pages/<page>.slint`，通用控件（设置行 / 段标题 / 步进器 / 色板）抽到 `ui/settings/chrome.slint`，分区容器与「还原本页默认」按钮分别是 `section.slint` / `reset_bar.slint`。页面内部与拆分前**逐字一致** —— 属性与回调在实例化处双向绑定或显式转发，因此行为零改动。**The settings panel is split by page on the Slint side.** `interface_panel.slint` drops from 1666 to 334 lines and keeps only the shell (left nav + content area + scroll viewport); each of the 7 settings pages now lives in `ui/settings/pages/<page>.slint`, shared controls (row, section header, stepper, swatch) moved to `ui/settings/chrome.slint`, and the section container / "restore page defaults" button live in `section.slint` / `reset_bar.slint`. Page internals are byte-for-byte identical to before the split (properties and callbacks are two-way bound or explicitly forwarded at the instantiation site), so behaviour is unchanged.
+
+- **README 新增「自定义字体（外置字体）」章节。** 三平台的字体目录路径（含 macOS 那个只读的 App 内备用位置）、支持的格式、两个选择器的入口与过滤差异（终端字体只列等宽**系统**字体、界面字体列全部）、显示的是字体文件内部的家族名而非文件名、同名去重优先级（内嵌 > 外置 > 系统）、终端中文回退的 `CN/SC/TC/JP/KR/CJK/Han` 家族名约定、暗淡文本取 `字体名 + " Thin"` 家族、以及「放了字体但列表里看不到」的排查清单；同时订正了功能列表里过时的平台字体栈描述与配置文件名。**Added a "Custom fonts" section to the README.** It documents the per-platform fonts directory (including the read-only app-adjacent fallback on macOS), supported formats, the two pickers and how they filter (the terminal list includes only monospace *system* families, the UI list includes all), the fact that entries are the family names inside the files rather than filenames, duplicate priority (embedded > external > system), the `CN/SC/TC/JP/KR/CJK/Han` naming convention behind the terminal's CJK fallback, dim text resolving the `"<family> Thin"` family, and a checklist for "I dropped a font in but it isn't listed". Also corrected the stale platform-font-stack blurb and config filenames in the feature list.
+
 ## [0.7.7-fix1] - 2026-09-13
 
 ### 修复 / Fixed

@@ -1,0 +1,317 @@
+// 设置页的通用控件（叶子层）：只有样式与交互，不含业务状态。
+//
+// 从 interface_panel.slint 抽出（阶段 A）。全部以 `export component` 暴露，
+// 便于后续按页拆分到 ui/settings/pages/*.slint 时跨文件复用。
+//
+// 约定：@children 只用于"右侧控件槽"，属性均为 `in`，事件一律用 callback 上抛，
+// 组件内部不持久化任何状态 —— 状态归 Rust 侧 config，"谁拥有状态谁负责写盘"。
+import { AnimationSettings, Theme } from "../theme.slint";
+
+// One left-nav row (icon + label).
+export component NavItem inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+    height: 30px;
+    border-radius: 6px;
+    background: root.active ? Theme.bg-active : (ta.has-hover ? Theme.bg-hover : transparent);
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        spacing: 9px;
+        Text { text: root.icon; font-family: "Material Icons";
+               color: root.active ? Theme.text-primary : Theme.text-secondary;
+               font-size: 15px * Theme.panel-font; vertical-alignment: center; }
+        Text { text: root.label;
+               color: root.active ? Theme.text-primary : Theme.text-secondary;
+               font-size: 13px * Theme.panel-font; vertical-alignment: center; horizontal-stretch: 1; }
+    }
+}
+
+// Small muted group heading (字体 / 预览 / SFTP …).
+export component SectionHeader inherits Text {
+    font-size: 11px * Theme.panel-font;
+    font-weight: 700;
+    color: Theme.text-muted;
+    vertical-alignment: center;
+}
+
+// A settings row: label (+ optional description) on the left, a control slot on
+// the right via @children. Right-aligned and vertically centered.
+export component SettingRow inherits Rectangle {
+    in property <string> label;
+    in property <string> desc;
+    in property <bool> show-divider: true;
+    VerticalLayout {
+        HorizontalLayout {
+            spacing: 14px;
+            padding-top: 9px;
+            padding-bottom: 9px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 3px;
+                Text { text: root.label; font-size: 13px * Theme.panel-font; color: Theme.text-primary; }
+                if root.desc != "" : Text { text: root.desc; font-size: 11px * Theme.panel-font;
+                       color: Theme.text-muted; wrap: word-wrap; }
+            }
+            VerticalLayout {
+                alignment: center;
+                @children
+            }
+        }
+        if root.show-divider : Rectangle { height: 1px; background: Theme.border-subtle; }
+    }
+}
+// 注：不再自绘 Switch —— 改用官方 std-widgets 的 `Switch`（`checked` 双向绑定 +
+// `toggled()` 无参回调）。自绘版存在的理由是"on 显示态 + 父级持有状态"，而官方版
+// `checked <=> root.x` 同样满足"状态归 Rust 侧 config"，且外观/无障碍由官方维护。
+
+
+// [- value +] stepper. Display-only `value`; emits the clamped new value.
+export component Stepper inherits Rectangle {
+    in property <int> value;
+    in property <int> minimum: 0;
+    in property <int> maximum: 100;
+    in property <int> step: 1;
+    in property <string> unit;
+    callback changed(int);
+    width: 112px;
+    height: 26px;
+    border-radius: 6px;
+    background: Theme.bg-elevated;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    clip: true;
+    HorizontalLayout {
+        Rectangle {
+            width: 30px;
+            background: minus-ta.has-hover ? Theme.bg-hover : transparent;
+            minus-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.changed(max(root.minimum, root.value - root.step)); }
+            }
+            Text { text: "\u{E15B}"; font-family: "Material Icons"; font-size: 14px * Theme.panel-font;
+                   color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+        }
+        Rectangle { width: 1px; background: Theme.border-subtle; }
+        Text { text: root.value + root.unit; horizontal-stretch: 1;
+               font-size: 12px * Theme.panel-font; color: Theme.text-primary;
+               horizontal-alignment: center; vertical-alignment: center; }
+        Rectangle { width: 1px; background: Theme.border-subtle; }
+        Rectangle {
+            width: 30px;
+            background: plus-ta.has-hover ? Theme.bg-hover : transparent;
+            plus-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.changed(min(root.maximum, root.value + root.step)); }
+            }
+            Text { text: "\u{E145}"; font-family: "Material Icons"; font-size: 14px * Theme.panel-font;
+                   color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+        }
+    }
+}
+
+// Compact cursor-shape choice with a live visual sample (#275).
+export component CursorStyleButton inherits Rectangle {
+    in property <string> label;
+    in property <string> cursor-kind;
+    in property <bool> selected;
+    callback clicked();
+    width: 74px;
+    height: 30px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent : Theme.border-subtle;
+    background: root.selected ? Theme.bg-active : (cursor-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated);
+    cursor-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 7px;
+        spacing: 6px;
+        alignment: center;
+        Rectangle {
+            width: 14px;
+            height: 100%;
+            background: transparent;
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 14px;
+                height: 18px;
+                background: Theme.term-bg;
+                Rectangle {
+                    x: 2px;
+                    y: root.cursor-kind == "underline" ? parent.height - 3px : 2px;
+                    width: root.cursor-kind == "bar" ? 2px : 10px;
+                    height: root.cursor-kind == "underline" ? 2px : 14px;
+                    background: Theme.term-fg;
+                }
+            }
+        }
+        Text {
+            text: root.label;
+            color: root.selected ? Theme.text-primary : Theme.text-secondary;
+            font-size: 11px * Theme.panel-font;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component CursorPaletteSwatch inherits Rectangle {
+    in property <string> hex;
+    in property <color> swatch-color;
+    in property <bool> selected;
+    callback chosen(string);
+    width: 26px;
+    height: 26px;
+    border-radius: 5px;
+    border-width: root.selected ? 2px : 1px;
+    border-color: root.selected ? Theme.accent : Theme.border-strong;
+    background: root.swatch-color;
+    swatch-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.chosen(root.hex); }
+    }
+}
+
+// Hex RGB editor with a live swatch. Incomplete/invalid input remains editable
+// but is marked red and is not applied or persisted.
+export component CursorColorInput inherits Rectangle {
+    in-out property <string> value;
+    in property <color> preview-color;
+    property <bool> valid: true;
+    callback apply-color(string) -> bool;
+    width: 160px;
+    height: 30px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.valid ? Theme.border-subtle : #e05252;
+    background: Theme.bg-elevated;
+    Rectangle {
+        x: 7px;
+        y: 6px;
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        background: root.preview-color;
+        color-button := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { color-picker.show(); }
+        }
+    }
+    color-input := TextInput {
+        x: 34px;
+        width: parent.width - 41px;
+        height: parent.height;
+        text <=> root.value;
+        color: Theme.text-primary;
+        font-family: Theme.term-font-family;
+        font-size: 12px * Theme.panel-font;
+        vertical-alignment: center;
+        single-line: true;
+        changed text => { root.valid = root.apply-color(self.text); }
+    }
+    color-picker := PopupWindow {
+        x: parent.width - self.width;
+        y: parent.height + 4px;
+        width: 210px;
+        height: 160px;
+        Rectangle {
+            background: Theme.bg-panel;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 12px;
+            drop-shadow-color: #00000060;
+            VerticalLayout {
+                padding: 10px;
+                spacing: 7px;
+                Text {
+                    text: root.value;
+                    color: Theme.text-secondary;
+                    font-family: Theme.term-font-family;
+                    font-size: 11px * Theme.panel-font;
+                    vertical-alignment: center;
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    CursorPaletteSwatch { hex: "#D4D4D4"; swatch-color: #D4D4D4; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#FFFFFF"; swatch-color: #FFFFFF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#FF5252"; swatch-color: #FF5252; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#FF9800"; swatch-color: #FF9800; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#FFD740"; swatch-color: #FFD740; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#69F0AE"; swatch-color: #69F0AE; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    CursorPaletteSwatch { hex: "#00E676"; swatch-color: #00E676; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#00E5FF"; swatch-color: #00E5FF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#40C4FF"; swatch-color: #40C4FF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#448AFF"; swatch-color: #448AFF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#7C4DFF"; swatch-color: #7C4DFF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#E040FB"; swatch-color: #E040FB; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    CursorPaletteSwatch { hex: "#F48FB1"; swatch-color: #F48FB1; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#FF8A65"; swatch-color: #FF8A65; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#FFF176"; swatch-color: #FFF176; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#A5D6A7"; swatch-color: #A5D6A7; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#80CBC4"; swatch-color: #80CBC4; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#90CAF9"; swatch-color: #90CAF9; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    CursorPaletteSwatch { hex: "#B39DDB"; swatch-color: #B39DDB; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#CE93D8"; swatch-color: #CE93D8; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#BCAAA4"; swatch-color: #BCAAA4; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#9E9E9E"; swatch-color: #9E9E9E; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#607D8B"; swatch-color: #607D8B; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                    CursorPaletteSwatch { hex: "#2D2D2F"; swatch-color: #2D2D2F; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
+                }
+            }
+        }
+    }
+}
+
+// A macOS-style wallpaper thumbnail: a rounded, clipped preview (passed via
+// @children) with a selection ring + check badge. The label sits below it in
+// the page, not inside.
+export component WallpaperSwatch inherits Rectangle {
+    in property <bool> selected;
+    callback clicked();
+    width: 120px;
+    height: 74px;
+    border-radius: 8px;
+    border-width: root.selected ? 3px : 1px;
+    border-color: root.selected ? Theme.accent : Theme.border-strong;
+    clip: true;
+    @children
+    if root.selected : Rectangle {
+        x: parent.width - self.width - 5px;
+        y: 5px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: Theme.accent;
+        Text {
+            text: "\u{E5CA}"; // check
+            font-family: "Material Icons"; color: white; font-size: 13px * Theme.panel-font;
+            width: 100%; height: 100%;
+            horizontal-alignment: center; vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

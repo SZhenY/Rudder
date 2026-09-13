@@ -1,0 +1,103 @@
+// 设置页：wsl
+//
+// 由 interface_panel.slint 按页拆分而来（阶段 B）。页面只声明自己用到的
+// 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
+// 因此可以保持与改造前逐字一致。
+
+import { Theme } from "../../theme.slint";
+import { SettingsSection } from "../section.slint";
+import { WslProfileInfo } from "../types.slint";
+import { SectionHeader } from "../chrome.slint";
+import { GhostButton, LabeledInput, PrimaryButton } from "../../widgets.slint";
+
+export component WslPage inherits VerticalLayout {
+    in property <bool> lang-en;
+    in-out property <string> wsl-new-directory;
+    in-out property <string> wsl-new-distribution;
+    in-out property <string> wsl-new-name;
+    in property <[WslProfileInfo]> wsl-profiles;
+    callback add-wsl-profile(string, string, string);
+    callback pick-wsl-directory();
+    callback remove-wsl-profile(string);
+
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 14px;
+    spacing: 8px;
+    alignment: start;
+    SettingsSection {
+        section-id: "wsl.wsl";
+        lang-en: root.lang-en;
+        title-zh: "WSL";
+        title-en: "WSL";
+        title-height: 24px;
+        Text {
+            text: root.lang-en
+                ? "Add multiple WSL launch entries. A blank distribution uses the Windows default; ~ opens the selected Linux user's home directory."
+                : "可添加多个 WSL 启动项。发行版留空时使用 Windows 默认发行版；~ 表示所选 Linux 用户的主目录。";
+            color: Theme.text-muted;
+            font-size: 11px * Theme.panel-font;
+            wrap: word-wrap;
+        }
+        LabeledInput {
+            label: root.lang-en ? "Display name" : "显示名称";
+            placeholder: "Ubuntu";
+            value <=> root.wsl-new-name;
+        }
+        LabeledInput {
+            label: root.lang-en ? "Distribution (optional)" : "发行版（可选）";
+            placeholder: "Ubuntu-24.04";
+            value <=> root.wsl-new-distribution;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            LabeledInput {
+                horizontal-stretch: 1;
+                label: root.lang-en ? "Startup directory" : "启动目录";
+                placeholder: "~ or /home/user/project";
+                value <=> root.wsl-new-directory;
+            }
+            VerticalLayout {
+                alignment: end;
+                GhostButton {
+                    text: root.lang-en ? "Browse…" : "选择目录…";
+                    clicked => { root.pick-wsl-directory(); }
+                }
+            }
+        }
+        HorizontalLayout {
+            alignment: end;
+            PrimaryButton {
+                text: root.lang-en ? "Add WSL" : "添加 WSL";
+                clicked => {
+                    root.add-wsl-profile(root.wsl-new-name, root.wsl-new-distribution, root.wsl-new-directory);
+                    root.wsl-new-name = "WSL";
+                    root.wsl-new-distribution = "";
+                    root.wsl-new-directory = "~";
+                }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+        for profile in root.wsl-profiles : Rectangle {
+            height: 54px;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-elevated;
+            HorizontalLayout {
+                padding-left: 10px; padding-right: 8px; spacing: 8px;
+                VerticalLayout {
+                    horizontal-stretch: 1; alignment: center;
+                    Text { text: profile.name; color: Theme.text-primary; font-size: 13px * Theme.panel-font; }
+                    Text {
+                        text: (profile.distribution == "" ? (root.lang-en ? "Default distribution" : "默认发行版") : profile.distribution)
+                            + "  ·  " + profile.directory;
+                        color: Theme.text-muted; font-size: 11px * Theme.panel-font; overflow: elide;
+                    }
+                }
+                GhostButton {
+                    text: root.lang-en ? "Remove" : "删除";
+                    clicked => { root.remove-wsl-profile(profile.id); }
+                }
+            }
+        }
+    }
+}

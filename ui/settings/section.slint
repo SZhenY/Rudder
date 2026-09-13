@@ -1,0 +1,37 @@
+// 设置分区 —— **自定义排序的最小单位**。
+//
+// 一个分区 = 一个标题 + 若干设置行。它同时是排序功能的锚点：
+//   * `section-id` 是稳定标识（形如 `transfer.download`），顺序数据按它存储；
+//     **改名等于"删旧 + 增新"** —— 旧 id 会被顺序归一化剪掉，新 id 按默认邻居插入。
+//   * `reorderable` / `move-up` / `move-down` 供"编辑排序"模式接线（阶段 E）。
+//
+// ⚠️ 视觉上刻意保持"与改造前逐像素一致"：标题高度由调用方传入（各页历史上
+// 22px / 24px 不一致），间距仍由页面自己的 `Rectangle { height: Npx }` 负责 ——
+// 分区化是结构改造，不在同一步里顺手改版式。
+import { SectionHeader } from "chrome.slint";
+
+export component SettingsSection inherits VerticalLayout {
+    /// 稳定 id，形如 `transfer.download`。
+    in property <string> section-id;
+    in property <string> title-zh;
+    in property <string> title-en;
+    in property <bool> lang-en;
+    /// 标题行高：历史上 22px / 24px 两种，原样保留。
+    in property <length> title-height: 24px;
+    /// 是否处于"编辑排序"模式（阶段 E 接线，当前恒为 false）。
+    in property <bool> reorderable: false;
+    callback move-up();
+    callback move-down();
+
+    spacing: 0;
+    HorizontalLayout {
+        SectionHeader {
+            text: root.lang-en ? root.title-en : root.title-zh;
+            height: root.title-height;
+            horizontal-stretch: 1;
+        }
+        // 排序控件的位置：阶段 E 在这里放 ↑ / ↓ 或拖拽把手。
+        if root.reorderable : Rectangle { width: 40px; }
+    }
+    @children
+}

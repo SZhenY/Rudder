@@ -48,7 +48,8 @@ impl SettingsPage {
 ///
 /// 存在的意义是把「一项设置的全部落点」集中起来：除了配置字段与控件属性，
 /// 还有派生 UI 状态（字体选择器索引）、运行时镜像（SFTP 跟随标志）等。
-#[derive(Clone)]
+/// 注：不派生 `Clone` —— 它持有 `ProcWindow`（Slint 组件句柄不实现 Clone），
+/// 且全项目只构造一次、按引用传给 `reset_page`。
 struct ResetRefs {
     /// 窗格与模型句柄（布局页还原时做窗格树迁移用）。
     panes: settings::layout::PaneHandles,
@@ -56,6 +57,9 @@ struct ResetRefs {
     /// 泵线程读取的「SFTP 跟随 cd」实时标志。还原必须同时更新它，否则配置与
     /// 界面都变了、**已打开会话的行为却没变** —— 表现为"还原不生效"。
     sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
+    /// 进程监视窗：外观页还原可能改变深浅色，已打开的窗口要跟着换肤。
+    /// 存 `Weak` 而非强引用 —— 组件句柄不实现 `Clone`，且不该由它延长窗口寿命。
+    proc_win: slint::Weak<crate::ui::ProcWindow>,
 }
 
 fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs, page: &str) {
@@ -65,7 +69,9 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
     };
     match page {
         SettingsPage::Terminal => settings::terminal::reset(w, store, bufs, &refs.fonts),
-        SettingsPage::Appearance => settings::appearance::reset(w, store, bufs, &refs.fonts),
+        SettingsPage::Appearance => {
+            settings::appearance::reset(w, store, bufs, &refs.fonts, &refs.proc_win)
+        }
         SettingsPage::Layout => settings::layout::reset(w, store, &refs.panes),
         SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
     }
@@ -185,7 +191,12 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     // last, each labelled with its source.
     let (font_labels, font_entries) = font_choices(&external_fonts, true);
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(font_labels))));
-    let (ui_labels, ui_entries) = font_choices(&external_fonts, false);
+    let (mut ui_labels, mut ui_entries) = font_choices(&external_fonts, false);
+    // 界面字体列表最前面补一项「跟随系统（自动）」= 出厂默认（空串）的显示项。
+    // 没有它时，选择器只能显示"字体栈里第一个可枚举的家族"—— macOS 上那是
+    // Helvetica Neue，而实际首选是 SF Pro Text，显示与事实不符。
+    ui_labels.insert(0, crate::app::fonts_ui::auto_font_label().into());
+    ui_entries.insert(0, crate::app::FontEntry::Auto);
     window.set_ui_fonts(ModelRc::from(Rc::new(VecModel::from(ui_labels))));
     // 索引换算统一走 FontCatalog，启动播种与「还原本页默认」共用同一套规则
     // —— 否则还原时极易漏掉索引，导致选择器停在旧项、显示与实际字体不符。
@@ -198,8 +209,11 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     // 索引必须与「实际生效的字体」对应：未设置时 `ui_font_family()` 返回空串，
     // 而真正生效的是平台默认（一个字体栈）。用解析后的值换算，才能与「还原本页
     // 默认」走到同一个结果 —— 否则启动显示与还原显示会不一致。
-    let ui_effective = resolve_ui_font_family().to_string();
-    window.set_ui_font_index(fonts.ui_index(&ui_effective));
+    // 索引按**存储值**算：空串 = auto → 「跟随系统（自动）」条目。
+    // （用解析后的字体栈去算索引会落到"栈里第一个可枚举的家族" —— macOS 上是
+    // Helvetica Neue，而实际状态是 auto。显示文本仍用解析后的字体栈。）
+    let ui_stored = store.borrow().ui_font_family().to_string();
+    window.set_ui_font_index(fonts.ui_index(&ui_stored));
 
     // Command bar (#55): seed quick commands + history from the config. Groups
     // start collapsed by default (#55).
@@ -317,6 +331,9 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             },
             fonts: fonts.clone(),
             sftp_follow_cd: sftp_follow_cd.clone(),
+            // 外观页还原可能改变深浅色（默认壁纸是暗色的），已打开的进程监视窗
+            // 要跟着换肤 —— 与用户手动选壁纸走同一条同步路径。
+            proc_win: proc_win.as_weak(),
         };
         window.on_reset_page(move |page: slint::SharedString| {
             let Some(w) = weak.upgrade() else { return };
@@ -530,12 +547,24 @@ mod tests {
     use super::*;
     use crate::app::FontEntry;
 
-    /// Collect every `root.reset-page("…")` id the UI actually emits.
+    /// Collect every reset-page id the UI actually wires up.
+    ///
+    /// 阶段 A 起按钮不再内联 `root.reset-page("x")`，而是
+    /// `ResetBar { page-id: "x"; reset-page(p) => { root.reset-page(p); } }`，
+    /// 因此解析目标随之改为 `page-id:`。写错（或按钮被删）会让集合变化，
+    /// 下面的测试就会失败 —— 不会静默放过。
     fn reset_page_ids_from_ui() -> std::collections::BTreeSet<String> {
-        const UI: &str = include_str!("../../ui/interface_panel.slint");
+        // 阶段 B 之后还原按钮随页面搬进了 `ui/settings/pages/*.slint`，
+        // 因此要扫的是**页面文件**而不是 interface_panel.slint。
+        const PAGES: &[&str] = &[
+            include_str!("../../ui/settings/pages/terminal.slint"),
+            include_str!("../../ui/settings/pages/appearance.slint"),
+            include_str!("../../ui/settings/pages/layout.slint"),
+            include_str!("../../ui/settings/pages/transfer.slint"),
+        ];
         let mut ids = std::collections::BTreeSet::new();
-        for line in UI.lines() {
-            let Some((_, rest)) = line.split_once("root.reset-page(") else {
+        for line in PAGES.iter().flat_map(|src| src.lines()) {
+            let Some((_, rest)) = line.split_once("page-id:") else {
                 continue;
             };
             let Some((_, after_quote)) = rest.split_once('"') else {
@@ -617,18 +646,29 @@ mod tests {
         }
     }
 
-    /// auto 解析出来的是**平台默认字体栈**（逗号分隔），索引要指向栈里第一个
-    /// 真实存在的家族 —— 拿整串去比对永远匹配不上。
+    /// 出厂默认（空串 = auto）指向「跟随系统（自动）」条目 —— 既不是分组标题，
+    /// 也不是某个被猜出来的家族名（那样选择器显示的字体会与实际渲染的不符）。
     #[test]
-    fn ui_index_resolves_the_first_usable_family_of_a_platform_stack() {
-        let fonts = test_catalog();
-        // "SF Pro Text" 不在列表里 → 继续往后找，"Helvetica Neue" 命中。
-        let i = fonts.ui_index("SF Pro Text, Helvetica Neue, Heiti SC, Meatshell Mono");
-        assert_eq!(i, 3, "应命中栈里的 Helvetica Neue");
-        assert!(matches!(&fonts.ui[i as usize], FontEntry::Family(f) if f == "Helvetica Neue"));
+    fn ui_index_points_the_default_at_the_auto_entry() {
+        // 真实列表：auto 在最前，其后才是分组标题与各家族。
+        let fonts = FontCatalog {
+            term: Rc::new(vec![FontEntry::Family("JetBrains Mono".into())]),
+            ui: Rc::new(vec![
+                FontEntry::Auto,
+                FontEntry::Header("内嵌字体"),
+                FontEntry::Family("JetBrains Mono".into()),
+                FontEntry::Family("Heiti SC".into()),
+                FontEntry::Family("Helvetica Neue".into()),
+            ]),
+        };
+        assert_eq!(fonts.ui_index(""), 0, "空串应命中 auto 条目");
+        assert_eq!(fonts.ui_index("Heiti SC"), 3, "显式家族按名字命中（含 auto 偏移）");
 
-        // 用户显式选过字体时，值就是一个裸家族名。
-        assert_eq!(fonts.ui_index("Heiti SC"), 2);
+        // 没有 auto 条目时（终端列表那种形态）仍回退到第一个可选家族，
+        // 且不会落到分组标题上。
+        let plain = test_catalog();
+        let i = plain.ui_index("");
+        assert!(matches!(plain.ui[i as usize], FontEntry::Family(_)));
     }
 }
 
@@ -671,27 +711,22 @@ mod wiring_tests {
         kebab.replace('-', "_")
     }
 
-    /// 某一页区块里 **root.<prop>** 形式的属性引用（排除回调调用）。
-    fn props_on_page(ui: &str, page: &str) -> std::collections::BTreeSet<String> {
-        let marker = format!("if root.ifd-page == \"{page}\"");
-        let start = ui.find(&marker).unwrap_or_else(|| panic!("找不到 {page} 页"));
-        let rest = &ui[start..];
-        let end = rest[marker.len()..]
-            .find("\n            if root.ifd-page ==")
-            .map(|i| i + marker.len())
-            .unwrap_or(rest.len());
-        let block = &rest[..end];
-
+    /// 一段 Slint 源码里 **root.<prop>** 形式的属性引用（排除回调调用）。
+    ///
+    /// 阶段 B 把设置页拆成独立文件之后，「这一页绑定了哪些设置」的权威来源就是
+    /// **页面文件本身**：`interface_panel.slint` 里对应位置只剩转发绑定
+    /// （`xxx <=> root.xxx`），不再能反映页面的真实内容。
+    fn props_in(src: &str) -> std::collections::BTreeSet<String> {
         let mut out = std::collections::BTreeSet::new();
         let mut from = 0;
-        while let Some(i) = block[from..].find("root.") {
+        while let Some(i) = src[from..].find("root.") {
             let s = from + i + "root.".len();
-            let name: String = block[s..]
+            let name: String = src[s..]
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
                 .collect();
             // 后接 '(' 的是回调调用，不是属性引用。
-            let is_call = block[s + name.len()..].starts_with('(');
+            let is_call = src[s + name.len()..].starts_with('(');
             let advance = s + name.len().max(1);
             if !name.is_empty() && !is_call {
                 out.insert(name);
@@ -716,22 +751,31 @@ mod wiring_tests {
     /// 它们的共同特征是"UI 显示已还原、实际没生效"，人工 review 极难发现。
     #[test]
     fn every_page_property_is_covered_by_its_reset() {
-        const UI: &str = include_str!("../../ui/interface_panel.slint");
-
-        // 每页指向承载其还原逻辑的源文件。阶段 B 按页拆分后，还原函数会逐步
-        // 搬进 `settings/<page>.rs` —— 路径写错会 panic「找不到函数」（明确的失败，
-        // 不会静默放过）。
+        // 每页给出：还原逻辑所在的 Rust 文件、以及**页面本身的 Slint 文件**。
+        // 路径写错会 panic（明确的失败，不会静默放过）。
         let pages = [
-            ("terminal", include_str!("settings/terminal.rs"), "reset"),
-            ("appearance", include_str!("settings/appearance.rs"), "reset"),
-            ("layout", include_str!("settings/layout.rs"), "reset"),
-            ("transfer", include_str!("settings/transfer.rs"), "reset"),
+            ("terminal",
+             include_str!("settings/terminal.rs"),
+             include_str!("../../ui/settings/pages/terminal.slint"),
+             "reset"),
+            ("appearance",
+             include_str!("settings/appearance.rs"),
+             include_str!("../../ui/settings/pages/appearance.slint"),
+             "reset"),
+            ("layout",
+             include_str!("settings/layout.rs"),
+             include_str!("../../ui/settings/pages/layout.slint"),
+             "reset"),
+            ("transfer",
+             include_str!("settings/transfer.rs"),
+             include_str!("../../ui/settings/pages/transfer.slint"),
+             "reset"),
         ];
 
         let mut uncovered = Vec::new();
-        for (page, src, reset_fn) in pages {
+        for (page, src, page_src, reset_fn) in pages {
             let body = fn_body(src, reset_fn);
-            for prop in props_on_page(UI, page) {
+            for prop in props_in(page_src) {
                 if UI_ONLY.contains(&prop.as_str())
                     || NOT_RESET_BY_DESIGN.iter().any(|(p, _)| *p == prop)
                     || COVERED_BY_HELPER.iter().any(|(p, _)| *p == prop)
@@ -750,13 +794,17 @@ mod wiring_tests {
         );
     }
 
-    /// 防漏：允许名单里不应出现已经不在 UI 上的属性（名单会腐化）。
+    /// 防漏：页面文件必须真的解析出属性（解析逻辑失效时要立刻发现）。
     #[test]
     fn allowlists_only_mention_pages_that_exist() {
-        const UI: &str = include_str!("../../ui/interface_panel.slint");
-        for page in ["terminal", "appearance", "layout", "transfer"] {
+        for (page, src) in [
+            ("terminal", include_str!("../../ui/settings/pages/terminal.slint")),
+            ("appearance", include_str!("../../ui/settings/pages/appearance.slint")),
+            ("layout", include_str!("../../ui/settings/pages/layout.slint")),
+            ("transfer", include_str!("../../ui/settings/pages/transfer.slint")),
+        ] {
             assert!(
-                !props_on_page(UI, page).is_empty(),
+                !props_in(src).is_empty(),
                 "{page} 页解析不到任何属性 —— 测试的解析逻辑已失效"
             );
         }

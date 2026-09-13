@@ -104,7 +104,7 @@ open /Applications/rudder.app
 - [x] SFTP 下载断点续传（取消 / 失败保留半截文件，重试自动续传）
 - [x] 终端双击选词 / 三击选行；查找支持 Enter / Shift+Enter 上下导航
 - [x] 沉浸壁纸（内置简约·浅 / 暗，支持自定义图片）+ 主题色随壁纸派生
-- [x] 平台字体栈：UI 自动使用平台默认字体（macOS SF Pro/苹方、Windows Segoe UI/雅黑、Linux Ubuntu/Cantarell/Noto），终端默认 JetBrains Mono（含暗淡文本的 ExtraLight 变体）
+- [x] 平台字体栈：界面自动使用平台默认字体（macOS SF Pro Text → Helvetica Neue + Heiti SC、Windows Segoe UI + DengXian、Linux Ubuntu/Cantarell + Noto Sans CJK），终端默认 JetBrains Mono（含暗淡文本的 ExtraLight 变体）；额外字体可放入字体目录，见[自定义字体](#自定义字体外置字体)
 - [x] Windows on ARM64（zip + MSI 安装包）
 - [x] 平台视觉适配：macOS 更圆润的圆角 / 悬浮细滚动条 / 柔和卡片阴影，统一自绘风格
 
@@ -115,6 +115,68 @@ open /Applications/rudder.app
 ### 计划中
 
 - [ ] 会话密码改用 OS 钥匙串存储
+
+## 自定义字体（外置字体）
+
+CJK 大字体（Maple Mono 这类每个字重约 20 MB）不再打进安装包。需要额外字体时，
+把字体文件放进「字体目录」，**重启 Rudder** 后即可在设置里选用。
+
+### 字体目录
+
+| 平台 | 路径 |
+| --- | --- |
+| Windows（安装版 / 便携版） | `<rudder.exe 所在目录>\config\fonts` — 启动时自动创建，不会写入 AppData |
+| macOS | `~/Library/Application Support/dev.rudder.rudder/fonts` — 启动时自动创建 |
+| Linux | `~/.config/rudder/fonts` — 设了 `XDG_CONFIG_HOME` 时在其下 |
+
+macOS 另有一个**只读的备用位置**：`Rudder.app/Contents/MacOS/rudder/config/fonts`
+（就在可执行文件路径之下）。`/Applications` 通常不可写，所以这个目录不会自动创建，
+只在你手工建好之后才会被扫描 —— 适合把字体跟 App 一起打包分发。
+
+### 支持格式
+
+`.ttf` / `.otf`（单字体）以及 `.ttc` / `.otc`（字体集合），扩展名不区分大小写。
+集合文件里的**每个字重都会被注册**，所以一个文件可能一次出现多个家族名。
+
+### 怎么选
+
+放好文件并重启后：
+
+- **终端字体**：设置 → 终端 → 终端字体（内嵌 + 外置 + 系统**等宽**字体）
+- **界面字体**：设置 → 外观 → 界面字体（内嵌 + 外置 + 系统**全部**字体）
+
+下拉框按来源分三段：`▍内嵌字体`（JetBrains Mono / Meatshell Mono）、
+`▍外置字体`（你放进去的）、`▍系统字体`（系统已安装的）。
+
+几个要知道的点：
+
+- 列表里显示的是**字体文件内部的家族名**，不是文件名。例如
+  `MapleMono-NF-CN-Regular.ttf` 会显示成 `Maple Mono NF CN`。
+- 同名家族只出现一次，优先级 **内嵌 > 外置 > 系统** —— 放入同名文件可以覆盖内嵌字体那一项。
+- 终端字体列表里**外置字体不做等宽过滤**（只有系统字体过滤）。放进比例字体也能选中，
+  但终端按网格排版，显示会很难看。
+- **外置字体不会被自动选用**：界面字体的默认值是平台字体栈，需要在设置里手动选择。
+- **暗淡文本（SGR-2）取的是 `字体名 + " Thin"`** 这个家族，不是字重。想让暗淡文本有真正的
+  细体效果，要一并放入该字体的 Thin 字重；像 Maple Mono 这种 Thin 单独成家族的
+  （`Maple Mono Normal NL NF CN Thin`），它会作为**另一个条目**出现在列表里，属正常。
+
+### 终端里的中文
+
+终端字体自身不含中文时，中文与全角标点会**自动回退到界面字体**，不会出现方块。
+判断依据是家族名里是否带 `CN` / `SC` / `TC` / `JP` / `KR` / `CJK` / `Han` 标记：
+
+- **名字带标记**（如 `Maple Mono NF CN`）→ 中文直接用该字体渲染，斜体 / 细体等变体
+  对中文同样生效；
+- **名字不带标记** → 中文回退到界面字体（内嵌的 JetBrains Mono 就属于这一类）。
+
+想让中文也用终端字体渲染，请选择名字带上述标记的字体。
+
+### 放了字体但列表里看不到？
+
+1. **重启了吗** —— 字体目录只在启动时扫描一次。
+2. **扩展名对不对** —— 只认 `.ttf` / `.otf` / `.ttc` / `.otc`（`.woff2` 等不支持）。
+3. **确认家族名，而不是文件名** —— 用系统字体查看器看文件内部的名字，再在列表里找。
+4. **macOS 的 App 旁目录是只读备用位置** —— 只有手工创建后才会被扫描。
 
 ## 技术栈
 
@@ -142,7 +204,8 @@ open /Applications/rudder.app
 cargo run --release
 ```
 
-首次启动会在 `%APPDATA%/rudder/sessions.json` 建立空的会话库。点击右上
+首次启动会在配置目录建立 `settings.json`（设置）与 `sessions.json`（会话）。
+点击右上
 角 **“＋ 新建会话”** 添加第一台服务器。
 
 ## 项目布局
@@ -159,7 +222,13 @@ rudder/
 │   ├── tabs.slint               # 顶部标签栏
 │   ├── welcome.slint            # 欢迎页 / 快速连接
 │   ├── session_dialog.slint     # 新建 / 编辑会话弹框
-│   ├── interface_panel.slint    # 界面设置面板
+│   ├── interface_panel.slint    # 设置面板外壳（左侧导航 + 内容区）
+│   ├── settings/                # 设置面板实现（按页拆分）
+│   │   ├── chrome.slint         #   通用控件：行 / 段标题 / 步进器 / 色板
+│   │   ├── section.slint        #   分区容器（设置项分组的最小单位）
+│   │   ├── reset_bar.slint      #   「还原本页默认」两段式确认按钮
+│   │   ├── types.slint          #   跨组件共享的 struct
+│   │   └── pages/               #   7 个设置页，一页一文件
 │   ├── proc_window.slint        # 进程管理窗口
 │   ├── system_info_window.slint # 系统信息窗口
 │   ├── confirm_dialog.slint     # 确认 / 删除对话框

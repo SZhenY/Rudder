@@ -10,355 +10,18 @@ import { AnimationSettings } from "theme.slint";
 import { Theme } from "theme.slint";
 import { ComboBox, Slider, ScrollView } from "std-widgets.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
 
-export struct OutputRuleItem {
-    pattern: string,
-    regex: bool,
-    case-sensitive: bool,
-    whole-line: bool,
-    color: string,
-    enabled: bool,
-}
-
-export struct WslProfileInfo {
-    id: string,
-    name: string,
-    distribution: string,
-    directory: string,
-}
-
-// One left-nav row (icon + label).
-component NavItem inherits Rectangle {
-    in property <string> icon;
-    in property <string> label;
-    in property <bool> active;
-    callback clicked();
-    height: 30px;
-    border-radius: 6px;
-    background: root.active ? Theme.bg-active : (ta.has-hover ? Theme.bg-hover : transparent);
-    ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-    HorizontalLayout {
-        padding-left: 10px;
-        spacing: 9px;
-        Text { text: root.icon; font-family: "Material Icons";
-               color: root.active ? Theme.text-primary : Theme.text-secondary;
-               font-size: 15px * Theme.panel-font; vertical-alignment: center; }
-        Text { text: root.label;
-               color: root.active ? Theme.text-primary : Theme.text-secondary;
-               font-size: 13px * Theme.panel-font; vertical-alignment: center; horizontal-stretch: 1; }
-    }
-}
-
-// Small muted group heading (字体 / 预览 / SFTP …).
-component SectionHeader inherits Text {
-    font-size: 11px * Theme.panel-font;
-    font-weight: 700;
-    color: Theme.text-muted;
-    vertical-alignment: center;
-}
-
-// A settings row: label (+ optional description) on the left, a control slot on
-// the right via @children. Right-aligned and vertically centered.
-component SettingRow inherits Rectangle {
-    in property <string> label;
-    in property <string> desc;
-    in property <bool> show-divider: true;
-    VerticalLayout {
-        HorizontalLayout {
-            spacing: 14px;
-            padding-top: 9px;
-            padding-bottom: 9px;
-            VerticalLayout {
-                horizontal-stretch: 1;
-                alignment: center;
-                spacing: 3px;
-                Text { text: root.label; font-size: 13px * Theme.panel-font; color: Theme.text-primary; }
-                if root.desc != "" : Text { text: root.desc; font-size: 11px * Theme.panel-font;
-                       color: Theme.text-muted; wrap: word-wrap; }
-            }
-            VerticalLayout {
-                alignment: center;
-                @children
-            }
-        }
-        if root.show-divider : Rectangle { height: 1px; background: Theme.border-subtle; }
-    }
-}
-
-// iOS-style toggle switch. Display-only `on` (driven by the parent); a tap emits
-// the intended new value so the parent owns the state (avoids Slint's
-// binding-break-on-self-assign gotcha).
-component Switch inherits Rectangle {
-    in property <bool> on;
-    callback toggled(bool);
-    width: 38px;
-    height: 22px;
-    border-radius: 11px;
-    background: root.on ? Theme.accent : Theme.bg-active;
-    animate background { duration: 120ms;
-            easing: AnimationSettings.color;
-        }
-    Rectangle {
-        width: 16px;
-        height: 16px;
-        border-radius: 8px;
-        y: 3px;
-        x: root.on ? parent.width - self.width - 3px : 3px;
-        background: white;
-        animate x { duration: 120ms; easing: ease-out; }
-    }
-    TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.toggled(!root.on); }
-    }
-}
-
-// [- value +] stepper. Display-only `value`; emits the clamped new value.
-component Stepper inherits Rectangle {
-    in property <int> value;
-    in property <int> minimum: 0;
-    in property <int> maximum: 100;
-    in property <int> step: 1;
-    in property <string> unit;
-    callback changed(int);
-    width: 112px;
-    height: 26px;
-    border-radius: 6px;
-    background: Theme.bg-elevated;
-    border-width: 1px;
-    border-color: Theme.border-subtle;
-    clip: true;
-    HorizontalLayout {
-        Rectangle {
-            width: 30px;
-            background: minus-ta.has-hover ? Theme.bg-hover : transparent;
-            minus-ta := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.changed(max(root.minimum, root.value - root.step)); }
-            }
-            Text { text: "\u{E15B}"; font-family: "Material Icons"; font-size: 14px * Theme.panel-font;
-                   color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
-        }
-        Rectangle { width: 1px; background: Theme.border-subtle; }
-        Text { text: root.value + root.unit; horizontal-stretch: 1;
-               font-size: 12px * Theme.panel-font; color: Theme.text-primary;
-               horizontal-alignment: center; vertical-alignment: center; }
-        Rectangle { width: 1px; background: Theme.border-subtle; }
-        Rectangle {
-            width: 30px;
-            background: plus-ta.has-hover ? Theme.bg-hover : transparent;
-            plus-ta := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.changed(min(root.maximum, root.value + root.step)); }
-            }
-            Text { text: "\u{E145}"; font-family: "Material Icons"; font-size: 14px * Theme.panel-font;
-                   color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
-        }
-    }
-}
-
-// Compact cursor-shape choice with a live visual sample (#275).
-component CursorStyleButton inherits Rectangle {
-    in property <string> label;
-    in property <string> cursor-kind;
-    in property <bool> selected;
-    callback clicked();
-    width: 74px;
-    height: 30px;
-    border-radius: 6px;
-    border-width: 1px;
-    border-color: root.selected ? Theme.accent : Theme.border-subtle;
-    background: root.selected ? Theme.bg-active : (cursor-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated);
-    cursor-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-    HorizontalLayout {
-        padding-left: 7px;
-        padding-right: 7px;
-        spacing: 6px;
-        alignment: center;
-        Rectangle {
-            width: 14px;
-            height: 100%;
-            background: transparent;
-            Rectangle {
-                y: (parent.height - self.height) / 2;
-                width: 14px;
-                height: 18px;
-                background: Theme.term-bg;
-                Rectangle {
-                    x: 2px;
-                    y: root.cursor-kind == "underline" ? parent.height - 3px : 2px;
-                    width: root.cursor-kind == "bar" ? 2px : 10px;
-                    height: root.cursor-kind == "underline" ? 2px : 14px;
-                    background: Theme.term-fg;
-                }
-            }
-        }
-        Text {
-            text: root.label;
-            color: root.selected ? Theme.text-primary : Theme.text-secondary;
-            font-size: 11px * Theme.panel-font;
-            vertical-alignment: center;
-        }
-    }
-}
-
-component CursorPaletteSwatch inherits Rectangle {
-    in property <string> hex;
-    in property <color> swatch-color;
-    in property <bool> selected;
-    callback chosen(string);
-    width: 26px;
-    height: 26px;
-    border-radius: 5px;
-    border-width: root.selected ? 2px : 1px;
-    border-color: root.selected ? Theme.accent : Theme.border-strong;
-    background: root.swatch-color;
-    swatch-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.chosen(root.hex); }
-    }
-}
-
-// Hex RGB editor with a live swatch. Incomplete/invalid input remains editable
-// but is marked red and is not applied or persisted.
-component CursorColorInput inherits Rectangle {
-    in-out property <string> value;
-    in property <color> preview-color;
-    property <bool> valid: true;
-    callback apply-color(string) -> bool;
-    width: 160px;
-    height: 30px;
-    border-radius: 6px;
-    border-width: 1px;
-    border-color: root.valid ? Theme.border-subtle : #e05252;
-    background: Theme.bg-elevated;
-    Rectangle {
-        x: 7px;
-        y: 6px;
-        width: 18px;
-        height: 18px;
-        border-radius: 4px;
-        border-width: 1px;
-        border-color: Theme.border-strong;
-        background: root.preview-color;
-        color-button := TouchArea {
-            mouse-cursor: pointer;
-            clicked => { color-picker.show(); }
-        }
-    }
-    color-input := TextInput {
-        x: 34px;
-        width: parent.width - 41px;
-        height: parent.height;
-        text <=> root.value;
-        color: Theme.text-primary;
-        font-family: Theme.term-font-family;
-        font-size: 12px * Theme.panel-font;
-        vertical-alignment: center;
-        single-line: true;
-        changed text => { root.valid = root.apply-color(self.text); }
-    }
-    color-picker := PopupWindow {
-        x: parent.width - self.width;
-        y: parent.height + 4px;
-        width: 210px;
-        height: 160px;
-        Rectangle {
-            background: Theme.bg-panel;
-            border-radius: 8px;
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            drop-shadow-blur: 12px;
-            drop-shadow-color: #00000060;
-            VerticalLayout {
-                padding: 10px;
-                spacing: 7px;
-                Text {
-                    text: root.value;
-                    color: Theme.text-secondary;
-                    font-family: Theme.term-font-family;
-                    font-size: 11px * Theme.panel-font;
-                    vertical-alignment: center;
-                }
-                HorizontalLayout {
-                    spacing: 6px;
-                    CursorPaletteSwatch { hex: "#D4D4D4"; swatch-color: #D4D4D4; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#FFFFFF"; swatch-color: #FFFFFF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#FF5252"; swatch-color: #FF5252; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#FF9800"; swatch-color: #FF9800; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#FFD740"; swatch-color: #FFD740; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#69F0AE"; swatch-color: #69F0AE; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                }
-                HorizontalLayout {
-                    spacing: 6px;
-                    CursorPaletteSwatch { hex: "#00E676"; swatch-color: #00E676; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#00E5FF"; swatch-color: #00E5FF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#40C4FF"; swatch-color: #40C4FF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#448AFF"; swatch-color: #448AFF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#7C4DFF"; swatch-color: #7C4DFF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#E040FB"; swatch-color: #E040FB; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                }
-                HorizontalLayout {
-                    spacing: 6px;
-                    CursorPaletteSwatch { hex: "#F48FB1"; swatch-color: #F48FB1; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#FF8A65"; swatch-color: #FF8A65; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#FFF176"; swatch-color: #FFF176; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#A5D6A7"; swatch-color: #A5D6A7; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#80CBC4"; swatch-color: #80CBC4; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#90CAF9"; swatch-color: #90CAF9; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                }
-                HorizontalLayout {
-                    spacing: 6px;
-                    CursorPaletteSwatch { hex: "#B39DDB"; swatch-color: #B39DDB; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#CE93D8"; swatch-color: #CE93D8; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#BCAAA4"; swatch-color: #BCAAA4; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#9E9E9E"; swatch-color: #9E9E9E; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#607D8B"; swatch-color: #607D8B; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                    CursorPaletteSwatch { hex: "#2D2D2F"; swatch-color: #2D2D2F; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
-                }
-            }
-        }
-    }
-}
-
-// A macOS-style wallpaper thumbnail: a rounded, clipped preview (passed via
-// @children) with a selection ring + check badge. The label sits below it in
-// the page, not inside.
-component WallpaperSwatch inherits Rectangle {
-    in property <bool> selected;
-    callback clicked();
-    width: 120px;
-    height: 74px;
-    border-radius: 8px;
-    border-width: root.selected ? 3px : 1px;
-    border-color: root.selected ? Theme.accent : Theme.border-strong;
-    clip: true;
-    @children
-    if root.selected : Rectangle {
-        x: parent.width - self.width - 5px;
-        y: 5px;
-        width: 18px;
-        height: 18px;
-        border-radius: 9px;
-        background: Theme.accent;
-        Text {
-            text: "\u{E5CA}"; // check
-            font-family: "Material Icons"; color: white; font-size: 13px * Theme.panel-font;
-            width: 100%; height: 100%;
-            horizontal-alignment: center; vertical-alignment: center;
-        }
-    }
-    ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-}
+import { NavItem, SectionHeader, SettingRow, Stepper, CursorStyleButton, CursorColorInput, WallpaperSwatch } from "settings/chrome.slint";
+import { Switch } from "std-widgets.slint";
+import { ResetBar } from "settings/reset_bar.slint";
+import { TerminalPage } from "settings/pages/terminal.slint";
+import { AppearancePage } from "settings/pages/appearance.slint";
+import { LayoutPage } from "settings/pages/layout.slint";
+import { SyncPage } from "settings/pages/sync.slint";
+import { WslPage } from "settings/pages/wsl.slint";
+import { TransferPage } from "settings/pages/transfer.slint";
+import { UpdatePage } from "settings/pages/update.slint";
 
 // The settings content (nav + pages). Embedded in AppWindow's modal overlay.
 export component InterfacePanel inherits Rectangle {
@@ -416,11 +79,8 @@ export component InterfacePanel inherits Rectangle {
     property <bool> new-rule-case-sensitive;
     property <bool> new-rule-whole-line;
     property <string> new-rule-color: "red";
-    property <bool> renderer-restart-required;
-    property <bool> wp-is-custom:
-        root.current-wallpaper != "" && root.current-wallpaper != "builtin:light"
-        && root.current-wallpaper != "builtin:dark" && root.current-wallpaper != "builtin:tech"
-        && root.current-wallpaper != "builtin:miku" && root.current-wallpaper != "builtin:ms";
+    // 注：`renderer-restart-required` 与 `wp-is-custom` 已随外观页搬进
+    // `ui/settings/pages/appearance.slint` —— 它们只被那一页使用，属于页面私有状态。
 
     callback set-term-font(string);
     callback set-term-font-size(int);
@@ -464,8 +124,9 @@ export component InterfacePanel inherits Rectangle {
     callback remove-wsl-profile(string);
     callback pick-wsl-directory();
     callback reset-page(string);   // 一键还原本页默认（page-id）
-    // 两段式还原确认状态：第一次点击"上膛"，再次点击执行（避免误触）
-    property <bool> reset-armed: false;
+    // 两段式还原确认的 armed 状态**不在这里**：它属于各自的 ResetBar 实例。
+    // 曾放在这里（单个 `reset-armed`）导致跨页串味：终端页上膛后切到外观页，
+    // 按钮直接显示「确认还原？」，一点就还原了另一页。
     // 动画开关此前只写 Slint 全局、从不持久化；现在同时通知 Rust 存入 config。
     callback set-animations-enabled(bool);
 
@@ -550,1117 +211,124 @@ export component InterfacePanel inherits Rectangle {
                     width: settings-scroll.visible-width;
 
             // --- Font page ---------------------------------------------
-            if root.ifd-page == "terminal" : VerticalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 14px;
-                spacing: 0;
-                alignment: start;
-
-                SectionHeader { text: root.lang-en ? "FONT" : "字体"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "Terminal font" : "终端字体";
-                    ComboBox {
-                        width: 220px;
-                        model: root.term-fonts;
-                        current-index <=> root.term-font-index;
-                        selected(v) => { root.set-term-font(v); }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Terminal font size" : "终端字体大小";
-                    Stepper {
-                        value: root.term-font-size / 1px; minimum: 8; maximum: 32; step: 1; unit: "px";
-                        changed(v) => { root.set-term-font-size(v); }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Bold terminal text" : "终端字体加粗";
-                    desc: root.lang-en ? "Makes regular terminal output use a bold face."
-                                       : "让普通终端输出使用加粗字重。";
-                    Switch {
-                        on: root.term-font-bold;
-                        toggled(v) => { root.term-font-bold = v; root.set-term-font-bold(v); }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Cursor shape" : "光标类型";
-                    desc: root.lang-en ? "Choose the terminal insertion cursor shape."
-                                       : "选择终端输入光标的形状。";
-                    HorizontalLayout {
-                        spacing: 5px;
-                        CursorStyleButton {
-                            label: root.lang-en ? "Block" : "块状";
-                            cursor-kind: "block";
-                            selected: root.term-cursor-style == "block";
-                            clicked => { root.term-cursor-style = "block"; root.set-term-cursor-style("block"); }
-                        }
-                        CursorStyleButton {
-                            label: root.lang-en ? "Bar" : "竖线";
-                            cursor-kind: "bar";
-                            selected: root.term-cursor-style == "bar";
-                            clicked => { root.term-cursor-style = "bar"; root.set-term-cursor-style("bar"); }
-                        }
-                        CursorStyleButton {
-                            label: root.lang-en ? "Line" : "下划线";
-                            cursor-kind: "underline";
-                            selected: root.term-cursor-style == "underline";
-                            clicked => { root.term-cursor-style = "underline"; root.set-term-cursor-style("underline"); }
-                        }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Cursor color" : "光标颜色";
-                    desc: root.lang-en ? "Enter a hexadecimal RGB color."
-                                       : "输入十六进制 RGB 颜色。";
-                    CursorColorInput {
-                        value <=> root.term-cursor-color-hex;
-                        preview-color: root.term-cursor-color;
-                        apply-color(v) => { root.set-term-cursor-color(v) }
-                    }
-                }
-                SectionHeader { text: root.lang-en ? "PREVIEW" : "预览"; height: 22px; }
-                Rectangle {
-                    height: 52px;
-                    background: Theme.term-bg;
-                    border-radius: 6px;
-                    border-width: 1px;
-                    border-color: Theme.border-subtle;
-                    Text {
-                        x: 12px;
-                        text: "Rudder ~$ echo preview 0123";
-                        font-family: Theme.term-font-family;
-                        font-size: Theme.term-font-size;
-                        font-weight: Theme.term-font-bold ? 700 : 400;
-                        color: Theme.term-fg;
-                        vertical-alignment: center;
-                        height: parent.height;
-                    }
-                }
-
-                SectionHeader { text: root.lang-en ? "SCROLLBACK" : "回滚行数"; height: 24px; }
-                SettingRow {
-                    show-divider: true;
-                    label: root.lang-en ? "Scrollback lines" : "回滚行数";
-                    desc: root.lang-en
-                        ? "Number of lines kept in terminal history (100–1,000,000)."
-                        : "终端历史记录保留的最大行数（100–1,000,000）。";
-                    Rectangle {
-                        width: 148px; height: 30px;
-                        border-radius: 6px; border-width: 1px;
-                        border-color: Theme.border-subtle;
-                        background: Theme.bg-elevated;
-                        TextInput {
-                            width: parent.width - 8px; height: parent.height;
-                            x: 4px; vertical-alignment: center;
-                            color: Theme.text-primary;
-                            text: root.scrollback-lines;
-                        changed text => {
-                            root.scrollback-valid = root.set-scrollback-lines(self.text);
-                        }
-                    }
-                    }
-                }
-                Text {
-                    text: root.lang-en
-                        ? "Larger values use more memory. Invalid input is not applied."
-                        : "行数越大占用内存越多。非法输入不会被应用。";
-                    font-size: 11px * Theme.panel-font;
-                    color: root.scrollback-valid ? Theme.text-muted : Theme.danger;
-                    wrap: word-wrap;
-                }
-                Rectangle { height: 14px; }
-                SettingRow {
-                    label: root.lang-en ? "Convert LF to CRLF" : "LF 转 CRLF";
-                    desc: root.lang-en
-                        ? "Replace \\n with \\r\\n on paste/input for programs that require Windows line endings."
-                        : "粘贴/输入时将 \\n 转为 \\r\\n，兼容需要 Windows 换行符的程序。";
-                    Switch {
-                        on: root.convert-eol;
-                        toggled(v) => { root.convert-eol = v; root.set-convert-eol(v); }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "OSC 52 clipboard" : "OSC 52 剪贴板";
-                    desc: root.lang-en
-                        ? "Allow remote programs (zellij, tmux, vim) to write the local clipboard via OSC 52. Disable for stricter security."
-                        : "允许远程程序 (zellij、tmux、vim) 通过 OSC 52 写入本地剪贴板。关闭可提高安全性。";
-                    Switch {
-                        on: root.osc52-clipboard;
-                        toggled(v) => { root.osc52-clipboard = v; root.set-osc52-clipboard(v); }
-                    }
-                }
-                Rectangle { height: 14px; }
-                SectionHeader { text: root.lang-en ? "OUTPUT HIGHLIGHTING" : "输出高亮"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "Highlight plain terminal output" : "高亮纯文本终端输出";
-                    desc: root.lang-en
-                        ? "Adds client-side colours only when the program did not provide ANSI styling."
-                        : "仅在程序未提供 ANSI 样式时由客户端补充颜色。";
-                    Switch {
-                        on: root.output-highlight-enabled;
-                        toggled(v) => {
-                            root.output-highlight-enabled = v;
-                            root.set-output-highlight(v, root.output-highlight-preset);
-                        }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Format and colour JSON lines" : "格式化并着色 JSON 行";
-                    desc: root.lang-en
-                        ? "Pretty-prints complete single-line JSON output with per-token colours; prompts and partial JSON stay untouched."
-                        : "把完整的单行 JSON 输出美化缩进并按令牌着色；提示符与不完整 JSON 保持原样。";
-                    Switch {
-                        on: root.json-format-output;
-                        toggled(v) => {
-                            root.json-format-output = v;
-                            root.set-json-format-output(v);
-                        }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Built-in rule set" : "内置规则集";
-                    desc: root.lang-en
-                        ? "Log levels is conservative; DevOps recognises deployment states; Rudder rules highlight numbers, URLs, IPs, UUIDs, dates and more."
-                        : "日志级别更保守；DevOps 识别部署状态；Rudder规则高亮数字、URL、IP、UUID、日期等。";
-                    show-divider: false;
-                    ComboBox {
-                        width: 190px;
-                        enabled: root.output-highlight-enabled;
-                        model: [
-                            root.lang-en ? "Log levels" : "日志级别",
-                            "DevOps",
-                            root.lang-en ? "Rudder rules" : "Rudder规则",
-                        ];
-                        current-value: root.output-highlight-preset == "devops"
-                            ? "DevOps"
-                            : (root.output-highlight-preset == "builtin"
-                                ? (root.lang-en ? "Rudder rules" : "Rudder规则")
-                                : (root.lang-en ? "Log levels" : "日志级别"));
-                        selected(v) => {
-                            root.output-highlight-preset =
-                                v == "DevOps" ? "devops"
-                                : (v == (root.lang-en ? "Rudder rules" : "Rudder规则")
-                                    ? "builtin" : "log");
-                            root.set-output-highlight(
-                                root.output-highlight-enabled,
-                                root.output-highlight-preset);
-                        }
-                    }
-                }
-
-                Rectangle { height: 18px; }
-                SectionHeader { text: root.lang-en ? "PREVIEW" : "预览"; height: 22px; }
-                Rectangle {
-                    height: root.output-highlight-preset == "devops" || root.output-highlight-preset == "builtin" ? 116px : 92px;
-                    background: Theme.term-bg;
-                    border-radius: 6px;
-                    border-width: 1px;
-                    border-color: Theme.border-subtle;
-                    VerticalLayout {
-                        padding: 12px;
-                        spacing: 5px;
-                        if root.output-highlight-preset == "builtin" : VerticalLayout {
-                            spacing: 5px;
-                            Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                            Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                            Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                        }
-                        if root.output-highlight-preset != "builtin" : VerticalLayout {
-                            spacing: 5px;
-                            Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.text-muted : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                            Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                            Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                            Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                            if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                        }
-                    }
-                }
-
-                Rectangle { height: 18px; }
-                SectionHeader { text: root.lang-en ? "CUSTOM RULES" : "自定义规则"; height: 22px; }
-                Text {
-                    text: root.lang-en
-                        ? "Custom rules run before the built-in preset and never overwrite ANSI colours."
-                        : "自定义规则优先于内置规则，且不会覆盖程序输出的 ANSI 颜色。";
-                    color: Theme.text-muted;
-                    font-size: 11px * Theme.panel-font;
-                    wrap: word-wrap;
-                }
-                Rectangle { height: 10px; }
-                LabeledInput {
-                    label: root.lang-en ? "Keyword or regular expression" : "关键词或正则表达式";
-                    placeholder: root.new-rule-regex ? "timeout|connection refused" : "connection refused";
-                    value <=> root.new-rule-pattern;
-                    accepted => {
-                        if root.add-output-highlight-rule(
-                            root.new-rule-pattern, root.new-rule-regex,
-                            root.new-rule-case-sensitive, root.new-rule-whole-line,
-                            root.new-rule-color) {
-                            root.new-rule-pattern = "";
-                        }
-                    }
-                }
-                Rectangle { height: 8px; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    ComboBox {
-                        width: 130px;
-                        model: [root.lang-en ? "Keyword" : "关键词", root.lang-en ? "Regex" : "正则"];
-                        current-value: root.new-rule-regex
-                            ? (root.lang-en ? "Regex" : "正则")
-                            : (root.lang-en ? "Keyword" : "关键词");
-                        selected(v) => {
-                            root.new-rule-regex = v == "Regex" || v == "正则";
-                        }
-                    }
-                    ComboBox {
-                        width: 120px;
-                        model: ["Red", "Yellow", "Green", "Cyan", "Magenta", "Gray"];
-                        current-value: root.new-rule-color == "yellow" ? "Yellow"
-                            : root.new-rule-color == "green" ? "Green"
-                            : root.new-rule-color == "cyan" ? "Cyan"
-                            : root.new-rule-color == "magenta" ? "Magenta"
-                            : root.new-rule-color == "gray" ? "Gray" : "Red";
-                        selected(v) => {
-                            root.new-rule-color = v == "Yellow" ? "yellow"
-                                : v == "Green" ? "green"
-                                : v == "Cyan" ? "cyan"
-                                : v == "Magenta" ? "magenta"
-                                : v == "Gray" ? "gray" : "red";
-                        }
-                    }
-                    Rectangle { horizontal-stretch: 1; }
-                    PrimaryButton {
-                        text: root.lang-en ? "Add rule" : "添加规则";
-                        disabled: root.new-rule-pattern == "";
-                        clicked => {
-                            if root.add-output-highlight-rule(
-                                root.new-rule-pattern, root.new-rule-regex,
-                                root.new-rule-case-sensitive, root.new-rule-whole-line,
-                                root.new-rule-color) {
-                                root.new-rule-pattern = "";
-                            }
-                        }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Case sensitive" : "区分大小写";
-                    Switch {
-                        on: root.new-rule-case-sensitive;
-                        toggled(v) => { root.new-rule-case-sensitive = v; }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Highlight whole line" : "高亮整行";
-                    desc: root.lang-en
-                        ? "Otherwise only matching text is coloured."
-                        : "关闭时仅高亮匹配到的文字。";
-                    show-divider: false;
-                    Switch {
-                        on: root.new-rule-whole-line;
-                        toggled(v) => { root.new-rule-whole-line = v; }
-                    }
-                }
-                if root.output-highlight-rule-status != "" : Text {
-                    text: root.output-highlight-rule-status;
-                    color: Theme.danger;
-                    font-size: 11px * Theme.panel-font;
-                    wrap: word-wrap;
-                }
-
-                if root.output-highlight-rules.length == 0 : Text {
-                    text: root.lang-en ? "No custom rules yet." : "暂无自定义规则。";
-                    color: Theme.text-muted;
-                    font-size: 11px * Theme.panel-font;
-                    height: 34px;
-                    vertical-alignment: center;
-                }
-                for rule[index] in root.output-highlight-rules : Rectangle {
-                    height: 44px;
-                    Rectangle { y: 0px; width: 100%; height: 1px; background: Theme.border-subtle; }
-                    HorizontalLayout {
-                        spacing: 9px;
-                        Rectangle {
-                            width: 8px;
-                            height: 8px;
-                            border-radius: 4px;
-                            background: rule.color == "yellow" ? Theme.warning
-                                : rule.color == "green" ? Theme.success
-                                : rule.color == "cyan" ? Theme.accent
-                                : rule.color == "magenta" ? #d670d6
-                                : rule.color == "gray" ? Theme.text-muted
-                                : Theme.danger;
-                            vertical-stretch: 0;
-                        }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            spacing: 2px;
-                            Text {
-                                text: rule.pattern;
-                                color: rule.enabled ? Theme.text-primary : Theme.text-muted;
-                                font-family: Theme.term-font-family;
-                                font-size: 12px * Theme.panel-font;
-                                overflow: elide;
-                            }
-                            Text {
-                                text: (rule.regex ? "Regex" : (root.lang-en ? "Keyword" : "关键词"))
-                                    + (rule.case-sensitive ? " · Aa" : "")
-                                    + (rule.whole-line ? (root.lang-en ? " · whole line" : " · 整行") : "");
-                                color: Theme.text-muted;
-                                font-size: 10px * Theme.panel-font;
-                            }
-                        }
-                        Switch {
-                            on: rule.enabled;
-                            toggled(v) => { root.set-output-highlight-rule-enabled(index, v); }
-                        }
-                        Rectangle {
-                            width: 28px;
-                            height: 28px;
-                            border-radius: 5px;
-                            background: delete-ta.has-hover ? Theme.bg-hover : transparent;
-                            delete-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { root.remove-output-highlight-rule(index); }
-                            }
-                            Text {
-                                text: "\u{E872}";
-                                font-family: "Material Icons";
-                                color: Theme.text-muted;
-                                font-size: 15px * Theme.panel-font;
-                                width: 100%; height: 100%;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-                }
-            
-            // ── 还原本页默认（终端页最后一个设置项之后）────────────────
-            HorizontalLayout {
-                padding-top: 12px;
-                padding-bottom: 4px;
-                Rectangle { horizontal-stretch: 1; }
-                GhostButton {
-                    text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
-                    clicked => {
-                        if (root.reset-armed) {
-                            root.reset-armed = false;
-                            root.reset-page("terminal");
-                        } else {
-                            root.reset-armed = true;
-                        }
-                    }
-                }
+            if root.ifd-page == "terminal" : TerminalPage {
+                convert-eol <=> root.convert-eol;
+                json-format-output <=> root.json-format-output;
+                lang-en: root.lang-en;
+                osc52-clipboard <=> root.osc52-clipboard;
+                output-highlight-enabled <=> root.output-highlight-enabled;
+                output-highlight-preset <=> root.output-highlight-preset;
+                output-highlight-rule-status <=> root.output-highlight-rule-status;
+                output-highlight-rules: root.output-highlight-rules;
+                scrollback-lines <=> root.scrollback-lines;
+                term-cursor-color: root.term-cursor-color;
+                term-cursor-color-hex <=> root.term-cursor-color-hex;
+                term-cursor-style <=> root.term-cursor-style;
+                term-font-bold <=> root.term-font-bold;
+                term-font-index <=> root.term-font-index;
+                term-font-size: root.term-font-size;
+                term-fonts: root.term-fonts;
+                add-output-highlight-rule(a0, a1, a2, a3, a4) => { return root.add-output-highlight-rule(a0, a1, a2, a3, a4); }
+                remove-output-highlight-rule(a0) => { root.remove-output-highlight-rule(a0); }
+                reset-page(a0) => { root.reset-page(a0); }
+                set-convert-eol(a0) => { root.set-convert-eol(a0); }
+                set-json-format-output(a0) => { root.set-json-format-output(a0); }
+                set-osc52-clipboard(a0) => { root.set-osc52-clipboard(a0); }
+                set-output-highlight(a0, a1) => { root.set-output-highlight(a0, a1); }
+                set-output-highlight-rule-enabled(a0, a1) => { root.set-output-highlight-rule-enabled(a0, a1); }
+                set-scrollback-lines(a0) => { return root.set-scrollback-lines(a0); }
+                set-term-cursor-color(a0) => { return root.set-term-cursor-color(a0); }
+                set-term-cursor-style(a0) => { root.set-term-cursor-style(a0); }
+                set-term-font(a0) => { root.set-term-font(a0); }
+                set-term-font-bold(a0) => { root.set-term-font-bold(a0); }
+                set-term-font-size(a0) => { root.set-term-font-size(a0); }
             }
-}
-
-            if root.ifd-page == "appearance" : VerticalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 14px;
-                spacing: 0;
-                alignment: start;
-
-                SectionHeader { text: root.lang-en ? "UI FONT" : "界面字体"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "UI font" : "界面字体";
-                    desc: root.lang-en
-                        ? "Choose a font for menus, settings and dialogs. Changes take effect immediately."
-                        : "选择菜单、设置和对话框的字体。修改后即时生效。";
-                    ComboBox {
-                        width: 220px;
-                        model: root.ui-fonts;
-                        current-index <=> root.ui-font-index;
-                        selected(v) => { root.set-ui-font(v); }
-                    }
+                if root.ifd-page == "appearance" : AppearancePage {
+                    current-wallpaper: root.current-wallpaper;
+                    custom-wallpaper-name: root.custom-wallpaper-name;
+                    hide-special-partitions <=> root.hide-special-partitions;
+                    lang-en: root.lang-en;
+                    mount-filter <=> root.mount-filter;
+                    renderer-mode <=> root.renderer-mode;
+                    ui-font-index <=> root.ui-font-index;
+                    ui-fonts: root.ui-fonts;
+                    ui-scale: root.ui-scale;
+                    wallpaper-overlay <=> root.wallpaper-overlay;
+                    persist-wallpaper-overlay(a0) => { root.persist-wallpaper-overlay(a0); }
+                    pick-wallpaper-file() => { root.pick-wallpaper-file(); }
+                    reset-page(a0) => { root.reset-page(a0); }
+                    set-animations-enabled(a0) => { root.set-animations-enabled(a0); }
+                    set-hide-special-partitions(a0) => { root.set-hide-special-partitions(a0); }
+                    set-mount-filter(a0) => { root.set-mount-filter(a0); }
+                    set-panel-font(a0) => { root.set-panel-font(a0); }
+                    set-renderer-mode(a0) => { root.set-renderer-mode(a0); }
+                    set-ui-font(a0) => { root.set-ui-font(a0); }
+                    set-ui-scale(a0) => { root.set-ui-scale(a0); }
+                    set-wallpaper(a0) => { root.set-wallpaper(a0); }
                 }
 
-                SectionHeader { text: root.lang-en ? "WALLPAPER" : "壁纸"; height: 24px; }
-                Text {
-                    text: root.lang-en
-                        ? "Pick a wallpaper — the interface tints itself to match (accent, panels, light/dark)."
-                        : "选一张壁纸,界面会沉浸式地适配它的颜色(强调色、面板、深浅)。";
-                    color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
-                }
-                Rectangle { height: 12px; }
-
-                // Built-in choices: keep this row horizontally scrollable as
-                // bundled wallpapers grow.
-                builtin-wallpapers-scroll := ScrollView {
-                    height: 106px;
-                    width: 100%;
-                    viewport-width: max(self.visible-width, builtin-wallpapers-row.preferred-width);
-                    viewport-height: self.visible-height;
-
-                    builtin-wallpapers-row := HorizontalLayout {
-                        spacing: 11px;
-                        alignment: start;
-                    VerticalLayout {
-                        spacing: 5px;
-                        WallpaperSwatch {
-                            width: 100px;
-                            selected: root.current-wallpaper == "";
-                            clicked => { root.set-wallpaper(""); }
-                            Rectangle {
-                                width: 100%; height: 100%;
-                                background: Theme.window-base;
-                                Text {
-                                    text: "\u{E14C}"; // clear / none
-                                    font-family: "Material Icons"; color: Theme.text-muted;
-                                    font-size: 22px * Theme.panel-font;
-                                    width: 100%; height: 100%;
-                                    horizontal-alignment: center; vertical-alignment: center;
-                                }
-                            }
-                        }
-                        Text { text: root.lang-en ? "None" : "无"; font-size: 11px * Theme.panel-font;
-                               color: Theme.text-secondary; horizontal-alignment: center; }
-                    }
-                    VerticalLayout {
-                        spacing: 5px;
-                        WallpaperSwatch {
-                            width: 100px;
-                            selected: root.current-wallpaper == "builtin:light";
-                            clicked => { root.set-wallpaper("builtin:light"); }
-                            Rectangle {
-                                width: 100%; height: 100%;
-                                background: @linear-gradient(135deg, #eff3fb 0%, #d5e1f2 100%);
-                                Rectangle {
-                                    x: parent.width * 0.66; y: -parent.height * 0.2;
-                                    width: 56px; height: 56px; border-radius: 28px;
-                                    background: #4a90e2; opacity: 0.30;
-                                }
-                            }
-                        }
-                        Text { text: root.lang-en ? "Meat Light" : "简约·浅"; font-size: 11px * Theme.panel-font;
-                               color: Theme.text-secondary; horizontal-alignment: center; }
-                    }
-                    VerticalLayout {
-                        spacing: 5px;
-                        WallpaperSwatch {
-                            width: 100px;
-                            selected: root.current-wallpaper == "builtin:dark";
-                            clicked => { root.set-wallpaper("builtin:dark"); }
-                            Rectangle {
-                                width: 100%; height: 100%;
-                                background: @linear-gradient(135deg, #10131a 0%, #1b2233 100%);
-                                Rectangle {
-                                    x: parent.width * 0.66; y: -parent.height * 0.2;
-                                    width: 56px; height: 56px; border-radius: 28px;
-                                    background: #4a6ce0; opacity: 0.40;
-                                }
-                            }
-                        }
-                        Text { text: root.lang-en ? "Meat Dark" : "简约·暗"; font-size: 11px * Theme.panel-font;
-                               color: Theme.text-secondary; horizontal-alignment: center; }
-                    }
-                    }
+                if root.ifd-page == "layout" : LayoutPage {
+                    collapse-sftp-default <=> root.collapse-sftp-default;
+                    collapse-sidebar-default <=> root.collapse-sidebar-default;
+                    lang-en: root.lang-en;
+                    quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
+                    welcome-as-sidebar <=> root.welcome-as-sidebar;
+                    reset-page(a0) => { root.reset-page(a0); }
+                    set-collapse-sftp-default(a0) => { root.set-collapse-sftp-default(a0); }
+                    set-collapse-sidebar-default(a0) => { root.set-collapse-sidebar-default(a0); }
+                    set-quick-commands-as-sidebar(a0) => { root.set-quick-commands-as-sidebar(a0); }
+                    set-welcome-as-sidebar(a0) => { root.set-welcome-as-sidebar(a0); }
                 }
 
-                Rectangle { height: 16px; }
-                SectionHeader { text: root.lang-en ? "CUSTOM" : "自定义"; height: 22px; }
-                HorizontalLayout {
-                    spacing: 14px;
-                    alignment: start;
-                    WallpaperSwatch {
-                        selected: root.wp-is-custom;
-                        clicked => { root.pick-wallpaper-file(); }
-                        // Show the real image when a custom one is active, else a
-                        // "choose a file" placeholder.
-                        if root.wp-is-custom : Image {
-                            width: 100%; height: 100%;
-                            source: Theme.wallpaper;
-                            image-fit: cover;
-                        }
-                        if !root.wp-is-custom : Rectangle {
-                            width: 100%; height: 100%;
-                            background: Theme.bg-elevated;
-                            Text {
-                                text: "\u{E2C6}"; // folder-open
-                                font-family: "Material Icons"; color: Theme.text-secondary;
-                                font-size: 22px * Theme.panel-font;
-                                width: 100%; height: 100%;
-                                horizontal-alignment: center; vertical-alignment: center;
-                            }
-                        }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 6px;
-                        Rectangle {
-                            width: 130px; height: 30px;
-                            border-radius: 6px;
-                            background: pick-ta.has-hover ? Theme.accent-hover : Theme.accent;
-                            pick-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { root.pick-wallpaper-file(); }
-                            }
-                            Text {
-                                text: root.lang-en ? "Choose file…" : "选择文件…";
-                                color: white; font-size: 12px * Theme.panel-font;
-                                width: 100%; height: 100%;
-                                horizontal-alignment: center; vertical-alignment: center;
-                            }
-                        }
-                        if root.wp-is-custom : Text {
-                            text: root.custom-wallpaper-name;
-                            color: Theme.text-muted; font-size: 11px * Theme.panel-font;
-                            width: 150px; overflow: elide;
-                        }
-                    }
+                if root.ifd-page == "transfer" : TransferPage {
+                    download-always-ask <=> root.download-always-ask;
+                    lang-en: root.lang-en;
+                    sftp-follow-cd <=> root.sftp-follow-cd;
+                    reset-page(a0) => { root.reset-page(a0); }
+                    set-download-always-ask(a0) => { root.set-download-always-ask(a0); }
+                    set-sftp-follow-cd(a0) => { root.set-sftp-follow-cd(a0); }
                 }
 
-                Rectangle { height: 16px; }
-                SectionHeader { text: root.lang-en ? "OVERLAY" : "遮罩"; height: 22px; }
-                SettingRow {
-                    label: root.lang-en ? "Wallpaper transparency" : "壁纸遮罩透明度";
-                    desc: root.lang-en
-                        ? "How much the wallpaper shows through panels and the terminal (no effect without a wallpaper)."
-                        : "壁纸透过面板 / 终端背景的程度,越往右越透;没设壁纸时不生效。";
-                    show-divider: false;
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Slider {
-                            width: 150px;
-                            minimum: 0;
-                            // Up to 70% transparency (overlay floor 0.30).
-                            maximum: 70;
-                            value: (1.0 - root.wallpaper-overlay) * 100;
-                            changed(v) => { root.wallpaper-overlay = 1.0 - v / 100; }
-                            released(v) => { root.persist-wallpaper-overlay(1.0 - v / 100); }
-                        }
-                        Text {
-                            text: "\{round((1.0 - root.wallpaper-overlay) * 100)}%";
-                            color: Theme.text-secondary;
-                            font-size: 12px * Theme.panel-font;
-                            vertical-alignment: center;
-                            width: 34px;
-                        }
-                    }
+                if root.ifd-page == "wsl" : WslPage {
+                    lang-en: root.lang-en;
+                    wsl-new-directory <=> root.wsl-new-directory;
+                    wsl-new-distribution <=> root.wsl-new-distribution;
+                    wsl-new-name <=> root.wsl-new-name;
+                    wsl-profiles: root.wsl-profiles;
+                    add-wsl-profile(a0, a1, a2) => { root.add-wsl-profile(a0, a1, a2); }
+                    pick-wsl-directory() => { root.pick-wsl-directory(); }
+                    remove-wsl-profile(a0) => { root.remove-wsl-profile(a0); }
                 }
 
-                SectionHeader { text: root.lang-en ? "RENDERING" : "渲染"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "Renderer" : "渲染器";
-                    desc: Theme.is-mac
-                        ? (root.lang-en
-                            ? "FemtoVG is the default. Try Skia when text is missing or rendered incorrectly on macOS."
-                            : "FemtoVG 是默认渲染器；如果 macOS 上文字缺失或显示异常，可以尝试 Skia。")
-                        : (root.lang-en
-                            ? "Auto tries GPU acceleration and lets Slint fall back to software. Software is best for VMs and compatibility."
-                            : "自动模式会尝试 GPU 加速，并由 Slint 在初始化失败时回退到软件渲染；虚拟机或兼容性优先时请选择软件。");
-                    show-divider: false;
-                    ComboBox {
-                        width: 150px;
-                        model: Theme.is-mac
-                            ? ["FemtoVG", "Skia"]
-                            : (root.lang-en
-                                ? ["Automatic", "GPU", "Software"]
-                                : ["自动", "GPU", "软件"]);
-                        current-value: Theme.is-mac
-                            ? (root.renderer-mode == "skia" ? "Skia" : "FemtoVG")
-                            : (root.renderer-mode == "auto"
-                                ? (root.lang-en ? "Automatic" : "自动")
-                                : root.renderer-mode == "gpu"
-                                    ? "GPU"
-                                    : (root.lang-en ? "Software" : "软件"));
-                        selected(v) => {
-                            if (Theme.is-mac && v == "FemtoVG"
-                                    && root.renderer-mode != "femtovg") {
-                                root.renderer-mode = "femtovg";
-                                root.set-renderer-mode("femtovg");
-                                root.renderer-restart-required = true;
-                            } else if (Theme.is-mac && v == "Skia"
-                                    && root.renderer-mode != "skia") {
-                                root.renderer-mode = "skia";
-                                root.set-renderer-mode("skia");
-                                root.renderer-restart-required = true;
-                            } else if (!Theme.is-mac && (v == "Automatic" || v == "自动")
-                                    && root.renderer-mode != "auto") {
-                                root.renderer-mode = "auto";
-                                root.set-renderer-mode("auto");
-                                root.renderer-restart-required = true;
-                            } else if (!Theme.is-mac && v == "GPU" && root.renderer-mode != "gpu") {
-                                root.renderer-mode = "gpu";
-                                root.set-renderer-mode("gpu");
-                                root.renderer-restart-required = true;
-                            } else if (!Theme.is-mac && (v == "Software" || v == "软件")
-                                    && root.renderer-mode != "software") {
-                                root.renderer-mode = "software";
-                                root.set-renderer-mode("software");
-                                root.renderer-restart-required = true;
-                            }
-                        }
-                    }
-                }
-                Rectangle { height: 10px; }
-                Text {
-                    text: root.renderer-restart-required
-                        ? (root.lang-en
-                            ? "Restart Rudder to apply the renderer change."
-                            : "重启 Rudder 后渲染器设置才会生效。")
-                        : (root.lang-en
-                            ? (Theme.is-mac
-                                ? "FemtoVG remains the default renderer on macOS."
-                                : "Software remains the compatibility default for existing installations.")
-                            : (Theme.is-mac
-                                ? "macOS 默认继续使用 FemtoVG 渲染器。"
-                                : "现有安装继续默认使用兼容性更好的软件渲染。"));
-                    color: root.renderer-restart-required ? Theme.accent : Theme.text-muted;
-                    font-size: 11px * Theme.panel-font;
-                    wrap: word-wrap;
-                }
-                Rectangle { height: 12px; }
-                SettingRow {
-                    show-divider: false;
-                    label: root.lang-en ? "Animations" : "动画";
-                    desc: root.lang-en
-                        ? "Enable or disable all sidebar and panel animations."
-                        : "启用或禁用所有侧边栏和面板动画。";
-                    Switch {
-                        on: AnimationSettings.enabled;
-                        toggled => {
-                            AnimationSettings.enabled = !AnimationSettings.enabled;
-                            // 持久化：此前这个开关只改 Slint 全局，重启即回。
-                            root.set-animations-enabled(AnimationSettings.enabled);
-                        }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "UI scale" : "界面缩放";
-                    desc: root.lang-en ? "Zooms the whole interface (not this panel)."
-                                       : "缩放整个界面(不影响本面板)。";
-                    Stepper {
-                        value: round(root.ui-scale * 100); minimum: 80; maximum: 200; step: 10; unit: "%";
-                        changed(v) => { root.set-ui-scale(v); }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Settings font size" : "界面字体大小";
-                    desc: root.lang-en ? "Enlarges this settings panel (font + window)."
-                                       : "放大本设置面板的字体和窗口。";
-                    show-divider: false;
-                    Stepper {
-                        value: round(Theme.panel-font * 100); minimum: 80; maximum: 160; step: 10; unit: "%";
-                        changed(v) => { root.set-panel-font(v); }
-                    }
+                if root.ifd-page == "sync" : SyncPage {
+                    lang-en: root.lang-en;
+                    sync-upload-enabled <=> root.sync-upload-enabled;
+                    webdav-accept-invalid-certs <=> root.webdav-accept-invalid-certs;
+                    webdav-enabled <=> root.webdav-enabled;
+                    webdav-password <=> root.webdav-password;
+                    webdav-remote-path <=> root.webdav-remote-path;
+                    webdav-status <=> root.webdav-status;
+                    webdav-url <=> root.webdav-url;
+                    webdav-username <=> root.webdav-username;
+                    save-webdav-settings(a0, a1, a2, a3, a4, a5) => { root.save-webdav-settings(a0, a1, a2, a3, a4, a5); }
+                    set-sync-upload-enabled(a0) => { root.set-sync-upload-enabled(a0); }
+                    webdav-download() => { root.webdav-download(); }
+                    webdav-upload() => { root.webdav-upload(); }
                 }
 
-                Rectangle { height: 14px; }
-                SettingRow {
-                    label: root.lang-en ? "Hide special partitions" : "隐藏特殊分区";
-                    desc: root.lang-en
-                        ? "Hide EFI / swap / temporary pseudo-file-systems and very small partitions in the resource panel."
-                        : "在资源面板中隐藏 EFI / swap / 临时文件系统等伪分区，避免误导。";
-                    Switch {
-                        on: root.hide-special-partitions;
-                        toggled(v) => { root.hide-special-partitions = v; root.set-hide-special-partitions(v); }
-                    }
+                if root.ifd-page == "update" : UpdatePage {
+                    lang-en: root.lang-en;
+                    update-check-enabled <=> root.update-check-enabled;
+                    update-check-status: root.update-check-status;
+                    update-checking: root.update-checking;
+                    check-update-now() => { root.check-update-now(); }
+                    set-update-check-enabled(a0) => { root.set-update-check-enabled(a0); }
                 }
-                SettingRow {
-                    label: root.lang-en ? "Mount filter" : "挂载点过滤";
-                    desc: root.lang-en
-                        ? "Only show these mount points (space/comma/semicolon separated). Leave empty to show all."
-                        : "仅显示这些挂载点的磁盘信息（空格/逗号/分号分隔）。留空表示显示全部。";
-                    Rectangle {
-                        width: 208px; height: 30px;
-                        border-radius: 6px; border-width: 1px;
-                        border-color: Theme.border-subtle;
-                        background: Theme.bg-elevated;
-                        TextInput {
-                            width: parent.width - 8px; x: 4px;
-                            height: parent.height; vertical-alignment: center;
-                            color: Theme.text-primary;
-                            text <=> root.mount-filter;
-                        accepted => { root.set-mount-filter(root.mount-filter); }
-                    }
-                    }
-                }
-            
-                // ── 还原本页默认（外观页最后一个设置项之后）──────────────
-                // 只还原 A 类（缩放 / 面板字体 / 渲染后端）；壁纸与遮罩按
-                // 你的要求不还原（B 类用户选择）。
-                HorizontalLayout {
-                    padding-top: 12px;
-                    padding-bottom: 4px;
-                    Rectangle { horizontal-stretch: 1; }
-                    GhostButton {
-                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
-                        clicked => {
-                            if (root.reset-armed) {
-                                root.reset-armed = false;
-                                root.reset-page("appearance");
-                            } else {
-                                root.reset-armed = true;
-                            }
-                        }
-                    }
-                }
-}
 
-            if root.ifd-page == "layout" : VerticalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 14px;
-                spacing: 0;
-                alignment: start;
-                SectionHeader { text: root.lang-en ? "SIDEBARS" : "侧栏"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "Collapse the resource panel by default" : "默认收起资源视图面板";
-                    Switch {
-                        on: root.collapse-sidebar-default;
-                        toggled(v) => { root.collapse-sidebar-default = v; root.set-collapse-sidebar-default(v); }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Collapse the SFTP panel by default" : "默认收起 SFTP 侧栏";
-                    desc: root.lang-en
-                        ? "Takes effect on next launch; handy on low-spec jump hosts."
-                        : "下次启动生效;低配跳板机上可减少常驻面板开销。";
-                    Switch {
-                        on: root.collapse-sftp-default;
-                        toggled(v) => { root.collapse-sftp-default = v; root.set-collapse-sftp-default(v); }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Quick commands as a sidebar" : "快捷命令作为侧栏";
-                    desc: root.lang-en
-                        ? "Allows the quick-command popup to be dragged to a window edge. After docking, use the sidebar or its collapsed icon."
-                        : "允许把快捷命令弹窗拖到窗口边缘；停靠后通过侧栏或收起图标使用。";
-                    show-divider: false;
-                    Switch {
-                        on: root.quick-commands-as-sidebar;
-                        toggled(v) => {
-                            root.quick-commands-as-sidebar = v;
-                            root.set-quick-commands-as-sidebar(v);
-                        }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Show the welcome page as a sidebar" : "欢迎页设为侧栏";
-                    desc: root.lang-en
-                        ? "Dock the session list on the left instead of a \"New tab\" tab; opened sessions fill the center."
-                        : "把会话列表停靠在左侧,不再用「新标签页」标签;打开的会话占据中央区域。";
-                    show-divider: false;
-                    Switch {
-                        on: root.welcome-as-sidebar;
-                        // Applying this binding destroys/recreates the Welcome
-                        // subtree. Rust defers that work until this Switch
-                        // callback has returned, so do not mutate it here (#323).
-                        toggled(v) => { root.set-welcome-as-sidebar(v); }
-                    }
-                }
-            
-                // ── 还原本页默认（布局页最后一个设置项之后）────────────────
-                HorizontalLayout {
-                    padding-top: 12px;
-                    padding-bottom: 4px;
-                    Rectangle { horizontal-stretch: 1; }
-                    GhostButton {
-                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
-                        clicked => {
-                            if (root.reset-armed) {
-                                root.reset-armed = false;
-                                root.reset-page("layout");
-                            } else {
-                                root.reset-armed = true;
-                            }
-                        }
-                    }
-                }
-}
-
-            if root.ifd-page == "transfer" : VerticalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 14px;
-                spacing: 0;
-                alignment: start;
-                SectionHeader { text: "SFTP"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "SFTP follows terminal cd" : "SFTP 跟随 cd 更新";
-                    desc: root.lang-en
-                        ? "A cd in the terminal switches the SFTP panel to the same directory."
-                        : "终端里执行 cd 时,SFTP 面板自动切到相同目录。";
-                    show-divider: false;
-                    Switch {
-                        on: root.sftp-follow-cd;
-                        toggled(v) => { root.sftp-follow-cd = v; root.set-sftp-follow-cd(v); }
-                    }
-                }
-                SectionHeader { text: root.lang-en ? "DOWNLOAD" : "下载"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "Always ask where to save" : "总是询问保存去何处";
-                    desc: root.lang-en
-                        ? "Every download prompts for a location instead of using the preset folder."
-                        : "每次下载都询问保存位置,而不是直接存到预设下载目录。";
-                    show-divider: false;
-                    Switch {
-                        on: root.download-always-ask;
-                        toggled(v) => { root.download-always-ask = v; root.set-download-always-ask(v); }
-                    }
-                }
-            
-                // ── 还原本页默认（传输页最后一个设置项之后（挂载过滤保留））────────────────
-                HorizontalLayout {
-                    padding-top: 12px;
-                    padding-bottom: 4px;
-                    Rectangle { horizontal-stretch: 1; }
-                    GhostButton {
-                        text: root.reset-armed ? @tr("确认还原？") : @tr("还原本页默认");
-                        clicked => {
-                            if (root.reset-armed) {
-                                root.reset-armed = false;
-                                root.reset-page("transfer");
-                            } else {
-                                root.reset-armed = true;
-                            }
-                        }
-                    }
-                }
-}
-
-            if root.ifd-page == "wsl" : VerticalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 14px;
-                spacing: 8px;
-                alignment: start;
-                SectionHeader { text: "WSL"; height: 24px; }
-                Text {
-                    text: root.lang-en
-                        ? "Add multiple WSL launch entries. A blank distribution uses the Windows default; ~ opens the selected Linux user's home directory."
-                        : "可添加多个 WSL 启动项。发行版留空时使用 Windows 默认发行版；~ 表示所选 Linux 用户的主目录。";
-                    color: Theme.text-muted;
-                    font-size: 11px * Theme.panel-font;
-                    wrap: word-wrap;
-                }
-                LabeledInput {
-                    label: root.lang-en ? "Display name" : "显示名称";
-                    placeholder: "Ubuntu";
-                    value <=> root.wsl-new-name;
-                }
-                LabeledInput {
-                    label: root.lang-en ? "Distribution (optional)" : "发行版（可选）";
-                    placeholder: "Ubuntu-24.04";
-                    value <=> root.wsl-new-distribution;
-                }
-                HorizontalLayout {
-                    spacing: 8px;
-                    LabeledInput {
-                        horizontal-stretch: 1;
-                        label: root.lang-en ? "Startup directory" : "启动目录";
-                        placeholder: "~ or /home/user/project";
-                        value <=> root.wsl-new-directory;
-                    }
-                    VerticalLayout {
-                        alignment: end;
-                        GhostButton {
-                            text: root.lang-en ? "Browse…" : "选择目录…";
-                            clicked => { root.pick-wsl-directory(); }
-                        }
-                    }
-                }
-                HorizontalLayout {
-                    alignment: end;
-                    PrimaryButton {
-                        text: root.lang-en ? "Add WSL" : "添加 WSL";
-                        clicked => {
-                            root.add-wsl-profile(root.wsl-new-name, root.wsl-new-distribution, root.wsl-new-directory);
-                            root.wsl-new-name = "WSL";
-                            root.wsl-new-distribution = "";
-                            root.wsl-new-directory = "~";
-                        }
-                    }
-                }
-                Rectangle { height: 1px; background: Theme.border-subtle; }
-                for profile in root.wsl-profiles : Rectangle {
-                    height: 54px;
-                    border-radius: Theme.radius-sm;
-                    background: Theme.bg-elevated;
-                    HorizontalLayout {
-                        padding-left: 10px; padding-right: 8px; spacing: 8px;
-                        VerticalLayout {
-                            horizontal-stretch: 1; alignment: center;
-                            Text { text: profile.name; color: Theme.text-primary; font-size: 13px * Theme.panel-font; }
-                            Text {
-                                text: (profile.distribution == "" ? (root.lang-en ? "Default distribution" : "默认发行版") : profile.distribution)
-                                    + "  ·  " + profile.directory;
-                                color: Theme.text-muted; font-size: 11px * Theme.panel-font; overflow: elide;
-                            }
-                        }
-                        GhostButton {
-                            text: root.lang-en ? "Remove" : "删除";
-                            clicked => { root.remove-wsl-profile(profile.id); }
-                        }
-                    }
-                }
-            }
-
-            if root.ifd-page == "sync" : VerticalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 14px;
-                spacing: 0;
-                alignment: start;
-                SectionHeader { text: root.lang-en ? "SESSION SYNC" : "会话同步"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "Sync file uploads" : "文件上传同步";
-                    desc: root.lang-en
-                        ? "While session sync is on, an upload goes to the same path on each session; if missing, to that session's current SFTP directory."
-                        : "会话同步开启时,上传会发往各会话的相同路径;路径不存在则发往该会话当前 SFTP 目录。";
-                    show-divider: false;
-                    Switch {
-                        on: root.sync-upload-enabled;
-                        toggled(v) => { root.sync-upload-enabled = v; root.set-sync-upload-enabled(v); }
-                    }
-                }
-                Rectangle { height: 6px; }
-                Text {
-                    text: root.lang-en
-                        ? "Session sync itself is toggled from the sync icon in the top-right bar."
-                        : "会话同步本身从右上角的同步图标开关。";
-                    color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
-                }
-                SectionHeader { text: "WEBDAV"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "Enable WebDAV sync" : "启用 WebDAV 同步";
-                    desc: root.lang-en
-                        ? "Manual upload/download only; Rudder will not connect on startup."
-                        : "仅手动上传/下载;Rudder 启动时不会自动连接。";
-                    show-divider: false;
-                    Switch {
-                        on: root.webdav-enabled;
-                        toggled(v) => { root.webdav-enabled = v; }
-                    }
-                }
-                LabeledInput {
-                    label: root.lang-en ? "Endpoint URL" : "WebDAV 地址";
-                    placeholder: "https://nas:5006/all/ or https://nas:5006/all/rudder-connections.json";
-                    value <=> root.webdav-url;
-                }
-                LabeledInput {
-                    label: root.lang-en ? "Username" : "用户名";
-                    placeholder: root.lang-en ? "Optional" : "可选";
-                    value <=> root.webdav-username;
-                }
-                LabeledInput {
-                    label: root.lang-en ? "Password / app token" : "密码 / 应用令牌";
-                    placeholder: root.lang-en ? "Optional" : "可选";
-                    password: true;
-                    value <=> root.webdav-password;
-                }
-                LabeledInput {
-                    label: root.lang-en ? "Remote file" : "远端文件";
-                    placeholder: "rudder-connections.json";
-                    value <=> root.webdav-remote-path;
-                }
-                SettingRow {
-                    label: root.lang-en ? "Trust self-signed / intranet certs" : "信任自签名/内网证书";
-                    desc: root.lang-en
-                        ? "Stops verifying the server certificate — the connection can be impersonated. Trusted LAN only."
-                        : "将不再校验服务器证书，连接可能被中间人冒充；仅建议在可信局域网内开启。";
-                    show-divider: false;
-                    Switch {
-                        on: root.webdav-accept-invalid-certs;
-                        toggled(v) => { root.webdav-accept-invalid-certs = v; }
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: end;
-                    GhostButton {
-                        text: root.lang-en ? "Save" : "保存";
-                        clicked => {
-                            root.save-webdav-settings(
-                                root.webdav-enabled, root.webdav-url, root.webdav-username,
-                                root.webdav-password, root.webdav-remote-path,
-                                root.webdav-accept-invalid-certs);
-                        }
-                    }
-                    GhostButton {
-                        text: root.lang-en ? "Download" : "下载";
-                        clicked => { root.webdav-download(); }
-                    }
-                    PrimaryButton {
-                        text: root.lang-en ? "Upload" : "上传";
-                        clicked => { root.webdav-upload(); }
-                    }
-                }
-                Text {
-                    text: root.webdav-status;
-                    color: Theme.text-muted;
-                    font-size: 11px * Theme.panel-font;
-                    wrap: word-wrap;
-                }
-            }
-
-            if root.ifd-page == "update" : VerticalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 14px;
-                spacing: 0;
-                alignment: start;
-                SectionHeader { text: root.lang-en ? "UPDATE CHECK" : "新版本提示"; height: 24px; }
-                SettingRow {
-                    label: root.lang-en ? "Check for new versions on startup" : "启动时检查新版本";
-                    desc: root.lang-en
-                        ? "Off: Rudder no longer queries GitHub for releases and the update banner won't appear (takes effect next launch)."
-                        : "关闭后:不再向 GitHub 查询新版本,也不会弹出更新提示(下次启动生效)。";
-                    Switch {
-                        on: root.update-check-enabled;
-                        toggled(v) => { root.update-check-enabled = v; root.set-update-check-enabled(v); }
-                    }
-                }
-                SettingRow {
-                    label: root.lang-en ? "Check for updates now" : "手动检查更新";
-                    desc: root.lang-en
-                        ? "Queries GitHub immediately; independent of the startup check setting."
-                        : "立即向 GitHub 查询新版本,不受上方开关影响。";
-                    show-divider: false;
-                    HorizontalLayout {
-                        spacing: 10px;
-                        alignment: center;
-                        if root.update-check-status != "" : Text {
-                            text: root.update-check-status;
-                            font-size: 11px * Theme.panel-font;
-                            color: Theme.text-muted;
-                            vertical-alignment: center;
-                            overflow: elide;
-                            horizontal-stretch: 1;
-                        }
-                        Rectangle {
-                            width: root.update-checking ? 76px : 64px;
-                            height: 28px;
-                            border-radius: Theme.radius-sm;
-                            background: upd-ck-ta.has-hover && !root.update-checking ? Theme.bg-hover : Theme.bg-elevated;
-                            border-width: 1px;
-                            border-color: Theme.border-strong;
-                            upd-ck-ta := TouchArea {
-                                enabled: !root.update-checking;
-                                mouse-cursor: root.update-checking ? default : pointer;
-                                clicked => { root.check-update-now(); }
-                            }
-                            Text {
-                                text: root.update-checking
-                                    ? (root.lang-en ? "Checking…" : "检查中…")
-                                    : (root.lang-en ? "Check now" : "检查");
-                                font-size: 12px * Theme.panel-font;
-                                color: Theme.text-primary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-                }
-}
-
-                }
             }
 
         }
     }
 }
+}
+

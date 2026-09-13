@@ -34,7 +34,8 @@ import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "ter
 import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
-import { InterfacePanel, OutputRuleItem, WslProfileInfo } from "interface_panel.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
 export { ProcWindow, SystemInfoWindow }
 import { ComboBox, SpinBox, LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
@@ -294,9 +295,9 @@ export component AppWindow inherits Window {
     // frost over the image. Using window-base (not bg-root) keeps the window
     // itself opaque even though bg-root turns translucent in immersive mode.
     background: Theme.window-base;
-    // A CJK-capable default so UI text (incl. fullwidth punctuation like ：（）)
-    // never tofus on glyph fallback (#54). Rust sets Theme.ui-font-family to a
-    // system CJK font on startup; empty on Linux keeps the Slint default.
+    // Rust 从配置解析后写入（`fonts_ui::resolve_ui_font_family`）：空串 = 跟随系统
+    // （Slint 用平台默认字体，缺字由 parley 按脚本回退），否则是**单个**家族名。
+    // ⚠️ 不要在这里塞逗号分隔的字体栈 —— Slint 的 font-family 不做逗号拆分。
     default-font-family: Theme.ui-font-family;
 
     // --- Sidebar data ------------------------------------------------------

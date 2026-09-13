@@ -1,0 +1,83 @@
+// 设置页：layout
+//
+// 由 interface_panel.slint 按页拆分而来（阶段 B）。页面只声明自己用到的
+// 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
+// 因此可以保持与改造前逐字一致。
+
+import { SettingRow } from "../chrome.slint";
+import { SettingsSection } from "../section.slint";
+import { ResetBar } from "../reset_bar.slint";
+import { Switch } from "std-widgets.slint";
+
+export component LayoutPage inherits VerticalLayout {
+    in-out property <bool> collapse-sftp-default;
+    in-out property <bool> collapse-sidebar-default;
+    in property <bool> lang-en;
+    in-out property <bool> quick-commands-as-sidebar;
+    in-out property <bool> welcome-as-sidebar;
+    callback reset-page(string);
+    callback set-collapse-sftp-default(bool);
+    callback set-collapse-sidebar-default(bool);
+    callback set-quick-commands-as-sidebar(bool);
+    callback set-welcome-as-sidebar(bool);
+
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 14px;
+    spacing: 0;
+    alignment: start;
+    SettingsSection {
+        section-id: "layout.sidebars";
+        lang-en: root.lang-en;
+        title-zh: "侧栏";
+        title-en: "SIDEBARS";
+        title-height: 24px;
+        SettingRow {
+            label: root.lang-en ? "Collapse the resource panel by default" : "默认收起资源视图面板";
+            Switch {
+                checked <=> root.collapse-sidebar-default;
+                toggled => { root.set-collapse-sidebar-default(root.collapse-sidebar-default); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Collapse the SFTP panel by default" : "默认收起 SFTP 侧栏";
+            desc: root.lang-en
+                ? "Takes effect on next launch; handy on low-spec jump hosts."
+                : "下次启动生效;低配跳板机上可减少常驻面板开销。";
+            Switch {
+                checked <=> root.collapse-sftp-default;
+                toggled => { root.set-collapse-sftp-default(root.collapse-sftp-default); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Quick commands as a sidebar" : "快捷命令作为侧栏";
+            desc: root.lang-en
+                ? "Allows the quick-command popup to be dragged to a window edge. After docking, use the sidebar or its collapsed icon."
+                : "允许把快捷命令弹窗拖到窗口边缘；停靠后通过侧栏或收起图标使用。";
+            show-divider: false;
+            Switch {
+                checked <=> root.quick-commands-as-sidebar;
+                toggled => {
+                root.set-quick-commands-as-sidebar(root.quick-commands-as-sidebar);
+                }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Show the welcome page as a sidebar" : "欢迎页设为侧栏";
+            desc: root.lang-en
+                ? "Dock the session list on the left instead of a \"New tab\" tab; opened sessions fill the center."
+                : "把会话列表停靠在左侧,不再用「新标签页」标签;打开的会话占据中央区域。";
+            show-divider: false;
+            Switch {
+                checked <=> root.welcome-as-sidebar;
+                toggled => { root.set-welcome-as-sidebar(root.welcome-as-sidebar); }
+            }
+        }
+            
+        // 还原本页默认（本页最后一个设置项之后）
+    }
+    ResetBar {
+        page-id: "layout";
+        reset-page(p) => { root.reset-page(p); }
+    }
+}
