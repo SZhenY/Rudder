@@ -7,6 +7,10 @@
 pkgname=rudder-bin
 pkgver=0.6.6
 pkgrel=1
+# `pkgver` 不允许 `-`，而补丁版的 tag 带 `-fixN`（如 v0.7.7-fix1）。pkgname 版本
+# 用点号（`0.7.7.fix1`），原始 GitHub tag 单独存在 `_tag` 里供下载 URL 使用。
+# 两者由 .github/workflows/aur-publish.yml 同步写入。
+_tag=${pkgver}
 pkgdesc="Lightweight FinalShell-style SSH/SFTP/terminal client (Rust + Slint)"
 arch=('x86_64' 'aarch64')
 url="https://github.com/SZhenY/Rudder"
@@ -16,8 +20,8 @@ conflicts=('rudder')
 depends=('fontconfig' 'freetype2' 'libxkbcommon' 'gtk3' 'hicolor-icon-theme')
 # The released binary is already stripped (Cargo.toml: strip = "symbols").
 options=('!strip')
-source_x86_64=("rudder-${pkgver}-x86_64.tar.gz::${url}/releases/download/v${pkgver}/rudder-v${pkgver}-linux-x86_64.tar.gz")
-source_aarch64=("rudder-${pkgver}-aarch64.tar.gz::${url}/releases/download/v${pkgver}/rudder-v${pkgver}-linux-aarch64.tar.gz")
+source_x86_64=("rudder-${pkgver}-x86_64.tar.gz::${url}/releases/download/v${_tag}/rudder-v${_tag}-linux-x86_64.tar.gz")
+source_aarch64=("rudder-${pkgver}-aarch64.tar.gz::${url}/releases/download/v${_tag}/rudder-v${_tag}-linux-aarch64.tar.gz")
 # `updpkgsums` (run by CI, or by you locally) fills these in. SKIP just disables
 # the integrity check for a manual build.
 sha256sums_x86_64=('SKIP')
@@ -26,7 +30,7 @@ sha256sums_aarch64=('SKIP')
 package() {
     # The tarball extracts to rudder-v<ver>-linux-<arch>/ ; $CARCH is
     # x86_64 / aarch64, matching the archive's name suffix.
-    local _dir="${srcdir}/rudder-v${pkgver}-linux-${CARCH}"
+    local _dir="${srcdir}/rudder-v${_tag}-linux-${CARCH}"
     install -Dm755 "${_dir}/rudder"            "${pkgdir}/usr/bin/rudder"
     install -Dm644 "${_dir}/rudder.desktop"    "${pkgdir}/usr/share/applications/rudder.desktop"
     install -Dm644 "${_dir}/icon@512.png"       "${pkgdir}/usr/share/icons/hicolor/512x512/apps/rudder.png"

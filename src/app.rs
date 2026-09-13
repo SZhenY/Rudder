@@ -1527,12 +1527,21 @@ pub(crate) fn clipboard_set_text(text: String) {
 /// `http`/`https` scheme prefixes. A value without a (recognised) scheme is
 /// treated as SOCKS5, matching proxy.rs's parse default, so older configs that
 /// stored a bare `host:port` keep working.
-/// Parse a "vX.Y.Z" / "X.Y.Z" tag into a comparable tuple, or None if it isn't
-/// a three-part numeric version. A pre-release suffix on the patch (e.g.
-/// "3-rc1") is tolerated by taking its leading digits (#48).
-pub(crate) fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
+/// Parse a `"vX.Y.Z"` / `"X.Y.Z"` / `"X.Y.Z-fixN"` tag into a comparable
+/// tuple, or `None` if it isn't a three-part numeric version.
+///
+/// 第四位是 **fix 序号**（`-fixN` 补丁版，见 `docs/RELEASE.md`）：没有后缀时为
+/// 0，于是排序天然满足 `0.7.7 < 0.7.7-fix1 < 0.7.7-fix2 < 0.7.8` —— 少了这一位，
+/// `0.7.7-fix1` 会被算成和 `0.7.7` 相同，用户就永远收不到补丁版的更新提示。
+///
+/// 其它预发布后缀（`3-rc1`）按旧行为容忍：取 patch 的前导数字 (#48)。
+pub(crate) fn parse_version(s: &str) -> Option<(u32, u32, u32, u32)> {
     let s = s.trim().trim_start_matches('v');
-    let mut it = s.split('.');
+    let (core, fix) = match s.split_once("-fix") {
+        Some((core, rest)) => (core, rest.parse().unwrap_or(0)),
+        None => (s, 0),
+    };
+    let mut it = core.split('.');
     let major = it.next()?.parse().ok()?;
     let minor = it.next()?.parse().ok()?;
     let patch = it
@@ -1541,7 +1550,38 @@ pub(crate) fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
         .next()?
         .parse()
         .ok()?;
-    Some((major, minor, patch))
+    Some((major, minor, patch, fix))
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::parse_version;
+
+    #[test]
+    fn parses_plain_and_prefixed_versions() {
+        assert_eq!(parse_version("0.7.7"), Some((0, 7, 7, 0)));
+        assert_eq!(parse_version("v0.7.7"), Some((0, 7, 7, 0)));
+        assert_eq!(parse_version(" v1.20.3 "), Some((1, 20, 3, 0)));
+        // 旧行为保留：`-rc1` 这类后缀取 patch 的前导数字 (#48)。
+        assert_eq!(parse_version("0.7.3-rc1"), Some((0, 7, 3, 0)));
+        assert_eq!(parse_version("nonsense"), None);
+        assert_eq!(parse_version("1.2"), None);
+    }
+
+    /// 补丁版必须能**排在对应正式版之后** —— 少了这一位，`0.7.7-fix1` 会与
+    /// `0.7.7` 相等，更新检查就永远不会提示用户（release 流程上的静默失败）。
+    #[test]
+    fn fix_releases_sort_after_their_base_version() {
+        assert_eq!(parse_version("0.7.7-fix1"), Some((0, 7, 7, 1)));
+        assert_eq!(parse_version("v0.7.7-fix12"), Some((0, 7, 7, 12)));
+
+        let v = |s: &str| parse_version(s).unwrap();
+        assert!(v("0.7.7-fix1") > v("0.7.7"), "补丁版必须新于它的基准版");
+        assert!(v("0.7.7-fix2") > v("0.7.7-fix1"), "fix 号递增");
+        assert!(v("0.7.8") > v("0.7.7-fix9"), "下一个小版本仍然更大");
+        assert!(v("0.8.0") > v("0.7.7-fix1"));
+        assert_eq!(v("0.7.7-fix1"), v("v0.7.7-fix1"), "v 前缀不影响比较");
+    }
 }
 
 pub(crate) fn split_proxy(url: &str) -> (String, String) {

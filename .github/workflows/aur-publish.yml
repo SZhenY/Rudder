@@ -37,8 +37,12 @@ jobs:
                   | grep -oP '"tag_name":\s*"\K[^"]+')
           fi
           VER="${VER#v}"   # strip leading v
-          echo "Publishing rudder-bin $VER"
-          sed -i "s/^pkgver=.*/pkgver=${VER}/" packaging/aur/PKGBUILD
+          # `pkgver` 不接受 `-`：补丁版 `0.7.7-fix1` → `0.7.7.fix1`，原始 tag 另存
+          # 进 `_tag`（PKGBUILD 用它拼下载 URL）。普通版本两者相同。
+          PKGVER="${VER/-fix/.fix}"
+          echo "Publishing rudder-bin $VER (pkgver=$PKGVER)"
+          sed -i "s/^pkgver=.*/pkgver=${PKGVER}/" packaging/aur/PKGBUILD
+          sed -i "s/^_tag=.*/_tag=${VER}/" packaging/aur/PKGBUILD
           sed -i "s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
           echo "VER=$VER" >> "$GITHUB_ENV"
 

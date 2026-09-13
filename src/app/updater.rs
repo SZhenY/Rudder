@@ -86,7 +86,7 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                     });
                 };
                 let current = crate::app::parse_version(env!("CARGO_PKG_VERSION"))
-                    .unwrap_or((0, 0, 0));
+                    .unwrap_or((0, 0, 0, 0));
                 set(
                     1,
                     0.0,
@@ -191,7 +191,7 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                 };
                 set(true, String::new(), None);
                 let current =
-                    crate::app::parse_version(env!("CARGO_PKG_VERSION")).unwrap_or((0, 0, 0));
+                    crate::app::parse_version(env!("CARGO_PKG_VERSION")).unwrap_or((0, 0, 0, 0));
                 match crate::app::self_updater::latest_update(current) {
                     Ok(Some(c)) => {
                         let v = format!("v{}", c.version);

@@ -5,6 +5,14 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.7-fix1] - 2026-09-13
+
+### 修复 / Fixed
+
+- **修复：终端 / 外观设置页底部有一大段可以滚进去的空白。** 设置区是一层 `ScrollView`，此前把它的 `viewport-height` 绑到了 `settings-pages.preferred-height` —— 那个值取的是**被拉伸后**的高度（终端页实测 2533px），而实际内容只有 1199px，于是末尾凭空多出 1334px 空白。Slint 自己算的默认视口高度就是精确的内容高度，去掉这行绑定即可。**Fixed: Terminal / Appearance settings had a large empty area you could scroll into.** The settings area is a `ScrollView` whose `viewport-height` was bound to `settings-pages.preferred-height` — that value is the *stretched* height (2533px on the Terminal page) while the real content is 1199px, leaving 1334px of blank space at the end. Slint's default viewport height is the exact content height, so dropping the binding fixes it.
+
+- **修复：`X.Y.Z-fixN` 形式的补丁版不会被更新检查提示。** 版本解析此前只取三段数字，`0.7.7-fix1` 与 `0.7.7` 算出来完全相同；同时这类带 `-` 的版本会被自动标成预发布，而更新检查读的 `/releases/latest` 默认排除预发布。现在补丁版按第四段（fix 序号）参与比较，且工作流只对 `-beta/-alpha/-rc` 标预发布，MSI 版本号映射为 `0.7.7.1`。**Fixed: patch releases of the form `X.Y.Z-fixN` were never offered as an update.** Version parsing kept only three numeric fields, so `0.7.7-fix1` compared equal to `0.7.7`; on top of that, versions carrying a `-` were auto-flagged as pre-releases, which the `/releases/latest` endpoint the update check reads excludes by default. Patch releases now sort by a fourth field (the fix number), only `-beta/-alpha/-rc` are marked pre-release, and the MSI version is mapped to `0.7.7.1`.
+
 ## [0.7.7] - 2026-09-12
 
 ### 修复 / Fixed

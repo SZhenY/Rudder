@@ -296,6 +296,10 @@ jobs:
           $MSI_VERSION = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' |
             Select-Object -First 1).Matches[0].Groups[1].Value
           if (-not $MSI_VERSION) { $MSI_VERSION = $VERSION.TrimStart("v") }
+          # Patch releases: WiX's ProductVersion is numeric-only, so map the
+          # semver prerelease to a 4th field — `0.7.7-fix1` → `0.7.7.1`.
+          # 补丁版：`0.7.7-fix1` → `0.7.7.1`（WiX 不接受 `-`）
+          $MSI_VERSION = $MSI_VERSION -replace '-fix(\d+)$', '.$1'
           # CLI and extension versions must match: pinning the CLI to 4.x while
           # resolving the extension to 7.0.0 left the cache entry "damaged"
           # (WIX0144). Both are pinned to the same release here.
@@ -341,6 +345,10 @@ jobs:
         with:
           files: ${{ env.ASSET }}
           fail_on_unmatched_files: true
+          # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
+          # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
+          # 等于用户永远收不到补丁版。
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
 
       - name: Attach AppImage to GitHub Release
         if: matrix.name == 'linux-x86_64' && startsWith(github.ref, 'refs/tags/')
@@ -348,6 +356,10 @@ jobs:
         with:
           files: ${{ env.APPIMAGE }}
           fail_on_unmatched_files: true
+          # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
+          # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
+          # 等于用户永远收不到补丁版。
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
 
       - name: Attach MSI to GitHub Release
         if: startsWith(matrix.name, 'windows') && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
@@ -355,6 +367,10 @@ jobs:
         with:
           files: ${{ env.MSI }}
           fail_on_unmatched_files: false
+          # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
+          # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
+          # 等于用户永远收不到补丁版。
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
 
   build-linux-aarch64-glibc228:
     name: linux-aarch64-glibc228
@@ -444,6 +460,10 @@ jobs:
         with:
           files: ${{ env.ASSET }}
           fail_on_unmatched_files: true
+          # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
+          # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
+          # 等于用户永远收不到补丁版。
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
 
   build-linux-x86_64-glibc228:
     name: linux-x86_64-glibc228
@@ -533,3 +553,7 @@ jobs:
         with:
           files: ${{ env.ASSET }}
           fail_on_unmatched_files: true
+          # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
+          # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
+          # 等于用户永远收不到补丁版。
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
