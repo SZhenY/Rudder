@@ -534,8 +534,17 @@ export component InterfacePanel inherits Rectangle {
                 width: 100%;
                 height: 100%;
                 viewport-width: self.visible-width;
-                // 严格按内容高度：有多少设置就滚多少，不在末尾留空白
-                viewport-height: settings-pages.preferred-height;
+                // ⚠️ **不要给 `viewport-height` 赋值**。
+                //
+                // Slint 自己计算的默认值就是精确的内容高度（实测：终端页 1199px
+                // = 最后一项「还原本页默认」的底边；外观页 860px），内容不足一屏时
+                // 取可视高度、不滚动 —— 正是"有多少设置项就有多大"。
+                //
+                // 而 `settings-pages.preferred-height` 拿到的却是**被拉伸后**的
+                // 高度（终端页实测 2533px），把它绑到这里等于在末尾凭空多出
+                // 1334px 可以滚进去的空白。改 `max(visible, preferred)` 同样错：
+                // 那个 preferred 本身就虚高。
+                //
 
                 settings-pages := VerticalLayout {
                     width: settings-scroll.visible-width;
