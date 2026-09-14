@@ -153,6 +153,22 @@ export global Theme {
     out property <length> card-shadow-blur: is-mac ? 28px : 24px;
     out property <brush> card-shadow-color: is-mac ? #00000060 : #00000080;
 
+    // --- 阴影档位 ---------------------------------------------------------
+    // 此前全项目 42 处手写 `drop-shadow-blur` / `drop-shadow-color`，同一组值
+    // 反复出现却散落各处。下面五档覆盖 33 处**逐字等价**的用法；剩下 7 处是
+    // 不规则取值（14px/#00000060、8px/#00000070 等），改动它们属于视觉变化，
+    // 需要单独决定，暂不动。
+    out property <length> shadow-dialog-blur: 24px;          // 模态对话框（最重）
+    out property <brush>  shadow-dialog-color: #000000a0;
+    out property <length> shadow-raised-blur: 24px;          // 浮起的卡片 / 面板
+    out property <brush>  shadow-raised-color: #00000080;
+    out property <length> shadow-popup-blur: 12px;           // 右键菜单 / 弹出面板
+    out property <brush>  shadow-popup-color: #00000060;
+    out property <length> shadow-menu-blur: 10px;            // 次级菜单
+    out property <brush>  shadow-menu-color: #00000050;
+    out property <length> shadow-float-blur: 16px;           // 悬浮小面板
+    out property <brush>  shadow-float-color: #00000070;
+
     out property <length> gap-xs: 4px * root.ui-scale;
     out property <length> gap-sm: 8px * root.ui-scale;
     out property <length> gap-md: 12px * root.ui-scale;

@@ -2237,8 +2237,8 @@ export component AppWindow inherits Window {
                 border-radius: Theme.radius-md;
                 border-width: 1px;
                 border-color: Theme.border-strong;
-                drop-shadow-blur: 24px;
-                drop-shadow-color: #00000080;
+                drop-shadow-blur: Theme.shadow-raised-blur;
+                drop-shadow-color: Theme.shadow-raised-color;
                 clip: true;
 
                 VerticalLayout {
@@ -2543,8 +2543,8 @@ export component AppWindow inherits Window {
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
                 border-color: Theme.border-strong;
-                drop-shadow-blur: 24px;
-                drop-shadow-color: #000000a0;
+                drop-shadow-blur: Theme.shadow-dialog-blur;
+                drop-shadow-color: Theme.shadow-dialog-color;
                 TouchArea {}   // swallow inside clicks
 
                 VerticalLayout {
@@ -2621,8 +2621,8 @@ export component AppWindow inherits Window {
         border-radius: Theme.radius-md;
         border-width: 1px;
         border-color: Theme.border-strong;
-        drop-shadow-blur: 16px;
-        drop-shadow-color: #00000070;
+        drop-shadow-blur: Theme.shadow-float-blur;
+        drop-shadow-color: Theme.shadow-float-color;
 
         // Swallow pointer events so right-clicks don't fall through to the
         // terminal's context menu underneath.
@@ -3048,8 +3048,8 @@ export component AppWindow inherits Window {
             border-radius: Theme.radius-md;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
+            drop-shadow-blur: Theme.shadow-dialog-blur;
+            drop-shadow-color: Theme.shadow-dialog-color;
             TouchArea {}   // swallow inside clicks
 
             VerticalLayout {
@@ -3131,8 +3131,8 @@ export component AppWindow inherits Window {
             border-radius: Theme.radius-md;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
+            drop-shadow-blur: Theme.shadow-dialog-blur;
+            drop-shadow-color: Theme.shadow-dialog-color;
             TouchArea {}   // swallow inside clicks
 
             VerticalLayout {
@@ -3277,7 +3277,7 @@ export component AppWindow inherits Window {
                                     Rectangle {
                                         background: Theme.bg-panel; border-radius: Theme.radius-sm;
                                         border-width: 1px; border-color: Theme.border-strong;
-                                        drop-shadow-blur: 10px; drop-shadow-color: #00000050;
+                                        drop-shadow-blur: Theme.shadow-menu-blur; drop-shadow-color: Theme.shadow-menu-color;
                                         VerticalLayout {
                                             padding: 4px; spacing: 1px;
                                             Rectangle {
@@ -3383,7 +3383,7 @@ export component AppWindow inherits Window {
                                     Rectangle {
                                         background: Theme.bg-panel; border-radius: Theme.radius-sm;
                                         border-width: 1px; border-color: Theme.border-strong;
-                                        drop-shadow-blur: 10px; drop-shadow-color: #00000050;
+                                        drop-shadow-blur: Theme.shadow-menu-blur; drop-shadow-color: Theme.shadow-menu-color;
                                         qctx-vl := VerticalLayout {
                                             padding: 4px; spacing: 1px;
                                             Rectangle { height: 28px; border-radius: Theme.radius-sm;
@@ -3493,8 +3493,8 @@ export component AppWindow inherits Window {
             border-radius: Theme.radius-md;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
+            drop-shadow-blur: Theme.shadow-dialog-blur;
+            drop-shadow-color: Theme.shadow-dialog-color;
             TouchArea {}   // swallow inside clicks
 
             VerticalLayout {
@@ -3558,8 +3558,8 @@ export component AppWindow inherits Window {
             border-radius: Theme.radius-md;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
+            drop-shadow-blur: Theme.shadow-dialog-blur;
+            drop-shadow-color: Theme.shadow-dialog-color;
             TouchArea {}   // swallow inside clicks
 
             VerticalLayout {
@@ -3654,8 +3654,8 @@ export component AppWindow inherits Window {
             border-radius: Theme.radius-md;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
+            drop-shadow-blur: Theme.shadow-dialog-blur;
+            drop-shadow-color: Theme.shadow-dialog-color;
             TouchArea {}
 
             VerticalLayout {
@@ -3704,8 +3704,8 @@ export component AppWindow inherits Window {
             border-radius: Theme.radius-md;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
+            drop-shadow-blur: Theme.shadow-dialog-blur;
+            drop-shadow-color: Theme.shadow-dialog-color;
             TouchArea {}
 
             VerticalLayout {
@@ -3796,8 +3796,8 @@ overflow: elide;
             border-radius: Theme.radius-md;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
+            drop-shadow-blur: Theme.shadow-dialog-blur;
+            drop-shadow-color: Theme.shadow-dialog-color;
             TouchArea {}
 
             VerticalLayout {
@@ -4148,8 +4148,8 @@ overflow: elide;
             border-radius: Theme.radius-lg;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #00000080;
+            drop-shadow-blur: Theme.shadow-raised-blur;
+            drop-shadow-color: Theme.shadow-raised-color;
             TouchArea {}   // swallow clicks inside the card
 
             VerticalLayout {
@@ -4234,8 +4234,8 @@ overflow: elide;
             border-radius: Theme.radius-lg;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #00000080;
+            drop-shadow-blur: Theme.shadow-raised-blur;
+            drop-shadow-color: Theme.shadow-raised-color;
             TouchArea {}   // swallow clicks inside the card
             cred-card := VerticalLayout {
                 padding: 20px;
@@ -4304,8 +4304,8 @@ overflow: elide;
             border-radius: Theme.radius-lg;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #00000080;
+            drop-shadow-blur: Theme.shadow-raised-blur;
+            drop-shadow-color: Theme.shadow-raised-color;
             TouchArea {}   // swallow clicks inside the card
             mfa-card := VerticalLayout {
                 padding: 20px;
@@ -4389,8 +4389,8 @@ overflow: elide;
             border-radius: Theme.radius-md;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #000000a0;
+            drop-shadow-blur: Theme.shadow-dialog-blur;
+            drop-shadow-color: Theme.shadow-dialog-color;
             clip: true;
             TouchArea {}   // swallow inside clicks so they don't hit the backdrop
 

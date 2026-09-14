@@ -1046,8 +1046,8 @@ export component TerminalView inherits Rectangle {
                                 border-radius: Theme.radius-sm;
                                 border-width: 1px;
                                 border-color: Theme.border-strong;
-                                drop-shadow-blur: 12px;
-                                drop-shadow-color: #00000060;
+                                drop-shadow-blur: Theme.shadow-popup-blur;
+                                drop-shadow-color: Theme.shadow-popup-color;
                                 VerticalLayout {
                                     padding: 4px;
                                     spacing: 1px;
@@ -1568,8 +1568,8 @@ export component TerminalView inherits Rectangle {
                 border-radius: Theme.radius-md;
                 border-width: 1px;
                 border-color: Theme.border-strong;
-                drop-shadow-blur: 16px;
-                drop-shadow-color: #00000070;
+                drop-shadow-blur: Theme.shadow-float-blur;
+                drop-shadow-color: Theme.shadow-float-color;
                 TouchArea {}  // swallow clicks
                 Flickable {
                     viewport-width: self.width;
@@ -1623,7 +1623,7 @@ export component TerminalView inherits Rectangle {
                                     Rectangle {
                                         background: Theme.bg-panel; border-radius: Theme.radius-sm;
                                         border-width: 1px; border-color: Theme.border-strong;
-                                        drop-shadow-blur: 10px; drop-shadow-color: #00000050;
+                                        drop-shadow-blur: Theme.shadow-menu-blur; drop-shadow-color: Theme.shadow-menu-color;
                                         VerticalLayout {
                                             padding: 4px; spacing: 1px;
                                             Rectangle { height: 30px; border-radius: Theme.radius-sm;
@@ -1693,7 +1693,7 @@ export component TerminalView inherits Rectangle {
                                     Rectangle {
                                         background: Theme.bg-panel; border-radius: Theme.radius-sm;
                                         border-width: 1px; border-color: Theme.border-strong;
-                                        drop-shadow-blur: 10px; drop-shadow-color: #00000050;
+                                        drop-shadow-blur: Theme.shadow-menu-blur; drop-shadow-color: Theme.shadow-menu-color;
                                         qpop-ctx-vl := VerticalLayout {
                                             padding: 4px; spacing: 1px;
                                             Rectangle { height: 28px; border-radius: Theme.radius-sm;
@@ -1799,8 +1799,8 @@ export component TerminalView inherits Rectangle {
                 border-radius: Theme.radius-md;
                 border-width: 1px;
                 border-color: Theme.border-strong;
-                drop-shadow-blur: 16px;
-                drop-shadow-color: #00000070;
+                drop-shadow-blur: Theme.shadow-float-blur;
+                drop-shadow-color: Theme.shadow-float-color;
                 TouchArea {}
                 VerticalLayout {
                     padding: 4px;

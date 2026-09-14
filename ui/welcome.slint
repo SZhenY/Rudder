@@ -139,8 +139,8 @@ component SessionRow inherits Rectangle {
             border-radius: Theme.radius-sm;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 10px;
-            drop-shadow-color: #00000050;
+            drop-shadow-blur: Theme.shadow-menu-blur;
+            drop-shadow-color: Theme.shadow-menu-color;
 
             menu-vl := VerticalLayout {
                 padding: 4px;
@@ -696,8 +696,8 @@ export component Welcome inherits Rectangle {
                                     border-radius: Theme.radius-sm;
                                     border-width: 1px;
                                     border-color: Theme.border-strong;
-                                    drop-shadow-blur: 10px;
-                                    drop-shadow-color: #00000050;
+                                    drop-shadow-blur: Theme.shadow-menu-blur;
+                                    drop-shadow-color: Theme.shadow-menu-color;
                                     VerticalLayout {
                                         padding: 4px;
                                         spacing: 1px;
