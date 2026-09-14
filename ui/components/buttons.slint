@@ -4,6 +4,7 @@
 // 事件一律 callback 上抛；默认值与被替换的旧内联写法**逐字对应**。
 
 import { Theme } from "../theme.slint";
+import { IconText } from "../components/text.slint";
 
 /// 右上角「✕」关闭按钮：替换 16 处手写实现（弹窗标题栏 / 浮层 / 卡片）。
 ///
@@ -27,13 +28,11 @@ export component CloseButton inherits Rectangle {
         }
     ]
 
-    Text {
+    IconText {
+        centered: true;
         text: "\u{E5CD}";
-        font-family: "Material Icons";
         color: root.danger ? Theme.danger : Theme.text-secondary;
         font-size: root.glyph-size;
-        horizontal-alignment: center;
-        vertical-alignment: center;
     }
 
     ta := TouchArea {

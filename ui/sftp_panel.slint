@@ -2,6 +2,7 @@
 import { ScrollView } from "std-widgets.slint";
 import { TabInfo } from "tabs.slint";
 import { Divider, VDivider } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -211,13 +212,11 @@ export component SftpPanel inherits Rectangle {
                             if (ev.kind == PointerEventKind.up) { root.dock-drag-end(); }
                         }
                     }
-                    Text {
+                    IconText {
+                        centered: true;
                         text: "\u{E945}";   // drag_indicator
-                        font-family: "Material Icons";
                         color: grip-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
                         font-size: 16px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
                         width: parent.width;
                         height: parent.height;
                     }
@@ -303,9 +302,10 @@ export component SftpPanel inherits Rectangle {
                             path-input.clear-selection();
                         }
                     }
-                    Text { text: "\u{E14D}"; font-family: "Material Icons";
+                    IconText { text: "\u{E14D}";
+                           centered: true;
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           horizontal-alignment: center; vertical-alignment: center; }
+}
                 }
 
                 // Paste a path from the clipboard and jump straight to it.
@@ -322,9 +322,10 @@ export component SftpPanel inherits Rectangle {
                             root.navigate(path-input.text);
                         }
                     }
-                    Text { text: "\u{E14F}"; font-family: "Material Icons";
+                    IconText { text: "\u{E14F}";
+                           centered: true;
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           horizontal-alignment: center; vertical-alignment: center; }
+}
                 }
 
                 // Parent navigation stays a fixed toolbar action in the compact
@@ -395,13 +396,11 @@ export component SftpPanel inherits Rectangle {
                         mouse-cursor: pointer;
                         clicked => { compact-more-menu.show(); }
                     }
-                    Text {
+                    IconText {
+                        centered: true;
                         text: "\u{E5D4}";
-                        font-family: "Material Icons";
                         color: Theme.text-secondary;
                         font-size: Theme.fs-md;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
                     }
                     compact-more-menu := PopupWindow {
                         x: parent.width - self.width;
@@ -459,16 +458,18 @@ export component SftpPanel inherits Rectangle {
                     border-radius: Theme.radius-sm;
                     background: dls-ta.has-hover ? Theme.bg-hover : transparent;
                     dls-ta := TouchArea { mouse-cursor: pointer; clicked => { root.download-selected(); } }
-                    Text { text: "\u{E2C4}"; font-family: "Material Icons"; color: Theme.text-secondary;
-                           font-size: Theme.fs-md; horizontal-alignment: center; vertical-alignment: center; }
+                    IconText { text: "\u{E2C4}";color: Theme.text-secondary;
+                           centered: true;
+                           font-size: Theme.fs-md;}
                 }
                 if root.panel-mode == "files" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
                     background: dels-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
                     dels-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-selected(); } }
-                    Text { text: "\u{E872}"; font-family: "Material Icons"; color: Theme.danger;
-                           font-size: Theme.fs-md; horizontal-alignment: center; vertical-alignment: center; }
+                    IconText { text: "\u{E872}";color: Theme.danger;
+                           centered: true;
+                           font-size: Theme.fs-md;}
                 }
 
                 Rectangle {
@@ -480,9 +481,10 @@ export component SftpPanel inherits Rectangle {
                         mouse-cursor: pointer;
                         clicked => { root.refresh(root.current-path); }
                     }
-                    Text { text: "\u{E5D5}"; font-family: "Material Icons";
+                    IconText { text: "\u{E5D5}";
+                           centered: true;
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           horizontal-alignment: center; vertical-alignment: center; }
+}
                 }
 
                 // Minimise / restore the SFTP panel (#41).
@@ -495,9 +497,10 @@ export component SftpPanel inherits Rectangle {
                         clicked => { root.toggle-collapsed(); }
                     }
                     // expand_less (▲, restore) when collapsed, expand_more (▼) otherwise.
-                    Text { text: root.collapsed ? "\u{E5CE}" : "\u{E5CF}"; font-family: "Material Icons";
+                    IconText { text: root.collapsed ? "\u{E5CE}" : "\u{E5CF}";
+                           centered: true;
                            color: Theme.text-secondary; font-size: Theme.fs-md;
-                           horizontal-alignment: center; vertical-alignment: center; }
+}
                 }
                 }
 
@@ -759,22 +762,19 @@ export component SftpPanel inherits Rectangle {
                                             mouse-cursor: pointer;
                                             clicked => { root.toggle-select(i); }
                                         }
-                                        if entry.selected : Text {
+                                        if entry.selected : IconText {
+                                            centered: true;
                                             text: "\u{E5CA}"; // check
-                                            font-family: "Material Icons";
                                             color: #ffffff;
                                             font-size: 13px;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
                                             width: parent.width; height: parent.height;
                                         }
                                     }
                                     HorizontalLayout {
                                         horizontal-stretch: 1;
                                         spacing: 4px;
-                                        Text {
+                                        IconText {
                                             text: entry.is-dir ? "\u{E2C7}" : "\u{E24D}"; // folder / insert_drive_file
-                                            font-family: "Material Icons";
                                             color: entry.is-dir ? Theme.accent : Theme.text-secondary;
                                             font-size: Theme.fs-sm;
                                             vertical-alignment: center;

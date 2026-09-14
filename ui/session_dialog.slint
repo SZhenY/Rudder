@@ -3,6 +3,7 @@ import { ComboBox } from "std-widgets.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 import { FieldLabel, HelpText } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
+import { IconText } from "components/text.slint";
 
 // One SSH port-forward row shown in the session dialog (#56). `summary` is a
 // ready-to-display line like "-L 127.0.0.1:8080 → host:80".
@@ -945,9 +946,8 @@ export component SessionDialog inherits Rectangle {
                         font-size: Theme.fs-sm;
                         vertical-alignment: center;
                     }
-                    Text {
+                    IconText {
                         text: root.show-advanced ? "\u{E5CE}" : "\u{E5CF}";
-                        font-family: "Material Icons";
                         color: Theme.text-muted;
                         font-size: Theme.fs-md;
                         vertical-alignment: center;
@@ -1013,11 +1013,12 @@ export component SessionDialog inherits Rectangle {
                         border-width: 1px;
                         border-color: root.draft-disable-shell-integration ? Theme.accent : Theme.border-strong;
                         background: root.draft-disable-shell-integration ? Theme.accent : transparent;
-                        Text {
+                        IconText {
+                            centered: true;
                             text: root.draft-disable-shell-integration ? "\u{E5CA}" : "";
-                            font-family: "Material Icons"; color: white; font-size: 14px;
+color: white; font-size: 14px;
                             width: 100%; height: 100%;
-                            horizontal-alignment: center; vertical-alignment: center;
+
                         }
                         TouchArea {
                             mouse-cursor: pointer;

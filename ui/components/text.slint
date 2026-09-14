@@ -1,0 +1,28 @@
+// 文本类通用组件。
+//
+// 约定（与 ui-component-api.md 一致）：只含样式；属性一律 `in`；不引入新视觉。
+
+import { Theme } from "../theme.slint";
+
+/// 图标字形（Material Icons）。全项目 95 处 `Text { font-family: "Material Icons"; … }`
+/// 的重复写法收敛到这里 —— 以后换图标字体、或图标字体出错（例如字体没注册），只改这一处。
+///
+/// ⚠️ 刻意**不**设置 font-size 与 color：实测多数站点靠**继承**取值（85 个块里 55 个没有
+/// font-size、32 个没有 color），组件里写死任何一个都会造成视觉回归。需要时由调用方传。
+///
+/// `centered: true` 等价于旧写法里同时写 `horizontal-alignment: center` +
+/// `vertical-alignment: center`（约 25 个站点）；默认 false 走 Slint 默认的
+/// left/top，与"没写对齐"的旧写法逐字等价。
+export component IconText inherits Text {
+    in property <bool> centered: false;
+
+    font-family: "Material Icons";
+    horizontal-alignment: root.centered ? center : left;
+    vertical-alignment: root.centered ? center : top;
+}
+
+/// 界面字体文本（可用字体由 Rust 解析、写入 `Theme.ui-font-family`）。
+/// 只固定字体族；字号/颜色/省略/换行由调用方决定（各处差异很大，写死即回归）。
+export component Label inherits Text {
+    font-family: Theme.ui-font-family;
+}

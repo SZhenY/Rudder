@@ -41,6 +41,7 @@ export { ProcWindow, SystemInfoWindow }
 import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
+import { IconText } from "components/text.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
 
@@ -146,13 +147,11 @@ component WinBtn inherits Rectangle {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
-    Text {
+    IconText {
+        centered: true;
         text: root.icon;
-        font-family: "Material Icons";
         color: (root.danger && ta.has-hover) ? white : Theme.text-secondary;
         font-size: 16px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
     }
 }
 
@@ -2168,8 +2167,9 @@ export component AppWindow inherits Window {
                         mouse-cursor: pointer;
                         clicked => { root.update-available = false; }
                     }
-                    Text { text: "\u{E5CD}"; font-family: "Material Icons"; color: #ffffff;
-                           font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
+                    IconText { text: "\u{E5CD}";color: #ffffff;
+                           centered: true;
+                           font-size: Theme.fs-sm;}
                 }
             }
             if root.update-state != 0 : HorizontalLayout {
@@ -2652,9 +2652,10 @@ export component AppWindow inherits Window {
                         mouse-cursor: pointer;
                         clicked => { root.download-open = false; }
                     }
-                    Text { text: "\u{E5CD}"; font-family: "Material Icons";
+                    IconText { text: "\u{E5CD}";
+                           centered: true;
                            color: close-ta.has-hover ? white : Theme.text-secondary; font-size: Theme.fs-sm;
-                           horizontal-alignment: center; vertical-alignment: center; }
+}
                 }
             }
 
@@ -2754,9 +2755,8 @@ export component AppWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 4px;
                                     // Direction glyph: upload green / download purple.
-                                    Text {
+                                    IconText {
                                         text: t.is-upload ? "\u{E5D8}" : "\u{E5DB}"; // arrow_upward / arrow_downward
-                                        font-family: "Material Icons";
                                         color: t.is-upload ? Theme.success : #9c6ade;
                                         font-size: Theme.fs-sm;
                                         vertical-alignment: center;
@@ -2787,13 +2787,11 @@ export component AppWindow inherits Window {
                                             mouse-cursor: pointer;
                                             clicked => { root.cancel-transfer(t.id); }
                                         }
-                                        Text {
+                                        IconText {
+                                            centered: true;
                                             text: "\u{E5CD}"; // close
-                                            font-family: "Material Icons";
                                             color: cancel-ta.has-hover ? Theme.danger : Theme.text-muted;
                                             font-size: Theme.fs-sm;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
                                         }
                                     }
                                 }
@@ -2865,7 +2863,7 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     padding-left: 8px; spacing: 8px;
-                    Text { text: "\u{E429}"; font-family: "Material Icons"; // tune
+                    IconText { text: "\u{E429}";// tune
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
                     Text { text: root.lang-en ? "Interface" : "界面";
@@ -2887,7 +2885,7 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     padding-left: 8px; spacing: 8px;
-                    Text { text: "\u{E5D8}"; font-family: "Material Icons"; // ↑ export
+                    IconText { text: "\u{E5D8}";// ↑ export
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
                     Text { text: root.lang-en ? "Export connections" : "导出连接";
@@ -2909,7 +2907,7 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     padding-left: 8px; spacing: 8px;
-                    Text { text: "\u{E5DB}"; font-family: "Material Icons"; // ↓ import
+                    IconText { text: "\u{E5DB}";// ↓ import
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
                     Text { text: root.lang-en ? "Import connections" : "导入连接";
@@ -2932,7 +2930,7 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     padding-left: 8px; spacing: 8px;
-                    Text { text: "\u{E1C3}"; font-family: "Material Icons"; // table/rows
+                    IconText { text: "\u{E1C3}";// table/rows
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
                     Text { text: root.lang-en ? "Batch import (text)" : "批量导入(文本)";
@@ -2954,7 +2952,7 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     padding-left: 8px; padding-right: 8px; spacing: 8px;
-                    Text { text: "\u{E890}"; font-family: "Material Icons"; // input/import
+                    IconText { text: "\u{E890}";// input/import
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
                     VerticalLayout {
@@ -2984,7 +2982,7 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     padding-left: 8px; spacing: 8px;
-                    Text { text: "\u{E894}"; font-family: "Material Icons"; // language/translate
+                    IconText { text: "\u{E894}";// language/translate
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
                     Text { text: root.lang-en ? "切换到中文" : "Switch to English";
@@ -3006,7 +3004,7 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     padding-left: 8px; spacing: 8px;
-                    Text { text: "\u{E312}"; font-family: "Material Icons"; // keyboard
+                    IconText { text: "\u{E312}";// keyboard
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
                     Text { text: root.lang-en ? "Shortcuts" : "快捷键";
@@ -3027,7 +3025,7 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     padding-left: 8px; spacing: 8px;
-                    Text { text: "\u{E88E}"; font-family: "Material Icons"; // Info
+                    IconText { text: "\u{E88E}";// Info
                            color: Theme.text-secondary; font-size: Theme.fs-sm;
                            vertical-alignment: center; }
                     Text { text: @tr("About"); color: Theme.text-primary; font-size: Theme.fs-md;
@@ -3262,7 +3260,7 @@ export component AppWindow inherits Window {
                                 property <length> gmy;
                                 HorizontalLayout {
                                     padding-left: 4px; padding-top: 6px; spacing: 4px;
-                                    Text { text: "\u{E2C7}"; font-family: "Material Icons";
+                                    IconText { text: "\u{E2C7}";
                                            color: Theme.text-muted; font-size: Theme.fs-sm; vertical-alignment: center; }
                                     Text { text: q.group; color: Theme.text-muted; font-size: Theme.fs-xs;
                                            font-weight: 700; vertical-alignment: center;
@@ -3291,7 +3289,7 @@ export component AppWindow inherits Window {
                                                 qeg-ta := TouchArea { mouse-cursor: pointer;
                                                     clicked => { root.qcg-orig = q.group; root.qcg-name = q.group; root.qcg-open = true; } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: root.lang-en ? "Rename group" : "重命名分组"; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } }
                                             }
                                             if q.orig-index == -1 : Rectangle {
@@ -3299,7 +3297,7 @@ export component AppWindow inherits Window {
                                                 background: qdg-ta.has-hover ? #cc333320 : transparent;
                                                 qdg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-group(q.group); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: root.lang-en ? "Delete group" : "删除分组"; color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } }
                                             }
                                             Rectangle {
@@ -3307,7 +3305,7 @@ export component AppWindow inherits Window {
                                                 background: qng-ta.has-hover ? Theme.bg-hover : transparent;
                                                 qng-ta := TouchArea { mouse-cursor: pointer; clicked => { root.qcg-orig = ""; root.qcg-name = ""; root.qcg-open = true; } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E2CC}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E2CC}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: root.lang-en ? "New group" : "新建分组"; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } }
                                             }
                                         }
@@ -3348,9 +3346,10 @@ export component AppWindow inherits Window {
                                             mouse-cursor: pointer;
                                             clicked => { root.reorder-quick-command(q.orig-index, true); }
                                         }
-                                        Text { text: "\u{E5D8}"; font-family: "Material Icons";
+                                        IconText { text: "\u{E5D8}";
+                                               centered: true;
                                                color: Theme.text-secondary; font-size: Theme.fs-sm;
-                                               horizontal-alignment: center; vertical-alignment: center; }
+}
                                     }
                                     Rectangle {
                                         width: 24px; height: 28px;
@@ -3360,9 +3359,10 @@ export component AppWindow inherits Window {
                                             mouse-cursor: pointer;
                                             clicked => { root.reorder-quick-command(q.orig-index, false); }
                                         }
-                                        Text { text: "\u{E5DB}"; font-family: "Material Icons";
+                                        IconText { text: "\u{E5DB}";
+                                               centered: true;
                                                color: Theme.text-secondary; font-size: Theme.fs-sm;
-                                               horizontal-alignment: center; vertical-alignment: center; }
+}
                                     }
                                     Rectangle {
                                         width: 28px;
@@ -3374,9 +3374,10 @@ export component AppWindow inherits Window {
                                             mouse-cursor: pointer;
                                             clicked => { root.delete-quick-command(q.orig-index); }
                                         }
-                                        Text { text: "\u{E872}"; font-family: "Material Icons";
+                                        IconText { text: "\u{E872}";
+                                               centered: true;
                                                color: Theme.danger; font-size: Theme.fs-md;
-                                               horizontal-alignment: center; vertical-alignment: center; }
+}
                                     }
                                 }
                                 qctx-menu := PopupWindow {
@@ -3392,29 +3393,29 @@ export component AppWindow inherits Window {
                                                 background: qe-ta.has-hover ? Theme.bg-hover : transparent;
                                                 qe-ta := TouchArea { mouse-cursor: pointer; clicked => { root.edit-quick-command(q.orig-index); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Rectangle { height: 28px; border-radius: Theme.radius-sm;
                                                 background: qd-ta.has-hover ? Theme.bg-hover : transparent;
                                                 qd-ta := TouchArea { mouse-cursor: pointer; clicked => { root.duplicate-quick-command(q.orig-index); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E14D}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E14D}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Rectangle { height: 28px; border-radius: Theme.radius-sm;
                                                 background: qx-ta.has-hover ? #cc333320 : transparent;
                                                 qx-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-command(q.orig-index); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Delete"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Divider {}
                                             HorizontalLayout { padding-left: 10px; padding-top: 2px; spacing: 6px;
-                                                Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
+                                                IconText { text: "\u{E2C7}";color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
                                                 Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; } }
                                             if q.group != "default" : Rectangle { height: 28px; border-radius: Theme.radius-sm;
                                                 background: qmd-ta.has-hover ? Theme.bg-hover : transparent;
                                                 qmd-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, "default"); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Default"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             for s in root.quick-commands : Rectangle {
                                                 visible: s.group-header != "" && s.group != "default" && s.group != q.group;
@@ -3423,7 +3424,7 @@ export component AppWindow inherits Window {
                                                 background: qm-ta.has-hover ? Theme.bg-hover : transparent;
                                                 qm-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, s.group); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: s.group; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; } } }
                                         }
                                     }
@@ -3443,13 +3444,11 @@ export component AppWindow inherits Window {
                 height: 18px;
                 background: qcm-resize-ta.has-hover || root.qcm-dialog-resizing
                     ? Theme.bg-hover : transparent;
-                Text {
+                IconText {
+                    centered: true;
                     text: "\u{E3C2}";
-                    font-family: "Material Icons";
                     color: Theme.text-muted;
                     font-size: 14px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
                 }
                 qcm-resize-ta := TouchArea {
                     mouse-cursor: nwse-resize;
@@ -4569,13 +4568,11 @@ export component AppWindow inherits Window {
                 width: 18px;
                 height: 18px;
                 background: resize-ta.has-hover || root.ifd-resizing ? Theme.bg-hover : transparent;
-                Text {
+                IconText {
+                    centered: true;
                     text: "\u{E3C2}";
-                    font-family: "Material Icons";
                     color: Theme.text-muted;
                     font-size: 14px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
                 }
                 resize-ta := TouchArea {
                     mouse-cursor: nwse-resize;

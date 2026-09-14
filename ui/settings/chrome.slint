@@ -7,6 +7,7 @@
 // 组件内部不持久化任何状态 —— 状态归 Rust 侧 config，"谁拥有状态谁负责写盘"。
 import { Theme } from "../theme.slint";
 import { Divider, VDivider } from "../components/surfaces.slint";
+import { IconText } from "../components/text.slint";
 
 // One left-nav row (icon + label).
 export component NavItem inherits Rectangle {
@@ -28,7 +29,7 @@ export component NavItem inherits Rectangle {
     HorizontalLayout {
         padding-left: 10px;
         spacing: 9px;
-        Text { text: root.icon; font-family: "Material Icons";
+        IconText { text: root.icon;
                color: root.active ? Theme.text-primary : Theme.text-secondary;
                font-size: 15px * Theme.panel-font; vertical-alignment: center; }
         Text { text: root.label;
@@ -100,8 +101,9 @@ export component Stepper inherits Rectangle {
                 mouse-cursor: pointer;
                 clicked => { root.changed(max(root.minimum, root.value - root.step)); }
             }
-            Text { text: "\u{E15B}"; font-family: "Material Icons"; font-size: 14px * Theme.panel-font;
-                   color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+            IconText { text: "\u{E15B}";font-size: 14px * Theme.panel-font;
+                   centered: true;
+                   color: Theme.text-secondary;}
         }
         VDivider {}
         Text { text: root.value + root.unit; horizontal-stretch: 1;
@@ -115,8 +117,9 @@ export component Stepper inherits Rectangle {
                 mouse-cursor: pointer;
                 clicked => { root.changed(min(root.maximum, root.value + root.step)); }
             }
-            Text { text: "\u{E145}"; font-family: "Material Icons"; font-size: 14px * Theme.panel-font;
-                   color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+            IconText { text: "\u{E145}";font-size: 14px * Theme.panel-font;
+                   centered: true;
+                   color: Theme.text-secondary;}
         }
     }
 }
@@ -316,11 +319,12 @@ export component WallpaperSwatch inherits Rectangle {
         height: 18px;
         border-radius: 9px;
         background: Theme.accent;
-        Text {
+        IconText {
+            centered: true;
             text: "\u{E5CA}"; // check
-            font-family: "Material Icons"; color: white; font-size: 13px * Theme.panel-font;
+color: white; font-size: 13px * Theme.panel-font;
             width: 100%; height: 100%;
-            horizontal-alignment: center; vertical-alignment: center;
+
         }
     }
     ta := TouchArea {

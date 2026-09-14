@@ -2,6 +2,7 @@ import { Theme, AnimationSettings } from "theme.slint";
 import { PrimaryButton, GhostButton, IconButton } from "widgets.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Divider } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
 
 export struct SessionInfo {
     id: string,
@@ -157,7 +158,7 @@ component SessionRow inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 10px;
                         spacing: 8px;
-                        Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                        IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
                 }
@@ -174,7 +175,7 @@ component SessionRow inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 10px;
                         spacing: 8px;
-                        Text { text: "\u{E14D}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                        IconText { text: "\u{E14D}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
                 }
@@ -191,7 +192,7 @@ component SessionRow inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 10px;
                         spacing: 8px;
-                        Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
+                        IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Delete"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
                 }
@@ -204,7 +205,7 @@ component SessionRow inherits Rectangle {
                     padding-left: 10px;
                     padding-top: 2px;
                     spacing: 6px;
-                    Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
+                    IconText { text: "\u{E2C7}";color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
                     Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; }
                 }
 
@@ -224,7 +225,7 @@ component SessionRow inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 10px;
                         spacing: 8px;
-                        Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                        IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: s.group-header; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                     }
                 }
@@ -262,13 +263,11 @@ component SessionRow inherits Rectangle {
             y: (parent.height - self.height) / 2;
             border-radius: 3px;
             background: Theme.bg-elevated;
-            Text {
+            IconText {
+                centered: true;
                 text: root.system-row ? "\u{E30A}" : "\u{E875}";   // terminal / server
-                font-family: "Material Icons";
                 color: Theme.text-secondary;
                 font-size: Theme.fs-sm;
-                horizontal-alignment: center;
-                vertical-alignment: center;
             }
         }
 
@@ -504,9 +503,8 @@ export component Welcome inherits Rectangle {
                         padding-right: 4px;
                         spacing: 6px;
 
-                        Text {
+                        IconText {
                             text: "\u{E8B6}";
-                            font-family: "Material Icons";
                             color: Theme.text-muted;
                             font-size: Theme.fs-sm;
                             vertical-alignment: center;
@@ -551,13 +549,11 @@ export component Welcome inherits Rectangle {
                                 accessible-role: button;
                                 accessible-label: @tr("Clear search");
 
-                                Text {
+                                IconText {
+                                    centered: true;
                                     text: "\u{E5CD}";
-                                    font-family: "Material Icons";
                                     color: Theme.text-muted;
                                     font-size: Theme.fs-sm;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
                                 }
                                 clear-search := TouchArea {
                                     mouse-cursor: pointer;
@@ -648,16 +644,14 @@ export component Welcome inherits Rectangle {
                                 // Collapse chevron — shown for every group, empty
                                 // folders included, so they line up and can be
                                 // toggled (an empty group just expands to nothing).
-                                Text {
+                                IconText {
                                     text: session.collapsed ? "\u{E5CC}" : "\u{E5CF}";
-                                    font-family: "Material Icons";
                                     color: Theme.text-muted;
                                     font-size: Theme.fs-sm;
                                     vertical-alignment: center;
                                 }
-                                Text {
+                                IconText {
                                     text: "\u{E2C7}";   // folder glyph
-                                    font-family: "Material Icons";
                                     color: Theme.text-muted;
                                     font-size: Theme.fs-sm;
                                     vertical-alignment: center;
@@ -715,7 +709,7 @@ export component Welcome inherits Rectangle {
                                             eg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.edit-group(session.group); } }
                                             HorizontalLayout {
                                                 padding-left: 10px; spacing: 8px;
-                                                Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                 Text { text: @tr("Edit group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                                             }
                                         }
@@ -727,7 +721,7 @@ export component Welcome inherits Rectangle {
                                             dg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-group(session.group); } }
                                             HorizontalLayout {
                                                 padding-left: 10px; spacing: 8px;
-                                                Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                 Text { text: @tr("Delete group"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                                             }
                                         }
@@ -739,7 +733,7 @@ export component Welcome inherits Rectangle {
                                             ng-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-group(); } }
                                             HorizontalLayout {
                                                 padding-left: 10px; spacing: 8px;
-                                                Text { text: "\u{E2CC}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                IconText { text: "\u{E2CC}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                 Text { text: @tr("New group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                                             }
                                         }

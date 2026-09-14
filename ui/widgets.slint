@@ -1,5 +1,6 @@
 import { Theme , AnimationSettings } from "theme.slint";
 import { FieldLabel } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
 
 // --- IconButton ------------------------------------------------------------
 // A small square action button that accepts a single-character glyph (or short text).
@@ -317,14 +318,12 @@ export component ToolStrip inherits Rectangle {
         y: root.horizontal ? (parent.height - self.height) / 2 : 4px;
         border-radius: Theme.radius-sm;
           background: root.enabled && ta.has-hover ? Theme.bg-hover : transparent;
-          Text {
+          IconText {
+              centered: true;
               text: root.glyph;
-              font-family: "Material Icons";
               font-size: 18px;
               color: !root.enabled ? Theme.text-muted.with-alpha(0.45)
                   : ta.has-hover ? Theme.text-primary : Theme.text-secondary;
-            horizontal-alignment: center;
-            vertical-alignment: center;
             width: parent.width;
             height: parent.height;
         }
@@ -344,13 +343,11 @@ export component ToolStrip inherits Rectangle {
         y: root.horizontal ? (parent.height - self.height) / 2 : 38px;
         border-radius: Theme.radius-sm;
         background: ta2.has-hover ? Theme.bg-hover : transparent;
-        Text {
+        IconText {
+            centered: true;
             text: root.second-glyph;
-            font-family: "Material Icons";
             font-size: 18px;
             color: ta2.has-hover ? Theme.text-primary : Theme.text-secondary;
-            horizontal-alignment: center;
-            vertical-alignment: center;
             width: parent.width;
             height: parent.height;
         }
@@ -366,13 +363,11 @@ export component ToolStrip inherits Rectangle {
         y: root.horizontal ? (parent.height - self.height) / 2 : 72px;
         border-radius: Theme.radius-sm;
         background: ta3.has-hover ? Theme.bg-hover : transparent;
-        Text {
+        IconText {
+            centered: true;
             text: root.third-glyph;
-            font-family: "Material Icons";
             font-size: 18px;
             color: ta3.has-hover ? Theme.text-primary : Theme.text-secondary;
-            horizontal-alignment: center;
-            vertical-alignment: center;
             width: parent.width;
             height: parent.height;
         }

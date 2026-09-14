@@ -4,6 +4,7 @@
 // models with AppWindow, much like ProcWindow shares the process table.
 
 import { Theme } from "theme.slint";
+import { IconText } from "components/text.slint";
 
 export struct SysMetricRow {
     label: string,
@@ -233,13 +234,11 @@ export component SystemInfoWindow inherits Window {
                     width: 46px;
                     background: close-ta.has-hover ? #e81123 : transparent;
                     close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.request-close(); } }
-                    Text {
+                    IconText {
+                        centered: true;
                         text: "\u{E5CD}";
-                        font-family: "Material Icons";
                         color: close-ta.has-hover ? white : Theme.text-secondary;
                         font-size: 16px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
                     }
                 }
             }

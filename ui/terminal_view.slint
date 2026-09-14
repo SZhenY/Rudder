@@ -21,6 +21,7 @@ import "fonts/JetBrainsMono-Bold.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
 import { Divider } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
 // Large CJK fonts are runtime-loaded from the fonts dir (src/fonts.rs), not
 // embedded — the cell-probe falls back to a system font for unregistered
 // external families, which is acceptable for optional user fonts.
@@ -93,9 +94,8 @@ component MenuItem inherits Rectangle {
         padding-left: 8px;
         padding-right: 8px;
         spacing: 8px;
-        Text {
+        IconText {
             text: root.icon;
-            font-family: "Material Icons";
             color: Theme.text-secondary;
             font-size: Theme.fs-sm;
             vertical-alignment: center;
@@ -146,9 +146,8 @@ export component QuickDockPanel inherits Rectangle {
             }
             HorizontalLayout {
                 padding-left: 8px; padding-right: 4px; spacing: 6px;
-                Text {
+                IconText {
                     text: "\u{E25D}";
-                    font-family: "Material Icons";
                     color: Theme.text-muted; font-size: Theme.fs-md;
                     vertical-alignment: center;
                 }
@@ -163,14 +162,14 @@ export component QuickDockPanel inherits Rectangle {
                     background: close-ta.has-hover ? Theme.bg-hover : transparent;
                     border-radius: Theme.radius-sm;
                     close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.close(); } }
-                    Text {
+                    IconText {
+                        centered: true;
                         text: root.dock-edge == "right" ? "\u{E5CC}"
                             : root.dock-edge == "top" ? "\u{E5CE}"
                             : root.dock-edge == "bottom" ? "\u{E5CF}"
                             : "\u{E5CB}";
-                        font-family: "Material Icons";
                         color: Theme.text-secondary; font-size: Theme.fs-md;
-                        horizontal-alignment: center; vertical-alignment: center;
+
                     }
                 }
             }
@@ -200,9 +199,8 @@ export component QuickDockPanel inherits Rectangle {
                         }
                         HorizontalLayout {
                             padding-left: 6px; padding-right: 6px; spacing: 5px;
-                            Text {
+                            IconText {
                                 text: q.collapsed ? "\u{E5CC}" : "\u{E5CF}";
-                                font-family: "Material Icons";
                                 color: Theme.text-muted; font-size: Theme.fs-sm;
                                 vertical-alignment: center;
                             }
@@ -1250,9 +1248,8 @@ export component TerminalView inherits Rectangle {
                 HorizontalLayout {
                     padding: 6px;
                     spacing: 6px;
-                    Text {
+                    IconText {
                         text: "\u{E8B6}";
-                        font-family: "Material Icons";
                         color: Theme.text-secondary;
                         font-size: Theme.fs-sm;
                         vertical-alignment: center;
@@ -1307,13 +1304,11 @@ export component TerminalView inherits Rectangle {
                                 ime-input.focus();
                             }
                         }
-                        Text {
+                        IconText {
+                            centered: true;
                             text: "\u{E5CD}";
-                            font-family: "Material Icons";
                             color: close-ta.has-hover ? Theme.text-primary : Theme.text-secondary;
                             font-size: Theme.fs-sm;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
                         }
                     }
                 }
@@ -1355,7 +1350,7 @@ export component TerminalView inherits Rectangle {
                         spacing: 3px;
                         Text { text: @tr("Quick"); color: Theme.text-secondary; font-size: Theme.fs-sm;
                                vertical-alignment: center; }
-                        Text { text: "\u{E5CE}"; font-family: "Material Icons"; color: Theme.text-muted;
+                        IconText { text: "\u{E5CE}";color: Theme.text-muted;
                                font-size: Theme.fs-sm; vertical-alignment: center; }
                     }
                 }
@@ -1517,8 +1512,9 @@ export component TerminalView inherits Rectangle {
                             root.history-open = !root.history-open;
                         }
                     }
-                    Text { text: "\u{E5CE}"; font-family: "Material Icons"; color: Theme.text-secondary;
-                           font-size: Theme.fs-md; horizontal-alignment: center; vertical-alignment: center; }
+                    IconText { text: "\u{E5CE}";color: Theme.text-secondary;
+                           centered: true;
+                           font-size: Theme.fs-md;}
                 }
 
                 // Send-to-all toggle.
@@ -1605,15 +1601,13 @@ export component TerminalView inherits Rectangle {
                                 }
                                 HorizontalLayout {
                                     padding-left: 4px; padding-top: 4px; spacing: 4px;
-                                    Text {
+                                    IconText {
                                         text: q.collapsed ? "\u{E5CC}" : "\u{E5CF}"; // chevron ▶/▼
-                                        font-family: "Material Icons";
                                         color: Theme.text-muted; font-size: Theme.fs-sm;
                                         vertical-alignment: center;
                                     }
-                                    Text {
+                                    IconText {
                                         text: "\u{E2C7}"; // folder
-                                        font-family: "Material Icons";
                                         color: Theme.text-muted; font-size: Theme.fs-sm;
                                         vertical-alignment: center;
                                     }
@@ -1636,19 +1630,19 @@ export component TerminalView inherits Rectangle {
                                                 background: pg-ren-ta.has-hover ? Theme.bg-hover : transparent;
                                                 pg-ren-ta := TouchArea { mouse-cursor: pointer; clicked => { root.rename-quick-group(q.group); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Rename group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             if q.orig-index == -1 : Rectangle { height: 30px; border-radius: Theme.radius-sm;
                                                 background: pg-del-ta.has-hover ? #cc333320 : transparent;
                                                 pg-del-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-group(q.group); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Delete group"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Rectangle { height: 30px; border-radius: Theme.radius-sm;
                                                 background: pg-new-ta.has-hover ? Theme.bg-hover : transparent;
                                                 pg-new-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-quick-group(); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E2CC}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E2CC}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("New group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                         }
                                     }
@@ -1706,29 +1700,29 @@ export component TerminalView inherits Rectangle {
                                                 background: pi-edit-ta.has-hover ? Theme.bg-hover : transparent;
                                                 pi-edit-ta := TouchArea { mouse-cursor: pointer; clicked => { root.quick-open = false; root.edit-quick-command(q.orig-index); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E3C9}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Rectangle { height: 28px; border-radius: Theme.radius-sm;
                                                 background: pi-dup-ta.has-hover ? Theme.bg-hover : transparent;
                                                 pi-dup-ta := TouchArea { mouse-cursor: pointer; clicked => { root.duplicate-quick-command(q.orig-index); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E14D}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E14D}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Rectangle { height: 28px; border-radius: Theme.radius-sm;
                                                 background: pi-del-ta.has-hover ? #cc333320 : transparent;
                                                 pi-del-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-command(q.orig-index); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Delete"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Divider {}
                                             HorizontalLayout { padding-left: 10px; padding-top: 2px; spacing: 6px;
-                                                Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
+                                                IconText { text: "\u{E2C7}";color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
                                                 Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; } }
                                             if q.group != "default" : Rectangle { height: 28px; border-radius: Theme.radius-sm;
                                                 background: pi-md-ta.has-hover ? Theme.bg-hover : transparent;
                                                 pi-md-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, "default"); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Default"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             for s in root.quick-commands : Rectangle {
                                                 visible: s.group-header != "" && s.group != "default" && s.group != q.group;
@@ -1737,7 +1731,7 @@ export component TerminalView inherits Rectangle {
                                                 background: pi-mv-ta.has-hover ? Theme.bg-hover : transparent;
                                                 pi-mv-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, s.group); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
-                                                    Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                                    IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: s.group; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; } } }
                                         }
                                     }
@@ -1780,10 +1774,11 @@ export component TerminalView inherits Rectangle {
                                             }
                                         }
                                     }
-                                    Text {
-                                        text: "\u{E25D}"; font-family: "Material Icons";
+                                    IconText {
+                                        centered: true;
+                                        text: "\u{E25D}";
                                         color: Theme.text-secondary; font-size: Theme.fs-md;
-                                        horizontal-alignment: center; vertical-alignment: center;
+
                                     }
                                 }
                             }
@@ -1864,9 +1859,10 @@ export component TerminalView inherits Rectangle {
                                             root.focus-pending = true;
                                         }
                                     }
-                                    Text { text: "\u{E037}"; font-family: "Material Icons";
+                                    IconText { text: "\u{E037}";
+                                           centered: true;
                                            color: Theme.accent; font-size: Theme.fs-md;
-                                           horizontal-alignment: center; vertical-alignment: center; }
+}
                                 }
                                 // Copy (⧉) — to clipboard, keep the popup open.
                                 Rectangle {
@@ -1877,9 +1873,10 @@ export component TerminalView inherits Rectangle {
                                         mouse-cursor: pointer;
                                         clicked => { root.copy-text(h); }
                                     }
-                                    Text { text: "\u{E14D}"; font-family: "Material Icons";
+                                    IconText { text: "\u{E14D}";
+                                           centered: true;
                                            color: Theme.text-secondary; font-size: Theme.fs-sm;
-                                           horizontal-alignment: center; vertical-alignment: center; }
+}
                                 }
                                 // Delete (×) — remove this entry.
                                 Rectangle {
@@ -1890,9 +1887,10 @@ export component TerminalView inherits Rectangle {
                                         mouse-cursor: pointer;
                                         clicked => { root.delete-history-cmd(h); }
                                     }
-                                    Text { text: "\u{E872}"; font-family: "Material Icons";
+                                    IconText { text: "\u{E872}";
+                                           centered: true;
                                            color: Theme.danger; font-size: Theme.fs-sm;
-                                           horizontal-alignment: center; vertical-alignment: center; }
+}
                                 }
                             }
                         }
@@ -1918,7 +1916,7 @@ export component TerminalView inherits Rectangle {
                         }
                         HorizontalLayout {
                             padding-left: 8px; padding-right: 8px; spacing: 4px;
-                            Text { text: "\u{E8B6}"; font-family: "Material Icons";
+                            IconText { text: "\u{E8B6}";
                                    color: Theme.text-muted; font-size: Theme.fs-sm;
                                    vertical-alignment: center; }
                             Rectangle {

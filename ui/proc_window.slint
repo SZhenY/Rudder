@@ -9,6 +9,7 @@
 import { Theme, AnimationSettings } from "theme.slint";
 import { LabeledInput, GhostButton } from "widgets.slint";
 import { FieldLabel } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
 
 // One row in the process table. Lives here (not app.slint) so both the main
 // window and this window can import it without a circular dependency.
@@ -191,13 +192,11 @@ export component ProcWindow inherits Window {
                         mouse-cursor: pointer;
                         clicked => { root.request-close(); }
                     }
-                    Text {
+                    IconText {
+                        centered: true;
                         text: "\u{E5CD}";
-                        font-family: "Material Icons";
                         color: close-ta.has-hover ? white : Theme.text-secondary;
                         font-size: 16px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
                     }
                 }
             }

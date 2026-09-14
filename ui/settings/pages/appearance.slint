@@ -9,6 +9,7 @@ import { SettingRow, Stepper, WallpaperSwatch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
 import { ComboBox, ScrollView, Slider, Switch } from "std-widgets.slint";
+import { IconText } from "../../components/text.slint";
 
 export component AppearancePage inherits VerticalLayout {
     in property <string> current-wallpaper;
@@ -101,12 +102,13 @@ export component AppearancePage inherits VerticalLayout {
                     Rectangle {
                         width: 100%; height: 100%;
                         background: Theme.window-base;
-                        Text {
+                        IconText {
+                            centered: true;
                             text: "\u{E14C}"; // clear / none
-                            font-family: "Material Icons"; color: Theme.text-muted;
+color: Theme.text-muted;
                             font-size: 22px * Theme.panel-font;
                             width: 100%; height: 100%;
-                            horizontal-alignment: center; vertical-alignment: center;
+
                         }
                     }
                 }
@@ -178,12 +180,13 @@ export component AppearancePage inherits VerticalLayout {
                 if !root.wp-is-custom : Rectangle {
                     width: 100%; height: 100%;
                     background: Theme.bg-elevated;
-                    Text {
+                    IconText {
+                        centered: true;
                         text: "\u{E2C6}"; // folder-open
-                        font-family: "Material Icons"; color: Theme.text-secondary;
+color: Theme.text-secondary;
                         font-size: 22px * Theme.panel-font;
                         width: 100%; height: 100%;
-                        horizontal-alignment: center; vertical-alignment: center;
+
                     }
                 }
             }

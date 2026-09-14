@@ -1,6 +1,7 @@
 import { Theme, AnimationSettings } from "theme.slint";
 import { Sparkline } from "widgets.slint";
 import { Divider, VDivider } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
 
 // One filesystem row for the disk-usage panel.
 export struct DiskInfo {
@@ -89,9 +90,8 @@ component NetGraph inherits VerticalLayout {
 
     HorizontalLayout {
         spacing: 3px;
-        Text {                              // ↑ upload (green)
+        IconText {                              // ↑ upload (green)
             text: "\u{E5D8}";
-            font-family: "Material Icons";
             color: Theme.success;
             font-size: Theme.fs-xs;
             vertical-alignment: center;
@@ -102,9 +102,8 @@ component NetGraph inherits VerticalLayout {
             font-size: Theme.fs-xs;
             vertical-alignment: center;
         }
-        Text {                              // ↓ download (blue)
+        IconText {                              // ↓ download (blue)
             text: "\u{E5DB}";
-            font-family: "Material Icons";
             color: Theme.accent;
             font-size: Theme.fs-xs;
             vertical-alignment: center;
@@ -133,9 +132,8 @@ component NetGraph inherits VerticalLayout {
                     horizontal-stretch: 1;
                     overflow: elide;
                 }
-                Text {
+                IconText {
                     text: "\u{E5CF}";
-                    font-family: "Material Icons";
                     color: Theme.text-muted;
                     font-size: 8px;
                     vertical-alignment: center;
@@ -240,9 +238,10 @@ component StatusBlock inherits Rectangle {
                 border-radius: Theme.radius-sm;
                 background: cl-ta.has-hover ? Theme.bg-hover : transparent;
                 cl-ta := TouchArea { mouse-cursor: pointer; clicked => { root.collapse(); } }
-                Text { text: root.collapse-icon; font-family: "Material Icons";
+                IconText { text: root.collapse-icon;
+                       centered: true;
                        font-size: 14px; color: Theme.text-secondary;
-                       horizontal-alignment: center; vertical-alignment: center; }
+}
             }
         }
         // IP / host line — click to copy (#192). Only interactive when there's a
@@ -327,13 +326,11 @@ component StatsBlock inherits VerticalLayout {
             border-radius: Theme.radius-sm;
             background: info-ta.has-hover ? Theme.bg-hover : transparent;
             info-ta := TouchArea { mouse-cursor: pointer; clicked => { root.show-system-info(); } }
-            Text {
+            IconText {
+                centered: true;
                 text: "\u{E88E}";
-                font-family: "Material Icons";
                 color: Theme.text-secondary;
                 font-size: Theme.fs-sm;
-                horizontal-alignment: center;
-                vertical-alignment: center;
             }
         }
         if root.proc-available : Rectangle {
