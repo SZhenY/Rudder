@@ -42,6 +42,7 @@ import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-w
 import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
 import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
 
@@ -2110,11 +2111,10 @@ export component AppWindow inherits Window {
             spacing: 4px;
             HorizontalLayout {
                 spacing: 8px;
-                Text {
+                Label {
                     text: "🎉 " + @tr("Update available:") + " " + root.update-version;
                     color: #ffffff;
                     font-size: Theme.fs-sm;
-                    font-family: Theme.ui-font-family;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                     overflow: elide;
@@ -2187,11 +2187,10 @@ export component AppWindow inherits Window {
                         background: #ffffff;
                     }
                 }
-                Text {
+                Label {
                     text: root.update-status;
                     color: #ffffff;
                     font-size: Theme.fs-xs;
-                    font-family: Theme.ui-font-family;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                     overflow: elide;
@@ -2275,7 +2274,7 @@ export component AppWindow inherits Window {
                             padding-top: 6px;
                             padding-bottom: 6px;
                             spacing: 8px;
-                            Text {
+                            Label {
                                 text: root.editor-name
                                     + (root.editor-readonly
                                         ? "  ·  " + @tr("Read-only")
@@ -2283,7 +2282,6 @@ export component AppWindow inherits Window {
                                 color: Theme.text-primary;
                                 font-size: Theme.fs-md;
                                 font-weight: 600;
-                                font-family: Theme.ui-font-family;
                                 vertical-alignment: center;
                                 horizontal-stretch: 1;
                                 overflow: elide;
@@ -2409,13 +2407,12 @@ export component AppWindow inherits Window {
                                 width: 48px;
                                 background: Theme.bg-panel-alt;
                                 clip: true;
-                                Text {
+                                Label {
                                     x: 0;
                                     y: ed-scroll.viewport-y + 8px;
                                     width: parent.width - 6px;
                                     text: root.editor-line-numbers;
                                     horizontal-alignment: right;
-                                    font-family: Theme.ui-font-family;
                                     font-size: Theme.fs-md;
                                     color: Theme.text-muted;
                                 }
@@ -3335,8 +3332,8 @@ export component AppWindow inherits Window {
                                         alignment: center;
                                         Text { text: q.name; color: Theme.text-primary; font-size: Theme.fs-sm;
                                                overflow: elide; }
-                                        Text { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
-                                               overflow: elide; font-family: Theme.ui-font-family; }
+                                        Label { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
+                                               overflow: elide;}
                                     }
                                     Rectangle {
                                         width: 24px; height: 28px;
@@ -3718,10 +3715,10 @@ export component AppWindow inherits Window {
                     text: root.lang-en ? "Permissions" : "修改文件权限";
                     color: Theme.text-primary; font-size: Theme.fs-lg; font-weight: 700;
                 }
-                Text {
+                Label {
                     text: root.chmod-name;
                     color: Theme.text-secondary; font-size: Theme.fs-sm;
-                    font-family: Theme.ui-font-family; overflow: elide;
+overflow: elide;
                 }
 
                 for grp in [

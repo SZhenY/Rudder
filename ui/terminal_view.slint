@@ -22,6 +22,7 @@ import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
 import { Divider } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
 // Large CJK fonts are runtime-loaded from the fonts dir (src/fonts.rs), not
 // embedded — the cell-probe falls back to a system font for unregistered
 // external families, which is acceptable for optional user fonts.
@@ -228,10 +229,9 @@ export component QuickDockPanel inherits Rectangle {
                                 font-size: Theme.fs-sm; wrap: word-wrap;
                                 vertical-alignment: center;
                             }
-                            Text {
+                            Label {
                                 text: q.command; color: Theme.text-muted;
                                 font-size: Theme.fs-xs; overflow: elide;
-                                font-family: Theme.ui-font-family;
                                 vertical-alignment: center;
                             }
                         }
@@ -1682,10 +1682,10 @@ export component TerminalView inherits Rectangle {
                                     Text { text: q.name; color: Theme.text-primary; font-size: Theme.fs-sm;
                                            vertical-alignment: center; overflow: elide;
                                            horizontal-stretch: 1; }
-                                    Text { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
+                                    Label { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
                                            vertical-alignment: center; overflow: elide;
                                            horizontal-alignment: right; horizontal-stretch: 1;
-                                           font-family: Theme.ui-font-family; }
+}
                                 }
                                 qpop-ctx-menu := PopupWindow {
                                     x: ctx-x; y: ctx-y; width: 160px;
@@ -1837,11 +1837,10 @@ export component TerminalView inherits Rectangle {
                             }
                             HorizontalLayout {
                                 padding-left: 8px; padding-right: 4px; spacing: 1px;
-                                Text {
+                                Label {
                                     text: h;
                                     color: Theme.text-secondary;
                                     font-size: Theme.fs-sm;
-                                    font-family: Theme.ui-font-family;
                                     vertical-alignment: center;
                                     horizontal-stretch: 1;
                                     overflow: elide;
