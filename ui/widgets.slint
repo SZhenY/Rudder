@@ -12,6 +12,8 @@ export component IconButton inherits Rectangle {
     // for plain ASCII glyphs like "+" / "×".
     in property <string> font-family: "";
     in property <length> size: 28px;
+    // 图标字号。默认 Theme.fs-md 与旧实现逐字一致；welcome 的折叠按钮用 16px。
+    in property <length> glyph-size: Theme.fs-md;
     in property <brush> fg: Theme.text-secondary;
     in property <brush> fg-hover: Theme.text-primary;
     // 图标颜色是否随 hover 变深。工具栏按钮传 false —— 它们的图标色本身带状态语义
@@ -62,7 +64,7 @@ export component IconButton inherits Rectangle {
         states [
             hovered when touch.has-hover && root.tint-on-hover : { color: root.fg-hover; }
         ]
-        font-size: Theme.fs-md;
+        font-size: root.glyph-size;
         horizontal-alignment: center;
         vertical-alignment: center;
     }

@@ -1,5 +1,5 @@
 import { Theme, AnimationSettings } from "theme.slint";
-import { PrimaryButton, GhostButton } from "widgets.slint";
+import { PrimaryButton, GhostButton, IconButton } from "widgets.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Divider } from "components/surfaces.slint";
 
@@ -320,27 +320,6 @@ component SessionRow inherits Rectangle {
     } // card
 }
 
-component CollapseButton inherits Rectangle {
-    in property <string> glyph;
-    callback clicked();
-    width: 24px;
-    height: 24px;
-    border-radius: Theme.radius-sm;
-    background: ta.has-hover ? Theme.bg-hover : transparent;
-    ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-    Text {
-        text: root.glyph;
-        font-family: "Material Icons";
-        color: Theme.text-secondary;
-        font-size: 16px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-}
-
 // --- Welcome ---------------------------------------------------------------
 export component Welcome inherits Rectangle {
     in property <[SessionInfo]> sessions;
@@ -466,7 +445,14 @@ export component Welcome inherits Rectangle {
                     }
                     header-row := HorizontalLayout {
                         spacing: 8px;
-                        if root.compact && root.dock-edge != "left" : CollapseButton {
+                        // 折叠按钮：与工具栏图标按钮同一套实现（IconButton）。
+                        // 注意逐项对齐旧 CollapseButton 的实现细节：24×24、图标 16px、
+                        // 图标色不随 hover 变（所以 tint-on-hover: false）。
+                        if root.compact && root.dock-edge != "left" : IconButton {
+                            size: 24px;
+                            glyph-size: 16px;
+                            font-family: "Material Icons";
+                            tint-on-hover: false;
                             glyph: root.dock-edge == "right" ? "\u{E5CC}"
                                  : root.dock-edge == "top" ? "\u{E5CE}"
                                  : "\u{E5CF}";
@@ -480,7 +466,11 @@ export component Welcome inherits Rectangle {
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                         }
-                        if root.compact && root.dock-edge == "left" : CollapseButton {
+                        if root.compact && root.dock-edge == "left" : IconButton {
+                            size: 24px;
+                            glyph-size: 16px;
+                            font-family: "Material Icons";
+                            tint-on-hover: false;
                             glyph: "\u{E5CB}";
                             clicked => { root.collapse(); }
                         }
