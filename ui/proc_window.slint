@@ -188,6 +188,7 @@ export component ProcWindow inherits Window {
                     background: close-ta.has-hover ? #e81123 : transparent;
                     animate background { duration: 90ms;
             easing: AnimationSettings.color;
+            enabled: AnimationSettings.enabled;
         }
                     close-ta := TouchArea {
                         mouse-cursor: pointer;

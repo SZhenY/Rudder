@@ -21,6 +21,7 @@ export component IconButton inherits Rectangle {
     background: touch.has-hover ? Theme.bg-hover : transparent;
     animate background { duration: 120ms;
             easing: AnimationSettings.color;
+            enabled: AnimationSettings.enabled;
         }
 
     Text {
@@ -53,6 +54,7 @@ export component PrimaryButton inherits Rectangle {
            : (touch.has-hover ? Theme.accent-hover : Theme.accent));
     animate background { duration: 120ms;
             easing: AnimationSettings.color;
+            enabled: AnimationSettings.enabled;
         }
 
     HorizontalLayout {
@@ -89,6 +91,7 @@ export component GhostButton inherits Rectangle {
         : (touch.has-hover ? Theme.bg-hover : Theme.bg-panel);
     animate background, border-color { duration: 120ms;
             easing: AnimationSettings.color;
+            enabled: AnimationSettings.enabled;
         }
 
     HorizontalLayout {

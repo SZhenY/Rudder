@@ -12,6 +12,7 @@ component DangerButton inherits Rectangle {
     background: touch.pressed ? #c44a4a : (touch.has-hover ? #ec6a6a : Theme.danger);
     animate background { duration: 120ms;
             easing: AnimationSettings.color;
+            enabled: AnimationSettings.enabled;
         }
     HorizontalLayout {
         padding-left: 14px;
@@ -63,7 +64,7 @@ export component ConfirmDialog inherits Rectangle {
     opacity: (root.is-open && !root.covered) ? 1 : 0;
     animate opacity {
         duration: 180ms;
-        easing: ease-out;
+        easing: AnimationSettings.color;
         enabled: AnimationSettings.enabled;
     }
     background: #000000aa;

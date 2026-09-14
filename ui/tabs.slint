@@ -38,6 +38,7 @@ component SingleTab inherits Rectangle {
         : (touch.has-hover ? Theme.bg-hover : transparent));
     animate background { duration: 120ms;
             easing: AnimationSettings.color;
+            enabled: AnimationSettings.enabled;
         }
 
     // Declared FIRST so the HorizontalLayout's children (close button) are at
