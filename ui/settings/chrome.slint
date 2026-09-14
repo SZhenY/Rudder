@@ -15,7 +15,11 @@ export component NavItem inherits Rectangle {
     callback clicked();
     height: 30px;
     border-radius: 6px;
-    background: root.active ? Theme.bg-active : (ta.has-hover ? Theme.bg-hover : transparent);
+    background: transparent;
+    states [
+        current when root.active : { background: Theme.bg-active; }
+        hovered when ta.has-hover : { background: Theme.bg-hover; }
+    ]
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -126,8 +130,16 @@ export component CursorStyleButton inherits Rectangle {
     height: 30px;
     border-radius: 6px;
     border-width: 1px;
-    border-color: root.selected ? Theme.accent : Theme.border-subtle;
-    background: root.selected ? Theme.bg-active : (cursor-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated);
+    border-color: Theme.border-subtle;
+    background: Theme.bg-elevated;
+    // 选中态同时改底色与边框色 —— 正是 states 相对三目的优势：一处声明、多属性。
+    states [
+        selected when root.selected : {
+            border-color: Theme.accent;
+            background: Theme.bg-active;
+        }
+        hovered when cursor-ta.has-hover : { background: Theme.bg-hover; }
+    ]
     cursor-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }

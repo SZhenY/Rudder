@@ -9,7 +9,13 @@ component DangerButton inherits Rectangle {
     height: 30px;
     min-width: 80px;
     border-radius: Theme.radius-sm;
-    background: touch.pressed ? #c44a4a : (touch.has-hover ? #ec6a6a : Theme.danger);
+    background: Theme.danger;
+    // 真 3 态（原来是嵌套三目）。**列表靠前者优先**（lower_states.rs:51 逆序折叠）：
+    // pressed > hover > danger 与原文逐字对应。两个色值先原样保留，token 化归 P1。
+    states [
+        held when touch.pressed : { background: #c44a4a; }
+        hovered when touch.has-hover : { background: #ec6a6a; }
+    ]
     animate background { duration: 120ms;
             easing: AnimationSettings.color;
             enabled: AnimationSettings.enabled;
