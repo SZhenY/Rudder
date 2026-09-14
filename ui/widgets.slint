@@ -18,7 +18,11 @@ export component IconButton inherits Rectangle {
     width: size;
     height: size;
     border-radius: Theme.radius-sm;
-    background: touch.has-hover ? Theme.bg-hover : transparent;
+    background: transparent;
+    // hover 是"正交视觉状态"，交给 states 表达（同一组状态被 Text 复用）。
+    states [
+        hovered when touch.has-hover : { background: Theme.bg-hover; }
+    ]
     animate background { duration: 120ms;
             easing: AnimationSettings.color;
             enabled: AnimationSettings.enabled;
@@ -27,7 +31,10 @@ export component IconButton inherits Rectangle {
     Text {
         text: glyph;
         font-family: root.font-family;
-        color: touch.has-hover ? fg-hover : fg;
+        color: root.fg;
+        states [
+            hovered when touch.has-hover : { color: root.fg-hover; }
+        ]
         font-size: Theme.fs-md;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -48,10 +55,14 @@ export component PrimaryButton inherits Rectangle {
     height: 30px;
     min-width: 80px;
     border-radius: Theme.radius-sm;
-    background: disabled
-        ? Theme.bg-elevated
-        : (touch.pressed ? Theme.accent-pressed
-           : (touch.has-hover ? Theme.accent-hover : Theme.accent));
+    background: Theme.accent;
+    // 原为 4 态嵌套三目。**列表靠前者优先**（编译器把 states 逆序折叠成条件，
+    // 见 lower_states.rs）：disabled > pressed > hover，与原语义逐字对应。
+    states [
+        off when disabled : { background: Theme.bg-elevated; }
+        pressed when touch.pressed : { background: Theme.accent-pressed; }
+        hovered when touch.has-hover : { background: Theme.accent-hover; }
+    ]
     animate background { duration: 120ms;
             easing: AnimationSettings.color;
             enabled: AnimationSettings.enabled;
@@ -86,9 +97,15 @@ export component GhostButton inherits Rectangle {
     min-width: 80px;
     border-radius: Theme.radius-sm;
     border-width: 1px;
-    border-color: touch.has-hover ? Theme.border-strong : Theme.border-subtle;
-    background: touch.pressed ? Theme.bg-active
-        : (touch.has-hover ? Theme.bg-hover : Theme.bg-panel);
+    border-color: Theme.border-subtle;
+    background: Theme.bg-panel;
+    states [
+        pressed when touch.pressed : { background: Theme.bg-active; }
+        hovered when touch.has-hover : {
+            border-color: Theme.border-strong;
+            background: Theme.bg-hover;
+        }
+    ]
     animate background, border-color { duration: 120ms;
             easing: AnimationSettings.color;
             enabled: AnimationSettings.enabled;
