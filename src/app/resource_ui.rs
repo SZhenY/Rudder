@@ -109,19 +109,16 @@ pub(super) fn metric_rows(
             label: "CPU".into(),
             percent: cpu,
             detail: "".into(),
-            kind: 0,
         },
         SysMetricRow {
             label: t("内存", "Memory").into(),
             percent: mem,
             detail: mem_detail.into(),
-            kind: 1,
         },
         SysMetricRow {
             label: t("交换", "Swap").into(),
             percent: swap,
             detail: swap_detail.into(),
-            kind: 2,
         },
     ]
 }

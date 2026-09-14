@@ -86,7 +86,6 @@ pub(super) fn refresh_sidebar(
                              mem_detail: SharedString,
                              swap_detail: SharedString,
                              nets: Vec<SysNetRow>,
-                             disks: Vec<DiskInfo>,
                              sys: SystemDetails| {
         if let Some(vm) = win
             .get_sys_metrics()
@@ -101,13 +100,6 @@ pub(super) fn refresh_sidebar(
             .downcast_ref::<VecModel<SysNetRow>>()
         {
             vm.set_vec(nets);
-        }
-        if let Some(vm) = win
-            .get_sys_disks()
-            .as_any()
-            .downcast_ref::<VecModel<DiskInfo>>()
-        {
-            vm.set_vec(disks);
         }
         if let Some(vm) = win
             .get_sys_overview_rows()
@@ -181,7 +173,6 @@ pub(super) fn refresh_sidebar(
                 up: format_bytes_per_sec(snap.net_tx_per_sec).into(),
                 down: format_bytes_per_sec(snap.net_rx_per_sec).into(),
             }],
-            Vec::new(),
             SystemDetails::default(),
         );
     };
@@ -258,7 +249,6 @@ pub(super) fn refresh_sidebar(
                 format_mem(st.mem_used_kib / 1024, st.mem_total_kib / 1024).into(),
                 format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
                 net_rows(&st.net),
-                disk_rows(&st.disks, &mount_filter(), hide_special_partitions()),
                 st.sys.clone(),
             );
         }
@@ -278,7 +268,6 @@ pub(super) fn refresh_sidebar(
                 "".into(),
                 "".into(),
                 Vec::new(),
-                Vec::new(),
                 SystemDetails::default(),
             );
         }
@@ -297,7 +286,6 @@ pub(super) fn refresh_sidebar(
                 0.0,
                 "".into(),
                 "".into(),
-                Vec::new(),
                 Vec::new(),
                 SystemDetails::default(),
             );

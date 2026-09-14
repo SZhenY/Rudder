@@ -481,7 +481,8 @@ export component Sidebar inherits Rectangle {
       : root.dock-edge == "bottom" ? "\u{E5CF}"   // expand_more
       : "\u{E5CB}";                               // chevron_left (left, default)
 
-    width: 220px;
+    // 尺寸由实例化处给出（app.slint 用 parent.width/height）—— 不要在这里写死，
+    // 那会是一条永远被覆盖的死绑定。
     background: Theme.bg-panel;
     border-width: 0;
 

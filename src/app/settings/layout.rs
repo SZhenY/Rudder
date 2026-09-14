@@ -88,7 +88,6 @@ pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     w.set_animations_enabled(s.animations_enabled());
     if collapse_sftp {
         w.set_sftp_collapsed(true);
-        w.set_sftp_saved_height(s.sftp_panel_height());
     }
 }
 

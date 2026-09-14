@@ -453,12 +453,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             }
         });
     }
-    {
-        let terminals_model = terminals_model.clone();
-        window.on_set_pane_sftp_saved_height(move |tab_id: SharedString, v: f32| {
-            update_terminal_row(&terminals_model, &tab_id, |r| r.sftp_saved_height = v);
-        });
-    }
 
     {
         let proc_weak = proc_win.as_weak();

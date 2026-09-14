@@ -1174,7 +1174,6 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                 sftp_collapsed: !has_sftp || sftp_collapsed_default,
                 sftp_panel_height: sftp_h_default,
                 sftp_panel_width: sftp_w_default,
-                sftp_saved_height: sftp_h_default,
             });
             // Create the alacritty-backed terminal for this tab (default
             // 24×80; resized on the first terminal-resize callback). The

@@ -5,7 +5,7 @@
 //
 // 约定：@children 只用于"右侧控件槽"，属性均为 `in`，事件一律用 callback 上抛，
 // 组件内部不持久化任何状态 —— 状态归 Rust 侧 config，"谁拥有状态谁负责写盘"。
-import { AnimationSettings, Theme } from "../theme.slint";
+import { Theme } from "../theme.slint";
 
 // One left-nav row (icon + label).
 export component NavItem inherits Rectangle {

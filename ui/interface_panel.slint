@@ -1,5 +1,4 @@
 // Interface settings content (#23 follow-up).
-import { AnimationSettings } from "theme.slint";
 //
 // Embedded panel (not a window): it lives inside AppWindow's modal overlay, so
 // the settings can't be dragged out of the parent and block input while open —
@@ -8,12 +7,10 @@ import { AnimationSettings } from "theme.slint";
 // of the global UI scale; only the font-preview reflects the real terminal size.
 
 import { Theme } from "theme.slint";
-import { ComboBox, Slider, ScrollView } from "std-widgets.slint";
-import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
+import { ScrollView } from "std-widgets.slint";
 import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
 
-import { NavItem, SectionHeader, SettingRow, Stepper, CursorStyleButton, CursorColorInput, WallpaperSwatch } from "settings/chrome.slint";
-import { Switch } from "std-widgets.slint";
+import { NavItem } from "settings/chrome.slint";
 import { ResetBar } from "settings/reset_bar.slint";
 import { TerminalPage } from "settings/pages/terminal.slint";
 import { AppearancePage } from "settings/pages/appearance.slint";

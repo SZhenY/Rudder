@@ -493,7 +493,6 @@ pub fn run() -> Result<()> {
     window.set_proc_list(ModelRc::from(proc_rows_model.clone()));
     let sys_metrics_model: Rc<VecModel<SysMetricRow>> = Rc::new(VecModel::default());
     let sys_net_rows_model: Rc<VecModel<SysNetRow>> = Rc::new(VecModel::default());
-    let sys_disks_model: Rc<VecModel<DiskInfo>> = Rc::new(VecModel::default());
     let sys_overview_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
     let sys_cpu_info_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
     let sys_gpu_info_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
@@ -504,7 +503,6 @@ pub fn run() -> Result<()> {
     let sys_filesystem_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
     window.set_sys_metrics(ModelRc::from(sys_metrics_model.clone()));
     window.set_sys_net_rows(ModelRc::from(sys_net_rows_model.clone()));
-    window.set_sys_disks(ModelRc::from(sys_disks_model.clone()));
     window.set_sys_overview_rows(ModelRc::from(sys_overview_model.clone()));
     window.set_sys_cpu_info_rows(ModelRc::from(sys_cpu_info_model.clone()));
     window.set_sys_gpu_info_rows(ModelRc::from(sys_gpu_info_model.clone()));
@@ -520,7 +518,6 @@ pub fn run() -> Result<()> {
     sys_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
     sys_win.set_metrics(ModelRc::from(sys_metrics_model.clone()));
     sys_win.set_nets(ModelRc::from(sys_net_rows_model.clone()));
-    sys_win.set_disks(ModelRc::from(sys_disks_model.clone()));
     sys_win.set_overview_rows(ModelRc::from(sys_overview_model.clone()));
     sys_win.set_cpu_info_rows(ModelRc::from(sys_cpu_info_model.clone()));
     sys_win.set_gpu_info_rows(ModelRc::from(sys_gpu_info_model.clone()));

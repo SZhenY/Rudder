@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 import { AnimationSettings } from "theme.slint";
 import { SftpPanel, SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { TabInfo } from "tabs.slint";
-import { DockExpandButton, ToolStrip } from "widgets.slint";
+import { ToolStrip } from "widgets.slint";
 
 // Embed the terminal fonts here too so the cell-probe Text below measures
 // with the CORRECT font (the built-in Meatshell Mono), not a system fallback.
@@ -40,7 +40,6 @@ export struct TermSpan {
     // (curly/dotted/dashed fall back to a single line — Slint has no
     // decorated-line primitives, so the style is approximated)
     underline: int,
-    hidden: bool,   // SGR 8 conceal — text already has alpha 0 from Rust
     strike: bool,   // SGR 9
     overline: bool, // SGR 53 — tracked by the ingest interceptor
     row: int,
@@ -294,11 +293,9 @@ export component TerminalView inherits Rectangle {
     // size + collapse state (resizing/collapsing one no longer affects the others).
     in property <length> sftp-panel-height: 220px;
     in property <length> sftp-panel-width: 380px;     // extent when docked left/right
-    in property <length> sftp-saved-height: 220px;    // height to restore on un-collapse
     in property <bool>   sftp-collapsed: false;       // SFTP panel minimised (toolbar only)
     callback set-sftp-panel-height(length);
     callback set-sftp-panel-width(length);
-    callback set-sftp-saved-height(length);
     callback set-sftp-collapsed(bool);
 
     // --- SFTP docking (within the terminal area) ---------------------------
@@ -316,7 +313,6 @@ export component TerminalView inherits Rectangle {
         : root.sftp-drag-ny < 0.22 ? "top"
         : root.sftp-drag-ny > 0.78 ? "bottom"
         : "";
-    callback persist-sftp-dock(string);
 
     // Command bar (#55): quick commands + input box + history (all shared/global,
     // fed from Rust); send-to-all is a per-tab toggle.
@@ -455,7 +451,6 @@ export component TerminalView inherits Rectangle {
 
     // Drag state (private)
     property <bool>   sftp-dragging:     false;
-    property <length> drag-start-mouse-y: 0px;
 
     // --- Real cell-size measurement ----------------------------------------
     // A hidden Text rendered with the exact terminal font reports the true
@@ -629,17 +624,11 @@ export component TerminalView inherits Rectangle {
         property <length> sf-h-viz: sf-h-taken;
         animate sf-h-viz { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); enabled: AnimationSettings.enabled; }
         property <length> sp:   root.sftp-collapsed ? 0px : 6px;
-        // Reserve room for the SFTP status bar at the bottom so that terminal
-        // content and the command-input bar never visually overlap the SFTP
-        // panel's edge elements.  Non-zero only when SFTP is docked at the
-        // left or right (horizontal) and is expanded.
-        property <length> bottom-strip-h: 0px;
-
         central := Rectangle {
             x: root.sftp-dock == "left" ? parent.sf-taken + parent.sp : 0px;
             y: root.sftp-dock == "top"  ? parent.sf-h-taken + parent.sp : 0px;
             width:  root.sftp-horizontal ? parent.width - parent.sf-taken - parent.sp : parent.width;
-            height: root.sftp-horizontal ? parent.height : parent.height - parent.sf-h-taken - parent.sp - parent.bottom-strip-h;
+            height: root.sftp-horizontal ? parent.height : parent.height - parent.sf-h-taken - parent.sp;
             clip: true;
             VerticalLayout {
             spacing: 0;
@@ -2069,7 +2058,6 @@ export component TerminalView inherits Rectangle {
             dock-drag-end() => {
                 if (root.sftp-dock-target != "") {
                     root.sftp-dock = root.sftp-dock-target;
-                    root.persist-sftp-dock(root.sftp-dock);
                 }
                 root.sftp-panel-dragging = false;
             }

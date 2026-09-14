@@ -4,13 +4,11 @@
 // models with AppWindow, much like ProcWindow shares the process table.
 
 import { Theme } from "theme.slint";
-import { DiskInfo } from "sidebar.slint";
 
 export struct SysMetricRow {
     label: string,
     percent: float,
     detail: string,
-    kind: int, // 0 CPU / 1 memory / 2 swap
 }
 
 export struct SysNetRow {
@@ -180,7 +178,6 @@ export component SystemInfoWindow inherits Window {
     in property <string> connection-state;
     in property <[SysMetricRow]> metrics;
     in property <[SysNetRow]> nets;
-    in property <[DiskInfo]> disks;
     in property <[SysInfoRow]> overview-rows;
     in property <[SysInfoRow]> cpu-info-rows;
     in property <[SysInfoRow]> gpu-info-rows;

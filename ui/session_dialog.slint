@@ -515,6 +515,40 @@ export component SessionDialog inherits Rectangle {
     callback delete-trigger(int /* index */);
     callback pick-key-file();   // open a native file picker for the private key
 
+    // 底部两个按钮（测试连接 / 提交）用的是**同一份 28 字段载荷**，此前各写一遍 ——
+    // 改字段必须改两处，漏一处就是静默丢字段。抽成函数后只有这一处定义。
+    // `pure` = 只读属性、无副作用（Slint 只允许在绑定里调用纯函数）。
+    pure function build-draft() -> SessionDraft {
+        return {
+                id: root.draft-id,
+                name: root.draft-name,
+                kind: root.draft-kind,
+                host: root.draft-host,
+                port: root.draft-port.to-float(),
+                user: root.draft-user,
+                auth: root.draft-auth,
+                password: root.draft-password,
+                private-key-path: root.draft-key-path,
+                private-key-inline: root.draft-key-inline,
+                private-key-inline-mode: root.draft-key-inline-mode,
+                proxy: (root.draft-proxy-type == "none" || root.draft-proxy-hostport == "") ? ""
+                : root.draft-proxy-type == "http" ? "http://" + root.draft-proxy-hostport
+                : "socks5://" + root.draft-proxy-hostport,
+                group: root.draft-group,
+                serial-port: root.draft-serial-port,
+                baud-rate: root.draft-baud.to-float(),
+                data-bits: root.draft-data-bits.to-float(),
+                stop-bits: root.draft-stop-bits.to-float(),
+                parity: root.draft-parity,
+                flow-control: root.draft-flow,
+                encoding: root.draft-encoding,
+                disable-shell-integration: root.draft-disable-shell-integration,
+                note: root.draft-note,
+                jump-session-id: (root.draft-jump-index > 0 && root.draft-jump-index < root.jump-ids.length)
+                ? root.jump-ids[root.draft-jump-index] : "",
+        };
+    }
+
     visible: is-open;
     background: #00000080;
 
@@ -1136,34 +1170,7 @@ export component SessionDialog inherits Rectangle {
                         }
                         root.host-missing = false;
                         root.test-status = @tr("Testing...");
-                        root.test-connection({
-                            id: root.draft-id,
-                            name: root.draft-name,
-                            kind: root.draft-kind,
-                            host: root.draft-host,
-                            port: root.draft-port.to-float(),
-                            user: root.draft-user,
-                            auth: root.draft-auth,
-                            password: root.draft-password,
-                            private-key-path: root.draft-key-path,
-                            private-key-inline: root.draft-key-inline,
-                            private-key-inline-mode: root.draft-key-inline-mode,
-                            proxy: (root.draft-proxy-type == "none" || root.draft-proxy-hostport == "") ? ""
-                                 : root.draft-proxy-type == "http" ? "http://" + root.draft-proxy-hostport
-                                 : "socks5://" + root.draft-proxy-hostport,
-                            group: root.draft-group,
-                            serial-port: root.draft-serial-port,
-                            baud-rate: root.draft-baud.to-float(),
-                            data-bits: root.draft-data-bits.to-float(),
-                            stop-bits: root.draft-stop-bits.to-float(),
-                            parity: root.draft-parity,
-                            flow-control: root.draft-flow,
-                            encoding: root.draft-encoding,
-                            disable-shell-integration: root.draft-disable-shell-integration,
-                            note: root.draft-note,
-                            jump-session-id: (root.draft-jump-index > 0 && root.draft-jump-index < root.jump-ids.length)
-                                ? root.jump-ids[root.draft-jump-index] : "",
-                        });
+                        root.test-connection(root.build-draft());
                     }
                 }
                 if root.test-status != "" : Text {
@@ -1188,34 +1195,7 @@ export component SessionDialog inherits Rectangle {
                             return;
                         }
                         root.host-missing = false;
-                        root.submit({
-                            id: root.draft-id,
-                            name: root.draft-name,
-                            kind: root.draft-kind,
-                            host: root.draft-host,
-                            port: root.draft-port.to-float(),
-                            user: root.draft-user,
-                            auth: root.draft-auth,
-                            password: root.draft-password,
-                            private-key-path: root.draft-key-path,
-                            private-key-inline: root.draft-key-inline,
-                            private-key-inline-mode: root.draft-key-inline-mode,
-                            proxy: (root.draft-proxy-type == "none" || root.draft-proxy-hostport == "") ? ""
-                                 : root.draft-proxy-type == "http" ? "http://" + root.draft-proxy-hostport
-                                 : "socks5://" + root.draft-proxy-hostport,
-                            group: root.draft-group,
-                            serial-port: root.draft-serial-port,
-                            baud-rate: root.draft-baud.to-float(),
-                            data-bits: root.draft-data-bits.to-float(),
-                            stop-bits: root.draft-stop-bits.to-float(),
-                            parity: root.draft-parity,
-                            flow-control: root.draft-flow,
-                            encoding: root.draft-encoding,
-                            disable-shell-integration: root.draft-disable-shell-integration,
-                            note: root.draft-note,
-                            jump-session-id: (root.draft-jump-index > 0 && root.draft-jump-index < root.jump-ids.length)
-                                ? root.jump-ids[root.draft-jump-index] : "",
-                        });
+                        root.submit(root.build-draft());
                     }
                 }
             }
