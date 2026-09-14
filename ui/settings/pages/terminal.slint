@@ -5,7 +5,7 @@
 // 因此可以保持与改造前逐字一致。
 
 import { Theme } from "../../theme.slint";
-import { CursorColorInput, CursorStyleButton, SettingRow, Stepper } from "../chrome.slint";
+import { CursorColorInput, CursorStyleButton, SettingRow, Stepper, SettingSwitch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
 import { OutputRuleItem } from "../types.slint";
@@ -83,14 +83,14 @@ export component TerminalPage inherits VerticalLayout {
                                 changed(v) => { root.set-term-font-size(v); }
                             }
                         }
-                        SettingRow {
+                        SettingSwitch {
                             label: root.lang-en ? "Bold terminal text" : "终端字体加粗";
                             desc: root.lang-en ? "Makes regular terminal output use a bold face."
                                                : "让普通终端输出使用加粗字重。";
-                            Switch {
-                                checked <=> root.term-font-bold;
-                                toggled => { root.set-term-font-bold(root.term-font-bold); }
-                            }
+
+                            checked <=> root.term-font-bold;
+                            toggled(v) => { root.set-term-font-bold(root.term-font-bold); }
+
                         }
                         SettingRow {
                             label: root.lang-en ? "Cursor shape" : "光标类型";
@@ -191,25 +191,25 @@ export component TerminalPage inherits VerticalLayout {
                             wrap: word-wrap;
                         }
                         Rectangle { height: 14px; }
-                        SettingRow {
+                        SettingSwitch {
                             label: root.lang-en ? "Convert LF to CRLF" : "LF 转 CRLF";
                             desc: root.lang-en
                                 ? "Replace \\n with \\r\\n on paste/input for programs that require Windows line endings."
                                 : "粘贴/输入时将 \\n 转为 \\r\\n，兼容需要 Windows 换行符的程序。";
-                            Switch {
-                                checked <=> root.convert-eol;
-                                toggled => { root.set-convert-eol(root.convert-eol); }
-                            }
+
+                            checked <=> root.convert-eol;
+                            toggled(v) => { root.set-convert-eol(root.convert-eol); }
+
                         }
-                        SettingRow {
+                        SettingSwitch {
                             label: root.lang-en ? "OSC 52 clipboard" : "OSC 52 剪贴板";
                             desc: root.lang-en
                                 ? "Allow remote programs (zellij, tmux, vim) to write the local clipboard via OSC 52. Disable for stricter security."
                                 : "允许远程程序 (zellij、tmux、vim) 通过 OSC 52 写入本地剪贴板。关闭可提高安全性。";
-                            Switch {
-                                checked <=> root.osc52-clipboard;
-                                toggled => { root.set-osc52-clipboard(root.osc52-clipboard); }
-                            }
+
+                            checked <=> root.osc52-clipboard;
+                            toggled(v) => { root.set-osc52-clipboard(root.osc52-clipboard); }
+
                         }
                         Rectangle { height: 14px; }
                     }
@@ -219,29 +219,29 @@ export component TerminalPage inherits VerticalLayout {
                         title-zh: "输出高亮";
                         title-en: "OUTPUT HIGHLIGHTING";
                         title-height: 24px;
-                        SettingRow {
+                        SettingSwitch {
                             label: root.lang-en ? "Highlight plain terminal output" : "高亮纯文本终端输出";
                             desc: root.lang-en
                                 ? "Adds client-side colours only when the program did not provide ANSI styling."
                                 : "仅在程序未提供 ANSI 样式时由客户端补充颜色。";
-                            Switch {
-                                checked <=> root.output-highlight-enabled;
-                                toggled => {
-                                root.set-output-highlight(root.output-highlight-enabled, root.output-highlight-preset);
-                                }
+
+                            checked <=> root.output-highlight-enabled;
+                            toggled(v) => {
+                            root.set-output-highlight(root.output-highlight-enabled, root.output-highlight-preset);
                             }
+
                         }
-                        SettingRow {
+                        SettingSwitch {
                             label: root.lang-en ? "Format and colour JSON lines" : "格式化并着色 JSON 行";
                             desc: root.lang-en
                                 ? "Pretty-prints complete single-line JSON output with per-token colours; prompts and partial JSON stay untouched."
                                 : "把完整的单行 JSON 输出美化缩进并按令牌着色；提示符与不完整 JSON 保持原样。";
-                            Switch {
-                                checked <=> root.json-format-output;
-                                toggled => {
-                                root.set-json-format-output(root.json-format-output);
-                                }
+
+                            checked <=> root.json-format-output;
+                            toggled(v) => {
+                            root.set-json-format-output(root.json-format-output);
                             }
+
                         }
                         SettingRow {
                             label: root.lang-en ? "Built-in rule set" : "内置规则集";
@@ -381,23 +381,23 @@ export component TerminalPage inherits VerticalLayout {
                                 }
                             }
                         }
-                        SettingRow {
+                        SettingSwitch {
                             label: root.lang-en ? "Case sensitive" : "区分大小写";
-                            Switch {
-                                checked <=> root.new-rule-case-sensitive;
-                                toggled => {}
-                            }
+
+                            checked <=> root.new-rule-case-sensitive;
+                            toggled(v) => {}
+
                         }
-                        SettingRow {
+                        SettingSwitch {
                             label: root.lang-en ? "Highlight whole line" : "高亮整行";
                             desc: root.lang-en
                                 ? "Otherwise only matching text is coloured."
                                 : "关闭时仅高亮匹配到的文字。";
                             show-divider: false;
-                            Switch {
-                                checked <=> root.new-rule-whole-line;
-                                toggled => {}
-                            }
+
+                            checked <=> root.new-rule-whole-line;
+                            toggled(v) => {}
+
                         }
                         if root.output-highlight-rule-status != "" : Text {
                             text: root.output-highlight-rule-status;

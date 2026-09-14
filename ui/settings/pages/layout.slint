@@ -4,10 +4,9 @@
 // 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
 // 因此可以保持与改造前逐字一致。
 
-import { SettingRow } from "../chrome.slint";
+import { SettingRow, SettingSwitch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
-import { Switch } from "std-widgets.slint";
 
 export component LayoutPage inherits VerticalLayout {
     in-out property <bool> show-cmd-bar;
@@ -34,46 +33,36 @@ export component LayoutPage inherits VerticalLayout {
         title-zh: "侧栏";
         title-en: "SIDEBARS";
         title-height: 24px;
-        SettingRow {
+        SettingSwitch {
             label: root.lang-en ? "Collapse the resource panel by default" : "默认收起资源视图面板";
-            Switch {
-                checked <=> root.collapse-sidebar-default;
-                toggled => { root.set-collapse-sidebar-default(root.collapse-sidebar-default); }
-            }
+            checked <=> root.collapse-sidebar-default;
+            toggled(v) => { root.set-collapse-sidebar-default(v); }
         }
-        SettingRow {
+        SettingSwitch {
             label: root.lang-en ? "Collapse the SFTP panel by default" : "默认收起 SFTP 侧栏";
             desc: root.lang-en
                 ? "Takes effect on next launch; handy on low-spec jump hosts."
                 : "下次启动生效;低配跳板机上可减少常驻面板开销。";
-            Switch {
-                checked <=> root.collapse-sftp-default;
-                toggled => { root.set-collapse-sftp-default(root.collapse-sftp-default); }
-            }
+            checked <=> root.collapse-sftp-default;
+            toggled(v) => { root.set-collapse-sftp-default(v); }
         }
-        SettingRow {
+        SettingSwitch {
             label: root.lang-en ? "Quick commands as a sidebar" : "快捷命令作为侧栏";
             desc: root.lang-en
                 ? "Allows the quick-command popup to be dragged to a window edge. After docking, use the sidebar or its collapsed icon."
                 : "允许把快捷命令弹窗拖到窗口边缘；停靠后通过侧栏或收起图标使用。";
             show-divider: false;
-            Switch {
-                checked <=> root.quick-commands-as-sidebar;
-                toggled => {
-                root.set-quick-commands-as-sidebar(root.quick-commands-as-sidebar);
-                }
-            }
+            checked <=> root.quick-commands-as-sidebar;
+            toggled(v) => { root.set-quick-commands-as-sidebar(v); }
         }
-        SettingRow {
+        SettingSwitch {
             label: root.lang-en ? "Show the welcome page as a sidebar" : "欢迎页设为侧栏";
             desc: root.lang-en
                 ? "Dock the session list on the left instead of a \"New tab\" tab; opened sessions fill the center."
                 : "把会话列表停靠在左侧,不再用「新标签页」标签;打开的会话占据中央区域。";
             show-divider: false;
-            Switch {
-                checked <=> root.welcome-as-sidebar;
-                toggled => { root.set-welcome-as-sidebar(root.welcome-as-sidebar); }
-            }
+            checked <=> root.welcome-as-sidebar;
+            toggled(v) => { root.set-welcome-as-sidebar(v); }
         }
             
     }
@@ -89,16 +78,14 @@ export component LayoutPage inherits VerticalLayout {
         // 开关**默认打开**（= 出厂默认命令栏可见）。整条链路都是正向语义
         // `show-cmd-bar`，只有 config 字段仍是反向的 hide_cmd_bar —— 翻转集中在
         // Rust 侧三处（播种 / 持久化回调 / 还原），UI 侧不出现取反。
-        SettingRow {
+        SettingSwitch {
             label: root.lang-en ? "Show the command bar" : "显示命令栏";
             desc: root.lang-en
                 ? "The strip under the terminal: quick commands and command history. The same switch as the code icon in the top-right toolbar."
                 : "终端下方的输入条：快捷命令与命令历史。与右上角工具栏的代码图标是同一个开关（两边状态同步）。";
             show-divider: false;
-            Switch {
-                checked <=> root.show-cmd-bar;
-                toggled => { root.set-show-cmd-bar(root.show-cmd-bar); }
-            }
+            checked <=> root.show-cmd-bar;
+            toggled(v) => { root.set-show-cmd-bar(v); }
         }
 
         // 还原本页默认（本页最后一个设置项之后）

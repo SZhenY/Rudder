@@ -6,6 +6,7 @@
 // 约定：@children 只用于"右侧控件槽"，属性均为 `in`，事件一律用 callback 上抛，
 // 组件内部不持久化任何状态 —— 状态归 Rust 侧 config，"谁拥有状态谁负责写盘"。
 import { Theme } from "../theme.slint";
+import { Switch } from "std-widgets.slint";
 import { Divider, VDivider } from "../components/surfaces.slint";
 import { IconText } from "../components/text.slint";
 
@@ -73,6 +74,26 @@ export component SettingRow inherits Rectangle {
         if root.show-divider : Divider {}
     }
 }
+
+/// 「说明 + 开关」的设置行：此前每个设置页都手写一遍
+/// `SettingRow { label/desc/show-divider + Switch { checked <=> …; toggled => { … } } }`。
+///
+/// 组件只是 `SettingRow` 加一个 Switch（元素落在基类的 `@children` 槽里），
+/// 因此 `label` / `desc` / `show-divider` 的用法与以前完全一样。
+///
+/// 注意：`Switch.toggled` 在 std-widgets 里是**无参**回调（传参会编译报错），
+/// 所以这里统一由组件把当前值 `root.checked` 转发出来，调用方写
+/// `toggled(v) => { … }` 即可 —— 与旧写法的语义一致。
+export component SettingSwitch inherits SettingRow {
+    in-out property <bool> checked;
+    callback toggled(bool);
+
+    Switch {
+        checked <=> root.checked;
+        toggled => { root.toggled(root.checked); }
+    }
+}
+
 // 注：不再自绘 Switch —— 改用官方 std-widgets 的 `Switch`（`checked` 双向绑定 +
 // `toggled()` 无参回调）。自绘版存在的理由是"on 显示态 + 父级持有状态"，而官方版
 // `checked <=> root.x` 同样满足"状态归 Rust 侧 config"，且外观/无障碍由官方维护。

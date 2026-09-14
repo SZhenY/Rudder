@@ -4,10 +4,9 @@
 // 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
 // 因此可以保持与改造前逐字一致。
 
-import { SettingRow } from "../chrome.slint";
+import { SettingRow, SettingSwitch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
-import { Switch } from "std-widgets.slint";
 
 export component TransferPage inherits VerticalLayout {
     in-out property <bool> download-always-ask;
@@ -27,16 +26,16 @@ export component TransferPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "SFTP";
         title-en: "SFTP";
-        SettingRow {
+        SettingSwitch {
             label: root.lang-en ? "SFTP follows terminal cd" : "SFTP 跟随 cd 更新";
             desc: root.lang-en
                 ? "A cd in the terminal switches the SFTP panel to the same directory."
                 : "终端里执行 cd 时,SFTP 面板自动切到相同目录。";
             show-divider: false;
-            Switch {
-                checked <=> root.sftp-follow-cd;
-                toggled => { root.set-sftp-follow-cd(root.sftp-follow-cd); }
-            }
+
+            checked <=> root.sftp-follow-cd;
+            toggled(v) => { root.set-sftp-follow-cd(root.sftp-follow-cd); }
+
         }
     }
     SettingsSection {
@@ -44,16 +43,16 @@ export component TransferPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "下载";
         title-en: "DOWNLOAD";
-        SettingRow {
+        SettingSwitch {
             label: root.lang-en ? "Always ask where to save" : "总是询问保存去何处";
             desc: root.lang-en
                 ? "Every download prompts for a location instead of using the preset folder."
                 : "每次下载都询问保存位置,而不是直接存到预设下载目录。";
             show-divider: false;
-            Switch {
-                checked <=> root.download-always-ask;
-                toggled => { root.set-download-always-ask(root.download-always-ask); }
-            }
+
+            checked <=> root.download-always-ask;
+            toggled(v) => { root.set-download-always-ask(root.download-always-ask); }
+
         }
     }
             

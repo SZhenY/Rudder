@@ -5,10 +5,10 @@
 // 因此可以保持与改造前逐字一致。
 
 import { Theme, AnimationSettings } from "../../theme.slint";
-import { SettingRow, Stepper, WallpaperSwatch } from "../chrome.slint";
+import { SettingRow, Stepper, WallpaperSwatch, SettingSwitch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
-import { ComboBox, ScrollView, Slider, Switch } from "std-widgets.slint";
+import { ComboBox, ScrollView, Slider } from "std-widgets.slint";
 import { IconText } from "../../components/text.slint";
 
 export component AppearancePage inherits VerticalLayout {
@@ -329,19 +329,19 @@ color: Theme.text-secondary;
             wrap: word-wrap;
         }
         Rectangle { height: 12px; }
-        SettingRow {
+        SettingSwitch {
             show-divider: false;
             label: root.lang-en ? "Animations" : "动画";
             desc: root.lang-en
                 ? "Enable or disable all sidebar and panel animations."
                 : "启用或禁用所有侧边栏和面板动画。";
-            Switch {
-                checked <=> AnimationSettings.enabled;
-                toggled => {
-                    // 持久化：此前这个开关只改 Slint 全局，重启即回。
-                    root.set-animations-enabled(AnimationSettings.enabled);
-                }
+
+            checked <=> AnimationSettings.enabled;
+            toggled(v) => {
+                // 持久化：此前这个开关只改 Slint 全局，重启即回。
+                root.set-animations-enabled(AnimationSettings.enabled);
             }
+
         }
         SettingRow {
             label: root.lang-en ? "UI scale" : "界面缩放";
@@ -364,15 +364,15 @@ color: Theme.text-secondary;
         }
 
         Rectangle { height: 14px; }
-        SettingRow {
+        SettingSwitch {
             label: root.lang-en ? "Hide special partitions" : "隐藏特殊分区";
             desc: root.lang-en
                 ? "Hide EFI / swap / temporary pseudo-file-systems and very small partitions in the resource panel."
                 : "在资源面板中隐藏 EFI / swap / 临时文件系统等伪分区，避免误导。";
-            Switch {
-                checked <=> root.hide-special-partitions;
-                toggled => { root.set-hide-special-partitions(root.hide-special-partitions); }
-            }
+
+            checked <=> root.hide-special-partitions;
+            toggled(v) => { root.set-hide-special-partitions(root.hide-special-partitions); }
+
         }
         SettingRow {
             label: root.lang-en ? "Mount filter" : "挂载点过滤";
