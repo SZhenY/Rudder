@@ -82,6 +82,10 @@ pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     w.set_welcome_sidebar_dock(welcome_sidebar_dock.into());
     w.set_welcome_collapsed(welcome_collapsed);
     w.set_sidebar_collapsed(sidebar_collapsed);
+    // 命令栏显隐：与工具栏图标共用同一个窗口属性 —— 必须从 config 推回 UI，
+    // 否则「还原本页默认」只改了 config，界面（含工具栏图标）停在旧状态，
+    // 表现为"点了还原没有任何反应"。
+    w.set_show_cmd_bar(!s.cmd_bar_hidden());
     w.set_wallpaper_overlay(s.wallpaper_overlay());
     w.set_update_check_enabled(s.update_check_enabled()); // #184
     // 动画开关此前是 Slint-only 全局、从不持久化；现在与其它偏好一样由 config 驱动。
@@ -109,9 +113,11 @@ pub(crate) fn bind(
 
     {
         let store = store.clone();
-        window.on_set_cmd_bar_hidden(move |hidden| {
+        // UI 传上来的是正向值（显示与否），config 存反向 —— 翻转只在这里与
+        // apply_layout_prefs / settings_ui 播种三处。
+        window.on_set_show_cmd_bar(move |shown| {
             persist(&store, |s| {
-                s.set_cmd_bar_hidden(hidden);
+                s.set_cmd_bar_hidden(!shown);
             });
         });
     }
@@ -274,6 +280,10 @@ pub(crate) fn bind(
 /// 注：侧栏宽度是拖拽产生的交互状态（设置页无对应控件），不纳入还原。
 pub(crate) fn reset(w: &AppWindow, store: &Store, panes: &PaneHandles) {
     let d = crate::config::ConfigFile::default();
+    // 命令栏：与工具栏图标共用同一个窗口属性，还原必须立即回推 UI，
+    // 否则只改了 config、界面停在旧状态（用户报告的"点还原没反应"）。
+    // 本页属性名 show-cmd-bar（正向），config 仍是 hide_cmd_bar（反向）。
+    w.set_show_cmd_bar(!d.layout.hide_cmd_bar);
     {
         persist(store, |s| {
             s.set_welcome_as_sidebar(d.layout.welcome_as_sidebar);

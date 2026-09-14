@@ -591,8 +591,10 @@ export component AppWindow inherits Window {
     in-out property <bool> sftp-follow-cd: true;
     callback set-sftp-follow-cd(bool);             // apply + persist
     // Hide the quick-command bar under the terminal; toolbar toggle persists it.
-    in-out property <bool> cmd-bar-hidden: false;
-    callback set-cmd-bar-hidden(bool);             // apply + persist
+    // 终端底部命令栏的可见性。**正向语义**（true = 显示），出厂默认 true。
+    // 配置里存的是反向的 hide_cmd_bar，翻转只在 Rust 侧（见 settings/layout.rs）。
+    in-out property <bool> show-cmd-bar: true;
+    callback set-show-cmd-bar(bool);               // apply + persist
     // Zen (focus) mode: hide the sidebar and tab strip for a distraction-free
     // terminal. Toggled by Ctrl+Alt+Z (⌘⌥Z on macOS) and persisted.
     in-out property <bool> zen-mode: false;
@@ -1715,7 +1717,7 @@ export component AppWindow inherits Window {
                     // 此前误绑 quick-panel-open：布局还原把 as-sidebar 关掉之后，
                     // 侧栏消失而入口按钮仍被隐藏，快捷命令就彻底无法访问了。
                     quick-panel-docked: root.quick-commands-as-sidebar && root.quick-panel-open;
-                    cmd-bar-hidden: root.cmd-bar-hidden;
+                    cmd-bar-hidden: !root.show-cmd-bar;
                     // Per-session zoom override wins over the global size.
                     term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : root.term-font-size / 1px;
                     quick-external-command: root.quick-external-command;
@@ -2054,12 +2056,12 @@ export component AppWindow inherits Window {
     IconBtn {
         x: root.width - 154px - root.toolbar-x-off; y: root.toolbar-y;
         icon: "\u{E86F}";   // Material "code" — command bar
-        icon-color: root.cmd-bar-hidden ? Theme.text-secondary : Theme.accent;
-        active: !root.cmd-bar-hidden;
+        icon-color: root.show-cmd-bar ? Theme.accent : Theme.text-secondary;
+        active: root.show-cmd-bar;
         tooltip: root.lang-en
-            ? (root.cmd-bar-hidden ? "Show command bar" : "Hide command bar")
-            : (root.cmd-bar-hidden ? "显示命令栏" : "隐藏命令栏");
-        clicked => { root.cmd-bar-hidden = !root.cmd-bar-hidden; root.set-cmd-bar-hidden(root.cmd-bar-hidden); }
+            ? (root.show-cmd-bar ? "Hide command bar" : "Show command bar")
+            : (root.show-cmd-bar ? "隐藏命令栏" : "显示命令栏");
+        clicked => { root.show-cmd-bar = !root.show-cmd-bar; root.set-show-cmd-bar(root.show-cmd-bar); }
     }
 
     // Frameless resize edges (#119): thin hit-zones that start an OS-level
@@ -4550,7 +4552,7 @@ export component AppWindow inherits Window {
                     ui-scale: root.ui-scale;
                     sftp-follow-cd <=> root.sftp-follow-cd;
                     collapse-sidebar-default <=> root.collapse-sidebar-default;
-                    cmd-bar-hidden <=> root.cmd-bar-hidden;
+                    show-cmd-bar <=> root.show-cmd-bar;
                     collapse-sftp-default <=> root.collapse-sftp-default;
                     sync-upload-enabled <=> root.sync-upload-enabled;
                     webdav-enabled <=> root.webdav-enabled;
@@ -4614,7 +4616,7 @@ export component AppWindow inherits Window {
                     webdav-download => { root.webdav-download(); }
                     set-download-always-ask(v) => { root.set-download-always-ask(v); }
                     set-welcome-as-sidebar(v) => { root.set-welcome-as-sidebar(v); }
-                    set-cmd-bar-hidden(v) => { root.set-cmd-bar-hidden(v); }
+                    set-show-cmd-bar(v) => { root.set-show-cmd-bar(v); }
                     set-quick-commands-as-sidebar(v) => {
                         root.quick-commands-as-sidebar = v;
                         if (!v) {

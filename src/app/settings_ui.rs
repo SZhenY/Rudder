@@ -243,7 +243,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
 
 
     // Toolbar toggle: hide/show the quick-command bar (persisted globally).
-    window.set_cmd_bar_hidden(store.borrow().cmd_bar_hidden());
+    // 配置存的是 hide_cmd_bar（反向），UI 属性是正向的 show-cmd-bar。
+    window.set_show_cmd_bar(!store.borrow().cmd_bar_hidden());
 
 
     // Zen (focus) mode: sidebar + tab strip hidden, persisted across launches.

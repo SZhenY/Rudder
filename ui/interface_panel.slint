@@ -56,7 +56,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> download-always-ask;
     in-out property <bool> welcome-as-sidebar;
     in-out property <bool> quick-commands-as-sidebar;
-    in-out property <bool> cmd-bar-hidden;
+    in-out property <bool> show-cmd-bar;
     in-out property <bool> update-check-enabled;
     // Manual "check now" button next to the startup toggle (#self-update).
     in property <string> update-check-status;
@@ -110,7 +110,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-download-always-ask(bool);
     callback set-welcome-as-sidebar(bool);
     callback set-quick-commands-as-sidebar(bool);
-    callback set-cmd-bar-hidden(bool);
+    callback set-show-cmd-bar(bool);
     callback set-update-check-enabled(bool);   // startup new-version check (#184)
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
     callback set-wallpaper(string);    // none / builtin selection
@@ -267,14 +267,14 @@ export component InterfacePanel inherits Rectangle {
                 }
 
                 if root.ifd-page == "layout" : LayoutPage {
-                    cmd-bar-hidden <=> root.cmd-bar-hidden;
+                    show-cmd-bar <=> root.show-cmd-bar;
                     collapse-sftp-default <=> root.collapse-sftp-default;
                     collapse-sidebar-default <=> root.collapse-sidebar-default;
                     lang-en: root.lang-en;
                     quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
                     welcome-as-sidebar <=> root.welcome-as-sidebar;
                     reset-page(a0) => { root.reset-page(a0); }
-                    set-cmd-bar-hidden(a0) => { root.set-cmd-bar-hidden(a0); }
+                    set-show-cmd-bar(a0) => { root.set-show-cmd-bar(a0); }
                     set-collapse-sftp-default(a0) => { root.set-collapse-sftp-default(a0); }
                     set-collapse-sidebar-default(a0) => { root.set-collapse-sidebar-default(a0); }
                     set-quick-commands-as-sidebar(a0) => { root.set-quick-commands-as-sidebar(a0); }
