@@ -29,7 +29,7 @@ import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
-import { LabeledInput, PrimaryButton, GhostButton, ToolStrip } from "widgets.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
@@ -152,93 +152,6 @@ component WinBtn inherits Rectangle {
         font-size: 16px;
         horizontal-alignment: center;
         vertical-alignment: center;
-    }
-}
-
-component IconBtn inherits Rectangle {
-    in property <string> icon;
-    in property <brush> icon-color: Theme.text-secondary;
-    in property <string> tooltip;
-    in property <bool> active;
-    // `breathe=true` adds a separate pulse layer underneath the icon, used by
-    // the Transfers button to signal in-flight transfers without breaking the
-    // icon's silhouette. Hover/active and breathe are rendered on two
-    // independent layers: a single combined background expression with a
-    // looping animation would keep pulsing on every `active=true` button (any
-    // toolbar button with its popup open), making the toolbar look like it is
-    // always breathing.
-    in property <bool> breathe: false;
-    callback clicked();
-    width: 26px;
-    height: 26px;
-    border-radius: Theme.radius-sm;
-    // Base stays transparent; the two layers below paint onto this.
-    background: transparent;
-
-    // Layer 1 — static hover/active background (no animation, no looping).
-    static-bg := Rectangle {
-        x: 0px; y: 0px;
-        width: 100%; height: 100%;
-        border-radius: Theme.radius-sm;
-        background: ta.has-hover || root.active ? Theme.bg-hover : transparent;
-    }
-
-    // Layer 2 — breathing pulse, only while `breathe=true`. Tinted with the
-    // accent so the pulse stays visible even when Layer 1 also paints
-    // bg-hover for an open popup, and follows the active theme.
-    //
-    // `visible` + `opacity` binding instead of `if root.breathe {…}`: Slint's
-    // `animate` only fires on a property change of an already-alive element,
-    // so an `if`-created layer would appear with its initial opacity already
-    // set and never animate. Flipping opacity 0 → 0.55 is a change, which
-    // starts the loop; `visible` hides the layer again once transfers end.
-    breathe-layer := Rectangle {
-        x: 0px; y: 0px;
-        width: 100%; height: 100%;
-        border-radius: Theme.radius-sm;
-        background: Theme.accent;
-        visible: root.breathe;
-        opacity: root.breathe ? 0.55 : 0;
-        animate opacity {
-            duration: 1400ms;
-            iteration-count: -1;
-            direction: alternate;
-            easing: AnimationSettings.breathing;
-            enabled: AnimationSettings.enabled;
-        }
-    }
-    ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-    Text {
-        text: root.icon;
-        font-family: "Material Icons";
-        color: root.icon-color;
-        font-size: Theme.fs-md;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-    if ta.has-hover && root.tooltip != "" : Rectangle {
-        y: parent.height + 5px;
-        x: parent.width - self.width;   // align right edge with the icon
-        width: tip-txt.preferred-width + 16px;
-        height: 22px;
-        background: Theme.bg-elevated;
-        border-radius: Theme.radius-sm;
-        border-width: 1px;
-        border-color: Theme.border-strong;
-        drop-shadow-blur: 8px;
-        drop-shadow-color: #00000070;
-        tip-txt := Text {
-            text: root.tooltip;
-            color: Theme.text-primary;
-            font-size: Theme.fs-xs;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width;
-            height: parent.height;
-        }
     }
 }
 
@@ -2044,43 +1957,58 @@ export component AppWindow inherits Window {
     // App toolbar icons (settings/download/theme/sync). They sit at the top-right
     // of the tab row — below the custom title bar when frameless (y offset), or
     // at the very top on macOS where the native title bar is separate (#119).
-    IconBtn {
+    IconButton {
         x: root.width - 34px - root.toolbar-x-off; y: root.toolbar-y;
-        icon: "\u{E8B8}";
+        size: 26px;
+        font-family: "Material Icons";
+        tint-on-hover: false;
+        glyph: "\u{E8B8}";
         tooltip: root.lang-en ? "Settings" : "设置";
         active: root.settings-open;
         clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.ssh-import-hint = ""; }
     }
-    IconBtn {
+    IconButton {
         x: root.width - 64px - root.toolbar-x-off; y: root.toolbar-y;
-        icon: "\u{E5D5}";   // swap_vert — transfer manager (up/down)
+        size: 26px;
+        font-family: "Material Icons";
+        tint-on-hover: false;
+        glyph: "\u{E5D5}";   // swap_vert — transfer manager (up/down)
         tooltip: root.lang-en ? "Transfers manager" : "传输管理";
         active: root.download-open;
         // Breathe while any transfer is running (driven from Rust).
         breathe: root.has-active-transfers;
         clicked => { root.download-open = !root.download-open; root.settings-open = false; }
     }
-    IconBtn {
+    IconButton {
         x: root.width - 94px - root.toolbar-x-off; y: root.toolbar-y;
-        icon: Theme.dark ? "\u{E518}" : "\u{E51C}";
-        icon-color: Theme.dark ? #f5c542 : #5856d6;
+        size: 26px;
+        font-family: "Material Icons";
+        tint-on-hover: false;
+        glyph: Theme.dark ? "\u{E518}" : "\u{E51C}";
+        fg: Theme.dark ? #f5c542 : #5856d6;
         tooltip: root.lang-en ? "Toggle theme" : "切换主题";
         clicked => { root.toggle-theme(); }
     }
-    IconBtn {
+    IconButton {
         x: root.width - 124px - root.toolbar-x-off; y: root.toolbar-y;
-        icon: "\u{E627}";
-        icon-color: root.sync-input ? Theme.accent : Theme.text-secondary;
+        size: 26px;
+        font-family: "Material Icons";
+        tint-on-hover: false;
+        glyph: "\u{E627}";
+        fg: root.sync-input ? Theme.accent : Theme.text-secondary;
         active: root.sync-input;
         tooltip: root.lang-en
             ? (root.sync-input ? "Sync input: ON" : "Sync input")
             : (root.sync-input ? "会话同步：开" : "会话同步");
         clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
     }
-    IconBtn {
+    IconButton {
         x: root.width - 154px - root.toolbar-x-off; y: root.toolbar-y;
-        icon: "\u{E86F}";   // Material "code" — command bar
-        icon-color: root.show-cmd-bar ? Theme.accent : Theme.text-secondary;
+        size: 26px;
+        font-family: "Material Icons";
+        tint-on-hover: false;
+        glyph: "\u{E86F}";   // Material "code" — command bar
+        fg: root.show-cmd-bar ? Theme.accent : Theme.text-secondary;
         active: root.show-cmd-bar;
         tooltip: root.lang-en
             ? (root.show-cmd-bar ? "Hide command bar" : "Show command bar")

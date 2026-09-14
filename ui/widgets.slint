@@ -14,6 +14,13 @@ export component IconButton inherits Rectangle {
     in property <length> size: 28px;
     in property <brush> fg: Theme.text-secondary;
     in property <brush> fg-hover: Theme.text-primary;
+    // 图标颜色是否随 hover 变深。工具栏按钮传 false —— 它们的图标色本身带状态语义
+    // （主题按钮的日/月配色、命令栏按钮的 accent 高亮），不该被 hover 覆盖。
+    in property <bool> tint-on-hover: true;
+    // 常亮：用于「这个按钮对应的面板正开着」。与 hover 共用同一个底色层。
+    in property <bool> active: false;
+    // 呼吸脉冲：用于「有进行中的传输」这类需要持续提示的按钮。
+    in property <bool> breathe: false;
     callback clicked();
 
     width: size;
@@ -22,19 +29,38 @@ export component IconButton inherits Rectangle {
     background: transparent;
     // hover 是"正交视觉状态"，交给 states 表达（同一组状态被 Text 复用）。
     states [
-        hovered when touch.has-hover : { background: Theme.bg-hover; }
+        lit when touch.has-hover || root.active : { background: Theme.bg-hover; }
     ]
     animate background { duration: 120ms;
             easing: AnimationSettings.color;
             enabled: AnimationSettings.enabled;
         }
 
+    // 脉冲层（移植自 app.slint 的本地 IconBtn）。⚠️ 必须用 `visible` + `opacity` 翻转，
+    // **不能**写成 `if root.breathe { … }`：Slint 的 animate 只在**已存在**元素的属性变化时
+    // 触发，`if` 新建的层会带着初始 opacity 出现、永远不动（原注释记录了这一点）。
+    breathe-layer := Rectangle {
+        x: 0px; y: 0px;
+        width: 100%; height: 100%;
+        border-radius: Theme.radius-sm;
+        background: Theme.accent;
+        visible: root.breathe;
+        opacity: root.breathe ? 0.55 : 0;
+        animate opacity {
+            duration: 1400ms;
+            iteration-count: -1;
+            direction: alternate;
+            easing: AnimationSettings.breathing;
+            enabled: AnimationSettings.enabled;
+        }
+    }
+
     Text {
         text: glyph;
         font-family: root.font-family;
         color: root.fg;
         states [
-            hovered when touch.has-hover : { color: root.fg-hover; }
+            hovered when touch.has-hover && root.tint-on-hover : { color: root.fg-hover; }
         ]
         font-size: Theme.fs-md;
         horizontal-alignment: center;
@@ -44,6 +70,30 @@ export component IconButton inherits Rectangle {
     touch := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
+    }
+
+    // tooltip 气泡（移植自 IconBtn）。此前 `tooltip` 是**声明了但从未渲染**的死属性 ——
+    // tabs.slint 的 5 个用法都没传它，所以补上渲染对它们零影响。
+    if touch.has-hover && root.tooltip != "" : Rectangle {
+        y: parent.height + 5px;
+        x: parent.width - self.width;   // 右边缘与图标对齐
+        width: tip-txt.preferred-width + 16px;
+        height: 22px;
+        background: Theme.bg-elevated;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #00000070;
+        tip-txt := Text {
+            text: root.tooltip;
+            color: Theme.text-primary;
+            font-size: Theme.fs-xs;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
     }
 }
 
