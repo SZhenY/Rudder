@@ -39,6 +39,7 @@ import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
 export { ProcWindow, SystemInfoWindow }
 import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
 
@@ -1059,11 +1060,7 @@ export component AppWindow inherits Window {
                 }
                 VerticalLayout {
                     alignment: center;
-                    Text {
-                        text: "Rudder";
-                        color: Theme.text-secondary;
-                        font-size: Theme.fs-sm;
-                    }
+                    FieldLabel { text: "Rudder"; }
                 }
                 // Draggable spacer (no TouchArea → clicks fall to tb-drag).
                 Rectangle { horizontal-stretch: 1; }
@@ -2387,7 +2384,7 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    Rectangle { height: 1px; background: Theme.border-subtle; }
+                    Divider {}
 
                     // Lightweight find/replace bar (#287). Replacement is
                     // explicit; closing the editor never writes the file.
@@ -2475,7 +2472,7 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    Rectangle { height: 1px; background: Theme.border-subtle; }
+                    Divider {}
 
                     // Text area: a line-number gutter on the left + the editor.
                     // word-wrap is OFF so one logical line == one display line and
@@ -2502,7 +2499,7 @@ export component AppWindow inherits Window {
                                     color: Theme.text-muted;
                                 }
                             }
-                            Rectangle { width: 1px; background: Theme.border-subtle; }
+                            VDivider {}
                             // Clip the editing area so text and selection
                             // painting cannot spill past the panel edge (#387).
                             editor-viewport := Rectangle {
@@ -2740,11 +2737,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-                Text {
-                    text: @tr("Save downloads to:");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Save downloads to:"); }
 
                 // Current path display
                 Rectangle {
@@ -2791,7 +2784,7 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                Rectangle { height: 1px; background: Theme.border-subtle; }
+                Divider {}
 
                 // Transfer records (download/upload progress + history).
                 HorizontalLayout {
@@ -3154,11 +3147,7 @@ export component AppWindow inherits Window {
                     font-size: Theme.fs-lg;
                     font-weight: 700;
                 }
-                Text {
-                    text: @tr("Group name");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Group name"); }
                 ge-input := LineEdit {
                     text <=> root.group-dialog-name;
                     font-family: Theme.ui-font-family; // CJK-capable (#54)
@@ -3337,7 +3326,7 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                Rectangle { height: 1px; background: Theme.border-subtle; }
+                Divider {}
 
                 // Existing commands list with delete buttons.
                 Flickable {
@@ -3504,7 +3493,7 @@ export component AppWindow inherits Window {
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Delete"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
-                                            Rectangle { height: 1px; background: Theme.border-subtle; }
+                                            Divider {}
                                             HorizontalLayout { padding-left: 10px; padding-top: 2px; spacing: 6px;
                                                 Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
                                                 Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; } }
@@ -4573,7 +4562,7 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
-                Rectangle { height: 1px; background: Theme.border-subtle; }
+                Divider {}
 
                 InterfacePanel {
                     vertical-stretch: 1;

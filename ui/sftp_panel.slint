@@ -1,6 +1,7 @@
 ﻿import { Theme } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { TabInfo } from "tabs.slint";
+import { Divider, VDivider } from "components/surfaces.slint";
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -555,7 +556,7 @@ export component SftpPanel inherits Rectangle {
                         height: parent.height;
                     }
                 }
-                Rectangle { height: 1px; background: Theme.border-subtle; }
+                Divider {}
 
                 // Tree list with scrollbar
                 ScrollView {
@@ -614,7 +615,7 @@ export component SftpPanel inherits Rectangle {
             }
 
             // Vertical separator (only when the tree is shown)
-            if root.show-tree : Rectangle { width: 1px; background: Theme.border-subtle; }
+            if root.show-tree : VDivider {}
 
             // ── Right: file listing ─────────────────────────────────────────
             VerticalLayout {
@@ -677,7 +678,7 @@ export component SftpPanel inherits Rectangle {
                         }
                     }
                 }
-                Rectangle { height: 1px; background: Theme.border-subtle; }
+                Divider {}
 
                 // File list. The area fills the panel height so right-click works
                 // on the whitespace below the rows too (#84); the single menu
@@ -922,7 +923,7 @@ export component SftpPanel inherits Rectangle {
                                     enabled: root.menu-target != "";
                                     clicked => { root.delete(root.menu-target); }
                                 }
-                                Rectangle { height: 1px; background: Theme.border-subtle; }
+                                Divider {}
                                 SftpMenuItem {
                                     label: @tr("New folder");
                                     clicked => { root.new-folder(root.current-path); }
@@ -1025,7 +1026,7 @@ export component SftpPanel inherits Rectangle {
                         }
                     }
 
-                    Rectangle { height: 1px; background: Theme.border-subtle; }
+                    Divider {}
 
                     if root.tunnels.length == 0 : Rectangle {
                         height: 36px;

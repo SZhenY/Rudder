@@ -6,6 +6,7 @@
 // 约定：@children 只用于"右侧控件槽"，属性均为 `in`，事件一律用 callback 上抛，
 // 组件内部不持久化任何状态 —— 状态归 Rust 侧 config，"谁拥有状态谁负责写盘"。
 import { Theme } from "../theme.slint";
+import { Divider, VDivider } from "../components/surfaces.slint";
 
 // One left-nav row (icon + label).
 export component NavItem inherits Rectangle {
@@ -68,7 +69,7 @@ export component SettingRow inherits Rectangle {
                 @children
             }
         }
-        if root.show-divider : Rectangle { height: 1px; background: Theme.border-subtle; }
+        if root.show-divider : Divider {}
     }
 }
 // 注：不再自绘 Switch —— 改用官方 std-widgets 的 `Switch`（`checked` 双向绑定 +
@@ -102,11 +103,11 @@ export component Stepper inherits Rectangle {
             Text { text: "\u{E15B}"; font-family: "Material Icons"; font-size: 14px * Theme.panel-font;
                    color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
         }
-        Rectangle { width: 1px; background: Theme.border-subtle; }
+        VDivider {}
         Text { text: root.value + root.unit; horizontal-stretch: 1;
                font-size: 12px * Theme.panel-font; color: Theme.text-primary;
                horizontal-alignment: center; vertical-alignment: center; }
-        Rectangle { width: 1px; background: Theme.border-subtle; }
+        VDivider {}
         Rectangle {
             width: 30px;
             background: plus-ta.has-hover ? Theme.bg-hover : transparent;

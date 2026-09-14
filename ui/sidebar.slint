@@ -1,5 +1,6 @@
 import { Theme, AnimationSettings } from "theme.slint";
 import { Sparkline } from "widgets.slint";
+import { Divider, VDivider } from "components/surfaces.slint";
 
 // One filesystem row for the disk-usage panel.
 export struct DiskInfo {
@@ -526,7 +527,7 @@ export component Sidebar inherits Rectangle {
                 collapse() => { root.toggle-collapse(); }
                 copy-host(h) => { root.copy-host(h); }
             }
-            Rectangle { height: 1px; background: Theme.border-subtle; }
+            Divider {}
             StatsBlock {
                 resource-title: root.resource-title;
                 system-info-available: root.system-info-available;
@@ -536,14 +537,14 @@ export component Sidebar inherits Rectangle {
                 show-system-info() => { root.show-system-info(); }
                 show-processes() => { root.show-processes(); }
             }
-            Rectangle { height: 1px; background: Theme.border-subtle; }
+            Divider {}
             NetBlock {
                 net-top-up: root.net-top-up; net-top-down: root.net-top-down; net-top-history: root.net-top-history;
                 net-show-selector: root.net-show-selector; net-ifaces: root.net-ifaces; net-selected: root.net-selected;
                 net-bot-up: root.net-bot-up; net-bot-down: root.net-bot-down; net-bot-history: root.net-bot-history;
                 select-net-iface(i) => { root.select-net-iface(i); }
             }
-            Rectangle { height: 1px; background: Theme.border-subtle; }
+            Divider {}
             DiskBlock { vertical-stretch: 1; disks: root.disks; }
             Text {
                 text: "Rudder v" + root.app-version;
@@ -593,7 +594,7 @@ export component Sidebar inherits Rectangle {
                     show-processes() => { root.show-processes(); }
                 }
             }
-            Rectangle { width: 1px; background: Theme.border-subtle; }
+            VDivider {}
             NetBlock {
                 min-width: 220px;
                 net-top-up: root.net-top-up; net-top-down: root.net-top-down; net-top-history: root.net-top-history;
@@ -601,7 +602,7 @@ export component Sidebar inherits Rectangle {
                 net-bot-up: root.net-bot-up; net-bot-down: root.net-bot-down; net-bot-history: root.net-bot-history;
                 select-net-iface(i) => { root.select-net-iface(i); }
             }
-            Rectangle { width: 1px; background: Theme.border-subtle; }
+            VDivider {}
             DiskBlock { horizontal-stretch: 1; disks: root.disks; }
         }
     }

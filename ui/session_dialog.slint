@@ -1,6 +1,7 @@
 import { Theme } from "theme.slint";
 import { ComboBox } from "std-widgets.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
+import { FieldLabel, HelpText } from "components/surfaces.slint";
 
 // One SSH port-forward row shown in the session dialog (#56). `summary` is a
 // ready-to-display line like "-L 127.0.0.1:8080 → host:80".
@@ -275,11 +276,7 @@ component GroupCombo inherits VerticalLayout {
     in property <[string]> groups;       // existing group names
     spacing: 4px;
 
-    Text {
-        text: root.label;
-        color: Theme.text-secondary;
-        font-size: Theme.fs-sm;
-    }
+    FieldLabel { text: root.label; }
 
     Rectangle {
         height: 32px;
@@ -378,11 +375,7 @@ component JumpCombo inherits VerticalLayout {
     in-out property <int> selected-index: 0;
     spacing: 4px;
 
-    Text {
-        text: root.label;
-        color: Theme.text-secondary;
-        font-size: Theme.fs-sm;
-    }
+    FieldLabel { text: root.label; }
 
     Rectangle {
         height: 32px;
@@ -648,11 +641,7 @@ export component SessionDialog inherits Rectangle {
             // Connection type selector (always shown).
             VerticalLayout {
                 spacing: 4px;
-                Text {
-                    text: @tr("Connection type");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Connection type"); }
                 HorizontalLayout {
                     spacing: 6px;
                     SegOption {
@@ -749,11 +738,7 @@ export component SessionDialog inherits Rectangle {
 
             if root.draft-kind == "ssh" : VerticalLayout {
                 spacing: 4px;
-                Text {
-                    text: @tr("Authentication");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Authentication"); }
                 HorizontalLayout {
                     spacing: 6px;
                     SegOption {
@@ -783,20 +768,11 @@ export component SessionDialog inherits Rectangle {
                 value <=> root.draft-password;
             }
 
-            if root.draft-kind == "ssh" && root.draft-auth == "keyboard-interactive" : Text {
-                text: @tr("Server prompts are shown during login; MFA / OTP prompts will ask again.");
-                color: Theme.text-muted;
-                font-size: Theme.fs-xs;
-                wrap: word-wrap;
-            }
+            if root.draft-kind == "ssh" && root.draft-auth == "keyboard-interactive" : HelpText { text: @tr("Server prompts are shown during login; MFA / OTP prompts will ask again."); }
 
             if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
                 spacing: 4px;
-                Text {
-                    text: @tr("Private key");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Private key"); }
                 HorizontalLayout {
                     spacing: 6px;
                     SegOption {
@@ -938,11 +914,7 @@ export component SessionDialog inherits Rectangle {
 
             if root.draft-kind == "serial" : VerticalLayout {
                 spacing: 4px;
-                Text {
-                    text: @tr("Data bits / Stop bits / Parity");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Data bits / Stop bits / Parity"); }
                 HorizontalLayout {
                     spacing: 6px;
                     SegOption { label: "7"; active: root.draft-data-bits == "7"; clicked => { root.draft-data-bits = "7"; } }
@@ -959,11 +931,7 @@ export component SessionDialog inherits Rectangle {
 
             if root.draft-kind == "serial" : VerticalLayout {
                 spacing: 4px;
-                Text {
-                    text: @tr("Flow control");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Flow control"); }
                 HorizontalLayout {
                     spacing: 6px;
                     SegOption { label: @tr("None"); active: root.draft-flow == "none"; clicked => { root.draft-flow = "none"; } }
@@ -975,11 +943,7 @@ export component SessionDialog inherits Rectangle {
             // ── Terminal character encoding (SSH only) (#338) ───────────────
             if root.draft-kind == "ssh" : VerticalLayout {
                 spacing: 4px;
-                Text {
-                    text: @tr("Terminal character encoding");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Terminal character encoding"); }
                 ComboBox {
                     height: 32px;
                     model: [@tr("UTF-8"), @tr("GBK"), @tr("Big5"), @tr("Shift_JIS"), @tr("EUC-KR"), @tr("Windows-1252")];
@@ -1024,11 +988,7 @@ export component SessionDialog inherits Rectangle {
             // ── Optional outbound proxy (SSH / Telnet only) ─────────────────
             if root.show-advanced && root.draft-kind != "serial" : VerticalLayout {
                 spacing: 4px;
-                Text {
-                    text: @tr("Proxy (optional)");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Proxy (optional)"); }
                 HorizontalLayout {
                     spacing: 6px;
                     SegOption { label: @tr("None"); active: root.draft-proxy-type == "none"; clicked => { root.draft-proxy-type = "none"; } }
@@ -1104,11 +1064,7 @@ export component SessionDialog inherits Rectangle {
                 }
                 Rectangle { height: 6px; }
 
-                Text {
-                    text: @tr("Port forwarding");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                }
+                FieldLabel { text: @tr("Port forwarding"); }
 
                 for f[i] in root.forwards : PortForwardRow {
                     forward: f;
@@ -1147,12 +1103,7 @@ export component SessionDialog inherits Rectangle {
                         clicked => { root.add-trigger(); }
                     }
                 }
-                Text {
-                    text: @tr("When expected text appears, send the response automatically. Responses are stored encrypted.");
-                    color: Theme.text-muted;
-                    font-size: Theme.fs-xs;
-                    wrap: word-wrap;
-                }
+                HelpText { text: @tr("When expected text appears, send the response automatically. Responses are stored encrypted."); }
             }
 
             HorizontalLayout {

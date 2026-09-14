@@ -11,6 +11,7 @@ import { ResetBar } from "../reset_bar.slint";
 import { OutputRuleItem } from "../types.slint";
 import { LabeledInput, PrimaryButton } from "../../widgets.slint";
 import { ComboBox, Switch } from "std-widgets.slint";
+import { Divider } from "../../components/surfaces.slint";
 
 export component TerminalPage inherits VerticalLayout {
     in-out property <bool> convert-eol;
@@ -413,7 +414,7 @@ export component TerminalPage inherits VerticalLayout {
                         }
                         for rule[index] in root.output-highlight-rules : Rectangle {
                             height: 44px;
-                            Rectangle { y: 0px; width: 100%; height: 1px; background: Theme.border-subtle; }
+                            Divider {}
                             HorizontalLayout {
                                 spacing: 9px;
                                 Rectangle {

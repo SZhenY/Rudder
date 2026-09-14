@@ -1,4 +1,5 @@
 import { Theme , AnimationSettings } from "theme.slint";
+import { FieldLabel } from "components/surfaces.slint";
 
 // --- IconButton ------------------------------------------------------------
 // A small square action button that accepts a single-character glyph (or short text).
@@ -158,11 +159,7 @@ export component LabeledInput inherits VerticalLayout {
         }
     }
 
-    Text {
-        text: label;
-        color: Theme.text-secondary;
-        font-size: Theme.fs-sm;
-    }
+    FieldLabel { text: label; }
 
     Rectangle {
         height: 32px;

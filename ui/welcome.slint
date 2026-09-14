@@ -1,6 +1,7 @@
 import { Theme, AnimationSettings } from "theme.slint";
 import { PrimaryButton, GhostButton } from "widgets.slint";
 import { ScrollView } from "std-widgets.slint";
+import { Divider } from "components/surfaces.slint";
 
 export struct SessionInfo {
     id: string,
@@ -195,7 +196,7 @@ component SessionRow inherits Rectangle {
                     }
                 }
 
-                if !root.system-row : Rectangle { height: 1px; background: Theme.border-subtle; }
+                if !root.system-row : Divider {}
 
                 // "Move to" hint — labels the group list below so the user knows
                 // these entries move the session into that folder.

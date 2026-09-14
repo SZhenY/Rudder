@@ -20,6 +20,7 @@ import "fonts/JetBrainsMono-Regular.ttf";
 import "fonts/JetBrainsMono-Bold.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
+import { Divider } from "components/surfaces.slint";
 // Large CJK fonts are runtime-loaded from the fonts dir (src/fonts.rs), not
 // embedded — the cell-probe falls back to a system font for unregistered
 // external families, which is acceptable for optional user fonts.
@@ -1719,7 +1720,7 @@ export component TerminalView inherits Rectangle {
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     Text { text: "\u{E872}"; font-family: "Material Icons"; color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Delete"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
-                                            Rectangle { height: 1px; background: Theme.border-subtle; }
+                                            Divider {}
                                             HorizontalLayout { padding-left: 10px; padding-top: 2px; spacing: 6px;
                                                 Text { text: "\u{E2C7}"; font-family: "Material Icons"; color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
                                                 Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; } }

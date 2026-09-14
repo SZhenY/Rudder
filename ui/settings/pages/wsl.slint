@@ -8,6 +8,7 @@ import { Theme } from "../../theme.slint";
 import { SettingsSection } from "../section.slint";
 import { WslProfileInfo } from "../types.slint";
 import { GhostButton, LabeledInput, PrimaryButton } from "../../widgets.slint";
+import { Divider } from "../../components/surfaces.slint";
 
 export component WslPage inherits VerticalLayout {
     in property <bool> lang-en;
@@ -76,7 +77,7 @@ export component WslPage inherits VerticalLayout {
                 }
             }
         }
-        Rectangle { height: 1px; background: Theme.border-subtle; }
+        Divider {}
         for profile in root.wsl-profiles : Rectangle {
             height: 54px;
             border-radius: Theme.radius-sm;

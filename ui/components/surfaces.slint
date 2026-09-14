@@ -1,0 +1,48 @@
+// 通用"表面"元素（分隔线 / 字段标题 / 说明文字）。
+//
+// 抽出来的理由：这三类在全项目里各手写了 28 / 15 / 9 遍，样式一字不差 ——
+// 改一次颜色要翻 10 个文件。抽成组件后只改这里。
+//
+// 约定（与 ui-component-api.md 的设计冻结一致）：
+// * 只含样式、不含业务状态；属性一律 `in`，事件一律 callback 上抛；
+// * 不引入新的视觉：默认值与本组件替换掉的旧内联写法**逐字对应**。
+
+import { Theme } from "../theme.slint";
+
+/// 横向 1px 分隔线：替换散落各处的「高 1px 的空 Rectangle + border-subtle 底色」（原 19 处）。
+/// 只设 height，宽度交给 `Rectangle` 的默认填充行为。
+///
+/// 注意两点实测结论：
+/// * 属性不能叫 `color` —— `Rectangle` 在 1.17 已带同名属性（"Cannot override property 'color'"）；
+/// * 不能用 `vertical` 开关把两个方向合成一个组件 —— 三目两侧 `1px`（length）与 `100%`
+///   （percent）类型不同，编译不过。所以横向/纵向各一个组件，各自只设一个维度。
+export component Divider inherits Rectangle {
+    in property <brush> line-color: Theme.border-subtle;
+
+    height: 1px;
+    background: root.line-color;
+}
+
+/// 纵向 1px 分隔线（原 6 处）：只设 width，高度默认填充。
+export component VDivider inherits Rectangle {
+    in property <brush> line-color: Theme.border-subtle;
+
+    width: 1px;
+    background: root.line-color;
+}
+
+/// 段落小标题（设置项 / 表单分组的说明性标签）：替换
+/// `Text { color: Theme.text-secondary; font-size: Theme.fs-sm; }` 的写法。
+/// 文本直接写继承来的 `text`：`FieldLabel { text: @tr("Connection type"); }`
+export component FieldLabel inherits Text {
+    color: Theme.text-secondary;
+    font-size: Theme.fs-sm;
+}
+
+/// 灰色小字说明（表单项下方那行帮助文字）：替换
+/// `Text { color: Theme.text-muted; font-size: Theme.fs-xs; wrap: word-wrap; }`。
+export component HelpText inherits Text {
+    color: Theme.text-muted;
+    font-size: Theme.fs-xs;
+    wrap: word-wrap;
+}

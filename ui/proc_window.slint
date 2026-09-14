@@ -8,6 +8,7 @@
 
 import { Theme, AnimationSettings } from "theme.slint";
 import { LabeledInput, GhostButton } from "widgets.slint";
+import { FieldLabel } from "components/surfaces.slint";
 
 // One row in the process table. Lives here (not app.slint) so both the main
 // window and this window can import it without a circular dependency.
@@ -175,11 +176,7 @@ export component ProcWindow inherits Window {
                 }
                 VerticalLayout {
                     alignment: center;
-                    Text {
-                        text: @tr("Processes") + (root.host != "" ? "  ·  " + root.host : "");
-                        color: Theme.text-secondary;
-                        font-size: Theme.fs-sm;
-                    }
+                    FieldLabel { text: @tr("Processes") + (root.host != "" ? "  ·  " + root.host : ""); }
                 }
                 Rectangle { horizontal-stretch: 1; }   // draggable spacer
                 // Close button.

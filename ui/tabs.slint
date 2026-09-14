@@ -1,5 +1,6 @@
 import { Theme , AnimationSettings } from "theme.slint";
 import { IconButton } from "widgets.slint";
+import { Divider } from "components/surfaces.slint";
 
 export struct TabInfo {
     id: string,
@@ -334,7 +335,7 @@ export component TabBar inherits Rectangle {
                     enabled: root.menu-target != "welcome";
                     clicked => { root.tab-rename-request(root.menu-target); }
                 }
-                Rectangle { height: 1px; background: Theme.border-subtle; }
+                Divider {}
                 TabMenuItem {
                     label: @tr("Split right");
                     enabled: root.tabs.length > 1;
@@ -350,7 +351,7 @@ export component TabBar inherits Rectangle {
                     enabled: root.can-merge-pane;
                     clicked => { root.merge-pane(); }
                 }
-                Rectangle { height: 1px; background: Theme.border-subtle; }
+                Divider {}
                 TabMenuItem {
                     label: @tr("Close tab");
                     enabled: root.menu-target != "welcome";
