@@ -2,6 +2,7 @@ import { Theme } from "theme.slint";
 import { ComboBox } from "std-widgets.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 import { FieldLabel, HelpText } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
 
 // One SSH port-forward row shown in the session dialog (#56). `summary` is a
 // ready-to-display line like "-L 127.0.0.1:8080 → host:80".
@@ -147,23 +148,11 @@ component PortForwardRow inherits VerticalLayout {
         SegOption { label: @tr("Local (-L)"); active: root.kind == "local"; clicked => { root.kind = "local"; root.notify-updated(); } }
         SegOption { label: @tr("Remote (-R)"); active: root.kind == "remote"; clicked => { root.kind = "remote"; root.notify-updated(); } }
         SegOption { label: @tr("Dynamic (-D)"); active: root.kind == "dynamic"; clicked => { root.kind = "dynamic"; root.notify-updated(); } }
-        Rectangle {
-            width: 30px;
-            height: 30px;
-            border-radius: Theme.radius-sm;
-            background: remove-area.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
-            remove-area := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.remove(root.index); }
-            }
-            Text {
-                text: "\u{E5CD}";
-                font-family: "Material Icons";
-                color: Theme.danger;
-                font-size: Theme.fs-sm;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
+        CloseButton {
+            size: 30px;
+            glyph-size: Theme.fs-sm;
+            danger: true;
+            clicked => { root.remove(root.index); }
         }
     }
     MiniInput {
@@ -238,15 +227,11 @@ component TriggerRow inherits VerticalLayout {
             value <=> root.expect;
             edited(value) => { root.expect = value; root.notify-updated(); }
         }
-        Rectangle {
-            width: 30px; height: 30px;
-            border-radius: Theme.radius-sm;
-            background: trigger-remove.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
-            trigger-remove := TouchArea { mouse-cursor: pointer; clicked => { root.remove(root.index); } }
-            Text {
-                text: "\u{E5CD}"; font-family: "Material Icons"; color: Theme.danger;
-                font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center;
-            }
+        CloseButton {
+            size: 30px;
+            glyph-size: Theme.fs-sm;
+            danger: true;
+            clicked => { root.remove(root.index); }
         }
     }
     MiniInput {
@@ -601,24 +586,11 @@ export component SessionDialog inherits Rectangle {
                     overflow: elide;
                 }
 
-                Rectangle {
-                    width: 32px;
-                    height: 32px;
+                CloseButton {
+                    size: 32px;
+                    glyph-size: 18px;
                     y: (parent.height - self.height) / 2;
-                    border-radius: Theme.radius-sm;
-                    background: close-ta.has-hover ? Theme.bg-hover : transparent;
-                    close-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.cancel(); }
-                    }
-                    Text {
-                        text: "\u{E5CD}";
-                        font-family: "Material Icons";
-                        color: Theme.text-secondary;
-                        font-size: 18px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                    clicked => { root.cancel(); }
                 }
             }
         }

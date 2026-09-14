@@ -40,6 +40,7 @@ import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
 export { ProcWindow, SystemInfoWindow }
 import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
 
@@ -2298,17 +2299,9 @@ export component AppWindow inherits Window {
                                 Text { text: @tr("Save"); color: #ffffff; font-size: Theme.fs-sm;
                                        horizontal-alignment: center; vertical-alignment: center; }
                             }
-                            Rectangle {
-                                width: 28px; height: 28px;
-                                border-radius: Theme.radius-sm;
-                                background: ed-close-ta.has-hover ? Theme.bg-hover : transparent;
-                                ed-close-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.close-editor(); }
-                                }
-                                Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                                       color: Theme.text-secondary; font-size: Theme.fs-md;
-                                       horizontal-alignment: center; vertical-alignment: center; }
+                            CloseButton {
+                                size: 28px;
+                                clicked => { root.close-editor(); }
                             }
                         }
                     }
@@ -3159,16 +3152,8 @@ export component AppWindow inherits Window {
                         horizontal-stretch: 1;
                         vertical-alignment: center;
                     }
-                    Rectangle {
-                        width: 22px; height: 22px;
-                        border-radius: Theme.radius-sm;
-                        background: qcm-close.has-hover ? Theme.bg-hover : transparent;
-                        qcm-close := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.quick-cmd-manage-open = false; }
-                        }
-                        Text { text: "\u{E5CD}"; font-family: "Material Icons"; color: Theme.text-secondary;
-                               font-size: Theme.fs-md; horizontal-alignment: center; vertical-alignment: center; }
+                    CloseButton {
+                        clicked => { root.quick-cmd-manage-open = false; }
                     }
                 }
 
@@ -3832,17 +3817,9 @@ export component AppWindow inherits Window {
                         horizontal-stretch: 1;
                         vertical-alignment: center;
                     }
-                    Rectangle {
-                        width: 22px; height: 22px;
-                        border-radius: Theme.radius-sm;
-                        background: sc-close.has-hover ? Theme.bg-hover : transparent;
-                        sc-close := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.shortcuts-open = false; }
-                        }
-                        Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                               color: Theme.text-secondary; font-size: Theme.fs-sm;
-                               horizontal-alignment: center; vertical-alignment: center; }
+                    CloseButton {
+                        glyph-size: Theme.fs-sm;
+                        clicked => { root.shortcuts-open = false; }
                     }
                 }
 
@@ -3926,18 +3903,10 @@ export component AppWindow inherits Window {
             TouchArea { enabled: root.about-open; }
 
             // Close (×) button
-            Rectangle {
+            CloseButton {
                 x: parent.width - 30px; y: 8px;
-                width: 22px; height: 22px;
-                border-radius: Theme.radius-sm;
-                background: ab-close-ta.has-hover ? Theme.bg-hover : transparent;
-                ab-close-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.about-open = false; }
-                }
-                Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                       color: Theme.text-secondary; font-size: Theme.fs-sm;
-                       horizontal-alignment: center; vertical-alignment: center; }
+                glyph-size: Theme.fs-sm;
+                clicked => { root.about-open = false; }
             }
 
             VerticalLayout {
@@ -4475,17 +4444,10 @@ export component AppWindow inherits Window {
                         }
                         VerticalLayout {
                             alignment: center;
-                            Rectangle {
-                                width: 24px; height: 24px;
-                                border-radius: Theme.radius-sm;
-                                background: if-close-ta.has-hover ? Theme.bg-hover : transparent;
-                                if-close-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.interface-open = false; }
-                                }
-                                Text { text: "\u{E5CD}"; font-family: "Material Icons";
-                                       color: Theme.text-secondary; font-size: 15px;
-                                       horizontal-alignment: center; vertical-alignment: center; }
+                            CloseButton {
+                                size: 24px;
+                                glyph-size: 15px;
+                                clicked => { root.interface-open = false; }
                             }
                         }
                     }

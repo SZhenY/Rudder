@@ -1,0 +1,43 @@
+// 通用按钮组件（从各处的重复实现收敛而来）。
+//
+// 约定（与 ui-component-api.md 一致）：只含样式与交互，属性一律 `in`，
+// 事件一律 callback 上抛；默认值与被替换的旧内联写法**逐字对应**。
+
+import { Theme } from "../theme.slint";
+
+/// 右上角「✕」关闭按钮：替换 16 处手写实现（弹窗标题栏 / 浮层 / 卡片）。
+///
+/// 参数只保留各处**真实存在**的差异：尺寸、图标字号、是否危险色。
+/// 注意：原实现**没有**背景过渡动画，这里也不引入新动效。
+export component CloseButton inherits Rectangle {
+    in property <length> size: 22px;
+    // 图标字号：旧实现里 13/15/18px 不等，逐站传原值
+    in property <length> glyph-size: Theme.fs-md;
+    // 危险形态（删除某一行）：hover 底色用 danger 18%，字形本身就是 danger
+    in property <bool> danger: false;
+    callback clicked();
+
+    width: root.size;
+    height: root.size;
+    border-radius: Theme.radius-sm;
+    background: transparent;
+    states [
+        hovered when ta.has-hover : {
+            background: root.danger ? Theme.danger.with-alpha(0.18) : Theme.bg-hover;
+        }
+    ]
+
+    Text {
+        text: "\u{E5CD}";
+        font-family: "Material Icons";
+        color: root.danger ? Theme.danger : Theme.text-secondary;
+        font-size: root.glyph-size;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
