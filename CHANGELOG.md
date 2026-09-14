@@ -5,6 +5,22 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.7-fix3] - 2026-09-14
+
+### 修复 / Fixed
+
+- **修复：命令栏被关掉之后找不到回来的入口 —— 设置里新增「命令栏」开关。** 终端底部那条输入条（快捷命令 + 命令历史）此前**只能**用右上角工具栏那个代码图标切换，悬停才看得到提示，设置里没有任何入口。现在 **设置 → 布局 → 命令栏** 有开关，与工具栏图标是同一个开关（两边状态同步），**默认打开**。顺带修好两处相关行为：①点「还原本页默认」后，命令栏与开关都会回到默认状态（此前只改了配置、界面不动，看起来像"点了没反应"）；②开关与工具栏图标的状态始终一致。**Fixed: there was no way to bring the command bar back once it was hidden.** The terminal's bottom input strip (quick commands + history) could previously only be toggled from a toolbar code icon with a hover-only label. **Settings → Layout → Command bar** now has a switch — the same switch as the toolbar icon (both stay in sync), on by default. Two related fixes: restoring page defaults now actually resets the bar and the switch (it used to change only the config, so nothing moved), and the switch and the toolbar icon can no longer disagree.
+
+- **修复：「界面动画」开关对 13/25 个动画无效。** 全项目 25 个 `animate` 块里有 13 个漏了 `enabled: AnimationSettings.enabled`，关掉动画后它们照旧播放。现在 25 个全部受控。同时把 11 处硬编码缓动曲线换成 `AnimationSettings` 的统一曲线：其中 9 处数值与原来**逐字等价**（零变化），2 处 `ease-out` 换成等价的 `AnimationSettings.color`，仅侧栏折叠的宽度动画改用"布局位移"曲线（`AnimationSettings.layout`，与文档规定一致，变化很轻微）。**Fixed: the "disable animations" setting didn't control 13 of 25 animations.** 13 `animate` blocks were missing `enabled: AnimationSettings.enabled`. Also replaced 11 hard-coded easing curves with the shared `AnimationSettings` tokens: 9 are byte-identical to the old value (no change), 2 map to the identical `AnimationSettings.color`, and only the sidebar's 500 ms width animation switches to the documented layout curve (a very slight change).
+
+### 新增 / Added
+
+- **设置 → 布局 → 命令栏**（见上）：终端底部输入条的显隐开关。**Settings → Layout → Command bar**: show or hide the terminal's bottom input strip.
+
+### 内部 / Internal
+
+- **UI 代码重构第一阶段（目标是观感完全一致）。** ①**死代码清理**：6 处未使用导入、0 实例的 `DockExpandButton`、无发射点的标签拖拽回调、`SingleTab.duplicated` 半死链、被父级覆盖的 `width: 220px`；删掉一条跨 5 个文件却**无人读取**的「SFTP 折叠高度」链路，以及写而不读的字段（`TermSpan.hidden`、`SysMetricRow.kind`、两个 `disks` 属性）。②**抽出公共组件**：分隔线（32 处内联 → `Divider`/`VDivider`）、关闭按钮（8 处 → `CloseButton`）、图标字形（95 处 → `IconText`）、界面字体文本（`Label`）、设置开关（20 处 → `SettingSwitch`）、图标按钮四套合一（删掉本地 `IconBtn` 与 welcome 的 `CollapseButton`）。③**交互状态改用 Slint 的 `states`**（拖拽停靠高亮 8 条三目 → 4 组状态、更新横幅高度切换并补上进出过渡）；④把 42 处硬编码阴影收敛到 5 档主题 token（33 处逐字等价，剩 7 处不规则值需视觉决策）。**Internal: first phase of the UI refactor (no visible change intended).** dead code removal (unused imports, a component with zero instantiations, callbacks with no emitter, a write-only "SFTP saved height" chain across 5 files, and write-only struct fields); shared components (divider, close button, icon text, label, setting switch, one icon button instead of four); Slint `states` for multi-state visuals; and 42 hard-coded shadows collapsed into 5 theme tokens.
+
 ## [0.7.7-fix2] - 2026-09-13
 
 ### 修复 / Fixed
