@@ -10,12 +10,14 @@ import { ResetBar } from "../reset_bar.slint";
 import { Switch } from "std-widgets.slint";
 
 export component LayoutPage inherits VerticalLayout {
+    in-out property <bool> cmd-bar-hidden;
     in-out property <bool> collapse-sftp-default;
     in-out property <bool> collapse-sidebar-default;
     in property <bool> lang-en;
     in-out property <bool> quick-commands-as-sidebar;
     in-out property <bool> welcome-as-sidebar;
     callback reset-page(string);
+    callback set-cmd-bar-hidden(bool);
     callback set-collapse-sftp-default(bool);
     callback set-collapse-sidebar-default(bool);
     callback set-quick-commands-as-sidebar(bool);
@@ -74,6 +76,29 @@ export component LayoutPage inherits VerticalLayout {
             }
         }
             
+        // ── 命令栏 ────────────────────────────────────────────────────────
+        // 终端底部那条输入条（快捷命令 + 命令历史）。此前**只有**右上角工具栏那个
+        // 代码图标能切换它，设置里没有入口 —— 用户把它关掉后就再也找不回来了。
+        // 开关语义与存储字段一致：checked = 隐藏（不翻转，`<=>` 只能绑属性引用）。
+    }
+    SettingsSection {
+        section-id: "layout.cmd-bar";
+        lang-en: root.lang-en;
+        title-zh: "命令栏";
+        title-en: "COMMAND BAR";
+        title-height: 24px;
+        SettingRow {
+            label: root.lang-en ? "Hide the command bar" : "隐藏命令栏（终端底部输入条）";
+            desc: root.lang-en
+                ? "The strip under the terminal: quick commands and command history. When hidden, the toolbar code icon brings it back."
+                : "终端下方的输入条：快捷命令与命令历史。隐藏后可用右上角工具栏的代码图标重新打开。";
+            show-divider: false;
+            Switch {
+                checked <=> root.cmd-bar-hidden;
+                toggled => { root.set-cmd-bar-hidden(root.cmd-bar-hidden); }
+            }
+        }
+
         // 还原本页默认（本页最后一个设置项之后）
     }
     ResetBar {

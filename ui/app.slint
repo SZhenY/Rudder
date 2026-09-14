@@ -4550,6 +4550,7 @@ export component AppWindow inherits Window {
                     ui-scale: root.ui-scale;
                     sftp-follow-cd <=> root.sftp-follow-cd;
                     collapse-sidebar-default <=> root.collapse-sidebar-default;
+                    cmd-bar-hidden <=> root.cmd-bar-hidden;
                     collapse-sftp-default <=> root.collapse-sftp-default;
                     sync-upload-enabled <=> root.sync-upload-enabled;
                     webdav-enabled <=> root.webdav-enabled;
@@ -4613,6 +4614,7 @@ export component AppWindow inherits Window {
                     webdav-download => { root.webdav-download(); }
                     set-download-always-ask(v) => { root.set-download-always-ask(v); }
                     set-welcome-as-sidebar(v) => { root.set-welcome-as-sidebar(v); }
+                    set-cmd-bar-hidden(v) => { root.set-cmd-bar-hidden(v); }
                     set-quick-commands-as-sidebar(v) => {
                         root.quick-commands-as-sidebar = v;
                         if (!v) {

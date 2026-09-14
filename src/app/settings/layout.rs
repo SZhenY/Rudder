@@ -279,6 +279,7 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, panes: &PaneHandles) {
             s.set_welcome_as_sidebar(d.layout.welcome_as_sidebar);
             s.set_quick_commands_as_sidebar(d.layout.quick_commands_as_sidebar);
             s.set_collapse_sidebar_default(d.layout.collapse_sidebar_default);
+            s.set_cmd_bar_hidden(d.layout.hide_cmd_bar);
             s.set_collapse_sftp_default(d.layout.collapse_sftp_default);
             s.set_sidebar_dock(d.layout.sidebar_dock.clone());
         });
