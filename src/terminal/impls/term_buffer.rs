@@ -46,7 +46,7 @@ impl TermBuffer {
         // `sgr_buf` 里还可能是半截 SGR 序列，跨 term 复用同样会错。bump 一代让旧条目
         // 全部失效 —— 它同时会清 `rendered`（原来的那行删除）。
         self.bump_render_gen();
-        self.scroll_cache.clear();
+        self.drop_scroll_cache();
         self.sgr_buf.clear();
         self.displayed_text.clear();
         self.view_offset = 0;
@@ -244,7 +244,7 @@ impl TermBuffer {
             // plain 文本相同"命中，把上一批内容的着色贴到新内容上。`bump_render_gen()`
             // 同时清 `rendered`（原本那行删除）。
             self.bump_render_gen();
-            self.scroll_cache.clear();
+            self.drop_scroll_cache();
             self.view_offset = 0;
             self.term.selection = None;
             self.clear_overlines();
@@ -562,7 +562,7 @@ impl TermBuffer {
         self.rendered.clear();
         // A reflow rewraps every line: cached scrollback spans were built
         // against the old width and are meaningless now.
-        self.scroll_cache.clear();
+        self.drop_scroll_cache();
         self.render_gen = self.render_gen.wrapping_add(1);
         // Rows rewrap on resize, so the exact offset cannot be preserved —
         // but snapping to the bottom while the user was reading history was
@@ -592,6 +592,19 @@ impl TermBuffer {
         self.rendered.clear();
     }
 
+    /// 丢弃回滚渲染缓存，并把哈希表的**容量**一并交还。
+    ///
+    /// `clear()` 只 drop 条目（条目里的 `plain_key` / `runs` 堆随之释放 ✓），
+    /// 但**桶数组按峰值常驻** ✗：4096 条目的表约 **0.5 MB / 标签页**（8192 桶 × 64 B），
+    /// 且此后永不回收（全项目原先 0 处 `shrink_to_fit`）。
+    /// 所以"确实要废弃缓存"的时机都走这里 —— 代价只是下次滚动回看时的一次摊还增长。
+    ///
+    /// ⚠️ `render()` 里 `SCROLL_CACHE_MAX` 那条路径**不能**用它：那里紧接着就要重新
+    /// 填满，shrink 只会换来一次多余的重分配。
+    fn drop_scroll_cache(&mut self) {
+        self.scroll_cache.clear();
+        self.scroll_cache.shrink_to_fit();
+    }
 
     /// Render the terminal grid for the current scrollback `view_offset`
     /// (0 = live).  Row-level caching avoids rebuilding spans for unchanged
@@ -661,7 +674,9 @@ impl TermBuffer {
             } else if self.scroll_live_frames < SCROLL_LIVE_GRACE {
                 self.scroll_live_frames += 1;
             } else {
-                self.scroll_cache.clear();
+                // 这是**最常走**的一条废弃路径（每次滚动回看结束都命中一次），
+                // 也是 0.5 MB 桶数组真正回到分配器的地方。
+                self.drop_scroll_cache();
                 self.render_gen = self.render_gen.wrapping_add(1);
                 self.scroll_live_frames = 0;
             }
@@ -735,6 +750,8 @@ impl TermBuffer {
             // Bounded: an long scroll-back session would otherwise accumulate
             // one entry per history line ever shown. Clearing is cheap — the
             // lines are immutable and re-highlight within a single frame.
+            // ⚠️ 这里**故意**不走 `drop_scroll_cache()`：紧接着的 insert 立刻要把表重新
+            // 填满，shrink_to_fit 只会换来一次多余的重分配（清空 ≠ 废弃）。
             if self.scroll_cache.len() >= SCROLL_CACHE_MAX {
                 self.scroll_cache.clear();
             }
@@ -1020,6 +1037,13 @@ mod tests {
         buf.ingest(b"\x1b[3J"); // erase saved lines
 
         assert!(buf.scroll_cache.is_empty(), "CSI 3J 后回滚缓存必须清空");
+        // B1.9（原 N1）：不只是条目 —— 哈希表的**容量**也要交还。`clear()` 会保留桶数组
+        // （4096 条目的表约 0.5 MB / 标签页），`shrink_to_fit` 才是真正释放的那一半。
+        assert_eq!(
+            buf.scroll_cache.capacity(),
+            0,
+            "清空回滚缓存后，桶数组容量必须一并归还"
+        );
         assert_ne!(buf.render_gen, gen_before, "渲染代号必须自增");
         assert_eq!(buf.view_offset, 0, "回到实时视图");
     }
