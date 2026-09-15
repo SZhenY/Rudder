@@ -219,14 +219,13 @@ export component SystemInfoWindow inherits Window {
         }
 
         // macOS 的窗口是「全尺寸内容视图 + 透明标题栏」（src/app/window.rs 的
-        // with_fullsize_content_view），原生交通灯按钮会**浮在内容之上** —— 顶部必须留出
-        // 28px（与主窗口 `titlebar-inset` 同宽），否则会盖住第一行。
+        // with_fullsize_content_view），原生交通灯按钮会**浮在内容之上** —— 顶部必须留出 25px（与主窗口的 `titlebar-inset` 同理，取值略窄），否则会盖住第一行。
         //
         // ⚠️ 判据用 `!root.custom-titlebar` 而不是 `Theme.is-mac`：global 是**每个窗口一份**，
         // `is-mac` 只在主窗口接线，子窗口里 `Theme.is-mac` 恒为 false（首版就是这么写坏的）。
         // 纯留白、不带 TouchArea；子窗口没有 zoom 回调，不接双击。
         if !root.custom-titlebar : Rectangle {
-            height: 28px;
+            height: 25px;
             background: Theme.bg-root.with-alpha(0.92);
         }
 

@@ -164,7 +164,7 @@ export component ProcWindow inherits Window {
 
         // macOS 的窗口是「全尺寸内容视图 + 透明标题栏」（见 src/app/window.rs 的
         // with_fullsize_content_view），原生交通灯按钮（关闭 / 最小化 / 缩放）会**浮在内容
-        // 之上** —— 顶部必须留出 28px（与主窗口 `titlebar-inset` 同宽），否则会盖住第一行。
+        // 之上** —— 顶部必须留出 25px（与主窗口的 `titlebar-inset` 同理，取值略窄），否则会盖住第一行。
         //
         // ⚠️ 判据是 `!root.custom-titlebar` 而**不是** `Theme.is-mac`：Slint 的 global 是
         // **每个窗口一份**，而 `is-mac` 只在主窗口上接线（settings_ui.rs 的 set_is_mac），
@@ -175,7 +175,7 @@ export component ProcWindow inherits Window {
         // 纯留白、不带 TouchArea：该区域的窗口拖拽仍交给系统标题栏；子窗口没有 zoom 回调，
         // 所以也不接双击。
         if !root.custom-titlebar : Rectangle {
-            height: 28px;
+            height: 25px;
             background: Theme.bg-panel;
         }
 

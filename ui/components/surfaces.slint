@@ -65,6 +65,11 @@ export component ModalCard inherits Rectangle {
     in property <length> radius: Theme.radius-sm;
     in property <brush> card-background: Theme.bg-panel;
     in property <brush> backdrop: #00000080;
+    // 卡片内边距与行距：多数对话框是 18 / 12，快捷键那一处是 18 / 5。
+    // ⚠️ 不能叫 `padding` —— `Rectangle` 已带同名属性（"Cannot override property
+    // 'padding'"），与之前 `color` 那个坑同源。
+    in property <length> body-padding: 18px;
+    in property <length> spacing: 12px;
     // 点击遮罩时触发（调用方负责关闭；不接就不响应）。
     callback dismissed();
 
@@ -92,8 +97,8 @@ export component ModalCard inherits Rectangle {
         TouchArea {}   // 吞掉卡片内部的点击，避免冒泡到遮罩
 
         card-body := VerticalLayout {
-            padding: 18px;
-            spacing: 12px;
+            padding: root.body-padding;
+            spacing: root.spacing;
             @children
         }
     }
