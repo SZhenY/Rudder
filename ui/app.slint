@@ -2536,7 +2536,8 @@ export component AppWindow inherits Window {
     Rectangle {
         // Follow the download button (shifts with the toolbar when the resource
         // panel docks right/top) (#dock).
-        x: parent.width - 364px - root.toolbar-x-off;
+        // 364px = 自身宽 350px + 14px 右边距（原来是手算的常数，改绑自身宽度）
+        x: parent.width - self.width - 14px - root.toolbar-x-off;
         y: (root.custom-titlebar ? 78px : 40px + root.titlebar-inset) + root.toolbar-y-off;
         width: 350px;
         height: 400px;
