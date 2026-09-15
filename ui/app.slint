@@ -1888,66 +1888,77 @@ export component AppWindow inherits Window {
     }
     }
 
-    // App toolbar icons (settings/download/theme/sync). They sit at the top-right
-    // of the tab row — below the custom title bar when frameless (y offset), or
-    // at the very top on macOS where the native title bar is separate (#119).
-    IconButton {
-        x: root.width - 34px - root.toolbar-x-off; y: root.toolbar-y;
-        size: 26px;
-        font-family: "Material Icons";
-        tint-on-hover: false;
-        glyph: "\u{E8B8}";
-        tooltip: root.lang-en ? "Settings" : "设置";
-        active: root.settings-open;
-        clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.ssh-import-hint = ""; }
-    }
-    IconButton {
-        x: root.width - 64px - root.toolbar-x-off; y: root.toolbar-y;
-        size: 26px;
-        font-family: "Material Icons";
-        tint-on-hover: false;
-        glyph: "\u{E5D5}";   // swap_vert — transfer manager (up/down)
-        tooltip: root.lang-en ? "Transfers manager" : "传输管理";
-        active: root.download-open;
-        // Breathe while any transfer is running (driven from Rust).
-        breathe: root.has-active-transfers;
-        clicked => { root.download-open = !root.download-open; root.settings-open = false; }
-    }
-    IconButton {
-        x: root.width - 94px - root.toolbar-x-off; y: root.toolbar-y;
-        size: 26px;
-        font-family: "Material Icons";
-        tint-on-hover: false;
-        glyph: Theme.dark ? "\u{E518}" : "\u{E51C}";
-        fg: Theme.dark ? #f5c542 : #5856d6;
-        tooltip: root.lang-en ? "Toggle theme" : "切换主题";
-        clicked => { root.toggle-theme(); }
-    }
-    IconButton {
-        x: root.width - 124px - root.toolbar-x-off; y: root.toolbar-y;
-        size: 26px;
-        font-family: "Material Icons";
-        tint-on-hover: false;
-        glyph: "\u{E627}";
-        fg: root.sync-input ? Theme.accent : Theme.text-secondary;
-        active: root.sync-input;
-        tooltip: root.lang-en
-            ? (root.sync-input ? "Sync input: ON" : "Sync input")
-            : (root.sync-input ? "会话同步：开" : "会话同步");
-        clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
-    }
-    IconButton {
-        x: root.width - 154px - root.toolbar-x-off; y: root.toolbar-y;
-        size: 26px;
-        font-family: "Material Icons";
-        tint-on-hover: false;
-        glyph: "\u{E86F}";   // Material "code" — command bar
-        fg: root.show-cmd-bar ? Theme.accent : Theme.text-secondary;
-        active: root.show-cmd-bar;
-        tooltip: root.lang-en
-            ? (root.show-cmd-bar ? "Hide command bar" : "Show command bar")
-            : (root.show-cmd-bar ? "隐藏命令栏" : "显示命令栏");
-        clicked => { root.show-cmd-bar = !root.show-cmd-bar; root.set-show-cmd-bar(root.show-cmd-bar); }
+    // App toolbar icons: command bar / sync / theme / transfers / settings.
+    // They sit at the top-right of the tab row — below the custom title bar when
+    // frameless (y offset), or at the very top on macOS where the native title
+    // bar is separate (#119).
+    //
+    // 版式：右对齐交给布局（`alignment: end`），不再逐个手算
+    // `root.width - <34|64|94|124|154>px - root.toolbar-x-off`。
+    // 旧写法里这五个数字是"按钮宽 26px + 间隙 4px"推出来的（含右侧 8px 边距），
+    // 加/删一个按钮就要重算全部偏移。书写顺序 = 视觉顺序（左 → 右）。
+    HorizontalLayout {
+        x: root.toolbar-x-off;                     // 右侧侧栏停靠时整体左移（原语义）
+        y: root.toolbar-y;
+        width: root.width - root.toolbar-x-off;
+        height: 26px;
+        alignment: end;                            // 靠右
+        spacing: 4px;
+        padding-right: 8px;
+
+        IconButton {
+            size: 26px;
+            font-family: "Material Icons";
+            tint-on-hover: false;
+            glyph: "\u{E86F}";   // Material "code" — command bar
+            fg: root.show-cmd-bar ? Theme.accent : Theme.text-secondary;
+            active: root.show-cmd-bar;
+            tooltip: root.lang-en
+                ? (root.show-cmd-bar ? "Hide command bar" : "Show command bar")
+                : (root.show-cmd-bar ? "隐藏命令栏" : "显示命令栏");
+            clicked => { root.show-cmd-bar = !root.show-cmd-bar; root.set-show-cmd-bar(root.show-cmd-bar); }
+        }
+        IconButton {
+            size: 26px;
+            font-family: "Material Icons";
+            tint-on-hover: false;
+            glyph: "\u{E627}";
+            fg: root.sync-input ? Theme.accent : Theme.text-secondary;
+            active: root.sync-input;
+            tooltip: root.lang-en
+                ? (root.sync-input ? "Sync input: ON" : "Sync input")
+                : (root.sync-input ? "会话同步：开" : "会话同步");
+            clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
+        }
+        IconButton {
+            size: 26px;
+            font-family: "Material Icons";
+            tint-on-hover: false;
+            glyph: Theme.dark ? "\u{E518}" : "\u{E51C}";
+            fg: Theme.dark ? #f5c542 : #5856d6;
+            tooltip: root.lang-en ? "Toggle theme" : "切换主题";
+            clicked => { root.toggle-theme(); }
+        }
+        IconButton {
+            size: 26px;
+            font-family: "Material Icons";
+            tint-on-hover: false;
+            glyph: "\u{E5D5}";   // swap_vert — transfer manager (up/down)
+            tooltip: root.lang-en ? "Transfers manager" : "传输管理";
+            active: root.download-open;
+            // Breathe while any transfer is running (driven from Rust).
+            breathe: root.has-active-transfers;
+            clicked => { root.download-open = !root.download-open; root.settings-open = false; }
+        }
+        IconButton {
+            size: 26px;
+            font-family: "Material Icons";
+            tint-on-hover: false;
+            glyph: "\u{E8B8}";
+            tooltip: root.lang-en ? "Settings" : "设置";
+            active: root.settings-open;
+            clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.ssh-import-hint = ""; }
+        }
     }
 
     // Frameless resize edges (#119): thin hit-zones that start an OS-level
