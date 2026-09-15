@@ -248,20 +248,6 @@ pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
     sys.set_wp_tint(main.get_wp_tint());
 }
 
-/// 子窗口内容区尺寸兜底（保留）：尺寸真的为 0 时按目标重新请求一次。
-pub(super) fn ensure_sub_window_sized(w: &slint::Window, min_w: f32, min_h: f32) {
-    let size = w.size();
-    if size.width > 0 && size.height > 0 {
-        return;
-    }
-    tracing::warn!(?size, min_w, min_h, "sub-window content size is zero — re-requesting");
-    let scale = w.with_winit_window(|ww| ww.scale_factor()).unwrap_or(1.0).max(0.01);
-    w.set_size(slint::PhysicalSize::new(
-        (f64::from(min_w) * scale) as u32,
-        (f64::from(min_h) * scale) as u32,
-    ));
-}
-
 /// 让子窗口真正画出第一帧。
 ///
 /// 根因：macOS 上新映射的第二个窗口**不会自动产生首次渲染事件**，而 Slint 的布局是
