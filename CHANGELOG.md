@@ -5,9 +5,21 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.7-fix4] - 2026-09-15
+
 ### 修复 / Fixed
 
 - **修复：打开「进程」或「系统信息」窗口只显示 macOS 交通灯、内容不出现（拖动窗口边缘拉伸一下才出来）。** 根因：**macOS 上新映射的第二个窗口不会自动产生首次渲染事件**，而 Slint 的布局是"渲染时惰性计算"的 —— 没渲染过就等于没算过布局，于是那个窗口一直是空的，直到外部原因（手动拖动边缘）送来一次 `Resized` 才补上首帧。现在在 `show()` 之后按 0 / 50 / 200ms 各**显式请求一次重绘**（`Window::request_redraw()`，Slint 为此提供的 API）；首次请求可能早于窗口映射完成而被 winit 丢弃，所以补两次。**不改尺寸** —— 那只是把"拖一下边缘"自动化。顺带把系统信息窗口的尺寸改用 Slint 自己的 `set_size`（原先用 winit 的 `request_inner_size` 在 Slint 背后动 OS 窗口），**Fixed: the Processes / System information window showed only the macOS traffic lights with no content** (until the window was manually resized). Root cause: macOS never delivers a first-render event for a newly mapped second window, and Slint computes layout lazily at render time — so the window was never laid out or painted until an external `Resized` (the manual drag) arrived. The app now explicitly requests a redraw via `Window::request_redraw()` at 0 / 50 / 200 ms after `show()` (the first request can be dropped by winit before the window is mapped, hence the two follow-ups). No size change is involved. Also: the system-info window now sizes itself through Slint's own `set_size` instead of winit's `request_inner_size` behind Slint's back,
+
+- **修复：进程 / 系统信息窗口的第一行被 macOS 交通灯按钮压住。** macOS 上这两个窗口是「透明标题栏 + 全尺寸内容视图」，交通灯浮在内容之上，而它们此前没有像主窗口那样在顶部留出那条带。现在按主窗口同样的做法留出 25px（进程窗口用 `bg-panel`、系统信息用 `bg-root`，与各自底板一致）。**Fixed: the first row was covered by the macOS traffic-light buttons** in both windows; they now reserve the same 25 px band the main window does.
+
+### 内部 / Internal
+
+- **设置面板 / 对话框继续收敛重复实现（P1 收尾）。** 三个窗口各自手写的标题栏合并为 `WindowTitleBar`（参数只保留真实差异：高度 / 背景 / 图标尺寸 / 是否带最小化最大化 / 拖拽触发方式）；9 处对话框里 7 处改用统一的 `ModalCard`；`CloseButton` 增加 `tone` 枚举，收掉最后 3 处彩色 ✕。**The window title bars are unified behind `WindowTitleBar`**, 7 of 9 dialogs now use a shared `ModalCard`, and `CloseButton` gained a `tone` enum.
+
+- **版式正名（P2 全阶段）。** 工具栏 5 个按钮从 `root.width - <34|64|94|124|154>px` 的手算偏移改为 `HorizontalLayout { alignment: end }`；系统信息窗口三处表行的 30 处手算列坐标改为布局 + 列宽权重；标签宽度从"每字符 7px"的估算改为内容驱动（`preferred-width` + `min/max-width`），并删掉 `94px`/`59px` 两个魔数；**空 `Rectangle` 当间距从 24 处清零**（边距类折进 `padding`、设置分区新增 `GroupGap` 走 `gap-*` 档位）；更新横幅的居中、传输面板的右边距不再手算；`settings/pages/terminal.slint` 与 `interface_panel.slint` 的结构缩进归一（`git diff -w` 可证是纯缩进）。**Layout and spacing cleanup across the UI**: the toolbar uses a right-aligned layout instead of five hand-computed offsets, the system-info tables use layouts with column weights instead of 30 hand-computed coordinates, tab widths are content-driven instead of a "7 px per character" estimate, all 24 empty `Rectangle` spacers are gone (folded into `padding` or the new `GroupGap` with `gap-*` tokens), and the banner/transfer-panel centring no longer hand-computes offsets.
+
+- **`viewport-height` 的写法经过核实保持原样。** 那些 `viewport-height: max(self.height, <content>.preferred-height)` 一度被当成"虚高视口"的反模式，核对 Slint 源码后确认它们是**上游 bug #407 的必要 workaround**（`Flickable` 文档写明：用 `for` 循环填充内容时不会自动计算视口），本仓库 8 处全部属于这种情况，因此保留并补上依据注释。**Those `viewport-height` bindings stay**: checking Slint's source confirmed they work around upstream issue #407 (Flickable does not auto-compute the viewport when its content is built with a `for` loop).
 
 ## [0.7.7-fix3] - 2026-09-14
 
