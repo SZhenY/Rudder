@@ -37,6 +37,13 @@ component InfoCard inherits Rectangle {
 
 component CellText inherits Text {
     in property <bool> muted: false;
+    // 列宽权重，交给外层 HorizontalLayout 分配（`horizontal-stretch`）。
+    // 默认 1.0 = 等分。**0 表示该列不占宽度** —— 旧的手算写法里 `width = 可用宽 * 0`
+    // 就是 0，但布局里 `horizontal-stretch: 0` 的含义是"用首选宽度"，所以额外用
+    // max-width 把这种情况压回 0，保持与旧行为一致。
+    in property <float> w: 1.0;
+    horizontal-stretch: root.w;
+    max-width: root.w == 0 ? 0px : 99999px;
     color: root.muted ? Theme.text-muted : Theme.text-primary;
     font-size: Theme.fs-xs;
     font-family: Theme.font-mono;
@@ -86,10 +93,17 @@ component PairGrid inherits InfoCard {
                     height: 1px;
                     background: Theme.border-subtle.with-alpha(0.65);
                 }
-                c1 := CellText { text: r.c1; muted: true; x: 14px; width: (parent.width - 28px - 36px) * 0.12; height: parent.height; }
-                c2 := CellText { text: r.c2; x: 14px + (parent.width - 28px - 36px) * 0.12 + 12px; width: (parent.width - 28px - 36px) * 0.38; height: parent.height; }
-                c3 := CellText { text: r.c3; muted: true; x: 14px + (parent.width - 28px - 36px) * 0.50 + 24px; width: (parent.width - 28px - 36px) * 0.12; height: parent.height; }
-                c4 := CellText { text: r.c4; x: 14px + (parent.width - 28px - 36px) * 0.62 + 36px; width: (parent.width - 28px - 36px) * 0.38; height: parent.height; }
+                // 列宽由布局分配（权重 = 原来的比例列宽，之和为 1）。旧写法手算 x：
+                // `14px + 可用宽 * (前面各列权重之和) + 12px * 列号`，加一列要重算整条链。
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 12px;
+                    c1 := CellText { text: r.c1; muted: true; w: 0.12; }
+                    c2 := CellText { text: r.c2; w: 0.38; }
+                    c3 := CellText { text: r.c3; muted: true; w: 0.12; }
+                    c4 := CellText { text: r.c4; w: 0.38; }
+                }
             }
         }
     }
@@ -126,11 +140,18 @@ component TableCard inherits InfoCard {
         Rectangle {
             height: max(30px, h1.preferred-height, h2.preferred-height, h3.preferred-height, h4.preferred-height, h5.preferred-height);
             background: Theme.bg-root.with-alpha(0.28);
-            h1 := CellText { text: root.h1; muted: true; x: 14px; width: (parent.width - 28px - 48px) * root.c1w; height: parent.height; }
-            h2 := CellText { text: root.h2; muted: true; x: 14px + (parent.width - 28px - 48px) * root.c1w + 12px; width: (parent.width - 28px - 48px) * root.c2w; height: parent.height; }
-            h3 := CellText { text: root.h3; muted: true; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w) + 24px; width: (parent.width - 28px - 48px) * root.c3w; height: parent.height; }
-            h4 := CellText { text: root.h4; muted: true; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w + root.c3w) + 36px; width: (parent.width - 28px - 48px) * root.c4w; height: parent.height; }
-            h5 := CellText { text: root.h5; muted: true; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w + root.c3w + root.c4w) + 48px; width: (parent.width - 28px - 48px) * root.c5w; height: parent.height; }
+            // 列宽由布局分配（权重 = 原来的比例列宽，之和为 1）。旧写法手算 x：
+            // `14px + 可用宽 * (前面各列权重之和) + 12px * 列号`，加一列要重算整条链。
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 12px;
+                h1 := CellText { text: root.h1; muted: true; w: root.c1w; }
+                h2 := CellText { text: root.h2; muted: true; w: root.c2w; }
+                h3 := CellText { text: root.h3; muted: true; w: root.c3w; }
+                h4 := CellText { text: root.h4; muted: true; w: root.c4w; }
+                h5 := CellText { text: root.h5; muted: true; w: root.c5w; }
+            }
         }
         if root.rows.length == 0 : Rectangle {
             height: 36px;
@@ -151,11 +172,18 @@ component TableCard inherits InfoCard {
                 background: Theme.border-subtle.with-alpha(0.48);
             }
             row-ta := TouchArea {}
-            c1 := CellText { text: r.c1; x: 14px; width: (parent.width - 28px - 48px) * root.c1w; height: parent.height; }
-            c2 := CellText { text: r.c2; x: 14px + (parent.width - 28px - 48px) * root.c1w + 12px; width: (parent.width - 28px - 48px) * root.c2w; height: parent.height; }
-            c3 := CellText { text: r.c3; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w) + 24px; width: (parent.width - 28px - 48px) * root.c3w; height: parent.height; }
-            c4 := CellText { text: r.c4; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w + root.c3w) + 36px; width: (parent.width - 28px - 48px) * root.c4w; height: parent.height; }
-            c5 := CellText { text: r.c5; x: 14px + (parent.width - 28px - 48px) * (root.c1w + root.c2w + root.c3w + root.c4w) + 48px; width: (parent.width - 28px - 48px) * root.c5w; height: parent.height; }
+            // 列宽由布局分配（权重 = 原来的比例列宽，之和为 1）。旧写法手算 x：
+            // `14px + 可用宽 * (前面各列权重之和) + 12px * 列号`，加一列要重算整条链。
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 12px;
+                c1 := CellText { text: r.c1; w: root.c1w; }
+                c2 := CellText { text: r.c2; w: root.c2w; }
+                c3 := CellText { text: r.c3; w: root.c3w; }
+                c4 := CellText { text: r.c4; w: root.c4w; }
+                c5 := CellText { text: r.c5; w: root.c5w; }
+            }
         }
     }
 }
