@@ -55,428 +55,428 @@ export component TerminalPage inherits VerticalLayout {
     callback set-term-font-bold(bool);
     callback set-term-font-size(int);
 
-                    padding-left: 20px;
-                    padding-right: 20px;
-                    padding-top: 14px;
-                    spacing: 0;
-                    alignment: start;
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 14px;
+    spacing: 0;
+    alignment: start;
 
-                    SettingsSection {
-                        section-id: "terminal.font";
-                        lang-en: root.lang-en;
-                        title-zh: "字体";
-                        title-en: "FONT";
-                        title-height: 24px;
-                        SettingRow {
-                            label: root.lang-en ? "Terminal font" : "终端字体";
-                            ComboBox {
-                                width: 220px;
-                                model: root.term-fonts;
-                                current-index <=> root.term-font-index;
-                                selected(v) => { root.set-term-font(v); }
-                            }
-                        }
-                        SettingRow {
-                            label: root.lang-en ? "Terminal font size" : "终端字体大小";
-                            Stepper {
-                                value: root.term-font-size / 1px; minimum: 8; maximum: 32; step: 1; unit: "px";
-                                changed(v) => { root.set-term-font-size(v); }
-                            }
-                        }
-                        SettingSwitch {
-                            label: root.lang-en ? "Bold terminal text" : "终端字体加粗";
-                            desc: root.lang-en ? "Makes regular terminal output use a bold face."
-                                               : "让普通终端输出使用加粗字重。";
+    SettingsSection {
+        section-id: "terminal.font";
+        lang-en: root.lang-en;
+        title-zh: "字体";
+        title-en: "FONT";
+        title-height: 24px;
+        SettingRow {
+            label: root.lang-en ? "Terminal font" : "终端字体";
+            ComboBox {
+                width: 220px;
+                model: root.term-fonts;
+                current-index <=> root.term-font-index;
+                selected(v) => { root.set-term-font(v); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Terminal font size" : "终端字体大小";
+            Stepper {
+                value: root.term-font-size / 1px; minimum: 8; maximum: 32; step: 1; unit: "px";
+                changed(v) => { root.set-term-font-size(v); }
+            }
+        }
+        SettingSwitch {
+            label: root.lang-en ? "Bold terminal text" : "终端字体加粗";
+            desc: root.lang-en ? "Makes regular terminal output use a bold face."
+                               : "让普通终端输出使用加粗字重。";
 
-                            checked <=> root.term-font-bold;
-                            toggled(v) => { root.set-term-font-bold(root.term-font-bold); }
+            checked <=> root.term-font-bold;
+            toggled(v) => { root.set-term-font-bold(root.term-font-bold); }
 
-                        }
-                        SettingRow {
-                            label: root.lang-en ? "Cursor shape" : "光标类型";
-                            desc: root.lang-en ? "Choose the terminal insertion cursor shape."
-                                               : "选择终端输入光标的形状。";
-                            HorizontalLayout {
-                                spacing: 5px;
-                                CursorStyleButton {
-                                    label: root.lang-en ? "Block" : "块状";
-                                    cursor-kind: "block";
-                                    selected: root.term-cursor-style == "block";
-                                    clicked => { root.term-cursor-style = "block"; root.set-term-cursor-style("block"); }
-                                }
-                                CursorStyleButton {
-                                    label: root.lang-en ? "Bar" : "竖线";
-                                    cursor-kind: "bar";
-                                    selected: root.term-cursor-style == "bar";
-                                    clicked => { root.term-cursor-style = "bar"; root.set-term-cursor-style("bar"); }
-                                }
-                                CursorStyleButton {
-                                    label: root.lang-en ? "Line" : "下划线";
-                                    cursor-kind: "underline";
-                                    selected: root.term-cursor-style == "underline";
-                                    clicked => { root.term-cursor-style = "underline"; root.set-term-cursor-style("underline"); }
-                                }
-                            }
-                        }
-                        SettingRow {
-                            label: root.lang-en ? "Cursor color" : "光标颜色";
-                            desc: root.lang-en ? "Enter a hexadecimal RGB color."
-                                               : "输入十六进制 RGB 颜色。";
-                            CursorColorInput {
-                                value <=> root.term-cursor-color-hex;
-                                preview-color: root.term-cursor-color;
-                                apply-color(v) => { root.set-term-cursor-color(v) }
-                            }
-                        }
-                    }
-                    SettingsSection {
-                        section-id: "terminal.font-preview";
-                        lang-en: root.lang-en;
-                        title-zh: "预览";
-                        title-en: "PREVIEW";
-                        title-height: 22px;
-                        Rectangle {
-                            height: 52px;
-                            background: Theme.term-bg;
-                            border-radius: 6px;
-                            border-width: 1px;
-                            border-color: Theme.border-subtle;
-                            Text {
-                                x: 12px;
-                                text: "Rudder ~$ echo preview 0123";
-                                font-family: Theme.term-font-family;
-                                font-size: Theme.term-font-size;
-                                font-weight: Theme.term-font-bold ? 700 : 400;
-                                color: Theme.term-fg;
-                                vertical-alignment: center;
-                                height: parent.height;
-                            }
-                        }
-
-                    }
-                    SettingsSection {
-                        section-id: "terminal.scrollback";
-                        lang-en: root.lang-en;
-                        title-zh: "回滚行数";
-                        title-en: "SCROLLBACK";
-                        title-height: 24px;
-                        SettingRow {
-                            show-divider: true;
-                            label: root.lang-en ? "Scrollback lines" : "回滚行数";
-                            desc: root.lang-en
-                                ? "Number of lines kept in terminal history (100–1,000,000)."
-                                : "终端历史记录保留的最大行数（100–1,000,000）。";
-                            Rectangle {
-                                width: 148px; height: 30px;
-                                border-radius: 6px; border-width: 1px;
-                                border-color: Theme.border-subtle;
-                                background: Theme.bg-elevated;
-                                TextInput {
-                                    width: parent.width - 8px; height: parent.height;
-                                    x: 4px; vertical-alignment: center;
-                                    color: Theme.text-primary;
-                                    text: root.scrollback-lines;
-                                changed text => {
-                                    root.scrollback-valid = root.set-scrollback-lines(self.text);
-                                }
-                            }
-                            }
-                        }
-                        Text {
-                            text: root.lang-en
-                                ? "Larger values use more memory. Invalid input is not applied."
-                                : "行数越大占用内存越多。非法输入不会被应用。";
-                            font-size: 11px * Theme.panel-font;
-                            color: root.scrollback-valid ? Theme.text-muted : Theme.danger;
-                            wrap: word-wrap;
-                        }
-                        Rectangle { height: 14px; }
-                        SettingSwitch {
-                            label: root.lang-en ? "Convert LF to CRLF" : "LF 转 CRLF";
-                            desc: root.lang-en
-                                ? "Replace \\n with \\r\\n on paste/input for programs that require Windows line endings."
-                                : "粘贴/输入时将 \\n 转为 \\r\\n，兼容需要 Windows 换行符的程序。";
-
-                            checked <=> root.convert-eol;
-                            toggled(v) => { root.set-convert-eol(root.convert-eol); }
-
-                        }
-                        SettingSwitch {
-                            label: root.lang-en ? "OSC 52 clipboard" : "OSC 52 剪贴板";
-                            desc: root.lang-en
-                                ? "Allow remote programs (zellij, tmux, vim) to write the local clipboard via OSC 52. Disable for stricter security."
-                                : "允许远程程序 (zellij、tmux、vim) 通过 OSC 52 写入本地剪贴板。关闭可提高安全性。";
-
-                            checked <=> root.osc52-clipboard;
-                            toggled(v) => { root.set-osc52-clipboard(root.osc52-clipboard); }
-
-                        }
-                        Rectangle { height: 14px; }
-                    }
-                    SettingsSection {
-                        section-id: "terminal.output-highlighting";
-                        lang-en: root.lang-en;
-                        title-zh: "输出高亮";
-                        title-en: "OUTPUT HIGHLIGHTING";
-                        title-height: 24px;
-                        SettingSwitch {
-                            label: root.lang-en ? "Highlight plain terminal output" : "高亮纯文本终端输出";
-                            desc: root.lang-en
-                                ? "Adds client-side colours only when the program did not provide ANSI styling."
-                                : "仅在程序未提供 ANSI 样式时由客户端补充颜色。";
-
-                            checked <=> root.output-highlight-enabled;
-                            toggled(v) => {
-                            root.set-output-highlight(root.output-highlight-enabled, root.output-highlight-preset);
-                            }
-
-                        }
-                        SettingSwitch {
-                            label: root.lang-en ? "Format and colour JSON lines" : "格式化并着色 JSON 行";
-                            desc: root.lang-en
-                                ? "Pretty-prints complete single-line JSON output with per-token colours; prompts and partial JSON stay untouched."
-                                : "把完整的单行 JSON 输出美化缩进并按令牌着色；提示符与不完整 JSON 保持原样。";
-
-                            checked <=> root.json-format-output;
-                            toggled(v) => {
-                            root.set-json-format-output(root.json-format-output);
-                            }
-
-                        }
-                        SettingRow {
-                            label: root.lang-en ? "Built-in rule set" : "内置规则集";
-                            desc: root.lang-en
-                                ? "Log levels is conservative; DevOps recognises deployment states; Rudder rules highlight numbers, URLs, IPs, UUIDs, dates and more."
-                                : "日志级别更保守；DevOps 识别部署状态；Rudder规则高亮数字、URL、IP、UUID、日期等。";
-                            show-divider: false;
-                            ComboBox {
-                                width: 190px;
-                                enabled: root.output-highlight-enabled;
-                                model: [
-                                    root.lang-en ? "Log levels" : "日志级别",
-                                    "DevOps",
-                                    root.lang-en ? "Rudder rules" : "Rudder规则",
-                                ];
-                                current-value: root.output-highlight-preset == "devops"
-                                    ? "DevOps"
-                                    : (root.output-highlight-preset == "builtin"
-                                        ? (root.lang-en ? "Rudder rules" : "Rudder规则")
-                                        : (root.lang-en ? "Log levels" : "日志级别"));
-                                selected(v) => {
-                                    root.output-highlight-preset =
-                                        v == "DevOps" ? "devops"
-                                        : (v == (root.lang-en ? "Rudder rules" : "Rudder规则")
-                                            ? "builtin" : "log");
-                                    root.set-output-highlight(
-                                        root.output-highlight-enabled,
-                                        root.output-highlight-preset);
-                                }
-                            }
-                        }
-
-                        Rectangle { height: 18px; }
-                    }
-                    SettingsSection {
-                        section-id: "terminal.highlight-preview";
-                        lang-en: root.lang-en;
-                        title-zh: "预览";
-                        title-en: "PREVIEW";
-                        title-height: 22px;
-                        Rectangle {
-                            height: root.output-highlight-preset == "devops" || root.output-highlight-preset == "builtin" ? 116px : 92px;
-                            background: Theme.term-bg;
-                            border-radius: 6px;
-                            border-width: 1px;
-                            border-color: Theme.border-subtle;
-                            VerticalLayout {
-                                padding: 12px;
-                                spacing: 5px;
-                                if root.output-highlight-preset == "builtin" : VerticalLayout {
-                                    spacing: 5px;
-                                    Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                                    Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                                    Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                                }
-                                if root.output-highlight-preset != "builtin" : VerticalLayout {
-                                    spacing: 5px;
-                                    Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.text-muted : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                                    Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                                    Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                                    Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                                    if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                                }
-                            }
-                        }
-
-                        Rectangle { height: 18px; }
-                    }
-                    SettingsSection {
-                        section-id: "terminal.custom-rules";
-                        lang-en: root.lang-en;
-                        title-zh: "自定义规则";
-                        title-en: "CUSTOM RULES";
-                        title-height: 22px;
-                        Text {
-                            text: root.lang-en
-                                ? "Custom rules run before the built-in preset and never overwrite ANSI colours."
-                                : "自定义规则优先于内置规则，且不会覆盖程序输出的 ANSI 颜色。";
-                            color: Theme.text-muted;
-                            font-size: 11px * Theme.panel-font;
-                            wrap: word-wrap;
-                        }
-                        Rectangle { height: 10px; }
-                        LabeledInput {
-                            label: root.lang-en ? "Keyword or regular expression" : "关键词或正则表达式";
-                            placeholder: root.new-rule-regex ? "timeout|connection refused" : "connection refused";
-                            value <=> root.new-rule-pattern;
-                            accepted => {
-                                if root.add-output-highlight-rule(
-                                    root.new-rule-pattern, root.new-rule-regex,
-                                    root.new-rule-case-sensitive, root.new-rule-whole-line,
-                                    root.new-rule-color) {
-                                    root.new-rule-pattern = "";
-                                }
-                            }
-                        }
-                        Rectangle { height: 8px; }
-                        HorizontalLayout {
-                            spacing: 8px;
-                            ComboBox {
-                                width: 130px;
-                                model: [root.lang-en ? "Keyword" : "关键词", root.lang-en ? "Regex" : "正则"];
-                                current-value: root.new-rule-regex
-                                    ? (root.lang-en ? "Regex" : "正则")
-                                    : (root.lang-en ? "Keyword" : "关键词");
-                                selected(v) => {
-                                    root.new-rule-regex = v == "Regex" || v == "正则";
-                                }
-                            }
-                            ComboBox {
-                                width: 120px;
-                                model: ["Red", "Yellow", "Green", "Cyan", "Magenta", "Gray"];
-                                current-value: root.new-rule-color == "yellow" ? "Yellow"
-                                    : root.new-rule-color == "green" ? "Green"
-                                    : root.new-rule-color == "cyan" ? "Cyan"
-                                    : root.new-rule-color == "magenta" ? "Magenta"
-                                    : root.new-rule-color == "gray" ? "Gray" : "Red";
-                                selected(v) => {
-                                    root.new-rule-color = v == "Yellow" ? "yellow"
-                                        : v == "Green" ? "green"
-                                        : v == "Cyan" ? "cyan"
-                                        : v == "Magenta" ? "magenta"
-                                        : v == "Gray" ? "gray" : "red";
-                                }
-                            }
-                            Rectangle { horizontal-stretch: 1; }
-                            PrimaryButton {
-                                text: root.lang-en ? "Add rule" : "添加规则";
-                                disabled: root.new-rule-pattern == "";
-                                clicked => {
-                                    if root.add-output-highlight-rule(
-                                        root.new-rule-pattern, root.new-rule-regex,
-                                        root.new-rule-case-sensitive, root.new-rule-whole-line,
-                                        root.new-rule-color) {
-                                        root.new-rule-pattern = "";
-                                    }
-                                }
-                            }
-                        }
-                        SettingSwitch {
-                            label: root.lang-en ? "Case sensitive" : "区分大小写";
-
-                            checked <=> root.new-rule-case-sensitive;
-                            toggled(v) => {}
-
-                        }
-                        SettingSwitch {
-                            label: root.lang-en ? "Highlight whole line" : "高亮整行";
-                            desc: root.lang-en
-                                ? "Otherwise only matching text is coloured."
-                                : "关闭时仅高亮匹配到的文字。";
-                            show-divider: false;
-
-                            checked <=> root.new-rule-whole-line;
-                            toggled(v) => {}
-
-                        }
-                        if root.output-highlight-rule-status != "" : Text {
-                            text: root.output-highlight-rule-status;
-                            color: Theme.danger;
-                            font-size: 11px * Theme.panel-font;
-                            wrap: word-wrap;
-                        }
-
-                        if root.output-highlight-rules.length == 0 : Text {
-                            text: root.lang-en ? "No custom rules yet." : "暂无自定义规则。";
-                            color: Theme.text-muted;
-                            font-size: 11px * Theme.panel-font;
-                            height: 34px;
-                            vertical-alignment: center;
-                        }
-                        for rule[index] in root.output-highlight-rules : Rectangle {
-                            height: 44px;
-                            Divider {}
-                            HorizontalLayout {
-                                spacing: 9px;
-                                Rectangle {
-                                    width: 8px;
-                                    height: 8px;
-                                    border-radius: 4px;
-                                    background: rule.color == "yellow" ? Theme.warning
-                                        : rule.color == "green" ? Theme.success
-                                        : rule.color == "cyan" ? Theme.accent
-                                        : rule.color == "magenta" ? #d670d6
-                                        : rule.color == "gray" ? Theme.text-muted
-                                        : Theme.danger;
-                                    vertical-stretch: 0;
-                                }
-                                VerticalLayout {
-                                    horizontal-stretch: 1;
-                                    alignment: center;
-                                    spacing: 2px;
-                                    Text {
-                                        text: rule.pattern;
-                                        color: rule.enabled ? Theme.text-primary : Theme.text-muted;
-                                        font-family: Theme.term-font-family;
-                                        font-size: 12px * Theme.panel-font;
-                                        overflow: elide;
-                                    }
-                                    Text {
-                                        text: (rule.regex ? "Regex" : (root.lang-en ? "Keyword" : "关键词"))
-                                            + (rule.case-sensitive ? " · Aa" : "")
-                                            + (rule.whole-line ? (root.lang-en ? " · whole line" : " · 整行") : "");
-                                        color: Theme.text-muted;
-                                        font-size: 10px * Theme.panel-font;
-                                    }
-                                }
-                                Switch {
-                                    checked: rule.enabled;
-                                    toggled => { root.set-output-highlight-rule-enabled(index, !rule.enabled); }
-                                }
-                                Rectangle {
-                                    width: 28px;
-                                    height: 28px;
-                                    border-radius: 5px;
-                                    background: delete-ta.has-hover ? Theme.bg-hover : transparent;
-                                    delete-ta := TouchArea {
-                                        mouse-cursor: pointer;
-                                        clicked => { root.remove-output-highlight-rule(index); }
-                                    }
-                                    IconText {
-                                        centered: true;
-                                        text: "\u{E872}";
-                                        color: Theme.text-muted;
-                                        font-size: 15px * Theme.panel-font;
-                                        width: 100%; height: 100%;
-                                    }
-                                }
-                            }
-                        }
-            
-                    // 还原本页默认（本页最后一个设置项之后）
-                    }
-                ResetBar {
-                    page-id: "terminal";
-                    reset-page(p) => { root.reset-page(p); }
+        }
+        SettingRow {
+            label: root.lang-en ? "Cursor shape" : "光标类型";
+            desc: root.lang-en ? "Choose the terminal insertion cursor shape."
+                               : "选择终端输入光标的形状。";
+            HorizontalLayout {
+                spacing: 5px;
+                CursorStyleButton {
+                    label: root.lang-en ? "Block" : "块状";
+                    cursor-kind: "block";
+                    selected: root.term-cursor-style == "block";
+                    clicked => { root.term-cursor-style = "block"; root.set-term-cursor-style("block"); }
                 }
+                CursorStyleButton {
+                    label: root.lang-en ? "Bar" : "竖线";
+                    cursor-kind: "bar";
+                    selected: root.term-cursor-style == "bar";
+                    clicked => { root.term-cursor-style = "bar"; root.set-term-cursor-style("bar"); }
+                }
+                CursorStyleButton {
+                    label: root.lang-en ? "Line" : "下划线";
+                    cursor-kind: "underline";
+                    selected: root.term-cursor-style == "underline";
+                    clicked => { root.term-cursor-style = "underline"; root.set-term-cursor-style("underline"); }
+                }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Cursor color" : "光标颜色";
+            desc: root.lang-en ? "Enter a hexadecimal RGB color."
+                               : "输入十六进制 RGB 颜色。";
+            CursorColorInput {
+                value <=> root.term-cursor-color-hex;
+                preview-color: root.term-cursor-color;
+                apply-color(v) => { root.set-term-cursor-color(v) }
+            }
+        }
     }
+    SettingsSection {
+        section-id: "terminal.font-preview";
+        lang-en: root.lang-en;
+        title-zh: "预览";
+        title-en: "PREVIEW";
+        title-height: 22px;
+        Rectangle {
+            height: 52px;
+            background: Theme.term-bg;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+            Text {
+                x: 12px;
+                text: "Rudder ~$ echo preview 0123";
+                font-family: Theme.term-font-family;
+                font-size: Theme.term-font-size;
+                font-weight: Theme.term-font-bold ? 700 : 400;
+                color: Theme.term-fg;
+                vertical-alignment: center;
+                height: parent.height;
+            }
+        }
+
+    }
+    SettingsSection {
+        section-id: "terminal.scrollback";
+        lang-en: root.lang-en;
+        title-zh: "回滚行数";
+        title-en: "SCROLLBACK";
+        title-height: 24px;
+        SettingRow {
+            show-divider: true;
+            label: root.lang-en ? "Scrollback lines" : "回滚行数";
+            desc: root.lang-en
+                ? "Number of lines kept in terminal history (100–1,000,000)."
+                : "终端历史记录保留的最大行数（100–1,000,000）。";
+            Rectangle {
+                width: 148px; height: 30px;
+                border-radius: 6px; border-width: 1px;
+                border-color: Theme.border-subtle;
+                background: Theme.bg-elevated;
+                TextInput {
+                    width: parent.width - 8px; height: parent.height;
+                    x: 4px; vertical-alignment: center;
+                    color: Theme.text-primary;
+                    text: root.scrollback-lines;
+                    changed text => {
+                        root.scrollback-valid = root.set-scrollback-lines(self.text);
+                    }
+                }
+            }
+        }
+        Text {
+            text: root.lang-en
+                ? "Larger values use more memory. Invalid input is not applied."
+                : "行数越大占用内存越多。非法输入不会被应用。";
+            font-size: 11px * Theme.panel-font;
+            color: root.scrollback-valid ? Theme.text-muted : Theme.danger;
+            wrap: word-wrap;
+        }
+        Rectangle { height: 14px; }
+        SettingSwitch {
+            label: root.lang-en ? "Convert LF to CRLF" : "LF 转 CRLF";
+            desc: root.lang-en
+                ? "Replace \\n with \\r\\n on paste/input for programs that require Windows line endings."
+                : "粘贴/输入时将 \\n 转为 \\r\\n，兼容需要 Windows 换行符的程序。";
+
+            checked <=> root.convert-eol;
+            toggled(v) => { root.set-convert-eol(root.convert-eol); }
+
+        }
+        SettingSwitch {
+            label: root.lang-en ? "OSC 52 clipboard" : "OSC 52 剪贴板";
+            desc: root.lang-en
+                ? "Allow remote programs (zellij, tmux, vim) to write the local clipboard via OSC 52. Disable for stricter security."
+                : "允许远程程序 (zellij、tmux、vim) 通过 OSC 52 写入本地剪贴板。关闭可提高安全性。";
+
+            checked <=> root.osc52-clipboard;
+            toggled(v) => { root.set-osc52-clipboard(root.osc52-clipboard); }
+
+        }
+        Rectangle { height: 14px; }
+    }
+    SettingsSection {
+        section-id: "terminal.output-highlighting";
+        lang-en: root.lang-en;
+        title-zh: "输出高亮";
+        title-en: "OUTPUT HIGHLIGHTING";
+        title-height: 24px;
+        SettingSwitch {
+            label: root.lang-en ? "Highlight plain terminal output" : "高亮纯文本终端输出";
+            desc: root.lang-en
+                ? "Adds client-side colours only when the program did not provide ANSI styling."
+                : "仅在程序未提供 ANSI 样式时由客户端补充颜色。";
+
+            checked <=> root.output-highlight-enabled;
+            toggled(v) => {
+            root.set-output-highlight(root.output-highlight-enabled, root.output-highlight-preset);
+            }
+
+        }
+        SettingSwitch {
+            label: root.lang-en ? "Format and colour JSON lines" : "格式化并着色 JSON 行";
+            desc: root.lang-en
+                ? "Pretty-prints complete single-line JSON output with per-token colours; prompts and partial JSON stay untouched."
+                : "把完整的单行 JSON 输出美化缩进并按令牌着色；提示符与不完整 JSON 保持原样。";
+
+            checked <=> root.json-format-output;
+            toggled(v) => {
+            root.set-json-format-output(root.json-format-output);
+            }
+
+        }
+        SettingRow {
+            label: root.lang-en ? "Built-in rule set" : "内置规则集";
+            desc: root.lang-en
+                ? "Log levels is conservative; DevOps recognises deployment states; Rudder rules highlight numbers, URLs, IPs, UUIDs, dates and more."
+                : "日志级别更保守；DevOps 识别部署状态；Rudder规则高亮数字、URL、IP、UUID、日期等。";
+            show-divider: false;
+            ComboBox {
+                width: 190px;
+                enabled: root.output-highlight-enabled;
+                model: [
+                    root.lang-en ? "Log levels" : "日志级别",
+                    "DevOps",
+                    root.lang-en ? "Rudder rules" : "Rudder规则",
+                ];
+                current-value: root.output-highlight-preset == "devops"
+                    ? "DevOps"
+                    : (root.output-highlight-preset == "builtin"
+                        ? (root.lang-en ? "Rudder rules" : "Rudder规则")
+                        : (root.lang-en ? "Log levels" : "日志级别"));
+                selected(v) => {
+                    root.output-highlight-preset =
+                        v == "DevOps" ? "devops"
+                        : (v == (root.lang-en ? "Rudder rules" : "Rudder规则")
+                            ? "builtin" : "log");
+                    root.set-output-highlight(
+                        root.output-highlight-enabled,
+                        root.output-highlight-preset);
+                }
+            }
+        }
+
+        Rectangle { height: 18px; }
+    }
+    SettingsSection {
+        section-id: "terminal.highlight-preview";
+        lang-en: root.lang-en;
+        title-zh: "预览";
+        title-en: "PREVIEW";
+        title-height: 22px;
+        Rectangle {
+            height: root.output-highlight-preset == "devops" || root.output-highlight-preset == "builtin" ? 116px : 92px;
+            background: Theme.term-bg;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+            VerticalLayout {
+                padding: 12px;
+                spacing: 5px;
+                if root.output-highlight-preset == "builtin" : VerticalLayout {
+                    spacing: 5px;
+                    Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                    Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                    Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                }
+                if root.output-highlight-preset != "builtin" : VerticalLayout {
+                    spacing: 5px;
+                    Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.text-muted : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                    Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                    Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                    Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                    if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                }
+            }
+        }
+
+        Rectangle { height: 18px; }
+    }
+    SettingsSection {
+        section-id: "terminal.custom-rules";
+        lang-en: root.lang-en;
+        title-zh: "自定义规则";
+        title-en: "CUSTOM RULES";
+        title-height: 22px;
+        Text {
+            text: root.lang-en
+                ? "Custom rules run before the built-in preset and never overwrite ANSI colours."
+                : "自定义规则优先于内置规则，且不会覆盖程序输出的 ANSI 颜色。";
+            color: Theme.text-muted;
+            font-size: 11px * Theme.panel-font;
+            wrap: word-wrap;
+        }
+        Rectangle { height: 10px; }
+        LabeledInput {
+            label: root.lang-en ? "Keyword or regular expression" : "关键词或正则表达式";
+            placeholder: root.new-rule-regex ? "timeout|connection refused" : "connection refused";
+            value <=> root.new-rule-pattern;
+            accepted => {
+                if root.add-output-highlight-rule(
+                    root.new-rule-pattern, root.new-rule-regex,
+                    root.new-rule-case-sensitive, root.new-rule-whole-line,
+                    root.new-rule-color) {
+                    root.new-rule-pattern = "";
+                }
+            }
+        }
+        Rectangle { height: 8px; }
+        HorizontalLayout {
+            spacing: 8px;
+            ComboBox {
+                width: 130px;
+                model: [root.lang-en ? "Keyword" : "关键词", root.lang-en ? "Regex" : "正则"];
+                current-value: root.new-rule-regex
+                    ? (root.lang-en ? "Regex" : "正则")
+                    : (root.lang-en ? "Keyword" : "关键词");
+                selected(v) => {
+                    root.new-rule-regex = v == "Regex" || v == "正则";
+                }
+            }
+            ComboBox {
+                width: 120px;
+                model: ["Red", "Yellow", "Green", "Cyan", "Magenta", "Gray"];
+                current-value: root.new-rule-color == "yellow" ? "Yellow"
+                    : root.new-rule-color == "green" ? "Green"
+                    : root.new-rule-color == "cyan" ? "Cyan"
+                    : root.new-rule-color == "magenta" ? "Magenta"
+                    : root.new-rule-color == "gray" ? "Gray" : "Red";
+                selected(v) => {
+                    root.new-rule-color = v == "Yellow" ? "yellow"
+                        : v == "Green" ? "green"
+                        : v == "Cyan" ? "cyan"
+                        : v == "Magenta" ? "magenta"
+                        : v == "Gray" ? "gray" : "red";
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            PrimaryButton {
+                text: root.lang-en ? "Add rule" : "添加规则";
+                disabled: root.new-rule-pattern == "";
+                clicked => {
+                    if root.add-output-highlight-rule(
+                        root.new-rule-pattern, root.new-rule-regex,
+                        root.new-rule-case-sensitive, root.new-rule-whole-line,
+                        root.new-rule-color) {
+                        root.new-rule-pattern = "";
+                    }
+                }
+            }
+        }
+        SettingSwitch {
+            label: root.lang-en ? "Case sensitive" : "区分大小写";
+
+            checked <=> root.new-rule-case-sensitive;
+            toggled(v) => {}
+
+        }
+        SettingSwitch {
+            label: root.lang-en ? "Highlight whole line" : "高亮整行";
+            desc: root.lang-en
+                ? "Otherwise only matching text is coloured."
+                : "关闭时仅高亮匹配到的文字。";
+            show-divider: false;
+
+            checked <=> root.new-rule-whole-line;
+            toggled(v) => {}
+
+        }
+        if root.output-highlight-rule-status != "" : Text {
+            text: root.output-highlight-rule-status;
+            color: Theme.danger;
+            font-size: 11px * Theme.panel-font;
+            wrap: word-wrap;
+        }
+
+        if root.output-highlight-rules.length == 0 : Text {
+            text: root.lang-en ? "No custom rules yet." : "暂无自定义规则。";
+            color: Theme.text-muted;
+            font-size: 11px * Theme.panel-font;
+            height: 34px;
+            vertical-alignment: center;
+        }
+        for rule[index] in root.output-highlight-rules : Rectangle {
+            height: 44px;
+            Divider {}
+            HorizontalLayout {
+                spacing: 9px;
+                Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: rule.color == "yellow" ? Theme.warning
+                        : rule.color == "green" ? Theme.success
+                        : rule.color == "cyan" ? Theme.accent
+                        : rule.color == "magenta" ? #d670d6
+                        : rule.color == "gray" ? Theme.text-muted
+                        : Theme.danger;
+                    vertical-stretch: 0;
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: rule.pattern;
+                        color: rule.enabled ? Theme.text-primary : Theme.text-muted;
+                        font-family: Theme.term-font-family;
+                        font-size: 12px * Theme.panel-font;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: (rule.regex ? "Regex" : (root.lang-en ? "Keyword" : "关键词"))
+                            + (rule.case-sensitive ? " · Aa" : "")
+                            + (rule.whole-line ? (root.lang-en ? " · whole line" : " · 整行") : "");
+                        color: Theme.text-muted;
+                        font-size: 10px * Theme.panel-font;
+                    }
+                }
+                Switch {
+                    checked: rule.enabled;
+                    toggled => { root.set-output-highlight-rule-enabled(index, !rule.enabled); }
+                }
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 5px;
+                    background: delete-ta.has-hover ? Theme.bg-hover : transparent;
+                    delete-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.remove-output-highlight-rule(index); }
+                    }
+                    IconText {
+                        centered: true;
+                        text: "\u{E872}";
+                        color: Theme.text-muted;
+                        font-size: 15px * Theme.panel-font;
+                        width: 100%; height: 100%;
+                    }
+                }
+            }
+        }
+            
+    // 还原本页默认（本页最后一个设置项之后）
+    }
+    ResetBar {
+    page-id: "terminal";
+    reset-page(p) => { root.reset-page(p); }
+    }
+}

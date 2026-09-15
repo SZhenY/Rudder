@@ -207,129 +207,129 @@ export component InterfacePanel inherits Rectangle {
                 //
 
                 settings-pages := VerticalLayout {
-                    width: settings-scroll.visible-width;
+                            width: settings-scroll.visible-width;
 
-            // --- Font page ---------------------------------------------
-            if root.ifd-page == "terminal" : TerminalPage {
-                convert-eol <=> root.convert-eol;
-                json-format-output <=> root.json-format-output;
-                lang-en: root.lang-en;
-                osc52-clipboard <=> root.osc52-clipboard;
-                output-highlight-enabled <=> root.output-highlight-enabled;
-                output-highlight-preset <=> root.output-highlight-preset;
-                output-highlight-rule-status <=> root.output-highlight-rule-status;
-                output-highlight-rules: root.output-highlight-rules;
-                scrollback-lines <=> root.scrollback-lines;
-                term-cursor-color: root.term-cursor-color;
-                term-cursor-color-hex <=> root.term-cursor-color-hex;
-                term-cursor-style <=> root.term-cursor-style;
-                term-font-bold <=> root.term-font-bold;
-                term-font-index <=> root.term-font-index;
-                term-font-size: root.term-font-size;
-                term-fonts: root.term-fonts;
-                add-output-highlight-rule(a0, a1, a2, a3, a4) => { return root.add-output-highlight-rule(a0, a1, a2, a3, a4); }
-                remove-output-highlight-rule(a0) => { root.remove-output-highlight-rule(a0); }
-                reset-page(a0) => { root.reset-page(a0); }
-                set-convert-eol(a0) => { root.set-convert-eol(a0); }
-                set-json-format-output(a0) => { root.set-json-format-output(a0); }
-                set-osc52-clipboard(a0) => { root.set-osc52-clipboard(a0); }
-                set-output-highlight(a0, a1) => { root.set-output-highlight(a0, a1); }
-                set-output-highlight-rule-enabled(a0, a1) => { root.set-output-highlight-rule-enabled(a0, a1); }
-                set-scrollback-lines(a0) => { return root.set-scrollback-lines(a0); }
-                set-term-cursor-color(a0) => { return root.set-term-cursor-color(a0); }
-                set-term-cursor-style(a0) => { root.set-term-cursor-style(a0); }
-                set-term-font(a0) => { root.set-term-font(a0); }
-                set-term-font-bold(a0) => { root.set-term-font-bold(a0); }
-                set-term-font-size(a0) => { root.set-term-font-size(a0); }
+                    // --- Font page ---------------------------------------------
+                    if root.ifd-page == "terminal" : TerminalPage {
+                        convert-eol <=> root.convert-eol;
+                        json-format-output <=> root.json-format-output;
+                        lang-en: root.lang-en;
+                        osc52-clipboard <=> root.osc52-clipboard;
+                        output-highlight-enabled <=> root.output-highlight-enabled;
+                        output-highlight-preset <=> root.output-highlight-preset;
+                        output-highlight-rule-status <=> root.output-highlight-rule-status;
+                        output-highlight-rules: root.output-highlight-rules;
+                        scrollback-lines <=> root.scrollback-lines;
+                        term-cursor-color: root.term-cursor-color;
+                        term-cursor-color-hex <=> root.term-cursor-color-hex;
+                        term-cursor-style <=> root.term-cursor-style;
+                        term-font-bold <=> root.term-font-bold;
+                        term-font-index <=> root.term-font-index;
+                        term-font-size: root.term-font-size;
+                        term-fonts: root.term-fonts;
+                        add-output-highlight-rule(a0, a1, a2, a3, a4) => { return root.add-output-highlight-rule(a0, a1, a2, a3, a4); }
+                        remove-output-highlight-rule(a0) => { root.remove-output-highlight-rule(a0); }
+                        reset-page(a0) => { root.reset-page(a0); }
+                        set-convert-eol(a0) => { root.set-convert-eol(a0); }
+                        set-json-format-output(a0) => { root.set-json-format-output(a0); }
+                        set-osc52-clipboard(a0) => { root.set-osc52-clipboard(a0); }
+                        set-output-highlight(a0, a1) => { root.set-output-highlight(a0, a1); }
+                        set-output-highlight-rule-enabled(a0, a1) => { root.set-output-highlight-rule-enabled(a0, a1); }
+                        set-scrollback-lines(a0) => { return root.set-scrollback-lines(a0); }
+                        set-term-cursor-color(a0) => { return root.set-term-cursor-color(a0); }
+                        set-term-cursor-style(a0) => { root.set-term-cursor-style(a0); }
+                        set-term-font(a0) => { root.set-term-font(a0); }
+                        set-term-font-bold(a0) => { root.set-term-font-bold(a0); }
+                        set-term-font-size(a0) => { root.set-term-font-size(a0); }
+                    }
+                    if root.ifd-page == "appearance" : AppearancePage {
+                            current-wallpaper: root.current-wallpaper;
+                            custom-wallpaper-name: root.custom-wallpaper-name;
+                            hide-special-partitions <=> root.hide-special-partitions;
+                            lang-en: root.lang-en;
+                            mount-filter <=> root.mount-filter;
+                            renderer-mode <=> root.renderer-mode;
+                            ui-font-index <=> root.ui-font-index;
+                            ui-fonts: root.ui-fonts;
+                            ui-scale: root.ui-scale;
+                            wallpaper-overlay <=> root.wallpaper-overlay;
+                            persist-wallpaper-overlay(a0) => { root.persist-wallpaper-overlay(a0); }
+                            pick-wallpaper-file() => { root.pick-wallpaper-file(); }
+                            reset-page(a0) => { root.reset-page(a0); }
+                            set-animations-enabled(a0) => { root.set-animations-enabled(a0); }
+                            set-hide-special-partitions(a0) => { root.set-hide-special-partitions(a0); }
+                            set-mount-filter(a0) => { root.set-mount-filter(a0); }
+                            set-panel-font(a0) => { root.set-panel-font(a0); }
+                            set-renderer-mode(a0) => { root.set-renderer-mode(a0); }
+                            set-ui-font(a0) => { root.set-ui-font(a0); }
+                            set-ui-scale(a0) => { root.set-ui-scale(a0); }
+                            set-wallpaper(a0) => { root.set-wallpaper(a0); }
+                    }
+
+                    if root.ifd-page == "layout" : LayoutPage {
+                            show-cmd-bar <=> root.show-cmd-bar;
+                            collapse-sftp-default <=> root.collapse-sftp-default;
+                            collapse-sidebar-default <=> root.collapse-sidebar-default;
+                            lang-en: root.lang-en;
+                            quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
+                            welcome-as-sidebar <=> root.welcome-as-sidebar;
+                            reset-page(a0) => { root.reset-page(a0); }
+                            set-show-cmd-bar(a0) => { root.set-show-cmd-bar(a0); }
+                            set-collapse-sftp-default(a0) => { root.set-collapse-sftp-default(a0); }
+                            set-collapse-sidebar-default(a0) => { root.set-collapse-sidebar-default(a0); }
+                            set-quick-commands-as-sidebar(a0) => { root.set-quick-commands-as-sidebar(a0); }
+                            set-welcome-as-sidebar(a0) => { root.set-welcome-as-sidebar(a0); }
+                    }
+
+                    if root.ifd-page == "transfer" : TransferPage {
+                            download-always-ask <=> root.download-always-ask;
+                            lang-en: root.lang-en;
+                            sftp-follow-cd <=> root.sftp-follow-cd;
+                            reset-page(a0) => { root.reset-page(a0); }
+                            set-download-always-ask(a0) => { root.set-download-always-ask(a0); }
+                            set-sftp-follow-cd(a0) => { root.set-sftp-follow-cd(a0); }
+                    }
+
+                    if root.ifd-page == "wsl" : WslPage {
+                            lang-en: root.lang-en;
+                            wsl-new-directory <=> root.wsl-new-directory;
+                            wsl-new-distribution <=> root.wsl-new-distribution;
+                            wsl-new-name <=> root.wsl-new-name;
+                            wsl-profiles: root.wsl-profiles;
+                            add-wsl-profile(a0, a1, a2) => { root.add-wsl-profile(a0, a1, a2); }
+                            pick-wsl-directory() => { root.pick-wsl-directory(); }
+                            remove-wsl-profile(a0) => { root.remove-wsl-profile(a0); }
+                    }
+
+                    if root.ifd-page == "sync" : SyncPage {
+                            lang-en: root.lang-en;
+                            sync-upload-enabled <=> root.sync-upload-enabled;
+                            webdav-accept-invalid-certs <=> root.webdav-accept-invalid-certs;
+                            webdav-enabled <=> root.webdav-enabled;
+                            webdav-password <=> root.webdav-password;
+                            webdav-remote-path <=> root.webdav-remote-path;
+                            webdav-status <=> root.webdav-status;
+                            webdav-url <=> root.webdav-url;
+                            webdav-username <=> root.webdav-username;
+                            save-webdav-settings(a0, a1, a2, a3, a4, a5) => { root.save-webdav-settings(a0, a1, a2, a3, a4, a5); }
+                            set-sync-upload-enabled(a0) => { root.set-sync-upload-enabled(a0); }
+                            webdav-download() => { root.webdav-download(); }
+                            webdav-upload() => { root.webdav-upload(); }
+                    }
+
+                    if root.ifd-page == "update" : UpdatePage {
+                            lang-en: root.lang-en;
+                            update-check-enabled <=> root.update-check-enabled;
+                            update-check-status: root.update-check-status;
+                            update-checking: root.update-checking;
+                            check-update-now() => { root.check-update-now(); }
+                            set-update-check-enabled(a0) => { root.set-update-check-enabled(a0); }
+                    }
+
+                }
+
             }
-                if root.ifd-page == "appearance" : AppearancePage {
-                    current-wallpaper: root.current-wallpaper;
-                    custom-wallpaper-name: root.custom-wallpaper-name;
-                    hide-special-partitions <=> root.hide-special-partitions;
-                    lang-en: root.lang-en;
-                    mount-filter <=> root.mount-filter;
-                    renderer-mode <=> root.renderer-mode;
-                    ui-font-index <=> root.ui-font-index;
-                    ui-fonts: root.ui-fonts;
-                    ui-scale: root.ui-scale;
-                    wallpaper-overlay <=> root.wallpaper-overlay;
-                    persist-wallpaper-overlay(a0) => { root.persist-wallpaper-overlay(a0); }
-                    pick-wallpaper-file() => { root.pick-wallpaper-file(); }
-                    reset-page(a0) => { root.reset-page(a0); }
-                    set-animations-enabled(a0) => { root.set-animations-enabled(a0); }
-                    set-hide-special-partitions(a0) => { root.set-hide-special-partitions(a0); }
-                    set-mount-filter(a0) => { root.set-mount-filter(a0); }
-                    set-panel-font(a0) => { root.set-panel-font(a0); }
-                    set-renderer-mode(a0) => { root.set-renderer-mode(a0); }
-                    set-ui-font(a0) => { root.set-ui-font(a0); }
-                    set-ui-scale(a0) => { root.set-ui-scale(a0); }
-                    set-wallpaper(a0) => { root.set-wallpaper(a0); }
-                }
-
-                if root.ifd-page == "layout" : LayoutPage {
-                    show-cmd-bar <=> root.show-cmd-bar;
-                    collapse-sftp-default <=> root.collapse-sftp-default;
-                    collapse-sidebar-default <=> root.collapse-sidebar-default;
-                    lang-en: root.lang-en;
-                    quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
-                    welcome-as-sidebar <=> root.welcome-as-sidebar;
-                    reset-page(a0) => { root.reset-page(a0); }
-                    set-show-cmd-bar(a0) => { root.set-show-cmd-bar(a0); }
-                    set-collapse-sftp-default(a0) => { root.set-collapse-sftp-default(a0); }
-                    set-collapse-sidebar-default(a0) => { root.set-collapse-sidebar-default(a0); }
-                    set-quick-commands-as-sidebar(a0) => { root.set-quick-commands-as-sidebar(a0); }
-                    set-welcome-as-sidebar(a0) => { root.set-welcome-as-sidebar(a0); }
-                }
-
-                if root.ifd-page == "transfer" : TransferPage {
-                    download-always-ask <=> root.download-always-ask;
-                    lang-en: root.lang-en;
-                    sftp-follow-cd <=> root.sftp-follow-cd;
-                    reset-page(a0) => { root.reset-page(a0); }
-                    set-download-always-ask(a0) => { root.set-download-always-ask(a0); }
-                    set-sftp-follow-cd(a0) => { root.set-sftp-follow-cd(a0); }
-                }
-
-                if root.ifd-page == "wsl" : WslPage {
-                    lang-en: root.lang-en;
-                    wsl-new-directory <=> root.wsl-new-directory;
-                    wsl-new-distribution <=> root.wsl-new-distribution;
-                    wsl-new-name <=> root.wsl-new-name;
-                    wsl-profiles: root.wsl-profiles;
-                    add-wsl-profile(a0, a1, a2) => { root.add-wsl-profile(a0, a1, a2); }
-                    pick-wsl-directory() => { root.pick-wsl-directory(); }
-                    remove-wsl-profile(a0) => { root.remove-wsl-profile(a0); }
-                }
-
-                if root.ifd-page == "sync" : SyncPage {
-                    lang-en: root.lang-en;
-                    sync-upload-enabled <=> root.sync-upload-enabled;
-                    webdav-accept-invalid-certs <=> root.webdav-accept-invalid-certs;
-                    webdav-enabled <=> root.webdav-enabled;
-                    webdav-password <=> root.webdav-password;
-                    webdav-remote-path <=> root.webdav-remote-path;
-                    webdav-status <=> root.webdav-status;
-                    webdav-url <=> root.webdav-url;
-                    webdav-username <=> root.webdav-username;
-                    save-webdav-settings(a0, a1, a2, a3, a4, a5) => { root.save-webdav-settings(a0, a1, a2, a3, a4, a5); }
-                    set-sync-upload-enabled(a0) => { root.set-sync-upload-enabled(a0); }
-                    webdav-download() => { root.webdav-download(); }
-                    webdav-upload() => { root.webdav-upload(); }
-                }
-
-                if root.ifd-page == "update" : UpdatePage {
-                    lang-en: root.lang-en;
-                    update-check-enabled <=> root.update-check-enabled;
-                    update-check-status: root.update-check-status;
-                    update-checking: root.update-checking;
-                    check-update-now() => { root.check-update-now(); }
-                    set-update-check-enabled(a0) => { root.set-update-check-enabled(a0); }
-                }
-
-            }
-
         }
     }
-}
 }
 
