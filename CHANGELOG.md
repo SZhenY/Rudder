@@ -5,6 +5,24 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.7-fix5] - 2026-09-15
+
+### 新增 / Added
+
+- **「大回滚缓冲区」开关（最多 100 万行）。** 回滚行数的**常规上限从 100 万降到 10 万**（默认值仍是 5 000 行，所以对绝大多数使用零影响，只约束手动填大数的场景）。需要检索超长输出时，可在 **设置 → 终端 → 回滚行数** 下方打开「大回滚缓冲区（最多 100 万行）」——开关旁写明内存代价：内存随终端使用**持续增长**直到上限，**每个标签页独立计算**；参考（200 列）10 万行满载约 458 MB、100 万行约 4.8 GB。**老配置已自动迁移**：若你此前设置过 10 万以上的行数，升级后开关会自动打开，回滚不会被截断。**Added a "large scrollback buffer" switch (up to 1,000,000 lines).** The regular cap drops from 1M to 100k lines — the default stays at 5,000, so this only affects hand-entered large values. Existing configs that already stored more than the new cap get the switch turned on automatically, so nothing is truncated.
+
+### 修复 / Fixed
+
+- **修复：清屏（`Ctrl+L`、切换回滚上限等）之后可能出现颜色错乱。** `TermBuffer::reset()` 换了新的终端实例，却漏清按行索引的渲染缓存 —— 行号相同、文本相同的行会命中旧缓存，于是**旧的着色被贴到新内容上**（`reflow()` 里一直有这一步，`reset()` 漏了）。现在 `reset()` 一并清掉行缓存与半截 SGR 缓冲，并自增渲染代号。**Fixed: garbled colours after clearing the screen.** The row cache is now invalidated when the terminal instance is replaced, so stale colour runs can no longer be reused for identical-looking new content.
+
+- **修复：测试连接时的事件循环空转。** 事件发送端被丢弃后，`recv()` 会立刻反复返回 `None`，而那里写的是 `continue` —— 该任务变成忙循环持续烧 CPU。现在改为停用该分支。**Fixed a busy-loop that burned CPU while a connection test was running** after its event sender was dropped.
+
+- **性能：OSC 密集输出不再变成平方级。** 捕获终端命令（OSC 697）时，每命中一条就重写整段字符串（`cat` 带 OSC 标记的输出会明显变慢）。现在单次扫描、一次构建。**Performance: OSC-dense output is no longer quadratic** when stripping the terminal-command sequences.
+
+- **性能：每个 span 每帧的字体名拼接被消掉。** `font-family` 原来对每个 span、每帧求值一条含运行时字符串拼接的三目（约 9 000 次/秒的堆分配）；现已提为组件级属性，只在字体设置变化时重算一次。**Performance: the per-span, per-frame font-name concatenation is gone** (~9,000 heap allocations/second), replaced by component-level properties.
+
+- **内存：若干处不再无界增长或长期驻留。** ①监控回滚的 `sys_buf` 补上 1 MiB 上限（同文件另一处早有，这是漏网副本）；②SFTP 句柄实现 `Drop`，关闭标签页/会话时专用连接不再变成孤儿；③超大目录的列表截断到 5 000 条；④回到实时视图后释放回滚行缓存（一个 20 万行的会话约 1.6–3.1 MB/标签页）；⑤emoji 解码缓存上限从 512 降到 128（约 10 MiB → 2.5 MiB，而全部内嵌 emoji 素材才 4 MB）。**Memory: several unbounded or long-lived allocations are bounded** — a missing 1 MiB cap on the monitor buffer, a `Drop` for the SFTP handle (no more orphaned connections), a 5,000-entry cap for huge directory listings, releasing the scrollback row cache after returning to the live view, and a smaller emoji decode cache.
+
 ## [0.7.7-fix4] - 2026-09-15
 
 ### 修复 / Fixed
