@@ -29,7 +29,11 @@ component SingleTab inherits Rectangle {
     out property <bool> dragging;
 
     height: 30px;
-    width: clamp(100px, 64px + info.title_len * 7px * Theme.ui-scale, 320px);
+    // 宽度跟着**内容**走：内部 HorizontalLayout 的 preferred-width（圆点 + 标题实测宽
+    // + 关闭按钮 + 内外边距），范围用 min/max 夹住。旧写法 `64px + 标题字数 * 7px`
+    // 是按"每个字符 7px"估算的 —— 中文、粗体、大写字母一律偏，换字体更完全不跟随。
+    min-width: 100px;
+    max-width: 320px;
     horizontal-stretch: 0;
     border-radius: Theme.radius-sm;
     border-width: active ? 2px : 0px;
@@ -94,9 +98,11 @@ component SingleTab inherits Rectangle {
     }
 
     HorizontalLayout {
-        width: parent.width - (info.kind != "welcome" ? 28px : 0px);
+        // 不写 width：让布局按内容给出首选宽度，标签的 min/max-width 再夹范围。
+        // （旧写法 `parent.width - 28px` 是给关闭按钮预留的绝对定位槽位，
+        // 写死 width 也就阻断了 preferred-width 向上传播。）
         padding-left: 10px;
-        padding-right: 4px;
+        padding-right: 6px;
         spacing: 8px;
         alignment: start;
 
@@ -119,15 +125,15 @@ component SingleTab inherits Rectangle {
             horizontal-stretch: 1;
         }
 
-    }
-
-    // Keep close pinned to the far right even when the title is very short.
-    if info.kind != "welcome" : IconButton {
-        glyph: "×";
-        size: 20px;
-        x: parent.width - self.width - 6px;
-        y: (parent.height - self.height) / 2;
-        clicked => { root.closed(); }
+        // 关闭按钮是布局的最后一格（原先绝对定位在 `parent.width - self.width - 6px`，
+        // 于是标签宽度必须额外预留 28px，而宽度又只能靠字数猜）。标题
+        // `horizontal-stretch: 1` 会把多余空间吃掉，因此它仍然贴在最右侧。
+        if info.kind != "welcome" : IconButton {
+            glyph: "×";
+            size: 20px;
+            y: (parent.height - self.height) / 2;
+            clicked => { root.closed(); }
+        }
     }
 
 }
@@ -189,12 +195,14 @@ export component TabBar inherits Rectangle {
     background: Theme.bg-panel-alt;
 
     // True only when the tabs are wider than the available strip width (#122).
-    // Computed from the TabBar's own width (set by the parent), not flick.width,
-    // so showing the arrows (which shrink the flickable) can't feed back into this
-    // condition and form a binding loop. The 64px allows for the two arrows,
-    // plus 30px more once the all-tabs button is always visible (#340).
+    // 判据从 TabBar 自身宽度算（而非 flick.width），避免"显示箭头 → 影响布局 →
+    // 又改变判据"的回环。右侧的预留量原本是一个 94px 魔数（旧注释：64 给两个箭头
+    // + 30 给"所有标签"按钮），现在按**真实元素**拆开写，改尺寸时会自动跟随。
+    property <length> arrows-w: 2 * 26px;          // 两个箭头覆盖层
+    property <length> right-chrome-w: 8px + 28px + 4px;  // 分隔 8 + 所有标签按钮 28 + 两个 spacing
     property <bool> tab-overflow:
-        strip.preferred-width > root.width - root.reserve-right - 94px;
+        strip.preferred-width > root.width - root.reserve-right
+            - (2 * 3px) - root.right-chrome-w - root.arrows-w;
 
     HorizontalLayout {
         padding: 3px;
@@ -238,7 +246,7 @@ export component TabBar inherits Rectangle {
         // last tab, and the IconButton is centred inside its 28 px box so the
         // glyph itself sits in the middle of the available vertical strip.
         Rectangle { width: 8px; }
-        IconButton {
+        all-tabs-btn := IconButton {
             glyph: "\u{E5C5}";
             font-family: "Material Icons";
             size: 28px;
@@ -263,7 +271,9 @@ export component TabBar inherits Rectangle {
         }
     }
     if root.tab-overflow : Rectangle {
-        x: root.width - root.reserve-right - 59px;
+        // 贴在标签条右端、即"所有标签"按钮的左侧（旧写法是 `- 59px` 魔数）。
+        // 覆盖层不参与布局，读布局算出的 x 不会造成回环。
+        x: all-tabs-btn.x - self.width;
         y: (parent.height - self.height) / 2;
         width: 26px; height: 26px;
         background: Theme.bg-panel-alt;
