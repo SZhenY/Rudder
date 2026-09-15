@@ -2702,7 +2702,7 @@ async fn run_session(
                         while let Some((cmd, range)) = extract_osc_command(&text[cursor..]) {
                             let start = cursor + range.start;
                             stripped.push_str(&text[cursor..start]);
-                            cursor = cursor + range.end;
+                            cursor += range.end;
                             commands.push(cmd);
                         }
                         stripped.push_str(&text[cursor..]);
