@@ -323,8 +323,13 @@ thread_local! {
     static TWEMOJI_TICK: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// Maximum decoded emoji images kept per thread (~512 x 20 KiB = ~10 MiB).
-const TWEMOJI_CACHE_CAP: usize = 512;
+/// Maximum decoded emoji images kept per thread (~128 x 20 KiB = ~2.5 MiB).
+///
+/// 512 时的上界是 ~10 MiB —— 而**全部**内嵌 twemoji 源 PNG 才 4.07 MB，等于缓存能
+/// 存下比全量素材还多的解码位图（B1.6）。实测命中需求是"当前屏幕上的那几十个字形"，
+/// 128 已经远超这个工作集；真正的上界问题在于**未被淘汰的 image 被 span 引用住**，
+/// 那由 B1.7（切走标签页时清空其 span 模型）解决。
+const TWEMOJI_CACHE_CAP: usize = 128;
 
 fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
     TWEMOJI_TICK.with(|t| t.set(t.get() + 1));

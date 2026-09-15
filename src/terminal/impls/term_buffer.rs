@@ -30,6 +30,10 @@ use alacritty_terminal::index::Line as GridLine;
 /// this keeps the cache in the low hundreds of KiB; exceeding it clears rather
 /// than evicts, because the entries are immutable and cheap to rebuild.
 const SCROLL_CACHE_MAX: usize = 4096;
+/// 回到实时视图后，连续多少帧没有回滚就清空 `scroll_cache`（B1.3）。
+/// 取 8 帧：终端只在有变化时重绘，实际约合 1–4 秒；上下滚动回看历史时会不断重置，
+/// 因此不影响"回滚浏览"这个缓存本来的用途。
+const SCROLL_LIVE_GRACE: u16 = 8;
 // Selection type used only in selection_rects_visible via term.selection
 
 impl TermBuffer {
@@ -37,7 +41,13 @@ impl TermBuffer {
     pub(crate) fn reset(&mut self, scrollback_lines: usize) {
         let (rows, cols) = term_size(&self.term);
         (self.term, self.processor) = crate::terminal::new_term(rows, cols, scrollback_lines);
-        self.rendered.clear();
+        // ⚠️ `scroll_cache` 里存的是**旧 term** 的行快照：行号相同、plain 文本相同的行
+        // 会命中缓存，于是旧着色被贴到新内容上（`reflow()` 里为此专门清它，这里漏了）。
+        // `sgr_buf` 里还可能是半截 SGR 序列，跨 term 复用同样会错。bump 一代让旧条目
+        // 全部失效 —— 它同时会清 `rendered`（原来的那行删除）。
+        self.bump_render_gen();
+        self.scroll_cache.clear();
+        self.sgr_buf.clear();
         self.displayed_text.clear();
         self.view_offset = 0;
         self.term.selection = None;
@@ -640,6 +650,16 @@ impl TermBuffer {
                 displayed.push(display_key.to_string());
             }
             self.displayed_text = displayed;
+            // B1.3：回到实时视图后行缓存不再被读取，连续几帧没有回滚就释放它。
+            if self.scroll_cache.is_empty() {
+                self.scroll_live_frames = 0;
+            } else if self.scroll_live_frames < SCROLL_LIVE_GRACE {
+                self.scroll_live_frames += 1;
+            } else {
+                self.scroll_cache.clear();
+                self.render_gen = self.render_gen.wrapping_add(1);
+                self.scroll_live_frames = 0;
+            }
             let rows_used = if alt { rows as i32 } else { last_content + 1 };
             return BuiltScreen {
                 mouse_tracked: self.mouse_tracked,
@@ -678,6 +698,8 @@ impl TermBuffer {
         // regexes per row) collapses into a borrow: consecutive frames while
         // the user scrolls are otherwise byte-identical work.
         let generation = self.render_gen;
+        // 回滚视图：重新计时（用户可能随时回到实时视图）
+        self.scroll_live_frames = 0;
         for d in 0..win {
             let line_no = d as i32 - vo as i32;
             let grid_line = GridLine(line_no);
@@ -833,6 +855,7 @@ mod tests {
             raw: std::collections::VecDeque::new(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
+            scroll_live_frames: 0,
             render_gen: 0,
             overline_active: false,
             overline_start: None,
@@ -1019,6 +1042,7 @@ mod tests {
             raw: std::collections::VecDeque::new(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
+            scroll_live_frames: 0,
             render_gen: 0,
             overline_active: false,
             overline_start: None,
@@ -1138,6 +1162,7 @@ mod real_file_overline_verify {
             raw: VecDeque::new(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
+            scroll_live_frames: 0,
             render_gen: 0,
             overline_active: false,
             overline_start: None,
@@ -1197,6 +1222,7 @@ mod render_path_cube_tests {
             raw: std::collections::VecDeque::new(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
+            scroll_live_frames: 0,
             render_gen: 0,
             overline_active: false,
             overline_start: None,

@@ -1207,6 +1207,7 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                     raw: std::collections::VecDeque::new(),
                     rendered: Vec::new(),
                     scroll_cache: HashMap::new(),
+                    scroll_live_frames: 0,
                     render_gen: 0,
                     overline_active: false,
                     overline_start: None,

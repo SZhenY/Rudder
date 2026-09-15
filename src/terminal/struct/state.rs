@@ -48,6 +48,10 @@ pub(crate) struct TermBuffer {
     /// indexed by screen position, because one screen row maps to a different
     /// history line whenever `view_offset` moves.
     pub(crate) scroll_cache: HashMap<i32, ScrollLine>,
+    /// 实时视图下连续渲染的帧数（B1.3）。`scroll_cache` 只在**回滚视图**里被读取，
+    /// 所以回到实时视图后它只是纯占内存（一个 20 万行的会话能驻留 1.6–3.1 MB/标签页）。
+    /// 连续若干帧没有回滚就把清掉；期间用户若又滚回去，计数会被重置（见 `render()`）。
+    pub(crate) scroll_live_frames: u16,
     /// Bumped whenever something *outside* the grid changes the way a row
     /// renders (theme, highlight preset, custom rules, resize).  Cached lines
     /// carrying an older generation are ignored and rebuilt.
