@@ -594,7 +594,18 @@ pub fn run() -> Result<()> {
                 };
                 let _ = pw.show();
                 place_process_window(&main, &pw);
-                pw.window().with_winit_window(|ww| ww.focus_window());
+                ensure_sub_window_sized(pw.window(), 640.0, 520.0);
+                // 首帧之后再核对一次尺寸：刚 show() 时本来就可能是 0（布局还没跑），
+                // 350ms 后仍为 0 才是异常 —— 那正是"只有交通灯、没有内容"的样子。
+                let late = pw.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(350), move || {
+                    if let Some(w) = late.upgrade() {
+                        ensure_sub_window_sized(w.window(), 640.0, 520.0);
+                    }
+                });
+                // ⚠️ 这里**不再调用 `focus_window()`**：它是整条路径上唯一会走 app 激活
+                // 逻辑、可能在 macOS 上自旋嵌套 run loop 的调用，而 `show()` 本身已经让
+                // 窗口出现在最前。少一个原生调用 = 少一个卡死入口。
             });
         });
     }
@@ -663,12 +674,20 @@ pub fn run() -> Result<()> {
                 };
                 let _ = sw.show();
                 place_system_info_window(&main, &sw);
-                sw.window().with_winit_window(|ww| ww.focus_window());
+                ensure_sub_window_sized(sw.window(), 760.0, 520.0);
+                let late = sw.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(350), move || {
+                    if let Some(w) = late.upgrade() {
+                        ensure_sub_window_sized(w.window(), 760.0, 520.0);
+                    }
+                });
+                // 同上：与进程窗口一致，不再调用 `focus_window()`。
             });
         });
     }
 
     settings_ui::seed_settings(&window, &proc_win, &ctx);
+
 
     // --- Wire callbacks --------------------------------------------------
     session_callbacks::wire_session_callbacks(&window, &ctx);
@@ -684,6 +703,95 @@ pub fn run() -> Result<()> {
             if let Some(w) = weak.upgrade() {
                 refresh_sidebar(&w, &statuses, &local, &net);
             }
+        });
+    }
+
+    // ⚠️ 临时诊断（同上一钩子）：RUDDER_DIAG=syscb
+    // 精确复现"用户点击 → 在 Slint UI 回调里直接做原生窗口操作"的旧路径
+    // （现行代码已把这三步推迟到定时器；这里故意还原成同步版，看是否会卡死）。
+    if std::env::var("RUDDER_DIAG").as_deref() == Ok("syscb") {
+        let main_weak = window.as_weak();
+        let sys_weak = sys_win.as_weak();
+        let proc_weak_cb = proc_win.as_weak();
+        let fired = std::rc::Rc::new(std::cell::Cell::new(false));
+        window.on_refresh_sidebar(move || {
+            if fired.replace(true) {
+                return;
+            }
+            let (Some(main), Some(sw), Some(pw)) =
+                (main_weak.upgrade(), sys_weak.upgrade(), proc_weak_cb.upgrade())
+            else {
+                return;
+            };
+            // 填满"像有活动会话"的全部数据（真实会话下这些模型都是满的）
+            {
+                use crate::ui::{ProcRow, SysInfoRow, SysMetricRow, SysNetRow};
+                let long = "apfs /dev/disk3s5 on /System/Volumes/Data (rw,noatime,nobrowse,multilabel,journal,discard,noexec)";
+                let n = |c1: &str| SysInfoRow { c1: c1.into(), c2: "".into(), c3: "".into(), c4: "".into(), c5: "".into() };
+                let fs: Vec<SysInfoRow> = (0..30).map(|i| SysInfoRow {
+                    c1: format!("{long} #{i}").into(), c2: "1.2 TB".into(),
+                    c3: format!("{} GB", 40 + i).into(), c4: "/mnt/data".into(), c5: "55%".into(),
+                }).collect();
+                let usage: Vec<SysInfoRow> = (0..16).map(|i| SysInfoRow {
+                    c1: format!("CPU {i}").into(), c2: format!("{}%", (i * 6) % 100).into(),
+                    c3: "3.2 GHz".into(), c4: "core".into(), c5: "—".into(),
+                }).collect();
+                let gpu: Vec<SysInfoRow> = (0..4).map(|i| SysInfoRow {
+                    c1: format!("GPU {i}").into(), c2: "Apple M2 Pro (10-core)".into(),
+                    c3: "78%".into(), c4: "1.5 GB".into(), c5: "—".into(),
+                }).collect();
+                let net: Vec<SysInfoRow> = (0..12).map(|i| SysInfoRow {
+                    c1: format!("en{i} / utun{i} / bridge{i}").into(), c2: "10.0.0.1/24".into(),
+                    c3: "1.4 MB/s".into(), c4: "820 KB/s".into(), c5: "up".into(),
+                }).collect();
+                macro_rules! set_rows {
+                    ($prop:expr, $rows:expr) => {
+                        if let Some(vm) =
+                            $prop.as_any().downcast_ref::<slint::VecModel<SysInfoRow>>()
+                        {
+                            vm.set_vec($rows);
+                        }
+                    };
+                }
+                set_rows!(main.get_sys_filesystem_rows(), fs);
+                set_rows!(main.get_sys_cpu_usage_rows(), usage);
+                set_rows!(main.get_sys_gpu_info_rows(), gpu);
+                set_rows!(main.get_sys_network_rows(), net);
+                set_rows!(main.get_sys_cpu_info_rows(), vec![n("Apple M2 Pro 10-core — flags: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch")]);
+                set_rows!(main.get_sys_overview_rows(), vec![n("macOS 26.0 (Tahoe) · Apple M2 Pro · 32 GB · 1.2 TB SSD")]);
+                set_rows!(main.get_sys_memory_rows(), vec![n("32 GB · 20.6 GB used · 8.1 GB cached")]);
+                set_rows!(main.get_sys_swap_rows(), vec![n("2 GB · 180 MB used")]);
+                if let Some(vm) = main.get_sys_metrics().as_any().downcast_ref::<slint::VecModel<SysMetricRow>>() {
+                    vm.set_vec(vec![
+                        SysMetricRow { label: "CPU".into(), percent: 12.0, detail: "12% · 8 cores".into() },
+                        SysMetricRow { label: "MEM".into(), percent: 64.0, detail: "20.6/32 GB".into() },
+                        SysMetricRow { label: "SWAP".into(), percent: 9.0, detail: "180 MB".into() },
+                    ]);
+                }
+                if let Some(vm) = main.get_sys_net_rows().as_any().downcast_ref::<slint::VecModel<SysNetRow>>() {
+                    vm.set_vec(vec![
+                        SysNetRow { name: "eth0".into(), up: "1.4 MB/s".into(), down: "820 KB/s".into() },
+                        SysNetRow { name: "utun3".into(), up: "12 KB/s".into(), down: "44 KB/s".into() },
+                    ]);
+                }
+                if let Some(vm) = pw.get_proc_list().as_any().downcast_ref::<slint::VecModel<ProcRow>>() {
+                    vm.set_vec((0..300).map(|i| ProcRow {
+                        tab_id: "t".into(), pid: format!("{}", 1000 + i).into(),
+                        user: "root".into(), cpu: format!("{:.1}", (i % 90) as f32 / 3.0).into(),
+                        mem: "1.2".into(), command: format!("/usr/sbin/very-long-daemon-name-{i} --flag=value --another=1").into(),
+                        cpu_frac: ((i % 90) as f32) / 100.0, own_process: i % 2 == 0,
+                    }).collect::<Vec<ProcRow>>());
+                }
+                tracing::warn!("[DIAG-CB] 模型已填满（含 30 行文件系统 / 300 行进程）");
+            }
+            tracing::warn!("[DIAG-CB] in-callback: show() … winit={} size={:?}",
+                sw.window().has_winit_window(), sw.window().size());
+            let _ = sw.show();
+            tracing::warn!("[DIAG-CB] in-callback: show() 返回 size={:?}", sw.window().size());
+            place_system_info_window(&main, &sw);
+            tracing::warn!("[DIAG-CB] in-callback: placed");
+            sw.window().with_winit_window(|ww| ww.focus_window());
+            tracing::warn!("[DIAG-CB] in-callback: focus() returned（没有卡死）");
         });
     }
 

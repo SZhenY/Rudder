@@ -248,6 +248,28 @@ pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
     sys.set_wp_tint(main.get_wp_tint());
 }
 
+/// 子窗口内容区尺寸兜底。
+///
+/// 现场（macOS）：子窗口只画出交通灯、内容一片空白 —— 那是**内容区尺寸为 0**：窗口
+/// 高度只剩标题栏，而标题栏是透明 + 全尺寸内容视图，于是看上去"只有一个小的交通灯窗"。
+/// 尺寸为 0 时按给定目标重新请求一次（正常路径下 make-0 不会触发）。
+pub(super) fn ensure_sub_window_sized(w: &slint::Window, min_w: f32, min_h: f32) {
+    let size = w.size();
+    if size.width > 0 && size.height > 0 {
+        return;
+    }
+    tracing::warn!(
+        ?size,
+        min_w,
+        min_h,
+        "sub-window content size is zero — re-requesting the inner size"
+    );
+    let _ = w.with_winit_window(|ww| {
+        use i_slint_backend_winit::winit::dpi::LogicalSize;
+        let _ = ww.request_inner_size(LogicalSize::new(min_w as f64, min_h as f64));
+    });
+}
+
 pub(super) fn place_system_info_window(main: &AppWindow, sys: &SystemInfoWindow) {
     use i_slint_backend_winit::winit::dpi::{LogicalPosition, LogicalSize};
 
