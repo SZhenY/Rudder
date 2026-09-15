@@ -322,6 +322,16 @@ export component TerminalView inherits Rectangle {
     // Effective terminal font size in px: per-session zoom override when > 0,
     // else the window/global size (Theme.term-font-size).
     in property <float> term-font-size-px: Theme.term-font-size / 1px;
+
+    // 字体族名（C1.4）：原先每个 span **每帧**求值一条嵌套三目，其中两处是运行时
+    // 字符串拼接（`Theme.term-font-family + " Thin"` / `+ " ExtraLight"`）。300 spans
+    // × 30 fps ≈ 9000 次/秒 `SharedString` 分配，只为拿到同一个字符串。
+    // 提到组件级 property 后，Slint 只在依赖（`Theme.*`）变化时重算一次。
+    property <string> ff-normal: Theme.term-font-family;
+    property <string> ff-dim: Theme.term-font-family == "JetBrains Mono"
+        ? Theme.term-font-family + " ExtraLight"
+        : Theme.term-font-family + " Thin";
+    property <string> ff-cjk: Theme.ui-font-family;
     // Toolbar toggle: hide the whole command bar (persisted globally).
     in property <bool> cmd-bar-hidden: false;
     property <bool> quick-open: false;         // quick-command popup visibility
@@ -867,12 +877,9 @@ export component TerminalView inherits Rectangle {
                                 // SGR 2 (dim) switches to the family's " Thin"
                                 // variant (MapleMono ships Thin as its own
                                 // family) for a genuine light-weight look.
-                                font-family: (span.cjk && !Theme.term-font-cjk) ? Theme.ui-font-family
-                                           : span.dim
-                                           ? (Theme.term-font-family == "JetBrains Mono"
-                                               ? Theme.term-font-family + " ExtraLight"
-                                               : Theme.term-font-family + " Thin")
-                                           : Theme.term-font-family;
+                                font-family: (span.cjk && !Theme.term-font-cjk) ? root.ff-cjk
+                                           : span.dim ? root.ff-dim
+                                           : root.ff-normal;
                                 font-size: root.term-font-size-px * 1px;
                                 font-weight: (Theme.term-font-bold || span.bold) ? 700 : 400;
                                 font-italic: span.italic;
