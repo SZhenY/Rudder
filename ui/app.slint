@@ -41,6 +41,7 @@ export { ProcWindow, SystemInfoWindow }
 import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
@@ -2449,80 +2450,55 @@ export component AppWindow inherits Window {
     // let the dialog compress into a narrow vertical strip on some layouts, and
     // the PopupWindow form silently routed clicks away from the menu items
     // that open it.
-    if root.tab-rename-open : Rectangle {
-        // Full-window translucent backdrop (anchored to AppWindow, not parent,
-        // so the layout cannot shrink it).
-        x: 0px;
-        y: 0px;
-        width: root.width;
-        height: root.height;
-        background: #00000080;
-        TouchArea { clicked => { root.tab-rename-open = false; } }
-
-        // Centred dialog.
+    if root.tab-rename-open : ModalCard {
+        card-width: 340px;
+        card-height: 196px;
+        dismissed() => { root.tab-rename-open = false; }
+        Text {
+            text: root.lang-en ? "Rename session" : "重命名会话";
+            color: Theme.text-primary;
+            font-size: Theme.fs-lg;
+            font-weight: 700;
+        }
+        Text {
+            text: root.lang-en
+                ? "Leave empty to restore the saved session name."
+                : "留空将恢复保存的会话名称。";
+            color: Theme.text-muted;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
         Rectangle {
-            x: (root.width - 340px) / 2;
-            y: (root.height - 196px) / 2;
-            width: 340px;
-            height: 196px;
-                background: Theme.bg-panel;
-                border-radius: Theme.radius-sm;
-                border-width: 1px;
-                border-color: Theme.border-strong;
-                drop-shadow-blur: Theme.shadow-dialog-blur;
-                drop-shadow-color: Theme.shadow-dialog-color;
-                TouchArea {}   // swallow inside clicks
-
-                VerticalLayout {
-                    padding: 18px;
-                    spacing: 12px;
-                    Text {
-                        text: root.lang-en ? "Rename session" : "重命名会话";
-                        color: Theme.text-primary;
-                        font-size: Theme.fs-lg;
-                        font-weight: 700;
-                    }
-                    Text {
-                        text: root.lang-en
-                            ? "Leave empty to restore the saved session name."
-                            : "留空将恢复保存的会话名称。";
-                        color: Theme.text-muted;
-                        font-size: Theme.fs-sm;
-                        wrap: word-wrap;
-                    }
-                    Rectangle {
-                        height: 30px;
-                        border-radius: Theme.radius-sm;
-                        border-width: 1px;
-                        border-color: rn-input.has-focus ? Theme.accent : Theme.border-strong;
-                        background: Theme.bg-elevated;
-                        rn-input := TextInput {
-                            x: 8px;
-                            width: parent.width - 16px;
-                            height: parent.height;
-                            vertical-alignment: center;
-                            single-line: true;
-                            color: Theme.text-primary;
-                            font-size: Theme.fs-md;
-                            text <=> root.tab-rename-value;
-                            accepted => { root.rename-tab(root.tab-rename-id, root.tab-rename-value); }
-                        }
-                    }
-                    HorizontalLayout {
-                        alignment: end;
-                        spacing: 8px;
-                        GhostButton {
-                            text: root.lang-en ? "Cancel" : "取消";
-                            clicked => { root.tab-rename-open = false; }
-                        }
-                        PrimaryButton {
-                            text: root.lang-en ? "Rename" : "重命名";
-                            clicked => { root.rename-tab(root.tab-rename-id, root.tab-rename-value); }
-                        }
-                    }
-                }
+            height: 30px;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: rn-input.has-focus ? Theme.accent : Theme.border-strong;
+            background: Theme.bg-elevated;
+            rn-input := TextInput {
+                x: 8px;
+                width: parent.width - 16px;
+                height: parent.height;
+                vertical-alignment: center;
+                single-line: true;
+                color: Theme.text-primary;
+                font-size: Theme.fs-md;
+                text <=> root.tab-rename-value;
+                accepted => { root.rename-tab(root.tab-rename-id, root.tab-rename-value); }
             }
         }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            GhostButton {
+                text: root.lang-en ? "Cancel" : "取消";
+                clicked => { root.tab-rename-open = false; }
+            }
+            PrimaryButton {
+                text: root.lang-en ? "Rename" : "重命名";
+                clicked => { root.rename-tab(root.tab-rename-id, root.tab-rename-value); }
+            }
+        }
+    }
 
     // --- Download manager popup -------------------------------------------
     // Click-outside-to-close: a full-window transparent sensor sitting *under*

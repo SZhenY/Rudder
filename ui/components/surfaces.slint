@@ -46,3 +46,55 @@ export component HelpText inherits Text {
     font-size: Theme.fs-xs;
     wrap: word-wrap;
 }
+
+/// 模态对话框外壳：全窗半透明遮罩 + 居中卡片。
+///
+/// 此前 9 处各写一遍「遮罩 Rectangle + 居中卡片 + 阴影 + 一张吞掉内部点击的 TouchArea」。
+///
+/// ⚠️ 两点约束（都来自实测）：
+/// * 组件只能有**一个** `@children`（`object_tree.rs` 的编译期限制）—— 所以**底部按钮
+///   由调用方写在 children 里**，组件不提供第二个"footer 槽"。
+/// * 组件的根元素**不能**引用 `parent`（这是 Slint 的限制）—— 所以卡片不是靠
+///   `x: (root.width - w) / 2` 定位（那样会取到窗口），而是让组件铺满宿主、内部用
+///   `parent.width` 居中。
+export component ModalCard inherits Rectangle {
+    in property <length> card-width: 340px;
+    in property <length> card-height: 196px;
+    // true = 高度随内容（原来的 `min(body.preferred-height + 53px, …)` 写法）
+    in property <bool> auto-height: false;
+    in property <length> radius: Theme.radius-sm;
+    in property <brush> card-background: Theme.bg-panel;
+    in property <brush> backdrop: #00000080;
+    // 点击遮罩时触发（调用方负责关闭；不接就不响应）。
+    callback dismissed();
+
+    width: 100%;
+    height: 100%;
+    background: root.backdrop;
+    // 遮罩本身吞掉点击：点击遮罩即 dismissed，卡片内部的点击被 card 自己吞掉。
+    backdrop-ta := TouchArea {
+        clicked => { root.dismissed(); }
+    }
+
+    card := Rectangle {
+        width: root.card-width;
+        height: root.auto-height
+            ? min(card-body.preferred-height, parent.height - 40px)
+            : root.card-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: root.card-background;
+        border-radius: root.radius;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: Theme.shadow-dialog-blur;
+        drop-shadow-color: Theme.shadow-dialog-color;
+        TouchArea {}   // 吞掉卡片内部的点击，避免冒泡到遮罩
+
+        card-body := VerticalLayout {
+            padding: 18px;
+            spacing: 12px;
+            @children
+        }
+    }
+}
