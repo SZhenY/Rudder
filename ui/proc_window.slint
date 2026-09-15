@@ -162,6 +162,15 @@ export component ProcWindow inherits Window {
             close() => { root.request-close(); }
         }
 
+        // macOS：窗口用「全尺寸内容视图」，原生交通灯按钮（关闭 / 最小化 / 缩放）会**浮在
+        // 内容之上** —— 顶部必须留出与主窗口同宽的空白，否则会盖住第一行内容（主窗口用
+        // `titlebar-inset` 做同一件事）。这里是纯留白、不带 TouchArea：该区域的拖拽仍交给
+        // 系统标题栏处理；子窗口没有 zoom 回调，所以也不接双击。
+        if Theme.is-mac && !root.custom-titlebar : Rectangle {
+            height: 28px;
+            background: Theme.bg-panel;
+        }
+
         // --- Table ----------------------------------------------------------
         VerticalLayout {
             padding: 12px;
