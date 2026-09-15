@@ -584,9 +584,10 @@ export component SftpPanel inherits Rectangle {
                             HorizontalLayout {
                                 spacing: 0;
                                 padding-top: 1px;
+                                // 树深度缩进：原来靠首个子元素 `Rectangle { width: depth * 12px }`
+                                // 占位（该布局 spacing 为 0，故 padding-left 与之逐字等价）
+                                padding-left: node.depth * 12px;
 
-                                // Depth indent spacer
-                                Rectangle { width: node.depth * 12px; }
 
                                 // Expand/collapse arrow
                                 Text {
@@ -630,10 +631,10 @@ export component SftpPanel inherits Rectangle {
                     height: 20px;
                     background: Theme.bg-root;
                     HorizontalLayout {
-                        padding-left: 8px; padding-right: 8px; spacing: 8px;
-                        // Spacer matching the rows' checkbox so the header columns
-                        // line up with the values below them (#dock).
-                        Rectangle { width: 16px; }
+                        // 8px 内边距 + 16px「与下方复选框对齐」的列 + 8px 原 spacing ——
+                        // 原来是空 `Rectangle { width: 16px; }` 占位（删掉它会连带删掉
+                        // 它后面那份额外 spacing，故折进 padding-left）。
+                        padding-left: 32px; padding-right: 8px; spacing: 8px;
                         Rectangle {
                             horizontal-stretch: 1;
                             header-name-ta := TouchArea {

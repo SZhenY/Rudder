@@ -6,8 +6,11 @@
 //   * `reorderable` / `move-up` / `move-down` 供"编辑排序"模式接线（阶段 E）。
 //
 // ⚠️ 视觉上刻意保持"与改造前逐像素一致"：标题高度由调用方传入（各页历史上
-// 22px / 24px 不一致），间距仍由页面自己的 `Rectangle { height: Npx }` 负责 ——
-// 分区化是结构改造，不在同一步里顺手改版式。
+// 22px / 24px 不一致）。
+//
+// 分区尾距（与下一个分区之间）用 `bottom-gap`：历史上各页是在分区末尾放一个
+// `Rectangle { height: Npx; }` 占位 —— 那是空元素当间距（Slint 官方 462 个 .slint
+// 里 0 例）。分区内部 `spacing: 0` 是刻意的：各设置行之间靠自身分隔线，不靠间距。
 import { SectionHeader } from "chrome.slint";
 
 export component SettingsSection inherits VerticalLayout {
@@ -20,10 +23,14 @@ export component SettingsSection inherits VerticalLayout {
     in property <length> title-height: 24px;
     /// 是否处于"编辑排序"模式（阶段 E 接线，当前恒为 false）。
     in property <bool> reorderable: false;
+    /// 与下一个分区之间的间距 —— 历史写法是在分区末尾放一个空 `Rectangle` 占位，
+    /// 现在由容器的 padding-bottom 表达（等价：都是"最后一个子元素之后的空间"）。
+    in property <length> bottom-gap: 0px;
     callback move-up();
     callback move-down();
 
     spacing: 0;
+    padding-bottom: root.bottom-gap;
     HorizontalLayout {
         SectionHeader {
             text: root.lang-en ? root.title-en : root.title-zh;

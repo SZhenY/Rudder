@@ -211,9 +211,9 @@ export component TerminalPage inherits VerticalLayout {
             toggled(v) => { root.set-osc52-clipboard(root.osc52-clipboard); }
 
         }
-        Rectangle { height: 14px; }
     }
     SettingsSection {
+        bottom-gap: 14px;
         section-id: "terminal.output-highlighting";
         lang-en: root.lang-en;
         title-zh: "输出高亮";
@@ -274,9 +274,9 @@ export component TerminalPage inherits VerticalLayout {
             }
         }
 
-        Rectangle { height: 18px; }
     }
     SettingsSection {
+        bottom-gap: 18px;
         section-id: "terminal.highlight-preview";
         lang-en: root.lang-en;
         title-zh: "预览";
@@ -308,9 +308,9 @@ export component TerminalPage inherits VerticalLayout {
             }
         }
 
-        Rectangle { height: 18px; }
     }
     SettingsSection {
+        bottom-gap: 18px;
         section-id: "terminal.custom-rules";
         lang-en: root.lang-en;
         title-zh: "自定义规则";

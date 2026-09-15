@@ -206,6 +206,10 @@ export component TabBar inherits Rectangle {
 
     HorizontalLayout {
         padding: 3px;
+        // 右侧为窗口右上角的工具栏图标预留（#122）：原来是末尾一个
+        // `Rectangle { width: root.reserve-right; }` 占位 —— 删掉它也会连带删掉
+        // 它前面那份 spacing(2px)，故一并补回。
+        padding-right: 3px + 2px + root.reserve-right;
         spacing: 2px;
 
         // Horizontally-scrollable strip: when the tabs overflow the available
@@ -253,8 +257,6 @@ export component TabBar inherits Rectangle {
             clicked => { all-tabs-menu.show(); }
         }
 
-        // Reserved gap for the external top-right toolbar icons (#122).
-        Rectangle { width: root.reserve-right; }
     }
 
     // Scroll arrows are absolute overlays so toggling them can't
