@@ -209,7 +209,11 @@ export component ProcWindow inherits Window {
             Flickable {
                 vertical-stretch: 1;
                 viewport-width: self.width;
-                viewport-height: max(self.height, proc-col.preferred-height);
+                // ⚠️ **不要给 `viewport-height` 赋值**（同 `interface_panel.slint` 的实测记录）：
+                // ScrollView 会把内容**拉伸**到视口，`content.preferred-height` 因此是被拉伸后的
+                // 虚高值（面板里实测 2533px vs 真实 1199px）。写 `max(self.height, …)` 会让视口
+                // 更大、内容再被拉长 —— 正反馈。Slint 的默认值就是精确内容高度，内容不足一屏时
+                // 取可视高度、不滚动。
                 proc-col := VerticalLayout {
                     alignment: start;
                     spacing: 1px;
