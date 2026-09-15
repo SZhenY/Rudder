@@ -24,6 +24,7 @@ import "fonts/MaterialIcons-Regular.ttf";
 // (src/fonts.rs), making them selectable in Settings after a restart.
 
 import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
 import { Sidebar, DiskInfo } from "sidebar.slint";
 import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
@@ -3575,9 +3576,12 @@ overflow: elide;
         ShortcutRow { keys: root.is-mac ? "⌃Tab" : "Ctrl+Tab"; desc: root.lang-en ? "Next tab" : "下一个标签页"; }
         ShortcutRow { keys: root.is-mac ? "⌃⇧Tab" : "Ctrl+Shift+Tab"; desc: root.lang-en ? "Previous tab" : "上一个标签页"; }
 
-        Rectangle { height: 6px; }
-        Text { text: root.lang-en ? "Terminal" : "终端";
-               color: Theme.text-muted; font-size: Theme.fs-xs; }
+        // 分组留白（原为空 `Rectangle` 占位）：分组间距 5+6+5=16px → 5+12=17px（+1px）
+        GroupGap {
+            gap: Theme.gap-md;
+            Text { text: root.lang-en ? "Terminal" : "终端";
+                   color: Theme.text-muted; font-size: Theme.fs-xs; }
+        }
         ShortcutRow { keys: root.is-mac ? "⌘C" : "Ctrl+Shift+C"; desc: root.lang-en ? "Copy selection" : "复制选中内容"; }
         ShortcutRow { keys: root.is-mac ? "⌘V" : "Ctrl+V"; desc: root.lang-en ? "Paste" : "粘贴"; }
         ShortcutRow { keys: root.is-mac ? "⌘F" : "Ctrl+F"; desc: root.lang-en ? "Find in terminal" : "查找"; }
@@ -3585,9 +3589,12 @@ overflow: elide;
         ShortcutRow { keys: root.lang-en ? "Drag" : "鼠标拖动"; desc: root.lang-en ? "Select text" : "选择文本"; }
         ShortcutRow { keys: root.lang-en ? "Wheel / Scrollbar" : "滚轮 / 滚动条"; desc: root.lang-en ? "Scroll history" : "滚动历史"; }
 
-        Rectangle { height: 6px; }
-        Text { text: root.lang-en ? "Command box" : "命令输入框";
-               color: Theme.text-muted; font-size: Theme.fs-xs; }
+        // 分组留白（原为空 `Rectangle` 占位）：同上（+1px）
+        GroupGap {
+            gap: Theme.gap-md;
+            Text { text: root.lang-en ? "Command box" : "命令输入框";
+                   color: Theme.text-muted; font-size: Theme.fs-xs; }
+        }
         ShortcutRow { keys: "Enter"; desc: root.lang-en ? "Send command" : "发送命令"; }
         ShortcutRow { keys: "↑ / ↓"; desc: root.lang-en ? "Previous / next in history" : "上一条 / 下一条历史"; }
         ShortcutRow { keys: root.is-mac ? "⌃R" : "Ctrl+R"; desc: root.lang-en ? "Search history (↑↓ select, Enter run, Esc close)" : "搜索命令历史(↑↓ 选择,回车执行,Esc 关闭)"; }
@@ -3596,8 +3603,11 @@ overflow: elide;
         ShortcutRow { keys: root.is-mac ? "⌃E" : "Ctrl+E"; desc: root.lang-en ? "Move to end of line" : "移到行尾"; }
         ShortcutRow { keys: root.is-mac ? "⌃K" : "Ctrl+K"; desc: root.lang-en ? "Delete to end of line" : "删除到行尾"; }
         ShortcutRow { keys: root.is-mac ? "⌃U" : "Ctrl+U"; desc: root.lang-en ? "Delete to start of line" : "删除到行首"; }
-                Rectangle { height: 2px; }
-            }
+                // 分组留白（原为空 `Rectangle` 占位）：2px → 4px（+2px），行内小分组
+                GroupGap {
+                    gap: Theme.gap-xs;
+                }
+                }
         }
     }
 

@@ -249,12 +249,15 @@ export component TabBar inherits Rectangle {
         // 8 px separator on the left keeps it from visually merging with the
         // last tab, and the IconButton is centred inside its 28 px box so the
         // glyph itself sits in the middle of the available vertical strip.
-        Rectangle { width: 8px; }
-        all-tabs-btn := IconButton {
-            glyph: "\u{E5C5}";
-            font-family: "Material Icons";
-            size: 28px;
-            clicked => { all-tabs-menu.show(); }
+        // 分组留白（原为空 `Rectangle` 占位）：标签条与「所有标签」按钮的间隔 2+8+2=12px → 2+8=10px（−2px）
+        HorizontalLayout {
+            padding-left: Theme.gap-sm;
+            all-tabs-btn := IconButton {
+                glyph: "\u{E5C5}";
+                font-family: "Material Icons";
+                size: 28px;
+                clicked => { all-tabs-menu.show(); }
+            }
         }
 
     }
