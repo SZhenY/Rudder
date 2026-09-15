@@ -576,9 +576,26 @@ pub fn run() -> Result<()> {
             };
             pw.set_host(main.get_connection_state());
             sync_proc_theme(&main, &pw);
-            let _ = pw.show();
-            place_process_window(&main, &pw);
-            pw.window().with_winit_window(|ww| ww.focus_window());
+            // ⚠️ 原生窗口操作（show / 尺寸 / 位置 / 焦点）**必须推迟到下一轮事件循环**。
+            //
+            // 在 Slint 回调里直接调 winit 会同步派发 Resized / Focused 事件 —— 等于在
+            // 回调中途**重入 Slint 的布局与渲染**。macOS 上的表现正是用户报的现场：
+            // 子窗口只画出交通灯、内容一直不出现，UI 线程从此卡死（连主窗口的关闭按钮
+            // 也不再响应，整个程序挂起）；因为取决于重入发生在哪一帧，现象是**概率性**的。
+            //
+            // 这不是新发现：主窗口的 `center_window` 早就是这个写法（window_chrome.rs
+            // 的 30ms 单次定时器），`key_input.rs` 里 clipboard 那条注释记录的是同一类坑
+            // （"re-enters the message loop and dead-locks the whole UI"）。
+            let main_weak = main.as_weak();
+            let pw_weak = pw.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
+                let (Some(main), Some(pw)) = (main_weak.upgrade(), pw_weak.upgrade()) else {
+                    return;
+                };
+                let _ = pw.show();
+                place_process_window(&main, &pw);
+                pw.window().with_winit_window(|ww| ww.focus_window());
+            });
         });
     }
     {
@@ -628,9 +645,26 @@ pub fn run() -> Result<()> {
             sw.set_connection_state(main.get_connection_state());
             sw.set_resource_title(main.get_resource_title());
             sync_system_info_theme(&main, &sw);
-            let _ = sw.show();
-            place_system_info_window(&main, &sw);
-            sw.window().with_winit_window(|ww| ww.focus_window());
+            // ⚠️ 原生窗口操作（show / 尺寸 / 位置 / 焦点）**必须推迟到下一轮事件循环**。
+            //
+            // 在 Slint 回调里直接调 winit 会同步派发 Resized / Focused 事件 —— 等于在
+            // 回调中途**重入 Slint 的布局与渲染**。macOS 上的表现正是用户报的现场：
+            // 子窗口只画出交通灯、内容一直不出现，UI 线程从此卡死（连主窗口的关闭按钮
+            // 也不再响应，整个程序挂起）；因为取决于重入发生在哪一帧，现象是**概率性**的。
+            //
+            // 这不是新发现：主窗口的 `center_window` 早就是这个写法（window_chrome.rs
+            // 的 30ms 单次定时器），`key_input.rs` 里 clipboard 那条注释记录的是同一类坑
+            // （"re-enters the message loop and dead-locks the whole UI"）。
+            let main_weak = main.as_weak();
+            let sw_weak = sw.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
+                let (Some(main), Some(sw)) = (main_weak.upgrade(), sw_weak.upgrade()) else {
+                    return;
+                };
+                let _ = sw.show();
+                place_system_info_window(&main, &sw);
+                sw.window().with_winit_window(|ww| ww.focus_window());
+            });
         });
     }
 

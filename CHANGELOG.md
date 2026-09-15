@@ -5,6 +5,10 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 修复 / Fixed
+
+- **修复：打开「进程」或「系统信息」窗口有概率卡死（只显示 macOS 交通灯、内容不出现，之后连主窗口的关闭按钮也不响应）。** 根因是三条原生窗口操作被放在 Slint 回调里**同步**执行：`show()` → 定位/改尺寸（`request_inner_size` / `set_outer_position`）→ `focus_window()`。它们会同步派发 `Resized` / `Focused` 事件，等于在回调中途**重入 Slint 的布局与渲染** —— macOS 上表现为第一帧永远画不出来（只剩原生交通灯），UI 线程从此挂起；"概率性"取决于重入落在哪一帧。现在与主窗口 `center_window` 的既有做法对齐：整条显示流程推迟到下一轮事件循环（30ms 单次定时器）后再做。**Fixed: opening the Processes or System information window could freeze the app** (only the macOS traffic lights painted, no content, and afterwards even the main window's close button stopped responding). Three native window calls ran synchronously inside a Slint callback — `show()`, placement/size (`request_inner_size` / `set_outer_position`) and `focus_window()` — and they dispatch `Resized` / `Focused` events synchronously, i.e. they re-enter Slint's layout and rendering mid-callback, so the first frame never completes and the UI thread is wedged (hence the intermittency). The whole sequence now runs one event-loop tick later (30 ms single-shot timer), matching what the main window's `center_window` already did.
+
 ## [0.7.7-fix3] - 2026-09-14
 
 ### 修复 / Fixed
