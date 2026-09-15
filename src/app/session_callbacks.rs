@@ -811,11 +811,18 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                 let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
                 runtime.spawn(async move {
                     let mut test = Box::pin(test_session_auth(session, jump, events_tx));
+                    // sender 被丢弃后 `recv()` 会**立刻**再次返回 `None`。原来这里写
+                    // `continue`，于是 `loop` 变成忙循环空转烧 CPU（C2.6）。改成用一个
+                    // 守卫把该分支停用；`loop` 是表达式，不能直接 `break`（需要一个值）。
+                    let mut events_open = true;
                     let result = loop {
                         tokio::select! {
                             result = &mut test => break result,
-                            event = events_rx.recv() => {
-                                let Some(event) = event else { continue };
+                            event = events_rx.recv(), if events_open => {
+                                let Some(event) = event else {
+                                    events_open = false;
+                                    continue;
+                                };
                                 if matches!(
                                     event,
                                     SessionEvent::HostKeyPrompt { .. }

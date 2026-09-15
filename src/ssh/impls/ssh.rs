@@ -2685,19 +2685,34 @@ async fn run_session(
                         if PROMPT_SETUP_PREFIX.starts_with(&guarded[split..]) {
                             guard_tail = guarded.split_off(split);
                         }
-                        let mut text = guarded;
+                        let text = guarded;
 
                         // Capture commands run in the terminal via our OSC 697
                         // hook, and strip the sequence so it never reaches the
                         // renderer (#113). Skip our own injected setup line in the
                         // rare case HISTCONTROL=ignorespace isn't in effect.
-                        while let Some((cmd, range)) = extract_osc_command(&text) {
-                            text.replace_range(range, "");
+                        // 单次扫描 + 一次构建。原来每命中一条就 `replace_range` 一次，
+                        // 每次都要搬动整段已剥离的字符串 → 命中 k 条就是 O(k·n)，
+                        // `cat` 一大段带 OSC 697 的输出会明显变慢（C2.2）。
+                        // 语义等价：`extract_osc_command` 每次都返回**第一个**匹配，
+                        // 而删除处之前的内容从不改变，所以按序推进与反复重扫等价。
+                        let mut commands = Vec::new();
+                        let mut stripped = String::with_capacity(text.len());
+                        let mut cursor = 0usize;
+                        while let Some((cmd, range)) = extract_osc_command(&text[cursor..]) {
+                            let start = cursor + range.start;
+                            stripped.push_str(&text[cursor..start]);
+                            cursor = cursor + range.end;
+                            commands.push(cmd);
+                        }
+                        stripped.push_str(&text[cursor..]);
+                        for cmd in &commands {
                             let cmd = cmd.trim();
                             if !cmd.is_empty() && !cmd.contains("__ms7") {
                                 let _ = events.send(SessionEvent::CommandRan(cmd.to_string()));
                             }
                         }
+                        let text = stripped;
 
                         // Expect/send login triggers (#212): match against the
                         // text the user actually sees (OSC hooks are already
@@ -2792,6 +2807,13 @@ async fn run_session(
                 match sys {
                     Some(ChannelMsg::Data { data }) => {
                         sys_buf.push_str(&String::from_utf8_lossy(&data));
+                        // 与上方 `mon_buf` 同一条理由（memory DoS, #27）：服务器持续发
+                        // 数据却迟迟不给 `__MSTICK__` 标记时，这个缓冲区不能无上限增长。
+                        // 真正的采样只有几 KiB，1 MiB 是宽松的上界（B1.2）。
+                        const SYS_BUF_CAP: usize = 1 << 20;
+                        if sys_buf.len() > SYS_BUF_CAP {
+                            sys_buf.clear();
+                        }
                         if let Some(idx) = sys_buf.find("__MSTICK__") {
                             let block = sys_buf[..idx].to_string();
                             let mut detail_cpu = None;
