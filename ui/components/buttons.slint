@@ -6,16 +6,21 @@
 import { Theme } from "../theme.slint";
 import { IconText } from "../components/text.slint";
 
-/// 右上角「✕」关闭按钮：替换 16 处手写实现（弹窗标题栏 / 浮层 / 卡片）。
+/// 「✕」关闭按钮：替换 16 处手写实现（弹窗标题栏 / 浮层 / 卡片 / 列表行）。
 ///
-/// 参数只保留各处**真实存在**的差异：尺寸、图标字号、是否危险色。
+/// 参数只保留各处**真实存在**的差异：尺寸、图标字号、外观档位（`tone`）。
 /// 注意：原实现**没有**背景过渡动画，这里也不引入新动效。
 export component CloseButton inherits Rectangle {
     in property <length> size: 22px;
     // 图标字号：旧实现里 13/15/18px 不等，逐站传原值
     in property <length> glyph-size: Theme.fs-md;
-    // 危险形态（删除某一行）：hover 底色用 danger 18%，字形本身就是 danger
-    in property <bool> danger: false;
+    // 外观档位（五档覆盖全部站点，每档都对应一处旧的内联写法）：
+    //   "plain"           字形 text-secondary，hover 底色 bg-hover —— 绝大多数
+    //   "danger"          字形 danger，hover 底色 danger 18% —— 删除某一行
+    //   "danger-on-hover" 字形默认 text-muted、hover 转 danger，底色 danger 18% —— 传输取消
+    //   "on-accent"       彩色底上的 ✕：字形纯白，hover 底色白 27% —— 更新横幅
+    //   "windows"         Windows 风格：hover 底色 #e81123、字形转白 —— 下载面板
+    in property <string> tone: "plain";
     callback clicked();
 
     width: root.size;
@@ -24,14 +29,22 @@ export component CloseButton inherits Rectangle {
     background: transparent;
     states [
         hovered when ta.has-hover : {
-            background: root.danger ? Theme.danger.with-alpha(0.18) : Theme.bg-hover;
+            background: root.tone == "danger" || root.tone == "danger-on-hover"
+                ? Theme.danger.with-alpha(0.18)
+                : root.tone == "on-accent" ? #ffffff45
+                : root.tone == "windows"   ? #e81123
+                : Theme.bg-hover;
         }
     ]
 
     IconText {
         centered: true;
         text: "\u{E5CD}";
-        color: root.danger ? Theme.danger : Theme.text-secondary;
+        color: root.tone == "danger"          ? Theme.danger
+             : root.tone == "danger-on-hover" ? (ta.has-hover ? Theme.danger : Theme.text-muted)
+             : root.tone == "on-accent"       ? #ffffff
+             : root.tone == "windows"         ? (ta.has-hover ? white : Theme.text-secondary)
+             : Theme.text-secondary;
         font-size: root.glyph-size;
     }
 

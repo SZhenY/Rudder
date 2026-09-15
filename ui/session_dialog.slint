@@ -152,7 +152,7 @@ component PortForwardRow inherits VerticalLayout {
         CloseButton {
             size: 30px;
             glyph-size: Theme.fs-sm;
-            danger: true;
+            tone: "danger";
             clicked => { root.remove(root.index); }
         }
     }
@@ -231,7 +231,7 @@ component TriggerRow inherits VerticalLayout {
         CloseButton {
             size: 30px;
             glyph-size: Theme.fs-sm;
-            danger: true;
+            tone: "danger";
             clicked => { root.remove(root.index); }
         }
     }
