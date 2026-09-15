@@ -90,6 +90,16 @@ pub struct SftpHandle {
     pub join: JoinHandle<()>,
 }
 
+impl Drop for SftpHandle {
+    fn drop(&mut self) {
+        // 没有这个 `Drop`，UI 直接丢弃句柄（关标签页 / 会话结束）不会让 worker 停下来：
+        // worker 自己持有一份 `self_tx`（编辑监视器 spawn_edit_watcher 要用），所以
+        // `commands.recv()` **永远不会返回 `None`** —— 那条专用 SSH 连接会一直挂着（B1.5）。
+        // 显式发 `Close`，worker 收到后即 `break`，连接随之释放。
+        let _ = self.commands.send(SftpCommand::Close);
+    }
+}
+
 pub(crate) type SftpHandles = Arc<Mutex<HashMap<String, SftpHandle>>>;
 
 /// Last terminal cwd followed by each SFTP panel.

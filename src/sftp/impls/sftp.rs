@@ -1831,12 +1831,19 @@ async fn list_dir_impl(sftp: &SftpSession, path: &str) -> Result<Vec<RemoteEntry
         .await
         .with_context(|| format!("read_dir {path} failed"))?;
 
+    // 目录条数上限（B1.4）：10 万文件的目录会一次性建出 8 MB+ 的条目表，而且树视图
+    // 那份（`list_dirs_only_impl`）是**另一次**同样量级的构建。这里截断到 5000 条
+    // ——列表随后按"目录优先 + 名称"排序，因此截断的是**未排序的前 5000 条**。
+    // `ReadDir` 是迭代器（没有 len），所以多取一条来判定"是否被截断"。
+    const MAX_SFTP_ENTRIES: usize = 5_000;
+
     let mut entries: Vec<RemoteEntry> = raw
         .into_iter()
         .filter(|e| {
             let n = e.file_name();
             n != "." && n != ".."
         })
+        .take(MAX_SFTP_ENTRIES + 1)
         .map(|e| {
             let name = e.file_name().to_string();
             let full_path = format!("{}/{}", path.trim_end_matches('/'), name);
@@ -1856,6 +1863,11 @@ async fn list_dir_impl(sftp: &SftpSession, path: &str) -> Result<Vec<RemoteEntry
             }
         })
         .collect();
+
+    if entries.len() > MAX_SFTP_ENTRIES {
+        entries.truncate(MAX_SFTP_ENTRIES);
+        tracing::warn!(path, kept = MAX_SFTP_ENTRIES, "SFTP listing truncated");
+    }
 
     // Sort: directories first, then files; both groups alphabetically.
     entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
