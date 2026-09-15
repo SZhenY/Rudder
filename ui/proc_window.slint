@@ -6,10 +6,9 @@
 // titlebar look of AppWindow (drag to move, ✕ to close) and reads its rows from
 // a model shared with the main window, so the table stays live.
 
-import { Theme, AnimationSettings } from "theme.slint";
+import { Theme } from "theme.slint";
 import { LabeledInput, GhostButton } from "widgets.slint";
-import { FieldLabel } from "components/surfaces.slint";
-import { IconText } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
 
 // One row in the process table. Lives here (not app.slint) so both the main
 // window and this window can import it without a circular dependency.
@@ -154,52 +153,13 @@ export component ProcWindow inherits Window {
         spacing: 0;
 
         // --- Custom titlebar (frameless platforms) -------------------------
-        if root.custom-titlebar : Rectangle {
-            height: 36px;
-            background: Theme.bg-elevated;
-            tb-drag := TouchArea {
-                pointer-event(e) => {
-                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
-                        root.win-drag();
-                    }
-                }
-            }
-            HorizontalLayout {
-                padding-left: 12px;
-                spacing: 8px;
-                VerticalLayout {
-                    alignment: center;
-                    Image {
-                        source: @image-url("../assets/icon.png");
-                        width: 16px;
-                        height: 16px;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    FieldLabel { text: @tr("Processes") + (root.host != "" ? "  ·  " + root.host : ""); }
-                }
-                Rectangle { horizontal-stretch: 1; }   // draggable spacer
-                // Close button.
-                Rectangle {
-                    width: 46px;
-                    background: close-ta.has-hover ? #e81123 : transparent;
-                    animate background { duration: 90ms;
-            easing: AnimationSettings.color;
-            enabled: AnimationSettings.enabled;
-        }
-                    close-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.request-close(); }
-                    }
-                    IconText {
-                        centered: true;
-                        text: "\u{E5CD}";
-                        color: close-ta.has-hover ? white : Theme.text-secondary;
-                        font-size: 16px;
-                    }
-                }
-            }
+        if root.custom-titlebar : WindowTitleBar {
+            title: @tr("Processes") + (root.host != "" ? "  ·  " + root.host : "");
+            bar-height: 36px;
+            bg: Theme.bg-elevated;
+            icon-size: 16px;
+            drag() => { root.win-drag(); }
+            close() => { root.request-close(); }
         }
 
         // --- Table ----------------------------------------------------------

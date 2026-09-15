@@ -1,0 +1,136 @@
+// 自绘窗口外壳（无边框平台的标题栏）。
+//
+// 三个窗口（主窗口 / 进程 / 系统信息）此前各写了一遍标题栏：结构完全一样，
+// 差异只在高度、背景、图标尺寸、按钮组与拖拽触发方式 —— 都做成了参数。
+
+import { Theme, AnimationSettings } from "../theme.slint";
+import { FieldLabel } from "surfaces.slint";
+import { IconText } from "text.slint";
+
+// Windows 风格的窗口控制按钮（最小化 / 最大化 / 关闭）。关闭按钮 hover 变红。
+component WinBtn inherits Rectangle {
+    in property <string> icon;
+    in property <bool> danger: false;
+    callback clicked();
+
+    width: 46px;
+    background: transparent;
+    states [
+        lit when ta.has-hover : {
+            background: root.danger ? #e81123 : Theme.bg-hover;
+        }
+    ]
+    animate background {
+        duration: 90ms;
+        easing: AnimationSettings.color;
+        enabled: AnimationSettings.enabled;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    IconText {
+        centered: true;
+        text: root.icon;
+        color: (root.danger && ta.has-hover) ? white : Theme.text-secondary;
+        font-size: 16px;
+    }
+}
+
+/// 自绘标题栏：图标 + 标题 + 可拖拽留白 + 窗口控制按钮。
+///
+/// 参数只保留三处窗口**真实存在**的差异：
+/// * `bar-height` / `bg` / `icon-size`：主窗口 38 / bg-panel / 18，两个子窗口 36 / bg-elevated / 16；
+/// * `show-min-max`：只有主窗口有最小化与最大化；
+/// * `armed-drag`：主窗口为 true（按下后位移超过 6px 才交给系统移动窗口 —— 否则
+///   `double-clicked` 永远派发不到，双击最大化会失效），两个子窗口为 false（按下即拖）。
+///   这条差异来自 app.slint 原有的注释，不能统一。
+export component WindowTitleBar inherits Rectangle {
+    in property <string> title;
+    in property <length> bar-height: 38px;
+    in property <brush> bg: Theme.bg-panel;
+    in property <length> icon-size: 18px;
+    in property <bool> show-min-max: false;
+    in property <bool> maximized: false;   // 决定最大化按钮的图标（还原 / 最大化）
+    // true = 按下后位移超过 6px 才交给系统移动窗口（保留双击最大化）。
+    in property <bool> armed-drag: false;
+
+    callback drag();
+    callback minimize();
+    callback maximize-toggle();
+    callback close();
+
+    height: root.bar-height;
+    background: root.bg;
+
+    tb-drag := TouchArea {
+        // 双击与拖拽共存：down 只"上膛"，位移超过 6px 才交给系统移动窗口 ——
+        // down 立即 drag 会让系统接管指针，第一次 click 的 up 不再派发，
+        // double-clicked 永远无法满足（这条注释从 app.slint 原样搬来）。
+        property <length> press-x: 0px;
+        property <length> press-y: 0px;
+        property <bool> drag-armed: false;
+
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                press-x = self.mouse-x;
+                press-y = self.mouse-y;
+                drag-armed = true;
+                if (!root.armed-drag) {
+                    root.drag();          // 子窗口：按下即拖
+                    drag-armed = false;
+                }
+            } else if (e.kind == PointerEventKind.up) {
+                drag-armed = false;
+            }
+        }
+        moved => {
+            if (root.armed-drag && self.pressed && drag-armed
+                && (abs(self.mouse-x - press-x) > 6px
+                    || abs(self.mouse-y - press-y) > 6px)) {
+                drag-armed = false;
+                root.drag();
+            }
+        }
+        // 只有带最小化/最大化的主窗口才响应双击；子窗口保持原样（不响应）。
+        double-clicked => {
+            if (root.show-min-max) {
+                root.maximize-toggle();
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        spacing: 8px;
+        // 垂直居中包装，让图标与窗口名对齐（#119）。
+        VerticalLayout {
+            alignment: center;
+            Image {
+                source: @image-url("../../assets/icon.png");
+                width: root.icon-size;
+                height: root.icon-size;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            FieldLabel { text: root.title; }
+        }
+        // 可拖拽留白（自身没有 TouchArea → 点击落到 tb-drag）。
+        Rectangle { horizontal-stretch: 1; }
+        if root.show-min-max : WinBtn {
+            icon: "\u{E15B}";
+            clicked => { root.minimize(); }
+        }
+        if root.show-min-max : WinBtn {
+            icon: root.maximized ? "\u{E3E0}" : "\u{E835}";
+            clicked => { root.maximize-toggle(); }
+        }
+        WinBtn {
+            icon: "\u{E5CD}";
+            danger: true;
+            clicked => { root.close(); }
+        }
+    }
+}

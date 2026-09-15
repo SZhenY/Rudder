@@ -4,7 +4,7 @@
 // models with AppWindow, much like ProcWindow shares the process table.
 
 import { Theme } from "theme.slint";
-import { IconText } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
 
 export struct SysMetricRow {
     label: string,
@@ -209,39 +209,13 @@ export component SystemInfoWindow inherits Window {
     VerticalLayout {
         spacing: 0;
 
-        if root.custom-titlebar : Rectangle {
-            height: 36px;
-            background: Theme.bg-elevated;
-            tb-drag := TouchArea {
-                pointer-event(e) => {
-                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
-                        root.win-drag();
-                    }
-                }
-            }
-            HorizontalLayout {
-                padding-left: 12px;
-                spacing: 8px;
-                Image { source: @image-url("../assets/icon.png"); width: 16px; height: 16px; vertical-alignment: center; }
-                Text {
-                    text: @tr("System information") + (root.host != "" ? "  -  " + root.host : "");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                    vertical-alignment: center;
-                }
-                Rectangle { horizontal-stretch: 1; }
-                Rectangle {
-                    width: 46px;
-                    background: close-ta.has-hover ? #e81123 : transparent;
-                    close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.request-close(); } }
-                    IconText {
-                        centered: true;
-                        text: "\u{E5CD}";
-                        color: close-ta.has-hover ? white : Theme.text-secondary;
-                        font-size: 16px;
-                    }
-                }
-            }
+        if root.custom-titlebar : WindowTitleBar {
+            title: @tr("System information") + (root.host != "" ? "  -  " + root.host : "");
+            bar-height: 36px;
+            bg: Theme.bg-elevated;
+            icon-size: 16px;
+            drag() => { root.win-drag(); }
+            close() => { root.request-close(); }
         }
 
         Flickable {

@@ -43,6 +43,7 @@ import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
 import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
 
@@ -134,28 +135,6 @@ export struct EditorFindResult {
 // its popup is open).
 // A Windows-style window-control button (minimize / maximize / close) for the
 // custom title bar (#119). `danger` gives the close button its red hover.
-component WinBtn inherits Rectangle {
-    in property <string> icon;
-    in property <bool> danger: false;
-    callback clicked();
-    width: 46px;
-    background: ta.has-hover ? (root.danger ? #e81123 : Theme.bg-hover) : transparent;
-    animate background { duration: 90ms;
-            easing: AnimationSettings.color;
-            enabled: AnimationSettings.enabled;
-        }
-    ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-    IconText {
-        centered: true;
-        text: root.icon;
-        color: (root.danger && ta.has-hover) ? white : Theme.text-secondary;
-        font-size: 16px;
-    }
-}
-
 // One row in the keyboard-shortcuts dialog: a key chip + a description (#103).
 component ShortcutRow inherits Rectangle {
     in property <string> keys;
@@ -930,63 +909,16 @@ export component AppWindow inherits Window {
         // (move window / double-click to maximize), then the toolbar icons and
         // window controls on the right. macOS keeps its native title bar and
         // shows the toolbar icons via the overlay further below.
-        if root.custom-titlebar : Rectangle {
-            height: 38px;
-            background: Theme.bg-panel;
-            tb-drag := TouchArea {
-                // 双击与拖拽共存：down 只"上膛"，位移超过 6px 才交给系统
-                // 移动窗口——down 立即 drag 会让系统接管指针，第一次 click
-                // 的 up 不再派发，double-clicked 永远无法满足。
-                property <length> press-x: 0px;
-                property <length> press-y: 0px;
-                property <bool> drag-armed: false;
-
-                pointer-event(e) => {
-                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
-                        press-x = self.mouse-x;
-                        press-y = self.mouse-y;
-                        drag-armed = true;
-                    } else if (e.kind == PointerEventKind.up) {
-                        drag-armed = false;
-                    }
-                }
-                moved => {
-                    if (self.pressed && drag-armed
-                        && (abs(self.mouse-x - press-x) > 6px
-                            || abs(self.mouse-y - press-y) > 6px)) {
-                        drag-armed = false;
-                        root.win-drag();
-                    }
-                }
-                double-clicked => { root.win-maximize-toggle(); }
-            }
-            HorizontalLayout {
-                padding-left: 12px;
-                spacing: 8px;
-                // Vertical-centering wrappers so the icon and name line up (#119).
-                VerticalLayout {
-                    alignment: center;
-                    Image {
-                        source: @image-url("../assets/icon.png");
-                        width: 18px;
-                        height: 18px;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    FieldLabel { text: "Rudder"; }
-                }
-                // Draggable spacer (no TouchArea → clicks fall to tb-drag).
-                Rectangle { horizontal-stretch: 1; }
-                // Window controls only — the app toolbar icons live in the tab
-                // row below, not here (#119).
-                WinBtn { icon: "\u{E15B}"; clicked => { root.win-minimize(); } }
-                WinBtn {
-                    icon: root.window-maximized ? "\u{E3E0}" : "\u{E835}";
-                    clicked => { root.win-maximize-toggle(); }
-                }
-                WinBtn { icon: "\u{E5CD}"; danger: true; clicked => { root.win-close(); } }
-            }
+        if root.custom-titlebar : WindowTitleBar {
+            title: "Rudder";
+            icon-size: 18px;
+            show-min-max: true;
+            maximized: root.window-maximized;
+            armed-drag: true;      // 拖过 6px 才交给系统，双击最大化才派发得到
+            drag() => { root.win-drag(); }
+            minimize() => { root.win-minimize(); }
+            maximize-toggle() => { root.win-maximize-toggle(); }
+            close() => { root.win-close(); }
         }
 
         // Dock area — fills below the title bar. The resource sidebar and the
