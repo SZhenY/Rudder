@@ -391,7 +391,14 @@ fn default_parity() -> String {
 }
 
 /// Bump when `migrate_defaults` gains a new one-time default-layout change.
-pub const DEFAULTS_REV: u32 = 5;
+// rev 6 = A 方案（回滚上限治理）的迁移植入点：`migrate_defaults` 在 `rev >= DEFAULTS_REV`
+// 时直接早退，所以新增迁移必须同时把这个版本号 +1，否则迁移块永远不会执行。
+pub const DEFAULTS_REV: u32 = 6;
+
+/// 回滚行数的**常规**上限（A 方案）。默认值仍是 5 000 行，所以这项只约束"手动填大数"。
+pub const SCROLLBACK_MAX: usize = 100_000;
+/// 打开「大回滚缓冲区」后的上限。
+pub const SCROLLBACK_MAX_LARGE: usize = 1_000_000;
 
 /// 配置目录里的两个数据文件（**同目录**，共享 `secret.key`）：
 /// 会话与用户数据 / 设置。拆分前设置也写在 `SESSIONS_FILE` 里。
@@ -484,6 +491,14 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
         && (cfg.appearance.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_OVERLAY_015).abs() < 0.005
     {
         cfg.appearance.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
+    }
+    // rev 6：回滚上限治理。老配置里可能存着 10 万以上的行数（当时上限是 100 万）——
+    // 若不处理，新的常规上限会在下次写入时把它**静默截断**。读到这种配置就把
+    // 「大回滚缓冲区」打开，保留用户原有的上限。
+    // 注意这条**刻意不按 rev 门控**：它只在"存储值超出常规上限"时生效，而关闭开关
+    // （`set_large_scrollback(false)`）本身会把现值收回上限，所以条件之后不会再成立。
+    if cfg.terminal.scrollback_lines > SCROLLBACK_MAX {
+        cfg.terminal.large_scrollback = true;
     }
     cfg.defaults_rev = DEFAULTS_REV;
     true
@@ -1544,7 +1559,26 @@ impl ConfigStore {
     }
 
     pub fn set_scrollback_lines(&mut self, lines: usize) {
-        self.cache.terminal.scrollback_lines = lines.clamp(100, 1_000_000);
+        // 上界取决于「大回滚缓冲区」开关（A3）：默认 10 万行，开关打开后 100 万行。
+        let max = if self.cache.terminal.large_scrollback {
+            SCROLLBACK_MAX_LARGE
+        } else {
+            SCROLLBACK_MAX
+        };
+        self.cache.terminal.scrollback_lines = lines.clamp(100, max);
+    }
+
+    /// 大回滚缓冲区开关（A4）。
+    pub fn large_scrollback(&self) -> bool {
+        self.cache.terminal.large_scrollback
+    }
+    /// 切换大回滚缓冲区：**开启不动现值**；关闭时把现值收回常规上限，
+    /// 否则就会留下一个"上限 10 万但存着 50 万"的不一致状态。
+    pub fn set_large_scrollback(&mut self, on: bool) {
+        self.cache.terminal.large_scrollback = on;
+        if !on && self.cache.terminal.scrollback_lines > SCROLLBACK_MAX {
+            self.cache.terminal.scrollback_lines = SCROLLBACK_MAX;
+        }
     }
 
     /// Convert LF to CRLF in pasted/typed text.
@@ -2666,6 +2700,55 @@ mod tests {
                 .iter()
                 .any(|group| group == "production")
         );
+    }
+
+    // ── A 方案：回滚上限治理 ────────────────────────────────────────────────
+
+    /// 旧配置里存着超过常规上限的行数时，迁移必须**自动打开**大回滚开关 ——
+    /// 否则新的 10 万上限会在下次写入时把用户原有的回滚静默截断（A.5 的风险项）。
+    #[test]
+    fn large_scrollback_migration_keeps_old_oversized_limits() {
+        let mut cfg = ConfigFile {
+            defaults_rev: 5,
+            ..ConfigFile::default()
+        };
+        cfg.terminal.scrollback_lines = 500_000;
+        cfg.terminal.large_scrollback = false;
+
+        assert!(migrate_defaults(&mut cfg));
+        assert!(cfg.terminal.large_scrollback, "超限的旧配置必须自动打开开关");
+        assert_eq!(cfg.terminal.scrollback_lines, 500_000, "原上限不能被改动");
+
+        // 常规范围内的配置不受影响
+        let mut cfg2 = ConfigFile {
+            defaults_rev: 5,
+            ..ConfigFile::default()
+        };
+        cfg2.terminal.scrollback_lines = 50_000;
+        migrate_defaults(&mut cfg2);
+        assert!(!cfg2.terminal.large_scrollback);
+        assert_eq!(cfg2.terminal.scrollback_lines, 50_000);
+    }
+
+    /// 上界随开关变化；关掉开关会把现值收回常规上限（不留"上限 10 万却存着 50 万"）。
+    #[test]
+    fn scrollback_clamp_follows_the_large_buffer_switch() {
+        let mut store = temp_store();
+
+        store.set_scrollback_lines(500_000);
+        assert_eq!(store.scrollback_lines(), SCROLLBACK_MAX, "开关关着时被常规上限夹住");
+
+        store.set_large_scrollback(true);
+        store.set_scrollback_lines(500_000);
+        assert_eq!(store.scrollback_lines(), 500_000, "开关打开后放到 100 万");
+
+        store.set_large_scrollback(false);
+        assert_eq!(
+            store.scrollback_lines(),
+            SCROLLBACK_MAX,
+            "关闭开关必须把现值收回常规上限"
+        );
+        assert_eq!(store.scrollback_lines(), 100_000);
     }
 
     #[test]

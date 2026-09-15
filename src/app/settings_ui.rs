@@ -143,6 +143,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_term_font_size(s.font_size() as f32);
         window.set_term_font_bold(s.terminal_bold());
         window.set_scrollback_lines(s.scrollback_lines().to_string().into());
+        window.set_large_scrollback(s.large_scrollback());
         window.set_term_cursor_style(s.terminal_cursor_style().into());
         if let Some(color) = parse_hex_color(s.terminal_cursor_color()) {
             window.set_term_cursor_color_hex(s.terminal_cursor_color().into());

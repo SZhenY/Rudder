@@ -86,8 +86,10 @@ export component InterfacePanel inherits Rectangle {
     callback set-term-cursor-style(string);
     callback set-term-cursor-color(string) -> bool;
     in-out property <string> scrollback-lines: "5000";
+    in-out property <bool> large-scrollback;
     property <bool> scrollback-valid: true;
     callback set-scrollback-lines(string) -> bool;
+    callback set-large-scrollback(bool);
     in-out property <bool> convert-eol: false;
     callback set-convert-eol(bool);
     in-out property <bool> osc52-clipboard: true;
@@ -220,6 +222,7 @@ export component InterfacePanel inherits Rectangle {
                         output-highlight-rule-status <=> root.output-highlight-rule-status;
                         output-highlight-rules: root.output-highlight-rules;
                         scrollback-lines <=> root.scrollback-lines;
+                        large-scrollback <=> root.large-scrollback;
                         term-cursor-color: root.term-cursor-color;
                         term-cursor-color-hex <=> root.term-cursor-color-hex;
                         term-cursor-style <=> root.term-cursor-style;
@@ -236,6 +239,7 @@ export component InterfacePanel inherits Rectangle {
                         set-output-highlight(a0, a1) => { root.set-output-highlight(a0, a1); }
                         set-output-highlight-rule-enabled(a0, a1) => { root.set-output-highlight-rule-enabled(a0, a1); }
                         set-scrollback-lines(a0) => { return root.set-scrollback-lines(a0); }
+                        set-large-scrollback(a0) => { root.set-large-scrollback(a0); }
                         set-term-cursor-color(a0) => { return root.set-term-cursor-color(a0); }
                         set-term-cursor-style(a0) => { root.set-term-cursor-style(a0); }
                         set-term-font(a0) => { root.set-term-font(a0); }

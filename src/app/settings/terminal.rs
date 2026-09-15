@@ -210,14 +210,37 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
     }
 
     {
+        // A6：大回滚缓冲区开关。关闭时会把回滚现值收回常规上限，因此要把新值
+        // 回写到输入框（否则面板里还显示着旧的大数字）。
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_large_scrollback(move |on: bool| {
+            let lines = {
+                let mut s = store.borrow_mut();
+                s.set_large_scrollback(on);
+                let _ = s.save();
+                s.scrollback_lines()
+            };
+            if let Some(w) = weak.upgrade() {
+                w.set_large_scrollback(on);
+                w.set_scrollback_lines(lines.to_string().into());
+            }
+        });
+    }
+    {
         let weak = window.as_weak();
         let store = store.clone();
         window.on_set_scrollback_lines(move |lines: slint::SharedString| -> bool {
-            // Validate: 100..=1_000_000. Malformed input is rejected (UI shows
-            // the invalid state) and nothing is persisted.
+            // Validate: 100..=（常规 10 万 / 开开关后 100 万）。非法输入被拒绝
+            // （界面显示为非法状态），不写入任何东西。
             let digits: String = lines.chars().filter(|c| c.is_ascii_digit()).collect();
+            let max = if store.borrow().large_scrollback() {
+                crate::config::SCROLLBACK_MAX_LARGE
+            } else {
+                crate::config::SCROLLBACK_MAX
+            };
             match digits.parse::<usize>() {
-                Ok(n) if (100..=1_000_000).contains(&n) => {
+                Ok(n) if (100..=max).contains(&n) => {
                     let mut s = store.borrow_mut();
                     s.set_scrollback_lines(n);
                     let _ = s.save();
@@ -288,6 +311,8 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &Fo
         s.set_terminal_bold(d.terminal.terminal_bold);
         s.set_terminal_cursor_style(d.terminal.terminal_cursor_style.clone());
         s.set_terminal_cursor_color(&d.terminal.terminal_cursor_color);
+        // 先恢复开关（它决定 `set_scrollback_lines` 的 clamp 上界），再恢复行数。
+        s.set_large_scrollback(d.terminal.large_scrollback);
         s.set_scrollback_lines(d.terminal.scrollback_lines);
         s.set_output_highlight_enabled(!d.terminal.output_highlight_disabled);
         s.set_output_highlight_preset(d.terminal.output_highlight_preset.clone());
@@ -320,6 +345,7 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &Fo
             w.set_term_cursor_color(color);
         }
         w.set_scrollback_lines(s.scrollback_lines().to_string().into());
+        w.set_large_scrollback(s.large_scrollback());
         w.set_output_highlight_enabled(s.output_highlight_enabled());
         w.set_output_highlight_preset(s.output_highlight_preset().into());
         w.set_output_highlight_rules(output_highlight_rule_model(&s));

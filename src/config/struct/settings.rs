@@ -37,6 +37,10 @@ pub struct TerminalSettings {
     pub terminal_bold: bool,
     /// 回滚行数上限。
     pub scrollback_lines: usize,
+    /// 大回滚缓冲区（A 方案）：关闭时上限 10 万行，打开后放宽到 100 万行。
+    /// 内存随终端使用时间**渐进增长**（alacritty 的环形缓冲按 1000 行步长扩容；
+    /// 200 列时每 1000 行约 +4.8 MB，每个标签页独立计算），故默认关闭。
+    pub large_scrollback: bool,
     /// 粘贴/输入时把 LF 转成 CRLF。
     pub convert_eol: bool,
     /// 允许远端程序通过 OSC 52 写剪贴板。
@@ -62,6 +66,7 @@ impl Default for TerminalSettings {
             font_size: 13,
             terminal_bold: false,
             scrollback_lines: 5000,
+            large_scrollback: false,
             convert_eol: true,
             osc52_clipboard: true,
             terminal_cursor_style: "bar".to_string(),

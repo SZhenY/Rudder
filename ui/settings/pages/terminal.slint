@@ -24,6 +24,7 @@ export component TerminalPage inherits VerticalLayout {
     in-out property <string> output-highlight-rule-status;
     in property <[OutputRuleItem]> output-highlight-rules;
     in-out property <string> scrollback-lines;
+    in-out property <bool> large-scrollback;
     in property <color> term-cursor-color;
     in-out property <string> term-cursor-color-hex;
     in-out property <string> term-cursor-style;
@@ -40,6 +41,7 @@ export component TerminalPage inherits VerticalLayout {
     callback set-output-highlight(bool, string);
     callback set-output-highlight-rule-enabled(int, bool);
     callback set-scrollback-lines(string) -> bool;
+    callback set-large-scrollback(bool);
     callback set-term-cursor-color(string) -> bool;
     // 页面私有状态（原为 InterfacePanel 的私有 property，随页面一起搬过来）：
     // "添加规则"表单的草稿值 + 回滚行数输入的校验态。它们不参与持久化。
@@ -183,12 +185,29 @@ export component TerminalPage inherits VerticalLayout {
             }
         }
         Text {
-            text: root.lang-en
-                ? "Larger values use more memory. Invalid input is not applied."
-                : "行数越大占用内存越多。非法输入不会被应用。";
+            // 上界随开关变化，这里如实反映（A10）。
+            text: root.large-scrollback
+                ? (root.lang-en
+                    ? "Up to 1,000,000 lines (large buffer enabled). Invalid input is not applied."
+                    : "上限 100 万行（已开启大缓冲区）。非法输入不会被应用。")
+                : (root.lang-en
+                    ? "Up to 100,000 lines. Enable the large buffer below to go higher. Invalid input is not applied."
+                    : "上限 10 万行；需要更多请开启下方的「大回滚缓冲区」。非法输入不会被应用。");
             font-size: 11px * Theme.panel-font;
             color: root.scrollback-valid ? Theme.text-muted : Theme.danger;
             wrap: word-wrap;
+        }
+        // 大回滚缓冲区（A10）：默认关。开启后上限提到 100 万行，但内存会随终端使用
+        // **持续增长**（每个标签页独立计算），所以文案里把量级写清楚。
+        SettingSwitch {
+            label: root.lang-en
+                ? "Large scrollback buffer (up to 1,000,000 lines)"
+                : "大回滚缓冲区（最多 100 万行）";
+            desc: root.lang-en
+                ? "Memory grows as the terminal is used until the cap is reached, counted per tab. At 200 columns: 100k ≈ 458 MB, 1M ≈ 4.8 GB. Enable only when you need to search very long output."
+                : "内存随终端使用持续增长直到上限，每个标签页独立计算。参考（200 列）：10 万行满载约 458 MB，100 万行约 4.8 GB。请仅在需要检索超长输出时开启。";
+            checked <=> root.large-scrollback;
+            toggled(v) => { root.set-large-scrollback(v); }
         }
         // 分组留白（原为空 `Rectangle` 占位）：14px → 12px（−2px）
         GroupGap {
