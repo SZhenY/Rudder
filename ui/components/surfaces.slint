@@ -103,3 +103,28 @@ export component ModalCard inherits Rectangle {
         }
     }
 }
+
+/// 分组留白：把「后一个分组」包起来，用容器的 padding-top 与上一组隔开。
+///
+/// 为什么需要它 —— 两个事实：
+/// 1. Slint 布局没有 margin，夹在两个兄弟元素之间的空隙**只能由容器表达**
+///    （官方 .slint 里没有"空 `Rectangle` 当间距"的写法，462 个文件 0 例）；
+/// 2. 设置分区内部是"设置行紧贴 + 自身分隔线"，容器的 `spacing` 必须保持 0，
+///    只有**分组之间**才有空隙 —— 单一 `spacing` 无法同时表达这两件事。
+///
+/// 所以：分组留白用一个只做 padding 的容器包住下一组，间距取 `Theme.gap-*` 档位
+/// （`gap-xs/sm/md/lg` = 4/8/12/16 × ui-scale）。
+///
+/// ```slint
+/// SettingSwitch { label: "A"; }
+/// GroupGap { gap: Theme.gap-md; SettingSwitch { label: "B"; } }
+/// ```
+export component GroupGap {
+    /// 与上一组之间的间距。
+    in property <length> gap: Theme.gap-md;
+    VerticalLayout {
+        padding-top: root.gap;
+        spacing: 0;
+        @children
+    }
+}

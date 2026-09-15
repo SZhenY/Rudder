@@ -8,6 +8,7 @@ import { Theme } from "../../theme.slint";
 import { SettingsSection } from "../section.slint";
 import { SettingRow, SettingSwitch } from "../chrome.slint";
 import { GhostButton, LabeledInput, PrimaryButton } from "../../widgets.slint";
+import { GroupGap } from "../../components/surfaces.slint";
 
 export component SyncPage inherits VerticalLayout {
     in property <bool> lang-en;
@@ -46,12 +47,15 @@ export component SyncPage inherits VerticalLayout {
             toggled(v) => { root.set-sync-upload-enabled(root.sync-upload-enabled); }
 
         }
-        Rectangle { height: 6px; }
-        Text {
-            text: root.lang-en
-                ? "Session sync itself is toggled from the sync icon in the top-right bar."
-                : "会话同步本身从右上角的同步图标开关。";
-            color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
+        // 分组留白（原为空 `Rectangle` 占位）：6px → 8px（+2px）
+        GroupGap {
+            gap: Theme.gap-sm;
+            Text {
+                text: root.lang-en
+                    ? "Session sync itself is toggled from the sync icon in the top-right bar."
+                    : "会话同步本身从右上角的同步图标开关。";
+                color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
+            }
         }
     }
     SettingsSection {

@@ -10,6 +10,7 @@ import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
 import { ComboBox, ScrollView, Slider } from "std-widgets.slint";
 import { IconText } from "../../components/text.slint";
+import { GroupGap } from "../../components/surfaces.slint";
 
 export component AppearancePage inherits VerticalLayout {
     in property <string> current-wallpaper;
@@ -80,79 +81,82 @@ export component AppearancePage inherits VerticalLayout {
                 : "选一张壁纸,界面会沉浸式地适配它的颜色(强调色、面板、深浅)。";
             color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
         }
-        Rectangle { height: 12px; }
+        // 分组留白（原为空 `Rectangle` 占位）：12px → 12px（gap-md），无差异
+        GroupGap {
+            gap: Theme.gap-md;
 
-        // Built-in choices: keep this row horizontally scrollable as
-        // bundled wallpapers grow.
-        builtin-wallpapers-scroll := ScrollView {
-            height: 106px;
-            width: 100%;
-            viewport-width: max(self.visible-width, builtin-wallpapers-row.preferred-width);
-            viewport-height: self.visible-height;
+            // Built-in choices: keep this row horizontally scrollable as
+            // bundled wallpapers grow.
+            builtin-wallpapers-scroll := ScrollView {
+                height: 106px;
+                width: 100%;
+                viewport-width: max(self.visible-width, builtin-wallpapers-row.preferred-width);
+                viewport-height: self.visible-height;
 
-            builtin-wallpapers-row := HorizontalLayout {
-                spacing: 11px;
-                alignment: start;
-            VerticalLayout {
-                spacing: 5px;
-                WallpaperSwatch {
-                    width: 100px;
-                    selected: root.current-wallpaper == "";
-                    clicked => { root.set-wallpaper(""); }
-                    Rectangle {
-                        width: 100%; height: 100%;
-                        background: Theme.window-base;
-                        IconText {
-                            centered: true;
-                            text: "\u{E14C}"; // clear / none
-color: Theme.text-muted;
-                            font-size: 22px * Theme.panel-font;
+                builtin-wallpapers-row := HorizontalLayout {
+                    spacing: 11px;
+                    alignment: start;
+                VerticalLayout {
+                    spacing: 5px;
+                    WallpaperSwatch {
+                        width: 100px;
+                        selected: root.current-wallpaper == "";
+                        clicked => { root.set-wallpaper(""); }
+                        Rectangle {
                             width: 100%; height: 100%;
+                            background: Theme.window-base;
+                            IconText {
+                                centered: true;
+                                text: "\u{E14C}"; // clear / none
+            color: Theme.text-muted;
+                                font-size: 22px * Theme.panel-font;
+                                width: 100%; height: 100%;
 
+                            }
                         }
                     }
+                    Text { text: root.lang-en ? "None" : "无"; font-size: 11px * Theme.panel-font;
+                           color: Theme.text-secondary; horizontal-alignment: center; }
                 }
-                Text { text: root.lang-en ? "None" : "无"; font-size: 11px * Theme.panel-font;
-                       color: Theme.text-secondary; horizontal-alignment: center; }
-            }
-            VerticalLayout {
-                spacing: 5px;
-                WallpaperSwatch {
-                    width: 100px;
-                    selected: root.current-wallpaper == "builtin:light";
-                    clicked => { root.set-wallpaper("builtin:light"); }
-                    Rectangle {
-                        width: 100%; height: 100%;
-                        background: @linear-gradient(135deg, #eff3fb 0%, #d5e1f2 100%);
+                VerticalLayout {
+                    spacing: 5px;
+                    WallpaperSwatch {
+                        width: 100px;
+                        selected: root.current-wallpaper == "builtin:light";
+                        clicked => { root.set-wallpaper("builtin:light"); }
                         Rectangle {
-                            x: parent.width * 0.66; y: -parent.height * 0.2;
-                            width: 56px; height: 56px; border-radius: 28px;
-                            background: #4a90e2; opacity: 0.30;
+                            width: 100%; height: 100%;
+                            background: @linear-gradient(135deg, #eff3fb 0%, #d5e1f2 100%);
+                            Rectangle {
+                                x: parent.width * 0.66; y: -parent.height * 0.2;
+                                width: 56px; height: 56px; border-radius: 28px;
+                                background: #4a90e2; opacity: 0.30;
+                            }
                         }
                     }
+                    Text { text: root.lang-en ? "Meat Light" : "简约·浅"; font-size: 11px * Theme.panel-font;
+                           color: Theme.text-secondary; horizontal-alignment: center; }
                 }
-                Text { text: root.lang-en ? "Meat Light" : "简约·浅"; font-size: 11px * Theme.panel-font;
-                       color: Theme.text-secondary; horizontal-alignment: center; }
-            }
-            VerticalLayout {
-                spacing: 5px;
-                WallpaperSwatch {
-                    width: 100px;
-                    selected: root.current-wallpaper == "builtin:dark";
-                    clicked => { root.set-wallpaper("builtin:dark"); }
-                    Rectangle {
-                        width: 100%; height: 100%;
-                        background: @linear-gradient(135deg, #10131a 0%, #1b2233 100%);
+                VerticalLayout {
+                    spacing: 5px;
+                    WallpaperSwatch {
+                        width: 100px;
+                        selected: root.current-wallpaper == "builtin:dark";
+                        clicked => { root.set-wallpaper("builtin:dark"); }
                         Rectangle {
-                            x: parent.width * 0.66; y: -parent.height * 0.2;
-                            width: 56px; height: 56px; border-radius: 28px;
-                            background: #4a6ce0; opacity: 0.40;
+                            width: 100%; height: 100%;
+                            background: @linear-gradient(135deg, #10131a 0%, #1b2233 100%);
+                            Rectangle {
+                                x: parent.width * 0.66; y: -parent.height * 0.2;
+                                width: 56px; height: 56px; border-radius: 28px;
+                                background: #4a6ce0; opacity: 0.40;
+                            }
                         }
                     }
+                    Text { text: root.lang-en ? "Meat Dark" : "简约·暗"; font-size: 11px * Theme.panel-font;
+                           color: Theme.text-secondary; horizontal-alignment: center; }
                 }
-                Text { text: root.lang-en ? "Meat Dark" : "简约·暗"; font-size: 11px * Theme.panel-font;
-                       color: Theme.text-secondary; horizontal-alignment: center; }
-            }
+                }
             }
         }
 
@@ -311,37 +315,43 @@ color: Theme.text-secondary;
                 }
             }
         }
-        Rectangle { height: 10px; }
-        Text {
-            text: root.renderer-restart-required
-                ? (root.lang-en
-                    ? "Restart Rudder to apply the renderer change."
-                    : "重启 Rudder 后渲染器设置才会生效。")
-                : (root.lang-en
-                    ? (Theme.is-mac
-                        ? "FemtoVG remains the default renderer on macOS."
-                        : "Software remains the compatibility default for existing installations.")
-                    : (Theme.is-mac
-                        ? "macOS 默认继续使用 FemtoVG 渲染器。"
-                        : "现有安装继续默认使用兼容性更好的软件渲染。"));
-            color: root.renderer-restart-required ? Theme.accent : Theme.text-muted;
-            font-size: 11px * Theme.panel-font;
-            wrap: word-wrap;
-        }
-        Rectangle { height: 12px; }
-        SettingSwitch {
-            show-divider: false;
-            label: root.lang-en ? "Animations" : "动画";
-            desc: root.lang-en
-                ? "Enable or disable all sidebar and panel animations."
-                : "启用或禁用所有侧边栏和面板动画。";
-
-            checked <=> AnimationSettings.enabled;
-            toggled(v) => {
-                // 持久化：此前这个开关只改 Slint 全局，重启即回。
-                root.set-animations-enabled(AnimationSettings.enabled);
+        // 分组留白（原为空 `Rectangle` 占位）：10px → 12px（+2px）
+        GroupGap {
+            gap: Theme.gap-md;
+            Text {
+                text: root.renderer-restart-required
+                    ? (root.lang-en
+                        ? "Restart Rudder to apply the renderer change."
+                        : "重启 Rudder 后渲染器设置才会生效。")
+                    : (root.lang-en
+                        ? (Theme.is-mac
+                            ? "FemtoVG remains the default renderer on macOS."
+                            : "Software remains the compatibility default for existing installations.")
+                        : (Theme.is-mac
+                            ? "macOS 默认继续使用 FemtoVG 渲染器。"
+                            : "现有安装继续默认使用兼容性更好的软件渲染。"));
+                color: root.renderer-restart-required ? Theme.accent : Theme.text-muted;
+                font-size: 11px * Theme.panel-font;
+                wrap: word-wrap;
             }
+        }
+        // 分组留白（原为空 `Rectangle` 占位）：12px → 12px（gap-md），无差异
+        GroupGap {
+            gap: Theme.gap-md;
+            SettingSwitch {
+                show-divider: false;
+                label: root.lang-en ? "Animations" : "动画";
+                desc: root.lang-en
+                    ? "Enable or disable all sidebar and panel animations."
+                    : "启用或禁用所有侧边栏和面板动画。";
 
+                checked <=> AnimationSettings.enabled;
+                toggled(v) => {
+                    // 持久化：此前这个开关只改 Slint 全局，重启即回。
+                    root.set-animations-enabled(AnimationSettings.enabled);
+                }
+
+            }
         }
         SettingRow {
             label: root.lang-en ? "UI scale" : "界面缩放";
@@ -363,16 +373,19 @@ color: Theme.text-secondary;
             }
         }
 
-        Rectangle { height: 14px; }
-        SettingSwitch {
-            label: root.lang-en ? "Hide special partitions" : "隐藏特殊分区";
-            desc: root.lang-en
-                ? "Hide EFI / swap / temporary pseudo-file-systems and very small partitions in the resource panel."
-                : "在资源面板中隐藏 EFI / swap / 临时文件系统等伪分区，避免误导。";
+        // 分组留白（原为空 `Rectangle` 占位）：14px → 12px（−2px）
+        GroupGap {
+            gap: Theme.gap-md;
+            SettingSwitch {
+                label: root.lang-en ? "Hide special partitions" : "隐藏特殊分区";
+                desc: root.lang-en
+                    ? "Hide EFI / swap / temporary pseudo-file-systems and very small partitions in the resource panel."
+                    : "在资源面板中隐藏 EFI / swap / 临时文件系统等伪分区，避免误导。";
 
-            checked <=> root.hide-special-partitions;
-            toggled(v) => { root.set-hide-special-partitions(root.hide-special-partitions); }
+                checked <=> root.hide-special-partitions;
+                toggled(v) => { root.set-hide-special-partitions(root.hide-special-partitions); }
 
+            }
         }
         SettingRow {
             label: root.lang-en ? "Mount filter" : "挂载点过滤";

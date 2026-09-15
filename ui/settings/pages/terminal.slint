@@ -11,7 +11,7 @@ import { ResetBar } from "../reset_bar.slint";
 import { OutputRuleItem } from "../types.slint";
 import { LabeledInput, PrimaryButton } from "../../widgets.slint";
 import { ComboBox, Switch } from "std-widgets.slint";
-import { Divider } from "../../components/surfaces.slint";
+import { Divider, GroupGap } from "../../components/surfaces.slint";
 import { IconText } from "../../components/text.slint";
 
 export component TerminalPage inherits VerticalLayout {
@@ -190,16 +190,19 @@ export component TerminalPage inherits VerticalLayout {
             color: root.scrollback-valid ? Theme.text-muted : Theme.danger;
             wrap: word-wrap;
         }
-        Rectangle { height: 14px; }
-        SettingSwitch {
-            label: root.lang-en ? "Convert LF to CRLF" : "LF 转 CRLF";
-            desc: root.lang-en
-                ? "Replace \\n with \\r\\n on paste/input for programs that require Windows line endings."
-                : "粘贴/输入时将 \\n 转为 \\r\\n，兼容需要 Windows 换行符的程序。";
+        // 分组留白（原为空 `Rectangle` 占位）：14px → 12px（−2px）
+        GroupGap {
+            gap: Theme.gap-md;
+            SettingSwitch {
+                label: root.lang-en ? "Convert LF to CRLF" : "LF 转 CRLF";
+                desc: root.lang-en
+                    ? "Replace \\n with \\r\\n on paste/input for programs that require Windows line endings."
+                    : "粘贴/输入时将 \\n 转为 \\r\\n，兼容需要 Windows 换行符的程序。";
 
-            checked <=> root.convert-eol;
-            toggled(v) => { root.set-convert-eol(root.convert-eol); }
+                checked <=> root.convert-eol;
+                toggled(v) => { root.set-convert-eol(root.convert-eol); }
 
+            }
         }
         SettingSwitch {
             label: root.lang-en ? "OSC 52 clipboard" : "OSC 52 剪贴板";
@@ -324,59 +327,65 @@ export component TerminalPage inherits VerticalLayout {
             font-size: 11px * Theme.panel-font;
             wrap: word-wrap;
         }
-        Rectangle { height: 10px; }
-        LabeledInput {
-            label: root.lang-en ? "Keyword or regular expression" : "关键词或正则表达式";
-            placeholder: root.new-rule-regex ? "timeout|connection refused" : "connection refused";
-            value <=> root.new-rule-pattern;
-            accepted => {
-                if root.add-output-highlight-rule(
-                    root.new-rule-pattern, root.new-rule-regex,
-                    root.new-rule-case-sensitive, root.new-rule-whole-line,
-                    root.new-rule-color) {
-                    root.new-rule-pattern = "";
-                }
-            }
-        }
-        Rectangle { height: 8px; }
-        HorizontalLayout {
-            spacing: 8px;
-            ComboBox {
-                width: 130px;
-                model: [root.lang-en ? "Keyword" : "关键词", root.lang-en ? "Regex" : "正则"];
-                current-value: root.new-rule-regex
-                    ? (root.lang-en ? "Regex" : "正则")
-                    : (root.lang-en ? "Keyword" : "关键词");
-                selected(v) => {
-                    root.new-rule-regex = v == "Regex" || v == "正则";
-                }
-            }
-            ComboBox {
-                width: 120px;
-                model: ["Red", "Yellow", "Green", "Cyan", "Magenta", "Gray"];
-                current-value: root.new-rule-color == "yellow" ? "Yellow"
-                    : root.new-rule-color == "green" ? "Green"
-                    : root.new-rule-color == "cyan" ? "Cyan"
-                    : root.new-rule-color == "magenta" ? "Magenta"
-                    : root.new-rule-color == "gray" ? "Gray" : "Red";
-                selected(v) => {
-                    root.new-rule-color = v == "Yellow" ? "yellow"
-                        : v == "Green" ? "green"
-                        : v == "Cyan" ? "cyan"
-                        : v == "Magenta" ? "magenta"
-                        : v == "Gray" ? "gray" : "red";
-                }
-            }
-            Rectangle { horizontal-stretch: 1; }
-            PrimaryButton {
-                text: root.lang-en ? "Add rule" : "添加规则";
-                disabled: root.new-rule-pattern == "";
-                clicked => {
+        // 分组留白（原为空 `Rectangle` 占位）：10px → 8px（−2px）
+        GroupGap {
+            gap: Theme.gap-sm;
+            LabeledInput {
+                label: root.lang-en ? "Keyword or regular expression" : "关键词或正则表达式";
+                placeholder: root.new-rule-regex ? "timeout|connection refused" : "connection refused";
+                value <=> root.new-rule-pattern;
+                accepted => {
                     if root.add-output-highlight-rule(
                         root.new-rule-pattern, root.new-rule-regex,
                         root.new-rule-case-sensitive, root.new-rule-whole-line,
                         root.new-rule-color) {
                         root.new-rule-pattern = "";
+                    }
+                }
+            }
+        }
+        // 分组留白（原为空 `Rectangle` 占位）：8px → 8px（gap-sm），无差异
+        GroupGap {
+            gap: Theme.gap-sm;
+            HorizontalLayout {
+                spacing: 8px;
+                ComboBox {
+                    width: 130px;
+                    model: [root.lang-en ? "Keyword" : "关键词", root.lang-en ? "Regex" : "正则"];
+                    current-value: root.new-rule-regex
+                        ? (root.lang-en ? "Regex" : "正则")
+                        : (root.lang-en ? "Keyword" : "关键词");
+                    selected(v) => {
+                        root.new-rule-regex = v == "Regex" || v == "正则";
+                    }
+                }
+                ComboBox {
+                    width: 120px;
+                    model: ["Red", "Yellow", "Green", "Cyan", "Magenta", "Gray"];
+                    current-value: root.new-rule-color == "yellow" ? "Yellow"
+                        : root.new-rule-color == "green" ? "Green"
+                        : root.new-rule-color == "cyan" ? "Cyan"
+                        : root.new-rule-color == "magenta" ? "Magenta"
+                        : root.new-rule-color == "gray" ? "Gray" : "Red";
+                    selected(v) => {
+                        root.new-rule-color = v == "Yellow" ? "yellow"
+                            : v == "Green" ? "green"
+                            : v == "Cyan" ? "cyan"
+                            : v == "Magenta" ? "magenta"
+                            : v == "Gray" ? "gray" : "red";
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                PrimaryButton {
+                    text: root.lang-en ? "Add rule" : "添加规则";
+                    disabled: root.new-rule-pattern == "";
+                    clicked => {
+                        if root.add-output-highlight-rule(
+                            root.new-rule-pattern, root.new-rule-regex,
+                            root.new-rule-case-sensitive, root.new-rule-whole-line,
+                            root.new-rule-color) {
+                            root.new-rule-pattern = "";
+                        }
                     }
                 }
             }
