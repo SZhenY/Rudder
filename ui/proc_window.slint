@@ -162,11 +162,19 @@ export component ProcWindow inherits Window {
             close() => { root.request-close(); }
         }
 
-        // macOS：窗口用「全尺寸内容视图」，原生交通灯按钮（关闭 / 最小化 / 缩放）会**浮在
-        // 内容之上** —— 顶部必须留出与主窗口同宽的空白，否则会盖住第一行内容（主窗口用
-        // `titlebar-inset` 做同一件事）。这里是纯留白、不带 TouchArea：该区域的拖拽仍交给
-        // 系统标题栏处理；子窗口没有 zoom 回调，所以也不接双击。
-        if Theme.is-mac && !root.custom-titlebar : Rectangle {
+        // macOS 的窗口是「全尺寸内容视图 + 透明标题栏」（见 src/app/window.rs 的
+        // with_fullsize_content_view），原生交通灯按钮（关闭 / 最小化 / 缩放）会**浮在内容
+        // 之上** —— 顶部必须留出 28px（与主窗口 `titlebar-inset` 同宽），否则会盖住第一行。
+        //
+        // ⚠️ 判据是 `!root.custom-titlebar` 而**不是** `Theme.is-mac`：Slint 的 global 是
+        // **每个窗口一份**，而 `is-mac` 只在主窗口上接线（settings_ui.rs 的 set_is_mac），
+        // 子窗口里 `Theme.is-mac` 恒为 false —— 首版就是这么写坏了，留白从未渲染。
+        // `custom-titlebar` 由 Rust 按平台设置（`cfg!(not(target_os = "macos"))`），
+        // 在子窗口里同样是可靠的"是不是 macOS"信号。
+        //
+        // 纯留白、不带 TouchArea：该区域的窗口拖拽仍交给系统标题栏；子窗口没有 zoom 回调，
+        // 所以也不接双击。
+        if !root.custom-titlebar : Rectangle {
             height: 28px;
             background: Theme.bg-panel;
         }
