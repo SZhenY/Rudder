@@ -275,36 +275,42 @@ export component AppWindow inherits Window {
     callback persist-sidebar-dock(string);
     // The top-right toolbar icons float over the tab row; when the sidebar docks
     // top/right it covers that corner, so shift the icons to stay over the tabs.
+    //
+    // 两个偏移都是"同一侧三个面板各自占掉多少，再相加"：资源侧栏 + 欢迎侧栏 +
+    // 快捷面板。此前是两条 14 行、彼此只差一个边缘字符串的三目链；现在把"这个面板
+    // 在这条边上占多少"抽成 `side-taken`，两条偏移各自只剩三个调用，逐项与原式等价。
+    //
+    // 折叠条宽度：侧栏与快捷面板折叠后都只剩 36px 宽的折叠条（见 CollapseButton）。
+    pure function side-taken(open: bool, dock: string, edge: string, value: length) -> length {
+        return open && dock == edge ? value : 0px;
+    }
+
+    /// 同一侧的资源 / 欢迎侧栏是否**已经**折叠成折叠条。
+    /// 快捷面板折叠时靠它判断：折叠条已被别的面板占住时不再叠加第二个 36px。
+    pure function collapsed-bar-taken(edge: string) -> bool {
+        return (root.welcome-as-sidebar && root.welcome-collapsed
+                && root.welcome-sidebar-dock == edge)
+            || (root.sidebar-collapsed && root.sidebar-dock == edge);
+    }
+
     property <length> toolbar-x-off:
-        (root.sidebar-dock == "right"
-            ? (root.sidebar-collapsed ? 36px : root.sidebar-width + 4px)
-            : 0px)
-        + ((root.welcome-as-sidebar && root.welcome-sidebar-dock == "right")
-            ? root.welcome-sidebar-taken
-            : 0px)
-        + ((root.quick-panel-open && root.quick-panel-dock == "right")
-            ? (root.quick-panel-collapsed
-                ? ((root.welcome-as-sidebar && root.welcome-collapsed
-                        && root.welcome-sidebar-dock == "right")
-                    || (root.sidebar-collapsed && root.sidebar-dock == "right")
-                    ? 0px : 36px)
-                : root.quick-panel-width + 4px)
-            : 0px);
+        side-taken(true, root.sidebar-dock, "right",
+            root.sidebar-collapsed ? 36px : root.sidebar-width + 4px)
+        + side-taken(root.welcome-as-sidebar, root.welcome-sidebar-dock, "right",
+            root.welcome-sidebar-taken)
+        + side-taken(root.quick-panel-open, root.quick-panel-dock, "right",
+            root.quick-panel-collapsed
+                ? (collapsed-bar-taken("right") ? 0px : 36px)
+                : root.quick-panel-width + 4px);
     property <length> toolbar-y-off:
-        (root.sidebar-dock == "top"
-            ? (root.sidebar-collapsed ? 36px : root.sidebar-height + 4px)
-            : 0px)
-        + ((root.welcome-as-sidebar && root.welcome-sidebar-dock == "top")
-            ? root.welcome-sidebar-taken
-            : 0px)
-        + ((root.quick-panel-open && root.quick-panel-dock == "top")
-            ? (root.quick-panel-collapsed
-                ? ((root.welcome-as-sidebar && root.welcome-collapsed
-                        && root.welcome-sidebar-dock == "top")
-                    || (root.sidebar-collapsed && root.sidebar-dock == "top")
-                    ? 0px : 36px)
-                : root.quick-panel-height + 4px)
-            : 0px);
+        side-taken(true, root.sidebar-dock, "top",
+            root.sidebar-collapsed ? 36px : root.sidebar-height + 4px)
+        + side-taken(root.welcome-as-sidebar, root.welcome-sidebar-dock, "top",
+            root.welcome-sidebar-taken)
+        + side-taken(root.quick-panel-open, root.quick-panel-dock, "top",
+            root.quick-panel-collapsed
+                ? (collapsed-bar-taken("top") ? 0px : 36px)
+                : root.quick-panel-height + 4px);
     property <length> toolbar-y:
         (root.custom-titlebar ? 43px : 5px + root.titlebar-inset) + root.toolbar-y-off;
     in-out property <bool> about-open: false;     // centered About dialog
