@@ -239,7 +239,12 @@ impl TermBuffer {
         };
         if let Some(end) = erase_saved_through {
             self.raw.drain(..end);
-            self.rendered.clear();
+            // ⚠️ 这里必须连 `scroll_cache` 一起失效（B1.1 的同类漏项）：缓存按**回滚行号**
+            // 索引，而 `CSI 3 J` 把回滚整个清空、后面的行号全部前移 —— 旧条目会以"行号相同、
+            // plain 文本相同"命中，把上一批内容的着色贴到新内容上。`bump_render_gen()`
+            // 同时清 `rendered`（原本那行删除）。
+            self.bump_render_gen();
+            self.scroll_cache.clear();
             self.view_offset = 0;
             self.term.selection = None;
             self.clear_overlines();
@@ -996,6 +1001,27 @@ mod tests {
         buf.ingest(b"\x1b[21mDUB");
         let attr = cell_attr(&buf.term, 0, 0);
         assert_eq!(attr.underline, UnderlineStyle::Double);
+    }
+
+    /// `CSI 3 J`（清除回滚，例如 `clear -x` / `reset`）必须让**按回滚行号索引**的渲染
+    /// 缓存一起失效：清空后行号整体前移，旧条目会以"行号相同 + plain 文本相同"命中，
+    /// 把上一批内容的着色贴到新内容上（与 B1.1 同一类漏项，这里锁定它）。
+    #[test]
+    fn erase_saved_lines_invalidates_the_scroll_cache() {
+        let mut buf = make_buffer();
+        for i in 0..40 {
+            buf.ingest(format!("line {i}\r\n").as_bytes());
+        }
+        buf.view_offset = 10; // 进入回滚视图
+        let _ = buf.render(); // 填充 scroll_cache
+        assert!(!buf.scroll_cache.is_empty(), "回滚渲染应填充缓存");
+        let gen_before = buf.render_gen;
+
+        buf.ingest(b"\x1b[3J"); // erase saved lines
+
+        assert!(buf.scroll_cache.is_empty(), "CSI 3J 后回滚缓存必须清空");
+        assert_ne!(buf.render_gen, gen_before, "渲染代号必须自增");
+        assert_eq!(buf.view_offset, 0, "回到实时视图");
     }
 
     #[test]
