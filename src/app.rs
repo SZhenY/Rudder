@@ -594,13 +594,21 @@ pub fn run() -> Result<()> {
                 };
                 let _ = pw.show();
                 place_process_window(&main, &pw);
+                // 尺寸兜底：真为 0 时重设（另一类失效，正常路径不触发）
                 ensure_sub_window_sized(pw.window(), 640.0, 520.0);
-                // 首帧之后再核对一次尺寸：刚 show() 时本来就可能是 0（布局还没跑），
-                // 350ms 后仍为 0 才是异常 —— 那正是"只有交通灯、没有内容"的样子。
-                let late = pw.as_weak();
-                slint::Timer::single_shot(std::time::Duration::from_millis(350), move || {
-                    if let Some(w) = late.upgrade() {
-                        ensure_sub_window_sized(w.window(), 640.0, 520.0);
+                // 首帧：显式请求重绘三次 —— 首次可能早于窗口映射完成而被 winit 丢弃，
+                // 后两次分别覆盖"映射完成"与"内容数据到达"两个时点。**不改尺寸**。
+                request_first_frame(pw.window());
+                let f1 = pw.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+                    if let Some(w) = f1.upgrade() {
+                        request_first_frame(w.window());
+                    }
+                });
+                let f2 = pw.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(200), move || {
+                    if let Some(w) = f2.upgrade() {
+                        request_first_frame(w.window());
                     }
                 });
                 // ⚠️ 这里**不再调用 `focus_window()`**：它是整条路径上唯一会走 app 激活
@@ -674,11 +682,21 @@ pub fn run() -> Result<()> {
                 };
                 let _ = sw.show();
                 place_system_info_window(&main, &sw);
+                // 尺寸兜底：真为 0 时重设（另一类失效，正常路径不触发）
                 ensure_sub_window_sized(sw.window(), 760.0, 520.0);
-                let late = sw.as_weak();
-                slint::Timer::single_shot(std::time::Duration::from_millis(350), move || {
-                    if let Some(w) = late.upgrade() {
-                        ensure_sub_window_sized(w.window(), 760.0, 520.0);
+                // 首帧：显式请求重绘三次 —— 首次可能早于窗口映射完成而被 winit 丢弃，
+                // 后两次分别覆盖"映射完成"与"内容数据到达"两个时点。**不改尺寸**。
+                request_first_frame(sw.window());
+                let f1 = sw.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+                    if let Some(w) = f1.upgrade() {
+                        request_first_frame(w.window());
+                    }
+                });
+                let f2 = sw.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(200), move || {
+                    if let Some(w) = f2.upgrade() {
+                        request_first_frame(w.window());
                     }
                 });
                 // 同上：与进程窗口一致，不再调用 `focus_window()`。

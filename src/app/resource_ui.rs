@@ -248,30 +248,35 @@ pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
     sys.set_wp_tint(main.get_wp_tint());
 }
 
-/// 子窗口内容区尺寸兜底。
-///
-/// 现场（macOS）：子窗口只画出交通灯、内容一片空白 —— 那是**内容区尺寸为 0**：窗口
-/// 高度只剩标题栏，而标题栏是透明 + 全尺寸内容视图，于是看上去"只有一个小的交通灯窗"。
-/// 尺寸为 0 时按给定目标重新请求一次（正常路径下 make-0 不会触发）。
+/// 子窗口内容区尺寸兜底（保留）：尺寸真的为 0 时按目标重新请求一次。
 pub(super) fn ensure_sub_window_sized(w: &slint::Window, min_w: f32, min_h: f32) {
     let size = w.size();
     if size.width > 0 && size.height > 0 {
         return;
     }
-    tracing::warn!(
-        ?size,
-        min_w,
-        min_h,
-        "sub-window content size is zero — re-requesting the inner size"
-    );
-    let _ = w.with_winit_window(|ww| {
-        use i_slint_backend_winit::winit::dpi::LogicalSize;
-        let _ = ww.request_inner_size(LogicalSize::new(min_w as f64, min_h as f64));
-    });
+    tracing::warn!(?size, min_w, min_h, "sub-window content size is zero — re-requesting");
+    let scale = w.with_winit_window(|ww| ww.scale_factor()).unwrap_or(1.0).max(0.01);
+    w.set_size(slint::PhysicalSize::new(
+        (f64::from(min_w) * scale) as u32,
+        (f64::from(min_h) * scale) as u32,
+    ));
+}
+
+/// 让子窗口真正画出第一帧。
+///
+/// 根因：macOS 上新映射的第二个窗口**不会自动产生首次渲染事件**，而 Slint 的布局是
+/// 「渲染时惰性计算」的 —— 于是一直没有内容，直到外部原因（用户拖动窗口边缘）送来一次
+/// `Resized` 才补上首帧。现场表现就是"只有交通灯、没有内容，拉伸一下就出来了"。
+///
+/// 正解不是去动尺寸，而是**显式请求重绘**：`Window::request_redraw()` 就是 Slint 为
+/// 此提供的 API。第一次请求可能早于窗口映射完成（winit 会丢弃未映射窗口的重绘请求），
+/// 所以在随后的两个 tick 里各补一次；三次都只是"请画一帧"，不改尺寸、不看内容。
+pub(super) fn request_first_frame(w: &slint::Window) {
+    w.request_redraw();
 }
 
 pub(super) fn place_system_info_window(main: &AppWindow, sys: &SystemInfoWindow) {
-    use i_slint_backend_winit::winit::dpi::{LogicalPosition, LogicalSize};
+    use i_slint_backend_winit::winit::dpi::LogicalPosition;
 
     let Some((mon_x, mon_y, mon_w, mon_h, scale)) = main
         .window()
@@ -298,11 +303,17 @@ pub(super) fn place_system_info_window(main: &AppWindow, sys: &SystemInfoWindow)
     let x = mon_x + (mon_w - target_w).max(0.0) / 2.0;
     let y = mon_y + (mon_h - target_h).max(0.0) / 2.0;
 
+    // 位置：只能走 winit（Slint 没有设置窗口位置的 API）。移动不涉及重排，安全。
     sys.window().with_winit_window(|ww| {
-        let _ = ww.request_inner_size(LogicalSize::new(target_w, target_h));
         ww.set_outer_position(LogicalPosition::new(x, y));
-        let _ = scale; // documents that all values above are already logical.
     });
+    // 尺寸：走 **Slint 自己的 API**。用 `with_winit_window(request_inner_size)` 改尺寸是
+    // 在 Slint 背后动 OS 窗口，首帧布局会被跳过（现场表现：空白窗口，拖动边缘才有内容）。
+    let _ = scale;
+    sys.window().set_size(slint::PhysicalSize::new(
+        (target_w * scale) as u32,
+        (target_h * scale) as u32,
+    ));
 }
 
 pub(super) fn place_process_window(main: &AppWindow, process: &ProcWindow) {
