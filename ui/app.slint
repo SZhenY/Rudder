@@ -47,6 +47,9 @@ import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
 import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+// EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
+export { EditorFindResult }
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
 // P5「公共面收敛」第 1 步：把两个全局导出，Rust 才能 `window.global::<Theme>()`
@@ -129,12 +132,6 @@ export struct SplitterInfo {
 }
 
 // Editor find step result (#287): the byte offsets to select and the total
-// match count (so the bar can show "3" even when the query no longer matches).
-export struct EditorFindResult {
-    start: int,
-    end: int,
-    count: int,
-}
 
 // A 26×26 top-bar icon button with a hover tooltip (right-aligned so it never
 // runs off the window edge). `active` keeps the hover background lit (e.g. while
@@ -2039,307 +2036,23 @@ export component AppWindow inherits Window {
     // --- Built-in file viewer / editor (#70) ------------------------------
     // View = read-only (selectable/copyable); Edit = writable, Ctrl+S or the
     // Save button uploads, and closing uploads any unsaved changes.
-    if root.editor-open : Rectangle {
-        // Modal backdrop; clicking it does NOT close (avoids losing edits to a
-        // stray click) — use the close button or Esc. Also swallow wheel events
-        // so scrolling can't leak through to the terminal underneath (#70).
-        background: #00000088;
-        TouchArea {
-            scroll-event(event) => { accept }
-        }
-        edit-fs := FocusScope {
-            // Ctrl+S saves, Esc closes. These bubble up from the focused
-            // TextInput because it doesn't consume them.
-            key-pressed(e) => {
-                // ⌘S on macOS, Ctrl+S elsewhere. (Slint maps `control` to Cmd on
-                // macOS — see #158, so no platform branch is needed here.) On macOS
-                // Cmd+letter arrives as the C0 control char (Cmd+S = "\u{13}"), not
-                // "s" — confirmed on an M4 — so accept both forms (#158).
-                if (e.modifiers.control && (e.text == "s" || e.text == "S" || e.text == "\u{0013}")) {
-                    root.save-file();
-                    return accept;
-                }
-                if (e.text == Key.Escape) {
-                    root.close-editor();
-                    return accept;
-                }
-                return reject;
-            }
-            Rectangle {
-                x: root.ed-x;
-                y: root.ed-y;
-                width: root.ed-w;
-                height: root.ed-h;
-                background: Theme.bg-panel;
-                border-radius: Theme.radius-md;
-                border-width: 1px;
-                border-color: Theme.border-strong;
-                drop-shadow-blur: Theme.shadow-raised-blur;
-                drop-shadow-color: Theme.shadow-raised-color;
-                clip: true;
-
-                VerticalLayout {
-                    // Title bar — drag to move; the buttons stay on top.
-                    Rectangle {
-                        height: 40px;
-                        background: Theme.bg-panel-alt;
-                        ed-title-drag := TouchArea {
-                            mouse-cursor: move;
-                            pointer-event(e) => {
-                                if (e.kind == PointerEventKind.down) {
-                                    root.ed-dragging = true;
-                                    root.ed-base-x = root.ed-x;
-                                    root.ed-base-y = root.ed-y;
-                                    root.ed-grab-x = self.absolute-position.x + self.mouse-x;
-                                    root.ed-grab-y = self.absolute-position.y + self.mouse-y;
-                                } else if (e.kind == PointerEventKind.up) {
-                                    root.ed-dragging = false;
-                                }
-                            }
-                            moved => {
-                                if (root.ed-dragging) {
-                                    root.ed-x = root.ed-base-x + (self.absolute-position.x + self.mouse-x - root.ed-grab-x);
-                                    root.ed-y = root.ed-base-y + (self.absolute-position.y + self.mouse-y - root.ed-grab-y);
-                                }
-                            }
-                        }
-                        HorizontalLayout {
-                            padding-left: 14px;
-                            padding-right: 8px;
-                            // Centre the 28px buttons inside the 40px bar so the
-                            // Save button isn't glued to the top edge (#70).
-                            padding-top: 6px;
-                            padding-bottom: 6px;
-                            spacing: 8px;
-                            Label {
-                                text: root.editor-name
-                                    + (root.editor-readonly
-                                        ? "  ·  " + @tr("Read-only")
-                                        : (root.editor-dirty ? "  ·  " + @tr("Modified") : ""));
-                                color: Theme.text-primary;
-                                font-size: Theme.fs-md;
-                                font-weight: 600;
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;
-                                overflow: elide;
-                            }
-                            if !root.editor-readonly : Rectangle {
-                                width: 76px; height: 28px;
-                                border-radius: Theme.radius-sm;
-                                background: ed-save-ta.has-hover ? Theme.accent-hover : Theme.accent;
-                                ed-save-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.save-file(); }
-                                }
-                                Text { text: @tr("Save"); color: #ffffff; font-size: Theme.fs-sm;
-                                       horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                            CloseButton {
-                                size: 28px;
-                                clicked => { root.close-editor(); }
-                            }
-                        }
-                    }
-                    Divider {}
-
-                    // Lightweight find/replace bar (#287). Replacement is
-                    // explicit; closing the editor never writes the file.
-                    Rectangle {
-                        height: 38px;
-                        background: Theme.bg-elevated;
-                        HorizontalLayout {
-                            padding-left: 8px; padding-right: 8px;
-                            padding-top: 5px; padding-bottom: 5px; spacing: 6px;
-                            Text { text: @tr("Find"); color: Theme.text-muted; vertical-alignment: center; }
-                            TextInput {
-                                horizontal-stretch: 1;
-                                single-line: true;
-                                text <=> root.editor-find-query;
-                                edited => {
-                                    root.editor-find-position = -1;
-                                    root.editor-match-count = root.editor-count-matches(
-                                        root.editor-content, root.editor-find-query);
-                                }
-                            }
-                            Text {
-                                width: 42px;
-                                text: root.editor-find-query == "" ? "" : root.editor-match-count;
-                                color: Theme.text-muted;
-                                vertical-alignment: center;
-                                horizontal-alignment: center;
-                            }
-                            Rectangle {
-                                width: 28px;
-                                border-radius: Theme.radius-sm;
-                                background: find-prev-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
-                                find-prev-ta := TouchArea {
-                                    enabled: root.editor-match-count > 0;
-                                    clicked => {
-                                        let found = root.editor-find-step(root.editor-content,
-                                            root.editor-find-query, root.editor-find-position, true);
-                                        root.editor-find-position = found.start;
-                                        root.editor-match-count = found.count;
-                                        edit-input.set-selection-offsets(found.start, found.end);
-                                        edit-input.focus();
-                                    }
-                                }
-                                Text { text: "↑"; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                            Rectangle {
-                                width: 28px;
-                                border-radius: Theme.radius-sm;
-                                background: find-next-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
-                                find-next-ta := TouchArea {
-                                    enabled: root.editor-match-count > 0;
-                                    clicked => {
-                                        let found = root.editor-find-step(root.editor-content,
-                                            root.editor-find-query, root.editor-find-position, false);
-                                        root.editor-find-position = found.start;
-                                        root.editor-match-count = found.count;
-                                        edit-input.set-selection-offsets(found.start, found.end);
-                                        edit-input.focus();
-                                    }
-                                }
-                                Text { text: "↓"; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                            Text { text: @tr("Replace"); color: Theme.text-muted; vertical-alignment: center; }
-                            TextInput {
-                                horizontal-stretch: 1;
-                                single-line: true;
-                                text <=> root.editor-replace-text;
-                            }
-                            Rectangle {
-                                width: 88px;
-                                border-radius: Theme.radius-sm;
-                                background: replace-all-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
-                                replace-all-ta := TouchArea {
-                                    enabled: !root.editor-readonly && root.editor-find-query != "";
-                                    clicked => {
-                                        root.editor-replace-all(root.editor-find-query, root.editor-replace-text);
-                                    }
-                                }
-                                Text {
-                                    text: @tr("Replace all");
-                                    color: replace-all-ta.enabled ? Theme.text-primary : Theme.text-muted;
-                                    font-size: Theme.fs-sm;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-                    }
-                    Divider {}
-
-                    // Text area: a line-number gutter on the left + the editor.
-                    // word-wrap is OFF so one logical line == one display line and
-                    // the numbers line up (long lines scroll horizontally); the
-                    // gutter is pinned horizontally but tracks the editor's
-                    // vertical scroll via ed-scroll.viewport-y (#81).
-                    Rectangle {
-                        vertical-stretch: 1;
-                        background: Theme.bg-root;
-                        HorizontalLayout {
-                            spacing: 0;
-                            Rectangle {
-                                width: 48px;
-                                background: Theme.bg-panel-alt;
-                                clip: true;
-                                Label {
-                                    x: 0;
-                                    y: ed-scroll.viewport-y + 8px;
-                                    width: parent.width - 6px;
-                                    text: root.editor-line-numbers;
-                                    horizontal-alignment: right;
-                                    font-size: Theme.fs-md;
-                                    color: Theme.text-muted;
-                                }
-                            }
-                            VDivider {}
-                            // Clip the editing area so text and selection
-                            // painting cannot spill past the panel edge (#387).
-                            editor-viewport := Rectangle {
-                                horizontal-stretch: 1;
-                                clip: true;
-                                ed-scroll := ScrollView {
-                                    viewport-width: max(self.visible-width, edit-input.preferred-width + 16px);
-                                    viewport-height: max(self.visible-height, edit-input.preferred-height + 16px);
-                                    edit-input := TextInput {
-                                        x: 8px;
-                                        y: 8px;
-                                        width: max(parent.visible-width - 16px, self.preferred-width);
-                                        height: self.preferred-height;
-                                        text <=> root.editor-content;
-                                        read-only: root.editor-readonly;
-                                        single-line: false;
-                                        // Wrapping stays OFF: one logical line
-                                        // == one display line, so the gutter
-                                        // numbers line up (#81).
-                                        wrap: no-wrap;
-                                        color: Theme.text-primary;
-                                        font-family: Theme.ui-font-family;
-                                        font-size: Theme.fs-md;
-                                        edited => { root.editor-dirty = true; root.editor-recount(root.editor-content); }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Bottom-right resize grip (#70).
-                Rectangle {
-                    x: parent.width - 18px;
-                    y: parent.height - 18px;
-                    width: 18px;
-                    height: 18px;
-                    ed-resize-ta := TouchArea {
-                        mouse-cursor: nwse-resize;
-                        pointer-event(e) => {
-                            if (e.kind == PointerEventKind.down) {
-                                root.ed-resizing = true;
-                                root.ed-base-w = root.ed-w;
-                                root.ed-base-h = root.ed-h;
-                                root.ed-grab-x = self.absolute-position.x + self.mouse-x;
-                                root.ed-grab-y = self.absolute-position.y + self.mouse-y;
-                            } else if (e.kind == PointerEventKind.up) {
-                                root.ed-resizing = false;
-                            }
-                        }
-                        moved => {
-                            if (root.ed-resizing) {
-                                root.ed-w = max(420px, root.ed-base-w + (self.absolute-position.x + self.mouse-x - root.ed-grab-x));
-                                root.ed-h = max(280px, root.ed-base-h + (self.absolute-position.y + self.mouse-y - root.ed-grab-y));
-                            }
-                        }
-                    }
-                    Text {
-                        text: "◢";
-                        color: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
-                        font-size: 10px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-            }
-            // Defer focus to the next event-loop tick. Focusing straight from
-            // init re-enters Slint's accessibility adapter while it is still
-            // registering the editor's new item tree, which panics with
-            // "RefCell already borrowed" on Windows (#386). Same pattern as
-            // TerminalView's focus-defer-timer.
-            init => { root.editor-focus-pending = true; }
-            editor-focus-timer := Timer {
-                interval: 0ms;
-                running: root.editor-focus-pending;
-                triggered => {
-                    if (root.editor-focus-pending) {
-                        edit-input.focus();
-                        root.editor-focus-pending = false;
-                    }
-                }
-            }
-        }
+    if root.editor-open : FileEditor {
+        editor-name: root.editor-name;
+        editor-readonly: root.editor-readonly;
+        editor-line-numbers: root.editor-line-numbers;
+        editor-content <=> root.editor-content;
+        editor-find-query <=> root.editor-find-query;
+        editor-replace-text <=> root.editor-replace-text;
+        editor-dirty <=> root.editor-dirty;
+        editor-match-count <=> root.editor-match-count;
+        editor-find-position <=> root.editor-find-position;
+        save-file => { root.save-file(); }
+        close-editor => { root.close-editor(); }
+        editor-recount(text) => { root.editor-recount(text); }
+        editor-count-matches(content, query) => { root.editor-count-matches(content, query); }
+        editor-find-step(content, query, current, reverse) => { root.editor-find-step(content, query, current, reverse); }
+        editor-replace-all(query, replacement) => { root.editor-replace-all(query, replacement); }
     }
-
     // --- Rename-session dialog ----------------------------------------------
     // Tab context menu → Rename: a display-name override for one open session.
     // Submitting an empty name restores the saved session name.
