@@ -56,6 +56,7 @@ import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
 import { ChmodDialog } from "chmod_dialog.slint";
 import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
 import { SettingsMenuPopup } from "settings_menu.slint";
+import { AboutDialog } from "about_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
 export { EditorFindResult }
 
@@ -2319,164 +2320,16 @@ export component AppWindow inherits Window {
     }
 
     // --- About dialog (centered on the window, with dim backdrop) ---------
-    Rectangle {
-        width: parent.width;
-        height: parent.height;
-        // 淡入淡出：常驻 + opacity 过渡，visible 跟随 opacity——淡出动画
-        // 走完才真正隐藏（复用 confirm_dialog 的样板）。
-        visible: self.opacity > 0.001;
-        opacity: root.about-open ? 1 : 0;
-        animate opacity {
-            duration: 180ms;
-            easing: AnimationSettings.color();
-            enabled: AnimationSettings.enabled;
-        }
-        background: #00000080;            // dim backdrop
-        TouchArea {
-            enabled: root.about-open;     // 隐藏期间禁命中
-            clicked => { root.about-open = false; }
-        }
-
-        Rectangle {
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2
-                + (root.about-open ? 0px : 12px);       // 进入上浮 / 退出下坠
-            width: 540px;
-            height: min(440px, parent.height - 40px);
-            background: Theme.bg-panel;
-            border-radius: Theme.radius-lg;
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            drop-shadow-blur: Theme.card-shadow-blur;
-            drop-shadow-color: Theme.card-shadow-color;
-            animate y {
-                duration: 200ms;
-                easing: AnimationSettings.layout();
-                enabled: AnimationSettings.enabled;
-            }
-
-            // Swallow clicks inside the card
-            TouchArea { enabled: root.about-open; }
-
-            // Close (×) button
-            CloseButton {
-                x: parent.width - 30px; y: 8px;
-                glyph-size: Theme.fs-sm;
-                clicked => { root.about-open = false; }
-            }
-
-            VerticalLayout {
-                padding: 24px;
-                padding-bottom: 16px;
-                spacing: 0px;
-
-                // --- Top row: logo + info ---
-                HorizontalLayout {
-                    spacing: 20px;
-                    VerticalLayout {
-                        alignment: center;
-                        Image {
-                            source: @image-url("../assets/icon.png");
-                            width: 76px; height: 76px;
-                        }
-                    }
-                    VerticalLayout {
-                        spacing: 7px;
-                        horizontal-stretch: 1;
-                        HorizontalLayout {
-                            alignment: start; spacing: 8px;
-                            Text {
-                                text: "Rudder";
-                                color: Theme.text-primary;
-                                font-size: 22px; font-weight: 700;
-                                vertical-alignment: center;
-                            }
-                            Rectangle {                       // 版本 pill 徽章
-                                border-radius: Theme.radius-sm;
-                                background: Theme.bg-panel-alt;
-                                HorizontalLayout {
-                                    padding-left: 7px; padding-right: 7px;
-                                    Text {
-                                        text: "v" + root.app-version;
-                                        color: Theme.text-secondary;
-                                        font-size: Theme.fs-xs;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-                        }
-                        Text {
-                            text: @tr("Rudder — a lightweight Rust + Slint SSH client");
-                            color: Theme.text-secondary;
-                            font-size: Theme.fs-sm;
-                            wrap: word-wrap;
-                        }
-                        Text {
-                            text: @tr("Forked from yituorou/meatshell");
-                            color: Theme.text-muted;
-                            font-size: 11px;
-                            vertical-alignment: center;
-                        }
-                        HorizontalLayout {
-                            alignment: start; spacing: 6px;
-                            Text {
-                                text: @tr("Open source");
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-sm;
-                                vertical-alignment: center;
-                            }
-                            Rectangle {
-                                border-radius: Theme.radius-sm;
-                                background: repo-ta.has-hover ? Theme.bg-hover : transparent;
-                                HorizontalLayout {
-                                    padding-left: 4px; padding-right: 4px;
-                                    Text {
-                                        text: "github.com/SZhenY/Rudder";
-                                        color: Theme.accent;
-                                        font-size: Theme.fs-sm;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                                repo-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.open-repo(); }
-                                }
-                            }
-                        }
-                        Text {
-                            text: "MIT / Apache-2.0";
-                            color: Theme.text-muted;
-                            font-size: Theme.fs-xs;
-                        }
-                    }
-                }
-
-                // --- Divider + open-source library versions ---
-                if root.about-libs.length > 0 : Rectangle {
-                    height: 1px;
-                    background: Theme.border-strong;
-                }
-                if root.about-libs.length > 0 : ListView {
-                    // ListView virtualizes: only visible rows are instantiated,
-                    // and it provides its own scrollbar. `vertical-stretch`
-                    // makes it fill the remaining space below the intro, so the
-                    // About card never overflows regardless of UI font size.
-                    vertical-stretch: 1;
-                    min-height: 0px;
-                    for lib[i] in root.about-libs : Rectangle {
-                        min-height: 26px;      // 依赖行距：不再密集
-                        Text {
-                            text: lib;
-                            color: Theme.text-muted;
-                            font-size: Theme.fs-sm;   // fs-xs -> fs-sm
-                            vertical-alignment: center;
-                        }
-                    }
-                }
-            }
-        }
+    // 已抽成 `ui/about_dialog.slint`：**常驻**（内部靠 `opacity`/`visible` 切换），状态透传 + 动作转发。
+    AboutDialog {
+        avail-width: root.width;
+        avail-height: root.height;
+        about-open: root.about-open;
+        about-libs: root.about-libs;
+        app-version: root.app-version;
+        close-requested => { root.about-open = false; }
+        open-repo() => { root.open-repo(); }
     }
-
     // --- Modal dialog -----------------------------------------------------
     SessionDialog {
         width: parent.width;
