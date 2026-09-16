@@ -183,6 +183,7 @@ pub(crate) fn contains_logical(rect: LogicalRect, x: f32, y: f32) -> bool {
     x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
 }
 
+
 pub(crate) fn app_content_area(win: &AppWindow) -> LogicalRect {
     let size = win.window().size();
     let scale = win.window().scale_factor().max(0.01);
@@ -422,3 +423,72 @@ pub(crate) fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path
 
 #[cfg(not(windows))]
 pub(crate) fn handle_file_drop(_win: &AppWindow, _sftp_handles: &SftpHandles, _path: std::path::PathBuf) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(x: f32, y: f32, w: f32, h: f32) -> LogicalRect {
+        LogicalRect { x, y, w, h }
+    }
+
+    /// 有模态面板时不允许把滚轮事件投给后面的终端。
+    #[test]
+    fn wheel_targets_terminal_only_without_interface_open() {
+        assert!(macos_terminal_wheel_can_target_terminal(false));
+        assert!(!macos_terminal_wheel_can_target_terminal(true));
+    }
+
+    /// 四种停靠边各自让出空间的方向（left/top 还要把起点挪开）。
+    #[test]
+    fn shrink_edge_shrinks_per_dock_side() {
+        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
+        shrink_edge(&mut x, &mut y, &mut w, &mut h, "left", 8.0);
+        assert_eq!((x, y, w, h), (18.0, 20.0, 92.0, 50.0), "left：起点右移 + 减宽");
+
+        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
+        shrink_edge(&mut x, &mut y, &mut w, &mut h, "right", 8.0);
+        assert_eq!((x, y, w, h), (10.0, 20.0, 92.0, 50.0), "right：只减宽");
+
+        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
+        shrink_edge(&mut x, &mut y, &mut w, &mut h, "top", 8.0);
+        assert_eq!((x, y, w, h), (10.0, 28.0, 100.0, 42.0), "top：起点下移 + 减高");
+
+        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
+        shrink_edge(&mut x, &mut y, &mut w, &mut h, "bottom", 8.0);
+        assert_eq!((x, y, w, h), (10.0, 20.0, 100.0, 42.0), "bottom：只减高");
+    }
+
+    /// 未知停靠值不动（停靠边是配置里的字符串，拼错不应被当成某个方向）。
+    #[test]
+    fn shrink_edge_ignores_unknown_dock() {
+        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
+        shrink_edge(&mut x, &mut y, &mut w, &mut h, "center", 8.0);
+        assert_eq!((x, y, w, h), (10.0, 20.0, 100.0, 50.0));
+    }
+
+    /// 负的 amount 视作 0；缩过头时宽高夹在 0（不能出现负数 —— 后面要拿它算
+    /// 单元格宽高，负值会传染成 NaN）。
+    #[test]
+    fn shrink_edge_clamps_amount_and_dimensions() {
+        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
+        shrink_edge(&mut x, &mut y, &mut w, &mut h, "left", -5.0);
+        assert_eq!((x, w), (10.0, 100.0), "负数 = 不缩");
+
+        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
+        shrink_edge(&mut x, &mut y, &mut w, &mut h, "left", 500.0);
+        assert_eq!(w, 0.0, "宽度缩到 0 为止");
+        assert_eq!(x, 510.0, "起点仍按 amount 移动（被夹的只是宽高）");
+    }
+
+    /// 命中判定是**闭区间**：正好落在右/下边缘也算命中。
+    #[test]
+    fn contains_logical_includes_the_border() {
+        let r = rect(10.0, 20.0, 100.0, 50.0);
+        assert!(contains_logical(r, 10.0, 20.0), "左上角");
+        assert!(contains_logical(r, 60.0, 45.0), "中间");
+        assert!(contains_logical(r, 110.0, 70.0), "右下边缘");
+        assert!(!contains_logical(r, 9.9, 45.0), "左侧外出");
+        assert!(!contains_logical(r, 60.0, 70.1), "下方外出");
+    }
+}

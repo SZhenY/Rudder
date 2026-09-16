@@ -69,6 +69,7 @@ pub(crate) fn tabs_eq(a: &ModelRc<TabInfo>, b: &ModelRc<TabInfo>) -> bool {
         _ => false,
     })
 }
+
 /// Find the terminal row with `tab_id`, apply `mutator`, and write it back.
 pub(crate) fn update_terminal_row(
     model: &VecModel<TerminalState>,
@@ -248,4 +249,51 @@ pub(crate) fn zoom_term_font(
         base + direction
     };
     set_terminal_row(w, tab_id, |r| r.font_size = next.clamp(8, 32) as f32);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tab_model(rows: &[(&str, &str)]) -> ModelRc<TabInfo> {
+        let v: Vec<TabInfo> = rows
+            .iter()
+            .map(|(id, title)| TabInfo {
+                id: (*id).into(),
+                title: (*title).into(),
+                title_len: title.chars().count() as i32,
+                kind: "terminal".into(),
+                connected: true,
+            })
+            .collect();
+        ModelRc::from(Rc::new(VecModel::from(v)))
+    }
+
+    #[test]
+    fn tabs_eq_true_for_same_ids_and_titles() {
+        let a = tab_model(&[("t1", "one"), ("t2", "two")]);
+        let b = tab_model(&[("t1", "one"), ("t2", "two")]);
+        assert!(tabs_eq(&a, &b));
+        assert!(tabs_eq(&tab_model(&[]), &tab_model(&[])), "两个空模型算相等");
+    }
+
+    /// **改名必须让它变 false**：`refresh_panes` 在返回 true 时会复用旧的子模型 ——
+    /// 早期只比 `id`，结果标题永远停在旧值（#rename-invisible 就是这条）。
+    #[test]
+    fn tabs_eq_false_when_only_the_title_changed() {
+        assert!(
+            !tabs_eq(&tab_model(&[("t1", "old")]), &tab_model(&[("t1", "new")])),
+            "标题变了就不能复用旧模型"
+        );
+    }
+
+    #[test]
+    fn tabs_eq_false_on_order_or_count_change() {
+        let a = tab_model(&[("t1", "one"), ("t2", "two")]);
+        assert!(
+            !tabs_eq(&a, &tab_model(&[("t2", "two"), ("t1", "one")])),
+            "顺序不同"
+        );
+        assert!(!tabs_eq(&a, &tab_model(&[("t1", "one")])), "条数不同");
+    }
 }
