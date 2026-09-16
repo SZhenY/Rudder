@@ -67,8 +67,8 @@ export component InterfacePanel inherits Rectangle {
     in property <string> current-wallpaper;
     in property <string> custom-wallpaper-name;   // basename for the file row
     in property <[WslProfileInfo]> wsl-profiles;
-    in-out property <string> wsl-new-name: "WSL";
-    in-out property <string> wsl-new-distribution;
+    private property <string> wsl-new-name: "WSL";
+    private property <string> wsl-new-distribution;
     in-out property <string> wsl-new-directory: "~";
 
     property <string> ifd-page: "terminal";

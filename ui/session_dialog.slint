@@ -452,7 +452,7 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-port: "22";
     in-out property <string> draft-user;
     // Set when Create/Save is pressed with an empty host (SSH/Telnet) (#110).
-    in-out property <bool> host-missing: false;
+    private property <bool> host-missing: false;
     in-out property <string> draft-auth: "password";
     in-out property <string> draft-password;
     in-out property <string> draft-key-path;
