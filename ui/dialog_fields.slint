@@ -1,0 +1,392 @@
+//! 会话对话框的**字段组件**：分段选项、迷你输入、端口转发行、触发器行、分组/跳板下拉。
+//!
+//! 从 `session_dialog.slint` 拆出（P4）：每个都有完整的 `in property` / `callback`
+//! 接口，逐字搬运（`component` → `export component`）。
+import { Theme } from "theme.slint";
+import { ComboBox } from "std-widgets.slint";
+import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { FieldLabel, HelpText } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { IconText } from "components/text.slint";
+import { PortFwd, TriggerDraft } from "session_types.slint";
+
+// A single segment in a segmented selector (auth toggle, baud presets, …).
+export component SegOption inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+    height: 30px;
+    horizontal-stretch: 1;
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    background: active ? Theme.accent : Theme.bg-root;
+    border-color: active ? Theme.accent : Theme.border-subtle;
+    Text {
+        text: root.label;
+        color: active ? white : Theme.text-primary;
+        font-size: Theme.fs-md;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Compact single-line input (no label) used in the port-forward add form (#56).
+export component MiniInput inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> value;
+    callback edited(string);
+    height: 30px;
+    horizontal-stretch: 1;
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    border-color: mi.has-focus ? Theme.accent : Theme.border-subtle;
+    background: Theme.bg-root;
+    mi := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        color: Theme.text-primary;
+        font-family: Theme.ui-font-family;
+        font-size: Theme.fs-md;
+        vertical-alignment: center;
+        single-line: true;
+        text <=> root.value;
+        edited => { root.edited(root.value); }
+    }
+    if root.value == "" : Text {
+        x: 8px;
+        height: parent.height;
+        text: root.placeholder;
+        color: Theme.text-muted;
+        font-size: Theme.fs-md;
+        vertical-alignment: center;
+    }
+}
+
+// Every forwarding rule stays editable in-place. "Add" creates another row
+// of this same form instead of converting the current form into a summary (#277).
+export component PortForwardRow inherits VerticalLayout {
+    in property <PortFwd> forward;
+    in property <int> index;
+    callback updated(int, PortFwd);
+    callback remove(int);
+
+    property <string> kind: forward.kind;
+    property <string> name: forward.name;
+    property <string> bind-addr: forward.bind-addr;
+    property <string> bind-port: forward.bind-port;
+    property <string> host: forward.host;
+    property <string> host-port: forward.host-port;
+
+    function notify-updated() {
+        root.updated(root.index, {
+            kind: root.kind,
+            name: root.name,
+            bind-addr: root.bind-addr,
+            bind-port: root.bind-port,
+            host: root.host,
+            host-port: root.host-port,
+        });
+    }
+
+    spacing: 6px;
+    padding: 8px;
+
+    HorizontalLayout {
+        spacing: 6px;
+        SegOption { label: @tr("Local (-L)"); active: root.kind == "local"; clicked => { root.kind = "local"; root.notify-updated(); } }
+        SegOption { label: @tr("Remote (-R)"); active: root.kind == "remote"; clicked => { root.kind = "remote"; root.notify-updated(); } }
+        SegOption { label: @tr("Dynamic (-D)"); active: root.kind == "dynamic"; clicked => { root.kind = "dynamic"; root.notify-updated(); } }
+        CloseButton {
+            size: 30px;
+            glyph-size: Theme.fs-sm;
+            tone: "danger";
+            clicked => { root.remove(root.index); }
+        }
+    }
+    MiniInput {
+        placeholder: @tr("Name (optional)");
+        value <=> root.name;
+        edited(value) => { root.name = value; root.notify-updated(); }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        MiniInput {
+            placeholder: "127.0.0.1";
+            value <=> root.bind-addr;
+            edited(value) => { root.bind-addr = value; root.notify-updated(); }
+        }
+        MiniInput {
+            placeholder: @tr("Listen port");
+            value <=> root.bind-port;
+            edited(value) => { root.bind-port = value; root.notify-updated(); }
+        }
+    }
+    // Non-loopback binds expose the port on the local network (an unauthenticated
+    // SOCKS proxy when kind == "dynamic") — surface that risk right here (#F-001).
+    if root.bind-addr != "" && root.bind-addr != "127.0.0.1" && root.bind-addr != "localhost" : Text {
+        text: @tr("⚠ Non-loopback address exposes this port on the local network. Only use on trusted networks.");
+        color: Theme.warning;
+        font-size: Theme.fs-xs;
+        wrap: word-wrap;
+    }
+    if root.kind != "dynamic" : HorizontalLayout {
+        spacing: 6px;
+        MiniInput {
+            placeholder: @tr("Target host");
+            value <=> root.host;
+            edited(value) => { root.host = value; root.notify-updated(); }
+        }
+        MiniInput {
+            placeholder: @tr("Target port");
+            value <=> root.host-port;
+            edited(value) => { root.host-port = value; root.notify-updated(); }
+        }
+    }
+}
+
+// One expect/send login trigger (#212), editable in place like the port-forward
+// rows. The response box is intentionally blank when editing a saved rule.
+export component TriggerRow inherits VerticalLayout {
+    in property <TriggerDraft> trigger;
+    in property <int> index;
+    callback updated(int, TriggerDraft);
+    callback remove(int);
+
+    property <string> expect: trigger.expect;
+    property <string> response: trigger.response;
+    property <bool> append-enter: trigger.append-enter;
+    property <bool> repeat: trigger.repeat;
+
+    function notify-updated() {
+        root.updated(root.index, {
+            expect: root.expect,
+            response: root.response,
+            append-enter: root.append-enter,
+            repeat: root.repeat,
+        });
+    }
+
+    spacing: 6px;
+    padding: 8px;
+    HorizontalLayout {
+        spacing: 6px;
+        MiniInput {
+            placeholder: @tr("Expected output");
+            value <=> root.expect;
+            edited(value) => { root.expect = value; root.notify-updated(); }
+        }
+        CloseButton {
+            size: 30px;
+            glyph-size: Theme.fs-sm;
+            tone: "danger";
+            clicked => { root.remove(root.index); }
+        }
+    }
+    MiniInput {
+        placeholder: @tr("Response (leave blank to keep saved value)");
+        value <=> root.response;
+        edited(value) => { root.response = value; root.notify-updated(); }
+    }
+    HorizontalLayout {
+        spacing: 14px;
+        SegOption {
+            label: @tr("Send Enter"); active: root.append-enter;
+            clicked => { root.append-enter = !root.append-enter; root.notify-updated(); }
+        }
+        SegOption {
+            label: @tr("Repeat"); active: root.repeat;
+            clicked => { root.repeat = !root.repeat; root.notify-updated(); }
+        }
+    }
+}
+
+// Group field with an editable text box + a dropdown of existing groups (#179).
+// Type to create a new group, or click the ▾ to pick one already in use.
+export component GroupCombo inherits VerticalLayout {
+    in property <string> label;
+    in property <string> placeholder;
+    in-out property <string> value;
+    in property <[string]> groups;       // existing group names
+    spacing: 4px;
+
+    FieldLabel { text: root.label; }
+
+    Rectangle {
+        height: 32px;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+    border-color: ginput.has-focus ? Theme.accent : Theme.border-strong;
+    background: Theme.bg-elevated;
+
+        ginput := TextInput {
+            x: 10px;
+            width: parent.width - 44px;     // room for the ▾ button
+            height: parent.height;
+            text <=> root.value;
+            color: Theme.text-primary;
+            font-family: Theme.ui-font-family;
+            font-size: Theme.fs-md;
+            vertical-alignment: center;
+            single-line: true;
+        }
+
+        if root.value == "" : Text {
+            x: 10px;
+            height: parent.height;
+            text: root.placeholder;
+            color: Theme.text-muted;
+            font-size: Theme.fs-md;
+            vertical-alignment: center;
+        }
+
+        // ▾ — opens the existing-groups list (no-op when there are none).
+        drop-ta := TouchArea {
+            x: parent.width - 36px;
+            width: 36px;
+            height: parent.height;
+            mouse-cursor: root.groups.length > 0 ? pointer : default;
+            clicked => { if (root.groups.length > 0) { groups-popup.show(); } }
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: Theme.radius-sm;
+                background: (drop-ta.has-hover && root.groups.length > 0) ? Theme.bg-hover : transparent;
+                Text {
+                    // Plain Unicode caret — the dialog's CJK UI font has this but
+                    // not the Material icon range, which would tofu (#179).
+                    text: "▼";
+                    color: root.groups.length > 0 ? Theme.text-secondary : Theme.border-strong;
+                    font-size: Theme.fs-xs;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        groups-popup := PopupWindow {
+            x: 0;
+            y: parent.height + 3px;
+            width: parent.width;
+            Rectangle {
+                background: Theme.bg-elevated;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.border-subtle;
+                VerticalLayout {
+                    padding: 4px;
+                    spacing: 1px;
+                    for g in root.groups : Rectangle {
+                        height: 28px;
+                        border-radius: Theme.radius-sm;
+                        background: g-ta.has-hover ? Theme.bg-hover : transparent;
+                        g-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.value = g; groups-popup.close(); }
+                        }
+                        Text {
+                            x: 10px;
+                            width: parent.width - 20px;
+                            text: g;
+                            color: Theme.text-primary;
+                            font-size: Theme.fs-md;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Read-only dropdown picking an SSH jump host from a fixed list of saved
+// sessions (#211). Index-based: `choices[0]` is the "no jump host" entry, and
+// `selected-index` maps into the parallel `ids` list held by the caller.
+export component JumpCombo inherits VerticalLayout {
+    in property <string> label;
+    in property <[string]> choices;      // display labels; index 0 = "no jump host"
+    in-out property <int> selected-index: 0;
+    spacing: 4px;
+
+    FieldLabel { text: root.label; }
+
+    Rectangle {
+        height: 32px;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+    border-color: jump-ta.has-hover ? Theme.accent : Theme.border-strong;
+    background: Theme.bg-elevated;
+
+        jump-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { jump-popup.show(); }
+        }
+
+        Text {
+            x: 10px;
+            width: parent.width - 44px;
+            height: parent.height;
+            text: (root.selected-index >= 0 && root.selected-index < root.choices.length)
+                ? root.choices[root.selected-index] : "";
+            color: root.selected-index > 0 ? Theme.text-primary : Theme.text-muted;
+            font-size: Theme.fs-md;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Rectangle {
+            x: parent.width - 36px;
+            width: 28px;
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: jump-ta.has-hover ? Theme.bg-hover : transparent;
+            Text {
+                text: "▼";
+                color: Theme.text-secondary;
+                font-size: Theme.fs-xs;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        jump-popup := PopupWindow {
+            x: 0;
+            y: parent.height + 3px;
+            width: parent.width;
+            Rectangle {
+                background: Theme.bg-elevated;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.border-subtle;
+                VerticalLayout {
+                    padding: 4px;
+                    spacing: 1px;
+                    for c[idx] in root.choices : Rectangle {
+                        height: 28px;
+                        border-radius: Theme.radius-sm;
+                        background: c-ta.has-hover ? Theme.bg-hover : transparent;
+                        c-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.selected-index = idx; jump-popup.close(); }
+                        }
+                        Text {
+                            x: 10px;
+                            width: parent.width - 20px;
+                            text: c;
+                            color: Theme.text-primary;
+                            font-size: Theme.fs-md;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

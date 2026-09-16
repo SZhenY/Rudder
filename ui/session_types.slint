@@ -1,0 +1,63 @@
+//! 会话相关的**数据类型**：端口转发、触发器、会话草稿。
+//!
+//! 从 `session_dialog.slint` 拆出（P4）：字段组件与 `SessionDialog` 都要用到它们，
+//! 放在独立类型文件里可避免"搬组件 → 反向依赖对话框文件 → 成环"。
+//! 原文件用 `export { … }` 转出口，外部导入点与生成的 Rust 类型名不变。
+import { Theme } from "theme.slint";
+import { ComboBox } from "std-widgets.slint";
+import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { FieldLabel, HelpText } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { IconText } from "components/text.slint";
+
+export struct PortFwd {
+    kind: string,
+    name: string,
+    bind-addr: string,
+    bind-port: string,
+    host: string,
+    host-port: string,
+}
+
+// One expect/send login trigger (#212). `response` is only a *draft*: the edit
+// dialog never echoes a stored response, so a blank field means "keep the saved
+// value" rather than "clear it".
+export struct TriggerDraft {
+    expect: string,
+    response: string,
+    append-enter: bool,
+    repeat: bool,
+}
+
+export struct SessionDraft {
+    id: string,
+    name: string,
+    kind: string,      // "ssh" | "serial" | "telnet"
+    host: string,
+    port: int,
+    user: string,
+    auth: string,      // "password" | "key"
+    password: string,
+    private-key-path: string,
+    private-key-inline: string,
+    private-key-inline-mode: bool,
+    proxy: string,     // "" | "socks5://host:port" | "http://host:port"
+    group: string,     // folder/group name ("" = ungrouped)
+    // Serial-only (ignored unless kind == "serial")
+    serial-port: string,
+    baud-rate: int,
+    data-bits: int,
+    stop-bits: int,
+    parity: string,        // "none" | "odd" | "even"
+    flow-control: string,  // "none" | "hardware" | "software"
+    encoding: string,      // terminal charset label, e.g. "UTF-8" / "GBK" (#338)
+    // Skip the POSIX shell-integration setup (cwd-follow hook + monitor) for
+    // Windows / pwsh servers where it breaks the shell (#140).
+    disable-shell-integration: bool,
+    // Free-form note (B站 suggestion).
+    note: string,
+    // Id of another saved SSH session to use as a jump host / bastion, or "" for
+    // a direct connection (#211).
+    jump-session-id: string,
+}
