@@ -1,14 +1,27 @@
 use super::render_tickets::{request_tab_render, wait_for_ui_flush};
 use super::*;
 
-pub(crate) fn resolve_jump(store: &Rc<RefCell<ConfigStore>>, session: &Session) -> Option<Session> {
+/// 该会话要用的跳板机 id；不是 SSH / 没配跳板机 / 自引用 / 全空白 -> None。
+///
+/// 抽成纯函数的原因：判定错了是**安全问题** —— 本该经跳板机的会话会静默直连目标机
+/// （审计链路与网络边界同时失效）；反过来自引用没拦住则会拿自己当跳板。
+///
+/// 已知疑点（本次只钉住现状、未改行为）：判空用 `trim()`、查表却用原始串，
+/// 于是 `" b "` 这种带空白的配置匹配不到跳板机 -> **静默直连**。要改成先 trim 再查表
+/// 是一个独立的行为决策，不混在补测试里做。
+fn jump_target(session: &Session) -> Option<&str> {
     if session.kind != SessionKind::Ssh || session.jump_session_id.trim().is_empty() {
         return None;
     }
     if session.jump_session_id == session.id {
         return None;
     }
-    store.borrow().get(&session.jump_session_id).cloned()
+    Some(session.jump_session_id.as_str())
+}
+
+pub(crate) fn resolve_jump(store: &Rc<RefCell<ConfigStore>>, session: &Session) -> Option<Session> {
+    let target = jump_target(session)?;
+    store.borrow().get(target).cloned()
 }
 
 pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
@@ -351,5 +364,44 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                 });
             }
         });
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ssh_session(id: &str, jump: &str) -> Session {
+        let mut s = Session::new_empty();
+        s.id = id.into();
+        s.kind = SessionKind::Ssh;
+        s.jump_session_id = jump.into();
+        s
+    }
+
+    #[test]
+    fn jump_target_requires_ssh_and_a_configured_jump_host() {
+        assert_eq!(jump_target(&ssh_session("a", "b")), Some("b"));
+        assert_eq!(jump_target(&ssh_session("a", "")), None, "没配跳板机");
+        assert_eq!(jump_target(&ssh_session("a", "   ")), None, "全空白不算配了");
+    }
+
+    /// 自引用必须拦住：拿自己当跳板只会得到一连串连接失败。
+    #[test]
+    fn jump_target_rejects_self_reference() {
+        assert_eq!(jump_target(&ssh_session("a", "a")), None);
+    }
+
+    /// 只有 SSH 有跳板概念（串口 / Telnet / 本地会话没有）。
+    #[test]
+    fn jump_target_ignores_non_ssh_kinds() {
+        let mut s = ssh_session("a", "b");
+        s.kind = SessionKind::Telnet;
+        assert_eq!(jump_target(&s), None);
+    }
+
+    /// 钉住现状：带空白的 id 能过判空，但查表用原始串 -> 匹配不到 -> 静默直连。
+    #[test]
+    fn jump_target_keeps_padded_ids_untouched() {
+        assert_eq!(jump_target(&ssh_session("a", " b ")), Some(" b "));
     }
 }
