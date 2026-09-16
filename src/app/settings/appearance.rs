@@ -67,7 +67,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         let weak = window.as_weak();
         let store = store.clone();
         window.on_set_ui_scale(move |percent: i32| {
-            let clamped = (percent.max(0) as u32).clamp(80, 200);
+            let clamped = clamp_ui_scale(percent);
             {
                 persist(&store, |s| {
                     s.set_ui_scale(clamped);
@@ -83,7 +83,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         let weak = window.as_weak();
         let store = store.clone();
         window.on_set_panel_font(move |percent: i32| {
-            let clamped = (percent.max(0) as u32).clamp(80, 160);
+            let clamped = clamp_panel_font(percent);
             {
                 persist(&store, |s| {
                     s.set_panel_font(clamped);
@@ -233,4 +233,41 @@ pub(crate) fn reset(
     }
     // 动画开关没有后端持久化（Slint 全局，重启即回），还原即重新开启。
     w.set_animations_enabled(true);
+}
+/// UI 缩放的百分比：先把负数夹到 0（否则 `as u32` 会回绕成 40 亿），再限制 80–200。
+fn clamp_ui_scale(percent: i32) -> u32 {
+    (percent.max(0) as u32).clamp(80, 200)
+}
+
+/// 面板字号的百分比：同上，范围 80–160。
+fn clamp_panel_font(percent: i32) -> u32 {
+    (percent.max(0) as u32).clamp(80, 160)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 边界 + **负数回绕**（`i32::MIN as u32` 是个巨大值，不能让它通过）。
+    #[test]
+    fn ui_scale_clamps_below_and_above() {
+        assert_eq!(clamp_ui_scale(i32::MIN), 80);
+        assert_eq!(clamp_ui_scale(-1), 80);
+        assert_eq!(clamp_ui_scale(0), 80);
+        assert_eq!(clamp_ui_scale(79), 80);
+        assert_eq!(clamp_ui_scale(80), 80);
+        assert_eq!(clamp_ui_scale(150), 150);
+        assert_eq!(clamp_ui_scale(200), 200);
+        assert_eq!(clamp_ui_scale(201), 200);
+        assert_eq!(clamp_ui_scale(i32::MAX), 200);
+    }
+
+    #[test]
+    fn panel_font_clamps_below_and_above() {
+        assert_eq!(clamp_panel_font(i32::MIN), 80);
+        assert_eq!(clamp_panel_font(0), 80);
+        assert_eq!(clamp_panel_font(160), 160);
+        assert_eq!(clamp_panel_font(161), 160);
+        assert_eq!(clamp_panel_font(i32::MAX), 160);
+    }
 }

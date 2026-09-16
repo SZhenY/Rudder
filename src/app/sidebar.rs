@@ -6,13 +6,7 @@ pub(super) fn refresh_sidebar(
     local: &LocalSnap,
     local_net_hist: &NetHist,
 ) {
-    let pct = |used: u64, total: u64| -> f32 {
-        if total > 0 {
-            used as f32 / total as f32
-        } else {
-            0.0
-        }
-    };
+    let pct = |used: u64, total: u64| usage_pct(used, total);
     // A poisoned lock must not take the client down — release builds use
     // panic = "abort". Skip this refresh pass instead; the sampler will
     // publish a fresh snapshot on the next tick.
@@ -192,21 +186,8 @@ pub(super) fn refresh_sidebar(
         // state but never reports remote resources, so keep the connection line
         // and show this machine's own CPU / memory / swap instead of zeroes.
         Some(st) if st.is_local => {
-            win.set_conn_state(if st.state == 1 {
-                1
-            } else if st.state == 2 {
-                2
-            } else {
-                0
-            });
-            win.set_connection_state(if st.state == 1 {
-                st.host.clone()
-            } else if st.state == 2 {
-                format!("{} {}", st.host, t("已断开", "disconnected"))
-            } else {
-                format!("{} {}", t("连接中", "Connecting"), st.host)
-            }
-            .into());
+            win.set_conn_state(conn_state_code(st.state));
+            win.set_connection_state(connection_label(st.state, &st.host).into());
             win.set_conn_host(conn_ip(&st.host).into());
             show_local_res(win);
             set_top_local(win);
@@ -299,5 +280,72 @@ pub(super) fn refresh_sidebar(
             set_top_local(win);
             show_local_system_models(win);
         }
+    }
+}
+/// 使用率：`total == 0` 时不能用 0 除（还没采到样本的本地快照就是这样）。
+fn usage_pct(used: u64, total: u64) -> f32 {
+    if total > 0 {
+        used as f32 / total as f32
+    } else {
+        0.0
+    }
+}
+
+/// 连接状态码：1 = 已连接，2 = 已断开，其余（含 0 = 连接中）= 0。
+fn conn_state_code(state: u8) -> i32 {
+    if state == 1 {
+        1
+    } else if state == 2 {
+        2
+    } else {
+        0
+    }
+}
+
+/// 状态行文案：已连接只显示主机；已断开加后缀；其余显示「连接中 <主机>」。
+fn connection_label(state: u8, host: &str) -> String {
+    if state == 1 {
+        host.to_string()
+    } else if state == 2 {
+        format!("{} {}", host, t("已断开", "disconnected"))
+    } else {
+        format!("{} {}", t("连接中", "Connecting"), host)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_pct_never_divides_by_zero() {
+        assert_eq!(usage_pct(0, 0), 0.0);
+        assert_eq!(usage_pct(1, 2), 0.5);
+        assert_eq!(usage_pct(0, 100), 0.0);
+        assert!(usage_pct(u64::MAX, 1) > 1.0, "超出 100% 也不 panic");
+    }
+
+    /// 状态码映射：**只有 1/2 是明确的，其余一律当"连接中"** ——
+    /// "断开后还亮绿灯"是最容易骗到用户的错法，这条把它钉住。
+    #[test]
+    fn conn_state_code_maps_only_connected_and_closed() {
+        assert_eq!(conn_state_code(1), 1);
+        assert_eq!(conn_state_code(2), 2);
+        assert_eq!(conn_state_code(0), 0, "连接中");
+        assert_eq!(conn_state_code(3), 0, "未知状态也当连接中");
+        assert_eq!(conn_state_code(255), 0);
+    }
+
+    #[test]
+    fn connection_label_wording_per_state() {
+        assert_eq!(connection_label(1, "nas"), "nas", "已连接只显示主机");
+        assert_eq!(
+            connection_label(2, "nas"),
+            format!("nas {}", t("已断开", "disconnected"))
+        );
+        assert_eq!(
+            connection_label(0, "nas"),
+            format!("{} nas", t("连接中", "Connecting"))
+        );
     }
 }

@@ -250,13 +250,7 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
     // Versions are baked in at compile time by build.rs → $OUT_DIR/deps.rs
     // (included as module-level `DEP_VERSIONS` above).
     {
-        let get_ver = |name: &str| -> &str {
-            DEP_VERSIONS
-                .iter()
-                .find(|(n, _)| *n == name)
-                .map(|(_, v)| *v)
-                .unwrap_or("-")
-        };
+        let get_ver = dep_version;
 
         let zh = crate::i18n::t;
         let libs: Vec<SharedString> = vec![
@@ -353,5 +347,37 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
         ]
         .to_vec();
         window.set_about_libs(ModelRc::from(Rc::new(VecModel::from(libs))));
+    }
+}
+/// 查编译期烘焙的依赖版本（`build.rs` -> `$OUT_DIR/deps.rs`，见文件顶部的 `DEP_VERSIONS`）。
+///
+/// 未命中返回 `"-"`：About 面板按名字查表，拼错会静默显示成 `-` ——
+/// 用户贴 bug 报告时给出的库版本就是错的。
+fn dep_version(name: &str) -> &str {
+    DEP_VERSIONS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, v)| *v)
+        .unwrap_or("-")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// About 面板真的会去查的名字必须命中（否则那一行显示成 `-`）。
+    #[test]
+    fn dep_version_finds_the_about_panel_entries() {
+        for name in ["slint", "russh", "tokio"] {
+            let v = dep_version(name);
+            assert_ne!(v, "-", "{name} 未命中 DEP_VERSIONS");
+            assert!(!v.is_empty(), "{name} 的版本号为空");
+        }
+    }
+
+    #[test]
+    fn dep_version_falls_back_to_dash() {
+        assert_eq!(dep_version("no-such-crate"), "-");
+        assert_eq!(dep_version(""), "-");
     }
 }

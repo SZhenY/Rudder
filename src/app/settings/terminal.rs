@@ -233,27 +233,26 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
         window.on_set_scrollback_lines(move |lines: slint::SharedString| -> bool {
             // Validate: 100..=（常规 10 万 / 开开关后 100 万）。非法输入被拒绝
             // （界面显示为非法状态），不写入任何东西。
-            let digits: String = lines.chars().filter(|c| c.is_ascii_digit()).collect();
             let max = if store.borrow().large_scrollback() {
                 crate::config::SCROLLBACK_MAX_LARGE
             } else {
                 crate::config::SCROLLBACK_MAX
             };
-            match digits.parse::<usize>() {
-                Ok(n) if (100..=max).contains(&n) => {
-                    let mut s = store.borrow_mut();
-                    s.set_scrollback_lines(n);
-                    let _ = s.save();
-                    // Write the canonical value back to the UI so the settings
-                    // panel (conditionally rendered) shows the new value when
-                    // reopened — without this it reverts to the stale one.
-                    if let Some(w) = weak.upgrade() {
-                        w.set_scrollback_lines(digits.into());
-                    }
-                    true
-                }
-                _ => false,
+            let Some(n) = parse_scrollback(lines.as_str(), max) else {
+                return false;
+            };
+            {
+                // 借用单独成块：写盘与回写 UI 都在借出期间之外（原写法把 RefCell
+                // 借用一直握到 `weak.upgrade()` 之后）。
+                let mut s = store.borrow_mut();
+                s.set_scrollback_lines(n);
+                let _ = s.save();
             }
+            // 回写规范化后的值：设置面板是条件渲染的，不回写就会在重开时显示旧值。
+            if let Some(w) = weak.upgrade() {
+                w.set_scrollback_lines(n.to_string().into());
+            }
+            true
         });
     }
 
@@ -367,4 +366,50 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &Fo
         &d.terminal.output_highlight_preset,
     );
     apply_custom_output_rules(w, bufs, &rules);
+}
+/// 解析用户输入的滚动行数：**只取数字**（`"10_000"` -> 10000），且必须落在
+/// `100..=max` 内，否则拒绝 —— 拒绝时界面显示非法状态、不写入任何东西。
+fn parse_scrollback(raw: &str, max: usize) -> Option<usize> {
+    let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+    match digits.parse::<usize>() {
+        Ok(n) if (100..=max).contains(&n) => Some(n),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_scrollback_accepts_the_valid_range_only() {
+        assert_eq!(parse_scrollback("100", 100_000), Some(100), "下界");
+        assert_eq!(parse_scrollback("5000", 100_000), Some(5_000));
+        assert_eq!(parse_scrollback("100000", 100_000), Some(100_000), "上界");
+        assert_eq!(parse_scrollback("99", 100_000), None, "低于下界");
+        assert_eq!(parse_scrollback("100001", 100_000), None, "超过常规上限");
+        assert_eq!(parse_scrollback("", 100_000), None, "空输入");
+    }
+
+    /// 只取数字：分隔符被丢掉；全非数字则拒绝（**不能静默变成 0 写进配置**）。
+    #[test]
+    fn parse_scrollback_strips_non_digits() {
+        assert_eq!(parse_scrollback("10_000", 100_000), Some(10_000));
+        assert_eq!(parse_scrollback("5 000", 100_000), Some(5_000));
+        assert_eq!(parse_scrollback("abc", 100_000), None);
+        assert_eq!(parse_scrollback("abc0", 100_000), None, "剩下的 0 也低于下界");
+    }
+
+    /// 上界由「大回滚缓冲区」开关决定：同一个 1 000 000，关着要拒、开着要收。
+    #[test]
+    fn parse_scrollback_upper_bound_follows_the_large_switch() {
+        assert_eq!(
+            parse_scrollback("1000000", crate::config::SCROLLBACK_MAX),
+            None
+        );
+        assert_eq!(
+            parse_scrollback("1000000", crate::config::SCROLLBACK_MAX_LARGE),
+            Some(1_000_000)
+        );
+    }
 }
