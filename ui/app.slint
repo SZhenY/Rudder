@@ -54,6 +54,8 @@ import { QuickGroupDialog } from "quick_group_dialog.slint";
 import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
 import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
 import { ChmodDialog } from "chmod_dialog.slint";
+import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
+import { SettingsMenuPopup } from "settings_menu.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
 export { EditorFindResult }
 
@@ -67,15 +69,6 @@ export { AnimationSettings, Theme }
 // TerminalState carries the streaming log + status line. Kept as a parallel
 // model so opening/closing tabs doesn't churn the log strings.
 // One file-transfer record shown in the download manager.
-export struct TransferInfo {
-    id: string,
-    name: string,
-    detail: string,   // "2.3 MB/5.0 MB" | "已完成" | "失败"
-    percent: float,   // 0.0..1.0
-    state: int,       // 0 active / 1 done / 2 error
-    is-upload: bool,
-}
-
 // ProcRow now lives in proc_window.slint (the detachable process window).
 
 export struct TerminalState {
@@ -2130,424 +2123,49 @@ export component AppWindow inherits Window {
     }
 
     // --- Download manager popup -------------------------------------------
-    // Click-outside-to-close: a full-window transparent sensor sitting *under*
-    // the popup. Clicking anywhere outside the popup hits this and closes it;
-    // clicks inside the popup are caught by the popup's own TouchArea first.
-    if root.download-open : TouchArea {
-        width: parent.width;
-        height: parent.height;
-        clicked => { root.download-open = false; }
+    // 已抽成 `ui/download_manager.slint`：**常驻**（面板内部用 `visible` 切换），状态透传 + 动作转发。
+    DownloadManagerPopup {
+        lang-en: root.lang-en;
+        avail-width: root.width;
+        avail-height: root.height;
+        download-open: root.download-open;
+        transfers : root.transfers;
+        download-dir : root.download-dir;
+        custom-titlebar : root.custom-titlebar;
+        titlebar-inset : root.titlebar-inset;
+        toolbar-x-off : root.toolbar-x-off;
+        toolbar-y-off : root.toolbar-y-off;
+        close-requested => { root.download-open = false; }
+        pick-download-dir() => { root.pick-download-dir(); }
+        open-download-dir() => { root.open-download-dir(); }
+        clear-transfers() => { root.clear-transfers(); }
+        cancel-transfer(id) => { root.cancel-transfer(id); }
     }
-    // Always present; toggled via `visible` (avoids destroying interactive
-    // elements mid-event, which crashes when created/removed at the Window root).
-    Rectangle {
-        // Follow the download button (shifts with the toolbar when the resource
-        // panel docks right/top) (#dock).
-        // 364px = 自身宽 350px + 14px 右边距（原来是手算的常数，改绑自身宽度）
-        x: parent.width - self.width - 14px - root.toolbar-x-off;
-        y: (root.custom-titlebar ? 78px : 40px + root.titlebar-inset) + root.toolbar-y-off;
-        width: 350px;
-        height: 400px;
-        visible: root.download-open;
-        background: Theme.bg-panel;
-        border-radius: Theme.radius-md;
-        border-width: 1px;
-        border-color: Theme.border-strong;
-        drop-shadow-blur: Theme.shadow-float-blur;
-        drop-shadow-color: Theme.shadow-float-color;
-
-        // Swallow pointer events so right-clicks don't fall through to the
-        // terminal's context menu underneath.
-        TouchArea {}
-
-        VerticalLayout {
-            padding: 14px;
-            spacing: 10px;
-
-            HorizontalLayout {
-                Text {
-                    text: root.lang-en ? "Transfers manager" : "传输管理";
-                    color: Theme.text-primary;
-                    font-size: Theme.fs-md;
-                    font-weight: 600;
-                    horizontal-stretch: 1;
-                    vertical-alignment: center;
-                }
-                CloseButton {
-                    size: 20px;
-                    glyph-size: Theme.fs-sm;
-                    tone: "windows";        // hover 变红、字形转白
-                    clicked => { root.download-open = false; }
-                }
-            }
-
-                FieldLabel { text: @tr("Save downloads to:"); }
-
-                // Current path display
-                Rectangle {
-                    height: 26px;
-                    background: Theme.bg-root;
-                    border-radius: Theme.radius-sm;
-                    Text {
-                        x: 8px;
-                        width: parent.width - 16px;
-                        height: parent.height;
-                        text: root.download-dir == "" ? @tr("(ask every time)") : root.download-dir;
-                        color: root.download-dir == "" ? Theme.text-muted : Theme.text-primary;
-                        font-size: Theme.fs-sm;
-                        vertical-alignment: center;
-                        overflow: elide;
-                    }
-                }
-
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: end;
-
-                    Rectangle {
-                        width: 110px; height: 28px;
-                        border-radius: Theme.radius-sm;
-                        background: pick-ta.has-hover ? Theme.accent-hover : Theme.accent;
-                        pick-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.pick-download-dir(); }
-                        }
-                        Text { text: @tr("Choose save path"); color: #ffffff; font-size: Theme.fs-sm;
-                               horizontal-alignment: center; vertical-alignment: center; }
-                    }
-                    Rectangle {
-                        width: 76px; height: 28px;
-                        border-radius: Theme.radius-sm;
-                        background: open-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
-                        open-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.open-download-dir(); }
-                        }
-                        Text { text: @tr("Open folder"); color: Theme.text-primary; font-size: Theme.fs-sm;
-                               horizontal-alignment: center; vertical-alignment: center; }
-                    }
-                }
-
-                Divider {}
-
-                // Transfer records (download/upload progress + history).
-                HorizontalLayout {
-                    Text {
-                        text: @tr("Transfers");
-                        color: Theme.text-secondary;
-                        font-size: Theme.fs-sm;
-                        horizontal-stretch: 1;
-                        vertical-alignment: center;
-                    }
-                    Rectangle {
-                        width: 44px; height: 20px;
-                        border-radius: Theme.radius-sm;
-                        background: clr-ta.has-hover ? Theme.bg-hover : transparent;
-                        clr-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.clear-transfers(); }
-                        }
-                        Text { text: @tr("Clear"); color: Theme.text-muted; font-size: Theme.fs-xs;
-                               horizontal-alignment: center; vertical-alignment: center; }
-                    }
-                }
-
-                Flickable {
-                    vertical-stretch: 1;
-                    viewport-width: self.width;
-                    viewport-height: max(self.height, xfer-col.preferred-height);
-                    xfer-col := VerticalLayout {
-                        alignment: start;
-                        spacing: 4px;
-
-                        if root.transfers.length == 0 : Text {
-                            text: @tr("No transfers yet");
-                            color: Theme.text-muted;
-                            font-size: Theme.fs-xs;
-                        }
-
-                        for t in root.transfers : Rectangle {
-                            height: 36px;
-                            border-radius: Theme.radius-sm;
-                            background: Theme.bg-root;
-                            VerticalLayout {
-                                padding-left: 8px; padding-right: 8px;
-                                padding-top: 4px; padding-bottom: 4px;
-                                spacing: 3px;
-                                HorizontalLayout {
-                                    spacing: 4px;
-                                    // Direction glyph: upload green / download purple.
-                                    IconText {
-                                        text: t.is-upload ? "\u{E5D8}" : "\u{E5DB}"; // arrow_upward / arrow_downward
-                                        color: t.is-upload ? Theme.success : #9c6ade;
-                                        font-size: Theme.fs-sm;
-                                        vertical-alignment: center;
-                                    }
-                                    Text {
-                                        text: t.name;
-                                        color: Theme.text-primary;
-                                        font-size: Theme.fs-xs;
-                                        horizontal-stretch: 1;
-                                        overflow: elide;
-                                        vertical-alignment: center;
-                                    }
-                                    Text {
-                                        text: t.detail;
-                                        color: t.state == 2 ? Theme.danger
-                                             : t.state == 1 ? Theme.success
-                                             : Theme.text-muted;
-                                        font-size: Theme.fs-xs;
-                                        vertical-alignment: center;
-                                    }
-                                    // Cancel button — only while the transfer is
-                                    // active (0) or preparing (3) (#100).
-                                    if t.state == 0 || t.state == 3 : CloseButton {
-                                        size: 16px;
-                                        glyph-size: Theme.fs-sm;
-                                        tone: "danger-on-hover";   // 平时灰、hover 转红
-                                        clicked => { root.cancel-transfer(t.id); }
-                                    }
-                                }
-                                // progress bar
-                                Rectangle {
-                                    height: 4px;
-                                    border-radius: 2px;
-                                    background: Theme.bg-elevated;
-                                    Rectangle {
-                                        x: 0; y: 0; height: parent.height;
-                                        width: parent.width * clamp(t.percent, 0.0, 1.0);
-                                        border-radius: 2px;
-                                        background: t.state == 2 ? Theme.danger
-                                                  : t.state == 1 ? Theme.success
-                                                  : Theme.accent;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
     // Process monitor is now ProcWindow (a detachable top-level window); the
     // former in-app overlay was removed in favour of a real OS window (#23).
-
     // --- Settings menu popup (top-right) ----------------------------------
-    // Click-outside-to-close backdrop (same pattern as the download popup).
-    if root.settings-open : TouchArea {
-        width: parent.width;
-        height: parent.height;
-        clicked => { root.settings-open = false; }
+    // 已抽成 `ui/settings_menu.slint`：**常驻**（面板内部用 `visible` 切换），状态透传 + 动作转发。
+    SettingsMenuPopup {
+        lang-en: root.lang-en;
+        avail-width: root.width;
+        avail-height: root.height;
+        settings-open: root.settings-open;
+        custom-titlebar : root.custom-titlebar;
+        titlebar-inset : root.titlebar-inset;
+        toolbar-x-off : root.toolbar-x-off;
+        toolbar-y-off : root.toolbar-y-off;
+        ssh-import-hint : root.ssh-import-hint;
+        close-requested => { root.settings-open = false; }
+        set-language(lang) => { root.set-language(lang); }
+        import-ssh-config() => { root.import-ssh-config(); }
+        export-sessions() => { root.export-sessions(); }
+        import-sessions() => { root.import-sessions(); }
+        open-interface-settings => { root.interface-open = true; }
+        open-batch-import => { root.batch-import-text = ""; root.batch-import-open = true; }
+        open-shortcuts => { root.shortcuts-open = true; }
+        open-about => { root.about-open = true; }
     }
-    Rectangle {
-        // Follow the gear button: it shifts by toolbar-x/y-off when the resource
-        // panel docks right/top, so the menu must shift the same amount or it ends
-        // up floating over the resource panel (#dock).
-        x: parent.width - 196px - root.toolbar-x-off;
-        y: (root.custom-titlebar ? 78px : 40px + root.titlebar-inset) + root.toolbar-y-off;
-        width: 198px;
-        // Size to the menu's content so adding/removing items (or the
-        // ~/.ssh/config import hint expanding) never overflows the card (#150-fix).
-        height: menu-vl.preferred-height;
-        visible: root.settings-open;
-        background: Theme.bg-panel;
-        border-radius: Theme.radius-md;
-        border-width: 1px;
-        border-color: Theme.border-strong;
-        drop-shadow-blur: 14px;
-        drop-shadow-color: #00000060;
-
-        TouchArea {}   // swallow events so they don't reach the terminal
-
-        menu-vl := VerticalLayout {
-            padding: 4px;
-            spacing: 1px;
-            // Interface (font) settings.
-            Rectangle {
-                height: 28px;
-                border-radius: Theme.radius-sm;
-                background: iface-ta.has-hover ? Theme.bg-hover : transparent;
-                iface-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.settings-open = false;
-                        root.interface-open = true;
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 8px; spacing: 8px;
-                    IconText { text: "\u{E429}";// tune
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           vertical-alignment: center; }
-                    Text { text: root.lang-en ? "Interface" : "界面";
-                           color: Theme.text-primary; font-size: Theme.fs-md;
-                           vertical-alignment: center; horizontal-stretch: 1; }
-                }
-            }
-            // Export all connections to a portable file (#46).
-            Rectangle {
-                height: 28px;
-                border-radius: Theme.radius-sm;
-                background: export-ta.has-hover ? Theme.bg-hover : transparent;
-                export-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.settings-open = false;
-                        root.export-sessions();
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 8px; spacing: 8px;
-                    IconText { text: "\u{E5D8}";// ↑ export
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           vertical-alignment: center; }
-                    Text { text: root.lang-en ? "Export connections" : "导出连接";
-                           color: Theme.text-primary; font-size: Theme.fs-md;
-                           vertical-alignment: center; horizontal-stretch: 1; }
-                }
-            }
-            // Import connections from a portable file (#46).
-            Rectangle {
-                height: 28px;
-                border-radius: Theme.radius-sm;
-                background: impconn-ta.has-hover ? Theme.bg-hover : transparent;
-                impconn-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.settings-open = false;
-                        root.import-sessions();
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 8px; spacing: 8px;
-                    IconText { text: "\u{E5DB}";// ↓ import
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           vertical-alignment: center; }
-                    Text { text: root.lang-en ? "Import connections" : "导入连接";
-                           color: Theme.text-primary; font-size: Theme.fs-md;
-                           vertical-alignment: center; horizontal-stretch: 1; }
-                }
-            }
-            // Batch-import connections from pasted text (#150).
-            Rectangle {
-                height: 28px;
-                border-radius: Theme.radius-sm;
-                background: batchimp-ta.has-hover ? Theme.bg-hover : transparent;
-                batchimp-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.settings-open = false;
-                        root.batch-import-text = "";
-                        root.batch-import-open = true;
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 8px; spacing: 8px;
-                    IconText { text: "\u{E1C3}";// table/rows
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           vertical-alignment: center; }
-                    Text { text: root.lang-en ? "Batch import (text)" : "批量导入(文本)";
-                           color: Theme.text-primary; font-size: Theme.fs-md;
-                           vertical-alignment: center; horizontal-stretch: 1; }
-                }
-            }
-            // Import hosts from ~/.ssh/config. Keep the menu open so the result
-            // (e.g. "imported 3" / "no new hosts") is visible right here — it used
-            // to only show on the welcome page, so importing while a session was
-            // open looked like nothing happened (#133).
-            Rectangle {
-                height: root.ssh-import-hint != "" ? 46px : 28px;
-                border-radius: Theme.radius-sm;
-                background: import-ta.has-hover ? Theme.bg-hover : transparent;
-                import-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.import-ssh-config(); }
-                }
-                HorizontalLayout {
-                    padding-left: 8px; padding-right: 8px; spacing: 8px;
-                    IconText { text: "\u{E890}";// input/import
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           vertical-alignment: center; }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        Text { text: @tr("Import ~/.ssh/config"); color: Theme.text-primary; font-size: Theme.fs-md;
-                               vertical-alignment: center; }
-                        if root.ssh-import-hint != "" : Text {
-                            text: root.ssh-import-hint;
-                            color: Theme.text-muted; font-size: Theme.fs-xs;
-                            overflow: elide;
-                        }
-                    }
-                }
-            }
-            // Language toggle: shows the language you'll switch TO.
-            Rectangle {
-                height: 28px;
-                border-radius: Theme.radius-sm;
-                background: lang-ta.has-hover ? Theme.bg-hover : transparent;
-                lang-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.settings-open = false;
-                        root.set-language(root.lang-en ? "zh" : "en");
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 8px; spacing: 8px;
-                    IconText { text: "\u{E894}";// language/translate
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           vertical-alignment: center; }
-                    Text { text: root.lang-en ? "切换到中文" : "Switch to English";
-                           color: Theme.text-primary; font-size: Theme.fs-md;
-                           vertical-alignment: center; horizontal-stretch: 1; }
-                }
-            }
-            // Keyboard shortcuts reference (#103).
-            Rectangle {
-                height: 28px;
-                border-radius: Theme.radius-sm;
-                background: keys-ta.has-hover ? Theme.bg-hover : transparent;
-                keys-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.settings-open = false;
-                        root.shortcuts-open = true;
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 8px; spacing: 8px;
-                    IconText { text: "\u{E312}";// keyboard
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           vertical-alignment: center; }
-                    Text { text: root.lang-en ? "Shortcuts" : "快捷键";
-                           color: Theme.text-primary; font-size: Theme.fs-md;
-                           vertical-alignment: center; horizontal-stretch: 1; }
-                }
-            }
-            Rectangle {
-                height: 28px;
-                border-radius: Theme.radius-sm;
-                background: about-ta.has-hover ? Theme.bg-hover : transparent;
-                about-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.settings-open = false;
-                        root.about-open = true;
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 8px; spacing: 8px;
-                    IconText { text: "\u{E88E}";// Info
-                           color: Theme.text-secondary; font-size: Theme.fs-sm;
-                           vertical-alignment: center; }
-                    Text { text: @tr("About"); color: Theme.text-primary; font-size: Theme.fs-md;
-                           vertical-alignment: center; horizontal-stretch: 1; }
-                }
-            }
-        }
-    }
-
     // --- Group create / rename dialog (#41) -------------------------------
     // 已抽成 `ui/group_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
     if root.group-dialog-open : GroupDialog {

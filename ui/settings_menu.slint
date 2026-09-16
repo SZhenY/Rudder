@@ -1,0 +1,286 @@
+//! 右上角**设置菜单**弹窗：语言切换、导入 / 导出，以及"设置 / 批量导入 / 快捷键 / 关于"四个入口。
+//!
+//! 结构：全窗口透明根 + 背景感应层 + **常驻面板**（`visible` 切换）。
+//!
+//! 从 `app.slint` 拆出（P4 B 类）：关闭 / 打开别的弹窗一律**上抛回调**，组件不直接改窗口状态。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
+
+export component SettingsMenuPopup inherits Rectangle {
+    width: avail-width;
+    height: avail-height;
+
+    // ── 状态（窗口透传）──────────────────────────────────────────────
+    in property <bool> lang-en: false;
+    in property <length> avail-width: 100000px;
+    in property <length> avail-height: 100000px;
+    in property <bool> settings-open: false;   // 面板以此为 `visible`，故必须传入
+    in property <bool> custom-titlebar: true;
+    in property <length> titlebar-inset: 0px;
+    in property <length> toolbar-x-off: 0px;
+    in property <length> toolbar-y-off: 0px;
+    in property <string> ssh-import-hint;
+
+    // ── 动作：由调用点转发（实现仍在 Rust / 窗口）────────────────────
+    callback close-requested();
+    callback set-language(string);
+    callback import-ssh-config();
+    callback export-sessions();
+    callback import-sessions();
+    callback open-interface-settings();
+    callback open-batch-import();
+    callback open-shortcuts();
+    callback open-about();
+
+// --- Settings menu popup (top-right) ----------------------------------
+// Click-outside-to-close backdrop (same pattern as the download popup).
+if settings-open : TouchArea {
+    width: parent.width;
+    height: parent.height;
+    clicked => { root.close-requested(); }
+}
+
+Rectangle {
+    // Follow the gear button: it shifts by toolbar-x/y-off when the resource
+    // panel docks right/top, so the menu must shift the same amount or it ends
+    // up floating over the resource panel (#dock).
+    x: parent.width - 196px - toolbar-x-off;
+    y: (custom-titlebar ? 78px : 40px + titlebar-inset) + toolbar-y-off;
+    width: 198px;
+    // Size to the menu's content so adding/removing items (or the
+    // ~/.ssh/config import hint expanding) never overflows the card (#150-fix).
+    height: menu-vl.preferred-height;
+    visible: settings-open;
+    background: Theme.bg-panel;
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+    drop-shadow-blur: 14px;
+    drop-shadow-color: #00000060;
+
+    TouchArea {}   // swallow events so they don't reach the terminal
+
+    menu-vl := VerticalLayout {
+        padding: 4px;
+        spacing: 1px;
+        // Interface (font) settings.
+        Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: iface-ta.has-hover ? Theme.bg-hover : transparent;
+            iface-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.close-requested();
+                    root.open-interface-settings();
+                }
+            }
+            HorizontalLayout {
+                padding-left: 8px; spacing: 8px;
+                IconText { text: "\u{E429}";// tune
+                       color: Theme.text-secondary; font-size: Theme.fs-sm;
+                       vertical-alignment: center; }
+                Text { text: lang-en ? "Interface" : "界面";
+                       color: Theme.text-primary; font-size: Theme.fs-md;
+                       vertical-alignment: center; horizontal-stretch: 1; }
+            }
+        }
+        // Export all connections to a portable file (#46).
+        Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: export-ta.has-hover ? Theme.bg-hover : transparent;
+            export-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.close-requested();
+                    root.export-sessions();
+                }
+            }
+            HorizontalLayout {
+                padding-left: 8px; spacing: 8px;
+                IconText { text: "\u{E5D8}";// ↑ export
+                       color: Theme.text-secondary; font-size: Theme.fs-sm;
+                       vertical-alignment: center; }
+                Text { text: lang-en ? "Export connections" : "导出连接";
+                       color: Theme.text-primary; font-size: Theme.fs-md;
+                       vertical-alignment: center; horizontal-stretch: 1; }
+            }
+        }
+        // Import connections from a portable file (#46).
+        Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: impconn-ta.has-hover ? Theme.bg-hover : transparent;
+            impconn-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.close-requested();
+                    root.import-sessions();
+                }
+            }
+            HorizontalLayout {
+                padding-left: 8px; spacing: 8px;
+                IconText { text: "\u{E5DB}";// ↓ import
+                       color: Theme.text-secondary; font-size: Theme.fs-sm;
+                       vertical-alignment: center; }
+                Text { text: lang-en ? "Import connections" : "导入连接";
+                       color: Theme.text-primary; font-size: Theme.fs-md;
+                       vertical-alignment: center; horizontal-stretch: 1; }
+            }
+        }
+        // Batch-import connections from pasted text (#150).
+        Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: batchimp-ta.has-hover ? Theme.bg-hover : transparent;
+            batchimp-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.close-requested();
+                    root.open-batch-import();
+                }
+            }
+            HorizontalLayout {
+                padding-left: 8px; spacing: 8px;
+                IconText { text: "\u{E1C3}";// table/rows
+                       color: Theme.text-secondary; font-size: Theme.fs-sm;
+                       vertical-alignment: center; }
+                Text { text: lang-en ? "Batch import (text)" : "批量导入(文本)";
+                       color: Theme.text-primary; font-size: Theme.fs-md;
+                       vertical-alignment: center; horizontal-stretch: 1; }
+            }
+        }
+        // Import hosts from ~/.ssh/config. Keep the menu open so the result
+        // (e.g. "imported 3" / "no new hosts") is visible right here — it used
+        // to only show on the welcome page, so importing while a session was
+        // open looked like nothing happened (#133).
+        Rectangle {
+            height: ssh-import-hint != "" ? 46px : 28px;
+            border-radius: Theme.radius-sm;
+            background: import-ta.has-hover ? Theme.bg-hover : transparent;
+            import-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.import-ssh-config(); }
+            }
+            HorizontalLayout {
+                padding-left: 8px; padding-right: 8px; spacing: 8px;
+                IconText { text: "\u{E890}";// input/import
+                       color: Theme.text-secondary; font-size: Theme.fs-sm;
+                       vertical-alignment: center; }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Text { text: @tr("Import ~/.ssh/config"); color: Theme.text-primary; font-size: Theme.fs-md;
+                           vertical-alignment: center; }
+                    if ssh-import-hint != "" : Text {
+                        text: ssh-import-hint;
+                        color: Theme.text-muted; font-size: Theme.fs-xs;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+        // Language toggle: shows the language you'll switch TO.
+        Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: lang-ta.has-hover ? Theme.bg-hover : transparent;
+            lang-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.close-requested();
+                    root.set-language(lang-en ? "zh" : "en");
+                }
+            }
+            HorizontalLayout {
+                padding-left: 8px; spacing: 8px;
+                IconText { text: "\u{E894}";// language/translate
+                       color: Theme.text-secondary; font-size: Theme.fs-sm;
+                       vertical-alignment: center; }
+                Text { text: lang-en ? "切换到中文" : "Switch to English";
+                       color: Theme.text-primary; font-size: Theme.fs-md;
+                       vertical-alignment: center; horizontal-stretch: 1; }
+            }
+        }
+        // Keyboard shortcuts reference (#103).
+        Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: keys-ta.has-hover ? Theme.bg-hover : transparent;
+            keys-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.close-requested();
+                    root.open-shortcuts();
+                }
+            }
+            HorizontalLayout {
+                padding-left: 8px; spacing: 8px;
+                IconText { text: "\u{E312}";// keyboard
+                       color: Theme.text-secondary; font-size: Theme.fs-sm;
+                       vertical-alignment: center; }
+                Text { text: lang-en ? "Shortcuts" : "快捷键";
+                       color: Theme.text-primary; font-size: Theme.fs-md;
+                       vertical-alignment: center; horizontal-stretch: 1; }
+            }
+        }
+        Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: about-ta.has-hover ? Theme.bg-hover : transparent;
+            about-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.close-requested();
+                    root.open-about();
+                }
+            }
+            HorizontalLayout {
+                padding-left: 8px; spacing: 8px;
+                IconText { text: "\u{E88E}";// Info
+                       color: Theme.text-secondary; font-size: Theme.fs-sm;
+                       vertical-alignment: center; }
+                Text { text: @tr("About"); color: Theme.text-primary; font-size: Theme.fs-md;
+                       vertical-alignment: center; horizontal-stretch: 1; }
+            }
+        }
+    }
+}
+}

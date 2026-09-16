@@ -1,0 +1,278 @@
+//! 右下角**下载管理器**弹窗：传输记录列表（可取消进行中的项）、清空、打开下载目录。
+//!
+//! 结构：全窗口透明根 + 背景感应层（点别处关闭）+ **常驻面板**（`visible` 切换；
+//! 面板若随事件销毁重建会在事件中途崩溃，故常驻）。
+//!
+//! 从 `app.slint` 拆出（P4 B 类）：关闭 / 打开别的弹窗一律**上抛回调**，组件不直接改窗口状态。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
+
+export struct TransferInfo {
+    id: string,
+    name: string,
+    detail: string,   // "2.3 MB/5.0 MB" | "已完成" | "失败"
+    percent: float,   // 0.0..1.0
+    state: int,       // 0 active / 1 done / 2 error
+    is-upload: bool,
+}
+
+export component DownloadManagerPopup inherits Rectangle {
+    width: avail-width;
+    height: avail-height;
+
+    // ── 状态（窗口透传）──────────────────────────────────────────────
+    in property <bool> lang-en: false;
+    in property <length> avail-width: 100000px;
+    in property <length> avail-height: 100000px;
+    in property <bool> download-open: false;   // 面板以此为 `visible`，故必须传入
+    in property <[TransferInfo]> transfers;
+    in property <string> download-dir;
+    in property <bool> custom-titlebar: true;
+    in property <length> titlebar-inset: 0px;
+    in property <length> toolbar-x-off: 0px;
+    in property <length> toolbar-y-off: 0px;
+
+    // ── 动作：由调用点转发（实现仍在 Rust / 窗口）────────────────────
+    callback close-requested();
+    callback pick-download-dir();
+    callback open-download-dir();
+    callback clear-transfers();
+    callback cancel-transfer(string);
+
+// --- Download manager popup -------------------------------------------
+// Click-outside-to-close: a full-window transparent sensor sitting *under*
+// the popup. Clicking anywhere outside the popup hits this and closes it;
+// clicks inside the popup are caught by the popup's own TouchArea first.
+if download-open : TouchArea {
+    width: parent.width;
+    height: parent.height;
+    clicked => { root.close-requested(); }
+}
+// Always present; toggled via `visible` (avoids destroying interactive
+// elements mid-event, which crashes when created/removed at the Window root).
+
+Rectangle {
+    // Follow the download button (shifts with the toolbar when the resource
+    // panel docks right/top) (#dock).
+    // 364px = 自身宽 350px + 14px 右边距（原来是手算的常数，改绑自身宽度）
+    x: parent.width - self.width - 14px - toolbar-x-off;
+    y: (custom-titlebar ? 78px : 40px + titlebar-inset) + toolbar-y-off;
+    width: 350px;
+    height: 400px;
+    visible: download-open;
+    background: Theme.bg-panel;
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+    drop-shadow-blur: Theme.shadow-float-blur;
+    drop-shadow-color: Theme.shadow-float-color;
+
+    // Swallow pointer events so right-clicks don't fall through to the
+    // terminal's context menu underneath.
+    TouchArea {}
+
+    VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+
+        HorizontalLayout {
+            Text {
+                text: lang-en ? "Transfers manager" : "传输管理";
+                color: Theme.text-primary;
+                font-size: Theme.fs-md;
+                font-weight: 600;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+            CloseButton {
+                size: 20px;
+                glyph-size: Theme.fs-sm;
+                tone: "windows";        // hover 变红、字形转白
+                clicked => { root.close-requested(); }
+            }
+        }
+
+            FieldLabel { text: @tr("Save downloads to:"); }
+
+            // Current path display
+            Rectangle {
+                height: 26px;
+                background: Theme.bg-root;
+                border-radius: Theme.radius-sm;
+                Text {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height;
+                    text: download-dir == "" ? @tr("(ask every time)") : download-dir;
+                    color: download-dir == "" ? Theme.text-muted : Theme.text-primary;
+                    font-size: Theme.fs-sm;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+
+                Rectangle {
+                    width: 110px; height: 28px;
+                    border-radius: Theme.radius-sm;
+                    background: pick-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                    pick-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.pick-download-dir(); }
+                    }
+                    Text { text: @tr("Choose save path"); color: #ffffff; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+                Rectangle {
+                    width: 76px; height: 28px;
+                    border-radius: Theme.radius-sm;
+                    background: open-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                    open-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.open-download-dir(); }
+                    }
+                    Text { text: @tr("Open folder"); color: Theme.text-primary; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+
+            Divider {}
+
+            // Transfer records (download/upload progress + history).
+            HorizontalLayout {
+                Text {
+                    text: @tr("Transfers");
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    width: 44px; height: 20px;
+                    border-radius: Theme.radius-sm;
+                    background: clr-ta.has-hover ? Theme.bg-hover : transparent;
+                    clr-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.clear-transfers(); }
+                    }
+                    Text { text: @tr("Clear"); color: Theme.text-muted; font-size: Theme.fs-xs;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+
+            Flickable {
+                vertical-stretch: 1;
+                viewport-width: self.width;
+                viewport-height: max(self.height, xfer-col.preferred-height);
+                xfer-col := VerticalLayout {
+                    alignment: start;
+                    spacing: 4px;
+
+                    if transfers.length == 0 : Text {
+                        text: @tr("No transfers yet");
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-xs;
+                    }
+
+                    for t in transfers : Rectangle {
+                        height: 36px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-root;
+                        VerticalLayout {
+                            padding-left: 8px; padding-right: 8px;
+                            padding-top: 4px; padding-bottom: 4px;
+                            spacing: 3px;
+                            HorizontalLayout {
+                                spacing: 4px;
+                                // Direction glyph: upload green / download purple.
+                                IconText {
+                                    text: t.is-upload ? "\u{E5D8}" : "\u{E5DB}"; // arrow_upward / arrow_downward
+                                    color: t.is-upload ? Theme.success : #9c6ade;
+                                    font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: t.name;
+                                    color: Theme.text-primary;
+                                    font-size: Theme.fs-xs;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: t.detail;
+                                    color: t.state == 2 ? Theme.danger
+                                         : t.state == 1 ? Theme.success
+                                         : Theme.text-muted;
+                                    font-size: Theme.fs-xs;
+                                    vertical-alignment: center;
+                                }
+                                // Cancel button — only while the transfer is
+                                // active (0) or preparing (3) (#100).
+                                if t.state == 0 || t.state == 3 : CloseButton {
+                                    size: 16px;
+                                    glyph-size: Theme.fs-sm;
+                                    tone: "danger-on-hover";   // 平时灰、hover 转红
+                                    clicked => { root.cancel-transfer(t.id); }
+                                }
+                            }
+                            // progress bar
+                            Rectangle {
+                                height: 4px;
+                                border-radius: 2px;
+                                background: Theme.bg-elevated;
+                                Rectangle {
+                                    x: 0; y: 0; height: parent.height;
+                                    width: parent.width * clamp(t.percent, 0.0, 1.0);
+                                    border-radius: 2px;
+                                    background: t.state == 2 ? Theme.danger
+                                              : t.state == 1 ? Theme.success
+                                              : Theme.accent;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
