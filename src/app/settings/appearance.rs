@@ -12,7 +12,7 @@ use crate::app::fonts_ui::{family_from_label, resolve_ui_font_family};
 use crate::app::resource_ui::sync_proc_theme;
 use crate::i18n::t;
 use crate::terminal::TermBuffers;
-use crate::ui::{AppWindow, ProcWindow};
+use crate::ui::{ AnimationSettings, AppWindow, ProcWindow, Theme };
 
 /// 播种 + 注册持久化回调。
 pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_win: &ProcWindow) {
@@ -74,7 +74,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 });
             }
             if let Some(w) = weak.upgrade() {
-                w.set_ui_scale(clamped as f32 / 100.0);
+                w.global::<Theme>().set_ui_scale(clamped as f32 / 100.0);
             }
         });
     }
@@ -90,7 +90,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 });
             }
             if let Some(w) = weak.upgrade() {
-                w.set_panel_font(clamped as f32 / 100.0);
+                w.global::<Theme>().set_panel_font(clamped as f32 / 100.0);
             }
         });
     }
@@ -106,7 +106,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             if let Some(w) = weak.upgrade() {
                 apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, true);
                 if crate::wallpaper::is_builtin(&id) {
-                    selected_builtin_theme = Some(w.get_dark_mode());
+                    selected_builtin_theme = Some(w.global::<Theme>().get_dark());
                 }
                 // Keep an already-open process window in sync with the change.
                 if let Some(p) = proc_weak.upgrade() {
@@ -167,7 +167,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 // 时存储的是空串、解析出来也是空串 → Slint 用它自己的平台默认字体。
                 // ⚠️ 不能是逗号分隔的字体栈：Slint 的 `font-family` 是单个家族名，
                 // 整串会被当成一个不存在的家族，界面看起来毫无变化。
-                w.set_ui_font_family(resolve_ui_font_family());
+                w.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
             }
         });
     }
@@ -205,12 +205,12 @@ pub(crate) fn reset(
     // 索引按**存储值**算（空串 → Auto 条目）：拿解析后的值去算会落到某个具体家族
     // 条目上，而实际状态明明是 auto。
     let ui_stored = s.ui_font_family().to_string();
-    w.set_ui_font_family(resolve_ui_font_family());
+    w.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
     w.set_ui_font_index(fonts.ui_index(&ui_stored));
-    w.set_ui_scale(s.ui_scale() as f32 / 100.0);
-    w.set_panel_font(s.panel_font() as f32 / 100.0);
+    w.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0);
+    w.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0);
     w.set_renderer_mode(s.renderer_mode().into());
-    w.set_wallpaper_overlay(s.wallpaper_overlay());
+    w.global::<Theme>().set_panel_alpha(s.wallpaper_overlay());
     w.set_hide_special_partitions(s.hide_special_partitions());
     drop(s);
     // 壁纸切换有完整的换肤 / 调色板派生流程，必须走 apply_wallpaper。
@@ -222,7 +222,7 @@ pub(crate) fn reset(
     apply_wallpaper(w, &store.borrow(), bufs, &d.appearance.wallpaper, true);
     if crate::wallpaper::is_builtin(&d.appearance.wallpaper) {
         // 把刚套用的深浅色持久化（同 on_set_wallpaper），否则下次启动又回到旧偏好。
-        let dark = w.get_dark_mode();
+        let dark = w.global::<Theme>().get_dark();
         persist(store, |s| {
             s.set_theme_pref(if dark { "dark" } else { "light" }.to_string());
         });
@@ -232,7 +232,7 @@ pub(crate) fn reset(
         sync_proc_theme(w, &p);
     }
     // 动画开关没有后端持久化（Slint 全局，重启即回），还原即重新开启。
-    w.set_animations_enabled(true);
+    w.global::<AnimationSettings>().set_enabled(true);
 }
 /// UI 缩放的百分比：先把负数夹到 0（否则 `as u32` 会回绕成 40 亿），再限制 80–200。
 fn clamp_ui_scale(percent: i32) -> u32 {

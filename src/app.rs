@@ -733,7 +733,7 @@ pub fn run() -> Result<()> {
         let proc_weak = proc_win.as_weak();
         window.on_toggle_theme(move || {
             let Some(w) = weak.upgrade() else { return };
-            let next_dark = !w.get_dark_mode();
+            let next_dark = !w.global::<Theme>().get_dark();
             // Flip theme + every terminal buffer + re-render (shared with wallpaper).
             apply_dark_mode(&w, &bufs_theme, next_dark);
             // Mirror the flip onto the detached process window (its Theme global

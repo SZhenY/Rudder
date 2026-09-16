@@ -14,7 +14,7 @@ use slint::{ComponentHandle, VecModel};
 use super::{Store, persist};
 use crate::app::pane_layout::refresh_panes;
 use crate::ssh::SessionHandle;
-use crate::ui::{AppWindow, PaneInfo, SplitterInfo, TabInfo};
+use crate::ui::{ AnimationSettings, AppWindow, PaneInfo, SplitterInfo, TabInfo, Theme };
 
 /// Dispatch one `reset-page` request from the UI to the page that owns it.
 /// Re-apply the persisted layout preferences to the live window: panel docking
@@ -79,10 +79,10 @@ pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     // 否则「还原本页默认」只改了 config，界面（含工具栏图标）停在旧状态，
     // 表现为"点了还原没有任何反应"。
     w.set_show_cmd_bar(!s.cmd_bar_hidden());
-    w.set_wallpaper_overlay(s.wallpaper_overlay());
+    w.global::<Theme>().set_panel_alpha(s.wallpaper_overlay());
     w.set_update_check_enabled(s.update_check_enabled()); // #184
     // 动画开关此前是 Slint-only 全局、从不持久化；现在与其它偏好一样由 config 驱动。
-    w.set_animations_enabled(s.animations_enabled());
+    w.global::<AnimationSettings>().set_enabled(s.animations_enabled());
     if collapse_sftp {
         w.set_sftp_collapsed(true);
     }

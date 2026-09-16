@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::{ Theme };
 
 pub(super) fn push_ring(buf: &mut Vec<f32>, val: f32) {
     if buf.len() != NET_HISTORY_LEN {
@@ -227,25 +228,25 @@ pub(super) fn tuple5_rows(rows: &[(String, String, String, String, String)]) -> 
 }
 
 pub(super) fn sync_proc_theme(main: &AppWindow, proc: &ProcWindow) {
-    proc.set_dark_mode(main.get_dark_mode());
-    proc.set_ui_scale(main.get_ui_scale());
-    proc.set_ui_font_family(main.get_ui_font_family());
+    proc.set_dark_mode(main.global::<Theme>().get_dark());
+    proc.set_ui_scale(main.global::<Theme>().get_ui_scale());
+    proc.set_ui_font_family(main.global::<Theme>().get_ui_font_family());
     // Mirror the immersive wallpaper so the detached window shares the frosted
     // backdrop instead of a flat panel.
-    proc.set_wallpaper_img(main.get_wallpaper_img());
-    proc.set_wallpaper_active(main.get_wallpaper_active());
-    proc.set_wp_accent(main.get_wp_accent());
-    proc.set_wp_tint(main.get_wp_tint());
+    proc.set_wallpaper_img(main.global::<Theme>().get_wallpaper());
+    proc.set_wallpaper_active(main.global::<Theme>().get_wallpaper_active());
+    proc.set_wp_accent(main.global::<Theme>().get_wp_accent());
+    proc.set_wp_tint(main.global::<Theme>().get_wp_tint());
 }
 
 pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
-    sys.set_dark_mode(main.get_dark_mode());
-    sys.set_ui_scale(main.get_ui_scale());
-    sys.set_ui_font_family(main.get_ui_font_family());
-    sys.set_wallpaper_img(main.get_wallpaper_img());
-    sys.set_wallpaper_active(main.get_wallpaper_active());
-    sys.set_wp_accent(main.get_wp_accent());
-    sys.set_wp_tint(main.get_wp_tint());
+    sys.set_dark_mode(main.global::<Theme>().get_dark());
+    sys.set_ui_scale(main.global::<Theme>().get_ui_scale());
+    sys.set_ui_font_family(main.global::<Theme>().get_ui_font_family());
+    sys.set_wallpaper_img(main.global::<Theme>().get_wallpaper());
+    sys.set_wallpaper_active(main.global::<Theme>().get_wallpaper_active());
+    sys.set_wp_accent(main.global::<Theme>().get_wp_accent());
+    sys.set_wp_tint(main.global::<Theme>().get_wp_tint());
 }
 
 /// 让子窗口真正画出第一帧。

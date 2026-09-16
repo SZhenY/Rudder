@@ -11,6 +11,7 @@
 // Everything this section needs was already in scope in `app.rs`; reuse that
 // namespace rather than re-deriving a long import list by hand.
 use super::*;
+use crate::ui::{ Theme };
 
 /// Shared config-store handle (`Rc<RefCell<ConfigStore>>`).
 // 配置存储句柄：与 `super::settings` 共用同一个别名定义。
@@ -113,7 +114,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     // OS unknown → fall back to dark.
     {
         let is_dark = theme_pref_is_dark(&store.borrow());
-        window.set_dark_mode(is_dark);
+        window.global::<Theme>().set_dark(is_dark);
     }
     // On macOS, app shortcuts use Cmd (⌘) so physical Ctrl stays free for the
     // shell (#158); on Windows/Linux they stay Ctrl-based.
@@ -137,11 +138,11 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             &fam
         });
         if !fam.is_empty() {
-            window.set_term_font_family(fam.into());
+            window.global::<Theme>().set_term_font_family(fam.into());
         }
-        window.set_term_font_cjk(cjk);
-        window.set_term_font_size(s.font_size() as f32);
-        window.set_term_font_bold(s.terminal_bold());
+        window.global::<Theme>().set_term_font_cjk(cjk);
+        window.global::<Theme>().set_term_font_size(s.font_size() as f32);
+        window.global::<Theme>().set_term_font_bold(s.terminal_bold());
         window.set_scrollback_lines(s.scrollback_lines().to_string().into());
         window.set_large_scrollback(s.large_scrollback());
         window.set_term_cursor_style(s.terminal_cursor_style().into());
@@ -153,8 +154,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_output_highlight_preset(s.output_highlight_preset().into());
         window.set_output_highlight_rules(output_highlight_rule_model(&s));
         window.set_json_format_output(s.json_format_output());
-        window.set_ui_scale(s.ui_scale() as f32 / 100.0); // global UI zoom (#100)
-        window.set_panel_font(s.panel_font() as f32 / 100.0); // settings-panel font scale
+        window.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0); // global UI zoom (#100)
+        window.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0); // settings-panel font scale
         window.set_renderer_mode(s.renderer_mode().into());
     }
 
@@ -177,7 +178,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     // embedded font. Instead probe what fontdb actually loaded and pick the first
     // resolvable CJK family, falling back to the embedded "Meatshell Mono" so the
     // window is never fully blank even when the system font DB is unreadable.
-    window.set_ui_font_family(resolve_ui_font_family());
+    window.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
     // Runtime font loading: fonts dropped into the fonts dir (Windows:
     // <exe_dir>/config/fonts; macOS/Linux: per-user config dir) are registered
     // with Slint's shared collection and become selectable below — large CJK

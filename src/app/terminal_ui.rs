@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::Theme;
 
 pub(crate) fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
     let rows: Vec<SharedString> = store
@@ -266,7 +267,7 @@ pub(super) fn for_each_buffer(window: &AppWindow, bufs: &TermBuffers, apply: imp
 }
 
 pub(super) fn apply_dark_mode(window: &AppWindow, bufs: &TermBuffers, dark: bool) {
-    window.set_dark_mode(dark);
+    window.global::<Theme>().set_dark(dark);
     for_each_buffer(window, bufs, |b| b.is_dark = dark);
 }
 
@@ -300,9 +301,9 @@ pub(super) fn apply_wallpaper(
         Some(wp) => {
             let (ar, ag, ab) = wp.palette.accent;
             let (tr, tg, tb) = wp.palette.tint;
-            window.set_wallpaper_img(wp.image);
-            window.set_wp_accent(slint::Color::from_rgb_u8(ar, ag, ab));
-            window.set_wp_tint(slint::Color::from_rgb_u8(tr, tg, tb));
+            window.global::<Theme>().set_wallpaper(wp.image);
+            window.global::<Theme>().set_wp_accent(slint::Color::from_rgb_u8(ar, ag, ab));
+            window.global::<Theme>().set_wp_tint(slint::Color::from_rgb_u8(tr, tg, tb));
             // Only the built-ins (designed as a light/dark pair) auto-set the
             // theme. A custom photo keeps the user's light/dark choice so the
             // theme toggle still governs text contrast — a light/white wallpaper
@@ -311,7 +312,7 @@ pub(super) fn apply_wallpaper(
             if apply_builtin_theme && crate::wallpaper::is_builtin(id) {
                 apply_dark_mode(window, bufs, wp.palette.is_dark);
             }
-            window.set_wallpaper_active(true);
+            window.global::<Theme>().set_wallpaper_active(true);
             window.set_current_wallpaper(id.into());
             let name = if crate::wallpaper::is_builtin(id) {
                 String::new()
@@ -324,7 +325,7 @@ pub(super) fn apply_wallpaper(
             window.set_custom_wallpaper_name(name.into());
         }
         None => {
-            window.set_wallpaper_active(false);
+            window.global::<Theme>().set_wallpaper_active(false);
             window.set_current_wallpaper("".into());
             window.set_custom_wallpaper_name("".into());
             apply_dark_mode(window, bufs, theme_pref_is_dark(store));

@@ -18,7 +18,7 @@ use crate::i18n::t;
 
 use super::{FontCatalog, Store};
 use crate::terminal::TermBuffers;
-use crate::ui::AppWindow;
+use crate::ui::{ AppWindow, Theme };
 
 /// 播种 + 注册持久化回调。
 pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
@@ -139,8 +139,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                 let _ = s.save();
             }
             if let Some(w) = weak.upgrade() {
-                w.set_term_font_family(family.into());
-                w.set_term_font_cjk(term_font_covers_cjk(family));
+                w.global::<Theme>().set_term_font_family(family.into());
+                w.global::<Theme>().set_term_font_cjk(term_font_covers_cjk(family));
             }
         });
     }
@@ -189,7 +189,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             // 字号滑条是逐帧触发的 → 走防抖出口（见 `settings::persist`）。
             super::persist(&store, |s| s.set_font_size(size as u32));
             if let Some(w) = weak.upgrade() {
-                w.set_term_font_size(size as f32);
+                w.global::<Theme>().set_term_font_size(size as f32);
             }
         });
     }
@@ -204,7 +204,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                 let _ = s.save();
             }
             if let Some(w) = weak.upgrade() {
-                w.set_term_font_bold(bold);
+                w.global::<Theme>().set_term_font_bold(bold);
             }
         });
     }
@@ -332,12 +332,12 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &Fo
     let rules;
     {
         let s = store.borrow();
-        w.set_term_font_family(s.font_family().into());
+        w.global::<Theme>().set_term_font_family(s.font_family().into());
         // 选择器索引必须跟着 family 一起还原，否则下拉框停在旧项：显示与实际
         // 字体不符，用户再动一次选择器还会用旧索引反推回旧字体。
         w.set_term_font_index(fonts.term_index(s.font_family()));
-        w.set_term_font_size(s.font_size() as f32);
-        w.set_term_font_bold(s.terminal_bold());
+        w.global::<Theme>().set_term_font_size(s.font_size() as f32);
+        w.global::<Theme>().set_term_font_bold(s.terminal_bold());
         w.set_term_cursor_style(s.terminal_cursor_style().into());
         w.set_term_cursor_color_hex(s.terminal_cursor_color().into());
         if let Some(color) = parse_hex_color(s.terminal_cursor_color()) {

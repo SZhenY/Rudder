@@ -48,6 +48,9 @@ import { Label } from "components/text.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
 
 export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
+// P5「公共面收敛」第 1 步：把两个全局导出，Rust 才能 `window.global::<Theme>()`
+// 直接读写主题 —— 这样 AppWindow 上那 14 条 `<=> Theme.x` 镜像就不必存在了。
+export { AnimationSettings, Theme }
 
 // --- TerminalState ---------------------------------------------------------
 // Per-terminal view-model exposed to Rust. A TabInfo has the metadata; the
@@ -386,19 +389,22 @@ export component AppWindow inherits Window {
     in-out property <bool> lang-en: false;  // current UI language (false = 中文)
     // Two-way binding to Theme.dark — Rust reads/writes this property and
     // Slint propagates it to every widget that references Theme colours.
-    in-out property <bool> dark-mode <=> Theme.dark;
     // Keep Slint's std-widgets (LineEdit / Button / ComboBox in the dialogs) in
     // step with our theme — otherwise in light mode they keep the platform/dark
     // palette and their text/borders blend into the light dialog background.
-    init => { Palette.color-scheme = root.dark-mode ? ColorScheme.dark : ColorScheme.light; }
-    changed dark-mode => { Palette.color-scheme = root.dark-mode ? ColorScheme.dark : ColorScheme.light; }
-    in-out property <string> term-font-family <=> Theme.term-font-family;
-    in-out property <bool> term-font-cjk <=> Theme.term-font-cjk;
+    // Palette 是官方控件的**派生气板**：方向只能是「应用状态 → Palette」，
+    // 反过来由它驱动本应用主题会把"配置 + 壁纸决定明暗"的真相源搞乱。
+    // 官方控件的 `Palette.color-scheme` 需要跟着主题走，而 Slint 里三条路都不通：
+    // ① `changed Theme.dark` —— `changed` 只认**本地**属性名；② 全局属性不能在组件体里
+    // 直接绑定；③ `private` 属性又不允许挂 `changed`。
+    // 解法：用一条**单向派生**的本地属性当触发器（`:` 绑定随 `Theme.dark` 变化，
+    // 不是 `<=>` 镜像、Rust 也不会去写它），再在 `changed` 里同步 Palette。
+    property <bool> dark-mode-watch: Theme.dark;
+    init => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-mode-watch => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }
     in-out property <int> term-font-index: 0;   // picker selection into term-fonts
-    in-out property <length> term-font-size <=> Theme.term-font-size;
-    in-out property <bool> term-font-bold <=> Theme.term-font-bold;
     in-out property <string> term-cursor-style: "block";
-    in-out property <string> term-cursor-color-hex: root.dark-mode ? "#D4D4D4" : "#2D2D2F";
+    in-out property <string> term-cursor-color-hex: Theme.dark ? "#D4D4D4" : "#2D2D2F";
     in-out property <color> term-cursor-color: Theme.term-fg;
     in-out property <bool> output-highlight-enabled: true;
     in-out property <bool> json-format-output: true;
@@ -410,15 +416,11 @@ export component AppWindow inherits Window {
     in-out property <bool> hide-special-partitions: true;
     // 动画开关的双向镜像：Rust 通过它读写 AnimationSettings.enabled，避免把整个
     // 全局暴露到公共 API（easing 类型的属性无法跨公共 API，会产生编译告警）。
-    in-out property <bool> animations-enabled <=> AnimationSettings.enabled;
     in-out property <string> mount-filter: "";
     in-out property <string> output-highlight-preset: "log";
     in property <[OutputRuleItem]> output-highlight-rules;
     in-out property <string> output-highlight-rule-status;
-    in-out property <float> ui-scale <=> Theme.ui-scale;   // global UI zoom (#100)
-    in-out property <float> panel-font <=> Theme.panel-font;  // settings-panel font scale
     callback set-panel-font(int);                          // apply + persist (percent)
-    in-out property <string> ui-font-family <=> Theme.ui-font-family;
     // Window focused & visible — Rust drives it from winit events; gates the
     // cursor blink so an idle background window stops repainting (#127).
     in-out property <bool> window-focused <=> Theme.window-focused;
@@ -428,12 +430,7 @@ export component AppWindow inherits Window {
     in-out property <string> renderer-mode: "software";
     callback set-renderer-mode(string);                    // applies next launch (#280)
     // Wallpaper / immersive theming — Rust drives these from the wallpaper module.
-    in-out property <image> wallpaper-img <=> Theme.wallpaper;
-    in-out property <bool> wallpaper-active <=> Theme.wallpaper-active;
-    in-out property <color> wp-accent <=> Theme.wp-accent;
-    in-out property <color> wp-tint <=> Theme.wp-tint;
     // User-adjustable wallpaper overlay opacity (0.30–1.00), persisted.
-    in-out property <float> wallpaper-overlay <=> Theme.panel-alpha;
     callback persist-wallpaper-overlay(float);
     in property <[string]> term-fonts;             // installed monospace families
     in property <[string]> ui-fonts;              // all families for UI font picker
@@ -1575,7 +1572,7 @@ export component AppWindow inherits Window {
                     quick-panel-docked: root.quick-commands-as-sidebar && root.quick-panel-open;
                     cmd-bar-hidden: !root.show-cmd-bar;
                     // Per-session zoom override wins over the global size.
-                    term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : root.term-font-size / 1px;
+                    term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : Theme.term-font-size / 1px;
                     quick-external-command: root.quick-external-command;
                     quick-external-send-enter: root.quick-external-send-enter;
                     quick-external-sequence: root.quick-external-sequence;
@@ -4223,12 +4220,12 @@ overflow: elide;
                     is-windows: root.is-windows;
                     renderer-mode <=> root.renderer-mode;
                     term-fonts: root.term-fonts;
-                    term-font-family: root.term-font-family;
+                    term-font-family: Theme.term-font-family;
                     term-font-index <=> root.term-font-index;
                     ui-fonts: root.ui-fonts;
                     ui-font-index <=> root.ui-font-index;
-                    term-font-size: root.term-font-size;
-                    term-font-bold: root.term-font-bold;
+                    term-font-size: Theme.term-font-size;
+                    term-font-bold: Theme.term-font-bold;
                     term-cursor-style <=> root.term-cursor-style;
                     term-cursor-color-hex <=> root.term-cursor-color-hex;
                     term-cursor-color: root.term-cursor-color;
@@ -4243,7 +4240,7 @@ overflow: elide;
                     output-highlight-preset <=> root.output-highlight-preset;
                     output-highlight-rules: root.output-highlight-rules;
                     output-highlight-rule-status <=> root.output-highlight-rule-status;
-                    ui-scale: root.ui-scale;
+                    ui-scale: Theme.ui-scale;
                     sftp-follow-cd <=> root.sftp-follow-cd;
                     collapse-sidebar-default <=> root.collapse-sidebar-default;
                     show-cmd-bar <=> root.show-cmd-bar;
@@ -4263,7 +4260,7 @@ overflow: elide;
                     update-check-enabled <=> root.update-check-enabled;
                     update-check-status: root.update-check-status;
                     update-checking: root.update-checking;
-                    wallpaper-overlay <=> root.wallpaper-overlay;
+                    wallpaper-overlay <=> Theme.panel-alpha;
                     current-wallpaper: root.current-wallpaper;
                     custom-wallpaper-name: root.custom-wallpaper-name;
                     wsl-profiles: root.wsl-profiles;

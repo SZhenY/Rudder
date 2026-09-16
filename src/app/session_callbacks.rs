@@ -1173,7 +1173,7 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
             // 24×80; resized on the first terminal-resize callback). The
             // scrollback depth comes from the settings value
             // (scrollback_lines, clamped to 100..=1_000_000 in config.rs).
-            let is_dark_now = weak.upgrade().map(|w| w.get_dark_mode()).unwrap_or(true);
+            let is_dark_now = weak.upgrade().map(|w| w.global::<Theme>().get_dark()).unwrap_or(true);
             let (output_highlight, custom_highlight_rules) = {
                 let settings = store.borrow();
                 (

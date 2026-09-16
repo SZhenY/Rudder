@@ -6,7 +6,7 @@ use std::rc::Rc;
 use slint::{ComponentHandle as _, Model as _, ModelRc, VecModel};
 
 use crate::config::ConfigStore;
-use crate::ui::{AppWindow, PaneInfo, SplitterInfo, TabInfo, TerminalState};
+use crate::ui::{ AppWindow, PaneInfo, SplitterInfo, TabInfo, TerminalState, Theme };
 
 use i_slint_backend_winit::WinitWindowAccessor;
 use super::set_terminal_row;
@@ -207,9 +207,9 @@ pub(crate) fn zoom_term_font(
         let next = if direction == 0 {
             settings_size
         } else {
-            w.get_term_font_size() as i32 + direction
+            w.global::<Theme>().get_term_font_size() as i32 + direction
         };
-        w.set_term_font_size(next.clamp(8, 32) as f32);
+        w.global::<Theme>().set_term_font_size(next.clamp(8, 32) as f32);
         // Per-tab overrides would pin sessions at their old size and defeat
         // "zoom everything", so drop them.
         let terminals = w.get_terminals();
@@ -241,7 +241,7 @@ pub(crate) fn zoom_term_font(
     let base = if current > 0.0 {
         current as i32
     } else {
-        w.get_term_font_size() as i32
+        w.global::<Theme>().get_term_font_size() as i32
     };
     let next = if direction == 0 {
         settings_size
