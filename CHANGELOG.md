@@ -5,7 +5,17 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.7-fix6] - 2026-09-16
+
 ### 修复 / Fixed
+
+- **修复：清除回滚缓冲（`CSI 3 J`、`clear` 等）之后可能出现的颜色错乱。** 渲染缓存按**行号**索引，
+  而清空回滚会让所有行号整体前移 —— 行号与文本恰好相同的行因此命中旧条目，把**上一次的着色贴到
+  新行**上，直到下次全量重排才自愈。现在清除回滚与换宽重排一样，一并失效整张缓存。**Fixed: stray
+  colours after clearing the scrollback** (`CSI 3 J`, `clear`, …). The render cache is indexed by
+  line number, and clearing the scrollback shifts every line — so a row whose number and text
+  happened to match reused a stale entry and got the *old* styling painted on it. Clearing the
+  scrollback now invalidates the cache exactly like a reflow does.
 
 - **修复：状态侧边栏停靠在右侧并展开时，工具栏图标溢出到侧边栏里**（`fix5` 起存在）。根因是 P2-2
   把工具栏从"逐个手算 `x`"改成右对齐布局时，盒子写成
@@ -20,6 +30,25 @@ All notable changes are documented here. 本文件记录所有重要变更。
   pushed the icons to the window edge, i.e. into the right-hand panel. The box now starts at 0 with
   `width: root.width - root.toolbar-x-off`, putting the icons' right edge back at
   `root.width - toolbar-x-off - 8px`, byte-for-byte the pre-P2-2 geometry.
+
+### 内部 / Internal
+
+- **内存：丢弃回滚渲染缓存时一并交还哈希表容量。** `HashMap::clear()` 只释放条目（条目里的字符串 /
+  向量堆随之回收），但**桶数组按峰值常驻** —— 4 096 条目的表约 **0.5 MB / 标签页**，此后永不回收
+  （此前全项目 0 处 `shrink_to_fit`）。新增 `drop_scroll_cache()`（`clear()` + `shrink_to_fit()`），
+  4 处「确实要废弃缓存」的站点改走它；哈希溢出那条**刻意不改**（紧接着就要重新填满，纯属多余重分配）。
+  **Memory: also return the hash table\'s capacity when discarding the scrollback render cache**
+  (~0.5 MB per tab).
+- **测试：`app/` 的零测试文件从 19 个清到 0 个。** 八批补齐（其中若干处先按「三档接口」抽出纯函数缝，
+  例如 `compute_tab_display`、`TermBuffer::new()`），门禁 **318 → 419 passed**。这是后续动渲染路径
+  （M5 / C1.1′）的前置。**Tests: `app/` went from 19 untested files to 0**, gate 318 → 419 passed.
+- **重构：UI 组件拆分，`ui/app.slint` 从 4 601 行降到 2 917 行。** 更新横幅、内置文件编辑器、快捷命令
+  管理弹窗、六个小弹窗、下载管理器、设置菜单、关于弹窗等陆续拆成独立 `.slint` 文件，每个都显式声明
+  自己的状态与动作接口（不再隐式依赖窗口）；纯搬家，**行为不变**。**Refactor: the 4 601-line
+  `ui/app.slint` is down to 2 917 lines**, with large UI blocks moved into dedicated component files.
+- **重构：删掉 14 条 `<=> Theme/AnimationSettings` 公共镜像属性，内部状态 `private` 化。**
+  `AppWindow` 成员 425 → 411，`<=>` 只剩 2 条窗口语义；Rust 侧直连全局。**Refactor: dropped 14
+  mirrored public properties** and privatised internal state.
 
 ## [0.7.7-fix5] - 2026-09-15
 
