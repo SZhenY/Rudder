@@ -52,6 +52,8 @@ import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
 import { GroupDialog } from "group_dialog.slint";
 import { QuickGroupDialog } from "quick_group_dialog.slint";
 import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
 export { EditorFindResult }
 
@@ -2603,145 +2605,31 @@ export component AppWindow inherits Window {
         sftp-prompt-submit(tab, kind, target, value) => { root.sftp-prompt-submit(tab, kind, target, value); }
     }
     // --- Confirm-before-close dialog (#88) --------------------------------
-    if root.confirm-close-open : Rectangle {
-        width: parent.width;
-        height: parent.height;
-        background: #00000088;
-        TouchArea { clicked => { root.confirm-close-open = false; } }
-        // Grab the keyboard so the terminal beneath stops receiving input, and
-        // make the dialog operable without the mouse: Enter/Space close, Esc
-        // cancels (so X → Space closes, X → Esc backs out) (#140-3).
-        FocusScope {
-            init => { self.focus(); }
-            key-pressed(e) => {
-                if (e.text == Key.Escape) {
-                    root.confirm-close-open = false;
-                    accept
-                } else if (e.text == Key.Return || e.text == " ") {
-                    root.confirm-close-yes();
-                    accept
-                } else {
-                    accept   // modal: swallow everything else
-                }
-            }
-        }
-
-        Rectangle {
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            width: 340px;
-            height: 168px;
-            background: Theme.bg-panel;
-            border-radius: Theme.radius-md;
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            drop-shadow-blur: Theme.shadow-dialog-blur;
-            drop-shadow-color: Theme.shadow-dialog-color;
-            TouchArea {}
-
-            VerticalLayout {
-                padding: 18px;
-                spacing: 12px;
-                Text {
-                    text: root.lang-en ? "Close Rudder?" : "确定关闭 Rudder?";
-                    color: Theme.text-primary; font-size: Theme.fs-lg; font-weight: 700;
-                }
-                Text {
-                    text: root.lang-en
-                        ? "There are active sessions. Closing will disconnect them."
-                        : "当前有活动会话,关闭将断开它们。";
-                    color: Theme.text-secondary; font-size: Theme.fs-sm; wrap: word-wrap;
-                }
-                Rectangle { vertical-stretch: 1; }
-                HorizontalLayout {
-                    alignment: end;
-                    spacing: 8px;
-                    GhostButton {
-                        text: root.lang-en ? "Cancel" : "取消";
-                        clicked => { root.confirm-close-open = false; }
-                    }
-                    PrimaryButton {
-                        text: root.lang-en ? "Close" : "关闭";
-                        clicked => { root.confirm-close-yes(); }
-                    }
-                }
-            }
-        }
+    // 已抽成 `ui/confirm_close_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    if root.confirm-close-open : ConfirmCloseDialog {
+        lang-en: root.lang-en;
+        avail-width: root.width;
+        avail-height: root.height;
+        close-requested => { root.confirm-close-open = false; }
+        confirm-close-yes() => { root.confirm-close-yes(); }
     }
-
     // --- Visual chmod dialog (#84): Owner/Group/Other × Read/Write/Execute --
-    if root.chmod-open  : ModalCard {
-        card-width: 320px;
-        card-height: 270px;
-        radius: Theme.radius-md;
-        spacing: 10px;
-        dismissed() => { root.chmod-open = false; }
-        Text {
-            text: root.lang-en ? "Permissions" : "修改文件权限";
-            color: Theme.text-primary; font-size: Theme.fs-lg; font-weight: 700;
-        }
-        Label {
-            text: root.chmod-name;
-            color: Theme.text-secondary; font-size: Theme.fs-sm;
-overflow: elide;
-        }
-
-        for grp in [
-            { lbl: root.lang-en ? "Owner" : "所有者", g: 0 },
-            { lbl: root.lang-en ? "Group" : "组",     g: 1 },
-            { lbl: root.lang-en ? "Other" : "其他",   g: 2 },
-        ] : VerticalLayout {
-            spacing: 2px;
-            Text { text: grp.lbl; color: Theme.text-secondary; font-size: Theme.fs-xs; }
-            HorizontalLayout {
-                spacing: 14px;
-                CheckBox {
-                    text: root.lang-en ? "Read" : "读取";
-                    checked: grp.g == 0 ? root.chmod-or : (grp.g == 1 ? root.chmod-gr : root.chmod-tr);
-                    toggled => {
-                        if (grp.g == 0) { root.chmod-or = self.checked; }
-                        else if (grp.g == 1) { root.chmod-gr = self.checked; }
-                        else { root.chmod-tr = self.checked; }
-                    }
-                }
-                CheckBox {
-                    text: root.lang-en ? "Write" : "写入";
-                    checked: grp.g == 0 ? root.chmod-ow : (grp.g == 1 ? root.chmod-gw : root.chmod-tw);
-                    toggled => {
-                        if (grp.g == 0) { root.chmod-ow = self.checked; }
-                        else if (grp.g == 1) { root.chmod-gw = self.checked; }
-                        else { root.chmod-tw = self.checked; }
-                    }
-                }
-                CheckBox {
-                    text: root.lang-en ? "Execute" : "执行";
-                    checked: grp.g == 0 ? root.chmod-ox : (grp.g == 1 ? root.chmod-gx : root.chmod-tx);
-                    toggled => {
-                        if (grp.g == 0) { root.chmod-ox = self.checked; }
-                        else if (grp.g == 1) { root.chmod-gx = self.checked; }
-                        else { root.chmod-tx = self.checked; }
-                    }
-                }
-            }
-        }
-
-        Rectangle { vertical-stretch: 1; }
-        HorizontalLayout {
-            alignment: end;
-            spacing: 8px;
-            Button {
-                text: root.lang-en ? "Cancel" : "取消";
-                clicked => { root.chmod-open = false; }
-            }
-            Button {
-                text: root.lang-en ? "OK" : "确定";
-                primary: true;
-                clicked => { root.sftp-chmod-apply(); root.chmod-open = false; }
-            }
-        }
+    // 已抽成 `ui/chmod_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    if root.chmod-open : ChmodDialog {
+        lang-en: root.lang-en;
+        chmod-name : root.chmod-name;
+        chmod-or <=> root.chmod-or;
+        chmod-ow <=> root.chmod-ow;
+        chmod-ox <=> root.chmod-ox;
+        chmod-gr <=> root.chmod-gr;
+        chmod-gw <=> root.chmod-gw;
+        chmod-gx <=> root.chmod-gx;
+        chmod-tr <=> root.chmod-tr;
+        chmod-tw <=> root.chmod-tw;
+        chmod-tx <=> root.chmod-tx;
+        close-requested => { root.chmod-open = false; }
+        sftp-chmod-apply() => { root.sftp-chmod-apply(); }
     }
-
-
     // --- Keyboard shortcuts dialog (#103) ---------------------------------
     ModalCard {
         visible: root.shortcuts-open;

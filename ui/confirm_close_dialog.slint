@@ -1,0 +1,116 @@
+//! **关闭前的确认**弹窗（#88）：有活动会话时先问一句再退出。
+//!
+//! 从 `app.slint` 拆出（P4 B 类）：显隐由调用点判断；关闭弹窗上抛
+//! `close-requested()`；根元素原先用 `parent.width/height` 定位，组件内拿不到
+//! `parent`，改为显式传入 `avail-width` / `avail-height`。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+
+export component ConfirmCloseDialog inherits Rectangle {
+    // ── 状态（窗口透传）──────────────────────────────────────────────
+    in property <bool> lang-en: false;
+    in property <length> avail-width: 100000px;
+    in property <length> avail-height: 100000px;
+
+    // ── 动作：由调用点转发（实现仍在 Rust / 窗口）────────────────────
+    callback close-requested();
+    callback confirm-close-yes();
+
+    width: avail-width;
+    height: avail-height;
+    background: #00000088;
+    TouchArea { clicked => { root.close-requested(); } }
+    // Grab the keyboard so the terminal beneath stops receiving input, and
+    // make the dialog operable without the mouse: Enter/Space close, Esc
+    // cancels (so X → Space closes, X → Esc backs out) (#140-3).
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(e) => {
+            if (e.text == Key.Escape) {
+                root.close-requested();
+                accept
+            } else if (e.text == Key.Return || e.text == " ") {
+                root.confirm-close-yes();
+                accept
+            } else {
+                accept   // modal: swallow everything else
+            }
+        }
+    }
+
+    Rectangle {
+        x: (avail-width - self.width) / 2;
+        y: (avail-height - self.height) / 2;
+        width: 340px;
+        height: 168px;
+        background: Theme.bg-panel;
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: Theme.shadow-dialog-blur;
+        drop-shadow-color: Theme.shadow-dialog-color;
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 18px;
+            spacing: 12px;
+            Text {
+                text: lang-en ? "Close Rudder?" : "确定关闭 Rudder?";
+                color: Theme.text-primary; font-size: Theme.fs-lg; font-weight: 700;
+            }
+            Text {
+                text: lang-en
+                    ? "There are active sessions. Closing will disconnect them."
+                    : "当前有活动会话,关闭将断开它们。";
+                color: Theme.text-secondary; font-size: Theme.fs-sm; wrap: word-wrap;
+            }
+            Rectangle { vertical-stretch: 1; }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                GhostButton {
+                    text: lang-en ? "Cancel" : "取消";
+                    clicked => { root.close-requested(); }
+                }
+                PrimaryButton {
+                    text: lang-en ? "Close" : "关闭";
+                    clicked => { root.confirm-close-yes(); }
+                }
+            }
+        }
+    }
+}

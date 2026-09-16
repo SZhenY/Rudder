@@ -1,0 +1,127 @@
+//! **可视化 chmod**弹窗（#84）：Owner/Group/Other × Read/Write/Execute 九个勾选框。
+//!
+//! 从 `app.slint` 拆出（P4 B 类）：显隐由调用点判断；关闭弹窗上抛 `close-requested()`。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+
+export component ChmodDialog inherits ModalCard {
+    // ── 状态（窗口透传）──────────────────────────────────────────────
+    in property <bool> lang-en: false;
+    in property <string> chmod-name;
+    in-out property <bool> chmod-or;
+    in-out property <bool> chmod-ow;
+    in-out property <bool> chmod-ox;
+    in-out property <bool> chmod-gr;
+    in-out property <bool> chmod-gw;
+    in-out property <bool> chmod-gx;
+    in-out property <bool> chmod-tr;
+    in-out property <bool> chmod-tw;
+    in-out property <bool> chmod-tx;
+
+    // ── 动作：由调用点转发（实现仍在 Rust / 窗口）────────────────────
+    callback close-requested();
+    callback sftp-chmod-apply();
+
+    card-width: 320px;
+    card-height: 270px;
+    radius: Theme.radius-md;
+    spacing: 10px;
+    dismissed() => { root.close-requested(); }
+    Text {
+        text: lang-en ? "Permissions" : "修改文件权限";
+        color: Theme.text-primary; font-size: Theme.fs-lg; font-weight: 700;
+    }
+    Label {
+        text: chmod-name;
+        color: Theme.text-secondary; font-size: Theme.fs-sm;
+overflow: elide;
+    }
+
+    for grp in [
+        { lbl: lang-en ? "Owner" : "所有者", g: 0 },
+        { lbl: lang-en ? "Group" : "组",     g: 1 },
+        { lbl: lang-en ? "Other" : "其他",   g: 2 },
+    ] : VerticalLayout {
+        spacing: 2px;
+        Text { text: grp.lbl; color: Theme.text-secondary; font-size: Theme.fs-xs; }
+        HorizontalLayout {
+            spacing: 14px;
+            CheckBox {
+                text: lang-en ? "Read" : "读取";
+                checked: grp.g == 0 ? chmod-or : (grp.g == 1 ? chmod-gr : chmod-tr);
+                toggled => {
+                    if (grp.g == 0) { chmod-or = self.checked; }
+                    else if (grp.g == 1) { chmod-gr = self.checked; }
+                    else { chmod-tr = self.checked; }
+                }
+            }
+            CheckBox {
+                text: lang-en ? "Write" : "写入";
+                checked: grp.g == 0 ? chmod-ow : (grp.g == 1 ? chmod-gw : chmod-tw);
+                toggled => {
+                    if (grp.g == 0) { chmod-ow = self.checked; }
+                    else if (grp.g == 1) { chmod-gw = self.checked; }
+                    else { chmod-tw = self.checked; }
+                }
+            }
+            CheckBox {
+                text: lang-en ? "Execute" : "执行";
+                checked: grp.g == 0 ? chmod-ox : (grp.g == 1 ? chmod-gx : chmod-tx);
+                toggled => {
+                    if (grp.g == 0) { chmod-ox = self.checked; }
+                    else if (grp.g == 1) { chmod-gx = self.checked; }
+                    else { chmod-tx = self.checked; }
+                }
+            }
+        }
+    }
+
+    Rectangle { vertical-stretch: 1; }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button {
+            text: lang-en ? "Cancel" : "取消";
+            clicked => { root.close-requested(); }
+        }
+        Button {
+            text: lang-en ? "OK" : "确定";
+            primary: true;
+            clicked => { root.sftp-chmod-apply(); root.close-requested(); }
+        }
+    }
+}
