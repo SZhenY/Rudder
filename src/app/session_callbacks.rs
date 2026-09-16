@@ -422,16 +422,11 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
             {
                 let mut s = store.borrow_mut();
                 if let Some(orig) = s.get(id.as_ref()).cloned() {
-                    let mut moved = orig;
-                    // "default" is the display label for ungrouped → store empty.
-                    moved.group = if group.as_str().eq_ignore_ascii_case("default") {
-                        String::new()
-                    } else if is_reserved_session_group(group.as_str().trim()) {
-                        // `system` belongs exclusively to built-in local shells.
+                    let Some(group) = normalize_move_group(group.as_str()) else {
                         return;
-                    } else {
-                        group.to_string()
                     };
+                    let mut moved = orig;
+                    moved.group = group;
                     s.upsert(moved);
                     if let Err(err) = s.save() {
                         tracing::warn!("failed to save config: {err:#}");
@@ -1096,16 +1091,9 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
             let tab_title = session.name.clone();
 
             // Connection label shown in the sidebar / status line, per transport.
-            let conn_label = match session.kind {
-                SessionKind::Ssh => format!("{}@{}", session.user, session.host),
-                SessionKind::Serial => {
-                    format!("{} @{}", session.serial_port, session.baud_rate)
-                }
-                SessionKind::Telnet => format!("telnet {}:{}", session.host, session.port),
-                SessionKind::Local => format!("local {}", session.name),
-            };
+            let conn_label = conn_label(&session);
             // Serial / Telnet have no SFTP side-channel.
-            let has_sftp = session.kind == SessionKind::Ssh;
+            let has_sftp = session_has_sftp(&session.kind);
 
             // Seed the per-tab status so the sidebar shows "连接中 host" the
             // moment this tab becomes active (the `changed active-tab-id`
@@ -1337,15 +1325,14 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                 // Two separate borrows: the builtin fallback must not run while
                 // the store lookup's RefCell borrow is still alive.
                 let saved = store.borrow().get(&session_id).map(|s| s.name.clone());
-                saved.or_else(|| {
-                    builtin_local_sessions(store.borrow().wsl_profiles())
-                        .into_iter()
-                        .find(|s| s.id == session_id)
-                        .map(|s| s.name)
-                })
+                let builtin = builtin_local_sessions(store.borrow().wsl_profiles())
+                    .into_iter()
+                    .find(|s| s.id == session_id)
+                    .map(|s| s.name);
+                resolve_tab_title(&name, saved, builtin)
             } else {
                 tab_titles.borrow_mut().insert(tab_id.clone(), name.clone());
-                Some(name)
+                resolve_tab_title(&name, None, None)
             };
             let Some(title) = title else {
                 return;
@@ -1382,5 +1369,124 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                 );
             }
         });
+    }
+}
+/// 「移动到分组」的目标名：`default`（忽略大小写）= 未分组 → 空串；
+/// 保留分组（`system` 等，属于内置本地会话）→ None，表示整体中止、不写入任何东西。
+///
+/// ⚠️ 已知不一致（只钉现状）：判保留名时 `trim()`、写入时用原始串，
+/// 所以 `" system "` 会被拒（对），但 `" Prod "` 会带着空白存进配置。
+fn normalize_move_group(group: &str) -> Option<String> {
+    if group.eq_ignore_ascii_case("default") {
+        Some(String::new())
+    } else if is_reserved_session_group(group.trim()) {
+        None
+    } else {
+        Some(group.to_string())
+    }
+}
+
+/// 侧边栏 / 状态行里的连接标签（按传输类型区分）。
+fn conn_label(session: &Session) -> String {
+    match &session.kind {
+        SessionKind::Ssh => format!("{}@{}", session.user, session.host),
+        SessionKind::Serial => format!("{} @{}", session.serial_port, session.baud_rate),
+        SessionKind::Telnet => format!("telnet {}:{}", session.host, session.port),
+        SessionKind::Local => format!("local {}", session.name),
+    }
+}
+
+/// 只有 SSH 有 SFTP 旁路；串口 / Telnet / 本地会话都不该显示 SFTP 面板。
+fn session_has_sftp(kind: &SessionKind) -> bool {
+    *kind == SessionKind::Ssh
+}
+
+/// 重命名提交时算标题：非空 → 用 trim 后的名字；空 → 回落到保存的会话名，
+/// 再回落到内置本地会话名；都没有 → None（**不动**标题，而不是把它清空）。
+fn resolve_tab_title(
+    name: &str,
+    saved: Option<String>,
+    builtin: Option<String>,
+) -> Option<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        saved.or(builtin)
+    } else {
+        Some(name.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session_of(kind: SessionKind) -> Session {
+        let mut s = Session::new_empty();
+        s.kind = kind;
+        s.user = "root".into();
+        s.host = "10.0.0.5".into();
+        s.port = 22;
+        s.serial_port = "COM3".into();
+        s.baud_rate = 115200;
+        s.name = "prod".into();
+        s
+    }
+
+    /// `default` = 未分组（存空串，忽略大小写）；保留分组要被拒绝（#324 那类事故：
+    /// 把服务器会话移进只属于内置本地会话的 `system` 组）。
+    #[test]
+    fn move_group_maps_default_and_rejects_reserved() {
+        assert_eq!(normalize_move_group("default"), Some(String::new()));
+        assert_eq!(normalize_move_group("Default"), Some(String::new()));
+        assert_eq!(normalize_move_group("DEFAULT"), Some(String::new()));
+        assert_eq!(normalize_move_group("system"), None, "保留分组");
+        assert_eq!(normalize_move_group(" system "), None, "带空白也算保留分组");
+        assert_eq!(normalize_move_group("Prod"), Some("Prod".to_string()));
+    }
+
+    /// 四种传输各一条标签 —— 标签错会让用户在侧边栏认错会话。
+    #[test]
+    fn conn_label_is_per_transport() {
+        assert_eq!(conn_label(&session_of(SessionKind::Ssh)), "root@10.0.0.5");
+        assert_eq!(conn_label(&session_of(SessionKind::Serial)), "COM3 @115200");
+        assert_eq!(
+            conn_label(&session_of(SessionKind::Telnet)),
+            "telnet 10.0.0.5:22"
+        );
+        assert_eq!(conn_label(&session_of(SessionKind::Local)), "local prod");
+    }
+
+    /// 只有 SSH 有 SFTP 旁路（否则串口 / Telnet 会显示一个永远连不上的 SFTP 面板）。
+    #[test]
+    fn only_ssh_has_sftp() {
+        assert!(session_has_sftp(&SessionKind::Ssh));
+        assert!(!session_has_sftp(&SessionKind::Serial));
+        assert!(!session_has_sftp(&SessionKind::Telnet));
+        assert!(!session_has_sftp(&SessionKind::Local));
+    }
+
+    /// 空输入**回落**而不是清空：先保存的会话名、再内置本地会话名，都没有就什么都不做。
+    #[test]
+    fn tab_title_falls_back_then_gives_up() {
+        assert_eq!(
+            resolve_tab_title("  my-tab  ", None, None),
+            Some("my-tab".to_string()),
+            "非空 → 用 trim 后的名字"
+        );
+        assert_eq!(
+            resolve_tab_title("", Some("prod".into()), Some("WSL".into())),
+            Some("prod".to_string()),
+            "优先回落保存的会话名"
+        );
+        assert_eq!(
+            resolve_tab_title("   ", None, Some("WSL".into())),
+            Some("WSL".to_string()),
+            "再回落内置本地会话名"
+        );
+        assert_eq!(
+            resolve_tab_title("", None, None),
+            None,
+            "都没有 → 不动标题（不能清空）"
+        );
     }
 }

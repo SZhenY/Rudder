@@ -136,13 +136,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
             let msg = match res {
                 Ok((added, skipped)) => {
                     sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
-                    format!(
-                        "{} {}, {} {}",
-                        t("已导入", "imported"),
-                        added,
-                        t("跳过", "skipped"),
-                        skipped
-                    )
+                    download_status_msg(added, skipped)
                 }
                 Err(e) => format!("{}: {}", t("下载失败", "download failed"), e),
             };
@@ -162,4 +156,35 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
     }
 
     window.set_sync_upload_enabled(store.borrow().sync_upload());
+}
+/// 下载结果的提示文案：「已导入 N, 跳过 M」。
+fn download_status_msg(added: usize, skipped: usize) -> String {
+    format!(
+        "{} {}, {} {}",
+        t("已导入", "imported"),
+        added,
+        t("跳过", "skipped"),
+        skipped
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 两个计数**不能取错位**：写反了用户会把合并结果看反（以为没导入成功）。
+    #[test]
+    fn download_status_reports_both_counts_in_order() {
+        let msg = download_status_msg(3, 5);
+        assert!(msg.contains('3'), "缺导入数：{msg}");
+        assert!(msg.contains('5'), "缺跳过数：{msg}");
+        let first = msg.find('3').unwrap();
+        let second = msg.find('5').unwrap();
+        assert!(first < second, "格式是「已导入 N, 跳过 M」：{msg}");
+        assert_eq!(
+            download_status_msg(0, 0).matches('0').count(),
+            2,
+            "两个 0 都要出现"
+        );
+    }
 }

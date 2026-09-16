@@ -45,23 +45,16 @@ pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     let quick_panel_collapsed = s.quick_panel_collapsed();
     let quick_panel_dock = s.quick_panel_dock();
     let welcome_sidebar_dock = s.welcome_sidebar_dock();
-    let mut sidebar_collapsed = s.sidebar_collapsed().unwrap_or(collapse_sidebar);
-    let mut welcome_collapsed = s.welcome_collapsed().unwrap_or(false);
-    if welcome_as_sidebar
-        && sidebar_dock == welcome_sidebar_dock
-        && !sidebar_collapsed
-        && !welcome_collapsed
-    {
-        sidebar_collapsed = true;
-    }
-    if quick_panel_open && !quick_panel_collapsed {
-        if sidebar_dock == quick_panel_dock {
-            sidebar_collapsed = true;
-        }
-        if welcome_as_sidebar && welcome_sidebar_dock == quick_panel_dock {
-            welcome_collapsed = true;
-        }
-    }
+    let (sidebar_collapsed, welcome_collapsed) = resolve_collapsed(
+        s.sidebar_collapsed().unwrap_or(collapse_sidebar),
+        s.welcome_collapsed().unwrap_or(false),
+        &sidebar_dock,
+        &welcome_sidebar_dock,
+        welcome_as_sidebar,
+        quick_panel_open,
+        quick_panel_collapsed,
+        &quick_panel_dock,
+    );
     w.set_collapse_sidebar_default(collapse_sidebar);
     w.set_collapse_sftp_default(collapse_sftp);
     // Restore the persisted panel docking layout (#dock).
@@ -324,4 +317,84 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, panes: &PaneHandles) {
             &r.splitters_model,
         );
     });
+}
+/// 面板收起状态的消解：**同一侧只能有一个展开的面板**，否则两个叠在同一侧。
+///
+/// 抽出成纯函数：这是"哪些面板要收起来"的唯一真相源，四向停靠两两组合都靠它。
+fn resolve_collapsed(
+    mut sidebar_collapsed: bool,
+    mut welcome_collapsed: bool,
+    sidebar_dock: &str,
+    welcome_sidebar_dock: &str,
+    welcome_as_sidebar: bool,
+    quick_panel_open: bool,
+    quick_panel_collapsed: bool,
+    quick_panel_dock: &str,
+) -> (bool, bool) {
+    // 欢迎页当侧栏且与侧栏同侧 → 收侧栏（两个都展开会叠在一起）。
+    if welcome_as_sidebar
+        && sidebar_dock == welcome_sidebar_dock
+        && !sidebar_collapsed
+        && !welcome_collapsed
+    {
+        sidebar_collapsed = true;
+    }
+    // 快捷面板开着且没被手动收起 → 谁与它同侧就收谁。
+    if quick_panel_open && !quick_panel_collapsed {
+        if sidebar_dock == quick_panel_dock {
+            sidebar_collapsed = true;
+        }
+        if welcome_as_sidebar && welcome_sidebar_dock == quick_panel_dock {
+            welcome_collapsed = true;
+        }
+    }
+    (sidebar_collapsed, welcome_collapsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_conflict_keeps_both_panels_expanded() {
+        let (side, welcome) =
+            resolve_collapsed(false, false, "left", "right", true, false, false, "left");
+        assert_eq!((side, welcome), (false, false), "不同侧 → 都保持展开");
+    }
+
+    /// 欢迎页当侧栏且**同侧** → 收侧栏（否则两个面板叠在同一侧）。
+    #[test]
+    fn welcome_on_the_same_side_collapses_the_sidebar() {
+        let (side, welcome) =
+            resolve_collapsed(false, false, "left", "left", true, false, false, "right");
+        assert_eq!((side, welcome), (true, false));
+    }
+
+    /// 快捷面板与侧栏同侧 → 收侧栏；与欢迎页同侧 → 收欢迎页；可以同时发生。
+    #[test]
+    fn quick_panel_collapses_whoever_shares_its_side() {
+        let (side, welcome) =
+            resolve_collapsed(false, false, "left", "right", true, true, false, "left");
+        assert_eq!((side, welcome), (true, false), "只收同侧的侧栏");
+
+        let (side, welcome) =
+            resolve_collapsed(false, false, "right", "left", true, true, false, "left");
+        assert_eq!((side, welcome), (false, true), "只收同侧的欢迎页");
+
+        let (side, welcome) =
+            resolve_collapsed(false, false, "left", "left", true, true, false, "left");
+        assert_eq!((side, welcome), (true, true), "三个同侧 → 全收");
+    }
+
+    /// 已经手动收起的面板不再被"同侧冲突"改回来；快捷面板被手动收起时不参与消解。
+    #[test]
+    fn manual_collapse_and_closed_quick_panel_are_respected() {
+        let (side, welcome) =
+            resolve_collapsed(true, false, "left", "left", true, false, false, "left");
+        assert_eq!((side, welcome), (true, false), "已收的保持收起");
+
+        let (side, welcome) =
+            resolve_collapsed(false, false, "left", "right", true, true, true, "left");
+        assert_eq!((side, welcome), (false, false), "快捷面板自己收着 → 不影响别人");
+    }
 }
