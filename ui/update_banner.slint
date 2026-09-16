@@ -1,0 +1,152 @@
+//! 顶部居中的**更新横幅**（#48）：有新版时出现，可显示下载进度、触发自更新/重启。
+//!
+//! 从 `app.slint` 拆出（P4 B 类）：块内只读 4 个状态、只发 4 个动作（含关闭横幅），因此接口就是
+//! 4 个 `in property` + 4 个 `callback`；`update-available` 的显隐判断留在调用点
+//! （`if root.update-available : UpdateBanner { … }`），组件自身只负责呈现。
+//!
+//! 布局本身不接收点击（无 TouchArea），横幅只在自身范围内可交互。
+
+import { Theme } from "theme.slint";
+import { AnimationSettings } from "theme.slint";
+import { Label } from "components/text.slint";
+import { CloseButton } from "components/buttons.slint";
+
+export component UpdateBanner inherits HorizontalLayout {
+    // 状态（全部由 Rust 侧 updater 读写，窗口只是透传）
+    in property <string> update-version: "";
+    in property <string> update-status: "";
+    in property <int> update-state: 0;        // 0 空闲 / 其它 = 进行中
+    in property <float> update-progress: 0;   // 0.0..1.0
+
+    // 动作（上抛给窗口/Rust）
+    callback dismiss();
+    callback open-update-url();
+    callback run-self-update();
+    callback restart-app();
+
+    y: 8px;
+    alignment: center;
+    bnr := Rectangle {
+        width: 420px;
+        // 空闲 38px；一旦开始更新（state != 0）长高以容纳进度行。
+        // 属性值用 `states` 表达（原来是一条三目硬跳），并给高度加过渡；
+        // 注意"哪个按钮存在"属于**结构**，仍由 `if` 决定 —— states 只能改属性值。
+        height: 38px;
+        background: Theme.accent;
+        states [
+            running when update-state != 0 : {
+                height: 62px;
+                // Slint 1.17 已废弃 `transitions [ in state : … ]` 块：
+                // 进/出状态的动画直接写在 state 里的 `in { }` / `out { }`
+                // （编译期即报错：'transitions' block are no longer supported）。
+                in {
+                    animate height {
+                        duration: 150ms;
+                        easing: AnimationSettings.layout();
+                        enabled: AnimationSettings.enabled;
+                    }
+                }
+                out {
+                    animate height {
+                        duration: 150ms;
+                        easing: AnimationSettings.layout();
+                        enabled: AnimationSettings.enabled;
+                    }
+                }
+            }
+        ]
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 14px;
+        drop-shadow-color: #00000060;
+        VerticalLayout {
+            padding-left: 12px;
+            padding-right: 6px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: 8px;
+                Label {
+                    text: "🎉 " + @tr("Update available:") + " " + update-version;
+                    color: #ffffff;
+                    font-size: Theme.fs-sm;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                // Idle / failed → offer the in-place update (failed falls back
+                // to the browser download).
+                if update-state == 0 || update-state == 4 : Rectangle {
+                    width: 84px; height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-sm;
+                    background: upd-now-ta.has-hover ? #ffffff55 : #ffffff38;
+                    upd-now-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.run-self-update(); }
+                    }
+                    Text { text: @tr("Update now"); color: #ffffff; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+                // Ready → restart into the freshly installed binary.
+                if update-state == 3 : Rectangle {
+                    width: 78px; height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-sm;
+                    background: upd-rs-ta.has-hover ? #ffffff55 : #ffffff38;
+                    upd-rs-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.restart-app(); }
+                    }
+                    Text { text: @tr("Restart"); color: #ffffff; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+                Rectangle {
+                    width: 68px; height: 26px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-sm;
+                    background: upd-dl-ta.has-hover ? #ffffff45 : #ffffff28;
+                    upd-dl-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.open-update-url(); }
+                    }
+                    Text { text: @tr("Download"); color: #ffffff; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+                CloseButton {
+                    size: 26px;
+                    glyph-size: Theme.fs-sm;
+                    tone: "on-accent";      // 横幅是 accent 底色
+                    y: (parent.height - self.height) / 2;
+                    clicked => { root.dismiss(); }
+                }
+            }
+            if update-state != 0 : HorizontalLayout {
+                spacing: 8px;
+                Rectangle {
+                    height: 5px;
+                    width: 210px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 3px;
+                    background: #ffffff30;
+                    Rectangle {
+                        x: 0; y: 0; height: 5px;
+                        width: parent.width * update-progress;
+                        border-radius: 3px;
+                        background: #ffffff;
+                    }
+                }
+                Label {
+                    text: update-status;
+                    color: #ffffff;
+                    font-size: Theme.fs-xs;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+}
