@@ -1,0 +1,110 @@
+//! 会话分组的**新建 / 重命名**弹窗（#41）：输入名称，提交后错误信息回填到 `error`。
+//!
+//! 从 `app.slint` 拆出（P4 B 类）：显隐由调用点判断，组件只负责呈现；
+//! 关闭弹窗上抛 `close-requested()`（不直接改窗口状态）。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+
+export component GroupDialog inherits ModalCard {
+    // ── 状态（窗口透传）──────────────────────────────────────────────
+    in property <bool> lang-en: false;
+    in property <string> group-dialog-orig;
+    in-out property <string> group-dialog-name;
+    in-out property <string> group-dialog-error;
+
+    // ── 动作：由调用点转发（实现仍在 Rust / 窗口）────────────────────
+    callback close-requested();
+    callback submit-group(string /* orig */, string /* name */) -> string;
+
+    card-width: 340px;
+    card-height: 208px;
+    radius: Theme.radius-md;
+    dismissed() => { root.close-requested(); }
+    Text {
+        text: group-dialog-orig == ""
+            ? (lang-en ? "New group" : "新建分组")
+            : (lang-en ? "Edit group" : "编辑分组");
+        color: Theme.text-primary;
+        font-size: Theme.fs-lg;
+        font-weight: 700;
+    }
+    FieldLabel { text: @tr("Group name"); }
+    ge-input := LineEdit {
+        text <=> group-dialog-name;
+        font-family: Theme.ui-font-family; // CJK-capable (#54)
+        placeholder-text: @tr("Group name");
+        edited => { group-dialog-error = ""; }
+        // Enter confirms when non-empty.
+        accepted => {
+            if (group-dialog-name != "") {
+                group-dialog-error = root.submit-group(
+                    group-dialog-orig,
+                    group-dialog-name,
+                );
+                if (group-dialog-error == "") {
+                    root.close-requested();
+                }
+            }
+        }
+    }
+    Text {
+        text: group-dialog-error;
+        color: Theme.danger;
+        font-size: Theme.fs-xs;
+        height: 18px;
+    }
+    Rectangle { vertical-stretch: 1; }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button {
+            text: lang-en ? "Cancel" : "取消";
+            clicked => { root.close-requested(); }
+        }
+        Button {
+            text: lang-en ? "OK" : "确定";
+            primary: true;
+            enabled: group-dialog-name != "";
+            clicked => {
+                group-dialog-error = root.submit-group(
+                    group-dialog-orig,
+                    group-dialog-name,
+                );
+                if (group-dialog-error == "") {
+                    root.close-requested();
+                }
+            }
+        }
+    }
+}

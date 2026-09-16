@@ -49,6 +49,9 @@ import { WindowTitleBar } from "components/window_shell.slint";
 import { UpdateBanner } from "update_banner.slint";
 import { EditorFindResult, FileEditor } from "file_editor.slint";
 import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
 export { EditorFindResult }
 
@@ -2544,69 +2547,15 @@ export component AppWindow inherits Window {
     }
 
     // --- Group create / rename dialog (#41) -------------------------------
-    if root.group-dialog-open  : ModalCard {
-        card-width: 340px;
-        card-height: 208px;
-        radius: Theme.radius-md;
-        dismissed() => { root.group-dialog-open = false; }
-        Text {
-            text: root.group-dialog-orig == ""
-                ? (root.lang-en ? "New group" : "新建分组")
-                : (root.lang-en ? "Edit group" : "编辑分组");
-            color: Theme.text-primary;
-            font-size: Theme.fs-lg;
-            font-weight: 700;
-        }
-        FieldLabel { text: @tr("Group name"); }
-        ge-input := LineEdit {
-            text <=> root.group-dialog-name;
-            font-family: Theme.ui-font-family; // CJK-capable (#54)
-            placeholder-text: @tr("Group name");
-            edited => { root.group-dialog-error = ""; }
-            // Enter confirms when non-empty.
-            accepted => {
-                if (root.group-dialog-name != "") {
-                    root.group-dialog-error = root.submit-group(
-                        root.group-dialog-orig,
-                        root.group-dialog-name,
-                    );
-                    if (root.group-dialog-error == "") {
-                        root.group-dialog-open = false;
-                    }
-                }
-            }
-        }
-        Text {
-            text: root.group-dialog-error;
-            color: Theme.danger;
-            font-size: Theme.fs-xs;
-            height: 18px;
-        }
-        Rectangle { vertical-stretch: 1; }
-        HorizontalLayout {
-            alignment: end;
-            spacing: 8px;
-            Button {
-                text: root.lang-en ? "Cancel" : "取消";
-                clicked => { root.group-dialog-open = false; }
-            }
-            Button {
-                text: root.lang-en ? "OK" : "确定";
-                primary: true;
-                enabled: root.group-dialog-name != "";
-                clicked => {
-                    root.group-dialog-error = root.submit-group(
-                        root.group-dialog-orig,
-                        root.group-dialog-name,
-                    );
-                    if (root.group-dialog-error == "") {
-                        root.group-dialog-open = false;
-                    }
-                }
-            }
-        }
+    // 已抽成 `ui/group_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    if root.group-dialog-open : GroupDialog {
+        lang-en: root.lang-en;
+        group-dialog-orig : root.group-dialog-orig;
+        group-dialog-name <=> root.group-dialog-name;
+        group-dialog-error <=> root.group-dialog-error;
+        close-requested => { root.group-dialog-open = false; }
+        submit-group(orig, name) => { return root.submit-group(orig, name); }
     }
-
     // --- Quick-command manage dialog (#55) --------------------------------
     // 已抽成 `ui/quick_cmd_manage.slint`：这里只做显隐判断 + 状态透传 + 动作转发。
     if root.quick-cmd-manage-open : QuickCmdManageDialog {
@@ -2634,111 +2583,25 @@ export component AppWindow inherits Window {
         delete-quick-group(name) => { root.delete-quick-group(name); }
     }
     // --- Quick-command group name dialog (#55): new / rename --------------
-    if root.qcg-open  : ModalCard {
-        card-width: 340px;
-        card-height: 178px;
-        radius: Theme.radius-md;
-        dismissed() => { root.qcg-open = false; }
-        Text {
-            text: root.qcg-orig == ""
-                ? (root.lang-en ? "New group" : "新建分组")
-                : (root.lang-en ? "Rename group" : "重命名分组");
-            color: Theme.text-primary;
-            font-size: Theme.fs-lg;
-            font-weight: 700;
-        }
-        Text { text: @tr("Group name"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
-        qcg-input := LineEdit {
-            text <=> root.qcg-name;
-            font-family: Theme.ui-font-family;
-            placeholder-text: @tr("Group name");
-            accepted => {
-                if (root.qcg-name != "") {
-                    root.submit-quick-group(root.qcg-orig, root.qcg-name);
-                    root.qcg-open = false;
-                }
-            }
-        }
-        Rectangle { vertical-stretch: 1; }
-        HorizontalLayout {
-            alignment: end;
-            spacing: 8px;
-            Button {
-                text: root.lang-en ? "Cancel" : "取消";
-                clicked => { root.qcg-open = false; }
-            }
-            Button {
-                text: root.lang-en ? "OK" : "确定";
-                primary: true;
-                enabled: root.qcg-name != "";
-                clicked => {
-                    root.submit-quick-group(root.qcg-orig, root.qcg-name);
-                    root.qcg-open = false;
-                }
-            }
-        }
+    // 已抽成 `ui/quick_group_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    if root.qcg-open : QuickGroupDialog {
+        lang-en: root.lang-en;
+        qcg-name <=> root.qcg-name;
+        qcg-orig : root.qcg-orig;
+        close-requested => { root.qcg-open = false; }
+        submit-quick-group(orig, name) => { root.submit-quick-group(orig, name); }
     }
-
     // --- SFTP prompt dialog (#69): rename / chmod / mkdir / touch ----------
-    if root.sftp-prompt-open  : ModalCard {
-        card-width: 340px;
-        card-height: 178px;
-        radius: Theme.radius-md;
-        dismissed() => { root.sftp-prompt-open = false; }
-        Text {
-            text: root.sftp-prompt-kind == "rename"
-                ? @tr("Rename")
-                : (root.sftp-prompt-kind == "chmod"
-                    ? @tr("Permissions")
-                    : (root.sftp-prompt-kind == "mkdir"
-                        ? @tr("New folder") : @tr("New file")));
-            color: Theme.text-primary;
-            font-size: Theme.fs-lg;
-            font-weight: 700;
-        }
-        Text {
-            text: root.sftp-prompt-kind == "chmod"
-                ? @tr("Octal mode, e.g. 755")
-                : (root.sftp-prompt-kind == "rename"
-                    ? @tr("New name") : @tr("Name"));
-            color: Theme.text-secondary;
-            font-size: Theme.fs-sm;
-        }
-        sp-input := LineEdit {
-            text <=> root.sftp-prompt-value;
-            font-family: Theme.ui-font-family; // CJK-capable (#54)
-            placeholder-text: root.sftp-prompt-kind == "chmod" ? "755" : "";
-            accepted => {
-                if (root.sftp-prompt-value != "") {
-                    root.sftp-prompt-submit(
-                        root.sftp-prompt-tab, root.sftp-prompt-kind,
-                        root.sftp-prompt-target, root.sftp-prompt-value);
-                    root.sftp-prompt-open = false;
-                }
-            }
-        }
-        Rectangle { vertical-stretch: 1; }
-        HorizontalLayout {
-            alignment: end;
-            spacing: 8px;
-            Button {
-                text: root.lang-en ? "Cancel" : "取消";
-                clicked => { root.sftp-prompt-open = false; }
-            }
-            Button {
-                text: root.lang-en ? "OK" : "确定";
-                primary: true;
-                enabled: root.sftp-prompt-value != "";
-                clicked => {
-                    root.sftp-prompt-submit(
-                        root.sftp-prompt-tab, root.sftp-prompt-kind,
-                        root.sftp-prompt-target, root.sftp-prompt-value);
-                    root.sftp-prompt-open = false;
-                }
-            }
-        }
+    // 已抽成 `ui/sftp_prompt_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    if root.sftp-prompt-open : SftpPromptDialog {
+        lang-en: root.lang-en;
+        sftp-prompt-kind : root.sftp-prompt-kind;
+        sftp-prompt-tab : root.sftp-prompt-tab;
+        sftp-prompt-target : root.sftp-prompt-target;
+        sftp-prompt-value <=> root.sftp-prompt-value;
+        close-requested => { root.sftp-prompt-open = false; }
+        sftp-prompt-submit(tab, kind, target, value) => { root.sftp-prompt-submit(tab, kind, target, value); }
     }
-
     // --- Confirm-before-close dialog (#88) --------------------------------
     if root.confirm-close-open : Rectangle {
         width: parent.width;
