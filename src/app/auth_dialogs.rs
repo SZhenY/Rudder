@@ -303,3 +303,42 @@ pub(super) fn resolve_front_mfa(win: &AppWindow, accept: bool) {
         win.set_mfa_prompt_open(false);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 首次连接：文案是"未知主机"，按钮是"信任并连接"，detail 是 `host:port  (类型)` + 指纹。
+    #[test]
+    fn unknown_host_dialog_asks_to_trust_and_connect() {
+        let (title, body, detail, confirm) =
+            hostkey_dialog_text("h", 22, "ssh-ed25519", "SHA256:abc", false);
+        assert_eq!(title, crate::i18n::t("未知主机", "Unknown host"));
+        assert_eq!(confirm, crate::i18n::t("信任并连接", "Trust & connect"));
+        assert_eq!(body, crate::i18n::t(
+            "首次连接该主机。请核对下面的密钥指纹,确认无误后再信任并连接。",
+            "First time connecting to this host. Verify the key fingerprint below before you trust and connect."
+        ));
+        assert_eq!(detail, "h:22  (ssh-ed25519)\nSHA256:abc", "主机:端口 (类型) + 指纹");
+    }
+
+    /// 密钥已变更 = **中间人告警**。这条分支接反过就是安全问题：用户会在密钥被换时
+    /// 看到"首次连接的未知主机"，毫无戒备地点下"信任并连接"。
+    #[test]
+    fn changed_host_key_warns_about_mitm_and_offers_trust_anyway() {
+        let (title, body, detail, confirm) =
+            hostkey_dialog_text("h", 2222, "ssh-rsa", "SHA256:xyz", true);
+        assert_eq!(title, crate::i18n::t("⚠ 主机密钥已改变", "⚠ Host key changed"));
+        assert_eq!(body, crate::i18n::t(
+            "该主机的密钥与之前记录的不一致,可能存在中间人攻击。仅当你确知服务器密钥已更换时才继续。",
+            "This host's key differs from the one stored earlier — this could be a man-in-the-middle attack. Only continue if you know the server's key really changed."
+        ));
+        assert_eq!(confirm, crate::i18n::t("仍然信任", "Trust anyway"));
+        assert_eq!(detail, "h:2222  (ssh-rsa)\nSHA256:xyz");
+        assert_ne!(
+            title,
+            crate::i18n::t("未知主机", "Unknown host"),
+            "绝不能退化成\"首次连接\"文案"
+        );
+    }
+}

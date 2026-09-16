@@ -171,3 +171,83 @@ pub(crate) fn do_tab_render_flush(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    fn gates_with(tab_ids: &[&str]) -> RenderGates {
+        let mut map = HashMap::new();
+        for id in tab_ids {
+            map.insert(
+                (*id).to_string(),
+                Arc::new(TabRenderGate::new(RENDER_MIN_INTERVAL)),
+            );
+        }
+        Arc::new(Mutex::new(map))
+    }
+
+    /// 已关闭 / 尚未建 gate 的标签页不再进入渲染流程。
+    #[test]
+    fn register_returns_none_for_unknown_tab() {
+        assert!(register_tab_render_request("ghost", &gates_with(&["t1"])).is_none());
+    }
+
+    /// 节流的全部意义：一串请求里**只有第一个**真去调度，其余合并进同一帧。
+    #[test]
+    fn register_coalesces_a_burst_into_one_schedule() {
+        let gates = gates_with(&["t1"]);
+        let (_, first, schedule_first) = register_tab_render_request("t1", &gates).unwrap();
+        let (_, second, schedule_second) = register_tab_render_request("t1", &gates).unwrap();
+        assert!(schedule_first, "首个请求要调度");
+        assert!(!schedule_second, "紧随其后的请求被合并进同一帧");
+        assert_ne!(
+            first.generation, second.generation,
+            "世代必须递增 —— 等待者靠它判断自己等的是哪一帧"
+        );
+    }
+
+    /// 等待是有界的：没人 settle 时必须在 ~50ms 内返回，绝不能把 pump 线程挂死。
+    #[test]
+    fn wait_for_ui_flush_is_bounded() {
+        let gates = gates_with(&["t1"]);
+        let (_, ticket, _) = register_tab_render_request("t1", &gates).unwrap();
+        let started = std::time::Instant::now();
+        wait_for_ui_flush(Some(ticket)); // 没有任何人 settle
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= UI_FLUSH_ACK_TIMEOUT,
+            "至少要等满一轮超时：{elapsed:?}"
+        );
+        assert!(
+            elapsed < UI_FLUSH_ACK_TIMEOUT * 4,
+            "但不能无界等待：{elapsed:?}"
+        );
+        wait_for_ui_flush(None); // 没有票据时立即返回、不 panic
+    }
+
+    /// 节流策略常量之间的关系（防策略漂移）：打字比常态快，且节流间隔必须小于应答超时。
+    #[test]
+    fn throttle_constants_stay_consistent() {
+        assert_eq!(
+            INTERACTIVE_RENDER_MIN_INTERVAL,
+            std::time::Duration::from_millis(8),
+            "交互式 ≈120Hz"
+        );
+        assert_eq!(
+            RENDER_MIN_INTERVAL,
+            std::time::Duration::from_millis(33),
+            "常态 ≈30Hz"
+        );
+        assert!(
+            INTERACTIVE_RENDER_MIN_INTERVAL < RENDER_MIN_INTERVAL,
+            "打字时的回显必须更快"
+        );
+        assert!(
+            RENDER_MIN_INTERVAL < UI_FLUSH_ACK_TIMEOUT,
+            "节流间隔不能超过应答超时，否则票据还没过期就先超时了"
+        );
+    }
+}
+

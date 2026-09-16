@@ -126,3 +126,69 @@ impl FontCatalog {
             .unwrap_or(0) as i32
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cat(term: Vec<FontEntry>, ui: Vec<FontEntry>) -> FontCatalog {
+        FontCatalog {
+            term: Rc::new(term),
+            ui: Rc::new(ui),
+        }
+    }
+
+    #[test]
+    fn term_index_matches_family_then_falls_back_to_first_family() {
+        let c = cat(
+            vec![FontEntry::Family("A".into()), FontEntry::Family("B".into())],
+            vec![],
+        );
+        assert_eq!(c.term_index("B"), 1, "精确命中");
+        assert_eq!(c.term_index("ghost"), 0, "未命中 → 第一个可选家族");
+    }
+
+    /// 回退**不能落在分组标题上**（标题不可选），空列表也要安全退回 0。
+    #[test]
+    fn term_index_skips_headers_and_survives_empty_list() {
+        let c = cat(
+            vec![
+                FontEntry::Header("▍内嵌字体"),
+                FontEntry::Family("A".into()),
+            ],
+            vec![],
+        );
+        assert_eq!(c.term_index("ghost"), 1, "回退到第一个家族，而不是 0 号标题");
+        assert_eq!(cat(vec![], vec![]).term_index("any"), 0, "空列表退回 0");
+    }
+
+    /// 空串 = auto → 指向「跟随系统（自动）」条目（历史上回退落在分组标题上，
+    /// 界面字体那一栏就显示成了「▍内嵌字体」）。
+    #[test]
+    fn ui_index_maps_empty_to_the_auto_entry() {
+        let c = cat(
+            vec![],
+            vec![
+                FontEntry::Auto,
+                FontEntry::Header("▍内嵌字体"),
+                FontEntry::Family("X".into()),
+            ],
+        );
+        assert_eq!(c.ui_index(""), 0, "空串 = auto");
+        assert_eq!(c.ui_index("   "), 0, "纯空白也算 auto");
+        assert_eq!(c.ui_index("X"), 2, "精确命中家族");
+    }
+
+    #[test]
+    fn ui_index_fallback_never_lands_on_a_header() {
+        let c = cat(
+            vec![],
+            vec![
+                FontEntry::Header("▍内嵌字体"),
+                FontEntry::Family("X".into()),
+            ],
+        );
+        assert_eq!(c.ui_index("ghost"), 1, "回退到第一个可选条目，不是 0 号标题");
+        assert_eq!(c.ui_index(""), 1, "连 Auto 都没有时也不能落到标题上");
+    }
+}
