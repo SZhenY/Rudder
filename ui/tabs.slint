@@ -21,6 +21,16 @@ component SingleTab inherits Rectangle {
     callback reorder(int /* dir */);
     // Right-click (v0.5): request a context menu at the given absolute position.
     callback context-requested(length /* abs-x */, length /* abs-y */);
+    // 无障碍（P6）：标签对读屏软件是一个 `tab`，名字就是标题；被选中的那个会被念作
+    // 已选中，默认动作（VoiceOver 的"双击"）= 选中它。写法照官方 `TabWidget`。
+    in property <int> tab-index: 0;
+
+    accessible-role: tab;
+    accessible-label: root.info.title;
+    accessible-item-index: root.tab-index;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.active;
+    accessible-action-default => { root.selected(); }
 
     // Where inside the tab the drag began, and whether a drag (vs a click) is in
     // progress. `dragging` suppresses the select-on-release.
@@ -117,6 +127,8 @@ component SingleTab inherits Rectangle {
 
         title-text := Text {
             text: info.title;
+            // 标题已作为外层 `tab` 的 `accessible-label`，这里不再作为独立节点重复朗读。
+            accessible-role: none;
             color: active ? Theme.text-primary : Theme.text-secondary;
             font-size: info.title_len > 24 ? 9px * Theme.ui-scale
                 : (info.title_len > 12 ? 10px * Theme.ui-scale : Theme.fs-sm);
@@ -132,6 +144,9 @@ component SingleTab inherits Rectangle {
             glyph: "×";
             size: 20px;
             y: (parent.height - self.height) / 2;
+            // 共享组件的 `accessible-label` 默认取 tooltip，这里没传 tooltip →
+            // 显式给名字（英文，与标签右键菜单里的 "Close tab" 一致）。
+            accessible-name: "Close tab";
             clicked => { root.closed(); }
         }
     }
@@ -224,6 +239,7 @@ export component TabBar inherits Rectangle {
                 for tab[i] in tabs : SingleTab {
                     info: tab;
                     active: tab.id == root.active-id;
+                    tab-index: i;
                     selected => { root.tab-selected(tab.id); }
                     closed => { root.tab-closed(tab.id); }
                     reorder(dir) => { root.tab-reorder(i, dir); }

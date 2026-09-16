@@ -25,6 +25,13 @@ export component IconButton inherits Rectangle {
     // 呼吸脉冲：用于「有进行中的传输」这类需要持续提示的按钮。
     in property <bool> breathe: false;
     callback clicked();
+    // 无障碍名：默认取 `tooltip`（各站点早已按语言本地化），没有 tooltip 的站点
+    // 可以显式传 `accessible-name`，避免读屏只念出图标码点。
+    in property <string> accessible-name: "";
+
+    // 图标按钮对读屏软件就是一个"按钮"。
+    accessible-role: button;
+    accessible-label: root.accessible-name != "" ? root.accessible-name : root.tooltip;
 
     width: size;
     height: size;

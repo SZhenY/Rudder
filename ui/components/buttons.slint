@@ -22,6 +22,12 @@ export component CloseButton inherits Rectangle {
     //   "windows"         Windows 风格：hover 底色 #e81123、字形转白 —— 下载面板
     in property <string> tone: "plain";
     callback clicked();
+    // 无障碍名。默认英文 —— 共享组件读不到窗口的 `lang-en` 标志（本项目 @tr 是空转，
+    // 文案一律在调用点按语言选），需要本地化名字的站点显式覆盖即可。
+    in property <string> accessible-name: "Close";
+
+    accessible-role: button;
+    accessible-label: root.accessible-name;
 
     width: root.size;
     height: root.size;
