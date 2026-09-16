@@ -3,7 +3,6 @@
 //! (connect / disconnect / resize / rename / triggers …) to session state.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -14,7 +13,7 @@ use crate::session::ConnectCtx;
 use crate::ssh::{SessionEvent, test_session_auth};
 use crate::app::render_tickets::RENDER_MIN_INTERVAL;
 use crate::terminal::{
-    CsiState, OutputHighlightPreset, TabRenderGate, TermBuffer, compile_output_rules, new_term,
+    OutputHighlightPreset, TabRenderGate, TermBuffer, compile_output_rules,
 };
 use crate::ui::*;
 use crate::app::pane_layout::refresh_panes;
@@ -1197,33 +1196,15 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                     compile_output_rules(settings.output_highlight_rules()),
                 )
             };
-            let (t24, p24) = new_term(24, 80, store.borrow().scrollback_lines());
+            // 22 字段的字面量收敛到 `TermBuffer::new()`（与单测共用同一构造点）。
+            let mut buf = TermBuffer::new(24, 80, store.borrow().scrollback_lines());
+            buf.is_dark = is_dark_now;
+            buf.output_highlight = output_highlight;
+            buf.custom_highlight_rules = custom_highlight_rules;
+            buf.json_format_output = store.borrow().json_format_output();
             bufs.lock().unwrap_or_else(|e| e.into_inner()).insert(
                 tab_id.clone(),
-                Arc::new(Mutex::new(TermBuffer {
-                    term: t24,
-                    processor: p24,
-                    find_query: String::new(),
-                    is_dark: is_dark_now,
-                    output_highlight,
-                    custom_highlight_rules,
-                    view_offset: 0,
-                    displayed_text: Vec::new(),
-                    csi_state: CsiState::Normal,
-                    csi_pending: Vec::new(),
-                    raw: std::collections::VecDeque::new(),
-                    rendered: Vec::new(),
-                    scroll_cache: HashMap::new(),
-                    scroll_live_frames: 0,
-                    render_gen: 0,
-                    overline_active: false,
-                    overline_start: None,
-                    overline_ranges: Vec::new(),
-                    sgr_buf: Vec::new(),
-                    interactive_echo_until: std::time::Instant::now(),
-                    json_format_output: store.borrow().json_format_output(),
-                    mouse_tracked: false,
-                })),
+                Arc::new(Mutex::new(buf)),
             );
             render_gates.lock().unwrap_or_else(|e| e.into_inner()).insert(
                 tab_id.clone(),

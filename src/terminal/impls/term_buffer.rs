@@ -37,6 +37,39 @@ const SCROLL_LIVE_GRACE: u16 = 8;
 // Selection type used only in selection_rects_visible via term.selection
 
 impl TermBuffer {
+    /// 新建一个终端缓冲区（给定尺寸与回滚上限，其余字段取运行时初值）。
+    ///
+    /// 生产侧（`session_callbacks` 开新标签页）与单测**共用这一个构造点**：原来那是一处
+    /// 22 字段的结构体字面量，加字段必漏，测试也没法随手造 buffer（M3 补测试的前置）。
+    /// 主题 / 高亮预设 / 自定义规则 / JSON 美化这几项由调用方在返回后覆盖。
+    pub(crate) fn new(rows: u16, cols: u16, scrollback_lines: usize) -> Self {
+        let (term, processor) = crate::terminal::new_term(rows, cols, scrollback_lines);
+        Self {
+            term,
+            processor,
+            find_query: String::new(),
+            is_dark: false,
+            output_highlight: crate::terminal::OutputHighlightPreset::from_settings(false, ""),
+            custom_highlight_rules: Vec::new(),
+            view_offset: 0,
+            displayed_text: Vec::new(),
+            csi_state: CsiState::Normal,
+            csi_pending: Vec::new(),
+            mouse_tracked: false,
+            raw: std::collections::VecDeque::new(),
+            rendered: Vec::new(),
+            scroll_cache: std::collections::HashMap::new(),
+            scroll_live_frames: 0,
+            render_gen: 0,
+            overline_active: false,
+            overline_start: None,
+            overline_ranges: Vec::new(),
+            sgr_buf: Vec::new(),
+            interactive_echo_until: std::time::Instant::now(),
+            json_format_output: false,
+        }
+    }
+
     /// Reset to a fresh screen: new parser + cleared caches/selection/raw.
     pub(crate) fn reset(&mut self, scrollback_lines: usize) {
         let (rows, cols) = term_size(&self.term);
