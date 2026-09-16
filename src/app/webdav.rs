@@ -260,3 +260,126 @@ pub(super) fn webdav_get_json(
         .into_string()
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_joins_base_and_remote_with_a_single_slash() {
+        assert_eq!(
+            webdav_url("https://nas:5006/all/", "/rudder.json").unwrap(),
+            "https://nas:5006/all/rudder.json",
+            "尾斜杠与前导斜杠只留一个"
+        );
+        assert_eq!(
+            webdav_url("  https://nas:5006/all  ", "rudder.json").unwrap(),
+            "https://nas:5006/all/rudder.json",
+            "两端空白应去掉"
+        );
+    }
+
+    #[test]
+    fn url_rejects_missing_scheme() {
+        assert!(webdav_url("nas:5006/all", "x.json").is_err());
+    }
+
+    /// 飞牛的 5005/5006 是 HTTP/HTTPS 配对端口；写反了只会撞上难懂的握手错误，
+    /// 所以在这里前置拦下并给出改法。
+    #[test]
+    fn url_rejects_swapped_fnos_ports() {
+        assert!(webdav_url("http://nas:5006/all", "x.json").is_err(), "http + 5006");
+        assert!(webdav_url("https://nas:5005/all", "x.json").is_err(), "https + 5005");
+        assert!(webdav_url("http://nas:5005/all", "x.json").is_ok(), "配对正确要放行");
+        assert!(webdav_url("https://nas:5006/all", "x.json").is_ok());
+    }
+
+    /// 地址本身就以 `.json` 结尾时**原样返回**（文件名由地址决定，不再拼 remote）。
+    #[test]
+    fn url_short_circuits_when_the_base_already_points_at_a_file() {
+        assert_eq!(
+            webdav_url("https://nas:5006/all/rudder.json", "").unwrap(),
+            "https://nas:5006/all/rudder.json",
+            "即使 remote 为空也直接返回"
+        );
+    }
+
+    /// 飞牛不允许写到根：地址没带共享目录时，remote 必须自带一段路径。
+    #[test]
+    fn url_requires_a_shared_folder_on_fnos_ports() {
+        assert!(webdav_url("https://nas:5006", "rudder.json").is_err(), "根路径 + 平铺文件名");
+        assert!(webdav_url("https://nas:5006/", "rudder.json").is_err(), "根路径（带尾斜杠）");
+        assert!(
+            webdav_url("https://nas:5006", "all/rudder.json").is_ok(),
+            "remote 自带目录则放行"
+        );
+    }
+
+    #[test]
+    fn url_rejects_empty_remote() {
+        assert!(webdav_url("https://nas:5006/all", "").is_err());
+        assert!(webdav_url("https://nas:5006/all", "   ").is_err());
+    }
+
+    #[test]
+    fn uses_port_detects_an_explicit_numeric_port_only() {
+        assert!(webdav_url_uses_port("https://nas:5006/all/", 5006));
+        assert!(webdav_url_uses_port("https://nas:5006", 5006));
+        assert!(!webdav_url_uses_port("https://nas:5006/all/", 5005), "端口不符");
+        assert!(!webdav_url_uses_port("https://nas/all/", 5006), "没写端口");
+        assert!(!webdav_url_uses_port("https://nas:abc/", 5006), "端口不是数字");
+        assert!(!webdav_url_uses_port("nas:5006", 5006), "没有 scheme");
+    }
+
+    /// 带用户名密码的地址：只有**最后一段**才是端口，密码里的冒号不是分隔符。
+    #[test]
+    fn uses_port_survives_userinfo() {
+        assert!(webdav_url_uses_port("https://u:p@nas:5006/all/", 5006));
+        assert!(
+            !webdav_url_uses_port("https://u:p@nas/all/", 5006),
+            "`u:p@nas` 不能把 `p@nas` 当端口"
+        );
+    }
+
+    #[test]
+    fn has_path_requires_a_non_empty_path_segment() {
+        assert!(!webdav_url_has_path("https://nas:5006"));
+        assert!(!webdav_url_has_path("https://nas:5006/"), "空路径也算没有");
+        assert!(webdav_url_has_path("https://nas:5006/all/"));
+        assert!(!webdav_url_has_path("not a url"));
+    }
+
+    /// **匿名必须真的匿名**：两个字段都空时不能送 `Basic Og==`（空用户名 + 空密码），
+    /// 否则部分 NAS 会直接判成认证失败而不是按匿名处理。
+    #[test]
+    fn auth_header_is_absent_when_both_fields_are_empty() {
+        assert_eq!(webdav_auth_header("", ""), None);
+        assert_eq!(
+            webdav_auth_header("u", ""),
+            Some("Basic dTo=".to_string()),
+            "只有用户名"
+        );
+        assert_eq!(
+            webdav_auth_header("", "p"),
+            Some("Basic OnA=".to_string()),
+            "只有密码"
+        );
+    }
+
+    /// 返回的是**要逐级创建的父目录**（带尾斜杠），不含文件名本身。
+    #[test]
+    fn parent_dirs_lists_every_intermediate_directory() {
+        assert_eq!(
+            webdav_parent_dirs("https://nas:5006/all/sub/x.json"),
+            vec!["https://nas:5006/all/", "https://nas:5006/all/sub/"]
+        );
+    }
+
+    #[test]
+    fn parent_dirs_is_empty_when_there_is_nothing_to_create() {
+        assert!(webdav_parent_dirs("https://nas:5006/x.json").is_empty(), "顶层文件");
+        assert!(webdav_parent_dirs("https://nas:5006/all/").is_empty(), "只有一层目录");
+        assert!(webdav_parent_dirs("not a url").is_empty(), "没有 scheme");
+        assert!(webdav_parent_dirs("https://nas").is_empty(), "没有路径段");
+    }
+}

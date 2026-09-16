@@ -186,3 +186,102 @@ pub(super) fn clear_sftp_selection(terminals: &VecModel<TerminalState>, tab_id: 
         break;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cmp::Ordering;
+
+    fn entry(name: &str, is_dir: bool, size: f32) -> SftpEntry {
+        SftpEntry {
+            name: name.into(),
+            full_path: format!("/{name}").into(),
+            is_dir,
+            size: String::new().into(),
+            size_bytes: size,
+            modified: String::new().into(),
+            modified_ts: 0.0,
+            mode: 0o644,
+            selected: false,
+        }
+    }
+
+    fn names(rows: &[SftpEntry]) -> Vec<String> {
+        rows.iter().map(|e| e.name.to_string()).collect()
+    }
+
+    /// 数字段按**数值**比较：`file10` 排在 `file2` 之后（最经典的用户可见排序 bug）。
+    #[test]
+    fn natural_ascii_cmp_orders_digit_runs_numerically() {
+        assert_eq!(natural_ascii_cmp("file2", "file10"), Ordering::Less);
+        assert_eq!(natural_ascii_cmp("file10", "file2"), Ordering::Greater);
+        assert_eq!(natural_ascii_cmp("v1.2", "v1.10"), Ordering::Less);
+    }
+
+    /// 数值相同时**前导零多的排后面** —— 有个稳定的 tiebreak，列表才不会在
+    /// `a01`/`a1` 之间来回抖。
+    #[test]
+    fn natural_ascii_cmp_tie_breaks_on_leading_zeros() {
+        assert_eq!(natural_ascii_cmp("a01", "a1"), Ordering::Greater);
+        assert_eq!(natural_ascii_cmp("a1", "a01"), Ordering::Less);
+        assert_eq!(natural_ascii_cmp("a1", "a1"), Ordering::Equal);
+    }
+
+    #[test]
+    fn natural_ascii_cmp_handles_prefixes_and_empty() {
+        assert_eq!(natural_ascii_cmp("a1b", "a1b2"), Ordering::Less, "前缀短的小");
+        assert_eq!(natural_ascii_cmp("", "a"), Ordering::Less);
+        assert_eq!(natural_ascii_cmp("", ""), Ordering::Equal);
+    }
+
+    /// 名称比较忽略大小写，**同小写时回退原串**（保证全序、结果可复现）。
+    #[test]
+    fn natural_name_cmp_is_case_insensitive_then_ordinal() {
+        assert_eq!(natural_name_cmp("B", "a"), Ordering::Greater);
+        assert_eq!(
+            natural_name_cmp("File1", "file1"),
+            Ordering::Less,
+            "小写相同 → 按原串（大写在前）"
+        );
+    }
+
+    /// **目录永远在最前**，即使按大小倒序 —— 反向排序不能把目录翻到文件下面去
+    /// （分组比较在反转之前就返回了）。
+    #[test]
+    fn sort_keeps_directories_first_in_every_mode() {
+        let mut rows = vec![
+            entry("b.txt", false, 100.0),
+            entry("adir", true, 0.0),
+            entry("a.txt", false, 5.0),
+        ];
+        sort_sftp_entries(&mut rows, "size", 1);
+        assert_eq!(names(&rows), vec!["adir", "a.txt", "b.txt"], "按大小升序");
+
+        sort_sftp_entries(&mut rows, "size", -1);
+        assert_eq!(
+            names(&rows),
+            vec!["adir", "b.txt", "a.txt"],
+            "按大小降序，但目录仍在最前"
+        );
+    }
+
+    #[test]
+    fn sort_falls_back_to_natural_names() {
+        let mut rows = vec![entry("file10", false, 1.0), entry("file2", false, 1.0)];
+        sort_sftp_entries(&mut rows, "", 0);
+        assert_eq!(names(&rows), vec!["file2", "file10"], "key 为空 = 名称序");
+        sort_sftp_entries(&mut rows, "whatever", 1);
+        assert_eq!(names(&rows), vec!["file2", "file10"], "未知 key 也走名称序");
+    }
+
+    /// 值相同时用名称兜底 —— 否则 `sort_by` 的结果依赖输入顺序，列表会莫名抖动。
+    #[test]
+    fn sort_tie_breaks_on_name() {
+        let mut rows = vec![
+            entry("z.txt", false, 42.0),
+            entry("a.txt", false, 42.0),
+        ];
+        sort_sftp_entries(&mut rows, "size", 1);
+        assert_eq!(names(&rows), vec!["a.txt", "z.txt"]);
+    }
+}
