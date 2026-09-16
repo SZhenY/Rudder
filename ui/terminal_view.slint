@@ -628,10 +628,10 @@ export component TerminalView inherits Rectangle {
             : root.sftp-horizontal ? max(300px, root.sftp-panel-width)
             : root.sftp-panel-width;
         property <length> sf-viz: sf-taken;
-        animate sf-viz { duration: 250ms; easing: AnimationSettings.layout; enabled: AnimationSettings.enabled; }
+        animate sf-viz { duration: 250ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
         property <length> sf-h-taken: root.sftp-collapsed ? 36px : root.sftp-panel-height;
         property <length> sf-h-viz: sf-h-taken;
-        animate sf-h-viz { duration: 250ms; easing: AnimationSettings.layout; enabled: AnimationSettings.enabled; }
+        animate sf-h-viz { duration: 250ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
         property <length> sp:   root.sftp-collapsed ? 0px : 6px;
         central := Rectangle {
             x: root.sftp-dock == "left" ? parent.sf-taken + parent.sp : 0px;
@@ -1225,7 +1225,7 @@ export component TerminalView inherits Rectangle {
                         : (Theme.is-mac ? #ffffff55 : Theme.border-strong);
                     border-radius: 3px;
                     animate background { duration: 100ms;
-            easing: AnimationSettings.color;
+            easing: AnimationSettings.color();
             enabled: AnimationSettings.enabled;
         }
                 }

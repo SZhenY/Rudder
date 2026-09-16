@@ -35,7 +35,7 @@ export component IconButton inherits Rectangle {
         lit when touch.has-hover || root.active : { background: Theme.bg-hover; }
     ]
     animate background { duration: 120ms;
-            easing: AnimationSettings.color;
+            easing: AnimationSettings.color();
             enabled: AnimationSettings.enabled;
         }
 
@@ -53,7 +53,7 @@ export component IconButton inherits Rectangle {
             duration: 1400ms;
             iteration-count: -1;
             direction: alternate;
-            easing: AnimationSettings.breathing;
+            easing: AnimationSettings.breathing();
             enabled: AnimationSettings.enabled;
         }
     }
@@ -118,7 +118,7 @@ export component PrimaryButton inherits Rectangle {
         hovered when touch.has-hover : { background: Theme.accent-hover; }
     ]
     animate background { duration: 120ms;
-            easing: AnimationSettings.color;
+            easing: AnimationSettings.color();
             enabled: AnimationSettings.enabled;
         }
 
@@ -161,7 +161,7 @@ export component GhostButton inherits Rectangle {
         }
     ]
     animate background, border-color { duration: 120ms;
-            easing: AnimationSettings.color;
+            easing: AnimationSettings.color();
             enabled: AnimationSettings.enabled;
         }
 

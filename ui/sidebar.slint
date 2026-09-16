@@ -46,7 +46,7 @@ component StatRow inherits HorizontalLayout {
             width: parent.width * clamp(percent, 0.0, 1.0);
             background: bar-color;
             border-radius: 2px;
-            animate width { duration: 500ms; easing: AnimationSettings.layout; enabled: AnimationSettings.enabled; }
+            animate width { duration: 500ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
         }
 
         Text {

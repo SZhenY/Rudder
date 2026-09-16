@@ -946,8 +946,8 @@ export component AppWindow inherits Window {
         property <length> sidebar-outside-strip: dock-area.sidebar-strip-outside ? 36px : 0px;
         property <length> welcome-strip: (root.welcome-as-sidebar && root.welcome-collapsed) ? 36px : 0px;
         property <length> welcome-size: (root.welcome-as-sidebar && !root.welcome-collapsed) ? root.welcome-sidebar-width : 0px;
-        animate welcome-size { duration: 200ms; easing: AnimationSettings.layout; enabled: AnimationSettings.enabled; }
-        animate welcome-strip { duration: 200ms; easing: AnimationSettings.layout; enabled: AnimationSettings.enabled; }
+        animate welcome-size { duration: 200ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
+        animate welcome-strip { duration: 200ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
         property <length> welcome-taken: welcome-strip + welcome-size + sidebar-outside-strip;
         property <bool> welcome-horizontal: root.welcome-sidebar-horizontal;
         property <bool> welcome-sidebar-dragging;
@@ -1090,7 +1090,7 @@ export component AppWindow inherits Window {
             background: Theme.bg-panel;
             clip: true;
             if !root.welcome-collapsed : Rectangle {
-                animate opacity { duration: 120ms; easing: AnimationSettings.layout; enabled: AnimationSettings.enabled; }
+                animate opacity { duration: 120ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
                 opacity: root.welcome-collapsed ? 0.0 : 1.0;
                 width: parent.width; height: parent.height;
                 Welcome {
@@ -1226,11 +1226,11 @@ export component AppWindow inherits Window {
         property <length> sb-taken: dock-area.sidebar-strip-outside
                 || dock-area.combine-collapsed-tools ? 0px
             : root.sidebar-collapsed ? 36px : root.sidebar-width;
-        animate sb-taken { duration: 200ms; easing: AnimationSettings.layout; enabled: AnimationSettings.enabled; }
+        animate sb-taken { duration: 200ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
         property <length> sb-h-taken: dock-area.sidebar-strip-outside
                 || dock-area.combine-collapsed-tools ? 0px
             : root.sidebar-collapsed ? 36px : root.sidebar-height;
-        animate sb-h-taken { duration: 200ms; easing: AnimationSettings.layout; enabled: AnimationSettings.enabled; }
+        animate sb-h-taken { duration: 200ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
         property <length> sp: root.sidebar-collapsed ? 0px : 4px;
 
         // Left sidebar — collapsible and drag-resizable, dockable to any edge.
@@ -1248,7 +1248,7 @@ export component AppWindow inherits Window {
             clip: true;
             background: Theme.bg-panel;
         if !root.sidebar-collapsed && !root.zen-mode : Rectangle {
-            animate opacity { duration: 120ms; easing: AnimationSettings.layout; enabled: AnimationSettings.enabled; }
+            animate opacity { duration: 120ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
             opacity: root.sidebar-collapsed ? 0.0 : 1.0;
             width: parent.width; height: parent.height;
             Sidebar {
@@ -1721,7 +1721,7 @@ export component AppWindow inherits Window {
                 background: sp-ta.has-hover || sp-ta.pressed ? Theme.accent : Theme.border-subtle;
                 animate background {
                     duration: 100ms;
-                    easing: AnimationSettings.color;
+                    easing: AnimationSettings.color();
                     enabled: AnimationSettings.enabled;
                 }
                 sp-ta := TouchArea {
@@ -2039,14 +2039,14 @@ export component AppWindow inherits Window {
                     in {
                         animate height {
                             duration: 150ms;
-                            easing: AnimationSettings.layout;
+                            easing: AnimationSettings.layout();
                             enabled: AnimationSettings.enabled;
                         }
                     }
                     out {
                         animate height {
                             duration: 150ms;
-                            easing: AnimationSettings.layout;
+                            easing: AnimationSettings.layout();
                             enabled: AnimationSettings.enabled;
                         }
                     }
@@ -3632,7 +3632,7 @@ overflow: elide;
         opacity: root.about-open ? 1 : 0;
         animate opacity {
             duration: 180ms;
-            easing: AnimationSettings.color;
+            easing: AnimationSettings.color();
             enabled: AnimationSettings.enabled;
         }
         background: #00000080;            // dim backdrop
@@ -3655,7 +3655,7 @@ overflow: elide;
             drop-shadow-color: Theme.card-shadow-color;
             animate y {
                 duration: 200ms;
-                easing: AnimationSettings.layout;
+                easing: AnimationSettings.layout();
                 enabled: AnimationSettings.enabled;
             }
 

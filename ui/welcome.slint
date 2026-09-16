@@ -245,11 +245,11 @@ component SessionRow inherits Rectangle {
         drop-shadow-blur: root.drag-target ? 14px : 0px;
         drop-shadow-color: root.drag-target ? #00000060 : transparent;
         animate background { duration: 120ms;
-            easing: AnimationSettings.color;
+            easing: AnimationSettings.color();
             enabled: AnimationSettings.enabled;
         }
         animate drop-shadow-blur { duration: 120ms;
-            easing: AnimationSettings.color;
+            easing: AnimationSettings.color();
             enabled: AnimationSettings.enabled;
         }
 
