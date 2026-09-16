@@ -1905,7 +1905,11 @@ export component AppWindow inherits Window {
     // 旧写法里这五个数字是"按钮宽 26px + 间隙 4px"推出来的（含右侧 8px 边距），
     // 加/删一个按钮就要重算全部偏移。书写顺序 = 视觉顺序（左 → 右）。
     HorizontalLayout {
-        x: root.toolbar-x-off;                     // 右侧侧栏停靠时整体左移（原语义）
+        // ⚠️ 关键是**右边界** = `root.width - root.toolbar-x-off`（右侧面板展开时整体左移）。
+        // 这里踩过坑：写成 `x: root.toolbar-x-off; width: root.width - root.toolbar-x-off`
+        // 会让右边界落到 `x + width == root.width`，于是图标**溢出到右侧状态栏里**。
+        // 左边界无关紧要（内容右对齐、盒子无背景、不拦截点击），取 0 即可。
+        x: 0px;
         y: root.toolbar-y;
         width: root.width - root.toolbar-x-off;
         height: 26px;
