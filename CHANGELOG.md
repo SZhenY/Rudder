@@ -5,6 +5,22 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 修复 / Fixed
+
+- **修复：状态侧边栏停靠在右侧并展开时，工具栏图标溢出到侧边栏里**（`fix5` 起存在）。根因是 P2-2
+  把工具栏从"逐个手算 `x`"改成右对齐布局时，盒子写成
+  `x: root.toolbar-x-off; width: root.width - root.toolbar-x-off` —— 右边界于是落在
+  `x + width == root.width`（**少了**那次减法），`alignment: end` 把图标贴到窗口右缘，
+  正好落进右侧面板。现在左边界取 0、宽度减 `toolbar-x-off`，图标右边缘回到
+  `root.width - toolbar-x-off - 8px`，与 P2-2 之前**逐字一致**。
+  **Fixed: with the resource sidebar docked on the right and expanded, the toolbar icons spilled
+  into it** (present since `fix5`). When P2-2 replaced the hand-computed per-icon `x` with a
+  right-aligned layout, the box became `x: root.toolbar-x-off; width: root.width - root.toolbar-x-off`,
+  so its right edge landed at `x + width == root.width` — the offset was lost — and `alignment: end`
+  pushed the icons to the window edge, i.e. into the right-hand panel. The box now starts at 0 with
+  `width: root.width - root.toolbar-x-off`, putting the icons' right edge back at
+  `root.width - toolbar-x-off - 8px`, byte-for-byte the pre-P2-2 geometry.
+
 ## [0.7.7-fix5] - 2026-09-15
 
 ### 新增 / Added
