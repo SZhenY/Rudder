@@ -20,6 +20,36 @@ All notable changes are documented here. 本文件记录所有重要变更。
   改了。**Fixed the layout of a custom highlight rule row** — the divider crossed the row and
   pushed the switch and delete button outside it.
 
+- **修复：WebDAV 上传 / 下载会把界面冻住。** 请求原来在界面线程里直接发：NAS 掉线时超时
+  20 秒、失败还要逐级重试，这期间点什么都没反应。现在请求在后台线程跑，界面全程可用，点下去
+  先显示「正在上传…/正在下载…」。**Fixed: WebDAV upload / download froze the UI** —
+  the request runs off the UI thread now.
+- **修复：WebDAV 口令不再回填到界面。** 设置 → 同步里以前会把已存口令显示在口令框里（等于把
+  明文复制进界面层）。现在口令框留空即沿用已存口令，保存 / 上传 / 下载后自动清空，占位文案也
+  写明「留空表示不修改」。**The stored WebDAV password is no longer echoed into the UI** —
+  leave the field blank to keep it.
+- **修复：跳板机 id 前后带空格会让它被静默跳过。** 以前判空用 `trim()`、查表却用原始串，配置里
+  写成 `" b "` 的跳板机会匹配不到任何会话，于是**直连目标机**（本该经跳板机的连接绕开了跳板机，
+  界面也没有任何提示）。现在 id 统一归一后再用。**Fixed: a padded jump-host id silently
+  bypassed the jump host.**
+- **修复：分组名前后带空格会连空白一起存进配置。** `" Prod "` 现在会存成 `"Prod"`，
+  `" default "` 也按「移出分组」正确处理（以前会变成一个名叫 `" default "` 的新分组）。
+  会话编辑弹窗里手打的组名同样归一。**Group names are trimmed before saving.**
+- **加固：密钥与配置文件的权限、落盘。** `secret.key`、配置临时文件改为**创建时即 0600**
+  （以前是先按 umask 建、之后再 chmod —— 中间那段时间别的本地账户可读），主文件写入补
+  `fsync`，掉电不再可能留下一个 0 字节的 `sessions.json`。临时目录（配置回落、自更新暂存、
+  SFTP 外部编辑）改用随机名 + 0700 + 创建即独占，避免在共享机器上被别人预占。
+  **Hardened file permissions and durability** (owner-only from creation, fsynced writes,
+  private temp dirs).
+- **加固：命令历史不再明文落盘。** 历史里常有 `mysql -p…` 这类自带口令的命令，现在与凭据一样
+  加密存储；旧文件照常读入，下次保存时自动加密。**Command history is encrypted at rest.**
+- **修复：监控通道失效后会话不再假死。** 资源 / 进程两条辅助通道若中途没了数据，以前那个会话
+  会一直卡着（点什么都没反应）；现在 10 秒没有数据就自动重开。**Fixed: a stalled monitor
+  channel no longer leaves the session wedged.**
+- **修复：写盘失败不再静默丢弃。** 设置写盘失败以前被直接吞掉（用户以为改动保住了，重启才发现
+  没存上，日志里也没有线索），现在会记进日志。**Write failures are logged instead of being
+  silently dropped.**
+
 ### 内部 / Internal
 
 - **UI 拆分收尾。** `ui/app.slint` 从 3969 行降到 2334 行：又拆出快捷键弹窗、设置覆盖层、两个
@@ -27,6 +57,13 @@ All notable changes are documented here. 本文件记录所有重要变更。
   与动作；窗口主体里按几何算坐标的几块（侧栏、快捷面板）保持原样 —— 改成布局需要在四个方向各
   实例化一次，代价大于收益。
 - 删掉一个没有引用的重复实现 `ui/quick_panel_frame.slint`。
+- **覆盖层不再销毁重建。** 各弹窗 / 覆盖层原来用 `if 条件 : 元素` 包着（关闭即销毁、打开即重建），
+  Slint 在事件处理途中释放元素会让后续的点击 / 拖动落空。现在改为常驻 + `visible` / `opacity`
+  控制，折叠面板的淡入淡出动画也回来了。
+- **清理拆分残留。** 扫掉 8 处零引用声明（快速命令弹窗的尺寸拖动状态等 —— 它们在拆分前就只有
+  声明没有实现）。
+- **补测试**：权限、私有目录判定、命令历史加解密与旧格式兼容、口令留空语义、写盘失败不 panic
+  等 8 条，门禁 **419 → 427 passed**。
 
 ## [0.7.7-fix6] - 2026-09-16
 

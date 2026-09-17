@@ -216,26 +216,51 @@ cargo run --release
 rudder/
 ├── Cargo.toml
 ├── build.rs                     # Slint 编译 + 依赖版本生成
-├── ui/                          # Slint 界面定义
-│   ├── app.slint                # 顶层窗口
+├── ui/                          # Slint 界面定义（重型块都在各自文件里）
+│   ├── app.slint                # 顶层窗口：装配标题栏 / 主体 / 覆盖层
 │   ├── terminal_view.slint      # 终端视图 + SFTP dock
+│   ├── terminal_parts.slint     # 终端相关的可复用部件
 │   ├── sftp_panel.slint         # SFTP 文件浏览面板
-│   ├── sidebar.slint            # 左侧系统监控面板
+│   ├── sftp_parts.slint         #   面板内的行 / 列表部件
+│   ├── sidebar.slint            # 左侧系统监控面板（外壳 + 折叠）
+│   ├── sidebar_body.slint       #   侧栏正文（资源 / 进程）
+│   ├── sidebar_blocks.slint     #   侧栏行块（网速 / 磁盘 / 进程行等）
 │   ├── tabs.slint               # 顶部标签栏
 │   ├── welcome.slint            # 欢迎页 / 快速连接
+│   ├── welcome_rows.slint       #   会话行 / 分组行
 │   ├── session_dialog.slint     # 新建 / 编辑会话弹框
+│   ├── session_types.slint      #   会话相关的共享 struct
+│   ├── dialog_fields.slint      #   弹框字段（各类输入行）
+│   ├── custom_titlebar.slint    # 自绘标题栏
+│   ├── titlebar_inset_strip.slint  # 标题栏内嵌条（无边框窗口）
 │   ├── interface_panel.slint    # 设置面板外壳（左侧导航 + 内容区）
+│   ├── interface_settings_overlay.slint  # 侧栏直接打开的设置覆盖层
 │   ├── settings/                # 设置面板实现（按页拆分）
 │   │   ├── chrome.slint         #   通用控件：行 / 段标题 / 步进器 / 色板
 │   │   ├── section.slint        #   分区容器（设置项分组的最小单位）
 │   │   ├── reset_bar.slint      #   「还原本页默认」两段式确认按钮
 │   │   ├── types.slint          #   跨组件共享的 struct
-│   │   └── pages/               #   7 个设置页，一页一文件
+│   │   └── pages/               #   8 个设置页，一页一文件
+│   ├── widgets.slint            # 可复用组件
+│   ├── theme.slint              # 设计 tokens（深色/浅色）
 │   ├── proc_window.slint        # 进程管理窗口
 │   ├── system_info_window.slint # 系统信息窗口
-│   ├── confirm_dialog.slint     # 确认 / 删除对话框
-│   ├── theme.slint              # 设计 tokens（深色/浅色）
-│   ├── widgets.slint            # 可复用组件
+│   ├── confirm_dialog.slint     # 通用确认 / 删除对话框
+│   ├── confirm_overlays.slint   #   删除 / 批量导入 / 粘贴 / 凭据 / MFA / 主机密钥确认
+│   ├── quick_cmd_manage.slint   # 快捷命令管理弹窗（含分组菜单）
+│   ├── group_dialog.slint       # 新建 / 重命名分组
+│   ├── quick_group_dialog.slint # 快捷命令分组命名
+│   ├── rename_dialog.slint      # 重命名会话
+│   ├── sftp_prompt_dialog.slint # SFTP 重命名 / 新建目录 / 新建文件
+│   ├── chmod_dialog.slint       # SFTP 改权限
+│   ├── shortcuts_dialog.slint   # 快捷键一览
+│   ├── download_manager.slint   # 下载管理器
+│   ├── settings_menu.slint      # 右上角设置菜单
+│   ├── about_dialog.slint       # 关于
+│   ├── update_banner.slint      # 更新提示横幅
+│   ├── file_editor.slint        # 内置文件查看 / 编辑器
+│   ├── confirm_close_dialog.slint  # 关闭活动会话前的确认
+│   ├── dock_snap_overlay.slint  # 拖拽停靠时的吸附指示层
 │   └── fonts/                   # 内嵌字体
 ├── lang/                        # 国际化
 │   ├── zh/                      # 简体中文
@@ -243,6 +268,7 @@ rudder/
 └── src/
     ├── main.rs                  # 入口
     ├── app.rs                   # UI ↔ 后端桥接（核心控制器）
+    ├── app/                     # 桥接层拆出的回调模块（会话、设置页、自更新…）
     ├── terminal/                # 终端模拟子系统
     │   └── impls/
     │       ├── vt_adapter.rs    # alacritty_terminal 封装
