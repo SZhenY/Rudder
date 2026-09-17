@@ -1,0 +1,94 @@
+//! 快捷命令面板的**定位框**：按 `quick-panel-dock`（左/右/上/下）算出面板位置，并把实际尺寸写回 `quick-panel-width/height`。
+//!
+//! 纯搬家：`parent.*` 仍指外层 VerticalLayout（组件实例放回原处，几何不变）。
+//!
+//! 从 `app.slint` 的窗口主体（`VerticalLayout`）拆出（P4 B 类）—— 纯搬家。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
+import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
+import { SettingsMenuPopup } from "settings_menu.slint";
+import { AboutDialog } from "about_dialog.slint";
+
+export component QuickPanelFrame inherits Rectangle {
+    // ── 状态（窗口透传）──────────────────────────────────────────────
+    in property <bool> quick-panel-collapsed: false;
+    in property <string> quick-panel-dock: "right";
+    in-out property <length> quick-panel-height: 220px;
+    in property <bool> quick-panel-open: false;
+    in-out property <length> quick-panel-width: 260px;
+
+    visible: quick-panel-open && !quick-panel-collapsed;
+    x: quick-panel-dock == "left" ? parent.quick-w
+     : quick-panel-dock == "right" ? parent.width - parent.quick-w - 4px
+     : 0px;
+    y: quick-panel-dock == "top" ? parent.quick-h
+     : quick-panel-dock == "bottom" ? parent.height - parent.quick-h - 4px
+     : 0px;
+    width: parent.quick-horizontal ? 4px : parent.width;
+    height: parent.quick-horizontal ? parent.height : 4px;
+    background: quick-split-ta.has-hover ? Theme.accent : Theme.border-subtle;
+    quick-split-ta := TouchArea {
+        x: quick-area.quick-horizontal ? -4px : 0px;
+        y: quick-area.quick-horizontal ? 0px : -4px;
+        width: quick-area.quick-horizontal ? 12px : parent.width;
+        height: quick-area.quick-horizontal ? parent.height : 12px;
+        mouse-cursor: quick-area.quick-horizontal ? ew-resize : ns-resize;
+        moved => {
+            if (self.pressed) {
+                if (quick-area.quick-horizontal) {
+                    quick-panel-width = clamp(
+                        quick-panel-dock == "right"
+                            ? quick-area.width - ((self.absolute-position.x + self.mouse-x)
+                                - quick-area.absolute-position.x)
+                            : (self.absolute-position.x + self.mouse-x)
+                                - quick-area.absolute-position.x,
+                        180px, max(200px, quick-area.width - 240px));
+                } else {
+                    quick-panel-height = clamp(
+                        quick-panel-dock == "bottom"
+                            ? quick-area.height - ((self.absolute-position.y + self.mouse-y)
+                                - quick-area.absolute-position.y)
+                            : (self.absolute-position.y + self.mouse-y)
+                                - quick-area.absolute-position.y,
+                        120px, max(140px, quick-area.height - 160px));
+                }
+            }
+        }
+    }
+}

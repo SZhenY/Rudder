@@ -57,6 +57,8 @@ import { ChmodDialog } from "chmod_dialog.slint";
 import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
 import { SettingsMenuPopup } from "settings_menu.slint";
 import { AboutDialog } from "about_dialog.slint";
+import { DockSnapOverlay } from "dock_snap_overlay.slint";
+import { ConfirmOverlays } from "confirm_overlays.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
 export { EditorFindResult }
 
@@ -1833,63 +1835,11 @@ export component AppWindow inherits Window {
         // Drag-to-dock snap overlay — four edge zones; the one under the cursor
         // (root.dock-target) lights up. Purely visual (no TouchArea) so the
         // header's drag keeps receiving move events (#dock).
-        if root.panel-dragging : Rectangle {
-            x: 0; y: 0;
-            width: parent.width;
-            height: parent.height;
-            Rectangle {   // left zone
-                x: 0; y: 0; width: parent.width * 0.22; height: parent.height;
-                background: Theme.accent.with-alpha(0.10);
-                border-width: 0px;
-                border-color: Theme.accent;
-                // 高亮 = 一组 states（原来是 background + border-width 两条三目）
-                states [
-                    lit when root.dock-target == "left" : {
-                        background: Theme.accent.with-alpha(0.35);
-                        border-width: 2px;
-                    }
-                ]
-            }
-            Rectangle {   // right zone
-                x: parent.width * 0.78; y: 0; width: parent.width * 0.22; height: parent.height;
-                background: Theme.accent.with-alpha(0.10);
-                border-width: 0px;
-                border-color: Theme.accent;
-                // 高亮 = 一组 states（原来是 background + border-width 两条三目）
-                states [
-                    lit when root.dock-target == "right" : {
-                        background: Theme.accent.with-alpha(0.35);
-                        border-width: 2px;
-                    }
-                ]
-            }
-            Rectangle {   // top zone
-                x: 0; y: 0; width: parent.width; height: parent.height * 0.22;
-                background: Theme.accent.with-alpha(0.10);
-                border-width: 0px;
-                border-color: Theme.accent;
-                // 高亮 = 一组 states（原来是 background + border-width 两条三目）
-                states [
-                    lit when root.dock-target == "top" : {
-                        background: Theme.accent.with-alpha(0.35);
-                        border-width: 2px;
-                    }
-                ]
-            }
-            Rectangle {   // bottom zone
-                x: 0; y: parent.height * 0.78; width: parent.width; height: parent.height * 0.22;
-                background: Theme.accent.with-alpha(0.10);
-                border-width: 0px;
-                border-color: Theme.accent;
-                // 高亮 = 一组 states（原来是 background + border-width 两条三目）
-                states [
-                    lit when root.dock-target == "bottom" : {
-                        background: Theme.accent.with-alpha(0.35);
-                        border-width: 2px;
-                    }
-                ]
-            }
-        }
+    // 已抽成 `ui/dock_snap_overlay.slint`：纯搬家，状态透传。
+    if root.panel-dragging : DockSnapOverlay {
+        dock-target : root.dock-target;
+        panel-dragging : root.panel-dragging;
+    }
     }
     }
 
@@ -2379,295 +2329,49 @@ export component AppWindow inherits Window {
     }
 
     // --- Delete confirmation (#28) ----------------------------------------
-    ConfirmDialog {
-        width: parent.width;
-        height: parent.height;
-        is-open <=> root.confirm-delete-open;
-        title: @tr("Confirm delete");
-        message: root.confirm-delete-batch
-            ? (root.lang-en ? "Delete the checked items? This cannot be undone."
-                            : "删除选中的多个项目?此操作不可撤销。")
-            : @tr("Delete this item? This cannot be undone.");
-        detail: root.confirm-delete-path;
-        confirm-label: @tr("Delete");
-        confirm => {
-            if (root.confirm-delete-batch) {
-                root.sftp-delete-selected(root.confirm-delete-tab);
-                root.confirm-delete-batch = false;
-            } else {
-                root.sftp-delete(root.confirm-delete-tab, root.confirm-delete-path);
-            }
-            root.confirm-delete-open = false;
-        }
-        cancel => { root.confirm-delete-batch = false; root.confirm-delete-open = false; }
+    // 已抽成 `ui/confirm_overlays.slint`：**常驻**（内部靠 states 切换确认种类），状态透传 + 动作转发。
+    ConfirmOverlays {
+        batch-import-open <=> root.batch-import-open;
+        batch-import-text <=> root.batch-import-text;
+        confirm-close-open : root.confirm-close-open;
+        confirm-delete-batch <=> root.confirm-delete-batch;
+        confirm-delete-open <=> root.confirm-delete-open;
+        confirm-delete-path : root.confirm-delete-path;
+        confirm-delete-tab : root.confirm-delete-tab;
+        cred-host : root.cred-host;
+        cred-need-password : root.cred-need-password;
+        cred-need-user : root.cred-need-user;
+        cred-password <=> root.cred-password;
+        cred-prompt-open : root.cred-prompt-open;
+        cred-remember <=> root.cred-remember;
+        cred-user <=> root.cred-user;
+        hostkey-confirm-label : root.hostkey-confirm-label;
+        hostkey-detail : root.hostkey-detail;
+        hostkey-message : root.hostkey-message;
+        hostkey-prompt-open <=> root.hostkey-prompt-open;
+        hostkey-title : root.hostkey-title;
+        lang-en : root.lang-en;
+        mfa-answer <=> root.mfa-answer;
+        mfa-echo : root.mfa-echo;
+        mfa-host : root.mfa-host;
+        mfa-prompt : root.mfa-prompt;
+        mfa-prompt-open : root.mfa-prompt-open;
+        paste-confirm-large : root.paste-confirm-large;
+        paste-confirm-open <=> root.paste-confirm-open;
+        paste-confirm-preview : root.paste-confirm-preview;
+        paste-confirm-tab : root.paste-confirm-tab;
+        hostkey-accept() => { root.hostkey-accept(); }
+        hostkey-reject() => { root.hostkey-reject(); }
+        cred-accept() => { root.cred-accept(); }
+        cred-reject() => { root.cred-reject(); }
+        mfa-submit() => { root.mfa-submit(); }
+        mfa-cancel() => { root.mfa-cancel(); }
+        batch-import-confirm(text) => { root.batch-import-confirm(text); }
+        paste-confirmed(tab-id) => { root.paste-confirmed(tab-id); }
+        paste-confirm-cancelled() => { root.paste-confirm-cancelled(); }
+        sftp-delete(tab-id, path) => { root.sftp-delete(tab-id, path); }
+        sftp-delete-selected(tab-id) => { root.sftp-delete-selected(tab-id); }
     }
-
-    // Multi-line paste can execute several shell commands at once. Keep the
-    // prompt explicit; clicking the backdrop never accepts the paste (#262),
-    // while Enter provides the expected keyboard confirmation (#392).
-    ConfirmDialog {
-        width: parent.width;
-        height: parent.height;
-        is-open <=> root.paste-confirm-open;
-        covered: root.confirm-close-open;
-        dismiss-on-backdrop: false;
-        confirm-on-enter: true;
-        title: root.lang-en ? "Confirm multi-line paste" : "确认多行粘贴";
-        message: root.lang-en
-            ? "The clipboard contains line breaks and may execute multiple commands. Review it before pasting."
-            : "剪贴板内容包含换行，粘贴后可能连续执行多个命令，请确认内容后再继续。";
-        detail: root.paste-confirm-preview;
-        large-detail: root.paste-confirm-large;
-        confirm-label: root.lang-en ? "Paste" : "粘贴";
-        confirm => {
-            root.paste-confirmed(root.paste-confirm-tab);
-            root.paste-confirm-open = false;
-        }
-        cancel => {
-            root.paste-confirm-cancelled();
-            root.paste-confirm-open = false;
-        }
-    }
-
-    // Host-key confirmation (#109-5). Reuses the confirm-dialog card. The backdrop
-    // is NOT a dismiss here (#152): clicking outside the card used to count as a
-    // reject and — worse — poison the host for the whole run. The user must pick
-    // "Trust & connect" or the explicit Cancel/Reject button.
-    ConfirmDialog {
-        width: parent.width;
-        height: parent.height;
-        is-open <=> root.hostkey-prompt-open;
-        dismiss-on-backdrop: false;
-        title: root.hostkey-title;
-        message: root.hostkey-message;
-        detail: root.hostkey-detail;
-        confirm-label: root.hostkey-confirm-label;
-        confirm => { root.hostkey-accept(); }
-        cancel => { root.hostkey-reject(); }
-    }
-
-    // Batch-import connections from pasted text (#150).
-    if root.batch-import-open : Rectangle {
-        width: parent.width;
-        height: parent.height;
-        background: #000000aa;
-        TouchArea { clicked => { root.batch-import-open = false; } }   // backdrop closes
-        Rectangle {
-            width: 540px;
-            height: 440px;
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            background: Theme.bg-panel;
-            border-radius: Theme.radius-lg;
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            drop-shadow-blur: Theme.shadow-raised-blur;
-            drop-shadow-color: Theme.shadow-raised-color;
-            TouchArea {}   // swallow clicks inside the card
-
-            VerticalLayout {
-                padding: 20px;
-                spacing: 10px;
-                Text {
-                    text: root.lang-en ? "Batch import connections" : "批量导入连接";
-                    color: Theme.text-primary;
-                    font-size: Theme.fs-xl;
-                    font-weight: 600;
-                }
-                Text {
-                    text: root.lang-en
-                        ? "One per line:  host|port|user|password|name   (port/user/password/name optional)"
-                        : "每行一个:  host|port|user|password|name   (端口/用户/密码/名称可省略)";
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                    wrap: word-wrap;
-                }
-                // Paste area — themed multiline input.
-                Rectangle {
-                    vertical-stretch: 1;
-                    border-radius: Theme.radius-sm;
-                    border-width: 1px;
-                    border-color: bi-input.has-focus ? Theme.accent : Theme.border-subtle;
-                    background: Theme.bg-root;
-                    clip: true;
-                    Flickable {
-                        viewport-height: max(self.height, bi-input.preferred-height + 16px);
-                        bi-input := TextInput {
-                            x: 10px;
-                            y: 8px;
-                            width: parent.width - 20px;
-                            text <=> root.batch-import-text;
-                            color: Theme.text-primary;
-                            font-family: Theme.font-mono;
-                            font-size: Theme.fs-md;
-                            single-line: false;
-                            wrap: no-wrap;
-                        }
-                    }
-                    if root.batch-import-text == "" : Text {
-                        x: 10px;
-                        y: 8px;
-                        text: "192.168.1.108|22|root|pass@123|服务器1";
-                        color: Theme.text-muted;
-                        font-family: Theme.font-mono;
-                        font-size: Theme.fs-md;
-                    }
-                }
-                HorizontalLayout {
-                    alignment: end;
-                    spacing: 8px;
-                    GhostButton {
-                        text: @tr("Cancel");
-                        clicked => { root.batch-import-open = false; }
-                    }
-                    PrimaryButton {
-                        text: root.lang-en ? "Import" : "导入";
-                        clicked => {
-                            root.batch-import-confirm(root.batch-import-text);
-                            root.batch-import-open = false;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Connect-time credential prompt (#110). Backdrop / Cancel abort the connect.
-    if root.cred-prompt-open : Rectangle {
-        width: parent.width;
-        height: parent.height;
-        background: #000000aa;
-        TouchArea { clicked => { root.cred-reject(); } }
-        Rectangle {
-            width: 360px;
-            height: cred-card.preferred-height;
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            background: Theme.bg-panel;
-            border-radius: Theme.radius-lg;
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            drop-shadow-blur: Theme.shadow-raised-blur;
-            drop-shadow-color: Theme.shadow-raised-color;
-            TouchArea {}   // swallow clicks inside the card
-            cred-card := VerticalLayout {
-                padding: 20px;
-                spacing: 12px;
-                Text {
-                    text: @tr("Login");
-                    color: Theme.text-primary;
-                    font-size: Theme.fs-xl;
-                    font-weight: 600;
-                }
-                Text {
-                    text: root.cred-host;
-                    color: Theme.text-secondary;
-                    font-family: Theme.font-mono;
-                    font-size: Theme.fs-sm;
-                }
-                if root.cred-need-user : LabeledInput {
-                    label: @tr("Username");
-                    placeholder: "root";
-                    value <=> root.cred-user;
-                    accepted => { root.cred-accept(); }
-                    canceled => { root.cred-reject(); }   // Esc cancels (#140-3)
-                }
-                if root.cred-need-password : LabeledInput {
-                    label: @tr("Password");
-                    placeholder: "••••••••";
-                    password: true;
-                    value <=> root.cred-password;
-                    accepted => { root.cred-accept(); }
-                    canceled => { root.cred-reject(); }   // Esc cancels (#140-3)
-                }
-                CheckBox {
-                    text: @tr("Remember for this session");
-                    checked <=> root.cred-remember;
-                }
-                HorizontalLayout {
-                    alignment: end;
-                    spacing: 8px;
-                    GhostButton {
-                        text: @tr("Cancel");
-                        clicked => { root.cred-reject(); }
-                    }
-                    PrimaryButton {
-                        text: @tr("Connect");
-                        clicked => { root.cred-accept(); }
-                    }
-                }
-            }
-        }
-    }
-
-    // MFA / keyboard-interactive prompt (#86-MFA). A bastion (JumpServer with MFA
-    // forced on) challenges for a verification code mid-login; backdrop / Cancel
-    // abort the connect.
-    if root.mfa-prompt-open : Rectangle {
-        width: parent.width;
-        height: parent.height;
-        background: #000000aa;
-        TouchArea { clicked => { root.mfa-cancel(); } }
-        Rectangle {
-            width: 360px;
-            height: mfa-card.preferred-height;
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            background: Theme.bg-panel;
-            border-radius: Theme.radius-lg;
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            drop-shadow-blur: Theme.shadow-raised-blur;
-            drop-shadow-color: Theme.shadow-raised-color;
-            TouchArea {}   // swallow clicks inside the card
-            mfa-card := VerticalLayout {
-                padding: 20px;
-                spacing: 12px;
-                Text {
-                    text: root.lang-en ? "Two-factor verification" : "双重验证 (MFA)";
-                    color: Theme.text-primary;
-                    font-size: Theme.fs-xl;
-                    font-weight: 600;
-                }
-                Text {
-                    text: root.mfa-host;
-                    color: Theme.text-secondary;
-                    font-family: Theme.font-mono;
-                    font-size: Theme.fs-sm;
-                }
-                // The server's own prompt text (falls back to a generic hint).
-                Text {
-                    text: root.mfa-prompt != "" ? root.mfa-prompt
-                        : (root.lang-en ? "Enter your verification code" : "请输入验证码");
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-sm;
-                    wrap: word-wrap;
-                }
-                code-input := LabeledInput {
-                    label: root.lang-en ? "Code" : "验证码";
-                    placeholder: "123456";
-                    password: !root.mfa-echo;
-                    value <=> root.mfa-answer;
-                    auto-focus: true;
-                    accepted => { root.mfa-submit(); }   // Enter submits
-                    canceled => { root.mfa-cancel(); }   // Esc cancels (#140-3)
-                }
-                HorizontalLayout {
-                    alignment: end;
-                    spacing: 8px;
-                    GhostButton {
-                        text: @tr("Cancel");
-                        clicked => { root.mfa-cancel(); }
-                    }
-                    PrimaryButton {
-                        text: root.lang-en ? "Verify" : "验证";
-                        clicked => { root.mfa-submit(); }
-                    }
-                }
-            }
-        }
-    }
-
     // --- Interface settings (modal overlay) -------------------------------
     // Embedded in the main window (not a detached window), so it can't be
     // dragged outside the parent. The dim backdrop + a focus-grabbing scope make

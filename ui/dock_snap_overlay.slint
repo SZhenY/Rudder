@@ -1,0 +1,112 @@
+//! 拖拽停靠时的**吸附指示层**：四个边缘区域，光标所在的一侧（`dock-target`）高亮。
+//!
+//! 纯视觉（无 TouchArea），否则表头的拖拽收不到 move 事件。
+//!
+//! ⚠️ 组件**根元素内拿不到 `parent`**，所以根的两条 `parent.width/height` 改成
+//! `100%` —— 解析后仍等于父布局的尺寸，与搬家前逐字等价；内部区域引用的
+//! `parent.*` 不受影响（那里 `parent` = 本组件根）。
+//!
+//! 从 `app.slint` 的窗口主体（`VerticalLayout`）拆出（P4 B 类）—— 纯搬家。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
+import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
+import { SettingsMenuPopup } from "settings_menu.slint";
+import { AboutDialog } from "about_dialog.slint";
+
+export component DockSnapOverlay inherits Rectangle {
+    // ── 状态（窗口透传）──────────────────────────────────────────────
+    in property <string> dock-target;
+    in property <bool> panel-dragging;
+
+    x: 0; y: 0;
+    width: 100%;
+    height: 100%;
+    Rectangle {   // left zone
+        x: 0; y: 0; width: parent.width * 0.22; height: parent.height;
+        background: Theme.accent.with-alpha(0.10);
+        border-width: 0px;
+        border-color: Theme.accent;
+        // 高亮 = 一组 states（原来是 background + border-width 两条三目）
+        states [
+            lit when dock-target == "left" : {
+                background: Theme.accent.with-alpha(0.35);
+                border-width: 2px;
+            }
+        ]
+    }
+    Rectangle {   // right zone
+        x: parent.width * 0.78; y: 0; width: parent.width * 0.22; height: parent.height;
+        background: Theme.accent.with-alpha(0.10);
+        border-width: 0px;
+        border-color: Theme.accent;
+        // 高亮 = 一组 states（原来是 background + border-width 两条三目）
+        states [
+            lit when dock-target == "right" : {
+                background: Theme.accent.with-alpha(0.35);
+                border-width: 2px;
+            }
+        ]
+    }
+    Rectangle {   // top zone
+        x: 0; y: 0; width: parent.width; height: parent.height * 0.22;
+        background: Theme.accent.with-alpha(0.10);
+        border-width: 0px;
+        border-color: Theme.accent;
+        // 高亮 = 一组 states（原来是 background + border-width 两条三目）
+        states [
+            lit when dock-target == "top" : {
+                background: Theme.accent.with-alpha(0.35);
+                border-width: 2px;
+            }
+        ]
+    }
+    Rectangle {   // bottom zone
+        x: 0; y: parent.height * 0.78; width: parent.width; height: parent.height * 0.22;
+        background: Theme.accent.with-alpha(0.10);
+        border-width: 0px;
+        border-color: Theme.accent;
+        // 高亮 = 一组 states（原来是 background + border-width 两条三目）
+        states [
+            lit when dock-target == "bottom" : {
+                background: Theme.accent.with-alpha(0.35);
+                border-width: 2px;
+            }
+        ]
+    }
+}
