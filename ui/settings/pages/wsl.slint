@@ -83,9 +83,11 @@ export component WslPage inherits VerticalLayout {
             border-radius: Theme.radius-sm;
             background: Theme.bg-elevated;
             HorizontalLayout {
-                // 显式铺满并纵向居中：否则内容按偏好高度排版、贴顶（与高亮规则行同一类问题）。
-                vertical-stretch: 1;
-                alignment: center;
+                // 显式铺满：否则内容按偏好高度排版、贴顶（与高亮规则行同一类问题）。
+                // 横排布局默认就把子项沿纵向居中，不要写 `alignment: center`（那是水平居中）。
+                y: 0;
+                width: parent.width;
+                height: parent.height;
                 padding-left: 10px; padding-right: 8px; spacing: 8px;
                 VerticalLayout {
                     horizontal-stretch: 1; alignment: center;
