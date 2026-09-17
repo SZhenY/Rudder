@@ -1,0 +1,162 @@
+//! **快捷键**弹窗（#103）：常驻 `ModalCard`，靠 `visible` 切换（不按事件销毁重建）。
+//!
+//! 从 `app.slint` 拆出（P4 B 类）—— 纯搬家；关闭上抛 `close-requested()`。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
+import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
+import { SettingsMenuPopup } from "settings_menu.slint";
+import { AboutDialog } from "about_dialog.slint";
+import { DockSnapOverlay } from "dock_snap_overlay.slint";
+import { ConfirmOverlays } from "confirm_overlays.slint";
+
+component ShortcutRow inherits Rectangle {
+    in property <string> keys;
+    in property <string> desc;
+    height: 28px;
+    HorizontalLayout {
+        spacing: 10px;
+        Rectangle {
+            width: 116px;
+            chip := Rectangle {
+                x: 0;
+                y: (parent.height - self.height) / 2;
+                width: min(parent.width, kt.preferred-width + 16px);
+                height: 20px;
+                background: Theme.bg-root;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                kt := Text {
+                    text: root.keys;
+                    color: Theme.text-primary;
+                    font-family: Theme.font-mono;
+                    font-size: Theme.fs-xs;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        Text {
+            text: root.desc;
+            color: Theme.text-secondary;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+export component ShortcutsDialog inherits ModalCard {
+    // ── 状态（窗口透传）──────────────────────────────────────────────
+    in property <bool> shortcuts-open:false;
+    in property <bool> is-mac;
+    in property <bool> lang-en:false;
+
+    // ── 动作 ──────────────────────────────────────────────────────────
+    callback close-requested();
+
+    visible: shortcuts-open;
+    card-width: 424px;
+    card-height: 432px;
+    radius: Theme.radius-md;
+    spacing: 5px;
+    dismissed() => { root.close-requested(); }
+
+    HorizontalLayout {
+        Text {
+            text: lang-en ? "Keyboard shortcuts" : "快捷键";
+            color: Theme.text-primary;
+            font-size: Theme.fs-lg;
+            font-weight: 700;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        CloseButton {
+            glyph-size: Theme.fs-sm;
+            clicked => { root.close-requested(); }
+        }
+    }
+
+    // Scrollable so the list never overflows the fixed-height card (#140).
+    ScrollView {
+        vertical-stretch: 1;
+        VerticalLayout {
+            spacing: 5px;
+
+    Text { text: lang-en ? "Tabs" : "标签页";
+           color: Theme.text-muted; font-size: Theme.fs-xs; }
+    ShortcutRow { keys: is-mac ? "⌃Tab" : "Ctrl+Tab"; desc: lang-en ? "Next tab" : "下一个标签页"; }
+    ShortcutRow { keys: is-mac ? "⌃⇧Tab" : "Ctrl+Shift+Tab"; desc: lang-en ? "Previous tab" : "上一个标签页"; }
+
+    // 分组留白（原为空 `Rectangle` 占位）：分组间距 5+6+5=16px → 5+12=17px（+1px）
+    GroupGap {
+        gap: Theme.gap-md;
+        Text { text: lang-en ? "Terminal" : "终端";
+               color: Theme.text-muted; font-size: Theme.fs-xs; }
+    }
+    ShortcutRow { keys: is-mac ? "⌘C" : "Ctrl+Shift+C"; desc: lang-en ? "Copy selection" : "复制选中内容"; }
+    ShortcutRow { keys: is-mac ? "⌘V" : "Ctrl+V"; desc: lang-en ? "Paste" : "粘贴"; }
+    ShortcutRow { keys: is-mac ? "⌘F" : "Ctrl+F"; desc: lang-en ? "Find in terminal" : "查找"; }
+    ShortcutRow { keys: is-mac ? "⌘⇧R" : "Ctrl+Shift+R"; desc: lang-en ? "Jump to command history search" : "跳到命令历史搜索"; }
+    ShortcutRow { keys: lang-en ? "Drag" : "鼠标拖动"; desc: lang-en ? "Select text" : "选择文本"; }
+    ShortcutRow { keys: lang-en ? "Wheel / Scrollbar" : "滚轮 / 滚动条"; desc: lang-en ? "Scroll history" : "滚动历史"; }
+
+    // 分组留白（原为空 `Rectangle` 占位）：同上（+1px）
+    GroupGap {
+        gap: Theme.gap-md;
+        Text { text: lang-en ? "Command box" : "命令输入框";
+               color: Theme.text-muted; font-size: Theme.fs-xs; }
+    }
+    ShortcutRow { keys: "Enter"; desc: lang-en ? "Send command" : "发送命令"; }
+    ShortcutRow { keys: "↑ / ↓"; desc: lang-en ? "Previous / next in history" : "上一条 / 下一条历史"; }
+    ShortcutRow { keys: is-mac ? "⌃R" : "Ctrl+R"; desc: lang-en ? "Search history (↑↓ select, Enter run, Esc close)" : "搜索命令历史(↑↓ 选择,回车执行,Esc 关闭)"; }
+    ShortcutRow { keys: "Esc"; desc: lang-en ? "Close history / focus terminal" : "关闭历史 / 聚焦终端"; }
+    ShortcutRow { keys: is-mac ? "⌃A" : "Ctrl+A"; desc: lang-en ? "Move to start of line" : "移到行首"; }
+    ShortcutRow { keys: is-mac ? "⌃E" : "Ctrl+E"; desc: lang-en ? "Move to end of line" : "移到行尾"; }
+    ShortcutRow { keys: is-mac ? "⌃K" : "Ctrl+K"; desc: lang-en ? "Delete to end of line" : "删除到行尾"; }
+    ShortcutRow { keys: is-mac ? "⌃U" : "Ctrl+U"; desc: lang-en ? "Delete to start of line" : "删除到行首"; }
+            // 分组留白（原为空 `Rectangle` 占位）：2px → 4px（+2px），行内小分组
+            GroupGap {
+                gap: Theme.gap-xs;
+            }
+            }
+    }
+}

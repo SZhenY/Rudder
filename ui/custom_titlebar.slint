@@ -1,0 +1,70 @@
+//! 无边框平台（Windows / Linux）的**自绘标题栏**：图标 + 标题 + 可拖拽中段 + 窗口按钮。
+//!
+//! 从 `app.slint` 的窗口主体（`VerticalLayout`）拆出（P4 B 类）；纯搬家。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
+import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
+import { SettingsMenuPopup } from "settings_menu.slint";
+import { AboutDialog } from "about_dialog.slint";
+import { DockSnapOverlay } from "dock_snap_overlay.slint";
+import { ConfirmOverlays } from "confirm_overlays.slint";
+import { ShortcutsDialog } from "shortcuts_dialog.slint";
+import { InterfaceSettingsOverlay } from "interface_settings_overlay.slint";
+
+export component FramelessTitleBar inherits WindowTitleBar {
+    // ── 状态（窗口 / 父布局透传）─────────────────────────────────────
+    in property <bool> window-maximized:false;
+
+    // ── 动作（由调用点转发，实现仍在 Rust / 窗口）──────────────────
+    callback close-requested();
+    callback win-close();
+    callback win-drag();
+    callback win-maximize-toggle();
+    callback win-minimize();
+
+        title: "Rudder";
+        icon-size: 18px;
+        show-min-max: true;
+        maximized: window-maximized;
+        armed-drag: true;      // 拖过 6px 才交给系统，双击最大化才派发得到
+        drag() => { root.win-drag(); }
+        minimize() => { root.win-minimize(); }
+        maximize-toggle() => { root.win-maximize-toggle(); }
+        close() => { root.win-close(); }
+}

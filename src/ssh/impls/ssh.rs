@@ -378,6 +378,64 @@ async fn open_auxiliary_channel(
     }
 }
 
+/// 在**后台任务**里打开辅助通道，结果经 `tx` 送回泵 —— 于是泵在开通道期间
+/// 仍能处理输入 / resize，不再被阻塞（早先在这里就地 await 会把输出、输入、
+/// resize 一起冻住整整一个超时窗口）。
+///
+/// ⚠️ 调用方必须同时保证：**任务在飞时不要轮询主 PTY 的 `channel.wait()`**。
+/// 一边轮询 `wait()` 一边开通道，严格的 SSH 服务端会直接断开传输（#264）。
+/// 泵里对应地有 `aux_open_in_flight` 把 `wait()` 分支挂起。
+/// 后台任务打开辅助通道后的**整批**结果。
+///
+/// ⚠️ 必须是"一批"而不是"一条"：一批里可能有多条通道（重开监控是两条），
+/// 泵只在**整批到达**后才清 `aux_open_in_flight`。若开一条就发一条，第一条
+/// 到达时泵就会恢复轮询 `channel.wait()`，而此时第二条还在开 —— 那正是 #264
+/// 禁止的情形（轮询主 PTY 的同时开通道 → 严格的服务端断开传输）。
+type AuxOpenBatch = Vec<(AuxiliaryChannelKind, Option<Channel<Msg>>)>;
+
+fn spawn_auxiliary_open(
+    handle: Arc<Handle<ClientHandler>>,
+    kind: AuxiliaryChannelKind,
+    command: &'static [u8],
+    label: &'static str,
+    tx: tokio::sync::mpsc::UnboundedSender<AuxOpenBatch>,
+) {
+    tokio::spawn(async move {
+        let channel = open_auxiliary_channel(&handle, command, label).await;
+        let _ = tx.send(vec![(kind, channel)]);
+    });
+}
+
+/// 重开两条监控通道（Resources → Processes），**串行**放在同一个后台任务里 ——
+/// 于是任意时刻最多只有一个开通道的任务在飞，泵那边的
+/// `aux_open_in_flight` 也就只有一个为真，天然满足 #264 的约束。
+///
+/// 泵已退出时 `tx.send` 会失败，直接收手；已开出的那条通道随连接一起回收。
+fn spawn_monitoring_channels(
+    handle: Arc<Handle<ClientHandler>>,
+    mon_cmd: &'static [u8],
+    proc_cmd: &'static [u8],
+    tx: tokio::sync::mpsc::UnboundedSender<AuxOpenBatch>,
+) {
+    tokio::spawn(async move {
+        // 两条都开完再**整批**发回：期间泵一直挂着 `channel.wait()`，
+        // 绝不出现在"开第二条"时已在轮询主 PTY 的情形（#264）。
+        let mut batch = AuxOpenBatch::new();
+        for (kind, command, label) in [
+            (AuxiliaryChannelKind::Resources, mon_cmd, "monitor"),
+            (
+                AuxiliaryChannelKind::Processes,
+                proc_cmd,
+                "process monitor",
+            ),
+        ] {
+            let channel = open_auxiliary_channel(&handle, command, label).await;
+            batch.push((kind, channel));
+        }
+        let _ = tx.send(batch);
+    });
+}
+
 fn prompt_setup_supported(probe_output: &str) -> Option<bool> {
     if probe_output.contains("__MEATSHELL_SHELL__:bash")
         || probe_output.contains("__MEATSHELL_SHELL__:zsh")
@@ -2089,6 +2147,10 @@ async fn run_session(
     // (#140).
     let mut mon_channel: Option<Channel<Msg>> = None;
     let mut mon_buf = String::new();
+    // 暂停期间**照常解析**，只是不发事件，始终留着最新一份快照；恢复时立刻推出去 ——
+    // 于是展开侧边栏即刻有数据（不必等远端下一拍，也不会先显示 0% 再跳）。
+    let mut last_resource: Option<SessionEvent> = None;
+    let mut last_process: Option<SessionEvent> = None;
     let mut sys_buf = String::new();
     let mut prev_cpu: Option<(u64, u64)> = None; // (total jiffies, idle jiffies)
     let mut prev_net: std::collections::HashMap<String, (u64, u64)> =
@@ -2159,6 +2221,13 @@ async fn run_session(
     // made strict SSH servers close the primary PTY (#264 follow-up).
     let auxiliary_started_at = tokio::time::Instant::now();
     let mut auxiliary_startup = AuxiliaryStartup::new(!session.disable_shell_integration);
+    // 辅助通道全部在后台任务里打开、结果送回泵；任务在飞期间**不轮询**主 PTY
+    // 的 `channel.wait()`（#264）。`aux_open_in_flight` 用来挂起那个分支。
+    let (aux_open_tx, mut aux_open_rx) = tokio::sync::mpsc::unbounded_channel::<AuxOpenBatch>();
+    let mut aux_open_in_flight = false;
+    // 在飞的那批属于**启动序列**（true）还是**重开监控**（false）—— 只有前者
+    // 在结果回来后推进 `auxiliary_startup`。
+    let mut aux_open_for_startup = false;
     let mut auxiliary_deadline = auxiliary_startup
         .pending()
         .map(|kind| auxiliary_started_at + kind.delay());
@@ -2198,20 +2267,60 @@ async fn run_session(
                     None => std::future::pending().await,
                 }
             } => {
-                if let Some(kind) = auxiliary_startup.begin() {
-                    let auxiliary_channel = match kind {
-                        AuxiliaryChannelKind::Resources if resource_monitoring => {
-                            open_auxiliary_channel(&handle, MON_CMD, "monitor").await
-                        }
-                        AuxiliaryChannelKind::Processes if resource_monitoring => {
-                            open_auxiliary_channel(&handle, PROC_CMD, "process monitor").await
-                        }
-                        AuxiliaryChannelKind::SystemInfo => {
-                            open_auxiliary_channel(&handle, SYS_CMD, "system-info").await
-                        }
-                        _ => None,
+                // ⚠️ 必须先判"有批次在飞"再 `begin()`：否则 `begin()` 已把
+                // in_progress 置上，随后又因为让路而不开通道，序列就再也推进不了。
+                if aux_open_in_flight {
+                    // 已有批次在飞（例如刚重开监控）—— 不并发开通道，稍后再来。
+                    auxiliary_deadline =
+                        Some(tokio::time::Instant::now() + std::time::Duration::from_millis(500));
+                } else if let Some(kind) = auxiliary_startup.begin() {
+                    let (command, label) = match kind {
+                        AuxiliaryChannelKind::Resources => (MON_CMD, "monitor"),
+                        AuxiliaryChannelKind::Processes => (PROC_CMD, "process monitor"),
+                        AuxiliaryChannelKind::SystemInfo => (SYS_CMD, "system-info"),
                     };
-                    let auxiliary_available = auxiliary_channel.is_some();
+                    // 监控已被暂停（侧边栏收起）时，监控通道根本不用开。
+                    let wanted = match kind {
+                        AuxiliaryChannelKind::Resources | AuxiliaryChannelKind::Processes => {
+                            resource_monitoring
+                        }
+                        AuxiliaryChannelKind::SystemInfo => true,
+                    };
+                    if wanted {
+                        // 交给后台任务：泵继续处理输入 / resize，不被开通道阻塞。
+                        // 同时 `aux_open_in_flight` 会把 `channel.wait()` 分支挂起 ——
+                        // #264 的硬性前提：不能在轮询主 PTY 的同时开通道。
+                        aux_open_in_flight = true;
+                        aux_open_for_startup = true;
+                        spawn_auxiliary_open(
+                            handle.clone(),
+                            kind,
+                            command,
+                            label,
+                            aux_open_tx.clone(),
+                        );
+                        // 等结果回来再排下一个（`aux_open_rx` 分支负责推进）。
+                        auxiliary_deadline = None;
+                    } else {
+                        // 监控处于暂停态：这条监控通道不开，直接推进到下一条
+                        // （首次连接序列里的 SystemInfo 不受影响）。
+                        let _ = (command, label);
+                        auxiliary_startup.complete();
+                        auxiliary_deadline = auxiliary_startup
+                            .pending()
+                            .map(|next| tokio::time::Instant::now() + next.delay());
+                    }
+                } else {
+                    auxiliary_deadline = None;
+                }
+            }
+            // 后台开通道的结果**整批**回来了（一批可能有多条）—— 这里才落库、
+            // 才清 `aux_open_in_flight`、才推进启动序列。
+            Some(batch) = aux_open_rx.recv() => {
+                for (kind, opened) in batch {
+                    // 暂停期间到达的通道**照常保留**（暂停不再关通道）：
+                    // 解析在下面的数据分支里按 `resource_monitoring` 跳过即可。
+                    let auxiliary_available = opened.is_some();
 
                     match kind {
                         AuxiliaryChannelKind::Resources => {
@@ -2221,28 +2330,33 @@ async fn run_session(
                             if let Some(old) = mon_channel.take() {
                                 let _ = old.close().await;
                             }
-                            mon_channel = auxiliary_channel;
+                            mon_channel = opened;
                         }
                         AuxiliaryChannelKind::Processes => {
                             if let Some(old) = proc_channel.take() {
                                 let _ = old.close().await;
                             }
-                            proc_channel = auxiliary_channel;
+                            proc_channel = opened;
                         }
-                        AuxiliaryChannelKind::SystemInfo => sys_channel = auxiliary_channel,
+                        AuxiliaryChannelKind::SystemInfo => sys_channel = opened,
                     }
-                    auxiliary_startup.complete();
-                    auxiliary_deadline = auxiliary_startup
-                        .pending()
-                        .map(|next| tokio::time::Instant::now() + next.delay());
                     tracing::debug!(
                         "[SESSION_START] id={} stage={kind:?}-startup-finished available={} elapsed_ms={}",
                         session.id,
                         auxiliary_available,
                         session_started.elapsed().as_millis()
                     );
-                } else {
-                    auxiliary_deadline = None;
+                }
+                // 整批处理完才恢复轮询主 PTY（#264）。
+                aux_open_in_flight = false;
+                // 只有**启动序列**那批才推进序列；重开监控那批不算
+                // （否则会一路推进到 SystemInfo，白白多开一条通道）。
+                if aux_open_for_startup {
+                    aux_open_for_startup = false;
+                    auxiliary_startup.complete();
+                    auxiliary_deadline = auxiliary_startup
+                        .pending()
+                        .map(|next| tokio::time::Instant::now() + next.delay());
                 }
             }
             cmd = commands.recv() => {
@@ -2266,38 +2380,34 @@ async fn run_session(
                         }
                         resource_monitoring = enabled;
                         if !enabled {
-                            // Pause: drop both monitor channels so the remote
-                            // polling loops terminate.
-                            if let Some(monitor) = mon_channel.take() {
-                                let _ = monitor.close().await;
-                            }
-                            if let Some(processes) = proc_channel.take() {
-                                let _ = processes.close().await;
-                            }
-                            mon_buf.clear();
-                            proc_buf.clear();
+                            // Pause：**不关通道**（关掉再重开 exec 通道正是掉线的元凶），
+                            // 也**不丢数据** —— 解析继续，只是不发事件，最新一份留在
+                            // `last_*`。通道数据照常被读走，服务端写窗口不会填满。
                         } else {
-                            // Resume: reopen fresh exec channels for both
-                            // monitors. Reuse open_auxiliary_channel so the 3s
-                            // timeout applies here too — awaiting the raw
-                            // channel_open inside this select branch used to
-                            // freeze output/input/resize for the whole keepalive
-                            // window when the server stopped responding
-                            // (#monitor-resume-timeout).
-                            if let Some(old) = mon_channel.take() {
-                                let _ = old.close().await;
+                            // Resume：先把暂停期间攒的最新快照**立刻**推出去，
+                            // 侧边栏展开即刻显示（不必等远端下一拍）。
+                            if let Some(ev) = last_resource.take() {
+                                let _ = events.send(ev);
                             }
-                            if let Some(old) = proc_channel.take() {
-                                let _ = old.close().await;
+                            if let Some(ev) = last_process.take() {
+                                let _ = events.send(ev);
                             }
-                            mon_channel =
-                                open_auxiliary_channel(&handle, MON_CMD, "monitor").await;
-                            proc_channel =
-                                open_auxiliary_channel(&handle, PROC_CMD, "process monitor")
-                                    .await;
-                            prev_cpu = None;
-                            prev_net.clear();
-                            prev_net_at = std::time::Instant::now();
+                            // 通道一直开着 → 通常无需重开；只有确实没了才重开，
+                            // 此时基线已失效，需要重置（走后台任务，期间挂起
+                            // `channel.wait()` —— #264）。
+                            if mon_channel.is_none() && proc_channel.is_none() && !aux_open_in_flight {
+                                prev_cpu = None;
+                                prev_net.clear();
+                                prev_net_at = std::time::Instant::now();
+                                aux_open_in_flight = true;
+                                aux_open_for_startup = false;
+                                spawn_monitoring_channels(
+                                    handle.clone(),
+                                    MON_CMD,
+                                    PROC_CMD,
+                                    aux_open_tx.clone(),
+                                );
+                            }
                         }
                     }
                     Some(SessionCommand::AddTunnel { id, forward }) => {
@@ -2394,7 +2504,17 @@ async fn run_session(
                     let _ = events.send(SessionEvent::Output(buf));
                 }
             }
-            msg = channel.wait() => {
+            // ⚠️ #264：后台任务正在开 exec 通道时**不能**轮询主 PTY 的
+            // `channel.wait()` —— 严格的服务端会据此断开传输（侧边栏反复收展
+            // 就会反复触发这条路径，连接于是"自己断开"）。
+            // 挂起该分支即可：数据由 russh 缓冲在通道里，恢复后照常送达，不丢。
+            msg = async {
+                if aux_open_in_flight {
+                    std::future::pending::<Option<ChannelMsg>>().await
+                } else {
+                    channel.wait().await
+                }
+            } => {
                 match msg {
                     Some(ChannelMsg::Data { data }) => {
                         // Route the two ZMODEM handshakes in opposite directions:
@@ -2780,7 +2900,12 @@ async fn run_session(
                                 &mut prev_net,
                                 &mut prev_net_at,
                             ) {
-                                let _ = events.send(stats);
+                                // 暂停时**照样解析**（1 Hz，成本可忽略），只是不发事件；
+                                // 始终留着最新一份，恢复时立刻推出去。
+                                if resource_monitoring {
+                                    let _ = events.send(stats.clone());
+                                }
+                                last_resource = Some(stats);
                             }
                         }
                         // Bound the leftover (incomplete) tail: a server that
@@ -2852,10 +2977,15 @@ async fn run_session(
                                 .trim_start_matches(['\r', '\n'])
                                 .to_string();
                             let (current_user, procs) = parse_process_block(&block);
-                            let _ = events.send(SessionEvent::ProcessStats {
+                            let ev = SessionEvent::ProcessStats {
                                 current_user,
                                 procs,
-                            });
+                            };
+                            // 同上：暂停时仍解析，只留最新一份。
+                            if resource_monitoring {
+                                let _ = events.send(ev.clone());
+                            }
+                            last_process = Some(ev);
                         }
                         const PROC_BUF_CAP: usize = 1 << 18;
                         if proc_buf.len() > PROC_BUF_CAP {
@@ -4244,3 +4374,4 @@ mod connect_failure_tests {
         assert!(hostkey.contains("主机密钥") || hostkey.contains("Host key"));
     }
 }
+

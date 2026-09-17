@@ -1,0 +1,68 @@
+//! macOS 下给原生交通灯让位的**留白条**（只让位、不接管拖拽，双击交给系统）。
+//!
+//! 从 `app.slint` 的窗口主体（`VerticalLayout`）拆出（P4 B 类）；纯搬家。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
+import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
+import { SettingsMenuPopup } from "settings_menu.slint";
+import { AboutDialog } from "about_dialog.slint";
+import { DockSnapOverlay } from "dock_snap_overlay.slint";
+import { ConfirmOverlays } from "confirm_overlays.slint";
+import { ShortcutsDialog } from "shortcuts_dialog.slint";
+import { InterfaceSettingsOverlay } from "interface_settings_overlay.slint";
+
+export component TitlebarInsetStrip inherits Rectangle {
+    // ── 状态（窗口 / 父布局透传）─────────────────────────────────────
+    in property <length> titlebar-inset;   // 默认值原本引用窗口属性，改由调用点传入
+
+    // ── 动作（由调用点转发，实现仍在 Rust / 窗口）──────────────────
+    callback close-requested();
+    callback win-maximize-toggle();
+
+        height: titlebar-inset;
+        background: Theme.bg-panel;
+        // macOS：交通灯右侧这块留白此前是"死区"——为不干扰系统拖拽
+        // 而没有 TouchArea，导致双击毫无反应（既不在原生标题栏内，
+        // 也没有自己的双击处理）。补一个**只处理双击**的 TouchArea：
+        // 双击 → Zoom（winit set_maximized）；拖拽仍交给系统，不加
+        // win-drag，避免接管指针后双击失效（同 tb-drag 的教训）。
+        tb-mac-dbl := TouchArea {
+            double-clicked => { root.win-maximize-toggle(); }
+        }
+}

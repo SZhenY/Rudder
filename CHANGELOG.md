@@ -5,6 +5,23 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 修复 / Fixed
+
+- **修复：反复收起 / 展开状态信息侧边栏后 SSH 连接会突然断开。** 收展侧栏会暂停 / 恢复远端
+  资源监控，原实现是"暂停即关闭两条 exec 通道、恢复再重开" —— 于是每次收展都要在会话
+  泵里开关一次 exec 通道，反复多次后严格的 SSH 服务端会断开主 PTY（连接就此掉线）。
+  现在**暂停不再碰通道**：两条监控通道随会话只开一次，暂停只是停止解析（数据照常排空，
+  以免服务端写窗口被填满），恢复即恢复解析；只有通道确实没了才重开，且重开走后台任务、
+  期间挂起主 PTY 的 `channel.wait()`（#264）。
+  **Fixed: the SSH connection dropped after repeatedly collapsing/expanding the resource
+  sidebar.** Toggling pauses/resumes remote monitoring; it used to *close* both exec channels
+  and reopen them, so every toggle opened/closed exec channels inside the session pump, and
+  after enough toggles strict SSH servers tore down the primary PTY. Pausing now leaves the
+  channels alone: they are opened once per session, pausing only stops *parsing* (data is
+  still drained so the server write window never fills), and resuming resumes parsing. A
+  reopen happens only if the channels are really gone, via a background task with the PTY
+  `channel.wait()` suspended meanwhile (#264).
+
 ## [0.7.7-fix6] - 2026-09-16
 
 ### 修复 / Fixed
