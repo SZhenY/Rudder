@@ -135,8 +135,8 @@ pub(crate) fn enqueue_cred_prompt(
     need_password: bool,
     responder: crate::ssh::CredentialResponder,
 ) {
-    if let Some(reply) = CRED_DECIDED.with(|d| d.borrow().get(&session_id).cloned()) {
-        responder.respond(reply);
+    if let Some(reply) = CRED_DECIDED.with(|d| d.borrow().get(&session_id).map(SecretCred::to_reply)) {
+        responder.respond(Some(reply));
         return;
     }
     let show_now = CRED_QUEUE.with(|q| {
@@ -192,9 +192,10 @@ pub(super) fn resolve_front_cred(win: &AppWindow, accept: bool) {
             // session: caching `None` made every later attempt for this
             // session short-circuit to Cancelled without showing the dialog
             // again (same class of bug as #152 on the host-key path).
-            if reply.is_some() {
+            if let Some(accepted) = &reply {
                 CRED_DECIDED.with(|d| {
-                    d.borrow_mut().insert(p.session_id.clone(), reply.clone());
+                    d.borrow_mut()
+                        .insert(p.session_id.clone(), SecretCred::from_reply(accepted));
                 });
             }
             if let Some((ref u, ref pw, true)) = reply {
@@ -233,7 +234,7 @@ pub(super) fn persist_credentials(
                     sess.password = crate::config::Secret::new(password.to_string());
                 }
                 st.upsert(sess);
-                let _ = st.save();
+                st.save_logging();
             }
         }
     });

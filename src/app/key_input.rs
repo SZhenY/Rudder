@@ -171,7 +171,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 let idx = i as usize;
                 if idx < s.command_history().len() {
                     s.remove_command_history(idx);
-                    let _ = s.save();
+                    s.save_logging();
                 }
             }
             if let Some(w) = weak.upgrade() {
@@ -204,7 +204,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 let mut s = store_rc.borrow_mut();
                 if let Some(idx) = s.command_history().iter().position(|c| c == cmd.as_str()) {
                     s.remove_command_history(idx);
-                    let _ = s.save();
+                    s.save_logging();
                 }
             }
             if let Some(w) = weak.upgrade() {
@@ -244,7 +244,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                         send_enter,
                     });
                     s.set_quick_commands(v);
-                    let _ = s.save();
+                    s.save_logging();
                 }
                 if let Some(w) = weak.upgrade() {
                     w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
@@ -265,7 +265,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     v.remove(i);
                 }
                 s.set_quick_commands(v);
-                let _ = s.save();
+                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
                 w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
@@ -334,7 +334,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                             send_enter,
                         },
                     );
-                    let _ = s.save();
+                    s.save_logging();
                 }
                 if let Some(w) = weak.upgrade() {
                     w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
@@ -360,7 +360,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     };
                     v.insert(index as usize + 1, dup);
                     s.set_quick_commands(v);
-                    let _ = s.save();
+                    s.save_logging();
                 }
             }
             if let Some(w) = weak.upgrade() {
@@ -387,7 +387,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     c.group = target;
                 }
                 s.set_quick_commands(v);
-                let _ = s.save();
+                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
                 w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
@@ -407,7 +407,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 let changed = reorder_quick_command(&mut commands, index as usize, move_up);
                 if changed {
                     s.set_quick_commands(commands);
-                    let _ = s.save();
+                    s.save_logging();
                 }
                 changed
             };
@@ -431,7 +431,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 } else {
                     s.rename_quick_group(orig.as_ref(), name.to_string());
                 }
-                let _ = s.save();
+                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
                 w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));
@@ -447,7 +447,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             {
                 let mut s = store_rc.borrow_mut();
                 s.remove_quick_group(name.as_ref());
-                let _ = s.save();
+                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
                 w.set_quick_commands(quick_cmd_model(&store_rc.borrow(), &collapsed.borrow()));

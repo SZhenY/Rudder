@@ -122,6 +122,83 @@ fn dir_is_writable(dir: &Path) -> bool {
     }
 }
 
+/// 把目录权限收紧到 0700（unix；Windows 的 `%TEMP%` 本就是当前用户专属）。
+fn restrict_dir(dir: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+}
+
+/// 这个目录是不是"我们自己的私有目录"：真的目录（不是符号链接）、0700、属主是我们。
+#[cfg(unix)]
+fn is_private_dir(dir: &Path) -> bool {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let Ok(meta) = fs::symlink_metadata(dir) else {
+        return false;
+    };
+    if !meta.is_dir() || meta.file_type().is_symlink() {
+        return false;
+    }
+    if meta.permissions().mode() & 0o777 != 0o700 {
+        return false;
+    }
+    // std 没有 getuid，拿可执行文件的属主当"我们自己"。
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| fs::metadata(exe).ok())
+        .is_some_and(|m| m.uid() == meta.uid())
+}
+
+#[cfg(not(unix))]
+fn is_private_dir(dir: &Path) -> bool {
+    fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir())
+}
+
+/// 8 字节加密随机数的十六进制串 —— 临时目录名用，别留可预测的名字。
+fn random_suffix() -> String {
+    use rand::RngCore as _;
+    let mut bytes = [0u8; 8];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// 在临时目录里建一个**本次运行专属**的私有目录（随机名、0700、创建即独占）。
+///
+/// 给自更新暂存这类"用完即弃、但不能被别人预占"的场景用。
+pub(crate) fn create_private_temp_dir(prefix: &str) -> Result<PathBuf> {
+    let dir = std::env::temp_dir().join(format!("{prefix}-{}", random_suffix()));
+    // `create_dir` 而不是 `create_dir_all`：名字已存在就报错，不会跟随符号链接。
+    fs::create_dir(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
+    restrict_dir(&dir);
+    Ok(dir)
+}
+
+/// 私有临时目录：配置数据的最后一招回落，也用作 zmodem 收文件的兜底目录。
+///
+/// 刻意**不**无条件用 `<temp>/rudder`：`/tmp` 是 1777（世界可写），共享机器上别的
+/// 本地账户可以先放一个同名目录或符号链接，把 `secret.key` 与 `sessions.json` 引到
+/// 任意位置。所以只在"目录由我们刚建出来"或"已存在的确实是我们的私有目录"时才用它，
+/// 否则换一个不可预测的随机名 —— 宁可丢持久化，也不写进别人能摆布的位置。
+pub(crate) fn private_temp_dir() -> PathBuf {
+    let base = std::env::temp_dir();
+    let candidate = base.join("rudder");
+    if fs::create_dir(&candidate).is_ok() {
+        restrict_dir(&candidate);
+        return candidate;
+    }
+    if is_private_dir(&candidate) {
+        return candidate; // 上次运行留下的、确实属于我们的目录
+    }
+    let dir = base.join(format!("rudder-{}", random_suffix()));
+    let _ = fs::create_dir(&dir);
+    restrict_dir(&dir);
+    dir
+}
+
 /// Windows: the data dir is ALWAYS beside the executable — `<exe_dir>/config`
 /// (logs in `<exe_dir>/log`, user fonts in `<exe_dir>/config/fonts`) —
 /// whether installed or portable. The app is fully self-contained and never
@@ -143,9 +220,7 @@ fn resolve_data_dir() -> PathBuf {
 
     // Read-only exe dir → temp dir, so the app still launches. Data is lost on
     // reboot, but never silently goes to AppData.
-    let dir = std::env::temp_dir().join("rudder");
-    let _ = fs::create_dir_all(&dir);
-    dir
+    private_temp_dir()
 }
 
 /// macOS: always the per-user OS config dir (`~/Library/Application
@@ -156,7 +231,7 @@ fn resolve_data_dir() -> PathBuf {
 /// portable (exe-adjacent) config if the per-user dir is still empty.
 #[cfg(target_os = "macos")]
 fn resolve_data_dir() -> PathBuf {
-    let dir = legacy_data_dir().unwrap_or_else(|| std::env::temp_dir().join("rudder"));
+    let dir = legacy_data_dir().unwrap_or_else(private_temp_dir);
     let _ = fs::create_dir_all(&dir);
 
     if let Some(portable) = portable_data_dir()
@@ -201,7 +276,7 @@ fn resolve_data_dir() -> PathBuf {
 
     // Fall back to the legacy per-user dir (also the pre-0.4.15 location). Last
     // resort: a temp dir, so the app still launches if neither is available.
-    let dir = legacy.unwrap_or_else(|| std::env::temp_dir().join("rudder"));
+    let dir = legacy.unwrap_or_else(private_temp_dir);
     let _ = fs::create_dir_all(&dir);
     dir
 }
@@ -1102,14 +1177,9 @@ impl ConfigStore {
 
         let mut key = [0u8; 32];
         OsRng.fill_bytes(&mut key);
-        fs::write(&key_path, key)
-            .with_context(|| format!("failed to write {}", key_path.display()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
-                .with_context(|| format!("failed to set permissions on {}", key_path.display()))?;
-        }
+        // 创建时就 0600（老写法是先 `fs::write` 再 `chmod`，中间那段窗口里别的本地
+        // 账户就能读走密钥），并且 fsync —— 密钥丢了等于所有已存口令都解不开。
+        Self::write_private(&key_path, &key, true)?;
         tracing::info!("generated new encryption key at {}", key_path.display());
         Ok(key)
     }
@@ -1250,6 +1320,17 @@ impl ConfigStore {
         if let Some(plain) = Self::try_decrypt(key, cfg.sync.webdav_password.as_str()) {
             cfg.sync.webdav_password = Secret::new(plain);
         }
+        // 命令历史：旧文件里的明文原样保留（下次 save 时加密），解不开的密文直接丢掉 ——
+        // 留着只是一条谁也读不出来的乱码，还会被当成命令补全出来。
+        cfg.command_history.retain_mut(|cmd| {
+            match Self::try_decrypt(key, cmd) {
+                Some(plain) => {
+                    *cmd = plain;
+                    true
+                }
+                None => !cmd.starts_with(Self::ENC_PREFIX),
+            }
+        });
         if undecryptable > 0 {
             // Nothing can recover these — `save()` skips values that
             // already carry the prefix, so the stale blobs would
@@ -2338,6 +2419,13 @@ impl ConfigStore {
                 }
             }
         }
+        // 命令历史也用同一套处理：里面常有 `mysql -p…`、`curl -H 'Authorization: …'`
+        // 这类自带口令的命令，此前是明文躺在 sessions.json 里。已带前缀的跳过（幂等）。
+        for cmd in &mut sessions_disk.command_history {
+            if !cmd.is_empty() && !cmd.starts_with(Self::ENC_PREFIX) {
+                *cmd = Self::encrypt(&self.key, cmd)?;
+            }
+        }
         let mut settings_disk = SettingsFile::from_cache(&self.cache);
         if !settings_disk.sync.webdav_password.is_empty()
             && !settings_disk
@@ -2361,6 +2449,25 @@ impl ConfigStore {
         Ok(())
     }
 
+    /// 立即写盘，失败**记日志**。
+    ///
+    /// 这是全项目统一的写盘失败策略（与设置面板的 `persist` 一致）：设置坏掉不值得
+    /// panic，但也不能像以前那样用 `let _ = s.save();` **静默**吞掉 —— 那样用户会以为
+    /// 改动保住了，重启之后才发现没存上，而且日志里什么线索都没有。
+    pub fn save_logging(&mut self) {
+        if let Err(e) = self.save() {
+            tracing::warn!("failed to save {}: {e:#}", self.path.display());
+        }
+    }
+
+    /// 退出路径的收尾写盘，失败**记日志** —— 这是最后一次落盘机会，
+    /// 静默丢掉的话用户改的设置就白改了。
+    pub fn flush_logging(&mut self) {
+        if let Err(e) = self.flush() {
+            tracing::warn!("failed to flush {} on exit: {e:#}", self.path.display());
+        }
+    }
+
     /// 标记"有改动待落盘"；真正的写入由 `flush` 在防抖窗口结束后执行。
     pub fn save_debounced(&mut self) {
         self.pending = true;
@@ -2375,21 +2482,73 @@ impl ConfigStore {
         self.save()
     }
 
-    /// 写兄弟临时文件 → 0600 → rename：廉价的原子发布。
-    fn write_atomic(path: &Path, raw: &str) -> Result<()> {
-        let tmp = path.with_extension("json.tmp");
-        fs::write(&tmp, raw).with_context(|| format!("failed to write {}", tmp.display()))?;
-        // Restrict to owner-only before publishing (#34): sessions.json holds
-        // (encrypted) credentials, so it shouldn't be world-readable. Set 0600
-        // on the temp file so the permission is already in place at rename.
-        // Windows %APPDATA% is owner-restricted by default ACLs — no-op there.
+    /// 以 0600 **创建**文件并写入内容；`durable` 为真时再 `fsync`。
+    ///
+    /// 两个容易漏的点：
+    ///
+    /// * **权限窗口**：`fs::write` + 事后 `chmod 0600` 之间，文件是按 umask（通常 0644）
+    ///   建的，这段时间**别的本地账户就能读**。`secret.key` 和 `sessions.json.tmp` 都不
+    ///   该有这段窗口，所以用 `OpenOptions::mode(0o600)` 让权限在创建时就带上。
+    ///   （Windows 的 `%APPDATA%` 默认 ACL 就是属主专属，那里的 `mode` 是空操作。）
+    /// * **掉电**：写完不 `fsync` 直接 `rename`，目录项可能先落盘而数据没有 —— 崩溃后
+    ///   会看到一个 0 字节的 `sessions.json`。主文件走 `durable = true`。
+    fn write_private(path: &Path, bytes: &[u8], durable: bool) -> Result<()> {
+        use std::io::Write as _;
+
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))
-                .with_context(|| format!("failed to set permissions on {}", tmp.display()))?;
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
         }
+        let mut file = opts
+            .open(path)
+            .with_context(|| format!("failed to create {}", path.display()))?;
+        #[cfg(unix)]
+        {
+            // 旧版本留下的文件可能是 0644（那时是先建后 chmod）：顺手补一次。
+            use std::os::unix::fs::PermissionsExt;
+            let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
+        }
+        file.write_all(bytes)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+        if durable {
+            file.sync_all()
+                .with_context(|| format!("failed to sync {}", path.display()))?;
+        }
+        Ok(())
+    }
+
+    /// `rename` 之后同步父目录，让目录项本身也落地。
+    ///
+    /// 只用 unix；失败只记 debug 日志 —— 它坏的最坏结果只是"崩溃后回到旧文件"，
+    /// 不是数据损坏，不值得把整次保存判成失败。
+    fn sync_parent_dir(path: &Path) {
+        #[cfg(unix)]
+        if let Some(dir) = path.parent() {
+            match fs::File::open(dir) {
+                Ok(d) => {
+                    if let Err(e) = d.sync_all() {
+                        tracing::debug!("failed to sync {}: {e}", dir.display());
+                    }
+                }
+                Err(e) => tracing::debug!("failed to open {} for sync: {e}", dir.display()),
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = path;
+    }
+
+    /// 写兄弟临时文件 → rename：廉价的原子发布。
+    ///
+    /// 权限在**建文件时**就带上 0600，主文件还带 `fsync`（见 `write_private`）：
+    /// `sessions.json` 里有（加密的）凭据，既不欢迎本地其他账户读，也不能掉电变 0 字节。
+    fn write_atomic(path: &Path, raw: &str) -> Result<()> {
+        let tmp = path.with_extension("json.tmp");
+        Self::write_private(&tmp, raw.as_bytes(), true)?;
         fs::rename(&tmp, path).with_context(|| format!("failed to finalise {}", path.display()))?;
+        Self::sync_parent_dir(path);
         Ok(())
     }
 
@@ -2411,14 +2570,11 @@ impl ConfigStore {
         ] {
             let dst = backup_dir.join(name);
             let tmp = dst.with_extension("json.tmp");
-            if let Err(e) = fs::write(&tmp, raw) {
+            // 备份是尽力而为：权限同样要在建文件时就 0600（里面是加密凭据），
+            // 但不值得为它 fsync —— 主文件已经在 write_atomic 里同步过了。
+            if let Err(e) = Self::write_private(&tmp, raw.as_bytes(), false) {
                 tracing::warn!("failed to write {}: {e}", tmp.display());
                 continue;
-            }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
             }
             if let Err(e) = fs::rename(&tmp, &dst) {
                 tracing::warn!("failed to finalise {}: {e}", dst.display());
@@ -2590,6 +2746,142 @@ mod tests {
             pending: false,
             key: [7u8; 32],
         }
+    }
+
+    /// `write_atomic` 落盘的文件必须是 0600。
+    ///
+    /// 老写法先按 umask（通常 0644）建文件、之后再 chmod，中间那段窗口里
+    /// `sessions.json.tmp` 是**世界可读**的 —— 里面是（加密的）凭据。
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_publishes_owner_only_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("ms-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sessions.json");
+        // 放一个旧版本留下的 0644 文件：新写法在覆盖它之后也得是 0600。
+        std::fs::write(&path, b"old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        ConfigStore::write_atomic(&path, "{}").unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "sessions.json 应为 0600，实际 {mode:o}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 新生成的 `secret.key` 同样必须从创建那一刻就是 0600，并且带 fsync。
+    #[cfg(unix)]
+    #[test]
+    fn generated_secret_key_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("ms-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        ConfigStore::load_or_create_key(&dir).unwrap();
+
+        let key_path = dir.join("secret.key");
+        let mode = std::fs::metadata(&key_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "secret.key 应为 0600，实际 {mode:o}");
+        assert_eq!(std::fs::metadata(&key_path).unwrap().len(), 32);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 私有目录的判据是"真目录 + 0700 + 属主是自己"。
+    ///
+    /// 别的本地账户在 `/tmp` 里抢先摆一个同名目录（或 0700 的符号链接）骗不过去。
+    #[cfg(unix)]
+    #[test]
+    fn private_dir_check_rejects_world_readable_and_symlinks() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("ms-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let good = dir.join("good");
+        std::fs::create_dir(&good).unwrap();
+        std::fs::set_permissions(&good, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(is_private_dir(&good));
+
+        let loose = dir.join("loose");
+        std::fs::create_dir(&loose).unwrap();
+        std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(!is_private_dir(&loose), "0755 的目录不该算私有目录");
+
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&good, &link).unwrap();
+        assert!(!is_private_dir(&link), "符号链接不该算私有目录");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `create_private_temp_dir`：随机名、0700、创建即独占。
+    #[cfg(unix)]
+    #[test]
+    fn create_private_temp_dir_is_random_and_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let a = create_private_temp_dir("ms-test").unwrap();
+        let b = create_private_temp_dir("ms-test").unwrap();
+        assert_ne!(a, b, "两次调用应当拿到不同的目录名");
+        for dir in [&a, &b] {
+            let mode = std::fs::metadata(dir).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700, "{} 应为 0700，实际 {mode:o}", dir.display());
+        }
+        let _ = std::fs::remove_dir_all(&a);
+        let _ = std::fs::remove_dir_all(&b);
+    }
+
+    /// 写盘失败只记日志，**不能 panic** —— 这正是 `save_logging` / `flush_logging`
+    /// 存在的意义（此前是 `let _ = s.save();` 静默吞掉）。
+    #[test]
+    fn logging_saves_survive_an_unwritable_path() {
+        let mut store = temp_store();
+        // 把路径指到一个**目录**上：`write_atomic` 必然失败。
+        store.path = std::env::temp_dir();
+        store.save_logging();
+        store.flush_logging();
+    }
+
+    /// 命令历史里的口令不该明文落在 `sessions.json` 里，读回来要能还原。
+    #[test]
+    fn command_history_is_encrypted_at_rest() {
+        let mut store = temp_store();
+        store.push_command_history("mysql -psecret123".to_string());
+        store.save().unwrap();
+
+        let raw = std::fs::read_to_string(&store.path).unwrap();
+        assert!(!raw.contains("secret123"), "命令历史不该明文落盘：{raw}");
+
+        // 模拟下次启动：读回来解密，应当还原原文。
+        let file: SessionsFile = serde_json::from_str(&raw).unwrap();
+        assert!(
+            file.command_history[0].starts_with(ConfigStore::ENC_PREFIX),
+            "落盘的应当是密文：{}",
+            file.command_history[0]
+        );
+        let mut cfg = ConfigFile {
+            command_history: file.command_history.clone(),
+            ..Default::default()
+        };
+        ConfigStore::decrypt_into(&mut cfg, &store.key);
+        assert_eq!(cfg.command_history, vec!["mysql -psecret123".to_string()]);
+
+        let _ = std::fs::remove_file(&store.path);
+        let _ = std::fs::remove_file(&store.settings_path);
+    }
+
+    /// 旧文件里的明文命令历史仍要读得进来 —— 别因为新增加密就把历史清空。
+    #[test]
+    fn legacy_plaintext_command_history_still_loads() {
+        let mut cfg = ConfigFile {
+            command_history: vec!["ls -la".to_string()],
+            ..Default::default()
+        };
+        ConfigStore::decrypt_into(&mut cfg, &[7u8; 32]);
+        assert_eq!(cfg.command_history, vec!["ls -la".to_string()]);
     }
 
     #[test]

@@ -327,11 +327,6 @@ export component AppWindow inherits Window {
     in-out property <bool> quick-cmd-manage-open: false;  // manage dialog
     in-out property <length> qcm-dialog-width: 560px;
     in-out property <length> qcm-dialog-height: 560px;
-    property <bool> qcm-dialog-resizing;
-    property <length> qcm-resize-base-width;
-    property <length> qcm-resize-base-height;
-    property <length> qcm-resize-grab-x;
-    property <length> qcm-resize-grab-y;
     in-out property <string> qcm-name;                // manage form: name field
     in-out property <string> qcm-command;             // manage form: command field
     in-out property <string> qcm-group;               // manage form: group field (#55)
@@ -733,7 +728,6 @@ export component AppWindow inherits Window {
 
     callback tab-selected(string);
     callback tab-closed(string);
-    callback new-tab-clicked();
     callback tab-reorder(int /* from-index */, int /* dir: -1 left / +1 right */);
     // Per-pane tab actions (v0.5): the int is the pane (leaf) id.
     callback pane-tab-selected(int /* pane-id */, string /* tab-id */);

@@ -504,7 +504,9 @@ fn is_close_byte(b: u8) -> bool {
 fn download_dir() -> PathBuf {
     directories::UserDirs::new()
         .and_then(|u| u.download_dir().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| std::env::temp_dir().join("rudder"))
+        // 兜底目录也必须是私有的：`/tmp/rudder` 这种固定名字在共享机器上
+        // 可能已经被别人放好了目录或符号链接。
+        .unwrap_or_else(crate::config::private_temp_dir)
 }
 
 /// Reduce a sender-supplied name to a safe basename inside the download dir.

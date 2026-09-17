@@ -49,7 +49,7 @@ pub(crate) fn save_layout(win: &AppWindow, store: &Rc<RefCell<ConfigStore>>) {
         // do not issue a new native resize while the window is shutting down.
         s.set_window_size(w, h);
     }
-    let _ = s.save();
+    s.save_logging();
 }
 /// Re-flatten the split-tree `layout` for the current content-area size and push
 /// the result into the AppWindow's `panes` / `splitters` models. Also keeps the

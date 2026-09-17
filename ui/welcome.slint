@@ -41,7 +41,6 @@ export component Welcome inherits Rectangle {
     // tighten padding so the session list fits a narrow docked panel (#v0.5).
     in property <bool> compact;
     in property <string> dock-edge: "left";
-    property <bool> dock-horizontal: root.dock-edge == "left" || root.dock-edge == "right";
     // Collapse the sidebar to the edge icon strip (compact mode only) (#v0.5 M5).
     callback collapse();
     callback dock-drag-move(length, length);

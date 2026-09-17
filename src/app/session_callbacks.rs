@@ -191,7 +191,7 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                     added += 1;
                 }
                 if added > 0 {
-                    let _ = s.save();
+                    s.save_logging();
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);
@@ -254,7 +254,7 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                     added += 1;
                 }
                 if added > 0 {
-                    let _ = s.save();
+                    s.save_logging();
                 }
             }
             sync_sessions_for_window(&weak, &store.borrow(), &sessions_model);

@@ -380,7 +380,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
                 distribution.to_string(),
                 directory.to_string(),
             );
-            let _ = s.save();
+            s.save_logging();
             if let Some(w) = weak.upgrade() {
                 w.set_wsl_profiles(wsl_profile_model(&s));
                 sync_sessions_to_model(&s, &sessions_model);
@@ -394,7 +394,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.on_remove_wsl_profile(move |id| {
             let mut s = store.borrow_mut();
             s.remove_wsl_profile(id.as_str());
-            let _ = s.save();
+            s.save_logging();
             if let Some(w) = weak.upgrade() {
                 w.set_wsl_profiles(wsl_profile_model(&s));
                 sync_sessions_to_model(&s, &sessions_model);

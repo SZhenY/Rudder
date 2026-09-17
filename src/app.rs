@@ -704,7 +704,7 @@ pub fn run() -> Result<()> {
             {
                 let mut s = store.borrow_mut();
                 s.set_language(crate::i18n::current_code().to_string());
-                let _ = s.save();
+                s.save_logging();
             }
             // Re-translate the welcome tab's dynamic title.
             for i in 0..tabs_model.row_count() {
@@ -744,7 +744,7 @@ pub fn run() -> Result<()> {
             let pref = if next_dark { "dark" } else { "light" };
             let mut s = store.borrow_mut();
             s.set_theme_pref(pref.to_string());
-            let _ = s.save();
+            s.save_logging();
         });
     }
 
@@ -833,7 +833,7 @@ pub fn run() -> Result<()> {
     {
         let mut s = store.borrow_mut();
         s.set_download_dir(dl);
-        let _ = s.save();
+        s.save_logging();
     }
     window.set_download_dir(store.borrow().download_dir().to_string().into());
     {
@@ -845,7 +845,7 @@ pub fn run() -> Result<()> {
                 {
                     let mut s = store.borrow_mut();
                     s.set_download_dir(dir.clone());
-                    let _ = s.save();
+                    s.save_logging();
                 }
                 if let Some(w) = weak.upgrade() {
                     w.set_download_dir(dir.into());
@@ -1248,7 +1248,7 @@ pub fn run() -> Result<()> {
                 sftp.clear();
             }
             // 防抖的写盘必须在这里收尾：事件循环一停，挂起的设置改动就没机会落盘了。
-            let _ = cc_store.borrow_mut().flush();
+            cc_store.borrow_mut().flush_logging();
             let _ = slint::quit_event_loop();
         });
     }
@@ -1257,7 +1257,7 @@ pub fn run() -> Result<()> {
 
     window.run().context("event loop exited with error")?;
     // 同上：退出前把防抖窗口内未落盘的设置改动写出去。
-    let _ = store.borrow_mut().flush();
+    store.borrow_mut().flush_logging();
     Ok(())
 }
 
@@ -1459,10 +1459,40 @@ thread_local! {
 
 thread_local! {
     static CRED_QUEUE: RefCell<VecDeque<PendingCred>> = const { RefCell::new(VecDeque::new()) };
-    /// session id → the answer given this run (`None` = cancelled), so a second
-    /// connection for the same session is answered without re-prompting.
-    static CRED_DECIDED: RefCell<HashMap<String, Option<crate::ssh::CredentialReply>>> =
-        RefCell::new(HashMap::new());
+    /// session id → the accepted answer given this run, so a second connection
+    /// for the same session is answered without re-prompting.
+    ///
+    /// 存的是 `SecretCred`（口令零化 + Debug 屏蔽）而不是裸 `(String, String, bool)`：
+    /// 口令不该以明文 `String` 在进程内存里躺一整个运行期。只缓存**接受**的回答，
+    /// 取消不进缓存（否则后续尝试会被静默判成取消）。
+    static CRED_DECIDED: RefCell<HashMap<String, SecretCred>> = RefCell::new(HashMap::new());
+}
+
+/// `CRED_DECIDED` 里缓存的一份回答 —— 口令用 `Secret` 装着（Drop 时零化、
+/// Debug 只打 `***`），与配置里的凭据同一套处理。
+pub(crate) struct SecretCred {
+    user: crate::config::Secret,
+    password: crate::config::Secret,
+    remember: bool,
+}
+
+impl SecretCred {
+    pub(crate) fn from_reply(reply: &crate::ssh::CredentialReply) -> Self {
+        Self {
+            user: crate::config::Secret::new(reply.0.clone()),
+            password: crate::config::Secret::new(reply.1.clone()),
+            remember: reply.2,
+        }
+    }
+
+    /// 还原成 `CredentialReply` 交给 SSH 层（那边要的就是明文三元组）。
+    pub(crate) fn to_reply(&self) -> crate::ssh::CredentialReply {
+        (
+            self.user.as_str().to_string(),
+            self.password.as_str().to_string(),
+            self.remember,
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------

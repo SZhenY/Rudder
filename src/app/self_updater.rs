@@ -145,9 +145,10 @@ pub(crate) fn download_and_stage(
     cand: &UpdateCandidate,
     on_progress: impl Fn(f32),
 ) -> Result<PathBuf> {
-    let stage_dir = std::env::temp_dir().join(format!("rudder-update-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&stage_dir);
-    std::fs::create_dir_all(&stage_dir).context("create staging dir")?;
+    // 随机名 + 0700 + 创建即独占。老写法是 `/tmp/rudder-update-<pid>`：名字可预测，
+    // 而且先 `remove_dir_all` 再 `create_dir_all`（会跟随符号链接）—— 共享机器上别人
+    // 可以先摆一个同名符号链接，把下载与解压都引到他指定的目录去。
+    let stage_dir = crate::config::create_private_temp_dir("rudder-update")?;
 
     let archive = stage_dir.join(&cand.asset_name);
     {
@@ -184,6 +185,8 @@ pub(crate) fn download_and_stage(
     self_update::Extract::from_source(&archive)
         .extract_into(&extract_dir)
         .context("extract release archive")?;
+    // 解压完就把压缩包删掉：不再需要它，也少留一份可执行文件在临时目录里。
+    let _ = std::fs::remove_file(&archive);
     on_progress(1.0);
     Ok(extract_dir)
 }

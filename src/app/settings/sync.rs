@@ -32,6 +32,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_save_webdav_settings(
             move |enabled: bool,
@@ -40,16 +41,21 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
                   password: SharedString,
                   remote_path: SharedString,
                   accept_invalid_certs: bool| {
+                let password = effective_password(password.as_str(), store.borrow().webdav_password());
                 persist(&store, |s| {
                     s.set_webdav_settings(
                         enabled,
                         url.to_string(),
                         username.to_string(),
-                        password.to_string(),
+                        password,
                         remote_path.to_string(),
                         accept_invalid_certs,
                     );
                 });
+                // 存完就把输入框清空：口令不再以明文留在界面层里。
+                if let Some(w) = weak.upgrade() {
+                    w.set_webdav_password(String::new().into());
+                }
             },
         );
     }
@@ -62,9 +68,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
             let enabled = w.get_webdav_enabled();
             let url = w.get_webdav_url().to_string();
             let username = w.get_webdav_username().to_string();
-            let password = w.get_webdav_password().to_string();
             let remote_path = w.get_webdav_remote_path().to_string();
             let accept_invalid_certs = w.get_webdav_accept_invalid_certs();
+            let password =
+                effective_password(w.get_webdav_password().as_str(), store.borrow().webdav_password());
             {
                 persist(&store, |s| {
                     s.set_webdav_settings(
@@ -77,6 +84,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
                     );
                 });
             }
+            // 输入框不再留着明文口令（已经存进配置了）。
+            w.set_webdav_password(String::new().into());
             if !enabled {
                 w.set_webdav_status(t("请先启用 WebDAV 同步", "enable WebDAV sync first").into());
                 return;
@@ -122,9 +131,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
             let enabled = w.get_webdav_enabled();
             let url = w.get_webdav_url().to_string();
             let username = w.get_webdav_username().to_string();
-            let password = w.get_webdav_password().to_string();
             let remote_path = w.get_webdav_remote_path().to_string();
             let accept_invalid_certs = w.get_webdav_accept_invalid_certs();
+            let password =
+                effective_password(w.get_webdav_password().as_str(), store.borrow().webdav_password());
             {
                 persist(&store, |s| {
                     s.set_webdav_settings(
@@ -137,6 +147,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
                     );
                 });
             }
+            // 输入框不再留着明文口令（已经存进配置了）。
+            w.set_webdav_password(String::new().into());
             if !enabled {
                 w.set_webdav_status(t("请先启用 WebDAV 同步", "enable WebDAV sync first").into());
                 return;
@@ -189,7 +201,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
         window.set_webdav_enabled(s.webdav_enabled());
         window.set_webdav_url(s.webdav_url().into());
         window.set_webdav_username(s.webdav_username().into());
-        window.set_webdav_password(s.webdav_password().into());
+        // **刻意不回填口令**：回填等于把明文复制一份进界面层常驻（UI 里既没有零化，
+        // 也没有 Debug 屏蔽）。框里留空按"沿用已存口令"处理，见 `effective_password`；
+        // 保存 / 上传 / 下载之后也会把框清空。
+        window.set_webdav_password(String::new().into());
         window.set_webdav_remote_path(s.webdav_remote_path().into());
         window.set_webdav_accept_invalid_certs(s.webdav_accept_invalid_certs());
         window.set_webdav_status(String::new().into());
@@ -197,6 +212,18 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
 
     window.set_sync_upload_enabled(store.borrow().sync_upload());
 }
+/// 口令框留空 = 沿用已存的口令。
+///
+/// 界面刻意**不**回填已存口令（那等于把明文复制进界面层常驻），所以空值必须解释成
+/// "保持原样" —— 否则用户只是点一下上传 / 下载就会把口令清掉。
+fn effective_password(typed: &str, stored: &str) -> String {
+    if typed.trim().is_empty() {
+        stored.to_string()
+    } else {
+        typed.to_string()
+    }
+}
+
 /// 下载结果的提示文案：「已导入 N, 跳过 M」。
 fn download_status_msg(added: usize, skipped: usize) -> String {
     format!(
@@ -211,6 +238,16 @@ fn download_status_msg(added: usize, skipped: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 口令框留空要沿用已存口令 —— 否则点一下上传就会把口令清掉；
+    /// 空白（含空格）也算留空。
+    #[test]
+    fn blank_password_field_keeps_the_stored_one() {
+        assert_eq!(effective_password("", "stored-token"), "stored-token");
+        assert_eq!(effective_password("   ", "stored-token"), "stored-token");
+        assert_eq!(effective_password("typed", "stored-token"), "typed");
+        assert_eq!(effective_password("typed", ""), "typed");
+    }
 
     /// 两个计数**不能取错位**：写反了用户会把合并结果看反（以为没导入成功）。
     #[test]

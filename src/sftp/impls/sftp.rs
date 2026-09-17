@@ -282,12 +282,14 @@ async fn run_sftp(
     // can therefore open the same remote basename without sharing one temp
     // file or editor document (#318).
     let external_edit_prefix = sanitize_filename(&session.host);
-    let external_edit_dir = std::env::temp_dir().join("rudder").join(format!(
-        "{}-{}-{}",
+    // 随机后缀 + 0700 + 创建即独占。老写法是 `/tmp/rudder/<host>-<port>-<uuid>`：
+    // 叶子名虽然随机，父目录 `/tmp/rudder` 是固定名字，共享机器上别人可以先在那里
+    // 摆一个符号链接，把随后写下的远端文件内容引到任意位置。
+    let external_edit_dir = crate::config::create_private_temp_dir(&format!(
+        "rudder-sftp-{}-{}",
         external_edit_prefix,
-        session.port,
-        Uuid::new_v4()
-    ));
+        session.port
+    ))?;
     // Keep the jump-host connection alive for the whole SFTP session — the
     // direct-tcpip tunnel rides on it (#211). Declared here so it lives to the
     // end of the function; `_`-prefixed so it isn't flagged unused.

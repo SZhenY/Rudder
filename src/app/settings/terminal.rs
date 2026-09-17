@@ -34,7 +34,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                 if !s.set_terminal_cursor_color(value.as_str()) {
                     return false;
                 }
-                let _ = s.save();
+                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
                 w.set_term_cursor_color(color);
@@ -78,7 +78,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                         color: color.to_string(),
                         enabled: true,
                     });
-                    let _ = s.save();
+                    s.save_logging();
                     w.set_output_highlight_rules(output_highlight_rule_model(&s));
                     // 规则清单变了，上一次的"规则已添加/已删除"提示文案必须清掉。
                     w.set_output_highlight_rule_status("".into());
@@ -98,7 +98,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             let Some(w) = weak.upgrade() else { return };
             let mut s = store.borrow_mut();
             s.remove_output_highlight_rule(index.max(0) as usize);
-            let _ = s.save();
+            s.save_logging();
             w.set_output_highlight_rules(output_highlight_rule_model(&s));
             // 规则清单变了，上一次的"规则已添加/已删除"提示文案必须清掉。
             w.set_output_highlight_rule_status("".into());
@@ -115,7 +115,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             let Some(w) = weak.upgrade() else { return };
             let mut s = store.borrow_mut();
             s.set_output_highlight_rule_enabled(index.max(0) as usize, enabled);
-            let _ = s.save();
+            s.save_logging();
             w.set_output_highlight_rules(output_highlight_rule_model(&s));
             // 规则清单变了，上一次的"规则已添加/已删除"提示文案必须清掉。
             w.set_output_highlight_rule_status("".into());
@@ -136,7 +136,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             {
                 let mut s = store.borrow_mut();
                 s.set_font_family(family.to_string());
-                let _ = s.save();
+                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
                 w.global::<Theme>().set_term_font_family(family.into());
@@ -155,7 +155,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                 let mut s = store.borrow_mut();
                 s.set_output_highlight_enabled(enabled);
                 s.set_output_highlight_preset(preset.clone());
-                let _ = s.save();
+                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
                 apply_output_highlight(&w, &bufs, enabled, &preset);
@@ -170,7 +170,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             {
                 let mut s = store.borrow_mut();
                 s.set_json_format_output(enabled);
-                let _ = s.save();
+                s.save_logging();
             }
             // Flip live buffers so the change applies without reconnecting.
             for buffer in bufs.lock().unwrap_or_else(|e| e.into_inner()).values() {
@@ -201,7 +201,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             {
                 let mut s = store.borrow_mut();
                 s.set_terminal_bold(bold);
-                let _ = s.save();
+                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
                 w.global::<Theme>().set_term_font_bold(bold);
@@ -218,7 +218,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             let lines = {
                 let mut s = store.borrow_mut();
                 s.set_large_scrollback(on);
-                let _ = s.save();
+                s.save_logging();
                 s.scrollback_lines()
             };
             if let Some(w) = weak.upgrade() {
@@ -246,7 +246,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                 // 借用一直握到 `weak.upgrade()` 之后）。
                 let mut s = store.borrow_mut();
                 s.set_scrollback_lines(n);
-                let _ = s.save();
+                s.save_logging();
             }
             // 回写规范化后的值：设置面板是条件渲染的，不回写就会在重开时显示旧值。
             if let Some(w) = weak.upgrade() {
@@ -261,7 +261,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
         window.on_set_convert_eol(move |v: bool| {
             let mut s = store.borrow_mut();
             s.set_convert_eol(v);
-            let _ = s.save();
+            s.save_logging();
         });
     }
 
@@ -270,7 +270,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
         window.on_set_osc52_clipboard(move |v: bool| {
             let mut s = store.borrow_mut();
             s.set_osc52_clipboard(v);
-            let _ = s.save();
+            s.save_logging();
             crate::terminal::vt_adapter::OSC52_ENABLED
                 .store(v, std::sync::atomic::Ordering::Relaxed);
         });
@@ -284,7 +284,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                 let mut s = store.borrow_mut();
                 s.set_terminal_cursor_style(style.to_string());
                 let normalized = s.terminal_cursor_style().to_string();
-                let _ = s.save();
+                s.save_logging();
                 normalized
             };
             if let Some(w) = weak.upgrade() {

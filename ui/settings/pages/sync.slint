@@ -87,7 +87,8 @@ export component SyncPage inherits VerticalLayout {
         }
         LabeledInput {
             label: root.lang-en ? "Password / app token" : "密码 / 应用令牌";
-            placeholder: root.lang-en ? "Optional" : "可选";
+            // 已存的口令不回填到界面（免得明文常驻 UI 层），留空即沿用。
+            placeholder: root.lang-en ? "Leave blank to keep the saved one" : "留空表示不修改";
             password: true;
             value <=> root.webdav-password;
         }
