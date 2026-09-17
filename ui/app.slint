@@ -63,6 +63,8 @@ import { ShortcutsDialog } from "shortcuts_dialog.slint";
 import { InterfaceSettingsOverlay } from "interface_settings_overlay.slint";
 import { FramelessTitleBar } from "custom_titlebar.slint";
 import { TitlebarInsetStrip } from "titlebar_inset_strip.slint";
+import { SidebarBody } from "sidebar_body.slint";
+import { RenameDialog } from "rename_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
 export { EditorFindResult }
 
@@ -1202,16 +1204,17 @@ export component AppWindow inherits Window {
             height: root.sidebar-horizontal ? parent.height : parent.sb-h-taken;
             clip: true;
             background: Theme.bg-panel;
-        if !root.sidebar-collapsed && !root.zen-mode : Rectangle {
-            animate opacity { duration: 120ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
-            opacity: root.sidebar-collapsed ? 0.0 : 1.0;
-            width: parent.width; height: parent.height;
-            Sidebar {
-            width: parent.width;
-            height: parent.height;
-            // Docked top/bottom → lay the resource widgets out in a row.
-            lay-horizontal: !root.sidebar-horizontal;
-            dock-edge: root.sidebar-dock;
+            // 正文已抽成 `ui/sidebar_body.slint`（P2-1 第二片第 1 步，纯搬家）：几何仍由本外壳决定。
+            SidebarBody {
+            width: 100%;
+            height: 100%;
+            combine-collapsed-tools: dock-area.combine-collapsed-tools;
+            sidebar-strip-outside: dock-area.sidebar-strip-outside;
+            quick-merge-sidebar: dock-area.quick-merge-sidebar;
+            sidebar-horizontal: root.sidebar-horizontal;
+            sidebar-collapsed: root.sidebar-collapsed;
+            zen-mode: root.zen-mode;
+            sidebar-dock: root.sidebar-dock;
             connection-state: root.connection-state;
             conn-host: root.conn-host;
             conn-state: root.conn-state;
@@ -1234,63 +1237,63 @@ export component AppWindow inherits Window {
             system-info-available: root.system-info-available;
             proc-available: root.proc-available;
             app-version: root.app-version;
-            select-net-iface(i) => { root.select-net-iface(i); }
-            show-system-info() => { root.open-system-info(); }
-            show-processes() => { root.open-processes(); }
-            copy-host(h) => { root.copy-text(h); }   // reuse the clipboard helper (#192)
-            // Drag the sidebar header to dock it to another edge. Coordinates
-            // arrive in window space; convert to dock-area-relative fractions.
-            dock-drag-move(ax, ay) => {
+            sidebar-width: root.sidebar-width;
+            sidebar-height: root.sidebar-height;
+            dock-x: dock-area.absolute-position.x;
+            dock-y: dock-area.absolute-position.y;
+            dock-w: dock-area.width;
+            dock-h: dock-area.height;
+            drag-normalized(nx, ny) => {
                 root.panel-dragging = true;
-                root.drag-nx = (ax - dock-area.absolute-position.x) / dock-area.width;
-                root.drag-ny = (ay - dock-area.absolute-position.y) / dock-area.height;
+                root.drag-nx = nx;
+                root.drag-ny = ny;
+            }
+            select-net-iface(i) => {
+            root.select-net-iface(i);
+            }
+            show-system-info() => {
+            root.open-system-info();
+            }
+            show-processes() => {
+            root.open-processes();
+            }
+            copy-host(h) => {
+            root.copy-text(h);   // reuse the clipboard helper (#192)
             }
             dock-drag-end() => {
-                if (root.dock-target != "") {
-                    root.sidebar-dock = root.dock-target;
-                    if (root.welcome-as-sidebar && root.welcome-sidebar-dock == root.dock-target) {
-                        root.welcome-collapsed = true;
-                        root.set-welcome-collapsed(true);
-                    }
-                    if (root.quick-panel-open && root.quick-panel-dock == root.dock-target) {
-                        root.quick-panel-collapsed = true;
-                    }
-                    root.persist-sidebar-dock(root.sidebar-dock);
-                }
-                root.panel-dragging = false;
-            }
-            toggle-collapse() => {
-                root.sidebar-collapsed = !root.sidebar-collapsed;
-                root.set-sidebar-collapsed(root.sidebar-collapsed);
-            }
-            }
-        }
-
-        // Collapsed resource panel → a ToolStrip icon bar at same docked edge.
-        // Reads sb-taken directly so it moves with the animated property.
-        if root.sidebar-collapsed && !dock-area.combine-collapsed-tools && !dock-area.sidebar-strip-outside : ToolStrip {
-            x: root.sidebar-dock == "right"  ? parent.width - (root.sidebar-collapsed ? 36px : root.sidebar-width) : 0px;
-            y: root.sidebar-dock == "bottom" ? parent.height - (root.sidebar-collapsed ? 36px : root.sidebar-height) : 0px;
-            width: root.sidebar-horizontal ? (root.sidebar-collapsed ? 36px : root.sidebar-width) : parent.width;
-            height: root.sidebar-horizontal ? parent.height : (root.sidebar-collapsed ? 36px : root.sidebar-height);
-            dock-edge: root.sidebar-dock;
-            glyph: "\u{E871}";   // dashboard — resource panel
-            show-second: dock-area.quick-merge-sidebar;
-            second-glyph: "\u{E3E7}";
-            expand => {
-                root.sidebar-collapsed = false;
-                root.set-sidebar-collapsed(false);
-                if (root.welcome-as-sidebar && root.welcome-sidebar-dock == root.sidebar-dock) {
+            if (root.dock-target != "") {
+                root.sidebar-dock = root.dock-target;
+                if (root.welcome-as-sidebar && root.welcome-sidebar-dock == root.dock-target) {
                     root.welcome-collapsed = true;
                     root.set-welcome-collapsed(true);
                 }
-                if (root.quick-panel-open && root.quick-panel-dock == root.sidebar-dock) {
+                if (root.quick-panel-open && root.quick-panel-dock == root.dock-target) {
                     root.quick-panel-collapsed = true;
                 }
+                root.persist-sidebar-dock(root.sidebar-dock);
             }
-            expand-second => { root.quick-panel-collapsed = false; }
+            root.panel-dragging = false;
+            }
+            toggle-collapse() => {
+            root.sidebar-collapsed = !root.sidebar-collapsed;
+            root.set-sidebar-collapsed(root.sidebar-collapsed);
+            }
+            expand() => {
+            root.sidebar-collapsed = false;
+            root.set-sidebar-collapsed(false);
+            if (root.welcome-as-sidebar && root.welcome-sidebar-dock == root.sidebar-dock) {
+                root.welcome-collapsed = true;
+                root.set-welcome-collapsed(true);
+            }
+            if (root.quick-panel-open && root.quick-panel-dock == root.sidebar-dock) {
+                root.quick-panel-collapsed = true;
+            }
+            }
+            expand-second() => {
+            root.quick-panel-collapsed = false;
+            }
+            }
         }
-        } // sidebar-shell
 
         // Splitter — drag to resize the sidebar. Orientation + which dimension it
         // adjusts follow the dock edge. Hidden while collapsed.
@@ -1978,54 +1981,13 @@ export component AppWindow inherits Window {
     // let the dialog compress into a narrow vertical strip on some layouts, and
     // the PopupWindow form silently routed clicks away from the menu items
     // that open it.
-    if root.tab-rename-open : ModalCard {
-        card-width: 340px;
-        card-height: 196px;
-        dismissed() => { root.tab-rename-open = false; }
-        Text {
-            text: root.lang-en ? "Rename session" : "重命名会话";
-            color: Theme.text-primary;
-            font-size: Theme.fs-lg;
-            font-weight: 700;
-        }
-        Text {
-            text: root.lang-en
-                ? "Leave empty to restore the saved session name."
-                : "留空将恢复保存的会话名称。";
-            color: Theme.text-muted;
-            font-size: Theme.fs-sm;
-            wrap: word-wrap;
-        }
-        Rectangle {
-            height: 30px;
-            border-radius: Theme.radius-sm;
-            border-width: 1px;
-            border-color: rn-input.has-focus ? Theme.accent : Theme.border-strong;
-            background: Theme.bg-elevated;
-            rn-input := TextInput {
-                x: 8px;
-                width: parent.width - 16px;
-                height: parent.height;
-                vertical-alignment: center;
-                single-line: true;
-                color: Theme.text-primary;
-                font-size: Theme.fs-md;
-                text <=> root.tab-rename-value;
-                accepted => { root.rename-tab(root.tab-rename-id, root.tab-rename-value); }
-            }
-        }
-        HorizontalLayout {
-            alignment: end;
-            spacing: 8px;
-            GhostButton {
-                text: root.lang-en ? "Cancel" : "取消";
-                clicked => { root.tab-rename-open = false; }
-            }
-            PrimaryButton {
-                text: root.lang-en ? "Rename" : "重命名";
-                clicked => { root.rename-tab(root.tab-rename-id, root.tab-rename-value); }
-            }
-        }
+    // 已抽成 `ui/rename_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    if root.tab-rename-open : RenameDialog {
+        lang-en : root.lang-en;
+        tab-rename-id : root.tab-rename-id;
+        tab-rename-value <=> root.tab-rename-value;
+        close-requested => { root.tab-rename-open = false; }
+        rename-tab(tab-id, new-title) => { root.rename-tab(tab-id, new-title); }
     }
 
     // --- Download manager popup -------------------------------------------

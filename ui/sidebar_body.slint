@@ -1,0 +1,164 @@
+//! **资源侧栏的面板正文**：展开态（淡入层 + `Sidebar`）与折叠态（`ToolStrip` 图标条）。
+//!
+//! 从 `app.slint` 的 `sidebar-shell` 拆出（P2-1 第二片第 1 步）—— **只搬内容，几何仍由外壳决定**
+//! （外壳按 `sb-taken` 算 x/y/size 并 `clip`，所以这里只铺满父容器）。
+//! 抽成组件是后续"布局化"的前提：同一面板要在横向 / 纵向两个布局里各实例化一次。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
+import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
+import { SettingsMenuPopup } from "settings_menu.slint";
+import { AboutDialog } from "about_dialog.slint";
+import { DockSnapOverlay } from "dock_snap_overlay.slint";
+import { ConfirmOverlays } from "confirm_overlays.slint";
+import { ShortcutsDialog } from "shortcuts_dialog.slint";
+import { InterfaceSettingsOverlay } from "interface_settings_overlay.slint";
+import { FramelessTitleBar } from "custom_titlebar.slint";
+import { TitlebarInsetStrip } from "titlebar_inset_strip.slint";
+
+export component SidebarBody inherits Rectangle {
+    width: 100%;
+    height: 100%;
+
+    // ── 状态（窗口 / 父布局透传）─────────────────────────────────────
+    in property <bool> combine-collapsed-tools;
+    in property <bool> sidebar-strip-outside;
+    in property <bool> quick-merge-sidebar;
+    in property <bool> sidebar-horizontal;
+    in property <bool> sidebar-collapsed;
+    in property <bool> zen-mode;
+    in property <string> sidebar-dock;
+    in property <string> connection-state;
+    in property <string> conn-host;
+    in property <int> conn-state;
+    in property <string> resource-title;
+    in property <float> cpu-percent;
+    in property <float> mem-percent;
+    in property <float> swap-percent;
+    in property <string> mem-detail;
+    in property <string> swap-detail;
+    in property <string> net-top-up;
+    in property <string> net-top-down;
+    in property <[float]> net-top-history;
+    in property <string> net-bot-up;
+    in property <string> net-bot-down;
+    in property <[float]> net-bot-history;
+    in property <[string]> net-ifaces;
+    in property <string> net-selected;
+    in property <bool> net-show-selector;
+    in property <[DiskInfo]> disks;
+    in property <bool> system-info-available;
+    in property <bool> proc-available;
+    in property <string> app-version;
+    in property <length> sidebar-width;
+    in property <length> sidebar-height;
+    in property <length> dock-x;   // 拖拽归一化用的 dock 区几何
+    in property <length> dock-y;
+    in property <length> dock-w;
+    in property <length> dock-h;
+
+    // ── 动作（由调用点实现 / 转发）──────────────────────────────────
+    callback select-net-iface(string);
+    callback show-system-info();
+    callback show-processes();
+    callback copy-host(string);
+    callback dock-drag-end();
+    callback toggle-collapse();
+    callback expand();
+    callback expand-second();
+    callback drag-normalized(float /* nx */, float /* ny */);
+
+    if !sidebar-collapsed && !zen-mode : Rectangle {
+        animate opacity { duration: 120ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
+        opacity: sidebar-collapsed ? 0.0 : 1.0;
+        width: parent.width; height: parent.height;
+        Sidebar {
+        width: parent.width;
+        height: parent.height;
+        // Docked top/bottom → lay the resource widgets out in a row.
+        lay-horizontal: !sidebar-horizontal;
+        dock-edge: sidebar-dock;
+        connection-state: connection-state;
+        conn-host: conn-host;
+        conn-state: conn-state;
+        resource-title: resource-title;
+        cpu-percent: cpu-percent;
+        mem-percent: mem-percent;
+        swap-percent: swap-percent;
+        mem-detail: mem-detail;
+        swap-detail: swap-detail;
+        net-top-up: net-top-up;
+        net-top-down: net-top-down;
+        net-top-history: net-top-history;
+        net-bot-up: net-bot-up;
+        net-bot-down: net-bot-down;
+        net-bot-history: net-bot-history;
+        net-ifaces: net-ifaces;
+        net-selected: net-selected;
+        net-show-selector: net-show-selector;
+        disks: disks;
+        system-info-available: system-info-available;
+        proc-available: proc-available;
+        app-version: app-version;
+        select-net-iface(i) => { root.select-net-iface(i); }
+        show-system-info() => { root.show-system-info(); }
+        show-processes() => { root.show-processes(); }
+        copy-host(h) => { root.copy-host(h); }   // reuse the clipboard helper (#192)
+        // Drag the sidebar header to dock it to another edge. Coordinates
+        // arrive in window space; convert to dock-area-relative fractions.
+        dock-drag-move(ax, ay) => { root.drag-normalized((ax - dock-x) / dock-w, (ay - dock-y) / dock-h); }
+        dock-drag-end() => { root.dock-drag-end(); }
+        toggle-collapse() => { root.toggle-collapse(); }
+        }
+    }
+
+    // Collapsed resource panel → a ToolStrip icon bar at same docked edge.
+    // Reads sb-taken directly so it moves with the animated property.
+    if sidebar-collapsed && !combine-collapsed-tools && !sidebar-strip-outside : ToolStrip {
+        x: sidebar-dock == "right"  ? parent.width - (sidebar-collapsed ? 36px : sidebar-width) : 0px;
+        y: sidebar-dock == "bottom" ? parent.height - (sidebar-collapsed ? 36px : sidebar-height) : 0px;
+        width: sidebar-horizontal ? (sidebar-collapsed ? 36px : sidebar-width) : parent.width;
+        height: sidebar-horizontal ? parent.height : (sidebar-collapsed ? 36px : sidebar-height);
+        dock-edge: sidebar-dock;
+        glyph: "\u{E871}";   // dashboard — resource panel
+        show-second: quick-merge-sidebar;
+        second-glyph: "\u{E3E7}";
+        expand => { root.expand(); }
+        expand-second => { root.expand-second(); }
+    }
+}

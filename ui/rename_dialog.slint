@@ -1,0 +1,110 @@
+//! **重命名会话**弹窗（Tab 右键 → 重命名）：留空则恢复保存的会话名。
+//!
+//! 从 `app.slint` 拆出（P4 B 类）—— 纯搬家；关闭上抛 `close-requested()`。
+
+import { AnimationSettings } from "theme.slint";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { GroupGap } from "components/surfaces.slint";
+import { Sidebar, DiskInfo } from "sidebar.slint";
+import { TabBar, TabInfo } from "tabs.slint";
+import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
+import { ConfirmDialog } from "confirm_dialog.slint";
+import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { ProcWindow, ProcRow } from "proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { InterfacePanel } from "interface_panel.slint";
+import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
+import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { Label } from "components/text.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+import { UpdateBanner } from "update_banner.slint";
+import { EditorFindResult, FileEditor } from "file_editor.slint";
+import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
+import { GroupDialog } from "group_dialog.slint";
+import { QuickGroupDialog } from "quick_group_dialog.slint";
+import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
+import { ChmodDialog } from "chmod_dialog.slint";
+import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
+import { SettingsMenuPopup } from "settings_menu.slint";
+import { AboutDialog } from "about_dialog.slint";
+import { DockSnapOverlay } from "dock_snap_overlay.slint";
+import { ConfirmOverlays } from "confirm_overlays.slint";
+import { ShortcutsDialog } from "shortcuts_dialog.slint";
+import { InterfaceSettingsOverlay } from "interface_settings_overlay.slint";
+import { FramelessTitleBar } from "custom_titlebar.slint";
+import { TitlebarInsetStrip } from "titlebar_inset_strip.slint";
+import { SidebarBody } from "sidebar_body.slint";
+
+export component RenameDialog inherits ModalCard {
+    // ── 状态（窗口透传）──────────────────────────────────────────────
+    in property <bool> lang-en:false;
+    in property <string> tab-rename-id:"";
+    in-out property <string> tab-rename-value:"";
+
+    // ── 动作（由调用点转发，实现仍在 Rust / 窗口）──────────────────
+    callback close-requested();
+    callback rename-tab(string /* tab-id */, string /* new-title */);
+
+    card-width: 340px;
+    card-height: 196px;
+    dismissed() => { root.close-requested(); }
+    Text {
+        text: lang-en ? "Rename session" : "重命名会话";
+        color: Theme.text-primary;
+        font-size: Theme.fs-lg;
+        font-weight: 700;
+    }
+    Text {
+        text: lang-en
+            ? "Leave empty to restore the saved session name."
+            : "留空将恢复保存的会话名称。";
+        color: Theme.text-muted;
+        font-size: Theme.fs-sm;
+        wrap: word-wrap;
+    }
+    Rectangle {
+        height: 30px;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+        border-color: rn-input.has-focus ? Theme.accent : Theme.border-strong;
+        background: Theme.bg-elevated;
+        rn-input := TextInput {
+            x: 8px;
+            width: parent.width - 16px;
+            height: parent.height;
+            vertical-alignment: center;
+            single-line: true;
+            color: Theme.text-primary;
+            font-size: Theme.fs-md;
+            text <=> tab-rename-value;
+            accepted => { root.rename-tab(tab-rename-id, tab-rename-value); }
+        }
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        GhostButton {
+            text: lang-en ? "Cancel" : "取消";
+            clicked => { root.close-requested(); }
+        }
+        PrimaryButton {
+            text: lang-en ? "Rename" : "重命名";
+            clicked => { root.rename-tab(tab-rename-id, tab-rename-value); }
+        }
+    }
+}
