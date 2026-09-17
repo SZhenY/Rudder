@@ -441,15 +441,15 @@ export component TerminalPage inherits VerticalLayout {
             height: 34px;
             vertical-alignment: center;
         }
-        // 行：顶部分割线 + 内容。⚠️ 内容行**必须显式铺满**（y/width/height）——
-        // 之前没写几何，布局按内容的偏好高度排版并溢出 44px 的行高，于是分割线看着像
-        // "穿过"行、右侧控件被挤到行外。横排布局默认就把子项沿纵向居中，**不要**再写
-        // `alignment: center`（那是水平居中，会把内容摆到行中间）。
+        // 行 = 44px 高 + 一条**行尾**细线（线用显式几何画，不用共享的 `Divider`：
+        // 那个组件在本上下文里尺寸受父级影响，曾出现"线跑到行中间/只有半行宽"的现象）。
+        // 内容行显式铺满并只占线以上的部分；横排布局默认把子项沿纵向居中，
+        // 所以色点 / 文字 / 开关 / 删除键自动对齐同一中线（**不要**写 `alignment: center`，
+        // 那是水平居中，会把整块内容摆到行中间）。
         for rule[index] in root.output-highlight-rules : Rectangle {
             height: 44px;
-            Divider {}
             HorizontalLayout {
-                y: 1px;
+                y: 0;
                 width: parent.width;
                 height: parent.height - 1px;
                 spacing: 9px;
@@ -505,6 +505,13 @@ export component TerminalPage inherits VerticalLayout {
                         width: 100%; height: 100%;
                     }
                 }
+            }
+            // 行尾细线：显式几何，保证整行宽、恒定在行底（不会"跑到行中间"）。
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.border-subtle;
             }
         }
             
