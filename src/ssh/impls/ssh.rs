@@ -335,6 +335,11 @@ impl AuxiliaryStartup {
 
 const AUXILIARY_CHANNEL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
+/// 辅助通道**整批**的看门狗。开一条通道本身有 3s 超时、一批最多两条，10s 留足余量；
+/// 超时说明负责开通道的任务出了意外，此时必须强制复位在飞标志，否则主 PTY 的
+/// `channel.wait()` 会一直挂着（会话假死）。
+const AUX_OPEN_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(10);
+
 async fn auxiliary_timeout<F, T>(
     timeout: std::time::Duration,
     future: F,
@@ -1163,6 +1168,10 @@ async fn kill_remote_process(
     use zeroize::Zeroize as _;
 
     let privileged = root_password.is_some();
+    // 口令下面会被 move 进闭包并 zeroize，这里留一份**只用于日志脱敏**的副本。
+    // 它只活到这个函数返回；而 `result.message` 本身就含同一段明文（远端回显），
+    // 所以这里没有新增暴露面 —— 目的只是别让明文落进磁盘上的 error.log。
+    let redact_key = root_password.as_ref().map(|secret| secret.as_str().to_string());
     let stage = Arc::new(std::sync::atomic::AtomicU8::new(0));
     let operation_stage = stage.clone();
     let operation = async move {
@@ -1330,10 +1339,12 @@ async fn kill_remote_process(
             }
         }
     };
+    // 日志一律过脱敏：message 里嵌着最多 1 KiB 的**原始远端输出**，而远端可能把
+    // 刚输入的 sudo 口令回显出来 —— 这条是 WARN，默认会落到磁盘上的 error.log。
     tracing::warn!(
         "[PROC_KILL] pid={pid} result={} message={:?}",
         if result.success { "success" } else { "failure" },
-        result.message
+        process_control_log_text(&result.message, redact_key.as_deref())
     );
     result
 }
@@ -2225,6 +2236,7 @@ async fn run_session(
     // 的 `channel.wait()`（#264）。`aux_open_in_flight` 用来挂起那个分支。
     let (aux_open_tx, mut aux_open_rx) = tokio::sync::mpsc::unbounded_channel::<AuxOpenBatch>();
     let mut aux_open_in_flight = false;
+    let mut aux_open_started: Option<tokio::time::Instant> = None;
     // 在飞的那批属于**启动序列**（true）还是**重开监控**（false）—— 只有前者
     // 在结果回来后推进 `auxiliary_startup`。
     let mut aux_open_for_startup = false;
@@ -2267,12 +2279,28 @@ async fn run_session(
                     None => std::future::pending().await,
                 }
             } => {
+                // 看门狗：批次迟迟不回（开通道的任务 panic、或长时间没被调度）就强制
+                // 复位。否则 `aux_open_in_flight` 永远为真 → 主 PTY 的 `channel.wait()`
+                // 被永久挂起 → 输入还能发、输出永不显示，会话假死且无法自愈。
+                if aux_open_in_flight
+                    && aux_open_started.is_some_and(|t| t.elapsed() > AUX_OPEN_WATCHDOG)
+                {
+                    tracing::warn!(
+                        "[AUX] channel batch timed out after {:?}; resuming PTY polling",
+                        AUX_OPEN_WATCHDOG
+                    );
+                    aux_open_in_flight = false;
+                    aux_open_started = None;
+                    auxiliary_startup.complete();
+                }
                 // ⚠️ 必须先判"有批次在飞"再 `begin()`：否则 `begin()` 已把
                 // in_progress 置上，随后又因为让路而不开通道，序列就再也推进不了。
                 if aux_open_in_flight {
                     // 已有批次在飞（例如刚重开监控）—— 不并发开通道，稍后再来。
-                    auxiliary_deadline =
-                        Some(tokio::time::Instant::now() + std::time::Duration::from_millis(500));
+                    // 这里同时充当看门狗的轮询点（上面那段按 `aux_open_started` 判超时）。
+                    auxiliary_deadline = Some(
+                        tokio::time::Instant::now() + std::time::Duration::from_millis(500),
+                    );
                 } else if let Some(kind) = auxiliary_startup.begin() {
                     let (command, label) = match kind {
                         AuxiliaryChannelKind::Resources => (MON_CMD, "monitor"),
@@ -2292,6 +2320,7 @@ async fn run_session(
                         // #264 的硬性前提：不能在轮询主 PTY 的同时开通道。
                         aux_open_in_flight = true;
                         aux_open_for_startup = true;
+                        aux_open_started = Some(tokio::time::Instant::now());
                         spawn_auxiliary_open(
                             handle.clone(),
                             kind,
@@ -2299,8 +2328,9 @@ async fn run_session(
                             label,
                             aux_open_tx.clone(),
                         );
-                        // 等结果回来再排下一个（`aux_open_rx` 分支负责推进）。
-                        auxiliary_deadline = None;
+                        // 结果由 `aux_open_rx` 分支回收；这里的 deadline 只用来驱动看门狗。
+                        auxiliary_deadline =
+                            Some(tokio::time::Instant::now() + AUX_OPEN_WATCHDOG);
                     } else {
                         // 监控处于暂停态：这条监控通道不开，直接推进到下一条
                         // （首次连接序列里的 SystemInfo 不受影响）。
@@ -2349,6 +2379,7 @@ async fn run_session(
                 }
                 // 整批处理完才恢复轮询主 PTY（#264）。
                 aux_open_in_flight = false;
+                aux_open_started = None;
                 // 只有**启动序列**那批才推进序列；重开监控那批不算
                 // （否则会一路推进到 SystemInfo，白白多开一条通道）。
                 if aux_open_for_startup {
@@ -2392,21 +2423,28 @@ async fn run_session(
                             if let Some(ev) = last_process.take() {
                                 let _ = events.send(ev);
                             }
-                            // 通道一直开着 → 通常无需重开；只有确实没了才重开，
+                            // 通道一直开着 → 通常无需重开；只有**任一条**没了才重开
+                            // （用 `||` 而不是 `&&`：曾经出现"刚恢复时启动序列正开着
+                            // 别的通道 → 恢复被跳过 → 进程监控永久缺失"的情形）。
                             // 此时基线已失效，需要重置（走后台任务，期间挂起
                             // `channel.wait()` —— #264）。
-                            if mon_channel.is_none() && proc_channel.is_none() && !aux_open_in_flight {
+                            if (mon_channel.is_none() || proc_channel.is_none())
+                                && !aux_open_in_flight
+                            {
                                 prev_cpu = None;
                                 prev_net.clear();
                                 prev_net_at = std::time::Instant::now();
                                 aux_open_in_flight = true;
                                 aux_open_for_startup = false;
+                                aux_open_started = Some(tokio::time::Instant::now());
                                 spawn_monitoring_channels(
                                     handle.clone(),
                                     MON_CMD,
                                     PROC_CMD,
                                     aux_open_tx.clone(),
                                 );
+                                auxiliary_deadline =
+                                    Some(tokio::time::Instant::now() + AUX_OPEN_WATCHDOG);
                             }
                         }
                     }

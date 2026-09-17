@@ -152,7 +152,9 @@ async fn run_serial(
         let mut buf = [0u8; 4096];
         while reader_running.load(Ordering::Relaxed) {
             match port.read(&mut buf) {
-                Ok(0) => {}
+                // 0 字节 = 设备端已关闭（EOF 语义）。继续循环会变成 100 % CPU 的忙旋
+                // （telnet / local 的读循环都在这条分支上退出）。
+                Ok(0) => break,
                 Ok(n) => {
                     let text = String::from_utf8_lossy(&buf[..n]).into_owned();
                     if reader_events.send(SessionEvent::Output(text)).is_err() {
