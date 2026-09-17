@@ -25,8 +25,11 @@ pub(super) mod update;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use slint::VecModel;
+
 use crate::app::FontEntry;
 use crate::config::ConfigStore;
+use crate::ui::SessionInfo;
 
 /// 配置存储句柄（UI 线程独占）。
 pub(super) type Store = Rc<RefCell<ConfigStore>>;
@@ -42,6 +45,26 @@ thread_local! {
     /// 只保留**最后一个**定时器：替换 `Option` 里的旧定时器即取消它（trailing 防抖，
     /// 连续改动只会顺延，不会积累成一串定时写盘）。
     static PENDING_FLUSH: RefCell<Option<slint::Timer>> = const { RefCell::new(None) };
+
+    /// UI 线程上的 (配置存储, 会话列表模型) —— 供**后台线程回填结果**时取用。
+    ///
+    /// 为什么需要：`slint::invoke_from_event_loop` 的闭包必须是 `Send`，而这两个都是
+    /// `Rc`，捕获不进去。于是后台线程只回传 `Send` 的数据（JSON、计数），闭包在 UI 线程
+    /// 上执行时再从这里取句柄写回去（WebDAV 上传/下载即如此）。
+    static UI_HANDLES: RefCell<Option<(Store, Rc<VecModel<SessionInfo>>)>> =
+        const { RefCell::new(None) };
+}
+
+/// 注册 UI 线程的句柄（设置面板绑定的时候调用一次即可）。
+pub(super) fn register_ui_handles(store: &Store, sessions: &Rc<VecModel<SessionInfo>>) {
+    UI_HANDLES.with(|slot| *slot.borrow_mut() = Some((store.clone(), sessions.clone())));
+}
+
+/// 在 UI 线程上取出句柄（供 `invoke_from_event_loop` 回调使用）。
+pub(super) fn with_ui_handles<R>(
+    f: impl FnOnce(&Store, &Rc<VecModel<SessionInfo>>) -> R,
+) -> Option<R> {
+    UI_HANDLES.with(|slot| slot.borrow().as_ref().map(|(s, m)| f(s, m)))
 }
 
 /// 改一个设置并写盘 —— **全项目统一的持久化出口**。
