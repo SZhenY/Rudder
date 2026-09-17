@@ -441,10 +441,14 @@ export component TerminalPage inherits VerticalLayout {
             height: 34px;
             vertical-alignment: center;
         }
-        for rule[index] in root.output-highlight-rules : Rectangle {
+        // 行 = **竖排布局**：内容在上、分割线在下（与 `SettingRow` 同一形状）。
+        // 内容行必须显式铺满并纵向居中：否则布局会按内容的偏好高度排版并溢出 44px 的行高，
+        // 表现为"分割线穿过行中间、开关与删除键被压到行外"。
+        for rule[index] in root.output-highlight-rules : VerticalLayout {
             height: 44px;
-            Divider {}
             HorizontalLayout {
+                vertical-stretch: 1;
+                alignment: center;
                 spacing: 9px;
                 Rectangle {
                     width: 8px;
@@ -499,6 +503,7 @@ export component TerminalPage inherits VerticalLayout {
                     }
                 }
             }
+            Divider {}
         }
             
     // 还原本页默认（本页最后一个设置项之后）

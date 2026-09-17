@@ -83,6 +83,9 @@ export component WslPage inherits VerticalLayout {
             border-radius: Theme.radius-sm;
             background: Theme.bg-elevated;
             HorizontalLayout {
+                // 显式铺满并纵向居中：否则内容按偏好高度排版、贴顶（与高亮规则行同一类问题）。
+                vertical-stretch: 1;
+                alignment: center;
                 padding-left: 10px; padding-right: 8px; spacing: 8px;
                 VerticalLayout {
                     horizontal-stretch: 1; alignment: center;
