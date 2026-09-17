@@ -48,6 +48,10 @@ export struct EditorFindResult {
 }
 
 export component FileEditor inherits Rectangle {
+    // 显隐由调用点控制：**常驻**，不用 `if` 包着 —— 在事件派发栈上销毁
+    // 正在处理事件的子树会闪退（#323/#343）。关闭时不绘制也不参与命中。
+    in property <bool> open: false;
+    visible: open;
     // ── 状态：Rust 侧读写，由窗口透传。带 `<=>` 的是**双向**（组件内也会改）──
     in property <string> editor-name: "";
     in property <bool> editor-readonly: false;

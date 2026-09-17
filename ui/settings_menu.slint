@@ -70,7 +70,11 @@ export component SettingsMenuPopup inherits Rectangle {
 
 // --- Settings menu popup (top-right) ----------------------------------
 // Click-outside-to-close backdrop (same pattern as the download popup).
-if settings-open : TouchArea {
+// 常驻（靠 visible/enabled 切换），不再用 `if` —— 原因同下载管理器那层：
+// 在事件派发栈上销毁正在处理事件的子树会闪退。
+TouchArea {
+    visible: settings-open;
+    enabled: settings-open;
     width: parent.width;
     height: parent.height;
     clicked => { root.close-requested(); }

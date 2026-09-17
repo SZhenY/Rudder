@@ -162,224 +162,236 @@ ConfirmDialog {
 }
 
 // Batch-import connections from pasted text (#150).
-if batch-import-open : Rectangle {
-    width: parent.width;
-    height: parent.height;
-    background: #000000aa;
-    TouchArea { clicked => { batch-import-open = false; } }   // backdrop closes
-    Rectangle {
-        width: 540px;
-        height: 440px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        background: Theme.bg-panel;
-        border-radius: Theme.radius-lg;
-        border-width: 1px;
-        border-color: Theme.border-strong;
-        drop-shadow-blur: Theme.shadow-raised-blur;
-        drop-shadow-color: Theme.shadow-raised-color;
-        TouchArea {}   // swallow clicks inside the card
+Rectangle {
+    // 常驻（靠 visible 切换）：`clicked` 里关掉自己那一下会在事件派发栈上
+    // 销毁正在处理事件的子树，属于仓库记录过的闪退场景（#323/#343）。
+    // 关闭时 `visible: false` 让整棵子树既不绘制也不参与命中。
+    visible: batch-import-open;
+width: parent.width;
+height: parent.height;
+background: #000000aa;
+TouchArea { clicked => { batch-import-open = false; } }   // backdrop closes
+Rectangle {
+    width: 540px;
+    height: 440px;
+    x: (parent.width - self.width) / 2;
+    y: (parent.height - self.height) / 2;
+    background: Theme.bg-panel;
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+    drop-shadow-blur: Theme.shadow-raised-blur;
+    drop-shadow-color: Theme.shadow-raised-color;
+    TouchArea {}   // swallow clicks inside the card
 
-        VerticalLayout {
-            padding: 20px;
-            spacing: 10px;
-            Text {
-                text: lang-en ? "Batch import connections" : "批量导入连接";
-                color: Theme.text-primary;
-                font-size: Theme.fs-xl;
-                font-weight: 600;
-            }
-            Text {
-                text: lang-en
-                    ? "One per line:  host|port|user|password|name   (port/user/password/name optional)"
-                    : "每行一个:  host|port|user|password|name   (端口/用户/密码/名称可省略)";
-                color: Theme.text-secondary;
-                font-size: Theme.fs-sm;
-                wrap: word-wrap;
-            }
-            // Paste area — themed multiline input.
-            Rectangle {
-                vertical-stretch: 1;
-                border-radius: Theme.radius-sm;
-                border-width: 1px;
-                border-color: bi-input.has-focus ? Theme.accent : Theme.border-subtle;
-                background: Theme.bg-root;
-                clip: true;
-                Flickable {
-                    viewport-height: max(self.height, bi-input.preferred-height + 16px);
-                    bi-input := TextInput {
-                        x: 10px;
-                        y: 8px;
-                        width: parent.width - 20px;
-                        text <=> batch-import-text;
-                        color: Theme.text-primary;
-                        font-family: Theme.font-mono;
-                        font-size: Theme.fs-md;
-                        single-line: false;
-                        wrap: no-wrap;
-                    }
-                }
-                if batch-import-text == "" : Text {
+    VerticalLayout {
+        padding: 20px;
+        spacing: 10px;
+        Text {
+            text: lang-en ? "Batch import connections" : "批量导入连接";
+            color: Theme.text-primary;
+            font-size: Theme.fs-xl;
+            font-weight: 600;
+        }
+        Text {
+            text: lang-en
+                ? "One per line:  host|port|user|password|name   (port/user/password/name optional)"
+                : "每行一个:  host|port|user|password|name   (端口/用户/密码/名称可省略)";
+            color: Theme.text-secondary;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+        // Paste area — themed multiline input.
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: bi-input.has-focus ? Theme.accent : Theme.border-subtle;
+            background: Theme.bg-root;
+            clip: true;
+            Flickable {
+                viewport-height: max(self.height, bi-input.preferred-height + 16px);
+                bi-input := TextInput {
                     x: 10px;
                     y: 8px;
-                    text: "192.168.1.108|22|root|pass@123|服务器1";
-                    color: Theme.text-muted;
+                    width: parent.width - 20px;
+                    text <=> batch-import-text;
+                    color: Theme.text-primary;
                     font-family: Theme.font-mono;
                     font-size: Theme.fs-md;
+                    single-line: false;
+                    wrap: no-wrap;
                 }
             }
-            HorizontalLayout {
-                alignment: end;
-                spacing: 8px;
-                GhostButton {
-                    text: @tr("Cancel");
-                    clicked => { batch-import-open = false; }
-                }
-                PrimaryButton {
-                    text: lang-en ? "Import" : "导入";
-                    clicked => {
-                        root.batch-import-confirm(batch-import-text);
-                        batch-import-open = false;
-                    }
+            if batch-import-text == "" : Text {
+                x: 10px;
+                y: 8px;
+                text: "192.168.1.108|22|root|pass@123|服务器1";
+                color: Theme.text-muted;
+                font-family: Theme.font-mono;
+                font-size: Theme.fs-md;
+            }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            GhostButton {
+                text: @tr("Cancel");
+                clicked => { batch-import-open = false; }
+            }
+            PrimaryButton {
+                text: lang-en ? "Import" : "导入";
+                clicked => {
+                    root.batch-import-confirm(batch-import-text);
+                    batch-import-open = false;
                 }
             }
         }
     }
 }
+}
 
 // Connect-time credential prompt (#110). Backdrop / Cancel abort the connect.
-if cred-prompt-open : Rectangle {
-    width: parent.width;
-    height: parent.height;
-    background: #000000aa;
-    TouchArea { clicked => { root.cred-reject(); } }
-    Rectangle {
-        width: 360px;
-        height: cred-card.preferred-height;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        background: Theme.bg-panel;
-        border-radius: Theme.radius-lg;
-        border-width: 1px;
-        border-color: Theme.border-strong;
-        drop-shadow-blur: Theme.shadow-raised-blur;
-        drop-shadow-color: Theme.shadow-raised-color;
-        TouchArea {}   // swallow clicks inside the card
-        cred-card := VerticalLayout {
-            padding: 20px;
-            spacing: 12px;
-            Text {
-                text: @tr("Login");
-                color: Theme.text-primary;
-                font-size: Theme.fs-xl;
-                font-weight: 600;
+Rectangle {
+    // 常驻（靠 visible 切换）：`clicked` 里关掉自己那一下会在事件派发栈上
+    // 销毁正在处理事件的子树，属于仓库记录过的闪退场景（#323/#343）。
+    // 关闭时 `visible: false` 让整棵子树既不绘制也不参与命中。
+    visible: cred-prompt-open;
+width: parent.width;
+height: parent.height;
+background: #000000aa;
+TouchArea { clicked => { root.cred-reject(); } }
+Rectangle {
+    width: 360px;
+    height: cred-card.preferred-height;
+    x: (parent.width - self.width) / 2;
+    y: (parent.height - self.height) / 2;
+    background: Theme.bg-panel;
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+    drop-shadow-blur: Theme.shadow-raised-blur;
+    drop-shadow-color: Theme.shadow-raised-color;
+    TouchArea {}   // swallow clicks inside the card
+    cred-card := VerticalLayout {
+        padding: 20px;
+        spacing: 12px;
+        Text {
+            text: @tr("Login");
+            color: Theme.text-primary;
+            font-size: Theme.fs-xl;
+            font-weight: 600;
+        }
+        Text {
+            text: cred-host;
+            color: Theme.text-secondary;
+            font-family: Theme.font-mono;
+            font-size: Theme.fs-sm;
+        }
+        if cred-need-user : LabeledInput {
+            label: @tr("Username");
+            placeholder: "root";
+            value <=> cred-user;
+            accepted => { root.cred-accept(); }
+            canceled => { root.cred-reject(); }   // Esc cancels (#140-3)
+        }
+        if cred-need-password : LabeledInput {
+            label: @tr("Password");
+            placeholder: "••••••••";
+            password: true;
+            value <=> cred-password;
+            accepted => { root.cred-accept(); }
+            canceled => { root.cred-reject(); }   // Esc cancels (#140-3)
+        }
+        CheckBox {
+            text: @tr("Remember for this session");
+            checked <=> cred-remember;
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            GhostButton {
+                text: @tr("Cancel");
+                clicked => { root.cred-reject(); }
             }
-            Text {
-                text: cred-host;
-                color: Theme.text-secondary;
-                font-family: Theme.font-mono;
-                font-size: Theme.fs-sm;
-            }
-            if cred-need-user : LabeledInput {
-                label: @tr("Username");
-                placeholder: "root";
-                value <=> cred-user;
-                accepted => { root.cred-accept(); }
-                canceled => { root.cred-reject(); }   // Esc cancels (#140-3)
-            }
-            if cred-need-password : LabeledInput {
-                label: @tr("Password");
-                placeholder: "••••••••";
-                password: true;
-                value <=> cred-password;
-                accepted => { root.cred-accept(); }
-                canceled => { root.cred-reject(); }   // Esc cancels (#140-3)
-            }
-            CheckBox {
-                text: @tr("Remember for this session");
-                checked <=> cred-remember;
-            }
-            HorizontalLayout {
-                alignment: end;
-                spacing: 8px;
-                GhostButton {
-                    text: @tr("Cancel");
-                    clicked => { root.cred-reject(); }
-                }
-                PrimaryButton {
-                    text: @tr("Connect");
-                    clicked => { root.cred-accept(); }
-                }
+            PrimaryButton {
+                text: @tr("Connect");
+                clicked => { root.cred-accept(); }
             }
         }
     }
+}
 }
 
 // MFA / keyboard-interactive prompt (#86-MFA). A bastion (JumpServer with MFA
 // forced on) challenges for a verification code mid-login; backdrop / Cancel
 // abort the connect.
-if mfa-prompt-open : Rectangle {
-    width: parent.width;
-    height: parent.height;
-    background: #000000aa;
-    TouchArea { clicked => { root.mfa-cancel(); } }
-    Rectangle {
-        width: 360px;
-        height: mfa-card.preferred-height;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        background: Theme.bg-panel;
-        border-radius: Theme.radius-lg;
-        border-width: 1px;
-        border-color: Theme.border-strong;
-        drop-shadow-blur: Theme.shadow-raised-blur;
-        drop-shadow-color: Theme.shadow-raised-color;
-        TouchArea {}   // swallow clicks inside the card
-        mfa-card := VerticalLayout {
-            padding: 20px;
-            spacing: 12px;
-            Text {
-                text: lang-en ? "Two-factor verification" : "双重验证 (MFA)";
-                color: Theme.text-primary;
-                font-size: Theme.fs-xl;
-                font-weight: 600;
+Rectangle {
+    // 常驻（靠 visible 切换）：`clicked` 里关掉自己那一下会在事件派发栈上
+    // 销毁正在处理事件的子树，属于仓库记录过的闪退场景（#323/#343）。
+    // 关闭时 `visible: false` 让整棵子树既不绘制也不参与命中。
+    visible: mfa-prompt-open;
+width: parent.width;
+height: parent.height;
+background: #000000aa;
+TouchArea { clicked => { root.mfa-cancel(); } }
+Rectangle {
+    width: 360px;
+    height: mfa-card.preferred-height;
+    x: (parent.width - self.width) / 2;
+    y: (parent.height - self.height) / 2;
+    background: Theme.bg-panel;
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.border-strong;
+    drop-shadow-blur: Theme.shadow-raised-blur;
+    drop-shadow-color: Theme.shadow-raised-color;
+    TouchArea {}   // swallow clicks inside the card
+    mfa-card := VerticalLayout {
+        padding: 20px;
+        spacing: 12px;
+        Text {
+            text: lang-en ? "Two-factor verification" : "双重验证 (MFA)";
+            color: Theme.text-primary;
+            font-size: Theme.fs-xl;
+            font-weight: 600;
+        }
+        Text {
+            text: mfa-host;
+            color: Theme.text-secondary;
+            font-family: Theme.font-mono;
+            font-size: Theme.fs-sm;
+        }
+        // The server's own prompt text (falls back to a generic hint).
+        Text {
+            text: mfa-prompt != "" ? mfa-prompt
+                : (lang-en ? "Enter your verification code" : "请输入验证码");
+            color: Theme.text-secondary;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+        code-input := LabeledInput {
+            label: lang-en ? "Code" : "验证码";
+            placeholder: "123456";
+            password: !mfa-echo;
+            value <=> mfa-answer;
+            auto-focus: true;
+            accepted => { root.mfa-submit(); }   // Enter submits
+            canceled => { root.mfa-cancel(); }   // Esc cancels (#140-3)
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            GhostButton {
+                text: @tr("Cancel");
+                clicked => { root.mfa-cancel(); }
             }
-            Text {
-                text: mfa-host;
-                color: Theme.text-secondary;
-                font-family: Theme.font-mono;
-                font-size: Theme.fs-sm;
-            }
-            // The server's own prompt text (falls back to a generic hint).
-            Text {
-                text: mfa-prompt != "" ? mfa-prompt
-                    : (lang-en ? "Enter your verification code" : "请输入验证码");
-                color: Theme.text-secondary;
-                font-size: Theme.fs-sm;
-                wrap: word-wrap;
-            }
-            code-input := LabeledInput {
-                label: lang-en ? "Code" : "验证码";
-                placeholder: "123456";
-                password: !mfa-echo;
-                value <=> mfa-answer;
-                auto-focus: true;
-                accepted => { root.mfa-submit(); }   // Enter submits
-                canceled => { root.mfa-cancel(); }   // Esc cancels (#140-3)
-            }
-            HorizontalLayout {
-                alignment: end;
-                spacing: 8px;
-                GhostButton {
-                    text: @tr("Cancel");
-                    clicked => { root.mfa-cancel(); }
-                }
-                PrimaryButton {
-                    text: lang-en ? "Verify" : "验证";
-                    clicked => { root.mfa-submit(); }
-                }
+            PrimaryButton {
+                text: lang-en ? "Verify" : "验证";
+                clicked => { root.mfa-submit(); }
             }
         }
     }
+}
 }
 }

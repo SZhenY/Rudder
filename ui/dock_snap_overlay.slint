@@ -54,6 +54,9 @@ export component DockSnapOverlay inherits Rectangle {
     in property <string> dock-target;
     in property <bool> panel-dragging;
 
+    // 常驻、按 `panel-dragging` 显隐：拖拽过程中创建/销毁整棵子树会闪退
+    // （pointer-move 里置位、pointer-up 里复位，正是"在事件中途销毁自己"）。
+    visible: panel-dragging;
     x: 0; y: 0;
     width: 100%;
     height: 100%;

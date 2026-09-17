@@ -103,9 +103,12 @@ export component SidebarBody inherits Rectangle {
     callback expand-second();
     callback drag-normalized(float /* nx */, float /* ny */);
 
-    if !sidebar-collapsed && !zen-mode : Rectangle {
+    // 常驻、用 opacity 淡入淡出（visible 跟随动画值）。原来外面套着 `if`，
+    // 元素随条件生死 —— `animate` 因此永不播放，折叠时还会把整块资源面板销毁重建。
+    Rectangle {
+        visible: self.opacity > 0.001;
         animate opacity { duration: 120ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
-        opacity: sidebar-collapsed ? 0.0 : 1.0;
+        opacity: (!sidebar-collapsed && !zen-mode) ? 1.0 : 0.0;
         width: parent.width; height: parent.height;
         Sidebar {
         width: parent.width;

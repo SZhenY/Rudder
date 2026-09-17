@@ -39,6 +39,11 @@ import { QuickGroupDialog } from "quick_group_dialog.slint";
 import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
 
 export component ChmodDialog inherits ModalCard {
+    // 显隐由调用点控制：**常驻**，不用 `if` 包着 —— 在事件派发栈上销毁
+    // 正在处理事件的子树会闪退（#323/#343）。
+    in property <bool> open: false;
+    visible: open;
+    active: open;          // 关闭时不吞掉整窗点击
     // ── 状态（窗口透传）──────────────────────────────────────────────
     in property <bool> lang-en: false;
     in property <string> chmod-name;

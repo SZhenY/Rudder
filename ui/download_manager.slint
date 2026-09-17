@@ -79,7 +79,11 @@ export component DownloadManagerPopup inherits Rectangle {
 // Click-outside-to-close: a full-window transparent sensor sitting *under*
 // the popup. Clicking anywhere outside the popup hits this and closes it;
 // clicks inside the popup are caught by the popup's own TouchArea first.
-if download-open : TouchArea {
+// 常驻（靠 visible/enabled 切换），不再用 `if`：在事件派发栈上销毁正在处理事件的
+// 子树会闪退（#323/#343）。这层是全窗口透明感应区，关闭时必须同时不可见、不可点。
+TouchArea {
+    visible: download-open;
+    enabled: download-open;
     width: parent.width;
     height: parent.height;
     clicked => { root.close-requested(); }

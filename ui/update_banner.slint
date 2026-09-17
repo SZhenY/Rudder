@@ -25,7 +25,10 @@ export component UpdateBanner inherits HorizontalLayout {
     callback restart-app();
 
     y: 8px;
-    alignment: center;
+    // 显式高度：布局根放在非布局父级里时，默认会延伸到父级剩余区域，横幅会被拉高
+    // 并因此垂直居中到窗口中部。高度跟着卡片走（卡片高度由 update-state 驱动）。
+    height: bnr.height;
+    alignment: center;   // 水平居中（横幅就是要居中，不是"误用的纵向居中"）
     bnr := Rectangle {
         width: 420px;
         // 空闲 38px；一旦开始更新（state != 0）长高以容纳进度行。

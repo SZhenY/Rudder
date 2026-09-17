@@ -48,6 +48,10 @@ import { ConfirmOverlays } from "confirm_overlays.slint";
 import { ShortcutsDialog } from "shortcuts_dialog.slint";
 
 export component InterfaceSettingsOverlay inherits Rectangle {
+    // 显隐由调用点控制：**常驻**，不用 `if` 包着 —— 在事件派发栈上销毁
+    // 正在处理事件的子树会闪退（#323/#343）。关闭时不绘制也不参与命中。
+    in property <bool> open: false;
+    visible: open;
     // ── 状态（窗口透传）──────────────────────────────────────────────
     in-out property <bool> collapse-sftp-default:false;
     in-out property <bool> collapse-sidebar-default:false;

@@ -1046,7 +1046,10 @@ export component AppWindow inherits Window {
                 ? parent.height - parent.quick-top - parent.quick-bottom : parent.welcome-size;
             background: Theme.bg-panel;
             clip: true;
-            if !root.welcome-collapsed : Rectangle {
+            // 常驻、用 opacity 淡入淡出（理由同 resource 面板：`if` 会让 animate 失效，
+            // 并在折叠时销毁重建整个会话列表）。
+            Rectangle {
+                visible: self.opacity > 0.001;
                 animate opacity { duration: 120ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
                 opacity: root.welcome-collapsed ? 0.0 : 1.0;
                 width: parent.width; height: parent.height;
@@ -1793,8 +1796,8 @@ export component AppWindow inherits Window {
         // Drag-to-dock snap overlay — four edge zones; the one under the cursor
         // (root.dock-target) lights up. Purely visual (no TouchArea) so the
         // header's drag keeps receiving move events (#dock).
-    // 已抽成 `ui/dock_snap_overlay.slint`：纯搬家，状态透传。
-    if root.panel-dragging : DockSnapOverlay {
+    // 已抽成 `ui/dock_snap_overlay.slint`：常驻（内部按 `panel-dragging` 显隐），状态透传。
+    DockSnapOverlay {
         dock-target : root.dock-target;
         panel-dragging : root.panel-dragging;
     }
@@ -1944,7 +1947,8 @@ export component AppWindow inherits Window {
     // --- Built-in file viewer / editor (#70) ------------------------------
     // View = read-only (selectable/copyable); Edit = writable, Ctrl+S or the
     // Save button uploads, and closing uploads any unsaved changes.
-    if root.editor-open : FileEditor {
+    FileEditor {
+        open: root.editor-open;
         editor-name: root.editor-name;
         editor-readonly: root.editor-readonly;
         editor-line-numbers: root.editor-line-numbers;
@@ -1982,7 +1986,8 @@ export component AppWindow inherits Window {
     // the PopupWindow form silently routed clicks away from the menu items
     // that open it.
     // 已抽成 `ui/rename_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
-    if root.tab-rename-open : RenameDialog {
+    RenameDialog {
+        open: root.tab-rename-open;
         lang-en : root.lang-en;
         tab-rename-id : root.tab-rename-id;
         tab-rename-value <=> root.tab-rename-value;
@@ -2036,7 +2041,8 @@ export component AppWindow inherits Window {
     }
     // --- Group create / rename dialog (#41) -------------------------------
     // 已抽成 `ui/group_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
-    if root.group-dialog-open : GroupDialog {
+    GroupDialog {
+        open: root.group-dialog-open;
         lang-en: root.lang-en;
         group-dialog-orig : root.group-dialog-orig;
         group-dialog-name <=> root.group-dialog-name;
@@ -2046,7 +2052,8 @@ export component AppWindow inherits Window {
     }
     // --- Quick-command manage dialog (#55) --------------------------------
     // 已抽成 `ui/quick_cmd_manage.slint`：这里只做显隐判断 + 状态透传 + 动作转发。
-    if root.quick-cmd-manage-open : QuickCmdManageDialog {
+    QuickCmdManageDialog {
+        open: root.quick-cmd-manage-open;
         quick-commands: root.quick-commands;
         lang-en: root.lang-en;
         qcm-dialog-width: root.qcm-dialog-width;
@@ -2072,7 +2079,8 @@ export component AppWindow inherits Window {
     }
     // --- Quick-command group name dialog (#55): new / rename --------------
     // 已抽成 `ui/quick_group_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
-    if root.qcg-open : QuickGroupDialog {
+    QuickGroupDialog {
+        open: root.qcg-open;
         lang-en: root.lang-en;
         qcg-name <=> root.qcg-name;
         qcg-orig : root.qcg-orig;
@@ -2081,7 +2089,8 @@ export component AppWindow inherits Window {
     }
     // --- SFTP prompt dialog (#69): rename / chmod / mkdir / touch ----------
     // 已抽成 `ui/sftp_prompt_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
-    if root.sftp-prompt-open : SftpPromptDialog {
+    SftpPromptDialog {
+        open: root.sftp-prompt-open;
         lang-en: root.lang-en;
         sftp-prompt-kind : root.sftp-prompt-kind;
         sftp-prompt-tab : root.sftp-prompt-tab;
@@ -2092,7 +2101,8 @@ export component AppWindow inherits Window {
     }
     // --- Confirm-before-close dialog (#88) --------------------------------
     // 已抽成 `ui/confirm_close_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
-    if root.confirm-close-open : ConfirmCloseDialog {
+    ConfirmCloseDialog {
+        open: root.confirm-close-open;
         lang-en: root.lang-en;
         avail-width: root.width;
         avail-height: root.height;
@@ -2101,7 +2111,8 @@ export component AppWindow inherits Window {
     }
     // --- Visual chmod dialog (#84): Owner/Group/Other × Read/Write/Execute --
     // 已抽成 `ui/chmod_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
-    if root.chmod-open : ChmodDialog {
+    ChmodDialog {
+        open: root.chmod-open;
         lang-en: root.lang-en;
         chmod-name : root.chmod-name;
         chmod-or <=> root.chmod-or;
@@ -2230,7 +2241,8 @@ export component AppWindow inherits Window {
     }
     // --- Interface settings (modal overlay) -------------------------------
     // 已抽成 `ui/interface_settings_overlay.slint`：**纯接线**，状态透传 + 动作转发。
-    if root.interface-open : InterfaceSettingsOverlay {
+    InterfaceSettingsOverlay {
+        open: root.interface-open;
         collapse-sftp-default <=> root.collapse-sftp-default;
         collapse-sidebar-default <=> root.collapse-sidebar-default;
         convert-eol <=> root.convert-eol;
