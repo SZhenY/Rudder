@@ -6,17 +6,15 @@ use super::*;
 /// 抽成纯函数的原因：判定错了是**安全问题** —— 本该经跳板机的会话会静默直连目标机
 /// （审计链路与网络边界同时失效）；反过来自引用没拦住则会拿自己当跳板。
 ///
-/// 已知疑点（本次只钉住现状、未改行为）：判空用 `trim()`、查表却用原始串，
-/// 于是 `" b "` 这种带空白的配置匹配不到跳板机 -> **静默直连**。要改成先 trim 再查表
-/// 是一个独立的行为决策，不混在补测试里做。
+/// 返回值**已 trim**：调用方拿它去 `store.get(id)` 精确查表，而配置里可能留着带空白的
+/// id（早期版本写进去的）。以前是判空用 `trim()`、查表用原始串 —— `" b "` 匹配不到任何
+/// 会话，于是静默直连目标机。自引用那条也一并对齐（`" a "` 同样要拦住）。
 fn jump_target(session: &Session) -> Option<&str> {
-    if session.kind != SessionKind::Ssh || session.jump_session_id.trim().is_empty() {
+    let id = session.jump_session_id.trim();
+    if session.kind != SessionKind::Ssh || id.is_empty() || id == session.id.trim() {
         return None;
     }
-    if session.jump_session_id == session.id {
-        return None;
-    }
-    Some(session.jump_session_id.as_str())
+    Some(id)
 }
 
 pub(crate) fn resolve_jump(store: &Rc<RefCell<ConfigStore>>, session: &Session) -> Option<Session> {
@@ -386,9 +384,11 @@ mod tests {
     }
 
     /// 自引用必须拦住：拿自己当跳板只会得到一连串连接失败。
+    /// 带空白的形式（早期配置里可能有）同样要拦。
     #[test]
     fn jump_target_rejects_self_reference() {
         assert_eq!(jump_target(&ssh_session("a", "a")), None);
+        assert_eq!(jump_target(&ssh_session("a", " a ")), None, "带空白的自引用");
     }
 
     /// 只有 SSH 有跳板概念（串口 / Telnet / 本地会话没有）。
@@ -399,9 +399,11 @@ mod tests {
         assert_eq!(jump_target(&s), None);
     }
 
-    /// 钉住现状：带空白的 id 能过判空，但查表用原始串 -> 匹配不到 -> 静默直连。
+    /// 带空白的 id 要归一后再返回：调用方拿它精确查表，返回原始串会匹配不到
+    /// 任何会话 -> 本该走跳板机的会话**静默直连**目标机（网络边界与审计链路一起失效）。
     #[test]
-    fn jump_target_keeps_padded_ids_untouched() {
-        assert_eq!(jump_target(&ssh_session("a", " b ")), Some(" b "));
+    fn jump_target_trims_padded_ids() {
+        assert_eq!(jump_target(&ssh_session("a", " b ")), Some("b"));
+        assert_eq!(jump_target(&ssh_session("a", "\tb\n")), Some("b"));
     }
 }

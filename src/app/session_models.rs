@@ -106,7 +106,9 @@ pub(crate) fn jump_candidates(
         } else {
             format!("{} ({}@{})", s.name, s.user, s.host)
         };
-        if s.id == current_jump_id {
+        // 与 `jump_target` 同一套口径：配置里可能留着带空白的 id（早期版本写进去的），
+        // 不 trim 的话这里会选中"无（直接连接）" —— 界面上说直连，实际原因就是它确实直连了。
+        if s.id == current_jump_id.trim() {
             selected = ids.len() as i32;
         }
         labels.push(label.into());
@@ -462,7 +464,8 @@ pub(crate) fn session_from_draft(
         private_key_inline,
         proxy: draft.proxy.to_string(),
         last_used: None,
-        group: draft.group.to_string(),
+        // 同 `session_callbacks` 里那份 draft→Session：分组名归一空白后再存。
+        group: draft.group.trim().to_string(),
         kind,
         local_distribution: String::new(),
         local_working_dir: String::new(),

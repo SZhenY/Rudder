@@ -711,7 +711,10 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                 private_key_inline,
                 proxy: draft.proxy.to_string(),
                 last_used: None,
-                group: draft.group.to_string(),
+                // 分组名先归一空白：输入框里手打的 " Prod " 不该带空白进配置
+                // （与 `normalize_move_group` / `add_group` 同一口径）。
+                // ⚠️ 这段 draft→Session 与 `session_models::session_from_draft` 是两份重复实现。
+                group: draft.group.trim().to_string(),
                 kind,
                 local_distribution: String::new(),
                 local_working_dir: String::new(),
@@ -1374,12 +1377,15 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
 /// 「移动到分组」的目标名：`default`（忽略大小写）= 未分组 → 空串；
 /// 保留分组（`system` 等，属于内置本地会话）→ None，表示整体中止、不写入任何东西。
 ///
-/// ⚠️ 已知不一致（只钉现状）：判保留名时 `trim()`、写入时用原始串，
-/// 所以 `" system "` 会被拒（对），但 `" Prod "` 会带着空白存进配置。
+/// 先归一空白再用。以前判保留名用 `trim()`、写入却用原始串：`" system "` 会被拒（对），
+/// 但 `" Prod "` 会带着空白存进配置；`" default "` 更隐蔽 —— 它既不等于 `default`、
+/// 也不是保留名，于是变成一个名叫 `" default "` 的**新分组**，而不是"移出分组"。
+/// 口径与 `add_group` / `rename_group`（都是先 `trim()` 再写）一致。
 fn normalize_move_group(group: &str) -> Option<String> {
+    let group = group.trim();
     if group.eq_ignore_ascii_case("default") {
         Some(String::new())
-    } else if is_reserved_session_group(group.trim()) {
+    } else if is_reserved_session_group(group) {
         None
     } else {
         Some(group.to_string())
@@ -1442,6 +1448,16 @@ mod tests {
         assert_eq!(normalize_move_group("system"), None, "保留分组");
         assert_eq!(normalize_move_group(" system "), None, "带空白也算保留分组");
         assert_eq!(normalize_move_group("Prod"), Some("Prod".to_string()));
+        assert_eq!(
+            normalize_move_group(" Prod "),
+            Some("Prod".to_string()),
+            "带空白的组名要归一后再写"
+        );
+        assert_eq!(
+            normalize_move_group(" default "),
+            Some(String::new()),
+            "带空白的 default 同样是移出分组"
+        );
     }
 
     /// 四种传输各一条标签 —— 标签错会让用户在侧边栏认错会话。
