@@ -103,6 +103,8 @@ open /Applications/rudder.app
 - [x] **连接失败原因分类**：认证失败 / 超时 / 端口被拒 / 网络不可达 / 域名解析失败 / 主机密钥不符，附排查建议（不再只显示原始错误码）
 - [x] SFTP 下载断点续传（取消 / 失败保留半截文件，重试自动续传）
 - [x] 终端双击选词 / 三击选行；查找支持 Enter / Shift+Enter 上下导航
+- [x] 自定义输出高亮规则（关键词或正则、颜色、区分大小写、整行），规则可单独启停
+- [x] 回滚缓冲上限可调：常规 10 万行，需要检索超长输出时可开启「大回滚缓冲区」（最高 100 万行）
 - [x] 沉浸壁纸（内置简约·浅 / 暗，支持自定义图片）+ 主题色随壁纸派生
 - [x] 平台字体栈：界面自动使用平台默认字体（macOS SF Pro Text → Helvetica Neue + Heiti SC、Windows Segoe UI + DengXian、Linux Ubuntu/Cantarell + Noto Sans CJK），终端默认 JetBrains Mono（含暗淡文本的 ExtraLight 变体）；额外字体可放入字体目录，见[自定义字体](#自定义字体外置字体)
 - [x] Windows on ARM64（zip + MSI 安装包）
