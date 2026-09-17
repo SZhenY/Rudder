@@ -5,8 +5,6 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
-## [0.7.8] - 2026-09-17
-
 ### 修复 / Fixed
 
 - **修复：反复收起、展开状态信息侧边栏后，SSH 连接会断开。** 收起侧栏原本会关掉两条远端监控
