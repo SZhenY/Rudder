@@ -297,8 +297,8 @@ color: Theme.text-secondary;
                     ? "FemtoVG (wgpu → Metal) is the default; try Skia if text looks wrong."
                     : "默认 FemtoVG（wgpu → Metal）；文字显示异常时可改用 Skia。")
                 : (root.lang-en
-                    ? "Software rendering is the default; FemtoVG (wgpu) uses the platform GPU API."
-                    : "默认使用软件渲染；FemtoVG（wgpu）走平台原生 GPU 接口。");
+                    ? "Automatic is the default: probe once on first launch, use FemtoVG (wgpu) when a GPU is present, otherwise software."
+                    : "默认自动：首次启动探测一次，有 GPU 用 FemtoVG（wgpu），没有则软件渲染。");
             show-divider: false;
             ComboBox {
                 width: 150px;
@@ -330,10 +330,10 @@ color: Theme.text-secondary;
                     : (root.lang-en
                         ? (Theme.is-mac
                             ? "FemtoVG (wgpu → Metal) remains the default renderer on macOS."
-                            : "Software remains the compatibility default for existing installations.")
+                            : "Installations that never changed this setting probe once on the next launch.")
                         : (Theme.is-mac
                             ? "macOS 默认继续使用 FemtoVG（wgpu → Metal）渲染器。"
-                            : "现有安装继续默认使用兼容性更好的软件渲染。"));
+                            : "从未改过此项的安装，下次启动会探测一次并把结论写进配置。"));
                 color: root.renderer-restart-required ? Theme.accent : Theme.text-muted;
                 font-size: 11px * Theme.panel-font;
                 wrap: word-wrap;

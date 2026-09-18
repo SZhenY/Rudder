@@ -72,6 +72,9 @@ pub(super) const fn auto_renderer_for(probe_ok: bool) -> &'static str {
 
 /// Windows / Linux 的"自动"：探测一次，把结论**固化进配置**，之后启动不再探测。
 ///
+/// 探测看两件事：适配器里**有没有真 GPU**（`report_probe_adapters` 排掉 WARP / lavapipe
+/// 这类 CPU 适配器），以及 femtovg-wgpu **能不能真渲染出一帧**（子进程退出码）。
+///
 /// 探测要花约一秒（子进程真渲染一帧），所以只在用户选"自动"之后的**第一次启动**发生；
 /// 写完配置后存的就是 `wgpu` / `software`，后续启动直接用它。想重新探测（比如换了机器
 /// 或者装上了显卡驱动）就再选一次"自动"。
@@ -112,15 +115,70 @@ fn gpu_renderer_probe_passes() -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
-    let status = std::process::Command::new(exe)
+    // stdout 要**读走**：探测进程会在里面写"适配器是 GPU 还是 CPU 型"，那是判断
+    // "有没有显卡"的第二条依据（第一条是退出码 —— 那一帧真的画出来了）。
+    let Ok(output) = std::process::Command::new(exe)
         .arg("--probe-renderer=wgpu")
         // 探测的是 femtovg 本身，不受外部 SLINT_BACKEND 影响。
         .env("SLINT_BACKEND", "winit-femtovg-wgpu")
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .status();
-    matches!(status, Ok(s) if s.success())
+        .output()
+    else {
+        return false;
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines().filter(|l| l.starts_with("probe-adapter=")) {
+        tracing::info!(adapter = line, "auto renderer: probe enumerated an adapter");
+    }
+    probe_conclusion(output.status.success(), &stdout)
+}
+
+/// 探测结论：**真 GPU**（不是 WARP / lavapipe 这类 CPU 适配器）**且**这一帧真的渲染出来了。
+///
+/// 抽成纯函数是为了能测：真正的探测要起子进程 + 枚举显卡，但"怎么下结论"这条契约不该靠
+/// 人肉观察。缺 `probe-adapter-kind=` 那行时（旧版探测进程 / 输出被裁掉）按"是 GPU"处理 ——
+/// 退出码已经是足够强的证据，只有**明确看到** CPU 适配器才降级到软件渲染。
+#[cfg(any(windows, target_os = "linux", test))]
+fn probe_conclusion(success: bool, stdout: &str) -> bool {
+    if !success {
+        return false;
+    }
+    !stdout
+        .lines()
+        .any(|line| line.trim().strip_prefix(PROBE_ADAPTER_KIND) == Some("cpu"))
+}
+
+/// 探测进程往 stdout 打的那行结论，父进程按行精确匹配。
+const PROBE_ADAPTER_KIND: &str = "probe-adapter-kind=";
+
+/// 探测进程里额外问一句：这台机器有没有**真的** GPU。
+///
+/// 光测"能不能渲染一帧"不够：WARP（Windows 的 D3D12 软件光栅化器）与 lavapipe（Mesa 的
+/// 软件 Vulkan）都会被 wgpu 枚举出来，而且照样能把那一帧画出来 —— 于是没显卡的机器也会
+/// 被判成"有 GPU"。它们的 `device_type` 是 `Cpu`，这里据此排除：那种机器用我们自己的
+/// 软件渲染（tiny-skia + softbuffer）更省资源，也更可控。
+///
+/// 只枚举适配器、不建设备，毫秒级；结论打到 stdout 供父进程读取（适配器名同时进 tracing，
+/// 事后排查"这台机器为什么走了软件渲染"时能直接看到）。
+fn report_probe_adapters() {
+    use slint::wgpu_30::wgpu;
+
+    let backends = wgpu::Backends::from_env().unwrap_or_default();
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends,
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    });
+    let adapters = pollster::block_on(instance.enumerate_adapters(backends));
+
+    let mut has_gpu = false;
+    for adapter in &adapters {
+        let info = adapter.get_info();
+        has_gpu |= !matches!(info.device_type, wgpu::DeviceType::Cpu);
+        println!("probe-adapter={:?} {}", info.device_type, info.name);
+    }
+    println!("{PROBE_ADAPTER_KIND}{}", if has_gpu { "gpu" } else { "cpu" });
 }
 
 /// 渲染探测进程：用指定渲染器起一个**屏幕外**的小窗口，渲染一帧后正常退出。
@@ -129,6 +187,9 @@ fn gpu_renderer_probe_passes() -> bool {
 /// 取值：Windows / Linux 用 `wgpu` / `software`，macOS 用 `femtovg-wgpu` / `skia` / `software`。
 pub(super) fn run_renderer_probe(mode: &str) -> anyhow::Result<()> {
     use slint::ComponentHandle as _;
+
+    // 先报一句"这台机器有没有真 GPU"：父进程拿它 + 退出码一起下结论。
+    report_probe_adapters();
 
     #[cfg(windows)]
     setup_windows_platform(mode);
@@ -511,7 +572,7 @@ mod mixed_dpi_window_tests {
 
 #[cfg(test)]
 mod auto_renderer_tests {
-    use super::auto_renderer_for;
+    use super::{auto_renderer_for, probe_conclusion};
 
     /// 探测通过 → 配置写 `wgpu`；不通过 → 写 `software`（这正是用户选的"自动"语义：
     /// 探测一次、结论落进配置文件，之后启动不再探测）。
@@ -519,6 +580,36 @@ mod auto_renderer_tests {
     fn probe_result_maps_to_a_concrete_config_value() {
         assert_eq!(auto_renderer_for(true), "wgpu");
         assert_eq!(auto_renderer_for(false), "software");
+    }
+
+    /// **CPU 适配器不算"有 GPU"**：WARP（Windows）/ lavapipe（Linux）能渲染，但那种机器
+    /// 该走软件渲染 —— 这正是"虚拟机里明明没显卡却挑中 GPU 档"的修法。
+    #[test]
+    fn only_a_real_gpu_counts() {
+        assert!(probe_conclusion(
+            true,
+            "probe-adapter=IntegratedGpu Apple M2\nprobe-adapter-kind=gpu\n"
+        ));
+        assert!(!probe_conclusion(
+            true,
+            "probe-adapter=Cpu Microsoft Basic Render Driver\nprobe-adapter-kind=cpu\n"
+        ));
+    }
+
+    /// 渲染失败（退出码非 0）本来就是软件渲染，适配器是什么都一样。
+    #[test]
+    fn a_failed_frame_never_selects_the_gpu() {
+        assert!(!probe_conclusion(
+            false,
+            "probe-adapter=DiscreteGpu GeForce RTX\nprobe-adapter-kind=gpu\n"
+        ));
+    }
+
+    /// 老版本探测进程没有那行结论时以退出码为准：只有**明确看到** CPU 才降级。
+    #[test]
+    fn a_missing_verdict_falls_back_to_the_exit_code() {
+        assert!(probe_conclusion(true, ""));
+        assert!(probe_conclusion(true, "probe-adapter=DiscreteGpu GeForce RTX\n"));
     }
 }
 

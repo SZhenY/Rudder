@@ -1546,21 +1546,22 @@ impl ConfigStore {
         }
     }
 
-    /// Missing and invalid Windows values use software so upgrades preserve the
-    /// high-DPI/VM compatibility from #224。
+    /// **默认 `auto`**：首次启动探测一次（这台机器有没有真 GPU、femtovg-wgpu 能不能真渲染
+    /// 出一帧），有 GPU 就存 `wgpu`、没有就存 `software`，之后启动直接读配置。
     ///
-    /// `"auto"` 仍然可选用：它的"先试 GPU、失败退回软件"由**启动时的探测**完成
-    /// （见 `app/window.rs::gpu_renderer_probe_passes`）—— 不能指望 Slint 自己的回退，
-    /// 它对 femtovg 的延迟上下文创建无能为力（虚拟机里就是"窗口打不开"）。
-    /// 矩阵：软件（默认）/ FemtoVG(wgpu→D3D12) / 自动（探测成前两者之一）。
-    /// 旧值 `gpu`（OpenGL）与 `skia` 都已退役 → 分别升到 `wgpu` 与软件渲染。
+    /// #224 那批高 DPI / 虚拟机兼容问题由这条探测兜住 —— 不再靠"把默认值压成软件渲染"。
+    /// 不能指望 Slint 自己的回退：它对 femtovg 的延迟上下文创建无能为力（虚拟机里就是
+    /// "窗口打不开"），所以探测必须自己起子进程实测。
+    /// 矩阵：自动（默认）/ 软件 / FemtoVG(wgpu→D3D12)。
+    /// 旧值 `gpu`（OpenGL）已退役 → 升到 `wgpu`；瞎值 → `auto`（重新探测一次）。
     #[cfg(target_os = "windows")]
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
             "auto" => "auto",
             "wgpu" => "wgpu",
+            "software" => "software",
             "gpu" => "wgpu",
-            _ => "software",
+            _ => "auto",
         }
     }
 
@@ -1594,8 +1595,9 @@ impl ConfigStore {
         self.cache.appearance.renderer_mode = match mode.as_str() {
             "auto" => "auto".into(),
             "wgpu" => "wgpu".into(),
+            "software" => "software".into(),
             "gpu" => "wgpu".into(),
-            _ => "software".into(),
+            _ => "auto".into(),
         };
     }
 
@@ -2954,23 +2956,24 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "windows")]
-    fn renderer_mode_preserves_compatibility_default_and_validates() {
+    fn renderer_mode_defaults_to_auto_and_validates() {
         let mut store = temp_store();
-        assert_eq!(store.renderer_mode(), "software");
-
-        // `auto` 仍然可选：能否用 GPU 由启动时的探测决定，配置层如实保留。
-        store.set_renderer_mode("auto".into());
+        // 默认 `auto`：首次启动探测一次，结论写回配置（见 app/window.rs）。
         assert_eq!(store.renderer_mode(), "auto");
+
         store.set_renderer_mode("wgpu".into());
         assert_eq!(store.renderer_mode(), "wgpu");
+        store.set_renderer_mode("software".into());
+        assert_eq!(store.renderer_mode(), "software");
         // 旧配置里的 `gpu`（OpenGL）升到 wgpu 档 —— OpenGL 已从矩阵退役。
         store.set_renderer_mode("gpu".into());
         assert_eq!(store.renderer_mode(), "wgpu");
+        // 瞎值回到"重新探测一次"，而不是默默压成软件渲染。
         store.set_renderer_mode("unexpected".into());
-        assert_eq!(store.renderer_mode(), "software");
+        assert_eq!(store.renderer_mode(), "auto");
 
         store.cache = serde_json::from_str("{}").expect("legacy config must deserialize");
-        assert_eq!(store.renderer_mode(), "software");
+        assert_eq!(store.renderer_mode(), "auto");
     }
 
     #[test]

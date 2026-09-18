@@ -30,6 +30,9 @@ rust-version = "1.96"
 #   FemtoVG，而本分支已决定不再使用 OpenGL（GPU 路径一律走 wgpu，见 target 段）。
 #   下面这份清单 = Slint 1.18 的默认集**减掉** `renderer-femtovg`，逐项照抄以便将来
 #   对齐上游默认值；`backend-default` 仍然带 winit（x11 + wayland）。
+#
+# unstable-wgpu-30：`slint::wgpu_30`（wgpu 30 的类型再导出）只在这个 feature 下存在。
+#   "自动"档的探测要用它枚举适配器，判断机器上有没有**真的** GPU（见 src/app/window.rs）。
 slint = { version = "1.18", default-features = false, features = [
     "std",
     "backend-default",
@@ -39,7 +42,11 @@ slint = { version = "1.18", default-features = false, features = [
     "system-tray",
     "unstable-fontique-011",
     "renderer-femtovg-wgpu",
+    "unstable-wgpu-30",
 ] }
+# 探测进程里把 wgpu 的异步 future（`enumerate_adapters`）跑完用。它本来就在依赖树里
+# （wgpu 自己用的），所以加上它不增加编译量。
+pollster = "0.4"
 # ICU4X (pulled in by Slint's text layout) spams stderr with raw `eprintln!`
 # ("ICU4X data error: No segmentation model for language: ja") because its
 # `log` shim falls back to eprintln when the `logging` feature is off. Turning
