@@ -376,3 +376,38 @@ mod mixed_dpi_window_tests {
         assert!(!maximized_geometry_needs_repair(2560, 1400, 2560, 1440));
     }
 }
+
+#[cfg(test)]
+mod titlebar_drag_tests {
+    /// 拖动区是否声明在双击区**之后**。抽成纯函数，好用合成输入自证它不是空断言。
+    ///
+    /// 为什么要看顺序：Slint 里后声明的兄弟在更上层，命中测试也先到它；`WindowMoveArea`
+    /// 的过滤器会把按下 `ForwardAndInterceptGrab` **转发**给下层（所以双击仍然生效），
+    /// 但被盖住时它根本收不到按下 —— 表现就是"双击最大化正常、拖动完全没反应"
+    /// （0.7.8-fix1 / fix2 在 Windows 与 Linux 上的现象）。编译期看不出这种顺序错误。
+    fn drag_area_is_after_double_click(src: &str) -> bool {
+        let move_line = src.lines().position(|l| l.contains("WindowMoveArea {"));
+        let click_line = src
+            .lines()
+            .position(|l| l.contains("show-min-max : TouchArea {"));
+        matches!((move_line, click_line), (Some(m), Some(t)) if t < m)
+    }
+
+    #[test]
+    fn window_move_area_is_declared_after_the_double_click_area() {
+        let src = include_str!("../../ui/components/window_shell.slint");
+        assert!(
+            drag_area_is_after_double_click(src),
+            "WindowMoveArea 必须在双击 TouchArea 之后声明，否则被它盖住、拖动失效"
+        );
+    }
+
+    /// 反向自证：顺序换回去时判据必须为假，否则上面的断言等于没写。
+    #[test]
+    fn the_order_check_rejects_the_buggy_order() {
+        let buggy = "\n    WindowMoveArea { }\n    if root.show-min-max : TouchArea { }\n";
+        assert!(!drag_area_is_after_double_click(buggy));
+        let fixed = "\n    if root.show-min-max : TouchArea { }\n    WindowMoveArea { }\n";
+        assert!(drag_area_is_after_double_click(fixed));
+    }
+}

@@ -63,18 +63,27 @@ export component WindowTitleBar inherits Rectangle {
     height: root.bar-height;
     background: root.bg;
 
-    // 拖动标题栏移动窗口。窗口系统负责实际移动（winit：Windows / macOS / X11 /
-    // Wayland 都支持；不支持的平台上它是空操作）。不在布局里时默认铺满父元素。
+    // 只有带最小化/最大化的主窗口才响应双击；子窗口保持原样（不响应）。
+    if root.show-min-max : TouchArea {
+        double-clicked => { root.maximize-toggle(); }
+    }
+
+    // 拖动标题栏移动窗口：Slint 1.18 的 `WindowMoveArea`，实际移动交给窗口系统
+    // （winit：Windows / macOS / X11 / Wayland 都支持），不在布局里时默认铺满父元素。
+    //
+    // ⚠️ **必须声明在双击 TouchArea 之后**：Slint 里后声明的兄弟在更上层，命中测试
+    // 也先到它。反过来放（先声明、被 TouchArea 盖住）时它永远收不到按下 —— 表现就是
+    // **双击最大化正常、拖动完全没反应**（0.7.8-fix1 / fix2 在 Windows 与 Linux 上的
+    // 现象）。现在这样：它的过滤器把按下 `ForwardAndInterceptGrab` **转发**给下层，
+    // 双击照旧生效；只有位移超过阈值后才接管并交给系统移动。
+    //
+    // macOS 两种写法都不受影响：那边是原生标题栏（透明 + fullsize content），
+    // 拖动由系统处理，这个元素只是顺便也在。`window.rs` 里有条测试盯着这个顺序。
     WindowMoveArea {
         x: 0;
         y: 0;
         width: 100%;
         height: 100%;
-    }
-
-    // 只有带最小化/最大化的主窗口才响应双击；子窗口保持原样（不响应）。
-    if root.show-min-max : TouchArea {
-        double-clicked => { root.maximize-toggle(); }
     }
 
     HorizontalLayout {

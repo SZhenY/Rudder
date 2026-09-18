@@ -5,7 +5,32 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
-## [0.7.8-fix2] - 2026-09-18
+## [0.7.8-fix3] - 2026-09-18
+
+### 修复 / Fixed
+
+- **修复：Windows 与 Linux 上拖动标题栏无法移动窗口**（`fix1` / `fix2` 都有，双击最大化却是
+  正常的）。根因是**声明顺序**：双击用的 `TouchArea` 排在拖动区 `WindowMoveArea` 之后，而
+  Slint 里后声明的兄弟在更上层、命中测试也先到它 —— 拖动区于是**永远收不到按下**。现在把拖动区
+  移到双击区之后：它的过滤器会把按下转发给下层，双击照旧生效，位移超过阈值才接管并交给系统。
+  macOS 不受影响（那边是原生标题栏，拖动一直由系统完成）。**Fixed: dragging the title bar did
+  nothing on Windows and Linux.** The double-click `TouchArea` was declared after the
+  `WindowMoveArea`, and later siblings sit on top, so the drag area never saw the press.
+- 顺带加了一条**源码顺序测试**盯着这个坑（编译器看不出顺序错误），并附该判据的反向自证。
+
+### 改进 / Improved
+
+- **Windows 默认改用软件渲染。** 旧默认值 `auto` 会先尝试 GPU，在虚拟机里常常**直接打不开
+  窗口**；现在 Windows 以软件渲染为默认，且老配置里存的 `auto` 也一并按软件渲染处理 —— 不用
+  手动改配置，设置页相应地不再列出"自动"那一档，下拉框如实显示"软件"。需要 GPU 时仍可手动选。
+  **Software rendering is now the default on Windows**, including for configs that still
+  store the old `auto` value.
+
+### 内部 / Internal
+
+- 测试 429 → **431 passed**（新增顺序守卫与其反向自证各一条）；`cargo clippy --all-targets
+  -D warnings` 与 `cargo check --all-targets` 均 0 警告。
+
 
 ### 新增 / Added
 

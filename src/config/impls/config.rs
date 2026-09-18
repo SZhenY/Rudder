@@ -1543,12 +1543,15 @@ impl ConfigStore {
         }
     }
 
-    /// Missing and invalid Windows values deliberately use software so upgrades
-    /// preserve the high-DPI/VM compatibility from #224.
+    /// Missing, invalid **and legacy `"auto"`** Windows values use software so
+    /// upgrades preserve the high-DPI/VM compatibility from #224.
+    ///
+    /// `"auto"` was the old default（也是设置页里"自动"那档）：它让 Slint 先试 GPU，
+    /// 虚拟机上常常**直接打不开窗口**。现在它并入软件渲染 —— 老配置不用手动改，
+    /// 设置页拿到的也是映射后的值，所以下拉框会如实显示"软件"。
     #[cfg(target_os = "windows")]
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
-            "auto" => "auto",
             "gpu" => "gpu",
             _ => "software",
         }
@@ -1576,7 +1579,6 @@ impl ConfigStore {
     #[cfg(target_os = "windows")]
     pub fn set_renderer_mode(&mut self, mode: String) {
         self.cache.appearance.renderer_mode = match mode.as_str() {
-            "auto" => "auto".into(),
             "gpu" => "gpu".into(),
             _ => "software".into(),
         };
@@ -2940,9 +2942,13 @@ mod tests {
         assert_eq!(store.renderer_mode(), "software");
 
         store.set_renderer_mode("auto".into());
-        assert_eq!(store.renderer_mode(), "auto");
+        assert_eq!(store.renderer_mode(), "software", "旧的 auto 并入软件渲染");
         store.set_renderer_mode("gpu".into());
         assert_eq!(store.renderer_mode(), "gpu");
+
+        // 老配置里存的 "auto"（旧默认值）同样当软件渲染，无需用户手动改。
+        store.cache.appearance.renderer_mode = "auto".into();
+        assert_eq!(store.renderer_mode(), "software");
         store.set_renderer_mode("unexpected".into());
         assert_eq!(store.renderer_mode(), "software");
 
