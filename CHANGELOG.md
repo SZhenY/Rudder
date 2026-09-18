@@ -5,6 +5,33 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 修复 / Fixed
+
+- **升级到 Slint 1.18，顺带拿到一批上游修复。** 长文本的布局与渲染更快；深层嵌套控件的
+  可见性检查从指数级耗时恢复正常；带 `drop-shadow` 的元素不再每帧重绘。交互上：命令栏、
+  设置里那些**文本会被程序改写**的输入框不再出现光标错位与撤销崩溃，跨换行上下移动光标
+  不再卡住；弹窗修正了尺寸变化时的偏移、从重复元素里重启定时器、以及基类与派生类弹窗
+  共享开关状态；下拉框写入当前值现在会选中匹配项；滑块停在两端时不再重复触发 `changed`；
+  滚动区没有可平移内容时会把按下事件立刻交给下层。平台相关：Windows 死键（重音符号）恢复
+  正确的组合输入、按住键的重复事件带上 `repeat` 标志、macOS 原生标题栏不再空白、旧版 macOS
+  启动崩溃修复。**Upgraded to Slint 1.18** — faster text layout and a batch of upstream fixes
+  for text inputs, popups, combo boxes, sliders and window input.
+- **无边框平台（Windows / Linux）的标题栏拖动改由 Slint 接管。** 原先是自己实现的一套状态机：
+  按下后位移超过 6px 才交给系统移动窗口，之后还得补一次指针 ungrab（不这么做双击最大化就
+  永远派发不到）。现在用 1.18 的 `WindowMoveArea` —— 拖过阈值才开始移动、单击不接管指针、
+  子元素照常收到事件。窗口缩放保持原样（1.18 没有对应的原生元素）。
+  **Custom title bar dragging now uses Slint's `WindowMoveArea`.**
+
+### 内部 / Internal
+
+- Slint 1.17.1 → **1.18.0** 的适配：`unstable-fontique-010` → `-011`（fontique 0.10 → 0.11）、
+  62 处 `Flickable.viewport-*` → `content-*`（旧名在 1.18 里是弃用别名）。
+- 1.18 的"绑定环编译期报错"与"回调被多次双向别名"两条新检查没有触发（294 处 `<=>` 全过）。
+- macOS 构建会把 `wgpu` 一并编进来（`renderer-skia` 的默认 features 含 `wgpu-30`）：
+  **编译时间略涨，但发布二进制体积不变（38 MB）**。
+- 测试 **427 passed**；`cargo clippy -D warnings` 与 `cargo check --all-targets` 均 0 警告。
+
+
 ## [0.7.8] - 2026-09-17
 
 ### 修复 / Fixed
