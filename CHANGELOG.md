@@ -5,7 +5,25 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
-## [0.7.8-fix4] - 2026-09-18
+## [0.7.8-fix5] - 2026-09-18
+
+### 改进 / Improved
+
+- **"自动"改为"探测一次、结论落进配置"**（Windows）。选"自动"之后的**第一次启动**会用
+  子进程真渲染一帧来探测 GPU：**有 GPU 就往配置里写 `gpu`，没有就写 `software`**；之后每次
+  启动直接读配置，**不再探测**（省掉约一秒的等待），设置页也如实显示落到的那一档。想重新
+  探测（换了机器、装了显卡驱动）就在设置里再选一次"自动"。
+  **Automatic now probes once and stores the result in the config** — later launches read it
+  directly and skip the probe.
+
+### 内部 / Internal
+
+- 新增 `window::resolve_auto_renderer_mode`（启动时调用，位于 `ConfigStore::load()` 之后、
+  建窗口之前）与纯函数 `auto_renderer_for(probe_ok)` —— 后者把"探测结果 → 配置取值"这条契约
+  钉进测试（通过写 `gpu`、不通过写 `software`），免得只靠人肉观察。
+- 探测只改 `appearance.renderer_mode` 一个字段；显式设置 `SLINT_BACKEND` 时不动配置。
+- 测试 **432 passed**；`cargo clippy -D warnings` 与 `cargo check --all-targets` 均 0 警告。
+
 
 ### 修复 / Fixed
 

@@ -272,8 +272,8 @@ color: Theme.text-secondary;
                     : "FemtoVG 是默认渲染器；如果 macOS 上文字缺失或显示异常，可以尝试 Skia。")
                 : (root.is-windows
                     ? (root.lang-en
-                        ? "Software is the default and the safest choice in virtual machines. Automatic probes the GPU at startup and falls back to software when that probe fails."
-                        : "默认软件渲染，也是虚拟机里最稳妥的一档；自动会在启动时先探测 GPU，探测不过就回退到软件渲染。")
+                        ? "Software is the default and the safest choice in virtual machines. Automatic probes the GPU once at startup and stores the result here — later launches use it directly."
+                        : "默认软件渲染，也是虚拟机里最稳妥的一档；自动会在下次启动时探测一次 GPU，并把结论写进这里（有 GPU 记 GPU，没有记软件），之后不再探测。")
                     : (root.lang-en
                         ? "Automatic tries GPU acceleration and lets Slint fall back to software. Software is best for VMs and compatibility."
                         : "自动模式会尝试 GPU 加速，并由 Slint 在初始化失败时回退到软件渲染；虚拟机或兼容性优先时请选择软件。"));

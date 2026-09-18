@@ -57,6 +57,48 @@ pub(super) fn apply_window_chrome(window: &slint::Window) {
 #[cfg(not(windows))]
 pub(super) fn apply_window_chrome(_window: &slint::Window) {}
 
+/// `auto` 的探测结果 → 配置里要写的具体取值。
+///
+/// 抽成纯函数是为了能测：真正的探测要起子进程，但"结果怎么落库"这条契约不该靠人肉观察。
+// 只有 Windows 的启动路径用得到它（外加测试）；别的平台别让它变成 dead_code。
+#[cfg(any(windows, test))]
+pub(super) const fn auto_renderer_for(probe_ok: bool) -> &'static str {
+    if probe_ok {
+        "gpu"
+    } else {
+        "software"
+    }
+}
+
+/// Windows 的"自动"：探测一次，把结论**固化进配置**，之后启动不再探测。
+///
+/// 探测要花约一秒（子进程真渲染一帧），所以只在用户选"自动"之后的**第一次启动**发生；
+/// 写完配置后存的就是 `gpu` / `software`，后续启动直接用它。想重新探测（比如换了机器
+/// 或者装上了显卡驱动）就再选一次"自动"。
+///
+/// 显式设了 `SLINT_BACKEND` 时不动配置 —— 那个环境变量优先级最高，探测没有意义。
+#[cfg(windows)]
+pub(super) fn resolve_auto_renderer_mode(
+    mut config: crate::config::ConfigStore,
+) -> crate::config::ConfigStore {
+    if config.renderer_mode() != "auto" {
+        return config;
+    }
+    if std::env::var_os("SLINT_BACKEND").is_some() {
+        tracing::info!("auto renderer: SLINT_BACKEND is set, leaving the config untouched");
+        return config;
+    }
+
+    let resolved = auto_renderer_for(gpu_renderer_probe_passes());
+    config.set_renderer_mode(resolved.to_owned());
+    config.save_logging();
+    tracing::info!(
+        resolved,
+        "auto renderer: probe finished and the result is now stored in the config"
+    );
+    config
+}
+
 /// `auto` 的 GPU 探测：**用子进程真渲染一帧**，成功才算 GPU 可用。
 ///
 /// 为什么不指望 Slint 自己的回退：`create_renderer` 只在**渲染器工厂返回 `Err`** 时才走
@@ -122,19 +164,17 @@ pub(super) fn setup_windows_platform(renderer_mode: &str) {
     let configured_renderer = match renderer_mode {
         "gpu" => Some("femtovg".to_owned()),
         "software" => Some("software".to_owned()),
-        // `auto`：先试 GPU，探测不过就软件渲染。以前这里是 `None`（交给 Slint 的"自动"
-        // = 编译期默认渲染器 = femtovg），虚拟机里因为延迟上下文创建而直接打不开窗口。
+        // 正常路径上 `app::run` 已经把 `auto` 探测并固化成了具体值（见
+        // `resolve_auto_renderer_mode`），这里只是兜底：万一还有 `auto` 走到这一步，
+        // 照样探测一次，别回到"交给 Slint 自动选择"（那正是打不开窗口的老路）。
         "auto" => {
-            // 显式 SLINT_BACKEND 优先级最高：那种情况下渲染器已经定了，别再花一次探测。
             if std::env::var_os("SLINT_BACKEND").is_some() {
                 tracing::info!("auto renderer: SLINT_BACKEND is set, skipping the GPU probe");
                 None
-            } else if gpu_renderer_probe_passes() {
-                tracing::info!("auto renderer: GPU probe succeeded, using femtovg");
-                Some("femtovg".to_owned())
             } else {
-                tracing::warn!("auto renderer: GPU probe failed, falling back to software");
-                Some("software".to_owned())
+                let resolved = auto_renderer_for(gpu_renderer_probe_passes());
+                tracing::warn!(resolved, "auto renderer: probed without being persisted first");
+                Some(if resolved == "gpu" { "femtovg" } else { "software" }.to_owned())
             }
         }
         _ => Some("software".to_owned()),
@@ -446,6 +486,19 @@ mod mixed_dpi_window_tests {
     fn accepts_taskbar_sized_maximized_work_area() {
         assert!(!maximized_geometry_needs_repair(1920, 1040, 1920, 1080));
         assert!(!maximized_geometry_needs_repair(2560, 1400, 2560, 1440));
+    }
+}
+
+#[cfg(test)]
+mod auto_renderer_tests {
+    use super::auto_renderer_for;
+
+    /// 探测通过 → 配置写 `gpu`；不通过 → 写 `software`（这正是用户选的"自动"语义：
+    /// 探测一次、结论落进配置文件，之后启动不再探测）。
+    #[test]
+    fn probe_result_maps_to_a_concrete_config_value() {
+        assert_eq!(auto_renderer_for(true), "gpu");
+        assert_eq!(auto_renderer_for(false), "software");
     }
 }
 
