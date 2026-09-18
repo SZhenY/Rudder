@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.8-fix1] - 2026-09-18
+
 ### 修复 / Fixed
 
 - **升级到 Slint 1.18，顺带拿到一批上游修复。** 长文本的布局与渲染更快；深层嵌套控件的
