@@ -25,6 +25,7 @@ export component AppearancePage inherits VerticalLayout {
     in property <string> custom-wallpaper-name;
     in-out property <bool> hide-special-partitions;
     in property <bool> lang-en;
+    in property <bool> is-windows;
     in-out property <string> mount-filter;
     in-out property <string> renderer-mode;
     in-out property <int> ui-font-index;
@@ -42,6 +43,37 @@ export component AppearancePage inherits VerticalLayout {
     callback set-ui-font(string);
     callback set-ui-scale(int);
     callback set-wallpaper(string);
+
+    // ── 渲染档位（实验支线矩阵）────────────────────────────────────────────
+    // 显示名与"配置里存的值"分两套：名字可按语言变，值必须是稳定的标识符。
+    // 两个纯函数互为反函数，选项列表、回填、选中三处都从这里取，免得各写一份而漂移。
+    property <string> lbl-auto: root.lang-en ? "Automatic" : "自动";
+    property <string> lbl-soft: root.lang-en ? "Software" : "软件";
+    property <string> lbl-wgpu: "FemtoVG (wgpu)";
+    property <string> lbl-skia-win: "Skia (wgpu)";
+    property <string> lbl-skia-vk: "Skia (Vulkan)";
+    property <string> lbl-gl: "FemtoVG (OpenGL)";
+
+    /// 显示名 → 配置取值。
+    pure function mode-of(label: string) -> string {
+        if (label == root.lbl-auto) { return "auto"; }
+        if (label == root.lbl-soft) { return "software"; }
+        if (label == root.lbl-wgpu) { return "femtovg-wgpu"; }
+        if (label == root.lbl-skia-win) { return "skia"; }
+        if (label == root.lbl-skia-vk) { return "skia-vulkan"; }
+        if (label == root.lbl-gl) { return "femtovg"; }
+        return root.renderer-mode;      // 认不出来就保持原样
+    }
+
+    /// 配置取值 → 显示名。Skia 在三平台各有名字（wgpu / Vulkan），所以要看平台。
+    pure function label-of(mode: string) -> string {
+        if (mode == "auto") { return root.lbl-auto; }
+        if (mode == "software") { return root.lbl-soft; }
+        if (mode == "femtovg-wgpu") { return root.lbl-wgpu; }
+        if (mode == "skia") { return Theme.is-mac ? "Skia (wgpu)" : (root.is-windows ? root.lbl-skia-win : root.lbl-skia-vk); }
+        if (mode == "skia-vulkan") { return root.lbl-skia-vk; }
+        return root.lbl-gl;
+    }
 
     padding-left: 20px;
     padding-right: 20px;
@@ -275,42 +307,20 @@ color: Theme.text-secondary;
             show-divider: false;
             ComboBox {
                 width: 150px;
+                // 平台矩阵：macOS 不给"自动"（那边的默认档本来就是确定的）；
+                // Windows 默认软件渲染、Linux 默认自动，见 config.rs 的取默认值逻辑。
+                // 每个平台都把 OpenGL 那一档留在最后：只为旧配置不显示成空白。
                 model: Theme.is-mac
-                    ? ["FemtoVG", "Skia"]
-                    : (root.lang-en
-                        ? ["Automatic", "GPU", "Software"]
-                        : ["自动", "GPU", "软件"]);
-                current-value: Theme.is-mac
-                    ? (root.renderer-mode == "skia" ? "Skia" : "FemtoVG")
-                    : (root.renderer-mode == "gpu"
-                        ? "GPU"
-                        : (root.renderer-mode == "auto"
-                            ? (root.lang-en ? "Automatic" : "自动")
-                            : (root.lang-en ? "Software" : "软件")));
+                    ? [root.lbl-gl, root.lbl-skia-win, root.lbl-wgpu, root.lbl-soft]
+                    : (root.is-windows
+                        ? [root.lbl-auto, root.lbl-soft, root.lbl-wgpu, root.lbl-skia-win, root.lbl-gl]
+                        : [root.lbl-auto, root.lbl-soft, root.lbl-wgpu, root.lbl-skia-vk, root.lbl-gl]);
+                current-value: root.label-of(root.renderer-mode);
                 selected(v) => {
-                    if (Theme.is-mac && v == "FemtoVG"
-                            && root.renderer-mode != "femtovg") {
-                        root.renderer-mode = "femtovg";
-                        root.set-renderer-mode("femtovg");
-                        root.renderer-restart-required = true;
-                    } else if (Theme.is-mac && v == "Skia"
-                            && root.renderer-mode != "skia") {
-                        root.renderer-mode = "skia";
-                        root.set-renderer-mode("skia");
-                        root.renderer-restart-required = true;
-                    } else if (!Theme.is-mac && (v == "Automatic" || v == "自动")
-                            && root.renderer-mode != "auto") {
-                        root.renderer-mode = "auto";
-                        root.set-renderer-mode("auto");
-                        root.renderer-restart-required = true;
-                    } else if (!Theme.is-mac && v == "GPU" && root.renderer-mode != "gpu") {
-                        root.renderer-mode = "gpu";
-                        root.set-renderer-mode("gpu");
-                        root.renderer-restart-required = true;
-                    } else if (!Theme.is-mac && (v == "Software" || v == "软件")
-                            && root.renderer-mode != "software") {
-                        root.renderer-mode = "software";
-                        root.set-renderer-mode("software");
+                    // 映射只有一处（`mode-of`），比较与写回都用它 —— 三处各写一份就成了前几版那种漂移源。
+                    if (root.mode-of(v) != root.renderer-mode) {
+                        root.renderer-mode = root.mode-of(v);
+                        root.set-renderer-mode(root.mode-of(v));
                         root.renderer-restart-required = true;
                     }
                 }

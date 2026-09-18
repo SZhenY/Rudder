@@ -1535,10 +1535,14 @@ impl ConfigStore {
     }
 
     /// Renderer preference for the current platform.
+    /// 实验支线矩阵：FemtoVG（默认）/ Skia（wgpu→Metal）/ FemtoVG(wgpu→Metal) / 软件。
+    /// 不认识的值回落 femtovg，与升级前一致。
     #[cfg(target_os = "macos")]
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
             "skia" => "skia",
+            "femtovg-wgpu" => "femtovg-wgpu",
+            "software" => "software",
             _ => "femtovg",
         }
     }
@@ -1549,10 +1553,14 @@ impl ConfigStore {
     /// `"auto"` 仍然可选用：它的"先试 GPU、失败退回软件"由**启动时的探测**完成
     /// （见 `app/window.rs::gpu_renderer_probe_passes`）—— 不能指望 Slint 自己的回退，
     /// 它对 femtovg 的延迟上下文创建无能为力（虚拟机里就是"窗口打不开"）。
+    /// 实验支线矩阵：软件（默认）/ FemtoVG(wgpu→D3D12) / Skia(wgpu→D3D12) / 自动。
+    /// 旧配置里的 `gpu`（OpenGL）仍能读出来，但设置页不再提供。
     #[cfg(target_os = "windows")]
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
             "auto" => "auto",
+            "wgpu" => "wgpu",
+            "skia" => "skia",
             "gpu" => "gpu",
             _ => "software",
         }
@@ -1560,11 +1568,14 @@ impl ConfigStore {
 
     /// Linux previously used Slint's automatic renderer selection and had no
     /// settings entry. Keep that behaviour for existing configurations.
+    /// 实验支线矩阵：自动（默认）/ 软件 / FemtoVG(wgpu→Vulkan) / Skia(Vulkan)。
     #[cfg(target_os = "linux")]
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
             "gpu" => "gpu",
             "software" => "software",
+            "wgpu" => "wgpu",
+            "skia-vulkan" => "skia-vulkan",
             _ => "auto",
         }
     }
@@ -1573,6 +1584,8 @@ impl ConfigStore {
     pub fn set_renderer_mode(&mut self, mode: String) {
         self.cache.appearance.renderer_mode = match mode.as_str() {
             "skia" => "skia".into(),
+            "femtovg-wgpu" => "femtovg-wgpu".into(),
+            "software" => "software".into(),
             _ => "femtovg".into(),
         };
     }
@@ -1581,6 +1594,8 @@ impl ConfigStore {
     pub fn set_renderer_mode(&mut self, mode: String) {
         self.cache.appearance.renderer_mode = match mode.as_str() {
             "auto" => "auto".into(),
+            "wgpu" => "wgpu".into(),
+            "skia" => "skia".into(),
             "gpu" => "gpu".into(),
             _ => "software".into(),
         };
@@ -1591,6 +1606,8 @@ impl ConfigStore {
         self.cache.appearance.renderer_mode = match mode.as_str() {
             "gpu" => "gpu".into(),
             "software" => "software".into(),
+            "wgpu" => "wgpu".into(),
+            "skia-vulkan" => "skia-vulkan".into(),
             _ => "auto".into(),
         };
     }

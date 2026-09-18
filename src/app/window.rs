@@ -64,7 +64,7 @@ pub(super) fn apply_window_chrome(_window: &slint::Window) {}
 #[cfg(any(windows, test))]
 pub(super) const fn auto_renderer_for(probe_ok: bool) -> &'static str {
     if probe_ok {
-        "gpu"
+        "wgpu"
     } else {
         "software"
     }
@@ -113,9 +113,9 @@ fn gpu_renderer_probe_passes() -> bool {
         return false;
     };
     let status = std::process::Command::new(exe)
-        .arg("--probe-renderer=gpu")
+        .arg("--probe-renderer=wgpu")
         // 探测的是 femtovg 本身，不受外部 SLINT_BACKEND 影响。
-        .env("SLINT_BACKEND", "winit-femtovg")
+        .env("SLINT_BACKEND", "winit-femtovg-wgpu")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -162,8 +162,9 @@ pub(super) fn setup_windows_platform(renderer_mode: &str) {
 
     let mut builder = i_slint_backend_winit::Backend::builder();
     let configured_renderer = match renderer_mode {
-        "gpu" => Some("femtovg".to_owned()),
         "software" => Some("software".to_owned()),
+        "wgpu" => Some("femtovg-wgpu".to_owned()),
+        "skia" => Some("skia".to_owned()),
         // 正常路径上 `app::run` 已经把 `auto` 探测并固化成了具体值（见
         // `resolve_auto_renderer_mode`），这里只是兜底：万一还有 `auto` 走到这一步，
         // 照样探测一次，别回到"交给 Slint 自动选择"（那正是打不开窗口的老路）。
@@ -171,10 +172,12 @@ pub(super) fn setup_windows_platform(renderer_mode: &str) {
             if std::env::var_os("SLINT_BACKEND").is_some() {
                 tracing::info!("auto renderer: SLINT_BACKEND is set, skipping the GPU probe");
                 None
+            } else if gpu_renderer_probe_passes() {
+                tracing::warn!("auto renderer: probed but not persisted, using wgpu");
+                Some("femtovg-wgpu".to_owned())
             } else {
-                let resolved = auto_renderer_for(gpu_renderer_probe_passes());
-                tracing::warn!(resolved, "auto renderer: probed without being persisted first");
-                Some(if resolved == "gpu" { "femtovg" } else { "software" }.to_owned())
+                tracing::warn!("auto renderer: probe failed, using software");
+                Some("software".to_owned())
             }
         }
         _ => Some("software".to_owned()),
@@ -230,9 +233,18 @@ pub(super) fn setup_linux_platform(renderer_mode: &str) {
         return;
     }
 
+    // 实验支线矩阵：软件 / FemtoVG(wgpu→Vulkan) / Skia(Vulkan)。"gpu" 是旧配置的兼容映射。
+    let mut graphics_api = None;
     let renderer = match renderer_mode {
-        "gpu" => "femtovg",
         "software" => "software",
+        "wgpu" => "femtovg-wgpu",
+        "skia-vulkan" => {
+            // 同一构建里 Skia 既有 wgpu 又有 Vulkan 时，不指定 API 会**优先**走 Vulkan；
+            // 这里显式请求，免得以后默认后端变化时这一档悄悄变味。
+            graphics_api = Some(i_slint_core::graphics::RequestedGraphicsAPI::Vulkan);
+            "skia"
+        }
+        "gpu" => "femtovg",
         _ => {
             tracing::info!(
                 renderer_mode,
@@ -250,10 +262,12 @@ pub(super) fn setup_linux_platform(renderer_mode: &str) {
         source = "settings",
         "initializing Linux renderer"
     );
-    match i_slint_backend_winit::Backend::builder()
-        .with_renderer_name(renderer.to_owned())
-        .build()
-    {
+    let mut backend_builder =
+        i_slint_backend_winit::Backend::builder().with_renderer_name(renderer.to_owned());
+    if let Some(api) = graphics_api {
+        backend_builder = backend_builder.request_graphics_api(api);
+    }
+    match backend_builder.build() {
         Ok(backend) => {
             if slint::platform::set_platform(Box::new(backend)).is_err() {
                 tracing::warn!("Linux winit backend was already initialized");
@@ -439,7 +453,17 @@ pub(super) fn setup_macos_platform(renderer_mode: &str) {
             .strip_prefix("winit-")
             .filter(|renderer| !renderer.is_empty())
             .map(str::to_owned),
-        None => Some(renderer_mode.to_owned()),
+        // 实验支线矩阵：FemtoVG(默认) / Skia(wgpu→Metal) / FemtoVG(wgpu→Metal) / 软件。
+        // 不认识的值（含旧配置）一律回落 femtovg，与升级前一致。
+        None => Some(
+            match renderer_mode {
+                "skia" => "skia",
+                "femtovg-wgpu" => "femtovg-wgpu",
+                "software" => "software",
+                _ => "femtovg",
+            }
+            .to_owned(),
+        ),
     };
     if let Some(renderer) = renderer.as_ref() {
         builder = builder.with_renderer_name(renderer.clone());
@@ -497,7 +521,7 @@ mod auto_renderer_tests {
     /// 探测一次、结论落进配置文件，之后启动不再探测）。
     #[test]
     fn probe_result_maps_to_a_concrete_config_value() {
-        assert_eq!(auto_renderer_for(true), "gpu");
+        assert_eq!(auto_renderer_for(true), "wgpu");
         assert_eq!(auto_renderer_for(false), "software");
     }
 }
