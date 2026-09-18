@@ -21,7 +21,14 @@ rust-version = "1.96"
 # 锁文件里的 0.2.0 —— 于是生成的 app.rs 里 137 处调用全部 "cannot find
 # function 'compose_field_offsets' in module 'sp'"（2026-09-18 实测，
 # 升 1.18.0 时踩到；单跑这一条 update 即解决）。
-slint = { version = "1.18", features = ["compat-1-2", "unstable-fontique-011"] }
+# ⚠️ 实验支线（exp/renderer-wgpu-vulkan）：额外编入两个渲染器
+#   * renderer-femtovg-wgpu —— FemtoVG 走 wgpu（名字 "femtovg-wgpu"）：
+#     注意它会让 Slint 的**自动回退链**不再包含 OpenGL 版 FemtoVG（见 winit 后端的
+#     try_create_window_with_fallback_renderer），所以 Linux 的「自动」含义随之变化；
+#   * macOS 侧的 renderer-skia-vulkan —— 让 Skia 支持经 wgpu 走 Vulkan
+#     （macOS 上是 MoltenVK）。该 feature 还会**优先**选 Vulkan，所以"Skia (Metal)"
+#     那一档必须在代码里显式 request Metal，否则会与 Vulkan 档重合。
+slint = { version = "1.18", features = ["compat-1-2", "unstable-fontique-011", "renderer-femtovg-wgpu"] }
 # ICU4X (pulled in by Slint's text layout) spams stderr with raw `eprintln!`
 # ("ICU4X data error: No segmentation model for language: ja") because its
 # `log` shim falls back to eprintln when the `logging` feature is off. Turning
@@ -29,7 +36,10 @@ slint = { version = "1.18", features = ["compat-1-2", "unstable-fontique-011"] }
 # subscriber, where init_tracing silences the `icu_provider` target.
 icu_provider = { version = "2", features = ["logging"] }
 # Direct access to the winit window/events (OS file-drop for drag-and-drop upload).
+# 只为一个东西：`RequestedGraphicsAPI`（选 Vulkan / Metal）。这个类型既没被 `slint`
+# 再导出、也没被 winit 后端再导出，而 `BackendBuilder::request_graphics_api` 需要它。
 i-slint-backend-winit = "1.18"
+i-slint-core = "1.18"
 # Raw HWND access (matches winit's rwh 0.6) for the Win11 rounded-corner + shadow
 # DWM tweaks on the frameless window (#162 / #166). Only used under cfg(windows).
 raw-window-handle = "0.6"
@@ -138,7 +148,7 @@ arboard = { version = "3", features = ["wayland-data-control"] }
 # Windows/Linux never compile Skia; on Windows it conflicts with another ICU
 # import library at link time when using the MSVC toolchain (#224).
 [target.'cfg(target_os = "macos")'.dependencies]
-slint = { version = "1.18", features = ["renderer-skia"] }
+slint = { version = "1.18", features = ["renderer-skia", "renderer-skia-vulkan"] }
 
 [build-dependencies]
 slint-build = "1.18"

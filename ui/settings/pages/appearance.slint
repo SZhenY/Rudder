@@ -266,45 +266,64 @@ color: Theme.text-secondary;
             label: root.lang-en ? "Renderer" : "渲染器";
             desc: Theme.is-mac
                 ? (root.lang-en
-                    ? "FemtoVG is the default. Try Skia when text is missing or rendered incorrectly on macOS."
-                    : "FemtoVG 是默认渲染器；如果 macOS 上文字缺失或显示异常，可以尝试 Skia。")
+                    ? "FemtoVG (OpenGL) is the default. Try Skia (Metal) when text is missing or rendered incorrectly. Skia (Vulkan) runs over MoltenVK and FemtoVG (wgpu) over wgpu — both are experimental."
+                    : "FemtoVG (OpenGL) 是默认渲染器；macOS 上文字缺失或显示异常时可试 Skia (Metal)。Skia (Vulkan) 经 MoltenVK、FemtoVG (wgpu) 经 wgpu，两者都是实验性选项。")
                 : (root.lang-en
-                    ? "Auto tries GPU acceleration and lets Slint fall back to software. Software is best for VMs and compatibility."
-                    : "自动模式会尝试 GPU 加速，并由 Slint 在初始化失败时回退到软件渲染；虚拟机或兼容性优先时请选择软件。");
+                    ? "Auto lets Slint pick a renderer and fall back to software. GPU (OpenGL) / GPU (wgpu) pin the backend; Software is best for VMs and compatibility."
+                    : "自动由 Slint 选择渲染器并在失败时回退到软件；GPU (OpenGL) / GPU (wgpu) 是指定后端；虚拟机或兼容性优先时请选软件。");
             show-divider: false;
             ComboBox {
                 width: 150px;
                 model: Theme.is-mac
-                    ? ["FemtoVG", "Skia"]
+                    ? ["FemtoVG", "Skia (Metal)", "Skia (Vulkan)", "FemtoVG (wgpu)"]
                     : (root.lang-en
-                        ? ["Automatic", "GPU", "Software"]
-                        : ["自动", "GPU", "软件"]);
+                        ? ["Automatic", "GPU (OpenGL)", "GPU (wgpu)", "Software"]
+                        : ["自动", "GPU (OpenGL)", "GPU (wgpu)", "软件"]);
                 current-value: Theme.is-mac
-                    ? (root.renderer-mode == "skia" ? "Skia" : "FemtoVG")
+                    ? (root.renderer-mode == "skia" ? "Skia (Metal)"
+                        : root.renderer-mode == "skia-vulkan" ? "Skia (Vulkan)"
+                        : root.renderer-mode == "femtovg-wgpu" ? "FemtoVG (wgpu)"
+                        : "FemtoVG")
                     : (root.renderer-mode == "auto"
                         ? (root.lang-en ? "Automatic" : "自动")
                         : root.renderer-mode == "gpu"
-                            ? "GPU"
-                            : (root.lang-en ? "Software" : "软件"));
+                            ? "GPU (OpenGL)"
+                            : root.renderer-mode == "wgpu"
+                                ? "GPU (wgpu)"
+                                : (root.lang-en ? "Software" : "软件"));
                 selected(v) => {
                     if (Theme.is-mac && v == "FemtoVG"
                             && root.renderer-mode != "femtovg") {
                         root.renderer-mode = "femtovg";
                         root.set-renderer-mode("femtovg");
                         root.renderer-restart-required = true;
-                    } else if (Theme.is-mac && v == "Skia"
+                    } else if (Theme.is-mac && v == "Skia (Metal)"
                             && root.renderer-mode != "skia") {
                         root.renderer-mode = "skia";
                         root.set-renderer-mode("skia");
+                        root.renderer-restart-required = true;
+                    } else if (Theme.is-mac && v == "Skia (Vulkan)"
+                            && root.renderer-mode != "skia-vulkan") {
+                        root.renderer-mode = "skia-vulkan";
+                        root.set-renderer-mode("skia-vulkan");
+                        root.renderer-restart-required = true;
+                    } else if (Theme.is-mac && v == "FemtoVG (wgpu)"
+                            && root.renderer-mode != "femtovg-wgpu") {
+                        root.renderer-mode = "femtovg-wgpu";
+                        root.set-renderer-mode("femtovg-wgpu");
                         root.renderer-restart-required = true;
                     } else if (!Theme.is-mac && (v == "Automatic" || v == "自动")
                             && root.renderer-mode != "auto") {
                         root.renderer-mode = "auto";
                         root.set-renderer-mode("auto");
                         root.renderer-restart-required = true;
-                    } else if (!Theme.is-mac && v == "GPU" && root.renderer-mode != "gpu") {
+                    } else if (!Theme.is-mac && v == "GPU (OpenGL)" && root.renderer-mode != "gpu") {
                         root.renderer-mode = "gpu";
                         root.set-renderer-mode("gpu");
+                        root.renderer-restart-required = true;
+                    } else if (!Theme.is-mac && v == "GPU (wgpu)" && root.renderer-mode != "wgpu") {
+                        root.renderer-mode = "wgpu";
+                        root.set-renderer-mode("wgpu");
                         root.renderer-restart-required = true;
                     } else if (!Theme.is-mac && (v == "Software" || v == "软件")
                             && root.renderer-mode != "software") {

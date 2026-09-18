@@ -1539,6 +1539,8 @@ impl ConfigStore {
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
             "skia" => "skia",
+            "skia-vulkan" => "skia-vulkan",
+            "femtovg-wgpu" => "femtovg-wgpu",
             _ => "femtovg",
         }
     }
@@ -1550,6 +1552,7 @@ impl ConfigStore {
         match self.cache.appearance.renderer_mode.as_str() {
             "auto" => "auto",
             "gpu" => "gpu",
+            "wgpu" => "wgpu",
             _ => "software",
         }
     }
@@ -1560,6 +1563,7 @@ impl ConfigStore {
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
             "gpu" => "gpu",
+            "wgpu" => "wgpu",
             "software" => "software",
             _ => "auto",
         }
@@ -1569,6 +1573,8 @@ impl ConfigStore {
     pub fn set_renderer_mode(&mut self, mode: String) {
         self.cache.appearance.renderer_mode = match mode.as_str() {
             "skia" => "skia".into(),
+            "skia-vulkan" => "skia-vulkan".into(),
+            "femtovg-wgpu" => "femtovg-wgpu".into(),
             _ => "femtovg".into(),
         };
     }
@@ -1578,6 +1584,7 @@ impl ConfigStore {
         self.cache.appearance.renderer_mode = match mode.as_str() {
             "auto" => "auto".into(),
             "gpu" => "gpu".into(),
+            "wgpu" => "wgpu".into(),
             _ => "software".into(),
         };
     }
@@ -1586,6 +1593,7 @@ impl ConfigStore {
     pub fn set_renderer_mode(&mut self, mode: String) {
         self.cache.appearance.renderer_mode = match mode.as_str() {
             "gpu" => "gpu".into(),
+            "wgpu" => "wgpu".into(),
             "software" => "software".into(),
             _ => "auto".into(),
         };

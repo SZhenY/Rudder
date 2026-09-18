@@ -64,6 +64,8 @@ pub(super) fn setup_windows_platform(renderer_mode: &str) {
     let mut builder = i_slint_backend_winit::Backend::builder();
     let configured_renderer = match renderer_mode {
         "gpu" => Some("femtovg".to_owned()),
+        // FemtoVG on wgpu（1.18 新增；见 Cargo.toml 里那条 feature 的说明）
+        "wgpu" => Some("femtovg-wgpu".to_owned()),
         "software" => Some("software".to_owned()),
         _ => None,
     };
@@ -120,6 +122,8 @@ pub(super) fn setup_linux_platform(renderer_mode: &str) {
 
     let renderer = match renderer_mode {
         "gpu" => "femtovg",
+        // FemtoVG on wgpu（1.18 新增）
+        "wgpu" => "femtovg-wgpu",
         "software" => "software",
         _ => {
             tracing::info!(
@@ -317,24 +321,48 @@ where
 #[cfg(target_os = "macos")]
 pub(super) fn setup_macos_platform(renderer_mode: &str) {
     use i_slint_backend_winit::winit::platform::macos::WindowAttributesExtMacOS;
+    use i_slint_core::graphics::RequestedGraphicsAPI;
 
     let mut builder = i_slint_backend_winit::Backend::builder();
     // An explicit environment value wins, including plain "winit" (Slint's
     // automatic choice). Otherwise use the renderer selected in Settings.
     let env_backend = std::env::var("SLINT_BACKEND").ok();
-    let renderer = match env_backend.as_deref() {
-        Some(backend) => backend
-            .strip_prefix("winit-")
-            .filter(|renderer| !renderer.is_empty())
-            .map(str::to_owned),
-        None => Some(renderer_mode.to_owned()),
+    let (renderer, graphics_api) = match env_backend.as_deref() {
+        // 环境变量只给渲染器名字（沿用 Slint 自己的语义），不替它挑图形 API。
+        Some(backend) => (
+            backend
+                .strip_prefix("winit-")
+                .filter(|renderer| !renderer.is_empty())
+                .map(str::to_owned),
+            None,
+        ),
+        // "Skia" 与 "Skia (Vulkan)" 用的是同一个 Skia 渲染器，靠请求的图形 API 区分：
+        // 编入 `renderer-skia-vulkan` 之后，不指定 API 时 Skia 会**优先**走 Vulkan
+        // （见 i-slint-renderer-skia 的 lib.rs），所以 Metal 那一档必须显式请求 Metal，
+        // 否则两档会落到同一个后端。
+        None => match renderer_mode {
+            "skia" => (Some("skia".to_owned()), Some(RequestedGraphicsAPI::Metal)),
+            "skia-vulkan" => (Some("skia".to_owned()), Some(RequestedGraphicsAPI::Vulkan)),
+            "femtovg-wgpu" => (Some("femtovg-wgpu".to_owned()), None),
+            _ => (Some("femtovg".to_owned()), None),
+        },
     };
     if let Some(renderer) = renderer.as_ref() {
         builder = builder.with_renderer_name(renderer.clone());
     }
+    let api_label = match &graphics_api {
+        Some(RequestedGraphicsAPI::Metal) => "metal",
+        Some(RequestedGraphicsAPI::Vulkan) => "vulkan",
+        Some(_) => "other",
+        None => "-",
+    };
+    if let Some(api) = graphics_api {
+        builder = builder.request_graphics_api(api);
+    }
     tracing::info!(
         renderer_mode,
         renderer = renderer.as_deref().unwrap_or("auto"),
+        graphics_api = api_label,
         source = if env_backend.is_some() {
             "SLINT_BACKEND"
         } else {
