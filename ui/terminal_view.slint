@@ -442,10 +442,10 @@ export component TerminalView inherits Rectangle {
             : root.sftp-horizontal ? max(300px, root.sftp-panel-width)
             : root.sftp-panel-width;
         property <length> sf-viz: sf-taken;
-        animate sf-viz { duration: 250ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
+        animate sf-viz { duration: 250ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
         property <length> sf-h-taken: root.sftp-collapsed ? 36px : root.sftp-panel-height;
         property <length> sf-h-viz: sf-h-taken;
-        animate sf-h-viz { duration: 250ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
+        animate sf-h-viz { duration: 250ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
         property <length> sp:   root.sftp-collapsed ? 0px : 6px;
         central := Rectangle {
             x: root.sftp-dock == "left" ? parent.sf-taken + parent.sp : 0px;
@@ -909,6 +909,7 @@ export component TerminalView inherits Rectangle {
             // safety net for IME commits that Windows delivers via WM_IME_CHAR
             // rather than WM_CHAR (and therefore don't fire key-pressed).
             ime-input := TextInput {
+                input-method-hints: Theme.plain-input-hints;
                 // Absolute 1x1 IME anchor: it captures keyboard/IME input without
                 // participating in layout or exposing a second I-beam hit area.
                 // Following the VT cursor also places native IME candidate UI near
@@ -1080,6 +1081,7 @@ export component TerminalView inherits Rectangle {
                         border-radius: 3px;
                         horizontal-stretch: 1;
                         find-input := TextInput {
+                            input-method-hints: Theme.plain-input-hints;
                             x: 6px;
                             width: parent.width - 12px;
                             height: parent.height;
@@ -1184,6 +1186,7 @@ export component TerminalView inherits Rectangle {
                     border-color: cmd-input.has-focus ? Theme.accent : Theme.border-subtle;
                     background: Theme.bg-root;
                     cmd-input := TextInput {
+                        input-method-hints: Theme.plain-input-hints;
                         x: 8px;
                         width: parent.width - 16px;
                         height: parent.height;
@@ -1742,6 +1745,7 @@ export component TerminalView inherits Rectangle {
                             Rectangle {
                                 horizontal-stretch: 1;
                                 hist-search := TextInput {
+                                    input-method-hints: Theme.plain-input-hints;
                                     width: 100%; height: 100%;
                                     vertical-alignment: center;
                                     color: Theme.text-primary;

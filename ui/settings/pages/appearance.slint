@@ -80,6 +80,7 @@ export component AppearancePage inherits VerticalLayout {
                 ? "Pick a wallpaper — the interface tints itself to match (accent, panels, light/dark)."
                 : "选一张壁纸,界面会沉浸式地适配它的颜色(强调色、面板、深浅)。";
             color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
+            line-height-factor: 1.3;
         }
         // 分组留白（原为空 `Rectangle` 占位）：12px → 12px（gap-md），无差异
         GroupGap {
@@ -333,6 +334,7 @@ color: Theme.text-secondary;
                 color: root.renderer-restart-required ? Theme.accent : Theme.text-muted;
                 font-size: 11px * Theme.panel-font;
                 wrap: word-wrap;
+                line-height-factor: 1.3;
             }
         }
         // 分组留白（原为空 `Rectangle` 占位）：12px → 12px（gap-md），无差异
@@ -398,6 +400,7 @@ color: Theme.text-secondary;
                 border-color: Theme.border-subtle;
                 background: Theme.bg-elevated;
                 TextInput {
+                    input-method-hints: Theme.plain-input-hints;
                     width: parent.width - 8px; x: 4px;
                     height: parent.height; vertical-alignment: center;
                     color: Theme.text-primary;

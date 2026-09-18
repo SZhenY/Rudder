@@ -81,6 +81,7 @@ export component RenameDialog inherits ModalCard {
         color: Theme.text-muted;
         font-size: Theme.fs-sm;
         wrap: word-wrap;
+        line-height-factor: 1.3; max-lines: 3;
     }
     Rectangle {
         height: 30px;
@@ -89,6 +90,7 @@ export component RenameDialog inherits ModalCard {
         border-color: rn-input.has-focus ? Theme.accent : Theme.border-strong;
         background: Theme.bg-elevated;
         rn-input := TextInput {
+            input-method-hints: Theme.plain-input-hints;
             x: 8px;
             width: parent.width - 16px;
             height: parent.height;

@@ -198,6 +198,7 @@ export component FileEditor inherits Rectangle {
                         padding-top: 5px; padding-bottom: 5px; spacing: 6px;
                         Text { text: @tr("Find"); color: Theme.text-muted; vertical-alignment: center; }
                         TextInput {
+                            input-method-hints: Theme.plain-input-hints;
                             horizontal-stretch: 1;
                             single-line: true;
                             text <=> editor-find-query;
@@ -250,6 +251,7 @@ export component FileEditor inherits Rectangle {
                         }
                         Text { text: @tr("Replace"); color: Theme.text-muted; vertical-alignment: center; }
                         TextInput {
+                            input-method-hints: Theme.plain-input-hints;
                             horizontal-stretch: 1;
                             single-line: true;
                             text <=> editor-replace-text;
@@ -310,6 +312,7 @@ export component FileEditor inherits Rectangle {
                                 content-width: max(self.visible-width, edit-input.preferred-width + 16px);
                                 content-height: max(self.visible-height, edit-input.preferred-height + 16px);
                                 edit-input := TextInput {
+                                    input-method-hints: Theme.plain-input-hints;
                                     x: 8px;
                                     y: 8px;
                                     width: max(parent.visible-width - 16px, self.preferred-width);

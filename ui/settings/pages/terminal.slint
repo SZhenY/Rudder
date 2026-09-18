@@ -174,6 +174,7 @@ export component TerminalPage inherits VerticalLayout {
                 border-color: Theme.border-subtle;
                 background: Theme.bg-elevated;
                 TextInput {
+                    input-method-hints: Theme.plain-input-hints;
                     width: parent.width - 8px; height: parent.height;
                     x: 4px; vertical-alignment: center;
                     color: Theme.text-primary;
@@ -196,6 +197,7 @@ export component TerminalPage inherits VerticalLayout {
             font-size: 11px * Theme.panel-font;
             color: root.scrollback-valid ? Theme.text-muted : Theme.danger;
             wrap: word-wrap;
+            line-height-factor: 1.3;
         }
         // 大回滚缓冲区（A10）：默认关。开启后上限提到 100 万行，但内存会随终端使用
         // **持续增长**（每个标签页独立计算），所以文案里把量级写清楚。
@@ -345,6 +347,7 @@ export component TerminalPage inherits VerticalLayout {
             color: Theme.text-muted;
             font-size: 11px * Theme.panel-font;
             wrap: word-wrap;
+            line-height-factor: 1.3;
         }
         // 分组留白（原为空 `Rectangle` 占位）：10px → 8px（−2px）
         GroupGap {
@@ -432,6 +435,7 @@ export component TerminalPage inherits VerticalLayout {
             color: Theme.danger;
             font-size: 11px * Theme.panel-font;
             wrap: word-wrap;
+            line-height-factor: 1.3;
         }
 
         if root.output-highlight-rules.length == 0 : Text {

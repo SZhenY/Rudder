@@ -113,7 +113,7 @@ export component ConfirmDialog inherits Rectangle {
             + (root.is-open && !root.covered ? 0px : 12px);
         animate y {
             duration: 200ms;
-            easing: AnimationSettings.layout();
+            easing: AnimationSettings.spring-settle();
             enabled: AnimationSettings.enabled;
         }
         background: Theme.bg-panel;
@@ -152,6 +152,7 @@ export component ConfirmDialog inherits Rectangle {
                 color: Theme.text-secondary;
                 font-size: Theme.fs-md;
                 wrap: word-wrap;
+                line-height-factor: 1.3;
             }
 
             if root.detail != "" && !root.large-detail : Text {
@@ -160,6 +161,7 @@ export component ConfirmDialog inherits Rectangle {
                 font-family: Theme.font-mono;
                 font-size: Theme.fs-sm;
                 wrap: word-wrap;
+                line-height-factor: 1.3;
             }
 
             if root.detail != "" && root.large-detail : Rectangle {
@@ -188,6 +190,7 @@ export component ConfirmDialog inherits Rectangle {
                         font-family: Theme.font-mono;
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
+                        line-height-factor: 1.3;
                     }
                 }
             }

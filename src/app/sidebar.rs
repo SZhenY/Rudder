@@ -70,7 +70,7 @@ pub(super) fn refresh_sidebar(
             .as_any()
             .downcast_ref::<VecModel<ProcRow>>()
         {
-            vm.set_vec(proc_rows(procs, current_user, tab_id));
+            apply_rows(vm, proc_rows(procs, current_user, tab_id));
         }
     };
     let set_system_models = |win: &AppWindow,
@@ -86,70 +86,70 @@ pub(super) fn refresh_sidebar(
             .as_any()
             .downcast_ref::<VecModel<SysMetricRow>>()
         {
-            vm.set_vec(metric_rows(cpu, mem, swap, mem_detail, swap_detail));
+            apply_rows(vm, metric_rows(cpu, mem, swap, mem_detail, swap_detail));
         }
         if let Some(vm) = win
             .get_sys_net_rows()
             .as_any()
             .downcast_ref::<VecModel<SysNetRow>>()
         {
-            vm.set_vec(nets);
+            apply_rows(vm, nets);
         }
         if let Some(vm) = win
             .get_sys_overview_rows()
             .as_any()
             .downcast_ref::<VecModel<SysInfoRow>>()
         {
-            vm.set_vec(pairs_to_overview_rows(&sys.overview));
+            apply_rows(vm, pairs_to_overview_rows(&sys.overview));
         }
         if let Some(vm) = win
             .get_sys_cpu_info_rows()
             .as_any()
             .downcast_ref::<VecModel<SysInfoRow>>()
         {
-            vm.set_vec(pairs_to_one_row(&sys.cpu_info));
+            apply_rows(vm, pairs_to_one_row(&sys.cpu_info));
         }
         if let Some(vm) = win
             .get_sys_gpu_info_rows()
             .as_any()
             .downcast_ref::<VecModel<SysInfoRow>>()
         {
-            vm.set_vec(pairs_to_rows(&sys.gpu_info, 4));
+            apply_rows(vm, pairs_to_rows(&sys.gpu_info, 4));
         }
         if let Some(vm) = win
             .get_sys_cpu_usage_rows()
             .as_any()
             .downcast_ref::<VecModel<SysInfoRow>>()
         {
-            vm.set_vec(cpu_usage_detail_rows(&sys.cpu_usage));
+            apply_rows(vm, cpu_usage_detail_rows(&sys.cpu_usage));
         }
         if let Some(vm) = win
             .get_sys_memory_rows()
             .as_any()
             .downcast_ref::<VecModel<SysInfoRow>>()
         {
-            vm.set_vec(pairs_to_one_row(&sys.memory));
+            apply_rows(vm, pairs_to_one_row(&sys.memory));
         }
         if let Some(vm) = win
             .get_sys_swap_rows()
             .as_any()
             .downcast_ref::<VecModel<SysInfoRow>>()
         {
-            vm.set_vec(pairs_to_one_row(&sys.swap));
+            apply_rows(vm, pairs_to_one_row(&sys.swap));
         }
         if let Some(vm) = win
             .get_sys_network_rows()
             .as_any()
             .downcast_ref::<VecModel<SysInfoRow>>()
         {
-            vm.set_vec(tuple5_rows(&sys.networks));
+            apply_rows(vm, tuple5_rows(&sys.networks));
         }
         if let Some(vm) = win
             .get_sys_filesystem_rows()
             .as_any()
             .downcast_ref::<VecModel<SysInfoRow>>()
         {
-            vm.set_vec(tuple5_rows(&sys.filesystems));
+            apply_rows(vm, tuple5_rows(&sys.filesystems));
         }
     };
     // The local machine's own figures: used both by a local-shell tab and by

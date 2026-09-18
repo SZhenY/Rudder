@@ -87,7 +87,7 @@ export component AboutDialog inherits Rectangle {
         drop-shadow-color: Theme.card-shadow-color;
         animate y {
             duration: 200ms;
-            easing: AnimationSettings.layout();
+            easing: AnimationSettings.spring-settle();
             enabled: AnimationSettings.enabled;
         }
 

@@ -253,6 +253,7 @@ export component SftpPanel inherits Rectangle {
                     border-width: 1px;
                     border-color: path-input.has-focus ? Theme.accent : Theme.border-subtle;
                     path-input := TextInput {
+                        input-method-hints: Theme.plain-input-hints;
                         x: 6px;
                         width: parent.width - 12px;
                         height: parent.height;
@@ -499,6 +500,7 @@ export component SftpPanel inherits Rectangle {
                         border-width: 1px;
                         border-color: compact-path-input.has-focus ? Theme.accent : Theme.border-subtle;
                         compact-path-input := TextInput {
+                            input-method-hints: Theme.plain-input-hints;
                             x: 6px;
                             width: parent.width - 12px;
                             height: parent.height;
@@ -978,17 +980,17 @@ export component SftpPanel inherits Rectangle {
                         Rectangle {
                             horizontal-stretch: 1; height: 24px; border-radius: Theme.radius-sm;
                             background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-name; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; }
+                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-name; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                         }
                         Rectangle {
                             width: 128px; height: 24px; border-radius: Theme.radius-sm;
                             background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-bind; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; }
+                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-bind; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                         }
                         Rectangle {
                             width: 68px; height: 24px; border-radius: Theme.radius-sm;
                             background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-bind-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; }
+                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-bind-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                         }
                     }
 
@@ -997,12 +999,12 @@ export component SftpPanel inherits Rectangle {
                         Rectangle {
                             horizontal-stretch: 1; height: 24px; border-radius: Theme.radius-sm;
                             background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-host; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; }
+                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-host; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                         }
                         Rectangle {
                             width: 76px; height: 24px; border-radius: Theme.radius-sm;
                             background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-host-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; }
+                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-host-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                         }
                     }
 

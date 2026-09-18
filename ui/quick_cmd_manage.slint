@@ -127,6 +127,7 @@ export component QuickCmdManageDialog inherits ModalCard {
                 content-width: self.width;
                 content-height: max(self.height, qcm-cmd-in.preferred-height + 12px);
                 qcm-cmd-in := TextInput {
+                    input-method-hints: Theme.plain-input-hints;
                     x: 8px; y: 6px;
                     width: parent.width - 16px;
                     text <=> qcm-command;

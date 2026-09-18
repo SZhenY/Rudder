@@ -45,14 +45,14 @@ export component UpdateBanner inherits HorizontalLayout {
                 in {
                     animate height {
                         duration: 150ms;
-                        easing: AnimationSettings.layout();
+                        easing: AnimationSettings.spring-settle();
                         enabled: AnimationSettings.enabled;
                     }
                 }
                 out {
                     animate height {
                         duration: 150ms;
-                        easing: AnimationSettings.layout();
+                        easing: AnimationSettings.spring-settle();
                         enabled: AnimationSettings.enabled;
                     }
                 }

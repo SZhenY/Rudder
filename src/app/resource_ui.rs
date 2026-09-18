@@ -15,6 +15,34 @@ pub(super) fn normalized_model(buf: &[f32]) -> ModelRc<f32> {
     ModelRc::from(Rc::new(VecModel::from(scaled)))
 }
 
+/// 把算好的一批行**增量**写进模型：逐行比对内容，只更新真正变化的行，长度变化时才在
+/// 尾部 push / remove。
+///
+/// 系统信息面板原来每轮刷新都是 `set_vec` 整表替换 —— Repeater 会把每一行都当成新行
+/// 重建（行内状态、悬停、动画全部重来）。这些面板是几秒一轮的定时刷新，内容多数时候
+/// 没变，增量写法把这份重复工作去掉。
+///
+/// 注意：行数**从尾部**增减，中间插队（排序/过滤变化）会退化成逐行更新 —— 结果是
+/// 正确的，只是没有增量收益。用 `set_row_data` 而非重建，也顺带避免了整块重绘。
+pub(super) fn apply_rows<T: Clone + PartialEq + 'static>(vm: &VecModel<T>, next: Vec<T>) {
+    let old_len = vm.row_count();
+    let new_len = next.len();
+
+    let mut incoming = next.into_iter();
+    for i in 0..old_len.min(new_len) {
+        let Some(row) = incoming.next() else { break };
+        if vm.row_data(i).as_ref() != Some(&row) {
+            vm.set_row_data(i, row);
+        }
+    }
+    for row in incoming {
+        vm.push(row);
+    }
+    for i in (new_len..old_len).rev() {
+        vm.remove(i);
+    }
+}
+
 pub(super) fn disk_rows(
     disks: &[(String, u64, u64)],
     mount_filter: &str,
@@ -328,6 +356,31 @@ mod tests {
 
     fn pairs(xs: &[(&str, &str)]) -> Vec<(String, String)> {
         xs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    // ---------- apply_rows：模型增量写入 ----------
+
+    /// 内容没变的行不写回 —— 这正是「增量」的意义（Repeater 不会重建这些行）。
+    #[test]
+    fn apply_rows_writes_only_changed_rows() {
+        let vm = VecModel::from(vec!["a".to_string(), "b".to_string()]);
+        apply_rows(&vm, vec!["a".to_string(), "B".to_string()]);
+        assert_eq!(vm.row_count(), 2);
+        assert_eq!(vm.row_data(0).unwrap(), "a");
+        assert_eq!(vm.row_data(1).unwrap(), "B");
+    }
+
+    /// 行数变多 / 变少都在**尾部**增删，前面的行原地保留。
+    #[test]
+    fn apply_rows_grows_and_shrinks_at_the_tail() {
+        let vm = VecModel::from(vec!["a".to_string()]);
+        apply_rows(&vm, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        assert_eq!(vm.row_count(), 3);
+        assert_eq!(vm.row_data(2).unwrap(), "c");
+
+        apply_rows(&vm, vec!["c".to_string()]);
+        assert_eq!(vm.row_count(), 1, "尾部多余的行走 remove");
+        assert_eq!(vm.row_data(0).unwrap(), "c");
     }
 
     // ---------- push_ring：网络历史环形缓冲 ----------

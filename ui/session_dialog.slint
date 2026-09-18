@@ -347,6 +347,7 @@ export component SessionDialog inherits Rectangle {
                         border-color: keyin.has-focus ? Theme.accent : Theme.border-strong;
                         background: Theme.bg-elevated;
                         keyin := TextInput {
+                            input-method-hints: Theme.plain-input-hints;
                             x: 10px; y: 0px;
                             width: parent.width - 20px;
                             height: parent.height;
@@ -401,6 +402,7 @@ export component SessionDialog inherits Rectangle {
                         border-color: keytext.has-focus ? Theme.accent : Theme.border-strong;
                         background: Theme.bg-elevated;
                         keytext := TextInput {
+                            input-method-hints: Theme.plain-input-hints;
                             x: 10px;
                             y: 8px;
                             width: parent.width - 20px;
@@ -411,6 +413,7 @@ export component SessionDialog inherits Rectangle {
                             font-size: Theme.fs-sm;
                             single-line: false;
                             wrap: word-wrap;
+                            line-height-factor: 1.3;
                         }
                         if root.draft-key-inline == "" : Text {
                             x: 10px;
@@ -619,6 +622,7 @@ color: white; font-size: 14px;
                 Text {
                     text: @tr("Turn on for Windows servers: skips the cwd-follow hook and monitor that assume a POSIX shell and otherwise break the shell.");
                     color: Theme.text-muted; font-size: Theme.fs-xs; wrap: word-wrap;
+                    line-height-factor: 1.3; max-lines: 3;
                 }
                 // 分组留白（原为空 `Rectangle` 占位）：高级区 6+6+6=18px → 6+12=18px（0）
                 GroupGap {

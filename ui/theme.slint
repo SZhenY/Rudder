@@ -170,6 +170,20 @@ export global Theme {
     out property <length> gap-sm: 8px * root.ui-scale;
     out property <length> gap-md: 12px * root.ui-scale;
     out property <length> gap-lg: 16px * root.ui-scale;
+
+    /// 平台输入法提示（Slint 1.18 新增的 `input-method-hints`）：**不要**自动大写、
+    /// 不要自动纠错、不要自动补全。
+    ///
+    /// 这个应用里的输入框装的都是终端命令、路径、主机名、端口、口令 —— 系统输入法的
+    /// 词级"善意"纠正只会帮倒忙（把 `ls -la` 的首字母大写、把路径当成拼写错误改掉）。
+    /// 统一在这里定义一处，输入框那边写一行 `input-method-hints: Theme.plain-input-hints;`。
+    ///
+    /// 默认值是 `capitalization: sentences` + 自动纠错开 + 自动补全开，所以要显式关掉。
+    out property <InputMethodHints> plain-input-hints: {
+        capitalization: none,
+        auto-correct: false,
+        auto-complete: false,
+    };
 }
 
 export global AnimationSettings {
@@ -186,6 +200,14 @@ export global AnimationSettings {
     public pure function color() -> easing { return ease-out; }
     /// 呼吸灯：正弦节奏最接近自然呼吸
     public pure function breathing() -> easing { return ease-in-out-sine; }
-    /// 布局位移（侧栏/欢迎页/滚动条）：Material emphasize 曲线
+    /// 不涉及位移的过渡（透明度等）：Material emphasize 曲线
     public pure function layout() -> easing { return cubic-bezier(0.2, 0, 0, 1); }
+    /// 位移与尺寸：物理弹簧曲线（Slint 1.18 新增）
+    ///
+    /// 与 `cubic-bezier` 的差别出现在**目标值中途改变**时：弹簧保留当前速度继续走，
+    /// 不会从头重启。侧栏折叠连点、面板宽度跟着窗口变化这类场景手感差别最明显。
+    ///
+    /// 参数是回弹量，取值 -1…1，且**必须是字面量**（`spring(50%)`、`spring(a * 1)`
+    /// 都会被编译器拒绝）。返回值写在函数里是为了全项目统一调参 —— 只有这一处字面量。
+    public pure function spring-settle() -> easing { return spring(0.25); }
 }
