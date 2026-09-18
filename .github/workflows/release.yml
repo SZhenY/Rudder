@@ -5,6 +5,10 @@ name: Release
 #    to a GitHub Release.
 #  - Run manually (workflow_dispatch) -> builds all platforms and uploads them as
 #    downloadable workflow artifacts (no release created).
+#
+# ⚠️ 手动触发时 GITHUB_REF_NAME 是**分支名**，可能带 `/`（如 exp/renderer-wgpu-vulkan）——
+#    直接拼进打包路径会让 `mkdir rudder-exp/renderer-…` 失败（父目录不存在），
+#    所以每处 `VERSION=` 都先把 `/` 换成 `-`。打 tag 时这条是空操作。
 
 on:
   push:
@@ -189,7 +193,7 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"   # no FUSE needed in CI
         run: |
           set -eu
-          VERSION="${GITHUB_REF_NAME:-dev}"
+          VERSION="$(printf '%s' "${GITHUB_REF_NAME:-dev}" | tr '/' '-')"
           wget -q -O linuxdeploy \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q -O linuxdeploy-plugin-appimage \
@@ -210,7 +214,7 @@ jobs:
         shell: bash
         run: |
           set -eu
-          VERSION="${GITHUB_REF_NAME:-dev}"
+          VERSION="$(printf '%s' "${GITHUB_REF_NAME:-dev}" | tr '/' '-')"
           STAGE="rudder-${VERSION}-${{ matrix.name }}"
 
           if [ "${{ runner.os }}" = "macOS" ]; then
@@ -288,7 +292,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          $VERSION = "$env:GITHUB_REF_NAME"; if (-not $VERSION) { $VERSION = "dev" }
+          $VERSION = $env:GITHUB_REF_NAME -replace '/', '-'; if (-not $VERSION) { $VERSION = "dev" }
           # WiX's ProductVersion must be numeric: a tag ref still carries the
           # "v" prefix and a workflow_dispatch run has no tag at all
           # (GITHUB_REF_NAME == the branch), so read the real version from
@@ -438,7 +442,7 @@ jobs:
         shell: bash
         run: |
           set -eu
-          VERSION="${GITHUB_REF_NAME:-dev}"
+          VERSION="$(printf '%s' "${GITHUB_REF_NAME:-dev}" | tr '/' '-')"
           STAGE="rudder-${VERSION}-linux-aarch64-glibc228"
 
           mkdir "$STAGE"
@@ -531,7 +535,7 @@ jobs:
         shell: bash
         run: |
           set -eu
-          VERSION="${GITHUB_REF_NAME:-dev}"
+          VERSION="$(printf '%s' "${GITHUB_REF_NAME:-dev}" | tr '/' '-')"
           STAGE="rudder-${VERSION}-linux-x86_64-glibc228"
 
           mkdir "$STAGE"
