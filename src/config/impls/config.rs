@@ -1535,15 +1535,14 @@ impl ConfigStore {
     }
 
     /// Renderer preference for the current platform.
-    /// 实验支线矩阵：FemtoVG（默认）/ Skia（wgpu→Metal）/ FemtoVG(wgpu→Metal) / 软件。
-    /// 不认识的值回落 femtovg，与升级前一致。
+    /// 矩阵：软件 / FemtoVG(wgpu→Metal，默认) / Skia(wgpu→Metal)。
+    /// 旧值（`femtovg`（OpenGL）/`auto`/空串）统一升到 `femtovg-wgpu` —— OpenGL 那档已退役。
     #[cfg(target_os = "macos")]
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
             "skia" => "skia",
-            "femtovg-wgpu" => "femtovg-wgpu",
             "software" => "software",
-            _ => "femtovg",
+            _ => "femtovg-wgpu",
         }
     }
 
@@ -1553,29 +1552,30 @@ impl ConfigStore {
     /// `"auto"` 仍然可选用：它的"先试 GPU、失败退回软件"由**启动时的探测**完成
     /// （见 `app/window.rs::gpu_renderer_probe_passes`）—— 不能指望 Slint 自己的回退，
     /// 它对 femtovg 的延迟上下文创建无能为力（虚拟机里就是"窗口打不开"）。
-    /// 实验支线矩阵：软件（默认）/ FemtoVG(wgpu→D3D12) / Skia(wgpu→D3D12) / 自动。
-    /// 旧配置里的 `gpu`（OpenGL）仍能读出来，但设置页不再提供。
+    /// 矩阵：软件（默认）/ FemtoVG(wgpu→D3D12) / 自动（探测成前两者之一）。
+    /// 旧值 `gpu`（OpenGL）与 `skia` 都已退役 → 分别升到 `wgpu` 与软件渲染。
     #[cfg(target_os = "windows")]
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
             "auto" => "auto",
             "wgpu" => "wgpu",
-            "skia" => "skia",
-            "gpu" => "gpu",
+            "gpu" => "wgpu",
             _ => "software",
         }
     }
 
     /// Linux previously used Slint's automatic renderer selection and had no
     /// settings entry. Keep that behaviour for existing configurations.
-    /// 实验支线矩阵：自动（默认）/ 软件 / FemtoVG(wgpu→Vulkan) / Skia(Vulkan)。
+    /// 矩阵：自动（默认）/ 软件 / FemtoVG(wgpu→Vulkan)。`auto` 由启动时的探测固化成
+    /// 后两者之一（与 Windows 同一套）。旧值 `gpu`（OpenGL）与支线早期的 `skia-vulkan`
+    /// 都已退役 → 升到 `wgpu`。
     #[cfg(target_os = "linux")]
     pub fn renderer_mode(&self) -> &str {
         match self.cache.appearance.renderer_mode.as_str() {
-            "gpu" => "gpu",
             "software" => "software",
             "wgpu" => "wgpu",
-            "skia-vulkan" => "skia-vulkan",
+            "gpu" => "wgpu",
+            "skia-vulkan" => "wgpu",
             _ => "auto",
         }
     }
@@ -1584,9 +1584,8 @@ impl ConfigStore {
     pub fn set_renderer_mode(&mut self, mode: String) {
         self.cache.appearance.renderer_mode = match mode.as_str() {
             "skia" => "skia".into(),
-            "femtovg-wgpu" => "femtovg-wgpu".into(),
             "software" => "software".into(),
-            _ => "femtovg".into(),
+            _ => "femtovg-wgpu".into(),
         };
     }
 
@@ -1595,8 +1594,7 @@ impl ConfigStore {
         self.cache.appearance.renderer_mode = match mode.as_str() {
             "auto" => "auto".into(),
             "wgpu" => "wgpu".into(),
-            "skia" => "skia".into(),
-            "gpu" => "gpu".into(),
+            "gpu" => "wgpu".into(),
             _ => "software".into(),
         };
     }
@@ -1604,10 +1602,10 @@ impl ConfigStore {
     #[cfg(target_os = "linux")]
     pub fn set_renderer_mode(&mut self, mode: String) {
         self.cache.appearance.renderer_mode = match mode.as_str() {
-            "gpu" => "gpu".into(),
             "software" => "software".into(),
             "wgpu" => "wgpu".into(),
-            "skia-vulkan" => "skia-vulkan".into(),
+            "gpu" => "wgpu".into(),
+            "skia-vulkan" => "wgpu".into(),
             _ => "auto".into(),
         };
     }
@@ -2963,8 +2961,11 @@ mod tests {
         // `auto` 仍然可选：能否用 GPU 由启动时的探测决定，配置层如实保留。
         store.set_renderer_mode("auto".into());
         assert_eq!(store.renderer_mode(), "auto");
+        store.set_renderer_mode("wgpu".into());
+        assert_eq!(store.renderer_mode(), "wgpu");
+        // 旧配置里的 `gpu`（OpenGL）升到 wgpu 档 —— OpenGL 已从矩阵退役。
         store.set_renderer_mode("gpu".into());
-        assert_eq!(store.renderer_mode(), "gpu");
+        assert_eq!(store.renderer_mode(), "wgpu");
         store.set_renderer_mode("unexpected".into());
         assert_eq!(store.renderer_mode(), "software");
 
@@ -2978,10 +2979,15 @@ mod tests {
         let mut store = temp_store();
         assert_eq!(store.renderer_mode(), "auto");
 
-        store.set_renderer_mode("gpu".into());
-        assert_eq!(store.renderer_mode(), "gpu");
+        store.set_renderer_mode("wgpu".into());
+        assert_eq!(store.renderer_mode(), "wgpu");
         store.set_renderer_mode("software".into());
         assert_eq!(store.renderer_mode(), "software");
+        // 旧值 `gpu`（OpenGL）与支线早期的 `skia-vulkan` 都升到 wgpu 档。
+        store.set_renderer_mode("gpu".into());
+        assert_eq!(store.renderer_mode(), "wgpu");
+        store.set_renderer_mode("skia-vulkan".into());
+        assert_eq!(store.renderer_mode(), "wgpu");
         store.set_renderer_mode("unexpected".into());
         assert_eq!(store.renderer_mode(), "auto");
 
@@ -3134,17 +3140,21 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn renderer_mode_uses_macos_backends_and_validates() {
         let mut store = temp_store();
-        assert_eq!(store.renderer_mode(), "femtovg");
+        // 默认档 = FemtoVG（wgpu → Metal）；OpenGL 那档已从矩阵退役。
+        assert_eq!(store.renderer_mode(), "femtovg-wgpu");
 
         store.set_renderer_mode("skia".into());
         assert_eq!(store.renderer_mode(), "skia");
+        store.set_renderer_mode("software".into());
+        assert_eq!(store.renderer_mode(), "software");
+        // 旧配置里的 `femtovg`（OpenGL）升到 wgpu 档，不留在已退役的渲染器上。
         store.set_renderer_mode("femtovg".into());
-        assert_eq!(store.renderer_mode(), "femtovg");
+        assert_eq!(store.renderer_mode(), "femtovg-wgpu");
         store.set_renderer_mode("unexpected".into());
-        assert_eq!(store.renderer_mode(), "femtovg");
+        assert_eq!(store.renderer_mode(), "femtovg-wgpu");
 
         store.cache = serde_json::from_str("{}").expect("legacy config must deserialize");
-        assert_eq!(store.renderer_mode(), "femtovg");
+        assert_eq!(store.renderer_mode(), "femtovg-wgpu");
     }
 
     #[test]

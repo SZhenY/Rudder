@@ -50,29 +50,24 @@ export component AppearancePage inherits VerticalLayout {
     property <string> lbl-auto: root.lang-en ? "Automatic" : "自动";
     property <string> lbl-soft: root.lang-en ? "Software" : "软件";
     property <string> lbl-wgpu: "FemtoVG (wgpu)";
-    property <string> lbl-skia-win: "Skia (wgpu)";
-    property <string> lbl-skia-vk: "Skia (Vulkan)";
-    property <string> lbl-gl: "FemtoVG (OpenGL)";
+    property <string> lbl-skia: "Skia (wgpu)";
 
     /// 显示名 → 配置取值。
     pure function mode-of(label: string) -> string {
         if (label == root.lbl-auto) { return "auto"; }
         if (label == root.lbl-soft) { return "software"; }
         if (label == root.lbl-wgpu) { return "femtovg-wgpu"; }
-        if (label == root.lbl-skia-win) { return "skia"; }
-        if (label == root.lbl-skia-vk) { return "skia-vulkan"; }
-        if (label == root.lbl-gl) { return "femtovg"; }
+        if (label == root.lbl-skia) { return "skia"; }
         return root.renderer-mode;      // 认不出来就保持原样
     }
 
-    /// 配置取值 → 显示名。Skia 在三平台各有名字（wgpu / Vulkan），所以要看平台。
+    /// 配置取值 → 显示名。`skia` 只在 macOS 出现（那边的 Skia 走 wgpu → Metal）。
     pure function label-of(mode: string) -> string {
         if (mode == "auto") { return root.lbl-auto; }
         if (mode == "software") { return root.lbl-soft; }
-        if (mode == "femtovg-wgpu") { return root.lbl-wgpu; }
-        if (mode == "skia") { return Theme.is-mac ? "Skia (wgpu)" : (root.is-windows ? root.lbl-skia-win : root.lbl-skia-vk); }
-        if (mode == "skia-vulkan") { return root.lbl-skia-vk; }
-        return root.lbl-gl;
+        if (mode == "skia") { return root.lbl-skia; }
+        // `femtovg-wgpu` 是三平台的默认档；旧值（`femtovg` 等）已在 config 里归一化。
+        return root.lbl-wgpu;
     }
 
     padding-left: 20px;
@@ -299,22 +294,20 @@ color: Theme.text-secondary;
             label: root.lang-en ? "Renderer" : "渲染器";
             desc: Theme.is-mac
                 ? (root.lang-en
-                    ? "FemtoVG is the default; try Skia if text looks wrong."
-                    : "默认 FemtoVG；文字显示异常时可改用 Skia。")
+                    ? "FemtoVG (wgpu → Metal) is the default; try Skia if text looks wrong."
+                    : "默认 FemtoVG（wgpu → Metal）；文字显示异常时可改用 Skia。")
                 : (root.lang-en
-                    ? "Software rendering is the default. Automatic uses the GPU when one is available."
-                    : "默认使用软件渲染；自动模式在有 GPU 的情况下会使用 GPU。");
+                    ? "Software rendering is the default; FemtoVG (wgpu) uses the platform GPU API."
+                    : "默认使用软件渲染；FemtoVG（wgpu）走平台原生 GPU 接口。");
             show-divider: false;
             ComboBox {
                 width: 150px;
-                // 平台矩阵：macOS 不给"自动"（那边的默认档本来就是确定的）；
-                // Windows 默认软件渲染、Linux 默认自动，见 config.rs 的取默认值逻辑。
-                // 每个平台都把 OpenGL 那一档留在最后：只为旧配置不显示成空白。
+                // 平台矩阵：三平台都能选 软件 / FemtoVG (wgpu)；Skia 只在 macOS
+                // （那是 Skia on wgpu → Metal）。Windows / Linux 的"自动"由启动探测固化成
+                // 软件 或 FemtoVG (wgpu) 之一（见 config.rs 的取值逻辑与 app/window.rs）。
                 model: Theme.is-mac
-                    ? [root.lbl-gl, root.lbl-skia-win, root.lbl-wgpu, root.lbl-soft]
-                    : (root.is-windows
-                        ? [root.lbl-auto, root.lbl-soft, root.lbl-wgpu, root.lbl-skia-win, root.lbl-gl]
-                        : [root.lbl-auto, root.lbl-soft, root.lbl-wgpu, root.lbl-skia-vk, root.lbl-gl]);
+                    ? [root.lbl-soft, root.lbl-wgpu, root.lbl-skia]
+                    : [root.lbl-auto, root.lbl-soft, root.lbl-wgpu];
                 current-value: root.label-of(root.renderer-mode);
                 selected(v) => {
                     // 映射只有一处（`mode-of`），比较与写回都用它 —— 三处各写一份就成了前几版那种漂移源。
@@ -336,10 +329,10 @@ color: Theme.text-secondary;
                         : "重启 Rudder 后渲染器设置才会生效。")
                     : (root.lang-en
                         ? (Theme.is-mac
-                            ? "FemtoVG remains the default renderer on macOS."
+                            ? "FemtoVG (wgpu → Metal) remains the default renderer on macOS."
                             : "Software remains the compatibility default for existing installations.")
                         : (Theme.is-mac
-                            ? "macOS 默认继续使用 FemtoVG 渲染器。"
+                            ? "macOS 默认继续使用 FemtoVG（wgpu → Metal）渲染器。"
                             : "现有安装继续默认使用兼容性更好的软件渲染。"));
                 color: root.renderer-restart-required ? Theme.accent : Theme.text-muted;
                 font-size: 11px * Theme.panel-font;

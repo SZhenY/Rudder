@@ -25,14 +25,21 @@ rust-version = "1.96"
 #   `renderer-femtovg-wgpu` 三平台都编：FemtoVG 走 wgpu（Windows=D3D12 / Linux=Vulkan /
 #   macOS=Metal）。注意它会让 Slint 自己的自动回退链**不再包含 OpenGL 版 FemtoVG** ——
 #   我们不用它那条链（"自动"是启动时子进程探测，见 src/app/window.rs）。
-slint = { version = "1.18", features = ["compat-1-2", "unstable-fontique-011", "renderer-femtovg-wgpu"] }
-# 只为 `RequestedGraphicsAPI`（Linux 的 Skia-Vulkan 档要显式请求 Vulkan）。这个类型既没被
-# `slint` 再导出、也没被 winit 后端再导出，而 `BackendBuilder::request_graphics_api` 需要它。
 #
-# ⚠️ 必须关掉默认特性：带上默认特性时它会**自行激活 wgpu**，进而把 js-sys 的版本要求抬到
-# ^0.3.104，与锁文件里 chrono 拉着的 0.3.103 冲突（依赖解析直接失败）。关掉之后真正的
-# feature 由上面的 `slint` 依赖决定，这里的合并结果不变。
-i-slint-core = { version = "1.18", default-features = false }
+# ⚠️ 这里**刻意**关掉 Slint 的默认特性：默认集里的 `renderer-femtovg` 就是 OpenGL 版
+#   FemtoVG，而本分支已决定不再使用 OpenGL（GPU 路径一律走 wgpu，见 target 段）。
+#   下面这份清单 = Slint 1.18 的默认集**减掉** `renderer-femtovg`，逐项照抄以便将来
+#   对齐上游默认值；`backend-default` 仍然带 winit（x11 + wayland）。
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "backend-default",
+    "renderer-software",
+    "accessibility",
+    "compat-1-2",
+    "system-tray",
+    "unstable-fontique-011",
+    "renderer-femtovg-wgpu",
+] }
 # ICU4X (pulled in by Slint's text layout) spams stderr with raw `eprintln!`
 # ("ICU4X data error: No segmentation model for language: ja") because its
 # `log` shim falls back to eprintln when the `logging` feature is off. Turning
@@ -145,23 +152,14 @@ arboard = { version = "3", features = ["wayland-data-control"] }
 
 # 渲染器矩阵（实验）：Slint 的 feature 是可加的，所以这里按平台补差集。
 #   三平台都有：软件渲染（slint 默认）+ femtovg-wgpu（主依赖里）；
-#   Windows 再加 renderer-skia（= Skia on wgpu → D3D12）；
-#   Linux 再加 renderer-skia-vulkan（Skia on Vulkan）；
 #   macOS 再加 renderer-skia（= Skia on wgpu → Metal）。
-#
-# ⚠️ Windows + Skia 有历史遗留风险：本文件过去记着"在 Windows 上它会与另一个 ICU 导入库
-# 在 MSVC 链接期冲突（#224）"，这也是它当年被限成 macOS 专属的原因。支线上先试，若链接
-# 失败就退回"只有 femtovg-wgpu + 软件"。
-[target.'cfg(target_os = "linux")'.dependencies.slint]
-version = "1.18"
-features = ["renderer-skia-vulkan"]
-
-[target.'cfg(target_os = "windows")'.dependencies.slint]
-version = "1.18"
-features = ["renderer-skia"]
-
+#   Windows / Linux **不编 Skia**：Windows 上它过去会与另一个 ICU 导入库在 MSVC 链接期
+#   冲突（#224，当年正是这条把它限成 macOS 专属），而 Linux 那档（skia-vulkan）与
+#   "FemtoVG on wgpu" 落的是同一个 Vulkan，多编一份不划算。
 [target.'cfg(target_os = "macos")'.dependencies]
-slint = { version = "1.18", features = ["renderer-skia"] }
+# ⚠️ default-features 必须在这里也关掉：同名依赖的多处声明会**合并特性**，这一处一旦没写，
+# 上面那份"默认集减 renderer-femtovg"就会被它把默认集带回来（OpenGL 又回到依赖树里）。
+slint = { version = "1.18", default-features = false, features = ["renderer-skia"] }
 
 [build-dependencies]
 slint-build = "1.18"

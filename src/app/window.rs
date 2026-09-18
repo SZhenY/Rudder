@@ -60,8 +60,8 @@ pub(super) fn apply_window_chrome(_window: &slint::Window) {}
 /// `auto` 的探测结果 → 配置里要写的具体取值。
 ///
 /// 抽成纯函数是为了能测：真正的探测要起子进程，但"结果怎么落库"这条契约不该靠人肉观察。
-// 只有 Windows 的启动路径用得到它（外加测试）；别的平台别让它变成 dead_code。
-#[cfg(any(windows, test))]
+// Windows 与 Linux 的启动路径用得到它（外加测试）；别的平台别让它变成 dead_code。
+#[cfg(any(windows, target_os = "linux", test))]
 pub(super) const fn auto_renderer_for(probe_ok: bool) -> &'static str {
     if probe_ok {
         "wgpu"
@@ -70,14 +70,14 @@ pub(super) const fn auto_renderer_for(probe_ok: bool) -> &'static str {
     }
 }
 
-/// Windows 的"自动"：探测一次，把结论**固化进配置**，之后启动不再探测。
+/// Windows / Linux 的"自动"：探测一次，把结论**固化进配置**，之后启动不再探测。
 ///
 /// 探测要花约一秒（子进程真渲染一帧），所以只在用户选"自动"之后的**第一次启动**发生；
-/// 写完配置后存的就是 `gpu` / `software`，后续启动直接用它。想重新探测（比如换了机器
+/// 写完配置后存的就是 `wgpu` / `software`，后续启动直接用它。想重新探测（比如换了机器
 /// 或者装上了显卡驱动）就再选一次"自动"。
 ///
 /// 显式设了 `SLINT_BACKEND` 时不动配置 —— 那个环境变量优先级最高，探测没有意义。
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub(super) fn resolve_auto_renderer_mode(
     mut config: crate::config::ConfigStore,
 ) -> crate::config::ConfigStore {
@@ -106,8 +106,8 @@ pub(super) fn resolve_auto_renderer_mode(
 /// （`new_suspended`）—— 工厂在虚拟机里照样成功，真正的失败发生在**首帧**。于是回退链
 /// 根本跑不到，"自动"的表现就是窗口打不开。这里用子进程实测，它无法作弊。
 ///
-/// 探测进程用 `--probe-renderer=gpu` 启动，而 `gpu` 这条取值不会再探测，所以不会递归。
-#[cfg(windows)]
+/// 探测进程用 `--probe-renderer=wgpu` 启动，而 `wgpu` 这条取值不会再探测，所以不会递归。
+#[cfg(any(windows, target_os = "linux"))]
 fn gpu_renderer_probe_passes() -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
@@ -126,7 +126,7 @@ fn gpu_renderer_probe_passes() -> bool {
 /// 渲染探测进程：用指定渲染器起一个**屏幕外**的小窗口，渲染一帧后正常退出。
 ///
 /// 退出码即结论：0 = 这个渲染器在这台机器上能用；非 0（含 panic / abort）= 不能用。
-/// 取值：Windows 用 `gpu` / `software`，macOS 用 `femtovg` / `skia`。
+/// 取值：Windows / Linux 用 `wgpu` / `software`，macOS 用 `femtovg-wgpu` / `skia` / `software`。
 pub(super) fn run_renderer_probe(mode: &str) -> anyhow::Result<()> {
     use slint::ComponentHandle as _;
 
@@ -164,7 +164,9 @@ pub(super) fn setup_windows_platform(renderer_mode: &str) {
     let configured_renderer = match renderer_mode {
         "software" => Some("software".to_owned()),
         "wgpu" => Some("femtovg-wgpu".to_owned()),
-        "skia" => Some("skia".to_owned()),
+        // 旧配置里的 `gpu`（OpenGL 版 FemtoVG）已从矩阵退役：升到 wgpu 档，
+        // 别让用户停在一条设置页不再提供、以后也不会再维护的路径上。
+        "gpu" => Some("femtovg-wgpu".to_owned()),
         // 正常路径上 `app::run` 已经把 `auto` 探测并固化成了具体值（见
         // `resolve_auto_renderer_mode`），这里只是兜底：万一还有 `auto` 走到这一步，
         // 照样探测一次，别回到"交给 Slint 自动选择"（那正是打不开窗口的老路）。
@@ -233,18 +235,15 @@ pub(super) fn setup_linux_platform(renderer_mode: &str) {
         return;
     }
 
-    // 实验支线矩阵：软件 / FemtoVG(wgpu→Vulkan) / Skia(Vulkan)。"gpu" 是旧配置的兼容映射。
-    let mut graphics_api = None;
+    // 矩阵：软件 / FemtoVG(wgpu→Vulkan)。`auto` 由启动时的探测
+    // （`resolve_auto_renderer_mode`，与 Windows 同一套）固化成这两者之一，
+    // 不再交给 Slint 自己的自动选择 —— 那条链会先挑 Skia，不是我们要的矩阵。
+    // 旧配置的 `gpu`（OpenGL 版 FemtoVG）与支线早期的 `skia-vulkan` 都退役 → 升到 wgpu 档。
     let renderer = match renderer_mode {
         "software" => "software",
         "wgpu" => "femtovg-wgpu",
-        "skia-vulkan" => {
-            // 同一构建里 Skia 既有 wgpu 又有 Vulkan 时，不指定 API 会**优先**走 Vulkan；
-            // 这里显式请求，免得以后默认后端变化时这一档悄悄变味。
-            graphics_api = Some(i_slint_core::graphics::RequestedGraphicsAPI::Vulkan);
-            "skia"
-        }
-        "gpu" => "femtovg",
+        "gpu" => "femtovg-wgpu",
+        "skia-vulkan" => "femtovg-wgpu",
         _ => {
             tracing::info!(
                 renderer_mode,
@@ -262,11 +261,8 @@ pub(super) fn setup_linux_platform(renderer_mode: &str) {
         source = "settings",
         "initializing Linux renderer"
     );
-    let mut backend_builder =
+    let backend_builder =
         i_slint_backend_winit::Backend::builder().with_renderer_name(renderer.to_owned());
-    if let Some(api) = graphics_api {
-        backend_builder = backend_builder.request_graphics_api(api);
-    }
     match backend_builder.build() {
         Ok(backend) => {
             if slint::platform::set_platform(Box::new(backend)).is_err() {
@@ -453,14 +449,14 @@ pub(super) fn setup_macos_platform(renderer_mode: &str) {
             .strip_prefix("winit-")
             .filter(|renderer| !renderer.is_empty())
             .map(str::to_owned),
-        // 实验支线矩阵：FemtoVG(默认) / Skia(wgpu→Metal) / FemtoVG(wgpu→Metal) / 软件。
-        // 不认识的值（含旧配置）一律回落 femtovg，与升级前一致。
+        // 矩阵：软件 / FemtoVG(wgpu→Metal，默认) / Skia(wgpu→Metal)。
+        // 旧配置里的 `femtovg`（OpenGL）已在 `ConfigStore::renderer_mode` 里归一化到
+        // `femtovg-wgpu`；这里的兜底只防配置被手改坏。
         None => Some(
             match renderer_mode {
                 "skia" => "skia",
-                "femtovg-wgpu" => "femtovg-wgpu",
                 "software" => "software",
-                _ => "femtovg",
+                _ => "femtovg-wgpu",
             }
             .to_owned(),
         ),
@@ -517,7 +513,7 @@ mod mixed_dpi_window_tests {
 mod auto_renderer_tests {
     use super::auto_renderer_for;
 
-    /// 探测通过 → 配置写 `gpu`；不通过 → 写 `software`（这正是用户选的"自动"语义：
+    /// 探测通过 → 配置写 `wgpu`；不通过 → 写 `software`（这正是用户选的"自动"语义：
     /// 探测一次、结论落进配置文件，之后启动不再探测）。
     #[test]
     fn probe_result_maps_to_a_concrete_config_value() {

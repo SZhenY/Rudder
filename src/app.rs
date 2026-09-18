@@ -429,10 +429,10 @@ pub fn run() -> Result<()> {
     // twice merely to select a backend (#280).
     let config = ConfigStore::load().context("failed to load config")?;
 
-    // Windows 的"自动"：探测一次（子进程真渲染一帧，约一秒），把结论**固化进配置** ——
-    // 有 GPU 就存 `gpu`，没有就存 `software`；之后每次启动直接读配置，不再探测。
-    // 想重新探测（换机器 / 装了显卡驱动）就在设置里再选一次"自动"。
-    #[cfg(windows)]
+    // Windows / Linux 的"自动"：探测一次（子进程真渲染一帧，约一秒），把结论**固化进配置** ——
+    // 有 GPU 就存 `wgpu`（FemtoVG on wgpu），没有就存 `software`；之后每次启动直接读配置，
+    // 不再探测。想重新探测（换机器 / 装了显卡驱动）就在设置里再选一次"自动"。
+    #[cfg(any(windows, target_os = "linux"))]
     let config = window::resolve_auto_renderer_mode(config);
 
     // Windows frameless-window attributes must be fixed before the first Slint
