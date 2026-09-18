@@ -90,8 +90,8 @@ export component AppearancePage inherits VerticalLayout {
             builtin-wallpapers-scroll := ScrollView {
                 height: 106px;
                 width: 100%;
-                viewport-width: max(self.visible-width, builtin-wallpapers-row.preferred-width);
-                viewport-height: self.visible-height;
+                content-width: max(self.visible-width, builtin-wallpapers-row.preferred-width);
+                content-height: self.visible-height;
 
                 builtin-wallpapers-row := HorizontalLayout {
                     spacing: 11px;

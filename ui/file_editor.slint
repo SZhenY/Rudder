@@ -280,7 +280,7 @@ export component FileEditor inherits Rectangle {
                 // word-wrap is OFF so one logical line == one display line and
                 // the numbers line up (long lines scroll horizontally); the
                 // gutter is pinned horizontally but tracks the editor's
-                // vertical scroll via ed-scroll.viewport-y (#81).
+                // vertical scroll via ed-scroll.content-y (#81).
                 Rectangle {
                     vertical-stretch: 1;
                     background: Theme.bg-root;
@@ -292,7 +292,7 @@ export component FileEditor inherits Rectangle {
                             clip: true;
                             Label {
                                 x: 0;
-                                y: ed-scroll.viewport-y + 8px;
+                                y: ed-scroll.content-y + 8px;
                                 width: parent.width - 6px;
                                 text: editor-line-numbers;
                                 horizontal-alignment: right;
@@ -307,8 +307,8 @@ export component FileEditor inherits Rectangle {
                             horizontal-stretch: 1;
                             clip: true;
                             ed-scroll := ScrollView {
-                                viewport-width: max(self.visible-width, edit-input.preferred-width + 16px);
-                                viewport-height: max(self.visible-height, edit-input.preferred-height + 16px);
+                                content-width: max(self.visible-width, edit-input.preferred-width + 16px);
+                                content-height: max(self.visible-height, edit-input.preferred-height + 16px);
                                 edit-input := TextInput {
                                     x: 8px;
                                     y: 8px;

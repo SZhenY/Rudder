@@ -154,8 +154,8 @@ pub(crate) fn load_external_fonts(fonts_dirs: &[PathBuf]) -> Vec<String> {
         let Ok(bytes) = std::fs::read(&path) else {
             continue;
         };
-        let blob = slint::fontique_010::fontique::Blob::new(std::sync::Arc::new(bytes));
-        let mut collection = slint::fontique_010::shared_collection();
+        let blob = slint::fontique_011::fontique::Blob::new(std::sync::Arc::new(bytes));
+        let mut collection = slint::fontique_011::shared_collection();
         let registered = collection.register_fonts(blob, None);
         for (family_id, _) in registered {
             if let Some(name) = collection.family_name(family_id) {

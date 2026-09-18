@@ -205,8 +205,8 @@ Rectangle {
 
             Flickable {
                 vertical-stretch: 1;
-                viewport-width: self.width;
-                viewport-height: max(self.height, xfer-col.preferred-height);
+                content-width: self.width;
+                content-height: max(self.height, xfer-col.preferred-height);
                 xfer-col := VerticalLayout {
                     alignment: start;
                     spacing: 4px;

@@ -259,13 +259,13 @@ export component SystemInfoWindow inherits Window {
 
         Flickable {
             vertical-stretch: 1;
-            viewport-width: self.width;
+            content-width: self.width;
                 // ⚠️ 这个绑定是**必需的 workaround**，别删：`Flickable` 的文档写明
-                // "When unset, the viewport-width/height are calculated automatically based on
+                // "When unset, the content-width/height are calculated automatically based on
                 // the Flickable's children. **This isn't the case when using a `for` loop** …
                 // This is a bug tracked in issue #407"（i-slint-compiler builtins.slint）。
                 // 本表的行由 `for` 生成 → 不显式给视口高度就不会滚动。
-            viewport-height: max(self.height, content.preferred-height);
+            content-height: max(self.height, content.preferred-height);
 
             content := VerticalLayout {
                 padding: 14px;

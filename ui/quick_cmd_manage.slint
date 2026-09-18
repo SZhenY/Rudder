@@ -124,8 +124,8 @@ export component QuickCmdManageDialog inherits ModalCard {
             background: Theme.bg-root;
             clip: true;
             Flickable {
-                viewport-width: self.width;
-                viewport-height: max(self.height, qcm-cmd-in.preferred-height + 12px);
+                content-width: self.width;
+                content-height: max(self.height, qcm-cmd-in.preferred-height + 12px);
                 qcm-cmd-in := TextInput {
                     x: 8px; y: 6px;
                     width: parent.width - 16px;
@@ -186,8 +186,8 @@ export component QuickCmdManageDialog inherits ModalCard {
     // Existing commands list with delete buttons.
     Flickable {
         vertical-stretch: 1;
-        viewport-width: self.width;
-        viewport-height: max(self.height, qcm-list.preferred-height);
+        content-width: self.width;
+        content-height: max(self.height, qcm-list.preferred-height);
         qcm-list := VerticalLayout {
             alignment: start;
             spacing: 2px;

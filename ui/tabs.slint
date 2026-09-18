@@ -216,8 +216,8 @@ export component TabBar inherits Rectangle {
         // width they stay reachable by the arrows or by dragging / trackpad (#122).
         flick := Flickable {
             horizontal-stretch: 1;
-            viewport-height: self.height;
-            viewport-width: max(self.width, strip.preferred-width);
+            content-height: self.height;
+            content-width: max(self.width, strip.preferred-width);
             strip := HorizontalLayout {
                 spacing: 2px;
                 alignment: start;
@@ -272,7 +272,7 @@ export component TabBar inherits Rectangle {
         background: Theme.bg-panel-alt;
         IconButton {
             glyph: "<"; size: 24px;
-            clicked => { flick.viewport-x = min(0px, flick.viewport-x + 120px); }
+            clicked => { flick.content-x = min(0px, flick.content-x + 120px); }
         }
     }
     if root.tab-overflow : Rectangle {
@@ -285,7 +285,7 @@ export component TabBar inherits Rectangle {
         IconButton {
             glyph: ">"; size: 24px;
             clicked => {
-                flick.viewport-x = max(flick.width - flick.viewport-width, flick.viewport-x - 120px);
+                flick.content-x = max(flick.width - flick.content-width, flick.content-x - 120px);
             }
         }
     }
@@ -307,8 +307,8 @@ export component TabBar inherits Rectangle {
                 x: 4px; y: 4px;
                 width: parent.width - 8px;
                 height: parent.height - 8px;
-                viewport-width: self.width;
-                viewport-height: max(self.height, all-tabs-list.preferred-height);
+                content-width: self.width;
+                content-height: max(self.height, all-tabs-list.preferred-height);
                 all-tabs-list := VerticalLayout {
                     spacing: 1px;
                     for tab in root.tabs : TabMenuItem {

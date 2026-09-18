@@ -195,8 +195,8 @@ export component InterfacePanel inherits Rectangle {
                 vertical-stretch: 1;
                 width: 100%;
                 height: 100%;
-                viewport-width: self.visible-width;
-                // ⚠️ **不要给 `viewport-height` 赋值**。
+                content-width: self.visible-width;
+                // ⚠️ **不要给 `content-height` 赋值**。
                 //
                 // Slint 自己计算的默认值就是精确的内容高度（实测：终端页 1199px
                 // = 最后一项「还原本页默认」的底边；外观页 860px），内容不足一屏时

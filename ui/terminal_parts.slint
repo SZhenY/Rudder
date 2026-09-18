@@ -136,8 +136,8 @@ export component QuickDockPanel inherits Rectangle {
 
         Flickable {
             vertical-stretch: 1;
-            viewport-width: self.width;
-            viewport-height: max(self.height, list.preferred-height);
+            content-width: self.width;
+            content-height: max(self.height, list.preferred-height);
             list := VerticalLayout {
                 padding: 6px; spacing: 2px; alignment: start;
                 if root.commands.length == 0 : Text {

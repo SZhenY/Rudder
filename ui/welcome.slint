@@ -308,8 +308,8 @@ export component Welcome inherits Rectangle {
 
                 if sessions.length > 0 : ScrollView {
                     vertical-stretch: 1;
-                    viewport-width: self.visible-width;
-                    viewport-height: max(self.visible-height, sess-list.preferred-height);
+                    content-width: self.visible-width;
+                    content-height: max(self.visible-height, sess-list.preferred-height);
                     sess-list := VerticalLayout {
                     spacing: 0px;
                     for session[i] in sessions : VerticalLayout {

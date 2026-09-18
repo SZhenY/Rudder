@@ -672,8 +672,8 @@ export component SftpPanel inherits Rectangle {
                     ScrollView {
                         width: parent.width;
                         height: parent.height;
-                        viewport-width: self.visible-width;
-                        viewport-height: max(self.visible-height, file-list.preferred-height);
+                        content-width: self.visible-width;
+                        content-height: max(self.visible-height, file-list.preferred-height);
 
                         file-list := VerticalLayout {
                             spacing: 0;
@@ -936,8 +936,8 @@ export component SftpPanel inherits Rectangle {
             ScrollView {
                 width: parent.width;
                 height: parent.height;
-                viewport-width: self.visible-width;
-                viewport-height: max(self.visible-height, tunnel-body.preferred-height);
+                content-width: self.visible-width;
+                content-height: max(self.visible-height, tunnel-body.preferred-height);
 
                 tunnel-body := VerticalLayout {
                     padding: 10px;
