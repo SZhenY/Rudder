@@ -5,7 +5,39 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
-## [0.7.8-fix1] - 2026-09-18
+## [0.7.8-fix2] - 2026-09-18
+
+### 新增 / Added
+
+- **动画改用物理弹簧曲线（Slint 1.18 的 `spring`）。** 位移与尺寸类动画 —— 侧栏折叠、
+  欢迎页尺寸、占用率条、对话框出现、更新横幅、SFTP 面板 —— 在**目标值中途被改变**时会
+  保留当前速度继续走，不再从头重启：连点折叠按钮、拖动窗口改变面板宽度时手感明显更连贯。
+  回弹量集中在一处（`AnimationSettings.spring-settle()`），觉得太弹可一行调小。
+  **Physics-based spring easing for movement and size animations** — they keep their
+  velocity when the target changes mid-flight instead of restarting from zero.
+
+### 改进 / Improved
+
+- **系统信息面板改为增量更新。** 进程列表与 CPU / 内存 / 网络 / 磁盘等表格每轮刷新只写
+  真正变化的行，不再整表重建（以前每一行都被当成新行重建，行内状态与悬停全部重来）。
+  **Incremental model updates for the sidebar system panels.**
+- **输入框不再被系统输入法自动大写 / 纠错 / 补全。** 全部 26 个输入框（命令栏、搜索、
+  路径、主机名、端口、口令…）都显式告诉平台输入法"别改我写的内容" —— 中文输入法与
+  命令输入受益最明显。**No more auto-capitalization, auto-correction or auto-completion
+  in any text field.**
+- **多行说明与提示的行距按字体自然行高缩放**（19 处），长提示最多 3 行、设置页描述 2 行、
+  快捷命令名 2 行；错误消息与状态文本**不限制行数**，避免截断你需要读的内容。
+  **Comfortable line spacing for multi-line text, with sensible line caps.**
+
+### 内部 / Internal
+
+- 采纳 Slint 1.18 的新语法：`VecModel` 的 `push` / `remove` / `insert`、`max-lines` /
+  `line-height-factor` / `input-method-hints`。
+- 测试 427 → **429 passed**（新增两条「只写变化的行」与「尾部增删」的回归测试）；
+  `cargo clippy --all-targets -D warnings` 与 `cargo check --all-targets` 均 0 警告。
+- **本次特别适合 Windows 实测**：无边框窗口的标题栏拖动 / 双击最大化 / 窗口按钮改由
+  `WindowMoveArea` 接管是 `0.7.8-fix1` 的改动，与本次的弹簧动画一并复验最省事。
+
 
 ### 修复 / Fixed
 
