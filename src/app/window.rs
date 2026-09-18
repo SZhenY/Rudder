@@ -57,6 +57,63 @@ pub(super) fn apply_window_chrome(window: &slint::Window) {
 #[cfg(not(windows))]
 pub(super) fn apply_window_chrome(_window: &slint::Window) {}
 
+/// `auto` 的 GPU 探测：**用子进程真渲染一帧**，成功才算 GPU 可用。
+///
+/// 为什么不指望 Slint 自己的回退：`create_renderer` 只在**渲染器工厂返回 `Err`** 时才走
+/// `try_create_window_with_fallback_renderer`，而 femtovg 是延迟创建 GL 上下文的
+/// （`new_suspended`）—— 工厂在虚拟机里照样成功，真正的失败发生在**首帧**。于是回退链
+/// 根本跑不到，"自动"的表现就是窗口打不开。这里用子进程实测，它无法作弊。
+///
+/// 探测进程用 `--probe-renderer=gpu` 启动，而 `gpu` 这条取值不会再探测，所以不会递归。
+#[cfg(windows)]
+fn gpu_renderer_probe_passes() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let status = std::process::Command::new(exe)
+        .arg("--probe-renderer=gpu")
+        // 探测的是 femtovg 本身，不受外部 SLINT_BACKEND 影响。
+        .env("SLINT_BACKEND", "winit-femtovg")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    matches!(status, Ok(s) if s.success())
+}
+
+/// 渲染探测进程：用指定渲染器起一个**屏幕外**的小窗口，渲染一帧后正常退出。
+///
+/// 退出码即结论：0 = 这个渲染器在这台机器上能用；非 0（含 panic / abort）= 不能用。
+/// 取值：Windows 用 `gpu` / `software`，macOS 用 `femtovg` / `skia`。
+pub(super) fn run_renderer_probe(mode: &str) -> anyhow::Result<()> {
+    use slint::ComponentHandle as _;
+
+    #[cfg(windows)]
+    setup_windows_platform(mode);
+    #[cfg(target_os = "linux")]
+    setup_linux_platform(mode);
+    #[cfg(target_os = "macos")]
+    setup_macos_platform(mode);
+
+    let probe = crate::ui::RendererProbe::new()?;
+    // 屏幕外，但**是可见窗口** —— 隐藏窗口不会触发渲染，而"能不能渲染"正是要测的东西。
+    // 位置在 `run()` 之前就设好，所以第一帧已经画在屏幕外，不会闪。
+    probe
+        .window()
+        .set_position(slint::PhysicalPosition::new(-32_000, -32_000));
+
+    let quit = slint::Timer::default();
+    quit.start(
+        slint::TimerMode::SingleShot,
+        std::time::Duration::from_millis(900),
+        || {
+            let _ = slint::quit_event_loop();
+        },
+    );
+    probe.run()?;
+    Ok(())
+}
+
 #[cfg(windows)]
 pub(super) fn setup_windows_platform(renderer_mode: &str) {
     use i_slint_backend_winit::winit::platform::windows::WindowAttributesExtWindows;
@@ -65,7 +122,22 @@ pub(super) fn setup_windows_platform(renderer_mode: &str) {
     let configured_renderer = match renderer_mode {
         "gpu" => Some("femtovg".to_owned()),
         "software" => Some("software".to_owned()),
-        _ => None,
+        // `auto`：先试 GPU，探测不过就软件渲染。以前这里是 `None`（交给 Slint 的"自动"
+        // = 编译期默认渲染器 = femtovg），虚拟机里因为延迟上下文创建而直接打不开窗口。
+        "auto" => {
+            // 显式 SLINT_BACKEND 优先级最高：那种情况下渲染器已经定了，别再花一次探测。
+            if std::env::var_os("SLINT_BACKEND").is_some() {
+                tracing::info!("auto renderer: SLINT_BACKEND is set, skipping the GPU probe");
+                None
+            } else if gpu_renderer_probe_passes() {
+                tracing::info!("auto renderer: GPU probe succeeded, using femtovg");
+                Some("femtovg".to_owned())
+            } else {
+                tracing::warn!("auto renderer: GPU probe failed, falling back to software");
+                Some("software".to_owned())
+            }
+        }
+        _ => Some("software".to_owned()),
     };
     // Any explicit environment value wins, including plain "winit" (automatic
     // renderer selection). This keeps the existing diagnostic escape hatch.

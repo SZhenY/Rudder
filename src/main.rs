@@ -56,6 +56,15 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // 渲染探测进程：用指定渲染器起一个屏幕外的小窗口、渲染一帧就退出，退出码即结论。
+    // 由 `auto` 渲染模式在 Windows 上启动（见 `src/app/window.rs`）；`gpu` 这条取值不会
+    // 再次探测，所以不存在递归。
+    if let Some(mode) = std::env::args()
+        .find_map(|arg| arg.strip_prefix("--probe-renderer=").map(str::to_owned))
+    {
+        return app::run_renderer_probe(&mode);
+    }
+
     // macOS renderer is left at Slint's default (femtovg) and is NOT forced.
     //
     // History: 0.4.10 force-set SLINT_BACKEND=winit-skia to work around femtovg's

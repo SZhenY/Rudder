@@ -5,7 +5,32 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
-## [0.7.8-fix3] - 2026-09-18
+## [0.7.8-fix4] - 2026-09-18
+
+### 修复 / Fixed
+
+- **"自动"渲染模式现在真的会回退**（Windows）。以前"自动"等于 Slint 的自动选择 = femtovg
+  (OpenGL)，而 Slint 自己的回退只覆盖"渲染器工厂返回 `Err`"这一种情况 —— femtovg 的 GL
+  上下文是**延迟**创建的，虚拟机里工厂照样成功、失败发生在**首帧**，回退链根本跑不到，
+  表现就是**选了"自动"就再也打不开窗口**。现在"自动"在启动时用一个**子进程真渲染一帧**来
+  探测 GPU：通过就用 GPU，不通过（退出码非 0，含 panic / abort）就用软件渲染，并把结论写进
+  日志。**Automatic renderer mode now really falls back**: a child process renders one
+  off-screen frame to probe the GPU before deciding.
+
+### 改进 / Improved
+
+- 设置页重新列出**"自动"**（上一版误把它删掉了）。Windows 的**默认仍是软件渲染**，"自动"
+  作为可选项保留，语义即上面的"探测 + 回退"。**The Automatic entry is back;** the Windows
+  default stays software.
+
+### 内部 / Internal
+
+- 新增 `--probe-renderer=<mode>`：用指定渲染器起一个**屏幕外**的 16×16 窗口，渲染一帧后退出，
+  退出码即结论（`src/app/window.rs::run_renderer_probe`；探测窗口 `RendererProbe` 在
+  `ui/app.slint`）。探测子进程显式指定 `SLINT_BACKEND` 以免受外部环境影响；父进程若有显式
+  `SLINT_BACKEND` 则跳过探测（那时渲染器已定）。
+- 测试 **431 passed**；`cargo clippy -D warnings` 与 `cargo check --all-targets` 均 0 警告。
+
 
 ### 修复 / Fixed
 

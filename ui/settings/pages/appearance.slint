@@ -272,23 +272,19 @@ color: Theme.text-secondary;
                     : "FemtoVG 是默认渲染器；如果 macOS 上文字缺失或显示异常，可以尝试 Skia。")
                 : (root.is-windows
                     ? (root.lang-en
-                        ? "Software is the default and the safest choice in virtual machines. GPU forces OpenGL and may fail to open there."
-                        : "默认软件渲染，也是虚拟机里最稳妥的一档；GPU 走 OpenGL，在虚拟机里可能打不开窗口。")
+                        ? "Software is the default and the safest choice in virtual machines. Automatic probes the GPU at startup and falls back to software when that probe fails."
+                        : "默认软件渲染，也是虚拟机里最稳妥的一档；自动会在启动时先探测 GPU，探测不过就回退到软件渲染。")
                     : (root.lang-en
                         ? "Automatic tries GPU acceleration and lets Slint fall back to software. Software is best for VMs and compatibility."
                         : "自动模式会尝试 GPU 加速，并由 Slint 在初始化失败时回退到软件渲染；虚拟机或兼容性优先时请选择软件。"));
             show-divider: false;
             ComboBox {
                 width: 150px;
-                // Windows 不再提供"自动"：它以前会先试 GPU，虚拟机上直接打不开窗口；
-                // 配置层现在把 auto 也当软件渲染，这一档留着只会误导。
                 model: Theme.is-mac
                     ? ["FemtoVG", "Skia"]
-                    : (root.is-windows
-                        ? (root.lang-en ? ["GPU", "Software"] : ["GPU", "软件"])
-                        : (root.lang-en
-                            ? ["Automatic", "GPU", "Software"]
-                            : ["自动", "GPU", "软件"]));
+                    : (root.lang-en
+                        ? ["Automatic", "GPU", "Software"]
+                        : ["自动", "GPU", "软件"]);
                 current-value: Theme.is-mac
                     ? (root.renderer-mode == "skia" ? "Skia" : "FemtoVG")
                     : (root.renderer-mode == "gpu"

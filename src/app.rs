@@ -418,6 +418,11 @@ impl AppContext {
     }
 }
 
+/// 渲染探测进程的入口（`--probe-renderer=<mode>`）。见 `window::run_renderer_probe`。
+pub fn run_renderer_probe(mode: &str) -> Result<()> {
+    window::run_renderer_probe(mode)
+}
+
 pub fn run() -> Result<()> {
     // Load the renderer preference before creating any Slint window. Reuse the
     // same store for the rest of the app so startup does not read the config

@@ -2336,3 +2336,13 @@ export component AppWindow inherits Window {
         webdav-upload() => { root.webdav-upload(); }
     }
 }
+
+/// 渲染探测用的小窗口（见 `src/app/window.rs::run_renderer_probe`）。
+///
+/// 屏幕外起一个真窗口渲染一帧，用来判断某个渲染器在这台机器上到底能不能初始化 ——
+/// femtovg 的 GL 上下文是**延迟**创建的，只有真渲染才会暴露驱动问题（虚拟机里的典型情况）。
+export component RendererProbe inherits Window {
+    width: 16px;
+    height: 16px;
+    background: #000000;
+}
