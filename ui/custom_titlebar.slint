@@ -54,6 +54,7 @@ export component FramelessTitleBar inherits WindowTitleBar {
     // ── 动作（由调用点转发，实现仍在 Rust / 窗口）──────────────────
     callback close-requested();
     callback win-close();
+    callback win-drag();
     callback win-maximize-toggle();
     callback win-minimize();
 
@@ -61,6 +62,8 @@ export component FramelessTitleBar inherits WindowTitleBar {
         icon-size: 18px;
         show-min-max: true;
         maximized: window-maximized;
+        armed-drag: true;      // 拖过 6px 才交给系统，双击最大化才派发得到
+        drag() => { root.win-drag(); }
         minimize() => { root.win-minimize(); }
         maximize-toggle() => { root.win-maximize-toggle(); }
         close() => { root.win-close(); }

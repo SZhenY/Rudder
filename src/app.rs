@@ -553,6 +553,19 @@ pub fn run() -> Result<()> {
         });
     }
     {
+        // 自绘标题栏拖动：交给窗口系统，并补一次合成的指针释放 —— Linux 的 WM /
+        // 合成器可能吃掉 up 事件，Slint 若一直抓着指针就会卡在移动光标状态。
+        let weak = proc_win.as_weak();
+        proc_win.on_win_drag(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_window();
+                });
+                schedule_slint_pointer_ungrab(weak.clone());
+            }
+        });
+    }
+    {
         // Bottom-right resize grip.
         use i_slint_backend_winit::winit::window::ResizeDirection;
         let weak = proc_win.as_weak();
@@ -604,6 +617,19 @@ pub fn run() -> Result<()> {
         sys_win.on_request_close(move || {
             if let Some(w) = weak.upgrade() {
                 let _ = w.hide();
+            }
+        });
+    }
+    {
+        // 自绘标题栏拖动：交给窗口系统，并补一次合成的指针释放 —— Linux 的 WM /
+        // 合成器可能吃掉 up 事件，Slint 若一直抓着指针就会卡在移动光标状态。
+        let weak = sys_win.as_weak();
+        sys_win.on_win_drag(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_window();
+                });
+                schedule_slint_pointer_ungrab(weak.clone());
             }
         });
     }

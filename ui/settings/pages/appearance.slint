@@ -25,7 +25,6 @@ export component AppearancePage inherits VerticalLayout {
     in property <string> custom-wallpaper-name;
     in-out property <bool> hide-special-partitions;
     in property <bool> lang-en;
-    in property <bool> is-windows;
     in-out property <string> mount-filter;
     in-out property <string> renderer-mode;
     in-out property <int> ui-font-index;
@@ -268,15 +267,11 @@ color: Theme.text-secondary;
             label: root.lang-en ? "Renderer" : "渲染器";
             desc: Theme.is-mac
                 ? (root.lang-en
-                    ? "FemtoVG is the default. Try Skia when text is missing or rendered incorrectly on macOS."
-                    : "FemtoVG 是默认渲染器；如果 macOS 上文字缺失或显示异常，可以尝试 Skia。")
-                : (root.is-windows
-                    ? (root.lang-en
-                        ? "Software is the default and the safest choice in virtual machines. Automatic probes the GPU once at startup and stores the result here — later launches use it directly."
-                        : "默认软件渲染，也是虚拟机里最稳妥的一档；自动会在下次启动时探测一次 GPU，并把结论写进这里（有 GPU 记 GPU，没有记软件），之后不再探测。")
-                    : (root.lang-en
-                        ? "Automatic tries GPU acceleration and lets Slint fall back to software. Software is best for VMs and compatibility."
-                        : "自动模式会尝试 GPU 加速，并由 Slint 在初始化失败时回退到软件渲染；虚拟机或兼容性优先时请选择软件。"));
+                    ? "FemtoVG is the default; try Skia if text looks wrong."
+                    : "默认 FemtoVG；文字显示异常时可改用 Skia。")
+                : (root.lang-en
+                    ? "Software rendering is the default. Automatic uses the GPU when one is available."
+                    : "默认使用软件渲染；自动模式在有 GPU 的情况下会使用 GPU。");
             show-divider: false;
             ComboBox {
                 width: 150px;

@@ -216,6 +216,7 @@ export component SystemInfoWindow inherits Window {
     in property <[SysInfoRow]> network-rows;
     in property <[SysInfoRow]> filesystem-rows;
 
+    callback win-drag();          // start an OS window-move
     callback request-close();
     callback win-resize-se();
 
@@ -242,6 +243,7 @@ export component SystemInfoWindow inherits Window {
             bg: Theme.bg-elevated;
             icon-size: 16px;
             close() => { root.request-close(); }
+            drag() => { root.win-drag(); }
         }
 
         // macOS 的窗口是「全尺寸内容视图 + 透明标题栏」（src/app/window.rs 的

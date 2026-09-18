@@ -504,35 +504,27 @@ mod auto_renderer_tests {
 
 #[cfg(test)]
 mod titlebar_drag_tests {
-    /// 拖动区是否声明在双击区**之后**。抽成纯函数，好用合成输入自证它不是空断言。
+    /// 标题栏拖动必须**先上膛、拖过阈值才交给系统**（`armed-drag` + 6px）。
     ///
-    /// 为什么要看顺序：Slint 里后声明的兄弟在更上层，命中测试也先到它；`WindowMoveArea`
-    /// 的过滤器会把按下 `ForwardAndInterceptGrab` **转发**给下层（所以双击仍然生效），
-    /// 但被盖住时它根本收不到按下 —— 表现就是"双击最大化正常、拖动完全没反应"
-    /// （0.7.8-fix1 / fix2 在 Windows 与 Linux 上的现象）。编译期看不出这种顺序错误。
-    fn drag_area_is_after_double_click(src: &str) -> bool {
-        let move_line = src.lines().position(|l| l.contains("WindowMoveArea {"));
-        let click_line = src
-            .lines()
-            .position(|l| l.contains("show-min-max : TouchArea {"));
-        matches!((move_line, click_line), (Some(m), Some(t)) if t < m)
-    }
-
+    /// 为什么盯着这条：按下即 drag 会让系统接管指针，第一次点击的 up 不再派发，
+    /// `double-clicked` 永远派发不到 —— 双击最大化就没了。反过来让双击区压在上面，
+    /// 拖动区又收不到按下（fix1/fix2 丢拖动，fix3/fix4 丢双击，两种顺序各丢一个功能）。
+    /// Slint 1.18 的 `WindowMoveArea` 走的是"抓走指针"那条路，所以这里用它替代不了。
     #[test]
-    fn window_move_area_is_declared_after_the_double_click_area() {
+    fn titlebar_drag_is_armed_before_handing_over_to_the_system() {
         let src = include_str!("../../ui/components/window_shell.slint");
         assert!(
-            drag_area_is_after_double_click(src),
-            "WindowMoveArea 必须在双击 TouchArea 之后声明，否则被它盖住、拖动失效"
+            src.contains("armed-drag"),
+            "标题栏拖动必须保留 armed-drag（否则双击最大化失效）"
         );
-    }
-
-    /// 反向自证：顺序换回去时判据必须为假，否则上面的断言等于没写。
-    #[test]
-    fn the_order_check_rejects_the_buggy_order() {
-        let buggy = "\n    WindowMoveArea { }\n    if root.show-min-max : TouchArea { }\n";
-        assert!(!drag_area_is_after_double_click(buggy));
-        let fixed = "\n    if root.show-min-max : TouchArea { }\n    WindowMoveArea { }\n";
-        assert!(drag_area_is_after_double_click(fixed));
+        assert!(
+            src.contains("> 6px"),
+            "拖动必须在位移超过 6px 后才交给系统（阈值被删就意味着按下即拖）"
+        );
+        // 注释里会提到 `WindowMoveArea`（解释为什么不用它），所以只认**元素声明**。
+        assert!(
+            !src.contains("WindowMoveArea {"),
+            "WindowMoveArea 会抓走指针、顶掉双击最大化，别在标题栏里用它"
+        );
     }
 }

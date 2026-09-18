@@ -5,7 +5,32 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
-## [0.7.8-fix4] - 2026-09-18
+## [0.7.8-fix5] - 2026-09-18
+
+### 修复 / Fixed
+
+- **修复：双击标题栏最大化又回来了，拖动同时保留。** 上一版把 `WindowMoveArea` 摆到双击区
+  **上面**才修好拖动，但它会把指针**抓走**（ForwardAndInterceptGrab），双击的第二下到不了
+  双击区 —— 拖动好了、双击没了。两种先后顺序各丢一个功能，说明 `WindowMoveArea` 在这套
+  自绘标题栏上替代不了手写实现。现在恢复原来那套"上膛 + 6px 阈值"的 TouchArea：按住不动仍
+  满足 `double-clicked`，拖过 6px 才交给系统移动（并照旧补一次合成的指针释放给 Linux 的
+  WM / 合成器）。**Fixed: double-click to maximize works again while dragging is kept** —
+  `WindowMoveArea` takes the pointer grab, so the second click never reached the double-click
+  area.
+
+### 改进 / Improved
+
+- **渲染档位的说明压成一句**：*默认使用软件渲染；自动模式在有 GPU 的情况下会使用 GPU。*
+  （英文同义一句。）不再罗列虚拟机与回退细节。**The rendering hint is now a single sentence.**
+
+### 内部 / Internal
+
+- 恢复 `WindowTitleBar` 的 `armed-drag` / `drag()`，以及三个窗口（主窗口 / 进程 / 系统信息）
+  的 `win-drag` 接线；`WindowMoveArea` 从标题栏移除。
+- 守卫测试改为盯住真正的不变量：标题栏必须保留 `armed-drag` 与 `> 6px` 阈值，且不得再出现
+  `WindowMoveArea {`（这条教训是四次发版换来的：fix1/fix2 丢拖动，fix3/fix4 丢双击）。
+- 测试 **431 passed**；`cargo clippy -D warnings` 与 `cargo check --all-targets` 均 0 警告。
+
 
 ### 修复 / Fixed
 

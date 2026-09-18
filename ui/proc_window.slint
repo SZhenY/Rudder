@@ -110,6 +110,7 @@ export component ProcWindow inherits Window {
     callback request-close();
     callback win-resize-se();     // start an OS resize from the bottom-right grip
     callback copy-pid(string);
+    callback win-drag();          // start an OS window-move
     callback terminate-process(string /* tab id */, string /* pid */, string /* root password, empty for own process */);
 
     // Create the confirmation dialog only after the context-menu click event
@@ -158,6 +159,7 @@ export component ProcWindow inherits Window {
             bg: Theme.bg-elevated;
             icon-size: 16px;
             close() => { root.request-close(); }
+            drag() => { root.win-drag(); }
         }
 
         // macOS 的窗口是「全尺寸内容视图 + 透明标题栏」（见 src/app/window.rs 的

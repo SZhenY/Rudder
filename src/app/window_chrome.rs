@@ -64,6 +64,19 @@ pub(crate) fn wire_window_chrome(
         });
     }
     {
+        // 自绘标题栏拖动：交给窗口系统，并补一次合成的指针释放 —— Linux 的 WM /
+        // 合成器可能吃掉 up 事件，Slint 若一直抓着指针就会卡在移动光标状态。
+        let weak = window.as_weak();
+        window.on_win_drag(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_window();
+                });
+                schedule_slint_pointer_ungrab(weak.clone());
+            }
+        });
+    }
+    {
         use i_slint_backend_winit::winit::window::ResizeDirection;
         let weak = window.as_weak();
         window.on_win_resize(move |dir: i32| {
