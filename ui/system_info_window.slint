@@ -217,7 +217,6 @@ export component SystemInfoWindow inherits Window {
     in property <[SysInfoRow]> filesystem-rows;
 
     callback request-close();
-    callback win-drag();
     callback win-resize-se();
 
     min-width: 760px;
@@ -242,7 +241,6 @@ export component SystemInfoWindow inherits Window {
             bar-height: 36px;
             bg: Theme.bg-elevated;
             icon-size: 16px;
-            drag() => { root.win-drag(); }
             close() => { root.request-close(); }
         }
 

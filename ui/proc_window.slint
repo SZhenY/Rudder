@@ -108,7 +108,6 @@ export component ProcWindow inherits Window {
     property <length> menu-y;
 
     callback request-close();
-    callback win-drag();          // start an OS window-move (frameless titlebar)
     callback win-resize-se();     // start an OS resize from the bottom-right grip
     callback copy-pid(string);
     callback terminate-process(string /* tab id */, string /* pid */, string /* root password, empty for own process */);
@@ -158,7 +157,6 @@ export component ProcWindow inherits Window {
             bar-height: 36px;
             bg: Theme.bg-elevated;
             icon-size: 16px;
-            drag() => { root.win-drag(); }
             close() => { root.request-close(); }
         }
 

@@ -64,17 +64,6 @@ pub(crate) fn wire_window_chrome(
         });
     }
     {
-        let weak = window.as_weak();
-        window.on_win_drag(move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_window();
-                });
-                schedule_slint_pointer_ungrab(weak.clone());
-            }
-        });
-    }
-    {
         use i_slint_backend_winit::winit::window::ResizeDirection;
         let weak = window.as_weak();
         window.on_win_resize(move |dir: i32| {

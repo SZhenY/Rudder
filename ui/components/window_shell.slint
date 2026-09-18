@@ -40,12 +40,14 @@ component WinBtn inherits Rectangle {
 
 /// 自绘标题栏：图标 + 标题 + 可拖拽留白 + 窗口控制按钮。
 ///
-/// 参数只保留三处窗口**真实存在**的差异：
+/// 参数只保留两处窗口**真实存在**的差异：
 /// * `bar-height` / `bg` / `icon-size`：主窗口 38 / bg-panel / 18，两个子窗口 36 / bg-elevated / 16；
-/// * `show-min-max`：只有主窗口有最小化与最大化；
-/// * `armed-drag`：主窗口为 true（按下后位移超过 6px 才交给系统移动窗口 —— 否则
-///   `double-clicked` 永远派发不到，双击最大化会失效），两个子窗口为 false（按下即拖）。
-///   这条差异来自 app.slint 原有的注释，不能统一。
+/// * `show-min-max`：只有主窗口有最小化与最大化（也决定是否响应双击最大化）。
+///
+/// 「拖动标题栏移动窗口」由 Slint 1.18 的 `WindowMoveArea` 负责（见下）。原先那套
+/// "按下后位移超过 6px 才交给系统"的手写状态机（`armed-drag`）因此删掉了 ——
+/// 它存在的唯一理由是"按下即 drag 会让系统接管指针，`double-clicked` 永远派发不到"，
+/// 而这恰好就是 `WindowMoveArea` 内置的行为（拖过阈值才开始移动，单击不接管指针）。
 export component WindowTitleBar inherits Rectangle {
     in property <string> title;
     in property <length> bar-height: 38px;
@@ -53,10 +55,7 @@ export component WindowTitleBar inherits Rectangle {
     in property <length> icon-size: 18px;
     in property <bool> show-min-max: false;
     in property <bool> maximized: false;   // 决定最大化按钮的图标（还原 / 最大化）
-    // true = 按下后位移超过 6px 才交给系统移动窗口（保留双击最大化）。
-    in property <bool> armed-drag: false;
 
-    callback drag();
     callback minimize();
     callback maximize-toggle();
     callback close();
@@ -64,41 +63,18 @@ export component WindowTitleBar inherits Rectangle {
     height: root.bar-height;
     background: root.bg;
 
-    tb-drag := TouchArea {
-        // 双击与拖拽共存：down 只"上膛"，位移超过 6px 才交给系统移动窗口 ——
-        // down 立即 drag 会让系统接管指针，第一次 click 的 up 不再派发，
-        // double-clicked 永远无法满足（这条注释从 app.slint 原样搬来）。
-        property <length> press-x: 0px;
-        property <length> press-y: 0px;
-        property <bool> drag-armed: false;
+    // 拖动标题栏移动窗口。窗口系统负责实际移动（winit：Windows / macOS / X11 /
+    // Wayland 都支持；不支持的平台上它是空操作）。不在布局里时默认铺满父元素。
+    WindowMoveArea {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+    }
 
-        pointer-event(e) => {
-            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
-                press-x = self.mouse-x;
-                press-y = self.mouse-y;
-                drag-armed = true;
-                if (!root.armed-drag) {
-                    root.drag();          // 子窗口：按下即拖
-                    drag-armed = false;
-                }
-            } else if (e.kind == PointerEventKind.up) {
-                drag-armed = false;
-            }
-        }
-        moved => {
-            if (root.armed-drag && self.pressed && drag-armed
-                && (abs(self.mouse-x - press-x) > 6px
-                    || abs(self.mouse-y - press-y) > 6px)) {
-                drag-armed = false;
-                root.drag();
-            }
-        }
-        // 只有带最小化/最大化的主窗口才响应双击；子窗口保持原样（不响应）。
-        double-clicked => {
-            if (root.show-min-max) {
-                root.maximize-toggle();
-            }
-        }
+    // 只有带最小化/最大化的主窗口才响应双击；子窗口保持原样（不响应）。
+    if root.show-min-max : TouchArea {
+        double-clicked => { root.maximize-toggle(); }
     }
 
     HorizontalLayout {

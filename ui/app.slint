@@ -214,7 +214,6 @@ export component AppWindow inherits Window {
     callback win-maximize-toggle();
     callback win-close();
     callback reset-page(string);   // settings: restore page defaults
-    callback win-drag();          // start an OS window-move
     callback win-resize(int);     // start an OS resize; arg = direction code
     in-out property <bool> sidebar-collapsed: false; // left panel hidden
     callback set-sidebar-collapsed(bool);       // apply + persist
@@ -875,7 +874,6 @@ export component AppWindow inherits Window {
     if root.custom-titlebar : FramelessTitleBar {
         window-maximized : root.window-maximized;
         win-close() => { root.win-close(); }
-        win-drag() => { root.win-drag(); }
         win-maximize-toggle() => { root.win-maximize-toggle(); }
         win-minimize() => { root.win-minimize(); }
     }

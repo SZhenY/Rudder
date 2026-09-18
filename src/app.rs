@@ -542,18 +542,6 @@ pub fn run() -> Result<()> {
         });
     }
     {
-        // Frameless titlebar drag, via winit on the process window's own handle.
-        let weak = proc_win.as_weak();
-        proc_win.on_win_drag(move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_window();
-                });
-                schedule_slint_pointer_ungrab(weak.clone());
-            }
-        });
-    }
-    {
         // Bottom-right resize grip.
         use i_slint_backend_winit::winit::window::ResizeDirection;
         let weak = proc_win.as_weak();
@@ -605,17 +593,6 @@ pub fn run() -> Result<()> {
         sys_win.on_request_close(move || {
             if let Some(w) = weak.upgrade() {
                 let _ = w.hide();
-            }
-        });
-    }
-    {
-        let weak = sys_win.as_weak();
-        sys_win.on_win_drag(move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_window();
-                });
-                schedule_slint_pointer_ungrab(weak.clone());
             }
         });
     }
