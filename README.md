@@ -109,6 +109,8 @@ open /Applications/rudder.app
 - [x] 平台字体栈：界面自动使用平台默认字体（macOS SF Pro Text → Helvetica Neue + Heiti SC、Windows Segoe UI + DengXian、Linux Ubuntu/Cantarell + Noto Sans CJK），终端默认 JetBrains Mono（含暗淡文本的 ExtraLight 变体）；额外字体可放入字体目录，见[自定义字体](#自定义字体外置字体)
 - [x] Windows on ARM64（zip + MSI 安装包）
 - [x] 平台视觉适配：macOS 更圆润的圆角 / 悬浮细滚动条 / 柔和卡片阴影，统一自绘风格
+- [x] **渲染档位只有「GPU / 软件」两档**：GPU 走 wgpu（macOS Metal / Windows D3D12 / Linux
+  Vulkan），Windows / Linux 首次启动自动探测，没有可用 GPU 时自动落到软件渲染
 
 彩色 emoji 图形来自 [Twemoji](https://github.com/jdecked/twemoji)，按
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 使用；完整署名见
@@ -184,7 +186,8 @@ macOS 另有一个**只读的备用位置**：`Rudder.app/Contents/MacOS/rudder/
 
 | 模块          | 选型                                                              |
 | ------------- | ----------------------------------------------------------------- |
-| UI            | [Slint](https://slint.dev) 1.17（纯 Rust 编译，无 GC）           |
+| UI            | [Slint](https://slint.dev) 1.18（纯 Rust 编译，无 GC）           |
+| 渲染          | **GPU**：FemtoVG on [wgpu](https://wgpu.rs)（macOS Metal / Windows D3D12 / Linux Vulkan）；**软件**：tiny-skia + softbuffer |
 | 终端模拟      | [`alacritty_terminal`](https://crates.io/crates/alacritty_terminal) 0.26（VT/ANSI + 原生 scrollback/reflow） |
 | PTY           | `portable-pty` 0.9（跨平台伪终端）                                |
 | 异步运行时    | [`tokio`](https://tokio.rs) 1.x（rt-multi-thread）                |
@@ -199,6 +202,25 @@ macOS 另有一个**只读的备用位置**：`Rudder.app/Contents/MacOS/rudder/
 | 串口          | `serialport` 4                                                     |
 | 系统字体      | `fontdb` 0.23                                                      |
 | 图像解码      | `image` 0.25（PNG/JPEG/WebP/BMP 壁纸）                             |
+
+### 渲染
+
+设置 → 界面 → 渲染 只有两档，三平台一致：
+
+- **GPU**（macOS 默认）：FemtoVG 走 wgpu，底下的图形接口由 wgpu 选平台原生那个 —— macOS
+  **Metal**、Windows **D3D12**、Linux **Vulkan**。
+- **软件**：CPU 渲染（tiny-skia + softbuffer）。GPU 档在某台机器上有问题时的备用档。
+
+Windows / Linux 的默认是**首次启动探测一次**：枚举适配器看机器上有没有真 GPU（WARP / lavapipe
+这类软件适配器不算），再真渲染一帧验证；结论写进配置文件，之后按配置启动，判定不通过就落到软件渲染。
+
+**逃生口**：万一某台机器上 GPU 档异常（黑屏 / 花屏 / 窗口打不开），用
+
+```bash
+SLINT_BACKEND=winit-software ./rudder
+```
+
+启动，或在设置里把渲染切成「软件」（环境变量优先级高于配置里的 `renderer_mode`）。
 
 ## 运行
 
@@ -316,10 +338,13 @@ rudder/
 不要直接手动修改 `Cargo.toml` 后再打标签。使用发布脚本，让 Git tag 指向的提交本身就已经包含正确版本号：
 
 ```powershell
-.\scripts\release.ps1 v0.6.0 -Push
+.\scripts\release.ps1 v0.7.9 -Push
 ```
 
-脚本会更新 `Cargo.toml` / `Cargo.lock`，运行 `cargo check --locked`，验证 `rudder --version`，提交 `Release v0.6.0`，创建 annotated tag，并推送当前分支和 tag。更多细节见 [docs/release.md](docs/release.md)。
+脚本会更新 `Cargo.toml` / `Cargo.lock`，运行 `cargo check --locked`，验证 `rudder --version`，提交 `Release v0.7.9`，创建 annotated tag。
+没有 PowerShell 的环境照这五步手工做即可（顺序一致）：改两个版本号 → `cargo check --locked` →
+`cargo run --locked -- --version` 应输出 `rudder <版本>` → `git commit -m "Release v<版本>"` +
+`git tag -a v<版本> -m "Release v<版本>"` → 推分支与 tag。，并推送当前分支和 tag。更多细节见 [docs/release.md](docs/release.md)。
 
 ## 开发方式
 

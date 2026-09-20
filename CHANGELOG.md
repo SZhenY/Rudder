@@ -3,7 +3,7 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
-## [Unreleased]
+## [0.7.9] - 2026-09-19
 
 ### 新增 / Added
 
@@ -43,6 +43,11 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 注意 / Notes
 
+- **内存画像**（macOS 实测）：静置 ≈100MB；打开一个会话后 ≈210–235MB —— 差量几乎全在 GPU 侧
+  （交换链纹理、管线对象、字形图集），窗口失焦空闲后系统会回收其中一部分。切「软件」档可让这部分
+  接近 0，代价是滚动与动画的 CPU 占用。
+  **Memory profile** (measured on macOS): ~100MB idle, ~210–235MB with one session open — the
+  difference lives on the GPU side; the software renderer trades it for CPU.
 - **只有 OpenGL、没有 D3D12 / Vulkan 的老 Linux 机器**会落到软件渲染（设置里可直接选）。
 - **逃生口**：GPU 档在某台机器上表现异常时，可用 `SLINT_BACKEND=winit-software ./rudder` 启动，
   或把配置里的 `appearance.renderer_mode` 设为 `"software"`。
