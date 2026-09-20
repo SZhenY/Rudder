@@ -65,7 +65,9 @@ fn main() -> anyhow::Result<()> {
         return app::run_renderer_probe(&mode);
     }
 
-    // macOS renderer is left at Slint's default (femtovg) and is NOT forced.
+    // Renderer 不在这里强制：三平台矩阵是「GPU / 软件」两档，取值与「自动」探测见
+    // src/app/window.rs（macOS 默认 GPU = FemtoVG on wgpu → Metal；Windows / Linux 首次
+    // 启动探测一次后把结论固化进配置）。上面 `--probe-renderer=` 那个分支是唯一的例外。
     //
     // History: 0.4.10 force-set SLINT_BACKEND=winit-skia to work around femtovg's
     // CoreText font lookup failing on macOS 26 / Tahoe (all text vanished, #108).
@@ -74,12 +76,10 @@ fn main() -> anyhow::Result<()> {
     // "PingFang SC" UI font and all text vanished there instead (#129). Icons
     // survived in both cases because Material Icons is an embedded font.
     //
-    // Neither renderer works for every macOS machine, so FemtoVG remains the
-    // known-good default for the majority. Users for whom it fails to render text
-    // (e.g. #108) can select Skia under Settings -> Interface -> Rendering. The
-    // SLINT_BACKEND=winit-skia diagnostic override remains available and takes
-    // precedence over the saved setting. The renderer-skia feature is compiled in
-    // on macOS (see Cargo.toml), so switching does not require a rebuild.
+    // Skia 渲染器后来整体下架（体积与构建成本换不来它带来的收益，且它在 Windows 上有历史
+    // 链接坑 #224），于是「两个渲染器各救一半机器」那个取舍不复存在：GPU 档只有
+    // femtovg-wgpu。某台机器上渲染异常时的逃生口是设置里切「软件」，或
+    // `SLINT_BACKEND=winit-software ./rudder` 启动（环境变量优先于配置里的 renderer_mode）。
 
     init_tracing();
 
