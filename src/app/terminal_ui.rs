@@ -144,6 +144,10 @@ pub(crate) fn apply_terminal_resize(
                 // Alt-screen (tmux/vim/btop): the remote redraws the whole screen
                 // on SIGWINCH, so just resize the grid and let that redraw fill it.
                 crate::terminal::resize_term(&mut buf.term, new_rows, new_cols);
+                // 但列宽变了 ⇒ 两类缓存里按**旧列宽**算出的 col/cells 不能再命中
+                //（非 alt 的 `reflow()` 会做同样两件事，alt 分支以前漏了）。
+                buf.bump_render_gen();
+                buf.drop_scroll_cache();
             } else {
                 // Reflow already-printed output to the new width by replaying the
                 // byte stream — vt100's set_size only truncates/pads (#169).
@@ -177,6 +181,17 @@ pub(crate) fn compute_tab_display(buf: &mut TermBuffer) -> TabDisplay {
     }
 }
 
+/// 就地写模型（复用 `VecModel`、只写变化项）；模型不可复用时新建。返回"内容是否变化"。
+fn write_or_replace<T: Clone + PartialEq + 'static>(slot: &mut ModelRc<T>, next: &[T]) -> bool {
+    match super::resource_ui::try_write_rows_changed(slot, next) {
+        Some(changed) => changed,
+        None => {
+            *slot = ModelRc::from(Rc::new(VecModel::from(next.to_vec())));
+            true
+        }
+    }
+}
+
 pub(crate) fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {
     let Some(display) = with_term_buf(bufs, tab_id, compute_tab_display) else {
         return;
@@ -186,9 +201,6 @@ pub(crate) fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &
         matches,
         selection,
     } = display;
-    let spans = ModelRc::from(Rc::new(VecModel::from(screen.spans)));
-    let fm = ModelRc::from(Rc::new(VecModel::from(matches)));
-    let sm = ModelRc::from(Rc::new(VecModel::from(selection)));
     let (cr, cc, ru, alt) = (
         screen.cursor_row,
         screen.cursor_col,
@@ -197,19 +209,45 @@ pub(crate) fn rebuild_tab_display(win: &AppWindow, bufs: &TermBuffers, tab_id: &
     );
     let (smax, soff) = (screen.scroll_max, screen.scroll_offset);
     let mouse_tracked = screen.mouse_tracked;
+    // 有没有任何东西真的变了 —— 决定最后要不要请求重绘。**这不是小事**：`request_redraw()`
+    // 会让 Slint 重画整个窗口（在 wgpu 档上还要重新申请一批 GPU 资源，我们量到过 ~100MB 的
+    // 前台峰值），而终端在空闲时（只有光标闪烁那类定时器在跑）本来没有内容变化。
+    let changed = Rc::new(std::cell::Cell::new(false));
+    let changed_in = changed.clone();
     set_terminal_row(win, tab_id, move |row| {
-        row.spans = spans.clone();
+        // **增量写**，复用行里已有的 `VecModel`：以前每帧都 `VecModel::from(...)` 再整体替换，
+        // Repeater 会把这一行的每一项都当成新的重建 —— 而一屏是**上千个 span**（逐单元格产出），
+        // 这是终端刷屏时最贵的一笔固定开销。现在的写法只在内容真的变了时才通知 Slint。
+        if write_or_replace(&mut row.spans, &screen.spans) {
+            changed_in.set(true);
+        }
+        if row.cursor_row != cr
+            || row.cursor_col != cc
+            || row.rows_used != ru
+            || row.is_alt_screen != alt
+            || row.mouse_tracked != mouse_tracked
+            || row.scroll_max != smax
+            || row.scroll_offset != soff
+        {
+            changed_in.set(true);
+        }
         row.cursor_row = cr;
         row.cursor_col = cc;
         row.rows_used = ru;
         row.is_alt_screen = alt;
         row.mouse_tracked = mouse_tracked;
-        row.find_matches = fm.clone();
-        row.selection = sm.clone();
+        if write_or_replace(&mut row.find_matches, &matches) {
+            changed_in.set(true);
+        }
+        if write_or_replace(&mut row.selection, &selection) {
+            changed_in.set(true);
+        }
         row.scroll_max = smax;
         row.scroll_offset = soff;
     });
-    win.window().request_redraw();
+    if changed.get() {
+        win.window().request_redraw();
+    }
 }
 
 pub(crate) fn refresh_terminal_selection(win: &AppWindow, bufs: &TermBuffers, tab_id: &str) {

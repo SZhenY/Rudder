@@ -146,10 +146,48 @@ pub(crate) enum MouseReport {
     Sgr,
 }
 
+/// 一个格子的文本内容。
+///
+/// **绝大多数格子是"一个字符"**（含宽字符），只有组合字符 / 零宽序列才需要多存几个 ——
+/// 用枚举把常见情况留在栈上，避免**逐格一次堆分配**：100×30 的屏幕每帧约 3000 次，
+/// 按 30fps 就是 9 万次/秒，而这全落在渲染热路径上（`build_line` 每帧都要重走一遍网格）。
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum CellText {
+    Char(char),
+    /// 组合字符 / 零宽序列（罕见）。
+    Multi(Box<str>),
+}
+
+impl CellText {
+    /// 把内容追加到 `out` —— 热路径上零分配的那种写法。
+    pub(crate) fn push_to(&self, out: &mut String) {
+        match self {
+            Self::Char(c) => out.push(*c),
+            Self::Multi(s) => out.push_str(s),
+        }
+    }
+
+    pub(crate) fn is_tab(&self) -> bool {
+        matches!(self, Self::Char('\t'))
+    }
+}
+
+impl PartialEq<&str> for CellText {
+    fn eq(&self, other: &&str) -> bool {
+        match self {
+            Self::Char(c) => {
+                let mut buf = [0u8; 4];
+                c.encode_utf8(&mut buf) == *other
+            }
+            Self::Multi(s) => &**s == *other,
+        }
+    }
+}
+
 /// Attributes of one grid cell, extracted from alacritty's `Cell`.
 #[derive(Clone, Debug)]
 pub(crate) struct CellAttr {
-    pub(crate) contents: String,
+    pub(crate) contents: CellText,
     pub(crate) fg: TermColor,
     pub(crate) bg: TermColor,
     pub(crate) bold: bool,
@@ -165,11 +203,15 @@ pub(crate) struct CellAttr {
 /// Shared extraction used by both live rows (u16 coords) and
 /// `build_line` (scrollback rows, possibly negative `Line`).
 pub(crate) fn attr_from_cell(cell: &alacritty_terminal::term::cell::Cell) -> CellAttr {
-    let mut contents = cell.c.to_string();
+    // 单字符留在栈上（零分配）；只有组合字符 / 零宽序列才落一次堆。
+    let mut contents = CellText::Char(cell.c);
     if let Some(zw) = cell.zerowidth() {
+        let mut buf = String::with_capacity(4 + zw.len() * 4);
+        buf.push(cell.c);
         for ch in zw {
-            contents.push(*ch);
+            buf.push(*ch);
         }
+        contents = CellText::Multi(buf.into_boxed_str());
     }
 
     let flags = cell.flags;
@@ -274,7 +316,7 @@ pub(crate) fn grid_to_lines(term: &ATerm) -> Vec<String> {
                 column: Column(c as usize),
             };
             let attr = attr_from_cell(&term.grid()[point]);
-            s.push_str(&attr.contents);
+            attr.contents.push_to(&mut s);
             c += 1;
         }
         // Trim only trailing empty / space-fill cells (after the last

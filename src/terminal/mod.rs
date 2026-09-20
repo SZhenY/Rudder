@@ -44,7 +44,7 @@ pub(crate) use input::{
 pub(crate) use encoding::TerminalEncoding;
 pub(crate) use json_output::format_json_output;
 pub(crate) use output_highlight::{compile_output_rules, highlight_color_index};
-pub(crate) use presentation::{highlight_plain_output, render_term_span};
+pub(crate) use presentation::{highlight_plain_output, merge_runs, render_term_span};
 #[cfg(test)]
 pub(crate) use presentation::{log_level_marker, text_cell_width};
 pub(crate) use render::{RAW_CAP, build_line, build_row, cell_prefix, refresh_overlines};

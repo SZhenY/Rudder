@@ -405,6 +405,46 @@ fn vt_apply_attr_alpha(color: slint::Color, dim: bool, hidden: bool) -> slint::C
     }
 }
 
+/// 把相邻、样式完全相同、且"中文归属"一致的 run 合并成一条。
+///
+/// **为什么要合并**：`render_term_span` 是按 run 逐条产出 `TermSpan` 的，而每个 `TermSpan`
+/// 在 UI 侧就是「一个 `Rectangle` + 一个 `Text`」—— 终端现在**逐单元格**产出 run
+/// （`render.rs::make_span`），一屏因此上千个绘制项。同一句话里绝大多数相邻格子长得一模一样，
+/// 合并后只剩一条，项数降一到两个数量级。
+///
+/// **两条不能跨的边界**：
+/// * **中文 / 非中文**：`render_term_span` 用 `contains_cjk(整条文本)` 决定用哪套字体，混在一起
+///   会让整条（含 ASCII 部分）改用 CJK 字体 —— 等宽格子的对齐全靠它（#54）；
+/// * **样式**：颜色、粗体、暗显、斜体、下划线、删除线、上/下划线、反显、隐藏必须全等。
+///   overline 区间在上游已按边界切好，同值合并不会越界。
+pub(crate) fn merge_runs(runs: &[HistSpan]) -> Vec<HistSpan> {
+    let mut out: Vec<HistSpan> = Vec::with_capacity(runs.len());
+    for span in runs {
+        let mergeable = out.last().is_some_and(|prev: &HistSpan| {
+            prev.col + prev.cells == span.col
+                && contains_cjk(&prev.text) == contains_cjk(&span.text)
+                && prev.fg == span.fg
+                && prev.bg == span.bg
+                && prev.bold == span.bold
+                && prev.dim == span.dim
+                && prev.italic == span.italic
+                && prev.underline == span.underline
+                && prev.strike == span.strike
+                && prev.overline == span.overline
+                && prev.hidden == span.hidden
+                && prev.inverse == span.inverse
+        });
+        if mergeable {
+            let prev = out.last_mut().expect("just checked");
+            prev.text.push_str(&span.text);
+            prev.cells += span.cells;
+        } else {
+            out.push(span.clone());
+        }
+    }
+    out
+}
+
 /// Split a styled terminal run only at complete Unicode grapheme boundaries.
 /// Ordinary graphemes remain grouped into large Text spans; emoji with a
 /// Twemoji asset become image spans so color survives Slint's monochrome font
@@ -634,6 +674,44 @@ mod color_emoji_tests {
 
         let g232 = vt_bg_to_slint(TermColor::Idx(232), true); // (8,8,8)
         assert_eq!((g232.red(), g232.green(), g232.blue()), (8, 8, 8));
+    }
+
+    /// P1：相邻、样式相同、且中文归属一致的 run 合并成一条 —— UI 侧的绘制项数因此降一到两个
+    /// 数量级（终端是**逐单元格**产出 run 的，`render.rs::make_span`）。
+    #[test]
+    fn merge_runs_joins_adjacent_identical_cells_into_one_run() {
+        let cells: Vec<HistSpan> = (0..40)
+            .map(|i| {
+                let mut hs = run("x", 1);
+                hs.col = i;
+                hs
+            })
+            .collect();
+        let merged = merge_runs(&cells);
+        assert_eq!(merged.len(), 1, "同一行同一样式的 40 个格子应合并成 1 条");
+        assert_eq!(merged[0].text.len(), 40);
+        assert_eq!(merged[0].col, 0);
+        assert_eq!(merged[0].cells, 40);
+    }
+
+    /// 合并的三条边界：样式不同、中文/非中文不同、位置不连续 —— 都不能跨。
+    #[test]
+    fn merge_runs_stops_at_style_cjk_and_position_boundaries() {
+        let mut a = run("a", 1);
+        a.col = 0;
+
+        let mut bold = run("b", 1);
+        bold.col = 1;
+        bold.bold = true;
+        assert_eq!(merge_runs(&[a.clone(), bold]).len(), 2, "样式不同不合并");
+
+        let mut cjk = run("中", 2);
+        cjk.col = 1;
+        assert_eq!(merge_runs(&[a.clone(), cjk]).len(), 2, "中文与非中文不合并（会选错字体）");
+
+        let mut far = run("z", 1);
+        far.col = 5;
+        assert_eq!(merge_runs(&[a, far]).len(), 2, "位置不连续（中间是默认样式空白）不合并");
     }
 
     #[test]

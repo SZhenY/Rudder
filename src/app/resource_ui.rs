@@ -25,22 +25,44 @@ pub(super) fn normalized_model(buf: &[f32]) -> ModelRc<f32> {
 /// 注意：行数**从尾部**增减，中间插队（排序/过滤变化）会退化成逐行更新 —— 结果是
 /// 正确的，只是没有增量收益。用 `set_row_data` 而非重建，也顺带避免了整块重绘。
 pub(super) fn apply_rows<T: Clone + PartialEq + 'static>(vm: &VecModel<T>, next: Vec<T>) {
+    apply_rows_slice(vm, &next);
+}
+
+/// `apply_rows` 的借用版：调用方只有 `&[T]` 时用（拿所有权会让每个调用点都得 clone 一遍）。
+/// 返回"是否真的写了东西"—— 内容完全没变时一次通知都不发。
+pub(super) fn apply_rows_slice<T: Clone + PartialEq + 'static>(vm: &VecModel<T>, next: &[T]) -> bool {
     let old_len = vm.row_count();
     let new_len = next.len();
+    let mut changed = old_len != new_len;
 
-    let mut incoming = next.into_iter();
-    for i in 0..old_len.min(new_len) {
-        let Some(row) = incoming.next() else { break };
-        if vm.row_data(i).as_ref() != Some(&row) {
-            vm.set_row_data(i, row);
+    for (i, item) in next.iter().enumerate().take(old_len.min(new_len)) {
+        if vm.row_data(i).as_ref() != Some(item) {
+            vm.set_row_data(i, item.clone());
+            changed = true;
         }
     }
-    for row in incoming {
-        vm.push(row);
+    for item in &next[old_len.min(new_len)..] {
+        vm.push(item.clone());
     }
     for i in (new_len..old_len).rev() {
         vm.remove(i);
     }
+    changed
+}
+
+/// 把 `next` **增量写进 model 背后那个 `VecModel`** —— Repeater 因此复用已有的项，而不是把
+/// 每一项都当成新的重建（每帧 `VecModel::from(...)` + 整体替换就是这个代价）。
+///
+/// 返回 `false` 表示这个 model 不是 `VecModel`（首次调用，或被别人换过）：调用方应新建一个。
+/// 把 `next` 增量写进 `model` 背后那个 `VecModel`，并报出**内容是否变化**
+/// （`None` = 模型不可复用，调用方应新建；`Some(false)` = 内容完全没变）。
+/// 调用方据此决定要不要 `request_redraw()` —— 一次重绘会让 Slint 重画整个窗口。
+pub(super) fn try_write_rows_changed<T: Clone + PartialEq + 'static>(
+    model: &ModelRc<T>,
+    next: &[T],
+) -> Option<bool> {
+    let vm = model.as_any().downcast_ref::<VecModel<T>>()?;
+    Some(apply_rows_slice(vm, next))
 }
 
 pub(super) fn disk_rows(
@@ -356,6 +378,42 @@ mod tests {
 
     fn pairs(xs: &[(&str, &str)]) -> Vec<(String, String)> {
         xs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    /// 关键契约：**就地更新同一个 `VecModel` 实例**（Repeater 只在实例不变时复用已有的项），
+    /// 并如实报出"内容是否变化"（调用方据此跳过一次整个窗口的重绘）。
+    #[test]
+    fn try_write_rows_changed_updates_in_place_and_reports_changes() {
+        let vm = Rc::new(VecModel::from(vec!["a".to_string()]));
+        let model = ModelRc::from(vm.clone());
+
+        assert_eq!(
+            try_write_rows_changed(&model, &["a".to_string(), "b".to_string()]),
+            Some(true),
+            "长度变了 → 有变化"
+        );
+        assert_eq!(vm.row_count(), 2, "长度变了要 push");
+        assert_eq!(vm.row_data(1).unwrap(), "b");
+
+        assert_eq!(
+            try_write_rows_changed(&model, &["a".to_string(), "b".to_string()]),
+            Some(false),
+            "内容一模一样 → 一次通知都不发"
+        );
+
+        assert_eq!(
+            try_write_rows_changed(&model, &["b".to_string()]),
+            Some(true),
+            "变短了 → 有变化"
+        );
+        assert_eq!(vm.row_count(), 1, "变短了要 remove");
+        assert_eq!(vm.row_data(0).unwrap(), "b");
+
+        // 同一个实例 —— 这就是"Repeater 不重建"的依据。
+        assert!(std::ptr::eq(
+            vm.as_ref(),
+            model.as_any().downcast_ref::<VecModel<String>>().unwrap()
+        ));
     }
 
     // ---------- apply_rows：模型增量写入 ----------

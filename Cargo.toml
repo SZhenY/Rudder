@@ -21,7 +21,32 @@ rust-version = "1.96"
 # 锁文件里的 0.2.0 —— 于是生成的 app.rs 里 137 处调用全部 "cannot find
 # function 'compose_field_offsets' in module 'sp'"（2026-09-18 实测，
 # 升 1.18.0 时踩到；单跑这一条 update 即解决）。
-slint = { version = "1.18", features = ["compat-1-2", "unstable-fontique-011"] }
+# ⚠️ 实验支线（exp/renderer-wgpu-vulkan）：渲染器矩阵按平台分化，见下方 target 段。
+#   `renderer-femtovg-wgpu` 三平台都编：FemtoVG 走 wgpu（Windows=D3D12 / Linux=Vulkan /
+#   macOS=Metal）。注意它会让 Slint 自己的自动回退链**不再包含 OpenGL 版 FemtoVG** ——
+#   我们不用它那条链（"自动"是启动时子进程探测，见 src/app/window.rs）。
+#
+# ⚠️ 这里**刻意**关掉 Slint 的默认特性：默认集里的 `renderer-femtovg` 就是 OpenGL 版
+#   FemtoVG，而本分支已决定不再使用 OpenGL（GPU 路径一律走 wgpu，见 target 段）。
+#   下面这份清单 = Slint 1.18 的默认集**减掉** `renderer-femtovg`，逐项照抄以便将来
+#   对齐上游默认值；`backend-default` 仍然带 winit（x11 + wayland）。
+#
+# unstable-wgpu-30：`slint::wgpu_30`（wgpu 30 的类型再导出）只在这个 feature 下存在。
+#   "自动"档的探测要用它枚举适配器，判断机器上有没有**真的** GPU（见 src/app/window.rs）。
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "backend-default",
+    "renderer-software",
+    "accessibility",
+    "compat-1-2",
+    "system-tray",
+    "unstable-fontique-011",
+    "renderer-femtovg-wgpu",
+    "unstable-wgpu-30",
+] }
+# 探测进程里把 wgpu 的异步 future（`enumerate_adapters`）跑完用。它本来就在依赖树里
+# （wgpu 自己用的），所以加上它不增加编译量。
+pollster = "0.4"
 # ICU4X (pulled in by Slint's text layout) spams stderr with raw `eprintln!`
 # ("ICU4X data error: No segmentation model for language: ja") because its
 # `log` shim falls back to eprintln when the `logging` feature is off. Turning
@@ -37,6 +62,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
 glob = "0.3"
+# 快速字节搜索：ingest 用 memchr 先判断"这块里有没有 ESC"，好让没有转义的普通输出
+# （终端流量的绝大多数）跳过留存、反向扫描与逐字节状态机。本就在依赖树里。
+memchr = "2"
+# 字体文件用 mmap 注册（而不是读进堆）：用户字体目录里是 20MB 级的 CJK 字体，几个就近
+# 100MB —— 读进堆会整份常驻。memmap2 本来就在依赖树里（零编译代价）。
+memmap2 = "0.9"
 anyhow = "1"
 directories = "5"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
@@ -132,13 +163,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Feature is additive over the base `arboard = "3"` dependency above.
 arboard = { version = "3", features = ["wayland-data-control"] }
 
-# Compile the Skia renderer in *only* on macOS (feature is additive over the base
-# slint dependency) so users can opt into it at launch with SLINT_BACKEND=winit-skia.
-# The default stays femtovg 鈥?see the renderer history note in main.rs (#108/#129).
-# Windows/Linux never compile Skia; on Windows it conflicts with another ICU
-# import library at link time when using the MSVC toolchain (#224).
-[target.'cfg(target_os = "macos")'.dependencies]
-slint = { version = "1.18", features = ["renderer-skia"] }
+# 渲染器矩阵（实验）：三平台**只用两套渲染器** —— 软件渲染（slint 默认）+ femtovg-wgpu
+# （主依赖里）。Skia 已整体下架：它在 Windows 上有历史链接坑（与 ICU 导入库在 MSVC 链接期
+# 冲突，#224），而体积与构建成本换不来这个项目需要的收益（终端场景以文字为主，实测它与
+# femtovg 的内存占用相当）。界面上因此只剩"GPU / 软件"两档。
 
 [build-dependencies]
 slint-build = "1.18"

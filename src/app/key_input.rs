@@ -25,6 +25,7 @@ use crate::app::pane_layout::zoom_term_font;
 use crate::app::session_runtime::start_session_in_tab;
 use crate::app::{AppContext, INTERACTIVE_ECHO_WINDOW, clipboard_set_text, convert_eol, set_terminal_row, term_buf, with_term_buf};
 use crate::app::terminal_ui::{apply_terminal_resize, compute_find_matches, history_model, history_view_model, rebuild_tab_display, refresh_terminal_selection};
+use super::render_tickets::request_tab_render_from_ui;
 
 /// Parse a runtime tunnel forward from the SSH dialog fields (#206).
 /// Returns `None` for unknown kinds or unparseable ports — the caller then
@@ -77,6 +78,9 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
     };
     let handles = app.handles.clone();
     let bufs = app.bufs.clone();
+    // 滚动回调要走渲染闸门（节流 + 合并）；两个回调各持一份。
+    let gates_scroll = app.render_gates.clone();
+    let gates_scroll2 = app.render_gates.clone();
     let store = app.store.clone();
     let last_term_size = app.last_term_size.clone();
     // Runtime SSH tunnel panel (#206). These tunnels live only for the active
@@ -1083,9 +1087,9 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 let cur = buf.view_offset as i64;
                 buf.view_offset = (cur + delta as i64).clamp(0, max_off) as usize;
             });
-            if let Some(win) = weak.upgrade() {
-                rebuild_tab_display(&win, &bufs_scroll, &tid);
-            }
+            // 走渲染闸门：以前每来一个滚轮 / 滚动条事件就**整屏重建**（惯性滚动每秒几十次，
+            // 既没有节流也没有合并）。闸门会把它们并成一帧，延迟仍在一帧以内。
+            request_tab_render_from_ui(weak.clone(), &tid, &bufs_scroll, &gates_scroll);
         });
     }
 
@@ -1187,9 +1191,9 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     .saturating_sub(buf.term.screen_lines()) as i64;
                 buf.view_offset = (offset as i64).clamp(0, max_off) as usize;
             });
-            if let Some(win) = weak.upgrade() {
-                rebuild_tab_display(&win, &bufs_scroll, &tid);
-            }
+            // 走渲染闸门：以前每来一个滚轮 / 滚动条事件就**整屏重建**（惯性滚动每秒几十次，
+            // 既没有节流也没有合并）。闸门会把它们并成一帧，延迟仍在一帧以内。
+            request_tab_render_from_ui(weak.clone(), &tid, &bufs_scroll, &gates_scroll2);
         });
     }
 

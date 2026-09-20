@@ -1,7 +1,7 @@
 use crate::terminal::{
     BuiltScreen, CsiState, HistSpan, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
     ScrollLine, TermBuffer, build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
-    process_bytes, refresh_overlines, render_term_span, resize_term, term_size,
+    merge_runs, process_bytes, refresh_overlines, render_term_span, resize_term, term_size,
 };
 use crate::ui::TermMatch;
 use crate::ui::TermSpan;
@@ -153,7 +153,7 @@ impl TermBuffer {
             .rev()
             .map(|i| build_line(&self.term, GridLine(-(i as i32 + 1)), cols, &[]).0)
             .chain((0..rows).map(|r| build_row(&self.term, r as u16, cols, &[]).0))
-            .position(|line| line.to_lowercase().contains(&q));
+            .position(|line| Self::contains_ci(&q, &line));
 
         let Some(match_idx) = find_idx else {
             return false;
@@ -165,6 +165,21 @@ impl TermBuffer {
         }
         self.view_offset = new_offset;
         true
+    }
+
+    /// 大小写不敏感的子串查找。
+    ///
+    /// 纯 ASCII 时**完全不分配** —— `to_lowercase()` 在 50 万行的会话上就是 50 万次堆分配，
+    /// 而查找导航本身已经够贵了。
+    fn contains_ci(needle_lower: &str, haystack: &str) -> bool {
+        if needle_lower.is_empty() {
+            return true;
+        }
+        if haystack.is_ascii() && needle_lower.is_ascii() {
+            let (h, n) = (haystack.as_bytes(), needle_lower.as_bytes());
+            return h.len() >= n.len() && h.windows(n.len()).any(|w| w.eq_ignore_ascii_case(n));
+        }
+        haystack.to_lowercase().contains(needle_lower)
     }
 
     /// Jump to the next (`forward`) or previous match of `query` measured
@@ -189,39 +204,31 @@ impl TermBuffer {
         // combined index i: i < hist_len → scrollback (oldest first);
         // i >= hist_len → live rows.
         let line_contains = |term: &crate::terminal::ATerm, i: usize| -> bool {
-            if i < hist_len {
-                build_line(
-                    term,
-                    GridLine(i as i32 - hist_len as i32),
-                    cols,
-                    &[],
-                )
-                .0
+            let line = if i < hist_len {
+                build_line(term, GridLine(i as i32 - hist_len as i32), cols, &[]).0
             } else {
                 build_row(term, (i - hist_len) as u16, cols, &[]).0
-            }
-            .to_lowercase()
-            .contains(&q)
+            };
+            Self::contains_ci(&q, &line)
         };
-        let mut hits: Vec<usize> = (0..combined_len)
-            .filter(|&i| line_contains(&self.term, i))
-            .collect();
-        if hits.is_empty() {
-            return false;
-        }
+        // **朝搜索方向扫，命中即停**：以前是"把全部命中收集完再挑"，20 万~50 万行时那是一次
+        // O(总行数 × 列数) 的卡顿。语义与旧实现等价（含 wrap 分支：前向回绕到最旧、后向回绕到最新）。
         let cur_top = hist_len.saturating_sub(self.view_offset);
+        let last = combined_len - 1;
+        let cur_top = cur_top.min(last);
         let target = if forward {
-            match hits.iter().position(|&i| i > cur_top) {
-                Some(p) => hits[p],
-                None => hits[0], // wrap to the first
-            }
+            (cur_top + 1..combined_len)
+                .find(|&i| line_contains(&self.term, i))
+                .or_else(|| (0..=cur_top).find(|&i| line_contains(&self.term, i)))
         } else {
-            match hits.iter().rposition(|&i| i < cur_top) {
-                Some(p) => hits[p],
-                None => hits[hits.len() - 1], // wrap to the last
-            }
+            (0..cur_top)
+                .rev()
+                .find(|&i| line_contains(&self.term, i))
+                .or_else(|| (cur_top..combined_len).rev().find(|&i| line_contains(&self.term, i)))
         };
-        hits.clear();
+        let Some(target) = target else {
+            return false;
+        };
         let clamped = target.min(combined_len.saturating_sub(rows));
         let new_offset = combined_len.saturating_sub(rows + clamped);
         if self.view_offset == new_offset {
@@ -256,21 +263,24 @@ impl TermBuffer {
         let replies = self.detect_terminal_queries(input);
         // vte treats HVP (`ESC [ … f`) identically to CUP (`ESC [ … H`), so no
         // rewrite is needed — pass the stream through as-is.
-        let bytes = input.to_vec();
-        // Retain the (post-rewrite) stream, capped, so a resize can replay it at
-        // the new width and reflow already-printed output (#169).
-        self.raw.extend(bytes.iter().copied());
+        // 没有 ESC 的块占终端流量的绝大多数（普通日志、`seq` 输出…）：它既不可能含
+        // `CSI 3 J`，也不可能续上上一块的半截序列 —— 所以"留存进 raw + 反向扫描"整段可以跳过。
+        // （`raw` 只在检测 `CSI 3 J` 时被读；`!self.raw.is_empty()` 覆盖"上一块留了半截"的情况。）
+        let has_esc = memchr::memchr(b'\x1b', input).is_some();
+        if has_esc || !self.raw.is_empty() {
+            // Retain the stream, capped, so a split `CSI 3 J` is still caught (#319).
+            self.raw.extend(input.iter().copied());
         // CSI 3 J means "erase saved lines". The vt100 crate clears its own
         // scrollback, but Rudder maintains a separate rendered history and a
         // raw replay stream for resize reflow. Drop both sides of that history,
         // including when the CSI sequence was split across SSH reads (#319).
-        let erase_saved_through = {
-            let raw = self.raw.make_contiguous();
-            raw.windows(4)
-                .rposition(|window| window == b"\x1b[3J")
-                .map(|position| position + 4)
-        };
-        if let Some(end) = erase_saved_through {
+            let erase_saved_through = {
+                let raw = self.raw.make_contiguous();
+                raw.windows(4)
+                    .rposition(|window| window == b"\x1b[3J")
+                    .map(|position| position + 4)
+            };
+            if let Some(end) = erase_saved_through {
             self.raw.drain(..end);
             // ⚠️ 这里必须连 `scroll_cache` 一起失效（B1.1 的同类漏项）：缓存按**回滚行号**
             // 索引，而 `CSI 3 J` 把回滚整个清空、后面的行号全部前移 —— 旧条目会以"行号相同、
@@ -278,12 +288,14 @@ impl TermBuffer {
             // 同时清 `rendered`（原本那行删除）。
             self.bump_render_gen();
             self.drop_scroll_cache();
-            self.view_offset = 0;
-            self.term.selection = None;
-            self.clear_overlines();
+                self.view_offset = 0;
+                self.term.selection = None;
+                self.clear_overlines();
+            }
+            self.cap_raw();
         }
-        self.cap_raw();
-        self.ingest_chunk(&bytes);
+        // 以前这里先 `input.to_vec()` 再解析 —— 一次没有任何作用的整块拷贝（流的重写不在这里做）。
+        self.ingest_chunk(input);
         self.sync_mouse_tracked();
         replies
     }
@@ -291,6 +303,11 @@ impl TermBuffer {
     /// Scan input for DSR/CPR/DA1 terminal queries and build replies.  The
     /// CSI scanner survives split reads thanks to `csi_pending`.
     fn detect_terminal_queries(&mut self, input: &[u8]) -> Vec<u8> {
+        // 没有 ESC、且上一块没留下未完成的 CSI ⇒ 不可能含查询序列。这是每块的第 2 遍全扫，
+        // 用 memchr 分流比逐字节状态机快一个量级。
+        if matches!(self.csi_state, CsiState::Normal) && memchr::memchr(b'\x1b', input).is_none() {
+            return Vec::new();
+        }
         let mut replies = Vec::new();
         for &byte in input {
             match self.csi_state {
@@ -355,9 +372,16 @@ impl TermBuffer {
     /// Line indices), so we no longer need to capture scrolled-off lines
     /// into a separate history.
     fn ingest_chunk(&mut self, bytes: &[u8]) {
-        let has_cursor_home = bytes.windows(3).any(|w| w == b"\x1b[H");
-        let has_erase_display =
-            bytes.windows(4).any(|w| w == b"\x1b[2J") || bytes.windows(3).any(|w| w == b"\x1b[J");
+        // 这三处 `windows(..)` 全扫只为判断"整屏重绘"这个启发式 —— 没有 ESC 的块不可能命中。
+        let (has_cursor_home, has_erase_display) = if memchr::memchr(b'\x1b', bytes).is_some() {
+            (
+                bytes.windows(3).any(|w| w == b"\x1b[H"),
+                bytes.windows(4).any(|w| w == b"\x1b[2J")
+                    || bytes.windows(3).any(|w| w == b"\x1b[J"),
+            )
+        } else {
+            (false, false)
+        };
         let is_fullscreen_refresh = has_cursor_home && has_erase_display;
 
         // Segment the stream at SGR sequences so the overline/double-underline
@@ -634,7 +658,7 @@ impl TermBuffer {
     ///
     /// ⚠️ `render()` 里 `SCROLL_CACHE_MAX` 那条路径**不能**用它：那里紧接着就要重新
     /// 填满，shrink 只会换来一次多余的重分配。
-    fn drop_scroll_cache(&mut self) {
+    pub(crate) fn drop_scroll_cache(&mut self) {
         self.scroll_cache.clear();
         self.scroll_cache.shrink_to_fit();
     }
@@ -677,13 +701,16 @@ impl TermBuffer {
                     // attributes (highlight bars, colour changes) — comparing
                     // the freshly built runs too keeps such restyles visible
                     // (#cache-style-key).
-                    if cached.plain_key == display_key && cached.runs == runs {
-                        let runs = refresh_overlines(
+                    if cached.plain_key == display_key
+                        && cached.raw_runs == runs
+                        && cached.highlighted != alt
+                    {
+                        let runs = merge_runs(&refresh_overlines(
                             &cached.runs,
                             &self.overline_ranges,
                             &self.term,
                             r as i32,
-                        );
+                        ));
                         runs.iter()
                             .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
                             .collect()
@@ -768,17 +795,30 @@ impl TermBuffer {
                 .is_some_and(|c| c.generation == generation && c.plain_key == display);
             if hit {
                 let cached = &self.scroll_cache[&line_no];
-                for hs in &cached.runs {
-                    spans.extend(render_term_span(hs, d as i32, self.is_dark));
+                // 文本相同还不够：相对行号可能落到"文本一样、样式不同"的另一行上，必须比对
+                // 高亮前的 runs；overlines 也要按**当前**区间重新切（同 live 路径的理由）。
+                if cached.raw_runs == runs {
+                    let refreshed = refresh_overlines(
+                        &cached.runs,
+                        &self.overline_ranges,
+                        &self.term,
+                        line_no,
+                    );
+                    for hs in merge_runs(&refreshed) {
+                        spans.extend(render_term_span(&hs, d as i32, self.is_dark));
+                    }
+                    displayed.push(display.to_string());
+                    continue;
                 }
-                displayed.push(display.to_string());
-                continue;
             }
 
-            let hr =
-                highlight_plain_output(runs, self.output_highlight, &self.custom_highlight_rules);
-            for hs in &hr {
-                spans.extend(render_term_span(hs, d as i32, self.is_dark));
+            let hr = highlight_plain_output(
+                runs.clone(),
+                self.output_highlight,
+                &self.custom_highlight_rules,
+            );
+            for hs in merge_runs(&hr) {
+                spans.extend(render_term_span(&hs, d as i32, self.is_dark));
             }
             // Bounded: an long scroll-back session would otherwise accumulate
             // one entry per history line ever shown. Clearing is cheap — the
@@ -793,6 +833,7 @@ impl TermBuffer {
                 ScrollLine {
                     generation,
                     plain_key: display.to_string(),
+                    raw_runs: runs,
                     runs: hr,
                 },
             );
@@ -822,22 +863,26 @@ impl TermBuffer {
         runs: &[HistSpan],
         alt: bool,
     ) -> Vec<TermSpan> {
+        // 高亮**前**那份留着做缓存键（见 `RenderedLine::raw_runs`）。
+        let raw_runs = runs.to_vec();
         let runs = if alt {
-            runs.to_vec()
+            raw_runs.clone()
         } else {
             highlight_plain_output(
-                runs.to_vec(),
+                raw_runs.clone(),
                 self.output_highlight,
                 &self.custom_highlight_rules,
             )
         };
-        let spans: Vec<_> = runs
+        let spans: Vec<_> = merge_runs(&runs)
             .iter()
             .flat_map(|hs| render_term_span(hs, row, self.is_dark))
             .collect();
         self.rendered[row as usize] = Some(RenderedLine {
             plain_key: plain_key.to_string(),
+            raw_runs,
             runs,
+            highlighted: !alt,
         });
         spans
     }
@@ -853,6 +898,10 @@ impl TermBuffer {
 /// caller buffers `bytes[tail..]` and prepends it to the next chunk so
 /// split reads (SSH/pipe) don't lose SGR 53 / 21.
 fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
+    // 普通输出没有 ESC：一次 memchr 就够，省掉逐字节循环（`Vec::new()` 不分配）。
+    if memchr::memchr(b'\x1b', bytes).is_none() {
+        return (Vec::new(), None);
+    }
     let mut seqs = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
@@ -1056,6 +1105,141 @@ mod tests {
     /// `CSI 3 J`（清除回滚，例如 `clear -x` / `reset`）必须让**按回滚行号索引**的渲染
     /// 缓存一起失效：清空后行号整体前移，旧条目会以"行号相同 + plain 文本相同"命中，
     /// 把上一批内容的着色贴到新内容上（与 B1.1 同一类漏项，这里锁定它）。
+    /// **离线压测（默认忽略）**：把"刷屏"这条热路径按真实参数跑出来，分别报告
+    /// **ingest（每 64 KiB 块）** 与 **render（每块之后一帧）** 的时间分布 —— 用来定位
+    /// "忽快忽慢"到底是解析侧的长尾，还是渲染侧的。
+    ///
+    /// 真实参数：SSH 侧把相邻输出合并到 64 KiB 再交给 `ingest`（`app.rs::OUTPUT_MERGE_BYTE_CAP`），
+    /// 每块之后 UI 侧渲染一帧。
+    ///
+    ///     cargo test --release -- --ignored --nocapture flood_profile
+    ///
+    /// 火焰图（直接对着测试二进制跑最省事）：
+    ///
+    ///     cargo test --release --no-run
+    ///     samply record ./target/release/deps/rudder-<hash> --ignored --nocapture flood_profile
+    #[test]
+    #[ignore = "压测：用 --ignored 显式运行"]
+    fn flood_profile_reports_ingest_and_render_timings() {
+        use std::time::Instant;
+
+        const CHUNK_LINES: usize = 1_400; // ≈ 64 KiB（每行 46 字节）
+        // 采样/调参用：默认 ≈30 万行，环境变量可放大（例如采样时拉长到几秒）。
+        let chunks: usize = std::env::var("RUDDER_FLOOD_CHUNKS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(220);
+        let line = b"line 123 abcdefghijklmnopqrstuvwxyz 0123456789\r\n";
+
+        // 回滚环大小可调：用来判断"长尾是不是回滚环淘汰造成的"（0 = 不留历史）。
+        let scrollback: usize = std::env::var("RUDDER_FLOOD_SCROLLBACK")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5_000);
+        let mut buf = TermBuffer::new(24, 80, scrollback);
+        let mut chunk = Vec::with_capacity(line.len() * CHUNK_LINES);
+        for _ in 0..CHUNK_LINES {
+            chunk.extend_from_slice(line);
+        }
+
+        let mut ingest_us = Vec::with_capacity(chunks);
+        let mut render_us = Vec::with_capacity(chunks);
+        let start = Instant::now();
+        for _ in 0..chunks {
+            let t = Instant::now();
+            buf.ingest(&chunk);
+            ingest_us.push(t.elapsed().as_micros());
+
+            let t = Instant::now();
+            let screen = buf.render();
+            render_us.push(t.elapsed().as_micros());
+            std::hint::black_box(&screen);
+        }
+        let total = start.elapsed();
+
+        // 最慢的几次发生在第几块 / 第几帧 —— 周期性长尾（例如每 N 次一次）能一眼看出来。
+        let slowest = |v: &[u128], n: usize| {
+            let mut idx: Vec<usize> = (0..v.len()).collect();
+            idx.sort_by_key(|&i| std::cmp::Reverse(v[i]));
+            idx.into_iter()
+                .take(n)
+                .map(|i| format!("#{i}={}us", v[i]))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let stats = |v: &mut Vec<u128>| {
+            v.sort_unstable();
+            let at = |p: f64| v[((v.len() - 1) as f64 * p) as usize];
+            (at(0.5), at(0.95), at(0.99), v[v.len() - 1])
+        };
+        // 先算"最慢的几次"（需要原始顺序），再排序求分位。
+        let i_slow = slowest(&ingest_us, 5);
+        let r_slow = slowest(&render_us, 5);
+        let (i50, i95, i99, imax) = stats(&mut ingest_us);
+        let (r50, r95, r99, rmax) = stats(&mut render_us);
+        println!("最慢 ingest 块: {i_slow}");
+        println!("最慢 render 帧: {r_slow}");
+        println!("== flood profile ==");
+        println!(
+            "总耗时 {:?}（{chunks} 块 × {CHUNK_LINES} 行 ≈ {} 万行）",
+            total,
+            chunks * CHUNK_LINES / 10_000
+        );
+        println!("ingest / 块: p50={i50}us p95={i95}us p99={i99}us max={imax}us");
+        println!("render / 帧: p50={r50}us p95={r95}us p99={r99}us max={rmax}us");
+    }
+
+    /// 查找导航：**只朝搜索方向扫、命中即停**（以前会把全部命中收集完再挑 —— 20 万~50 万行
+    /// 时那是一次 O(总行数 × 列数) 的卡顿）。这里把方向、回绕与"找不到不动"钉住。
+    #[test]
+    fn find_navigation_moves_in_the_requested_direction_and_wraps() {
+        let mut buf = make_buffer();
+        for i in 0..40 {
+            buf.ingest(format!("line {i} marker-{i}\r\n").as_bytes());
+        }
+
+        // 向后（更旧）找 → 离开实时底部，且越找越旧
+        assert!(buf.scroll_to_find_match("marker-20", false), "向后应能找到");
+        let first = buf.view_offset;
+        assert!(first > 0, "应当离开实时底部");
+        assert!(buf.scroll_to_find_match("marker-10", false), "继续向后应能找到更旧的");
+        assert!(buf.view_offset > first, "视口应朝更旧的方向移动");
+
+        // 向前（更新）找一个更下面的标记 → 视口朝更新方向回来
+        assert!(buf.scroll_to_find_match("marker-30", true), "向前应能找到更新的");
+        assert!(buf.view_offset < first, "视口应朝更新的方向移动");
+
+        // 回绕：向前找最旧的一行（在视口上方）→ 必须绕到最旧处，而不是原地返回 false
+        assert!(buf.scroll_to_find_match("marker-0", true), "向前找不到时应回绕到最旧的行");
+
+        // 找不到 → false，且视口不动
+        let untouched = buf.view_offset;
+        assert!(!buf.scroll_to_find_match("no-such-marker", true));
+        assert_eq!(buf.view_offset, untouched, "找不到时视口不应移动");
+    }
+
+    /// 首个命中：能跳进历史，找不到时不动。
+    #[test]
+    fn first_find_match_jumps_into_history() {
+        let mut buf = make_buffer();
+        for i in 0..40 {
+            buf.ingest(format!("line {i} marker-{i}\r\n").as_bytes());
+        }
+        assert!(buf.scroll_to_first_find_match("marker-5"));
+        assert!(buf.view_offset > 0, "应跳到历史里的匹配行");
+        assert!(!buf.scroll_to_first_find_match("no-such-marker"));
+    }
+
+    /// `contains_ci`：大小写不敏感；ASCII 走不分配的路径，非 ASCII 回落到 `to_lowercase`。
+    #[test]
+    fn contains_ci_matches_case_insensitively() {
+        assert!(TermBuffer::contains_ci("marker", "LINE 3 MARKER-3"));
+        assert!(TermBuffer::contains_ci("marker", "line 3 marker-3"));
+        assert!(!TermBuffer::contains_ci("marker", "line 3"));
+        assert!(TermBuffer::contains_ci("中文", "含中文的行"));
+        assert!(TermBuffer::contains_ci("", "任意"));
+    }
+
     #[test]
     fn erase_saved_lines_invalidates_the_scroll_cache() {
         let mut buf = make_buffer();

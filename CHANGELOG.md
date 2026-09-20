@@ -5,6 +5,43 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- **渲染器简化为「GPU / 软件」两档，三平台一致。** 设置 → 界面 → 渲染 只剩两项：`GPU`
+  （FemtoVG 走 wgpu —— macOS=Metal、Windows=D3D12、Linux=Vulkan）与 `软件`。**OpenGL 渲染器
+  整套退役**（Skia 渲染器一并下架），GPU 路径统一走 wgpu；Windows / Linux 首次启动会**自动探测**
+  （这台机器有没有真 GPU、femtovg 能不能真渲染出一帧），结论写进配置，之后按配置启动。
+  **Renderer choice is now just GPU / software on all platforms** — the OpenGL and Skia
+  renderers were removed, and Windows / Linux probe once on first launch.
+
+### 变化 / Changed
+
+- **静置常驻内存 198MB → 100MB。** 用户字体目录里是 20MB 级的 CJK 字体（5 个 ≈ 99MB），以前整份
+  读进内存常驻；现在改用 mmap 注册，只有真正用到的页才驻留，系统也能随时回收。
+  **Idle memory dropped from ~198MB to ~100MB** — user fonts are memory-mapped instead of read
+  into the heap.
+
+- **终端刷屏吞吐大幅提升。** 相邻同属性单元格合并成一个绘制片段（绘制项数降一到两个数量级）、
+  每帧改为增量写模型、行与回滚缓存修正（高亮行不再每帧重跑全部规则）、不含 ESC 的输出块走快速
+  路径、查找导航改为按方向扫描、单元格文本零堆分配；刷新节奏改为**跟随显示器刷新率**（60 / 120 /
+  144Hz 各自对齐，不再固定 30Hz）。
+  **Much faster terminal output** — merged draw runs, incremental model writes, cache fixes, a
+  fast path for escape-free output, and the frame interval now follows the display refresh rate.
+
+### 修复 / Fixed
+
+- 回看时"文本相同、样式不同"的行不再显示旧样式；退出全屏程序（vim / btop 等）后高亮不再丢失；
+  改变窗口大小后不再复用按旧列宽算出的缓存；渲染闸门卡住时会自愈（不再出现"某个标签页再也不刷新"）。
+
+### 注意 / Notes
+
+- **只有 OpenGL、没有 D3D12 / Vulkan 的老 Linux 机器**会落到软件渲染（设置里可直接选）。
+- **逃生口**：GPU 档在某台机器上表现异常时，可用 `SLINT_BACKEND=winit-software ./rudder` 启动，
+  或把配置里的 `appearance.renderer_mode` 设为 `"software"`。
+- `--probe-renderer=<mode>` 的取值随矩阵变化：Windows / Linux 用 `wgpu` / `software`，
+  macOS 用 `femtovg-wgpu` / `software`。
+
+
 ## [0.7.8-fix5] - 2026-09-18
 
 ### 修复 / Fixed

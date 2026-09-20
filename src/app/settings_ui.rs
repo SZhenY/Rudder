@@ -682,6 +682,9 @@ mod wiring_tests {
         "swatch-color", "preview-color", "cursor-kind", "minimum", "maximum", "step", "unit",
         // 由输入内容派生的 Slint 内部状态
         "scrollback-valid",
+        // 渲染档位的**显示名**（不是配置字段）：真正参与还原的是 `renderer-mode`，
+        // 这几个只是「值 ↔ 界面文字」映射用的常量，随语言/平台变化。
+        "lbl-auto", "lbl-soft", "lbl-gpu",
         // 一次性瞬态
         "renderer-restart-required",
         // 选择器数据源（列表本身不随还原变化）

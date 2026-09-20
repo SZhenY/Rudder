@@ -86,7 +86,16 @@ pub(crate) struct TermBuffer {
 #[derive(Clone)]
 pub(crate) struct RenderedLine {
     pub(crate) plain_key: String,
+    /// 与 `build_row` 的**原始**输出逐字比对（高亮**前**）。
+    ///
+    /// 键里必须含这一份：以前存的是"高亮后"、比的却是"高亮前"，于是**只要该行命中任一高亮
+    /// 规则就永远判为变化** —— 每帧重跑全部规则并重建该行（#cache-style-key）。
+    pub(crate) raw_runs: Vec<HistSpan>,
+    /// 高亮后的 runs（真正用来产出 `TermSpan` 的那份）。
     pub(crate) runs: Vec<HistSpan>,
+    /// 这份条目是在"跑高亮"的模式下建的吗 —— alt-screen 不跑高亮，退出 alt 后旧条目不能复用，
+    /// 否则文本与原始样式恰好相同的行会命中"未高亮"的版本（高亮丢失）。
+    pub(crate) highlighted: bool,
 }
 
 /// One cached scrollback line. `gen` guards against render-setting changes
@@ -95,6 +104,9 @@ pub(crate) struct RenderedLine {
 pub(crate) struct ScrollLine {
     pub(crate) generation: u64,
     pub(crate) plain_key: String,
+    /// 同 `RenderedLine::raw_runs`：回滚缓存的键是"相对行号 + 裁剪后的文本"，光凭它分不出
+    /// "文本相同、样式不同"的另一行 —— 而回滚窗口底部往往还压在**活行**上，这种撞车很常见。
+    pub(crate) raw_runs: Vec<HistSpan>,
     pub(crate) runs: Vec<HistSpan>,
 }
 
@@ -145,6 +157,10 @@ pub(super) struct RenderGateState {
     pub(super) phase: RenderGatePhase,
     pub(super) closed: bool,
     pub(super) last_visible_flush: std::time::Instant,
+    /// 进入 `Flushing` 的时刻。若 `begin_flush()` 与 `finish_flush()` 之间没走完（panic /
+    /// 提前返回），phase 会永远停在 `Flushing` —— 该标签页此后不再渲染，泵线程的背压也静默失效。
+    /// 带上时间戳后由 `request()` 超时复位（自愈）。
+    pub(super) flushing_since: Option<std::time::Instant>,
 }
 
 /// Coalesces and acknowledges UI snapshot flushes for one terminal tab.

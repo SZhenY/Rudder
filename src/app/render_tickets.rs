@@ -17,6 +17,11 @@ use super::{visible_tab_ids, with_term_buf};
 pub(crate) const UI_FLUSH_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// Max UI renders per second for a tab under sustained output (#209).
+use i_slint_backend_winit::WinitWindowAccessor as _;
+use slint::ComponentHandle as _;
+
+/// 最慢一档（30Hz）—— 现在只作为节流的**上界**（见 `MAX_FRAME_INTERVAL`），
+/// 实际间隔按显示器刷新率算（`frame_interval`）。
 pub(crate) const RENDER_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(33);
 
 /// Echo produced shortly after a physical keypress should feel immediate. This
@@ -101,6 +106,60 @@ pub(crate) fn wait_for_ui_flush(ticket: Option<TabRenderTicket>) {
     }
 }
 
+/// 目标帧间隔 = 当前显示器的**一个刷新周期**（60Hz → 16.6ms，120Hz → 8.3ms，144Hz → 6.9ms）。
+///
+/// 为什么不再用写死的两档：33ms（≈30Hz）与 120Hz 屏不是整数倍关系，画面会出现"有时快、
+/// 有时慢"的节奏差；反过来在 144Hz 屏上按 30Hz 渲染也白白浪费了刷新率。渲染**快过一帧没有
+/// 意义** —— 多出来的帧只会被显示器丢掉（还可能因为 GPU 资源反复申请而抖）。
+///
+/// 显示器可能在运行期间变化（换屏 / 拖到另一块屏 / 合盖接外显），所以带 TTL 缓存：
+/// 既跟得上变化，又不必每次 flush 都去问 winit。
+fn frame_interval(win: &AppWindow) -> std::time::Duration {
+    FRAME_INTERVAL_CACHE.with(|cell| {
+        let (cached, at) = cell.get();
+        if at.elapsed() < FRAME_INTERVAL_TTL {
+            return cached;
+        }
+        let fresh = query_frame_interval(win).unwrap_or(FALLBACK_FRAME_INTERVAL);
+        cell.set((fresh, std::time::Instant::now()));
+        fresh
+    })
+}
+
+fn query_frame_interval(win: &AppWindow) -> Option<std::time::Duration> {
+    // 两层 Option：外层是"窗口是否还活着"，内层是 winit 的"显示器是否报了刷新率"。
+    let mhz = win.window().with_winit_window(|ww| {
+        ww.current_monitor()
+            .or_else(|| ww.primary_monitor())
+            .and_then(|m| m.refresh_rate_millihertz())
+    })??;
+    if mhz == 0 {
+        return None;
+    }
+    // millihertz → 每帧纳秒；再夹到 [240Hz, 30Hz]，避免异常报告把节流搞坏。
+    let interval = std::time::Duration::from_nanos(1_000_000_000_000 / mhz as u64);
+    Some(interval.clamp(MIN_FRAME_INTERVAL, MAX_FRAME_INTERVAL))
+}
+
+/// 拿不到显示器信息时按 60Hz 兜底。
+const FALLBACK_FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_micros(16_667);
+/// 上界：240Hz（再快没有意义）。下界沿用旧的"firehose 保护" 30Hz。
+const MIN_FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_micros(4_167);
+const MAX_FRAME_INTERVAL: std::time::Duration = RENDER_MIN_INTERVAL;
+/// 提交链路的提前量（见 `run_coalesced_tab_render` 里的注释）。
+const FRAME_SLACK: std::time::Duration = std::time::Duration::from_micros(1_500);
+/// 缓存有效期：显示器变化后最多 2 秒跟上来。
+const FRAME_INTERVAL_TTL: std::time::Duration = std::time::Duration::from_secs(2);
+
+thread_local! {
+    /// UI 线程独占（`run_coalesced_tab_render` 只在事件循环线程跑），所以 thread_local 足够。
+    static FRAME_INTERVAL_CACHE: std::cell::Cell<(std::time::Duration, std::time::Instant)> =
+        std::cell::Cell::new((
+            FALLBACK_FRAME_INTERVAL,
+            std::time::Instant::now() - FRAME_INTERVAL_TTL,
+        ));
+}
+
 /// UI-thread entry: honour the throttle, then render. Timer must be created
 /// here — not on pump threads (#209).
 pub(crate) fn run_coalesced_tab_render(
@@ -115,10 +174,19 @@ pub(crate) fn run_coalesced_tab_render(
         std::time::Instant::now() < b.interactive_echo_until
     })
     .unwrap_or(false);
+    // 目标帧间隔 = 显示器的一个刷新周期（见 `frame_interval`）。以前写死 33ms ≈ 30Hz，
+    // 与 120Hz 屏不是整数倍关系 —— 那正是"有时快、有时慢"的来源；渲染比屏幕刷新更快也没有意义。
+    let interval = weak
+        .upgrade()
+        .map(|win| frame_interval(&win))
+        .unwrap_or(FALLBACK_FRAME_INTERVAL);
     let interval = if interactive {
-        INTERACTIVE_RENDER_MIN_INTERVAL
+        interval.min(INTERACTIVE_RENDER_MIN_INTERVAL)
     } else {
-        RENDER_MIN_INTERVAL
+        // 留出一点提前量：提交（模型冲洗 → Slint 重建 → wgpu 提交 → 合成）本身要花时间，
+        // 正好卡在目标间隔上很容易"差一点点没赶上"这一帧，于是退到再下一个刷新周期 ——
+        // 视觉上就是同一段输出里有的帧快、有的帧慢。往前挪一档能让绝大多数帧落在窗口内。
+        interval.saturating_sub(FRAME_SLACK)
     };
     let delay = gate.flush_delay(interval);
 

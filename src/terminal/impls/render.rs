@@ -274,7 +274,7 @@ pub(crate) fn build_line(
         let attr = attr_from_cell(&term.grid()[point]);
 
         // Tab expansion — identical to `build_row`.
-        if attr.contents == "\t" {
+        if attr.contents.is_tab() {
             let col_i = column as i32;
             let (spaces_raw, next_raw) = tab_expansion(col_i);
             // Clamp the tab stop to the line end: a Tab landing in the last
@@ -315,7 +315,11 @@ pub(crate) fn build_line(
         }
 
         if attr.wide {
-            let text = attr.contents.clone();
+            let text = {
+                let mut buf = String::new();
+                attr.contents.push_to(&mut buf);
+                buf
+            };
             plain.push_str(&text);
             runs.extend(make_span(
                 attr,
@@ -331,8 +335,9 @@ pub(crate) fn build_line(
         }
 
         let start_column = column;
-        let mut text = attr.contents.clone();
-        plain.push_str(&attr.contents);
+        let mut text = String::new();
+        attr.contents.push_to(&mut text);
+        attr.contents.push_to(&mut plain);
         column += 1;
         while column < columns {
             let next_pt = Point {
@@ -341,11 +346,11 @@ pub(crate) fn build_line(
             };
             let next = attr_from_cell(&term.grid()[next_pt]);
             // Tab cells end the run so the outer loop can expand them.
-            if next.wide || next.contents == "\t" || !same_style(&attr, &next) {
+            if next.wide || next.contents.is_tab() || !same_style(&attr, &next) {
                 break;
             }
-            plain.push_str(&next.contents);
-            text.push_str(&next.contents);
+            next.contents.push_to(&mut plain);
+            next.contents.push_to(&mut text);
             column += 1;
         }
 
