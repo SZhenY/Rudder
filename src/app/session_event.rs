@@ -152,8 +152,6 @@ pub(super) fn apply_session_event_to_window<'a>(
             swap_total_kib,
             net,
             disks,
-            current_user: _,
-            procs: _,
             sys,
         } => {
             if let Ok(mut s) = statuses.lock()

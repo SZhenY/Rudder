@@ -38,7 +38,6 @@ const OPT_NAWS: u8 = 31; // negotiate about window size
 
 pub fn spawn_telnet_session(
     runtime: &tokio::runtime::Handle,
-    tab_id: String,
     session: Session,
     initial_cols: u32,
     initial_rows: u32,
@@ -47,7 +46,8 @@ pub fn spawn_telnet_session(
     let (evt_tx, evt_rx) = mpsc::unbounded_channel::<SessionEvent>();
 
     let evt_for_task = evt_tx.clone();
-    let join = runtime.spawn(async move {
+    // 丢弃 `JoinHandle` = detach（tokio 语义）：任务照常运行。
+    runtime.spawn(async move {
         if let Err(err) = run_telnet(
             session,
             cmd_rx,
@@ -62,11 +62,7 @@ pub fn spawn_telnet_session(
     });
 
     (
-        SessionHandle {
-            tab_id,
-            commands: cmd_tx,
-            join,
-        },
+        SessionHandle { commands: cmd_tx },
         evt_rx,
     )
 }

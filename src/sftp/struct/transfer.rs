@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::task::JoinHandle;
 
 /// Commands sent to the SFTP worker task from the UI thread.
 #[derive(Debug)]
@@ -84,10 +83,11 @@ pub enum DownloadConflict {
 }
 
 /// Handle retained by the UI to drive a running SFTP worker.
+///
+/// 只有 `commands`：worker 的 `JoinHandle` 在 `spawn_sftp` 里直接丢弃 —— tokio 里丢弃
+/// `JoinHandle` 只是 **detach**，任务照跑；要停它靠下面 `Drop` 发的那条 `Close`。
 pub struct SftpHandle {
     pub commands: UnboundedSender<SftpCommand>,
-    #[allow(dead_code)]
-    pub join: JoinHandle<()>,
 }
 
 impl Drop for SftpHandle {

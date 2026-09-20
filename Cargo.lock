@@ -2791,7 +2791,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76b8b730a020446b367e0033e6a1e17719df6b35fd4a65f723e86a7147fbc983"
 dependencies = [
  "accesskit",
- "async-channel",
  "bitflags 2.13.1",
  "cfg-if",
  "chrono",
@@ -2804,7 +2803,6 @@ dependencies = [
  "icu_normalizer",
  "image",
  "js-sys",
- "ksni",
  "lyon_algorithms",
  "lyon_extra",
  "lyon_geom",
@@ -3380,24 +3378,6 @@ name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
-
-[[package]]
-name = "ksni"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "814b44c24cd2cb236c3b8a41c7f08237b452a8e76ecaa81f1cec40b5b678215b"
-dependencies = [
- "async-executor",
- "async-io",
- "async-lock",
- "futures-channel",
- "futures-lite",
- "futures-util",
- "pastey",
- "serde",
- "task-local",
- "zbus 5.18.0",
-]
 
 [[package]]
 name = "kurbo"
@@ -4512,12 +4492,6 @@ dependencies = [
  "rand_core 0.6.4",
  "subtle",
 ]
-
-[[package]]
-name = "pastey"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "pbkdf2"
@@ -6588,15 +6562,6 @@ dependencies = [
  "filetime",
  "libc",
  "xattr",
-]
-
-[[package]]
-name = "task-local"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2972044a9e5e448a506a7ff6f0d03b566d8ef4cd6918a58fc59835a0f8666626"
-dependencies = [
- "pin-project-lite",
 ]
 
 [[package]]

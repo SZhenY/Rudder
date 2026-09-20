@@ -27,25 +27,21 @@ use crate::ssh::{SessionCommand, SessionEvent, SessionHandle};
 /// `spawn_session` (minus the PTY size, which a serial line has no notion of).
 pub fn spawn_serial_session(
     runtime: &tokio::runtime::Handle,
-    tab_id: String,
     session: Session,
 ) -> (SessionHandle, UnboundedReceiver<SessionEvent>) {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
     let (evt_tx, evt_rx) = mpsc::unbounded_channel::<SessionEvent>();
 
     let evt_for_task = evt_tx.clone();
-    let join = runtime.spawn(async move {
+    // 丢弃 `JoinHandle` = detach（tokio 语义）：任务照常运行。
+    runtime.spawn(async move {
         if let Err(err) = run_serial(session, cmd_rx, evt_for_task.clone()).await {
             let _ = evt_for_task.send(SessionEvent::Closed(format!("{err:#}")));
         }
     });
 
     (
-        SessionHandle {
-            tab_id,
-            commands: cmd_tx,
-            join,
-        },
+        SessionHandle { commands: cmd_tx },
         evt_rx,
     )
 }

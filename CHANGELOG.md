@@ -28,6 +28,14 @@ All notable changes are documented here. 本文件记录所有重要变更。
   **Much faster terminal output** — merged draw runs, incremental model writes, cache fixes, a
   fast path for escape-free output, and the frame interval now follows the display refresh rate.
 
+- **诊断日志不再默认刷屏。** 逐键打印的 `[KEY_DIAG]`（Shift / Backspace / IME 标记）从 `info`
+  降到 `debug` —— 正式版不再每按一次键就往 stderr 写两行；需要时用 `RUST_LOG=debug` 打开
+  （`error.log` 那条 `warn` 通道不受影响）。顺带清掉未使用的 `system-tray` 特性（依赖里少掉
+  `ksni` / `async-channel` 两个包）与几处确认无用的死代码。
+  **[KEY_DIAG] per-key diagnostics moved from info to debug** — release builds no longer log on every
+  keystroke; use `RUST_LOG=debug` when diagnosing. The unused `system-tray` feature and some dead
+  code were removed as well.
+
 ### 修复 / Fixed
 
 - 回看时"文本相同、样式不同"的行不再显示旧样式；退出全屏程序（vim / btop 等）后高亮不再丢失；

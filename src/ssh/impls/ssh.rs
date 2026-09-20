@@ -1041,12 +1041,6 @@ pub enum SessionEvent {
         net: Vec<(String, u64, u64)>,
         /// Per-filesystem (mount_point, available_bytes, total_bytes).
         disks: Vec<(String, u64, u64)>,
-        /// Effective login name reported by the remote host (`id -un`).
-        #[allow(dead_code)]
-        current_user: String,
-        /// Top processes by CPU (#23). Empty if the host's `ps` is unusable.
-        #[allow(dead_code)]
-        procs: Vec<ProcInfo>,
         /// Detailed system information for the detached system-info window.
         /// Detailed data is present only for the separately delayed one-shot
         /// system-information probe; lightweight resource samples leave it None.
@@ -1108,12 +1102,12 @@ pub enum SessionEvent {
 }
 
 /// Handle retained by the UI layer to talk to a running session.
+///
+/// 只有 `commands`：`tab_id` 与 `join` 两个字段全项目从未被读过 —— 句柄本就按 tab_id
+/// 存进 `HashMap`（键即身份，字段冗余）；丢弃 `JoinHandle` 只是 detach（tokio 语义），
+/// 会话任务照跑，要停它靠给 `commands` 发指令。
 pub struct SessionHandle {
-    #[allow(dead_code)] // used by future resize / reconnect flows
-    pub tab_id: String,
     pub commands: UnboundedSender<SessionCommand>,
-    #[allow(dead_code)] // keep alive; detach on Drop is fine for v0.1
-    pub join: JoinHandle<()>,
 }
 
 impl SessionHandle {
@@ -1428,7 +1422,6 @@ fn process_kill_command(pid: u32, privileged: bool) -> String {
 /// should drain on the Slint event loop.
 pub fn spawn_session(
     runtime: &tokio::runtime::Handle,
-    tab_id: String,
     session: Session,
     jump: Option<Session>,
     initial_cols: u32,
@@ -1438,7 +1431,8 @@ pub fn spawn_session(
     let (evt_tx, evt_rx) = mpsc::unbounded_channel::<SessionEvent>();
 
     let evt_tx_for_task = evt_tx.clone();
-    let join = runtime.spawn(async move {
+    // 丢弃 `JoinHandle` = detach（tokio 语义）：会话任务照常运行。
+    runtime.spawn(async move {
         if let Err(err) = run_session(
             session,
             jump,
@@ -1456,11 +1450,7 @@ pub fn spawn_session(
     });
 
     (
-        SessionHandle {
-            tab_id,
-            commands: cmd_tx,
-            join,
-        },
+        SessionHandle { commands: cmd_tx },
         evt_rx,
     )
 }
@@ -3117,22 +3107,17 @@ fn parse_monitor_block(
     // into a Set: skip a (total, available) we've already shown. `df` lists the real
     // mount first, so that's the one kept.
     let mut seen_fs: std::collections::HashSet<(u64, u64)> = std::collections::HashSet::new();
-    // Processes from `ps` (#23): top-by-CPU rows.
-    let mut procs: Vec<ProcInfo> = Vec::new();
-    let mut current_user = String::new();
     let mut sys_kv: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     // The sample is split into sections by `echo` markers; everything before the
     // first marker is the cpu/mem/net block.
     enum Section {
         Top,
         Df,
-        Me,
-        Ps,
         Sys,
     }
     let mut section = Section::Top;
 
-    // Cap how many interfaces / filesystems / processes we accept from one sample
+    // Cap how many interfaces / filesystems we accept from one sample
     // so a hostile server can't flood the parser and sidebar with fabricated rows
     // (#27). No real machine has anywhere near this many.
     const MAX_MON_ENTRIES: usize = 64;
@@ -3140,14 +3125,6 @@ fn parse_monitor_block(
     for line in block.lines() {
         if line == "__DF__" {
             section = Section::Df;
-            continue;
-        }
-        if line == "__PS__" {
-            section = Section::Ps;
-            continue;
-        }
-        if line == "__ME__" {
-            section = Section::Me;
             continue;
         }
         if line == "__SYS__" {
@@ -3165,20 +3142,6 @@ fn parse_monitor_block(
                     if seen_fs.insert((total, avail)) {
                         disks.push((mount, avail, total));
                     }
-                }
-                continue;
-            }
-            Section::Ps => {
-                if procs.len() < MAX_MON_ENTRIES
-                    && let Some(p) = parse_ps_line(line)
-                {
-                    procs.push(p);
-                }
-                continue;
-            }
-            Section::Me => {
-                if current_user.is_empty() {
-                    current_user = line.trim().chars().take(64).collect();
                 }
                 continue;
             }
@@ -3292,8 +3255,6 @@ fn parse_monitor_block(
         swap_total_kib: swap_total,
         net,
         disks,
-        current_user,
-        procs,
         sys: Box::new(sys),
     })
 }
@@ -3794,12 +3755,13 @@ impl Handler for ClientHandler {
     }
 }
 
-// Marker trait impl so `Arc<Handle<Handler>>` is nameable in external code.
-#[allow(dead_code)]
-fn _assert_handle_send() {
+// Compile-time assertion: `Handle<ClientHandler>` must stay `Send` — external code
+// (SSH forwards) holds it behind an `Arc` across threads. If the bound ever breaks,
+// this const fails to compile.
+const _: fn() = || {
     fn takes<T: Send>() {}
     takes::<Handle<ClientHandler>>();
-}
+};
 
 #[cfg(test)]
 mod prompt_setup_echo_tests {
@@ -4238,25 +4200,6 @@ mod monitor_hardening_tests {
         assert!(prev_net.len() <= 64, "prev_net held {}", prev_net.len());
     }
 
-    #[test]
-    fn monitor_reports_effective_user_for_ownership_checks() {
-        let block = "MemTotal: 1000 kB\nMemAvailable: 500 kB\n__DF__\n__ME__\nalice\n__PS__\n10 alice 1.0 2.0 sleep 30";
-        let mut prev = None;
-        let mut prev_net = HashMap::new();
-        let mut at = Instant::now();
-        let event = parse_monitor_block(block, &mut prev, &mut prev_net, &mut at).unwrap();
-        match event {
-            super::SessionEvent::ResourceStats {
-                current_user,
-                procs,
-                ..
-            } => {
-                assert_eq!(current_user, "alice");
-                assert_eq!(procs[0].user, "alice");
-            }
-            other => panic!("unexpected event: {other:?}"),
-        }
-    }
 
     #[test]
     fn lightweight_resource_sample_does_not_replace_system_details() {

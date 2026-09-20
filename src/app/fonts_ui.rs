@@ -183,7 +183,11 @@ pub(crate) fn auto_font_label() -> String {
     format!("  {}", t("跟随系统（自动）", "System default (auto)"))
 }
 /// One entry of the font picker list.
-#[allow(dead_code)] // Header payload read by tests only
+///
+/// `Header` 的载荷（表头文本）**只有测试会读**：`app.rs` / `settings_ui.rs` 用它断言
+/// 表头顺序与文字；生产代码渲染列表用的是与 `entries` 平行的 `labels` 向量，只匹配
+/// `Family` / `Auto`。所以这条 `allow(dead_code)` 是必要的 —— 删掉载荷会削弱那两条断言。
+#[allow(dead_code)] // Header payload asserted by tests; the list itself uses the parallel `labels`
 pub(crate) enum FontEntry {
     /// A non-selectable group header, shown as `▍内嵌字体` etc.
     Header(&'static str),

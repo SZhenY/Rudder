@@ -31,7 +31,6 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
     let (handle, rx) = match session.kind {
         SessionKind::Ssh => spawn_session(
             ctx.runtime.handle(),
-            tab_id.to_string(),
             session.clone(),
             jump.clone(),
             initial_cols,
@@ -39,19 +38,16 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         ),
         SessionKind::Serial => crate::terminal::serial::spawn_serial_session(
             ctx.runtime.handle(),
-            tab_id.to_string(),
             session.clone(),
         ),
         SessionKind::Telnet => crate::terminal::telnet::spawn_telnet_session(
             ctx.runtime.handle(),
-            tab_id.to_string(),
             session.clone(),
             initial_cols,
             initial_rows,
         ),
         SessionKind::Local => crate::terminal::local::spawn_local_session(
             ctx.runtime.handle(),
-            tab_id.to_string(),
             session.clone(),
             initial_cols,
             initial_rows,

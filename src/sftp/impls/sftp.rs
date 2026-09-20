@@ -166,15 +166,14 @@ pub fn spawn_sftp(
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let self_tx = cmd_tx.clone();
     let events_err = events.clone();
-    let join = runtime.spawn(async move {
+    // 丢弃 `JoinHandle` = detach（tokio 语义）：worker 照跑；要停它靠 `SftpHandle::drop`
+    // 发的那条 `Close`。
+    runtime.spawn(async move {
         if let Err(err) = run_sftp(session, jump, cmd_rx, self_tx, events).await {
             let _ = events_err.send(SessionEvent::SftpStatus(friendly_sftp_error(&err)));
         }
     });
-    SftpHandle {
-        commands: cmd_tx,
-        join,
-    }
+    SftpHandle { commands: cmd_tx }
 }
 
 // ---------------------------------------------------------------------------

@@ -576,11 +576,11 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 tab_id, redact_key(key.as_str()), ctrl, alt, shift, app_cursor
             );
 
-            // ── Shift / Backspace 诊断日志 (info 级, 无需 RUST_LOG=debug) ─────
+            // ── Shift / Backspace 诊断日志 (debug 级，需设 RUST_LOG=debug) ─────
             // 每个 Shift 相关事件都打印 key 的 Unicode 码位，方便对比
             // 左Shift / 右Shift 是否产生不同的 key 字符串。
             if shift || key.as_str() == "\u{0008}" {
-                // INFO level (no RUST_LOG needed) — must not leak the key text.
+                // debug level (set RUST_LOG=debug to re-enable) — must not leak the key text.
                 // redact_key reveals only control code points (the IME markers
                 // this diagnostic cares about), masking any printable char that
                 // could be part of a Shift-typed password symbol (#15).
@@ -590,7 +590,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     .unwrap_or_else(|e| e.into_inner())
                     .map(|t| format!("{}ms ago", t.elapsed().as_millis()))
                     .unwrap_or_else(|| "never".to_string());
-                tracing::info!(
+                tracing::debug!(
                     "[KEY_DIAG] key={} shift={} ctrl={} alt={} | last_shift={}",
                     codepoints, shift, ctrl, alt, elapsed_ms
                 );
@@ -603,7 +603,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             // events even if they arrive with shift=false.
             if key.as_str().is_empty() && shift && !ctrl && !alt {
                 *last_shift_time.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
-                tracing::info!("[KEY_DIAG] lone-Shift recorded → timestamp saved");
+                tracing::debug!("[KEY_DIAG] lone-Shift recorded → timestamp saved");
             }
 
             // ── 拦截百度拼音注入的 Shift 标记字符（核心修复）────────────────────
@@ -633,7 +633,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                         && !is_standalone
                     {
                         *last_shift_time.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
-                        tracing::info!(
+                        tracing::debug!(
                             "[KEY_DIAG] DROPPED IME C0 marker U+{:04X} (shift={}) → timestamp saved",
                             cp, shift
                         );
@@ -718,7 +718,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             if key.as_str() == "\u{0008}" && !ctrl && !alt {
                 // Layer 1
                 if shift {
-                    tracing::info!("[KEY_DIAG] Backspace DROPPED by layer-1 (shift=true)");
+                    tracing::debug!("[KEY_DIAG] Backspace DROPPED by layer-1 (shift=true)");
                     return;
                 }
                 // Layer 2 — 时间窗口 1500ms
@@ -735,7 +735,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     }
                 };
                 if shift_just_pressed {
-                    tracing::info!(
+                    tracing::debug!(
                         "[KEY_DIAG] Backspace DROPPED by layer-2 ({}ms after IME Shift marker)",
                         elapsed_ms
                     );
@@ -745,7 +745,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 // Do not consult the live VK_BACK state here. Under UI/SSH
                 // backlog the key-up can be processed before this callback, so
                 // that test drops a genuine queued Backspace (#319).
-                tracing::info!("[KEY_DIAG] Backspace PASSED all filters → sent to PTY");
+                tracing::debug!("[KEY_DIAG] Backspace PASSED all filters → sent to PTY");
             }
 
             if should_drop_bare_ctrl_marker(
