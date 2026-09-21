@@ -4,14 +4,47 @@
 // 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
 // 因此可以保持与改造前逐字一致。
 //
-// 四行（对齐截图）：自动检查更新 / 检查频率 / 更新通道 / 上次检查时间。
+// 四行：自动检查更新 / 检查频率 / 更新通道 / 上次检查时间。
 // 通道语义见 `self_updater::fetch_channel_release`：`stable` 只提示正式版、
 // `beta` 只提示预发布（`-betaN` 等）、`all` 取全通道最新。
+//
+// 刻意**不写行内说明**：四项的标签与右侧控件已经自解释，短句堆四行只会显乱
+// （旧版那四条 desc 已删）；只有「上次检查时间」那行把**实时状态**放到 desc 位 ——
+// 它本来就是读者想看的那句话，为空时 `SettingRow` 会自动隐藏该行。
 
 import { Theme } from "../../theme.slint";
 import { SettingsSection } from "../section.slint";
-import { CursorStyleButton, SettingRow, SettingSwitch } from "../chrome.slint";
+import { SettingRow, SettingSwitch } from "../chrome.slint";
 import { ComboBox } from "std-widgets.slint";
+
+/// 更新通道的一段（正式版 / 测试版 / 全通道最新版）。
+///
+/// 不用 `chrome.slint` 的 `CursorStyleButton`：那是**光标样式**专用件（固定 74px +
+/// 内含 14px 光标图形），拿来做通道选择既画出无意义的小方块、又因固定宽度溢出右边缘。
+component ChannelSegment inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 28px;
+    width: max(64px, seg-label.preferred-width + 24px);
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent : Theme.border-subtle;
+    background: root.selected ? Theme.bg-active : (seg-ta.has-hover ? Theme.bg-hover : transparent);
+
+    seg-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    seg-label := Text {
+        text: root.label;
+        font-size: 12px * Theme.panel-font;
+        color: root.selected ? Theme.text-primary : Theme.text-secondary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
 
 export component UpdatePage inherits VerticalLayout {
     in property <bool> lang-en;
@@ -43,21 +76,13 @@ export component UpdatePage inherits VerticalLayout {
         title-height: 24px;
         SettingSwitch {
             label: root.lang-en ? "Check for new versions automatically" : "自动检查更新";
-            desc: root.lang-en
-                ? "Off: Rudder no longer queries GitHub for releases and the update banner won't appear (takes effect next launch)."
-                : "关闭后:不再向 GitHub 查询新版本,也不会弹出更新提示(下次启动生效)。";
-
             checked <=> root.update-check-enabled;
             toggled(v) => { root.set-update-check-enabled(root.update-check-enabled); }
-
         }
         SettingRow {
             label: root.lang-en ? "Check frequency" : "检查频率";
-            desc: root.lang-en
-                ? "Once per launch, or at most once a day."
-                : "每次启动检查一次,或每天最多检查一次。";
             ComboBox {
-                width: 200px;
+                width: 160px;
                 model: root.update-freq-labels;
                 current-index <=> root.update-freq-index;
                 selected(v) => { root.set-update-freq(root.update-freq-index); }
@@ -65,27 +90,21 @@ export component UpdatePage inherits VerticalLayout {
         }
         SettingRow {
             label: root.lang-en ? "Update channel" : "更新通道";
-            desc: root.lang-en
-                ? "Stable only / beta previews only / newest across every channel."
-                : "正式版只提示正式版;测试版只提示预发布(beta);全通道最新版取两者里最新的。";
             HorizontalLayout {
-                spacing: 8px;
-                alignment: start;
-                CursorStyleButton {
+                spacing: 6px;
+                alignment: end;
+                ChannelSegment {
                     label: root.lang-en ? "Stable" : "正式版";
-                    cursor-kind: "stable";
                     selected: root.update-channel == "stable";
                     clicked => { root.set-update-channel("stable"); }
                 }
-                CursorStyleButton {
+                ChannelSegment {
                     label: root.lang-en ? "Beta" : "测试版";
-                    cursor-kind: "beta";
                     selected: root.update-channel == "beta";
                     clicked => { root.set-update-channel("beta"); }
                 }
-                CursorStyleButton {
-                    label: root.lang-en ? "All channels" : "全通道最新版";
-                    cursor-kind: "all";
+                ChannelSegment {
+                    label: root.lang-en ? "All channels" : "全通道";
                     selected: root.update-channel == "all";
                     clicked => { root.set-update-channel("all"); }
                 }
@@ -93,13 +112,12 @@ export component UpdatePage inherits VerticalLayout {
         }
         SettingRow {
             label: root.lang-en ? "Last checked" : "上次检查时间";
-            desc: root.lang-en
-                ? "Queries GitHub immediately; independent of the startup check setting."
-                : "立即向 GitHub 查询新版本,不受上方开关影响。";
+            // 实时状态放在说明位：有结果才出现，为空时整行自动收起。
+            desc: root.update-check-status;
             show-divider: false;
             HorizontalLayout {
                 spacing: 10px;
-                alignment: center;
+                alignment: end;
                 Rectangle {
                     width: root.update-checking ? 92px : 80px;
                     height: 28px;
@@ -127,14 +145,6 @@ export component UpdatePage inherits VerticalLayout {
                     font-size: 12px * Theme.panel-font;
                     color: Theme.text-muted;
                     vertical-alignment: center;
-                }
-                if root.update-check-status != "" : Text {
-                    text: root.update-check-status;
-                    font-size: 11px * Theme.panel-font;
-                    color: Theme.text-muted;
-                    vertical-alignment: center;
-                    overflow: elide;
-                    horizontal-stretch: 1;
                 }
             }
         }
