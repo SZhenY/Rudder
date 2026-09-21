@@ -82,14 +82,23 @@ All notable changes are documented here. 本文件记录所有重要变更。
 ### 变化 / Changed
 
 - **中间版本改名：`-fixN` → `-betaN`。** 还没到正式版的构建以后一律用 `0.7.9-beta1` /
-  `-beta2` 这类 tag，语义上**早于** `0.7.9` 正式版（老写法 `0.7.7 < 0.7.7-fix1` 正好相反）。
-  老 `-fixN` tag 仍认得、不影响老用户，只是不再产生新的。更新检查按这个顺序比较，所以
-  beta 用户在正式版发布后能正确收到"已是最新"。
-  **Intermediate builds are tagged `-betaN` instead of `-fixN`** — a beta sorts *before*
-  its base version (`0.7.9-beta1 < 0.7.9`); old `-fixN` tags keep working.
+  `-beta2` 这类 tag，排序上**晚于（新于）同号正式版**（`0.7.9-beta1 > 0.7.9`）—— 与旧写法
+  `-fixN` 一致（`0.7.7-fix1 > 0.7.7`）：两者都是"正式版发出去之后、在其上继续做出来的构建"。
+  老 `-fixN` tag 仍认得、不影响老用户，只是不再产生新的。更新检查按这个顺序比较，所以选
+  「测试版」/「全通道最新版」的用户能收到 beta，而用测试版的人切回「正式版」时会被提示
+  "可切换到旧版本"。
+  **Intermediate builds are tagged `-betaN` instead of `-fixN`** — like the old `-fixN`, a beta
+  sorts *after* its base version (`0.7.9-beta1 > 0.7.9`), so testers actually receive it.
 - **Linux 构建改在 Ubuntu 24.04 上做**（主矩阵 + 质检门一起上移）：主力产物的 glibc 底线随之
   抬到 **2.39**，更老的发行版请下载 `-glibc228` 变体（Debian 10 容器构建，glibc ≥ 2.28）。
   **Linux builds now run on Ubuntu 24.04**, raising the main artifacts' glibc floor to 2.39.
+- **macOS 发布作业改用 macOS 26 镜像 + Xcode 26.6，Rust 提到 1.98.1**（`af31259`）。显式钉住 Xcode
+  版本，免得将来镜像换默认版本时构建悄悄变味；**不要切到 macOS 27** —— 它的 dyld 校验更严，会
+  拒收 release 档 proc-macro 的 `.dylib`（`mis-aligned LINKEDIT string pool`），构建会死在
+  `slint` 上（Rust 1.98.1 起缓解，但镜像本身还没 GA，等它 GA 且实测通过再切）。
+  **macOS release jobs now run on the macOS 26 image with Xcode 26.6 pinned and Rust 1.98.1**
+  (`af31259`). Do **not** move to macOS 27 yet — its stricter dyld rejects release-profile
+  proc-macro `.dylib`s and the build dies inside `slint`.
 
 ## [0.7.9] - 2026-09-19
 
