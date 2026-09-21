@@ -12,14 +12,18 @@ use super::{Store, persist};
 use crate::app::updater::format_last_check;
 use crate::ui::AppWindow;
 
-/// 「检查频率」下拉的选项顺序 —— 下标即 `update-freq-index`，与
-/// `ConfigStore::{update_frequency, set_update_frequency}` 的取值一一对应。
-const FREQ_VALUES: [&str; 2] = ["startup", "daily"];
+/// 「检查频率」下拉的取值 —— 直接用配置里的那张表（顺序即下拉顺序）。
+const FREQ_VALUES: [&str; 6] = crate::config::UPDATE_FREQUENCIES;
 
+/// 与 [`FREQ_VALUES`] **逐项对应**的标签；数量对不上就会在 `tests` 里红。
 fn freq_labels() -> Vec<slint::SharedString> {
     vec![
         crate::i18n::t("每次启动", "On every launch").into(),
-        crate::i18n::t("每天最多一次", "At most once a day").into(),
+        crate::i18n::t("每天", "Every day").into(),
+        crate::i18n::t("每周", "Every week").into(),
+        crate::i18n::t("每月", "Every month").into(),
+        crate::i18n::t("每半年", "Every 6 months").into(),
+        crate::i18n::t("每年", "Every year").into(),
     ]
 }
 
@@ -69,4 +73,19 @@ pub(crate) fn bind(w: &AppWindow, store: &Store) {
             w.set_update_freq_index(index);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FREQ_VALUES, freq_labels};
+
+    /// 下拉的标签数量必须与取值表一致，否则 `selected` 换算出来的下标会串位
+    /// （用户选"每周"，存进去的却是"每月"）。
+    #[test]
+    fn labels_line_up_with_values() {
+        assert_eq!(freq_labels().len(), FREQ_VALUES.len());
+    }
+
+    // 注：这里不需要再测"取值能否被配置层原样存下" —— 配置层的校验**直接用**
+    // `UPDATE_FREQUENCIES`（同一张表），两边不可能漂移。
 }

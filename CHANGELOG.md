@@ -7,9 +7,10 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 新增 / Added
 
-- **「新版本提示」页补齐四项**：自动检查更新 / **检查频率**（每次启动、每天最多一次）/
-  **更新通道**（正式版 / 测试版 / 全通道最新版）/ **上次检查时间**。通道语义：正式版只提示
-  正式版；测试版只提示预发布（`-betaN` 等）；全通道最新版取两者里最新的。
+- **「新版本提示」页补齐四项**：自动检查更新 / **检查频率**（下拉：每次启动 / 每天 / 每周 /
+  每月 / 每半年 / 每年）/ **更新通道**（正式版 / 测试版 / 全通道最新版）/ **上次检查时间**。
+  通道语义：正式版只提示正式版；测试版只提示预发布（`-betaN` 等）；全通道最新版取两者里最新的。
+  频率按"距上次检查"节流（每次启动 = 不节流）。
   **The update page now has a check-frequency picker, an update-channel selector
   (stable / beta / all) and a “last checked” timestamp.**
 

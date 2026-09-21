@@ -9,6 +9,23 @@ use crate::ui::{AppWindow, TransferInfo};
 use super::settings::{Store, persist};
 use super::{AppContext, parse_version, DEP_VERSIONS};
 
+/// 「检查频率」对应的最小间隔；`None` = 每次启动都查（`startup`）。
+///
+/// 月/半年/年按月与年的常用近似（30 / 182 / 365 天）—— 目的只是"别太频繁"，
+/// 不需要日历级精确。
+pub(crate) fn check_interval_secs(frequency: &str) -> Option<i64> {
+    const DAY: i64 = 24 * 60 * 60;
+    match frequency {
+        "daily" => Some(DAY),
+        "weekly" => Some(7 * DAY),
+        "monthly" => Some(30 * DAY),
+        "semiannual" => Some(182 * DAY),
+        "yearly" => Some(365 * DAY),
+        // `startup` 以及任何未知值：每次启动都查。
+        _ => None,
+    }
+}
+
 /// 当前 Unix 秒；系统时钟异常时退化为 0（调用方按"还没查过"处理）。
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
@@ -84,8 +101,11 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
             )
         };
         let now = now_unix();
-        // `daily`：距上次**成功**检查不足 24 小时就跳过这次启动。
-        let due = frequency == "startup" || last == 0 || now.saturating_sub(last) >= 24 * 60 * 60;
+        // 距上次检查不足所选频率的最小间隔就跳过这次启动（`startup` = 不节流）。
+        let due = match check_interval_secs(&frequency) {
+            None => true,
+            Some(secs) => last == 0 || now.saturating_sub(last) >= secs,
+        };
         if enabled && due {
             mark_check_started(window, store);
             let weak = window.as_weak();
@@ -430,5 +450,24 @@ mod tests {
     fn dep_version_falls_back_to_dash() {
         assert_eq!(dep_version("no-such-crate"), "-");
         assert_eq!(dep_version(""), "-");
+    }
+}
+
+#[cfg(test)]
+mod interval_tests {
+    use super::check_interval_secs;
+
+    /// 「每次启动」不节流；其余各档必须**严格递增** —— 顺序写错会让"每周"比"每天"更频繁。
+    #[test]
+    fn intervals_are_ordered_and_startup_is_unthrottled() {
+        assert_eq!(check_interval_secs("startup"), None);
+        assert_eq!(check_interval_secs("nonsense"), None, "未知值按每次启动处理");
+        let secs: Vec<i64> = ["daily", "weekly", "monthly", "semiannual", "yearly"]
+            .iter()
+            .map(|f| check_interval_secs(f).expect("必须有区间"))
+            .collect();
+        for pair in secs.windows(2) {
+            assert!(pair[1] > pair[0], "区间必须递增：{secs:?}");
+        }
     }
 }

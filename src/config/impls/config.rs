@@ -465,6 +465,18 @@ fn default_parity() -> String {
     "none".to_string()
 }
 
+/// 「检查频率」的取值，**顺序即设置页下拉的顺序**（下标 = `update-freq-index`）。
+/// 第一项是默认值（每次启动）。改这里就别忘 `app::updater::check_interval_secs` 与
+/// `app::settings::update` 的标签数组 —— 两边都有测试盯着它们对得上。
+pub const UPDATE_FREQUENCIES: [&str; 6] = [
+    "startup",
+    "daily",
+    "weekly",
+    "monthly",
+    "semiannual",
+    "yearly",
+];
+
 /// Bump when `migrate_defaults` gains a new one-time default-layout change.
 // rev 6 = A 方案（回滚上限治理）的迁移植入点：`migrate_defaults` 在 `rev >= DEFAULTS_REV`
 // 时直接早退，所以新增迁移必须同时把这个版本号 +1，否则迁移块永远不会执行。
@@ -2139,18 +2151,22 @@ impl ConfigStore {
         };
     }
 
-    /// 检查频率：`startup`（默认）/ `daily`。
+    /// 检查频率：`startup`（每次启动，默认）/ `daily` / `weekly` / `monthly` /
+    /// `semiannual`（每半年）/ `yearly`。未知值一律回落 `startup`。
+    ///
+    /// 取值列在 [`UPDATE_FREQUENCIES`] —— 它是**唯一出处**：设置页的下拉标签按同一个顺序
+    /// 排列，节流区间见 `app::updater::check_interval_secs`。
     pub fn update_frequency(&self) -> &str {
         match self.cache.update.update_check_frequency.as_str() {
-            "daily" => "daily",
-            _ => "startup",
+            v if UPDATE_FREQUENCIES.contains(&v) => v,
+            _ => UPDATE_FREQUENCIES[0],
         }
     }
 
     pub fn set_update_frequency(&mut self, frequency: String) {
         self.cache.update.update_check_frequency = match frequency.as_str() {
-            "daily" => "daily".into(),
-            _ => "startup".into(),
+            v if UPDATE_FREQUENCIES.contains(&v) => v.into(),
+            _ => UPDATE_FREQUENCIES[0].into(),
         };
     }
 
