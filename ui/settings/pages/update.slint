@@ -75,7 +75,7 @@ export component UpdatePage inherits VerticalLayout {
         title-en: "UPDATE CHECK";
         title-height: 24px;
         SettingSwitch {
-            label: root.lang-en ? "Check for new versions automatically" : "自动检查更新";
+            label: root.lang-en ? "Check for updates on every launch" : "启动时自动检查更新";
             checked <=> root.update-check-enabled;
             toggled(v) => { root.set-update-check-enabled(root.update-check-enabled); }
         }

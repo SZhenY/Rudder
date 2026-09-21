@@ -11,7 +11,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
   每月 / 每半年 / 每年）/ **更新通道**（正式版 / 测试版 / 全通道）/ **上次检查时间**。
   通道语义：正式版只提示正式版；测试版只提示预发布（`-betaN` 等）；全通道取两者里最新的。
   频率按"距上次检查"节流（每次启动 = 不节流）。页面刻意不写行内说明，只有「上次检查时间」
-  一行把**实时状态**放在说明位（为空时自动收起）。
+  一行把**实时状态**放在说明位（为空时自动收起）；开关标签写明「启动时」（检查只发生在启动时，
+  改动下次启动生效）。「立即检查」失败时给一句本地化提示（完整错误链进 `error.log`），
+  发现新版本时带上版本号。
   **The update page now has a check-frequency picker, an update-channel selector
   (stable / beta / all) and a “last checked” timestamp.**
 

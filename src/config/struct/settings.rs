@@ -241,7 +241,8 @@ pub struct UpdateSettings {
     pub update_channel: String,
     /// 检查频率：`startup`（默认，每次启动）/ `daily`（每天最多一次）。
     pub update_check_frequency: String,
-    /// 上次**成功查到结果**的 Unix 秒（0 = 从未）。用于「每天一次」的节流与界面显示。
+    /// 上次**发起**检查的 Unix 秒（0 = 从未）—— 在请求发出前就写入，**失败也算**：
+    /// 界面上它就是「上次检查时间」，节流也据此判断（所以一次失败不会让「每天」当天反复重试）。
     pub update_last_check_unix: i64,
 }
 

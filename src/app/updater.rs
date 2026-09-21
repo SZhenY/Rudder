@@ -266,11 +266,9 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                 match crate::app::self_updater::latest_update(current, &check_channel) {
                     Ok(Some(c)) => {
                         let v = format!("v{}", c.version);
-                        set(
-                            false,
-                            crate::i18n::t("发现新版本", "New version found").to_string(),
-                            Some(v),
-                        );
+                        let status =
+                            format!("{} {v}", crate::i18n::t("发现新版本", "New version found"));
+                        set(false, status, Some(v));
                     }
                     Ok(None) => {
                         set(
@@ -280,8 +278,16 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                         );
                     }
                     Err(e) => {
+                        // 细节进日志（error.log 只收 warn 以上，用户报障时能拿到完整错误链）；
+                        // 界面上只给一句本地化的话 —— 此前直接把 `{e:#}` 抛到那行说明位上，
+                        // 于是中文界面里冒出一串 "query GitHub releases: …"。
                         tracing::warn!("manual update check failed: {e:#}");
-                        set(false, format!("{e:#}"), None);
+                        set(
+                            false,
+                            crate::i18n::t("检查失败，请稍后重试", "Check failed — try again later")
+                                .to_string(),
+                            None,
+                        );
                     }
                 }
             });
