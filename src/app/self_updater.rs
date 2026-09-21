@@ -89,9 +89,11 @@ fn translocated_path(exe: &Path) -> bool {
 /// 按**更新通道**挑出最新的一个 release（返回它的 JSON，调用方再读 `tag_name` / `assets`）。
 ///
 /// * `stable`：走 `/releases/latest` —— GitHub 保证它不含预发布，响应也最小；
-/// * `beta` / `all`：拉一页 `/releases` 自己挑 —— GitHub **没有**"最新预发布"这种端点。
-///   `beta` 只认预发布（`-betaN` / `-alphaN` / `-rcN`，即 `parse_version` 的 `stage == 0`），
-///   `all`（全通道最新版）认版本最高的那个，不挑类型。
+/// * `beta` / `all`：拉一页 `/releases` 自己挑 —— GitHub **没有**"最新测试版"这种端点。
+///   `beta` 只认测试版（`-alphaN` / `-betaN` / `-rcN`，即 `is_test_build`），
+///   `all`（全通道最新版）认版本最高的那个，不挑类型 —— 于是它同时包含测试版与正式版。
+///   排序按 `parse_version` 的约定：**同号的测试版比正式版新**（`0.7.9-beta1 > 0.7.9`），
+///   所以正式版之后发出去的测试版能被提示到（见下面的 `channel_tests`）。
 ///
 /// 预发布与否按 **tag 名**判断，而不是 API 的 `prerelease` 字段：tag 是权威
 /// （`-betaN` 的语义写在我们自己的版本解析里），API 字段只是发布时的标记。
@@ -115,7 +117,19 @@ pub(crate) fn fetch_channel_release(channel: &str) -> Result<Option<serde_json::
     }
 
     let list = json.as_array().cloned().unwrap_or_default();
-    let mut best: Option<(serde_json::Value, super::Version)> = None;
+    Ok(pick_channel_release(&list, channel))
+}
+
+/// 从一页 `/releases` 的结果里挑出该通道要提示的那一个（`stable` 不走这里，它直接读
+/// `/releases/latest`）。
+///
+/// 跳过草稿、以及 tag 认不出格式的项；`beta` 通道只要测试版（`is_test_build`），
+/// `all` 什么都认 —— 取版本最高的那个。
+///
+/// 抽成纯函数是为了**能测**：这段挑选逻辑原先和网络请求缠在一起，唯一"验证"它的是线上的
+/// 真实 release，而 `-betaN` 的排序约定（同号比正式版新）恰好是错的 —— 没有任何测试盯着。
+fn pick_channel_release(list: &[serde_json::Value], channel: &str) -> Option<serde_json::Value> {
+    let mut best: Option<(&serde_json::Value, super::Version)> = None;
     for release in list {
         if release["draft"].as_bool().unwrap_or(false) {
             continue;
@@ -123,15 +137,14 @@ pub(crate) fn fetch_channel_release(channel: &str) -> Result<Option<serde_json::
         let Some(v) = super::parse_version(release["tag_name"].as_str().unwrap_or_default()) else {
             continue;
         };
-        // `beta` 通道只认预发布（stage 0）；`all` 什么都认。
-        if channel == "beta" && v.3 != 0 {
+        if channel == "beta" && !super::is_test_build(&v) {
             continue;
         }
         if best.as_ref().is_none_or(|(_, best_v)| v > *best_v) {
             best = Some((release, v));
         }
     }
-    Ok(best.map(|(release, _)| release))
+    best.map(|(release, _)| release.clone())
 }
 
 /// 查询 GitHub Releases，返回比 `current` 新的最新版本（无则 None）。
@@ -409,5 +422,65 @@ mod tests {
             macos_app_bundle(Path::new("/tmp/target/release/rudder")),
             None
         );
+    }
+}
+
+
+#[cfg(test)]
+mod channel_tests {
+    use super::pick_channel_release;
+    use serde_json::json;
+
+    fn rel(tag: &str) -> serde_json::Value {
+        json!({ "tag_name": tag, "draft": false, "assets": [] })
+    }
+
+    fn pick(list: &[serde_json::Value], channel: &str) -> String {
+        pick_channel_release(list, channel)
+            .and_then(|v| v["tag_name"].as_str().map(str::to_string))
+            .unwrap_or_default()
+    }
+
+    /// 用户 2026/09/21 的约定：`X.Y.Z-betaN` 是正式版之后继续做出来的构建，**比同号正式版新**。
+    /// 所以「全通道最新版」和「测试版」两个通道都要挑它 —— 挑不出来就等于测试版白发了。
+    #[test]
+    fn test_builds_beat_the_stable_of_the_same_version() {
+        let list = vec![
+            rel("v0.7.8"),
+            rel("v0.7.8-fix5"),
+            rel("v0.7.9"),
+            rel("v0.7.9-beta1"),
+        ];
+        assert_eq!(pick(&list, "all"), "v0.7.9-beta1", "全通道：beta 比同号正式版新");
+        assert_eq!(pick(&list, "beta"), "v0.7.9-beta1", "测试版通道：只认测试版");
+    }
+
+    /// 测试版通道在**没有**测试版时必须返回 None，而不是退回正式版 ——
+    /// 否则选了"测试版"的用户会在正式版发布时收到一次提示，与其选择不符。
+    #[test]
+    fn beta_channel_ignores_plain_stables() {
+        let list = vec![rel("v0.7.8"), rel("v0.7.9")];
+        assert_eq!(pick(&list, "beta"), "", "没有测试版就是不提示");
+        assert_eq!(pick(&list, "all"), "v0.7.9");
+    }
+
+    /// 版本号本身仍然优先：下一个号的测试版 > 上一个号的正式版/测试版。
+    #[test]
+    fn version_numbers_outrank_stages() {
+        let list = vec![rel("v0.7.9"), rel("v0.7.9-beta9"), rel("v0.8.0-beta1")];
+        assert_eq!(pick(&list, "all"), "v0.8.0-beta1");
+        assert_eq!(pick(&list, "beta"), "v0.8.0-beta1");
+    }
+
+    /// 草稿与认不出的 tag 一律跳过（否则一个手滑的 tag 会把通道整体带偏）。
+    #[test]
+    fn skips_drafts_and_unparsable_tags() {
+        let list = vec![
+            json!({ "tag_name": "vNEXT", "draft": false }),
+            json!({ "tag_name": "v0.9.0", "draft": true }),
+            rel("v0.7.9"),
+        ];
+        assert_eq!(pick(&list, "all"), "v0.7.9");
+        assert_eq!(pick(&[json!({ "tag_name": "vNEXT", "draft": false })], "all"), "");
     }
 }
