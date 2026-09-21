@@ -18,6 +18,18 @@ on:
 permissions:
   contents: write   # needed to create / update the GitHub Release
 
+env:
+  # macOS 镜像与 Xcode（两处 macOS 作业共用，改这里即可）。
+  # 跑在 `macos-26`（= 当前的 `macos-latest`，macOS 26 Arm64）上，镜像自带
+  # Xcode 26.0.1 / 26.1.1 / 26.2 / 26.3 / 26.4.1 / 26.5 / **26.6**（默认）。
+  # 显式选定，免得将来镜像换默认版本时构建悄悄变味。
+  #
+  # ⚠️ **不要切到 macOS 27**：它的 dyld 校验更严，会拒收 release 档 proc-macro 的
+  #   `.dylib`（`mis-aligned LINKEDIT string pool`，旧 rustc 产出的布局），构建会死在
+  #   `slint` 上（`can't find crate for slint_macros`）。Rust 1.98.1 起已缓解，
+  #   但镜像本身也还没 GA —— 等它 GA 且实测通过再切。
+  MACOS_XCODE: Xcode_26.6
+
 jobs:
   check-version:
     name: Check tag version
@@ -80,7 +92,7 @@ jobs:
           # Lock to the same toolchain the release builds use — newer stables
           # keep adding lints and would redline the gate independently of the
           # shipped code (#ci-quality-toolchain).
-          toolchain: 1.96
+          toolchain: 1.98.1
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       # fmt --check intentionally omitted: the tree has ~99 pre-existing
@@ -124,17 +136,27 @@ jobs:
             target: aarch64-unknown-linux-gnu  # builds the Linux ARM64 .tar.gz (#82)
             name: linux-aarch64
             bin: rudder
-          - os: macos-14               # Apple Silicon
+          - os: macos-26               # Apple Silicon, macOS 26（见顶部 env 的说明）
             target: aarch64-apple-darwin
             name: macos-aarch64
             bin: rudder
-          - os: macos-14               # Apple Silicon runner — cross-compiles the
+          - os: macos-26               # Apple Silicon runner — cross-compiles the
             target: x86_64-apple-darwin # x86_64 Mac binary. (Dedicated Intel
-            name: macos-x86_64          # macos-13 runners queue for ages / time out.)
+            name: macos-x86_64          # runners queue for ages / time out.)
             bin: rudder
 
     steps:
       - uses: actions/checkout@v5
+
+      # 固定链接器用的 Xcode（见顶部 `MACOS_XCODE`）。构建用的 cc/ld 由它决定，
+      # 所以必须在 `Build` 之前选好；顺手打印版本，日志里能对上。
+      - name: Select Xcode
+        if: runner.os == 'macOS'
+        run: |
+          set -eu
+          sudo xcode-select -s "/Applications/${MACOS_XCODE}.app"
+          xcodebuild -version
+          clang --version | head -n 1
 
       # Slint (winit + femtovg) + rfd (GTK) + arboard need these system libs.
       # Build-time only — no GPU/display required to compile.
@@ -153,7 +175,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.96
+          toolchain: 1.98.1
           targets: ${{ matrix.target }}
 
       - name: Cache cargo build
