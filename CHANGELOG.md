@@ -3,6 +3,28 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [Unreleased]
+
+### 新增 / Added
+
+- **「新版本提示」页补齐四项**：自动检查更新 / **检查频率**（每次启动、每天最多一次）/
+  **更新通道**（正式版 / 测试版 / 全通道最新版）/ **上次检查时间**。通道语义：正式版只提示
+  正式版；测试版只提示预发布（`-betaN` 等）；全通道最新版取两者里最新的。
+  **The update page now has a check-frequency picker, an update-channel selector
+  (stable / beta / all) and a “last checked” timestamp.**
+
+### 变化 / Changed
+
+- **中间版本改名：`-fixN` → `-betaN`。** 还没到正式版的构建以后一律用 `0.7.9-beta1` /
+  `-beta2` 这类 tag，语义上**早于** `0.7.9` 正式版（老写法 `0.7.7 < 0.7.7-fix1` 正好相反）。
+  老 `-fixN` tag 仍认得、不影响老用户，只是不再产生新的。更新检查按这个顺序比较，所以
+  beta 用户在正式版发布后能正确收到"已是最新"。
+  **Intermediate builds are tagged `-betaN` instead of `-fixN`** — a beta sorts *before*
+  its base version (`0.7.9-beta1 < 0.7.9`); old `-fixN` tags keep working.
+- **Linux 构建改在 Ubuntu 24.04 上做**（主矩阵 + 质检门一起上移）：主力产物的 glibc 底线随之
+  抬到 **2.39**，更老的发行版请下载 `-glibc228` 变体（Debian 10 容器构建，glibc ≥ 2.28）。
+  **Linux builds now run on Ubuntu 24.04**, raising the main artifacts' glibc floor to 2.39.
+
 ## [0.7.9] - 2026-09-19
 
 ### 新增 / Added

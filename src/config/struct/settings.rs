@@ -236,5 +236,12 @@ pub struct SyncSettings {
 pub struct UpdateSettings {
     /// 存储取反：缺失/老配置保持启动检查开启。
     pub update_check_disabled: bool,
+    /// 更新通道：`stable`（默认，只提示正式版）/ `beta`（beta 预发布也提示）/
+    /// `all`（全通道最新版）。空串或未知值一律按 `stable` 处理。
+    pub update_channel: String,
+    /// 检查频率：`startup`（默认，每次启动）/ `daily`（每天最多一次）。
+    pub update_check_frequency: String,
+    /// 上次**成功查到结果**的 Unix 秒（0 = 从未）。用于「每天一次」的节流与界面显示。
+    pub update_last_check_unix: i64,
 }
 

@@ -1624,7 +1624,11 @@ pub(crate) fn clipboard_set_text(text: String) {
 /// beta 的更新提示（与当年 `-fixN` 那个坑同源，见 #48）。
 ///
 /// 其它后缀（含 `-rc` 这类老写法）按预发布处理，但序号解析不出来时记 0。
-pub(crate) fn parse_version(s: &str) -> Option<(u32, u32, u32, u8, u32)> {
+/// 解析后的版本号：`(major, minor, patch, stage, num)`（语义见 [`parse_version`]）。
+/// 抽成别名是为了让 `Option<(Value, Version)>` 这类签名过得了 clippy 的 `type_complexity`。
+pub(crate) type Version = (u32, u32, u32, u8, u32);
+
+pub(crate) fn parse_version(s: &str) -> Option<Version> {
     let s = s.trim().trim_start_matches('v');
     let (core, suffix) = match s.split_once('-') {
         Some((core, rest)) => (core, rest),

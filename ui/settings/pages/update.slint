@@ -3,18 +3,32 @@
 // 由 interface_panel.slint 按页拆分而来（阶段 B）。页面只声明自己用到的
 // 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
 // 因此可以保持与改造前逐字一致。
+//
+// 四行（对齐截图）：自动检查更新 / 检查频率 / 更新通道 / 上次检查时间。
+// 通道语义见 `self_updater::fetch_channel_release`：`stable` 只提示正式版、
+// `beta` 只提示预发布（`-betaN` 等）、`all` 取全通道最新。
 
 import { Theme } from "../../theme.slint";
 import { SettingsSection } from "../section.slint";
-import { SettingRow, SettingSwitch } from "../chrome.slint";
+import { CursorStyleButton, SettingRow, SettingSwitch } from "../chrome.slint";
+import { ComboBox } from "std-widgets.slint";
 
 export component UpdatePage inherits VerticalLayout {
     in property <bool> lang-en;
     in-out property <bool> update-check-enabled;
     in property <string> update-check-status;
     in property <bool> update-checking;
+    /// `stable` / `beta` / `all`
+    in property <string> update-channel;
+    /// 「检查频率」下拉的选项下标（0 = 每次启动 / 1 = 每天一次）
+    in-out property <int> update-freq-index;
+    in property <[string]> update-freq-labels;
+    /// 上次检查时间（已在 Rust 侧本地化；空串 = 还没查过）
+    in property <string> update-last-check;
     callback check-update-now();
     callback set-update-check-enabled(bool);
+    callback set-update-channel(string);
+    callback set-update-freq(int);
 
     padding-left: 20px;
     padding-right: 20px;
@@ -28,7 +42,7 @@ export component UpdatePage inherits VerticalLayout {
         title-en: "UPDATE CHECK";
         title-height: 24px;
         SettingSwitch {
-            label: root.lang-en ? "Check for new versions on startup" : "启动时检查新版本";
+            label: root.lang-en ? "Check for new versions automatically" : "自动检查更新";
             desc: root.lang-en
                 ? "Off: Rudder no longer queries GitHub for releases and the update banner won't appear (takes effect next launch)."
                 : "关闭后:不再向 GitHub 查询新版本,也不会弹出更新提示(下次启动生效)。";
@@ -38,7 +52,47 @@ export component UpdatePage inherits VerticalLayout {
 
         }
         SettingRow {
-            label: root.lang-en ? "Check for updates now" : "手动检查更新";
+            label: root.lang-en ? "Check frequency" : "检查频率";
+            desc: root.lang-en
+                ? "Once per launch, or at most once a day."
+                : "每次启动检查一次,或每天最多检查一次。";
+            ComboBox {
+                width: 200px;
+                model: root.update-freq-labels;
+                current-index <=> root.update-freq-index;
+                selected(v) => { root.set-update-freq(root.update-freq-index); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Update channel" : "更新通道";
+            desc: root.lang-en
+                ? "Stable only / beta previews only / newest across every channel."
+                : "正式版只提示正式版;测试版只提示预发布(beta);全通道最新版取两者里最新的。";
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                CursorStyleButton {
+                    label: root.lang-en ? "Stable" : "正式版";
+                    cursor-kind: "stable";
+                    selected: root.update-channel == "stable";
+                    clicked => { root.set-update-channel("stable"); }
+                }
+                CursorStyleButton {
+                    label: root.lang-en ? "Beta" : "测试版";
+                    cursor-kind: "beta";
+                    selected: root.update-channel == "beta";
+                    clicked => { root.set-update-channel("beta"); }
+                }
+                CursorStyleButton {
+                    label: root.lang-en ? "All channels" : "全通道最新版";
+                    cursor-kind: "all";
+                    selected: root.update-channel == "all";
+                    clicked => { root.set-update-channel("all"); }
+                }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Last checked" : "上次检查时间";
             desc: root.lang-en
                 ? "Queries GitHub immediately; independent of the startup check setting."
                 : "立即向 GitHub 查询新版本,不受上方开关影响。";
@@ -46,16 +100,8 @@ export component UpdatePage inherits VerticalLayout {
             HorizontalLayout {
                 spacing: 10px;
                 alignment: center;
-                if root.update-check-status != "" : Text {
-                    text: root.update-check-status;
-                    font-size: 11px * Theme.panel-font;
-                    color: Theme.text-muted;
-                    vertical-alignment: center;
-                    overflow: elide;
-                    horizontal-stretch: 1;
-                }
                 Rectangle {
-                    width: root.update-checking ? 76px : 64px;
+                    width: root.update-checking ? 92px : 80px;
                     height: 28px;
                     border-radius: Theme.radius-sm;
                     background: upd-ck-ta.has-hover && !root.update-checking ? Theme.bg-hover : Theme.bg-elevated;
@@ -69,12 +115,26 @@ export component UpdatePage inherits VerticalLayout {
                     Text {
                         text: root.update-checking
                             ? (root.lang-en ? "Checking…" : "检查中…")
-                            : (root.lang-en ? "Check now" : "检查");
+                            : (root.lang-en ? "Check now" : "立即检查");
                         font-size: 12px * Theme.panel-font;
                         color: Theme.text-primary;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
+                }
+                Text {
+                    text: root.update-last-check;
+                    font-size: 12px * Theme.panel-font;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                }
+                if root.update-check-status != "" : Text {
+                    text: root.update-check-status;
+                    font-size: 11px * Theme.panel-font;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
                 }
             }
         }

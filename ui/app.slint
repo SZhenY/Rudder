@@ -477,6 +477,8 @@ export component AppWindow inherits Window {
     callback set-welcome-as-sidebar(bool);         // apply + persist
     in-out property <bool> update-check-enabled: true;   // startup new-version check (#184)
     callback set-update-check-enabled(bool);       // apply + persist
+    callback set-update-channel(string);
+    callback set-update-freq(int);
     // WSL profiles (upstream a64097e): managed in Interface → WSL.
     in property <[WslProfileInfo]> wsl-profiles;
     in-out property <string> wsl-new-directory: "~";
@@ -591,6 +593,11 @@ export component AppWindow inherits Window {
     // startup check toggle, result is shown inline in the settings row.
     in property <string> update-check-status: "";
     in property <bool> update-checking: false;
+    // 更新通道（stable / beta / all）与检查频率、上次检查时间（见 settings/pages/update.slint）。
+    in property <string> update-channel: "stable";
+    in property <[string]> update-freq-labels;
+    in-out property <int> update-freq-index: 0;
+    in property <string> update-last-check: "";
     callback check-update-now();
 
     // --- Built-in file viewer/editor (#70) --------------------------------
@@ -2284,6 +2291,10 @@ export component AppWindow inherits Window {
         update-check-enabled <=> root.update-check-enabled;
         update-check-status : root.update-check-status;
         update-checking : root.update-checking;
+        update-channel : root.update-channel;
+        update-freq-labels : root.update-freq-labels;
+        update-freq-index <=> root.update-freq-index;
+        update-last-check : root.update-last-check;
         webdav-accept-invalid-certs <=> root.webdav-accept-invalid-certs;
         webdav-enabled <=> root.webdav-enabled;
         webdav-password <=> root.webdav-password;
@@ -2332,6 +2343,8 @@ export component AppWindow inherits Window {
         set-ui-font(p0) => { root.set-ui-font(p0); }
         set-ui-scale(p0) => { root.set-ui-scale(p0); }
         set-update-check-enabled(p0) => { root.set-update-check-enabled(p0); }
+        set-update-channel(q0) => { root.set-update-channel(q0); }
+        set-update-freq(q1) => { root.set-update-freq(q1); }
         set-wallpaper(p0) => { root.set-wallpaper(p0); }
         set-welcome-as-sidebar(p0) => { root.set-welcome-as-sidebar(p0); }
         webdav-download() => { root.webdav-download(); }

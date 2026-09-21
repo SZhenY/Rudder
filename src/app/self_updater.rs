@@ -86,22 +86,62 @@ fn translocated_path(exe: &Path) -> bool {
     exe.to_string_lossy().contains("/AppTranslocation/")
 }
 
-/// 查询 GitHub Releases，返回比 `current` 新的最新版本（无则 None）。
+/// 按**更新通道**挑出最新的一个 release（返回它的 JSON，调用方再读 `tag_name` / `assets`）。
 ///
-/// 静默策略沿用既有检查逻辑：网络/解析失败返回 Err，但调用方只记录日志。
-pub(crate) fn latest_update(current: (u32, u32, u32, u8, u32)) -> Result<Option<UpdateCandidate>> {
-    let body = ureq::get(&format!(
-        "https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
-    ))
-    .set("User-Agent", "rudder-self-update")
-    .timeout(std::time::Duration::from_secs(15))
-    .call()
-    .context("query GitHub releases")?
-    .into_string()
-    .context("read releases response")?;
-
+/// * `stable`：走 `/releases/latest` —— GitHub 保证它不含预发布，响应也最小；
+/// * `beta` / `all`：拉一页 `/releases` 自己挑 —— GitHub **没有**"最新预发布"这种端点。
+///   `beta` 只认预发布（`-betaN` / `-alphaN` / `-rcN`，即 `parse_version` 的 `stage == 0`），
+///   `all`（全通道最新版）认版本最高的那个，不挑类型。
+///
+/// 预发布与否按 **tag 名**判断，而不是 API 的 `prerelease` 字段：tag 是权威
+/// （`-betaN` 的语义写在我们自己的版本解析里），API 字段只是发布时的标记。
+pub(crate) fn fetch_channel_release(channel: &str) -> Result<Option<serde_json::Value>> {
+    let url = if channel == "stable" {
+        format!("https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest")
+    } else {
+        format!("https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases?per_page=30")
+    };
+    let body = ureq::get(&url)
+        .set("User-Agent", "rudder-self-update")
+        .timeout(std::time::Duration::from_secs(15))
+        .call()
+        .context("query GitHub releases")?
+        .into_string()
+        .context("read releases response")?;
     let json: serde_json::Value =
         serde_json::from_str(&body).context("parse releases response")?;
+    if channel == "stable" {
+        return Ok(Some(json));
+    }
+
+    let list = json.as_array().cloned().unwrap_or_default();
+    let mut best: Option<(serde_json::Value, super::Version)> = None;
+    for release in list {
+        if release["draft"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        let Some(v) = super::parse_version(release["tag_name"].as_str().unwrap_or_default()) else {
+            continue;
+        };
+        // `beta` 通道只认预发布（stage 0）；`all` 什么都认。
+        if channel == "beta" && v.3 != 0 {
+            continue;
+        }
+        if best.as_ref().is_none_or(|(_, best_v)| v > *best_v) {
+            best = Some((release, v));
+        }
+    }
+    Ok(best.map(|(release, _)| release))
+}
+
+/// 查询 GitHub Releases，返回比 `current` 新的最新版本（无则 None）。
+///
+/// `channel` 决定查哪一类 release（见 [`fetch_channel_release`]）。
+/// 静默策略沿用既有检查逻辑：网络/解析失败返回 Err，但调用方只记录日志。
+pub(crate) fn latest_update(current: super::Version, channel: &str) -> Result<Option<UpdateCandidate>> {
+    let Some(json) = fetch_channel_release(channel)? else {
+        return Ok(None);
+    };
     let tag = json["tag_name"].as_str().unwrap_or_default().to_string();
     let Some(latest) = super::parse_version(&tag) else {
         return Ok(None);

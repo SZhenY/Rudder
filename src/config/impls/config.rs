@@ -2120,6 +2120,47 @@ impl ConfigStore {
     pub fn set_update_check_enabled(&mut self, enabled: bool) {
         self.cache.update.update_check_disabled = !enabled;
     }
+
+    /// 更新通道：`stable` / `beta` / `all`。未知值（含空串）一律回落 `stable`，
+    /// 于是老配置与手改坏的值都表现为"只提示正式版"。
+    pub fn update_channel(&self) -> &str {
+        match self.cache.update.update_channel.as_str() {
+            "beta" => "beta",
+            "all" => "all",
+            _ => "stable",
+        }
+    }
+
+    pub fn set_update_channel(&mut self, channel: String) {
+        self.cache.update.update_channel = match channel.as_str() {
+            "beta" => "beta".into(),
+            "all" => "all".into(),
+            _ => "stable".into(),
+        };
+    }
+
+    /// 检查频率：`startup`（默认）/ `daily`。
+    pub fn update_frequency(&self) -> &str {
+        match self.cache.update.update_check_frequency.as_str() {
+            "daily" => "daily",
+            _ => "startup",
+        }
+    }
+
+    pub fn set_update_frequency(&mut self, frequency: String) {
+        self.cache.update.update_check_frequency = match frequency.as_str() {
+            "daily" => "daily".into(),
+            _ => "startup".into(),
+        };
+    }
+
+    pub fn update_last_check(&self) -> i64 {
+        self.cache.update.update_last_check_unix
+    }
+
+    pub fn set_update_last_check(&mut self, unix_secs: i64) {
+        self.cache.update.update_last_check_unix = unix_secs.max(0);
+    }
     pub fn wallpaper_overlay(&self) -> f32 {
         let a = self.cache.appearance.wallpaper_overlay;
         // Floor lowered 0.40 -> 0.30 so more see-through panels are reachable.

@@ -6,7 +6,41 @@ use slint::{ComponentHandle as _, ModelRc, SharedString, VecModel};
 
 use crate::ui::{AppWindow, TransferInfo};
 
+use super::settings::{Store, persist};
 use super::{AppContext, parse_version, DEP_VERSIONS};
+
+/// 当前 Unix 秒；系统时钟异常时退化为 0（调用方按"还没查过"处理）。
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// 「上次检查时间」那一行显示的本机时间（`2026/09/21 10:14:58`）；0 → 空串。
+pub(crate) fn format_last_check(unix: i64) -> String {
+    if unix <= 0 {
+        return String::new();
+    }
+    chrono::DateTime::from_timestamp(unix, 0)
+        .map(|dt| {
+            dt.with_timezone(&chrono::Local)
+                .format("%Y/%m/%d %H:%M:%S")
+                .to_string()
+        })
+        .unwrap_or_default()
+}
+
+/// 记下「这次检查发生的时间」：写配置（带去抖）+ 刷新界面那一行。
+///
+/// 在**发起**检查之前、UI 线程上调用 —— 时间戳即"上次检查时间"，界面显示的就是它；
+/// `daily` 的节流也据此判断。放在这里而不是等结果回来，是因为配置句柄是
+/// `Rc<RefCell<..>>`（只能待在 UI 线程），而检查跑在后台线程上。
+fn mark_check_started(window: &AppWindow, store: &Store) {
+    let now = now_unix();
+    persist(store, |s| s.set_update_last_check(now));
+    window.set_update_last_check(format_last_check(now).into());
+}
 
 /// Wire the in-app update-check banner (#48): download opens the releases page.
 pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
@@ -35,35 +69,45 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
     // Query the GitHub releases API on a background thread; if a newer version
     // exists, flip the banner on. Best-effort: any network/parse error is
     // silently ignored and the app keeps working on the current version.
-    // Skipped entirely when the user turned the check off (#184).
-    if store.borrow().update_check_enabled() {
-        let weak = window.as_weak();
-        std::thread::spawn(move || {
-            let body = match ureq::get("https://api.github.com/repos/SZhenY/Rudder/releases/latest")
-                .set("User-Agent", "rudder-update-check")
-                .timeout(std::time::Duration::from_secs(8))
-                .call()
-            {
-                Ok(resp) => resp.into_string().unwrap_or_default(),
-                Err(_) => return,
-            };
-            let json: serde_json::Value = match serde_json::from_str(&body) {
-                Ok(v) => v,
-                Err(_) => return,
-            };
-            let tag = json["tag_name"].as_str().unwrap_or("").to_string();
-            let newer = matches!(
-                (parse_version(&tag), parse_version(env!("CARGO_PKG_VERSION"))),
-                (Some(latest), Some(cur)) if latest > cur
-            );
-            if !newer {
-                return;
-            }
-            let _ = weak.upgrade_in_event_loop(move |w| {
-                w.set_update_version(tag.into());
-                w.set_update_available(true);
+    //
+    // 三件事都听设置：「自动检查更新」开关（关掉就完全不发请求，#184）、
+    // 「更新通道」（只提示正式版 / 只提示预发布 / 全通道最新，见
+    // `self_updater::fetch_channel_release`）、「检查频率」（每次启动 / 每天一次）。
+    {
+        let (enabled, channel, frequency, last) = {
+            let st = store.borrow();
+            (
+                st.update_check_enabled(),
+                st.update_channel().to_string(),
+                st.update_frequency().to_string(),
+                st.update_last_check(),
+            )
+        };
+        let now = now_unix();
+        // `daily`：距上次**成功**检查不足 24 小时就跳过这次启动。
+        let due = frequency == "startup" || last == 0 || now.saturating_sub(last) >= 24 * 60 * 60;
+        if enabled && due {
+            mark_check_started(window, store);
+            let weak = window.as_weak();
+            std::thread::spawn(move || {
+                // 失败静默（沿用既有策略）：只影响横幅，不改时间戳。
+                let Ok(Some(json)) = super::self_updater::fetch_channel_release(&channel) else {
+                    return;
+                };
+                let tag = json["tag_name"].as_str().unwrap_or("").to_string();
+                let newer = matches!(
+                    (parse_version(&tag), parse_version(env!("CARGO_PKG_VERSION"))),
+                    (Some(latest), Some(cur)) if latest > cur
+                );
+                if !newer {
+                    return;
+                }
+                let _ = weak.upgrade_in_event_loop(move |w| {
+                    w.set_update_version(tag.into());
+                    w.set_update_available(true);
+                });
             });
-        });
+        }
     }
 
     // ── In-app self-update (#self-update) ─────────────────────────────────
@@ -72,8 +116,10 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
     // falls back to the browser release page (the Download button stays put).
     {
         let weak = window.as_weak();
+        let store_rc = store.clone();
         window.on_run_self_update(move || {
             let weak = weak.clone();
+            let channel = store_rc.borrow().update_channel().to_string();
             std::thread::spawn(move || {
                 let set = |state: i32, progress: f32, status: String| {
                     let weak = weak.clone();
@@ -92,7 +138,7 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                     0.0,
                     crate::i18n::t("正在检查更新…", "Checking for updates…").to_string(),
                 );
-                let cand = match crate::app::self_updater::latest_update(current) {
+                let cand = match crate::app::self_updater::latest_update(current, &channel) {
                     Ok(Some(c)) => c,
                     Ok(None) => {
                         set(
@@ -172,8 +218,13 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
     // inline in the settings row; a new version additionally flips the banner.
     {
         let weak = window.as_weak();
+        let store_rc = store.clone();
         window.on_check_update_now(move || {
+            if let Some(w) = weak.upgrade() {
+                mark_check_started(&w, &store_rc);
+            }
             let weak = weak.clone();
+            let check_channel = store_rc.borrow().update_channel().to_string();
             std::thread::spawn(move || {
                 let set = |checking: bool, status: String, found: Option<String>| {
                     let weak = weak.clone();
@@ -192,7 +243,7 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                 set(true, String::new(), None);
                 let current =
                     crate::app::parse_version(env!("CARGO_PKG_VERSION")).unwrap_or((0, 0, 0, 0, 0));
-                match crate::app::self_updater::latest_update(current) {
+                match crate::app::self_updater::latest_update(current, &check_channel) {
                     Ok(Some(c)) => {
                         let v = format!("v{}", c.version);
                         set(
