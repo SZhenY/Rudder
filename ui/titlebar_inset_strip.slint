@@ -53,16 +53,18 @@ export component TitlebarInsetStrip inherits Rectangle {
 
     // ── 动作（由调用点转发，实现仍在 Rust / 窗口）──────────────────
     callback close-requested();
-    callback win-maximize-toggle();
 
         height: titlebar-inset;
         background: Theme.bg-panel;
-        // macOS：交通灯右侧这块留白此前是"死区"——为不干扰系统拖拽
-        // 而没有 TouchArea，导致双击毫无反应（既不在原生标题栏内，
-        // 也没有自己的双击处理）。补一个**只处理双击**的 TouchArea：
-        // 双击 → Zoom（winit set_maximized）；拖拽仍交给系统，不加
-        // win-drag，避免接管指针后双击失效（同 tb-drag 的教训）。
-        tb-mac-dbl := TouchArea {
-            double-clicked => { root.win-maximize-toggle(); }
-        }
+        // **这块留白故意不挂任何 TouchArea**：双击与拖拽都交给 AppKit 自己。
+        //
+        // 曾经这里挂过一个"只处理双击"的 TouchArea（双击 → 我们自己的最大化开关），
+        // 结果与系统行为**互相抢**：实测日志（2026-09-21）里，系统先自己 zoom
+        // （`isZoomed` false → true，并带完整的缩放动画），约 0.5s 后我们的 handler
+        // 才跑、又 toggle 一次 —— 于是"第一次能最大化，第二次回弹一下又重新最大化"，
+        // 从 0.7.9 起一直如此。去掉之后两个方向都由 AppKit 负责：它 zoom 到屏幕大小，
+        // 还原时回到 `standard_frame`（也就是最大化之前的尺寸）。
+        //
+        // 同理不加 `win-drag`：拖拽本来就走系统（`mouseDownCanMoveWindow`），
+        // 接管指针只会把双击一起弄丢。
 }

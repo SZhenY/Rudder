@@ -14,6 +14,17 @@ All notable changes are documented here. 本文件记录所有重要变更。
   **The update page now has a check-frequency picker, an update-channel selector
   (stable / beta / all) and a “last checked” timestamp.**
 
+### 修复 / Fixed
+
+- **macOS：双击标题栏还原时的"回弹"修好了（0.7.9 起就存在）。** 给交通灯让位的那块留白区里，
+  双击本来就由 **AppKit 自己**处理 —— 它把窗口 zoom 到屏幕大小、还原时回到缩放前的尺寸
+  （`standard_frame`），两个方向都对。我们额外挂的那处"只处理双击"的 TouchArea 会在系统做完
+  之后再 toggle 一次，于是表现为"第一次能最大化、第二次回弹一下又重新最大化"。
+  现在把那处自绘双击整个去掉，手势完全交给系统（顺带也不再和系统抢指针，拖拽依旧原生）。
+  **Fixed: macOS double-click restore bouncing back** — the traffic-light inset strip added its own
+  double-click toggle on top of AppKit's, so restoring immediately re-maximised. The strip now
+  leaves that gesture entirely to the system.
+
 ### 变化 / Changed
 
 - **中间版本改名：`-fixN` → `-betaN`。** 还没到正式版的构建以后一律用 `0.7.9-beta1` /

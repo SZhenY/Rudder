@@ -868,9 +868,10 @@ export component AppWindow inherits Window {
         // in light mode. Left as a plain reserve (no TouchArea) so macOS's own title
         // bar keeps handling the window drag in this region.
     // 已抽成 `ui/titlebar_inset_strip.slint`：纯搬家，状态透传 + 动作转发。
+    // 不转发 `win-maximize-toggle`：这块留白区的双击由 AppKit 直接处理（见
+    // `ui/titlebar_inset_strip.slint` 里的说明 —— 我们再 toggle 一次就是跟系统抢）。
     if root.titlebar-inset > 0px : TitlebarInsetStrip {
         titlebar-inset : root.titlebar-inset;
-        win-maximize-toggle() => { root.win-maximize-toggle(); }
     }
 
         // Immersive custom title bar (#119) — only on frameless platforms
