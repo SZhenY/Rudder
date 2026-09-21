@@ -11,3 +11,10 @@ src/app.rs.rej
 
 # Large optional fonts the user may drop in locally — never committed (80 MB).
 ui/fonts/MapleMono*.ttf
+
+# 屏幕录制 / 影音随手文件 —— 曾误把 9.8MB 的「录屏*.mov」提交进来（2026-09-21）。
+# 这类文件属于"看板/演示"产物，不该进仓库。
+*.mov
+*.mp4
+*.mkv
+*.avi
