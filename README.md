@@ -343,17 +343,21 @@ rudder/
 
 - **分支名 = 当前主线版本 + `-betaN`**（按批次递增）—— 例如主线是 `0.7.9` 时用
   `0.7.9-beta1` / `0.7.9-beta2` / …（分支名里不带斜杠，避免 CI 打包路径被当成目录）。
-- 分支上验证通过（本地门禁 + CI 六平台构建）后，再**合入 `main`**（一条提交），并**立即删除该
-  分支** —— 本地与远端都删。
+- 分支上验证通过（本地门禁 + CI 六平台构建）后**直接发 beta 版**（见「打标签」）——
+  **不主动合入 `main`**：合不合、什么时候合，由维护者明确要求，要求了才合（一条提交）。
+- **分支不删。** `-betaN` 支线长期留着（远端也在），方便对照、回溯与后续补丁；
+  要清理时同样由维护者明确要求。
 - **主版本号只在发版时更新**：中间的分支改动 `Cargo.toml` / `Cargo.lock` 里的版本号不动，
-  免得同一个版本号对应好几份不同的代码。
+  免得同一个版本号对应好几份不同的代码。**发 beta 时例外**：那一刻版本号就写成带后缀的形式
+  （`0.7.9-beta1`），与 tag 一致 —— 工作流的 `Check tag version` 会逐字校验，对不上不发版。
 
 ### 打标签
 
 不要直接手动修改 `Cargo.toml` 后再打标签。使用发布脚本，让 Git tag 指向的提交本身就已经包含正确版本号：
 
 ```powershell
-.\scripts\release.ps1 v0.7.9 -Push
+.\scripts\release.ps1 v0.7.9-beta1 -Push     # beta：Cargo.toml 写成 0.7.9-beta1，tag 同名
+.\scripts\release.ps1 v0.7.9 -Push           # 正式版
 ```
 
 脚本会更新 `Cargo.toml` / `Cargo.lock`，运行 `cargo check --locked`，验证 `rudder --version`，提交 `Release v0.7.9`，创建 annotated tag。
