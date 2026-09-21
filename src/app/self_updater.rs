@@ -24,6 +24,8 @@ pub(crate) struct UpdateCandidate {
     pub version: String,
     pub asset_name: String,
     pub download_url: String,
+    /// 发布说明（release 的 `body`，已由 [`release_notes`] 清洗 + 截断）。
+    pub notes: String,
 }
 
 /// 当前平台在 release 资产名里的关键字（按优先级）。
@@ -179,12 +181,14 @@ pub(crate) fn latest_update(current: super::Version, channel: &str) -> Result<Op
         })
         .collect();
 
+    let notes = release_notes(json["body"].as_str().unwrap_or_default());
     for kw in asset_keywords() {
         if let Some((name, url)) = candidates.iter().find(|(n, _)| n.contains(kw)) {
             return Ok(Some(UpdateCandidate {
                 version: tag.trim_start_matches('v').to_string(),
                 asset_name: name.clone(),
                 download_url: url.clone(),
+                notes: notes.clone(),
             }));
         }
     }
@@ -482,5 +486,134 @@ mod channel_tests {
         ];
         assert_eq!(pick(&list, "all"), "v0.7.9");
         assert_eq!(pick(&[json!({ "tag_name": "vNEXT", "draft": false })], "all"), "");
+    }
+}
+
+/// 发布说明在「自动更新」对话框里占多大：够看清几个要点即可，再多也没人读，
+/// 完整内容在发布页。按**字符**（不是字节）算，中文说明不会被截成半个字。
+pub(crate) const MAX_NOTES_CHARS: usize = 1400;
+
+/// 把 release 的 `body` 清洗成能直接塞进普通 `Text` 的纯文本。
+///
+/// 为什么要洗：Slint 的 `Text` **不渲染 Markdown**，原样显示就是一堆 `##`、`**`、`- `
+/// 符号。这里只做最保守的几步，不追求完整解析：
+/// * HTML 注释（发布模板常留着 `<!-- ... -->`，可能跨行）整段丢掉；
+/// * 行首 `#` / `>` 去掉，`- ` / `* ` 列表项换成 `• `；
+/// * 行内 `**` / `__` / 反引号去掉；
+/// * 连续空行压成一个，首尾空行去掉；
+/// * 超长截断并加省略号。
+pub(crate) fn release_notes(body: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_comment = false;
+    let mut blanks = 0usize;
+
+    for raw in body.lines() {
+        let mut line = raw.trim().to_string();
+
+        if in_comment {
+            match line.find("-->") {
+                Some(i) => {
+                    line = line[i + 3..].trim().to_string();
+                    in_comment = false;
+                }
+                None => continue,
+            }
+        }
+        while let Some(start) = line.find("<!--") {
+            match line[start + 4..].find("-->") {
+                Some(rel) => {
+                    let end = start + 4 + rel + 3;
+                    line = format!("{}{}", &line[..start], &line[end..]);
+                }
+                None => {
+                    line.truncate(start);
+                    in_comment = true;
+                    break;
+                }
+            }
+        }
+
+        let mut text = line.trim();
+        text = text.trim_start_matches('#').trim();
+        text = text.trim_start_matches('>').trim();
+        let text = match text.strip_prefix("- ").or_else(|| text.strip_prefix("* ")) {
+            Some(rest) => format!("• {}", rest.trim()),
+            None => text.to_string(),
+        };
+        let text = text.replace("**", "").replace("__", "").replace('`', "");
+        let text = text.trim_end().to_string();
+
+        if text.is_empty() {
+            blanks += 1;
+            if blanks > 1 {
+                continue; // 连续空行只留一个
+            }
+        } else {
+            blanks = 0;
+        }
+        out.push(text);
+    }
+
+    // 首尾空行都清掉：对话框里那块框不该以空白开头或结尾（注释被整段删掉时，
+    // 开头很容易留下一串空行）。
+    while out.first().is_some_and(|l| l.is_empty()) {
+        out.remove(0);
+    }
+    while out.last().is_some_and(|l| l.is_empty()) {
+        out.pop();
+    }
+    let mut s = out.join("\n");
+    if s.chars().count() > MAX_NOTES_CHARS {
+        s = s.chars().take(MAX_NOTES_CHARS).collect::<String>();
+        s.push('…');
+    }
+    s
+}
+
+
+#[cfg(test)]
+mod notes_tests {
+    use super::{MAX_NOTES_CHARS, release_notes};
+
+    /// Markdown 标记要清掉：普通 `Text` 不渲染它，留下来的只是符号噪声。
+    #[test]
+    fn strips_markdown_markup() {
+        let body = "## Improvements\n\n- **HTTP transfer recovery** — better retries\n- `foo` and __bar__\n";
+        assert_eq!(
+            release_notes(body),
+            "Improvements\n\n• HTTP transfer recovery — better retries\n• foo and bar"
+        );
+    }
+
+    /// HTML 注释（含跨行）整段丢掉 —— 发布模板常留着它们。
+    #[test]
+    fn drops_html_comments_even_multiline() {
+        let body = "<!-- release template\nnotes for maintainers -->\nReal notes\n<!-- inline -->tail";
+        assert_eq!(release_notes(body), "Real notes\ntail");
+    }
+
+    /// 空行压缩 + 首尾清理：对话框里那块框不许开头结尾是一片空白。
+    #[test]
+    fn collapses_blank_runs_and_trims_ends() {
+        assert_eq!(release_notes("\n\nA\n\n\n\nB\n\n"), "A\n\nB");
+        assert_eq!(release_notes("   \n  \n"), "");
+    }
+
+    /// 超长截断，并按**字符**算（中文说明不会被截成半个字）。
+    #[test]
+    fn truncates_long_bodies_by_chars() {
+        let long = "更".repeat(MAX_NOTES_CHARS + 200);
+        let out = release_notes(&long);
+        assert_eq!(out.chars().count(), MAX_NOTES_CHARS + 1, "截断后带一个省略号");
+        assert!(out.ends_with('…'));
+
+        let short = "短说明";
+        assert_eq!(release_notes(short), "短说明", "没超长就不该动它");
+    }
+
+    /// 没有 body（很常见）→ 空串，对话框据此整块不显示。
+    #[test]
+    fn empty_body_is_empty() {
+        assert_eq!(release_notes(""), "");
     }
 }

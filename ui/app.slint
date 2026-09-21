@@ -46,7 +46,9 @@ import { ModalCard } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
-import { UpdateBanner } from "update_banner.slint";
+// 「自动更新」对话框：**必须**挂在文件末尾、设置遮罩（InterfaceSettingsOverlay）之后 ——
+// 否则会重演横幅那个 bug（设置面板是全窗遮罩，挂在最后，压住一切在它之前的东西）。
+import { UpdateDialog } from "update_dialog.slint";
 import { EditorFindResult, FileEditor } from "file_editor.slint";
 import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
 import { GroupDialog } from "group_dialog.slint";
@@ -598,6 +600,12 @@ export component AppWindow inherits Window {
     in property <[string]> update-freq-labels;
     in-out property <int> update-freq-index: 0;
     in property <string> update-last-check: "";
+    // 「自动更新」对话框（取代原顶部横幅）：Rust 在"自动检查发现新版本"或"手动检查发现"
+    // 时打开它；用户关掉后可由下一次检查再打开。
+    in-out property <bool> update-dialog-open: false;
+    in property <string> update-notes: "";            // 发布说明（Rust 侧已清洗 + 截断）
+    in property <string> update-current-version: "";  // 形如 "v0.7.9"
+    in property <string> update-badge: "";            // 通道徽章：正式版 / 测试版
     callback check-update-now();
 
     // --- Built-in file viewer/editor (#70) --------------------------------
@@ -1930,22 +1938,9 @@ export component AppWindow inherits Window {
         }
     }
 
-    // --- Update-available banner (#48) ------------------------------------
-    // 已抽成 `ui/update_banner.slint`；这里只做显隐判断 + 状态透传 + 动作转发。
-    // A dismissible top-centre banner; the app stays usable on the current
-    // version. "Download" opens the GitHub release page in the browser.
-    // 版式：水平居中交给布局（`alignment: center`），不再手算
-    // `(parent.width - 420px) / 2`。布局本身不接收点击，横幅仍只在自身范围内可交互。
-    if root.update-available : UpdateBanner {
-        update-version: root.update-version;
-        update-status: root.update-status;
-        update-state: root.update-state;
-        update-progress: root.update-progress;
-        dismiss => { root.update-available = false; }
-        open-update-url => { root.open-update-url(); }
-        run-self-update => { root.run-self-update(); }
-        restart-app => { root.restart-app(); }
-    }
+    // --- Update-available prompt (#48) ------------------------------------
+    // 原顶部横幅已改成 `ui/update_dialog.slint` 的模态对话框，挂在**文件末尾**
+    // （设置遮罩之后）—— 横幅挂在内容层里，设置面板一开就被那块全窗遮罩压住、点不到。
     // --- Built-in file viewer / editor (#70) ------------------------------
     // View = read-only (selectable/copyable); Edit = writable, Ctrl+S or the
     // Save button uploads, and closing uploads any unsaved changes.
@@ -2350,6 +2345,27 @@ export component AppWindow inherits Window {
         set-welcome-as-sidebar(p0) => { root.set-welcome-as-sidebar(p0); }
         webdav-download() => { root.webdav-download(); }
         webdav-upload() => { root.webdav-upload(); }
+    }
+
+    // --- 「自动更新」对话框（AppWindow 的最后一个子元素）-----------------
+    // ⚠️ 位置是**功能性的**，不是排版偏好：设置面板 `InterfaceSettingsOverlay` 是全窗模态，
+    // 且挂在它之前，谁在后面谁就压得住它。放在这里，才是"设置面板开着也能点更新"。
+    // 组件内部常驻（`opacity`/`visible` 切换），所以这里的 `open` 只做显隐，不用 `if`。
+    UpdateDialog {
+        avail-width: root.width;
+        avail-height: root.height;
+        open: root.update-dialog-open;
+        badge: root.update-badge;
+        current-version: root.update-current-version;
+        new-version: root.update-version;
+        notes: root.update-notes;
+        update-state: root.update-state;
+        update-progress: root.update-progress;
+        update-status: root.update-status;
+        close-requested => { root.update-dialog-open = false; }
+        run-update => { root.run-self-update(); }
+        restart-app => { root.restart-app(); }
+        open-releases => { root.open-update-url(); }
     }
 }
 

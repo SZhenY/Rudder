@@ -26,6 +26,17 @@ pub(crate) fn check_interval_secs(frequency: &str) -> Option<i64> {
     }
 }
 
+/// 「自动更新」对话框上那个通道徽章：被提示的版本是**测试版**（`-betaN` 等）就写「测试版」，
+/// 否则「正式版」。按 tag 名判定，与更新通道的筛选同一套规则（`is_test_build`）。
+fn version_badge(tag: &str) -> String {
+    let is_test = crate::app::parse_version(tag).is_some_and(|v| crate::app::is_test_build(&v));
+    if is_test {
+        crate::i18n::t("测试版", "Beta").to_string()
+    } else {
+        crate::i18n::t("正式版", "Stable").to_string()
+    }
+}
+
 /// 当前 Unix 秒；系统时钟异常时退化为 0（调用方按"还没查过"处理）。
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
@@ -61,6 +72,8 @@ fn mark_check_started(window: &AppWindow, store: &Store) {
 
 /// Wire the in-app update-check banner (#48): download opens the releases page.
 pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
+    // 「自动更新」对话框里「当前版本 → 新版本」那行的左半边：编译期版本，写一次就够。
+    window.set_update_current_version(format!("v{}", env!("CARGO_PKG_VERSION")).into());
     let store = &ctx.store;
     let sftp_handles = &ctx.sftp_handles;
     // "Download" on the banner opens the latest-release page in the browser.
@@ -122,9 +135,18 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                 if !newer {
                     return;
                 }
+                let badge = version_badge(&tag);
+                let notes = crate::app::self_updater::release_notes(
+                    json["body"].as_str().unwrap_or_default(),
+                );
                 let _ = weak.upgrade_in_event_loop(move |w| {
                     w.set_update_version(tag.into());
+                    w.set_update_badge(badge.into());
+                    w.set_update_notes(notes.into());
                     w.set_update_available(true);
+                    // 自动检查也一样要弹「自动更新」对话框：用户此刻可能正开着设置面板，
+                    // 而对话框挂在设置遮罩之后，压得住。
+                    w.set_update_dialog_open(true);
                 });
             });
         }
@@ -148,6 +170,11 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                             w.set_update_state(state);
                             w.set_update_progress(progress);
                             w.set_update_status(status.into());
+                            // 安装完成（3）与失败（4）必须让用户看到 ——
+                            // 他可能下载到一半就把对话框关掉了。
+                            if state == 3 || state == 4 {
+                                w.set_update_dialog_open(true);
+                            }
                         }
                     });
                 };
@@ -161,8 +188,10 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                 let cand = match crate::app::self_updater::latest_update(current, &channel) {
                     Ok(Some(c)) => c,
                     Ok(None) => {
+                        // 5 = "无需更新"，与 4（失败）分开：对话框标题跟着状态走，
+                        // 借用失败档会显示成"更新失败"，可实际上什么都没坏。
                         set(
-                            4,
+                            5,
                             0.0,
                             crate::i18n::t("已是最新版本", "Already up to date").to_string(),
                         );
@@ -170,7 +199,15 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                     }
                     Err(e) => {
                         tracing::warn!("self-update lookup failed: {e:#}");
-                        set(4, 0.0, format!("{e:#}"));
+                        set(
+                            4,
+                            0.0,
+                            crate::i18n::t(
+                                "检查更新失败，请稍后重试",
+                                "Check failed — try again later",
+                            )
+                            .to_string(),
+                        );
                         return;
                     }
                 };
@@ -203,7 +240,15 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                     Ok(d) => d,
                     Err(e) => {
                         tracing::warn!("self-update download failed: {e:#}");
-                        set(4, 0.0, format!("{e:#}"));
+                        set(
+                            4,
+                            0.0,
+                            crate::i18n::t(
+                                "下载失败，请检查网络，或点下面的发布页手动下载",
+                                "Download failed — check your network, or use the release page",
+                            )
+                            .to_string(),
+                        );
                         return;
                     }
                 };
@@ -227,7 +272,15 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                     }
                     Err(e) => {
                         tracing::warn!("self-update install failed: {e:#}");
-                        set(4, 1.0, format!("{e:#}"));
+                        set(
+                            4,
+                            1.0,
+                            crate::i18n::t(
+                                "安装失败，请点下面的发布页手动下载安装包",
+                                "Install failed — download the package from the release page",
+                            )
+                            .to_string(),
+                        );
                     }
                 }
             });
@@ -246,16 +299,22 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
             let weak = weak.clone();
             let check_channel = store_rc.borrow().update_channel().to_string();
             std::thread::spawn(move || {
-                let set = |checking: bool, status: String, found: Option<String>| {
+                // 第三个参数是"发现更新"时的三件套：(版本号, 通道徽章, 发布说明)。
+                let set = |checking: bool, status: String, found: Option<(String, String, String)>| {
                     let weak = weak.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = weak.upgrade() {
                             w.set_update_checking(checking);
                             w.set_update_check_status(status.into());
-                            if let Some(v) = found {
+                            if let Some((v, badge, notes)) = found {
                                 w.set_update_version(v.into());
+                                w.set_update_badge(badge.into());
+                                w.set_update_notes(notes.into());
                                 w.set_update_available(true);
                                 w.set_update_state(0);
+                                // 手动检查发现新版本同样弹对话框（用户就是在设置里点的，
+                                // 对话框显示在设置面板之上）。
+                                w.set_update_dialog_open(true);
                             }
                         }
                     });
@@ -268,7 +327,7 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                         let v = format!("v{}", c.version);
                         let status =
                             format!("{} {v}", crate::i18n::t("发现新版本", "New version found"));
-                        set(false, status, Some(v));
+                        set(false, status, Some((v, version_badge(&c.version), c.notes)));
                     }
                     Ok(None) => {
                         set(
