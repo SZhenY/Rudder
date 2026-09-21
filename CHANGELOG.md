@@ -7,6 +7,13 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 新增 / Added
 
+- **「自动更新」对话框**（取代原来的顶部横幅）：发现新版本时弹出，展示 **当前版本 → 新版本**、
+  通道徽章（正式版 / 测试版）与**发布说明**（release 正文，已清洗 Markdown 并按字符截断），
+  承载「立即更新 → 重启」的全过程（进度条 + 状态行）；失败给一句本地化的话，并保留
+  「打开发布页」兜底。自动检查（启动时）与设置里的「立即检查」两条路径都会弹它。
+  **The in-app update prompt is now a modal dialog** (replacing the top banner): current → new
+  version, the channel badge, and cleaned-up release notes, with progress / restart / failure states.
+
 - **「新版本提示」页补齐四项**：自动检查更新 / **检查频率**（下拉：每次启动 / 每天 / 每周 /
   每月 / 每半年 / 每年）/ **更新通道**（正式版 / 测试版 / 全通道）/ **上次检查时间**。
   通道语义：正式版只提示正式版；测试版只提示测试版（`-betaN` 等）；全通道两者都收，按版本取最新 ——
@@ -19,6 +26,13 @@ All notable changes are documented here. 本文件记录所有重要变更。
   (stable / beta / all) and a “last checked” timestamp.**
 
 ### 修复 / Fixed
+
+- **设置面板打开时点不到更新提示。** 原横幅挂在主窗口的内容层里，而设置面板是**最后挂载**的全窗
+  模态遮罩 —— 层序上谁在后面谁盖住谁，横幅于是被整块吞掉。改成对话框并挂在遮罩之后（`app.slint`
+  的最后一个子元素），这个层序问题从根上没有；对话框自身常驻 + `opacity` 过渡（不用 `if` 包着，
+  避免 `#323/#343` 那类闪退），关闭态不吞点击。
+  **The update prompt was unclickable while Settings was open** — the settings overlay is mounted
+  last and covered it; it is now a dialog mounted *after* that overlay.
 
 - **macOS：双击标题栏还原时的"回弹"修好了（0.7.9 起就存在）。** 给交通灯让位的那块留白区里，
   双击本来就由 **AppKit 自己**处理 —— 它把窗口 zoom 到屏幕大小、还原时回到缩放前的尺寸
