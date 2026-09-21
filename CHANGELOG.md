@@ -7,6 +7,20 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 新增 / Added
 
+- **切回「正式版」时会提示"可切换到旧版本"。** 本机跑 `0.7.9-beta1` 这类测试版、而正式版最新是
+  `0.7.9` 时，按「带 beta 的比同号正式版新」的约定，两者一比只会得出"已是最新版本" —— 于是
+  切回正式版的用户永远回不去。现在：「正式版」通道上发现目标版本**低于**本机时，弹的是
+  **「可切换到旧版本」**（警示色图标、按钮写「下载并切换」、说明区照旧是中英对照 CHANGELOG）；
+  而且**切换更新通道本身**也会立刻按新通道查一次（复用设置里「立即检查」那条链路，结果就地
+  显示 + 弹对话框）。`beta` / `all` 通道不给降级提示 —— 它们的语义就是"要更新的"，本机跑着比
+  线上一切都新的自编译版本时，在那两个通道上弹降级只会莫名其妙。启动时的自动检查也不弹降级
+  （否则每次启动都来一次），它只在用户**主动**切通道或点「立即检查」时出现。
+  **Switching back to the stable channel now offers an explicit downgrade prompt** — when the
+  newest stable release is *older* than the running build (e.g. `0.7.9-beta1` → `0.7.9`), the
+  update dialog says "Older version available" with a "Download & switch" button. Switching the
+  channel itself re-runs the check immediately; only the `stable` channel offers a downgrade, and
+  never during the silent startup check.
+
 - **「自动更新」对话框**（取代原来的顶部横幅）：发现新版本时弹出，展示 **当前版本 → 新版本**、
   通道徽章（正式版 / 测试版），以及**中英对照的发布说明** —— 取自该版本在 `CHANGELOG.md` 里的
   那一段（取不到才退回 release 正文），清洗 Markdown 后放进一块**常驻、可上下滚动**的区域，

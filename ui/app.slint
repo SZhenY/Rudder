@@ -606,6 +606,9 @@ export component AppWindow inherits Window {
     in property <string> update-notes: "";            // 发布说明（Rust 侧已清洗 + 截断）
     in property <string> update-current-version: "";  // 形如 "v0.7.9"
     in property <string> update-badge: "";            // 通道徽章：正式版 / 测试版
+    // 目标版本比本机低（降级 / 切换通道）：对话框据此换标题、换措辞、换主操作按钮。
+    // 例：本机 v0.7.9-beta1，切到「正式版」而正式版最新是 v0.7.9。
+    in property <bool> update-downgrade: false;
     callback check-update-now();
 
     // --- Built-in file viewer/editor (#70) --------------------------------
@@ -2360,6 +2363,7 @@ export component AppWindow inherits Window {
         update-state: root.update-state;
         update-progress: root.update-progress;
         update-status: root.update-status;
+        downgrade: root.update-downgrade;
         close-requested => { root.update-dialog-open = false; }
         run-update => { root.run-self-update(); }
         restart-app => { root.restart-app(); }

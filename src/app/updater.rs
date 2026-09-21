@@ -288,9 +288,13 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
             });
         });
     }
-    // ── Settings → "Check now" (#self-update) ─────────────────────────────
+    // ── Settings → "Check now" + 切换更新通道 (#self-update) ───────────────
     // Manual check, independent of the startup toggle. Result is surfaced
-    // inline in the settings row; a new version additionally flips the banner.
+    // inline in the settings row; a new version additionally opens the dialog.
+    //
+    // 「切换更新通道」也走这条检查（`settings::update` 里持久化之后 invoke 一次）——
+    // 本机是 `0.7.9-beta1` 而切到「正式版」、正式版最新是 `0.7.9` 时，这时要提示
+    // "可切换到旧版本"，而不是"已是最新版本"（用户 2026-09-21 的要求）。
     {
         let weak = window.as_weak();
         let store_rc = store.clone();
@@ -301,17 +305,20 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
             let weak = weak.clone();
             let check_channel = store_rc.borrow().update_channel().to_string();
             std::thread::spawn(move || {
-                // 第三个参数是"发现更新"时的三件套：(版本号, 通道徽章, 发布说明)。
-                let set = |checking: bool, status: String, found: Option<(String, String, String)>| {
+                // 第三个参数是"发现更新"时的四件套：(版本号, 通道徽章, 发布说明, 是否切换)。
+                let set = |checking: bool,
+                           status: String,
+                           found: Option<(String, String, String, bool)>| {
                     let weak = weak.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = weak.upgrade() {
                             w.set_update_checking(checking);
                             w.set_update_check_status(status.into());
-                            if let Some((v, badge, notes)) = found {
+                            if let Some((v, badge, notes, is_switch)) = found {
                                 w.set_update_version(v.into());
                                 w.set_update_badge(badge.into());
                                 w.set_update_notes(notes.into());
+                                w.set_update_downgrade(is_switch);
                                 w.set_update_available(true);
                                 w.set_update_state(0);
                                 // 手动检查发现新版本同样弹对话框（用户就是在设置里点的，
@@ -327,9 +334,20 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                 match crate::app::self_updater::latest_update(current, &check_channel) {
                     Ok(Some(c)) => {
                         let v = format!("v{}", c.version);
-                        let status =
-                            format!("{} {v}", crate::i18n::t("发现新版本", "New version found"));
-                        set(false, status, Some((v, version_badge(&c.version), c.notes)));
+                        // 切回旧版时说"发现新版本"会误导，措辞分开。
+                        let status = if c.is_switch {
+                            format!(
+                                "{} {v}",
+                                crate::i18n::t("可切换到旧版本", "Older version available")
+                            )
+                        } else {
+                            format!("{} {v}", crate::i18n::t("发现新版本", "New version found"))
+                        };
+                        set(
+                            false,
+                            status,
+                            Some((v, version_badge(&c.version), c.notes, c.is_switch)),
+                        );
                     }
                     Ok(None) => {
                         set(

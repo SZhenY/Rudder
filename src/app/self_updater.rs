@@ -24,8 +24,10 @@ pub(crate) struct UpdateCandidate {
     pub version: String,
     pub asset_name: String,
     pub download_url: String,
-    /// 发布说明（release 的 `body`，已由 [`release_notes`] 清洗 + 截断）。
+    /// 发布说明（该 tag 的 CHANGELOG 段落，见 [`notes_for`]）。
     pub notes: String,
+    /// 目标版本比本机**低**：这是"降级 / 切换"（见 [`is_channel_switch`]），不是升级。
+    pub is_switch: bool,
 }
 
 /// 当前平台在 release 资产名里的关键字（按优先级）。
@@ -161,7 +163,11 @@ pub(crate) fn latest_update(current: super::Version, channel: &str) -> Result<Op
     let Some(latest) = super::parse_version(&tag) else {
         return Ok(None);
     };
-    if latest <= current {
+    if latest == current {
+        return Ok(None);
+    }
+    let is_switch = latest < current;
+    if is_switch && !is_channel_switch(channel, current, latest) {
         return Ok(None);
     }
 
@@ -189,6 +195,7 @@ pub(crate) fn latest_update(current: super::Version, channel: &str) -> Result<Op
                 asset_name: name.clone(),
                 download_url: url.clone(),
                 notes: notes.clone(),
+                is_switch,
             }));
         }
     }
@@ -726,5 +733,47 @@ mod changelog_tests {
         assert!(changelog_section(MD, "9.9.9").is_none());
         assert!(changelog_section("## [1.0.0] - x\n\n## [0.9.0] - y\n\n- z\n", "1.0.0").is_none());
         assert!(changelog_section("", "0.7.9").is_none());
+    }
+}
+
+/// 这个候选是不是"**降级 / 切换**"（目标版本比本机低）而不是升级？
+///
+/// 只在「正式版」通道上提供切换：本机跑的是 `0.7.9-beta1` 这类测试版、而正式版最新是
+/// `0.7.9` 时，用户**已经明确选了正式版通道**，那就该告诉他"可切换到旧版本"，
+/// 而不是一句"已是最新版本"（用户 2026-09-21 的要求）。
+///
+/// `all` / `beta` 通道永不提供降级 —— 它们的语义就是"要更新的"；而且本机跑着比线上
+/// 一切都新的自编译版本时（很常见），在那两个通道上弹降级只会莫名其妙。
+pub(crate) fn is_channel_switch(channel: &str, current: super::Version, latest: super::Version) -> bool {
+    channel == "stable" && latest < current
+}
+
+
+#[cfg(test)]
+mod switch_tests {
+    use super::is_channel_switch;
+    use crate::app::{Version, parse_version};
+
+    fn v(s: &str) -> Version {
+        parse_version(s).unwrap()
+    }
+
+    /// 用户 2026-09-21 的场景：本机 `0.7.9-beta1`、切到正式版、正式版最新是 `0.7.9`
+    /// → 要提示"可切换到旧版本"（因为按约定 beta 比同号正式版新）。
+    #[test]
+    fn beta_user_on_stable_channel_gets_a_switch_offer() {
+        assert!(is_channel_switch("stable", v("0.7.9-beta1"), v("0.7.9")));
+        // 正式版比测试版新（跨版本）：那是正常升级，不是切换。
+        assert!(!is_channel_switch("stable", v("0.7.8-beta1"), v("0.7.9")));
+        // 同为正式版（降级复现）：仍算切换，让用户能回到通道最新。
+        assert!(is_channel_switch("stable", v("0.7.9"), v("0.7.8")));
+    }
+
+    /// `beta` / `all` 通道不给降级：要么升级，要么什么都不说。
+    #[test]
+    fn other_channels_never_downgrade() {
+        assert!(!is_channel_switch("beta", v("0.7.9-beta2"), v("0.7.9-beta1")));
+        assert!(!is_channel_switch("all", v("0.7.10-beta1"), v("0.7.9")));
+        assert!(!is_channel_switch("nonsense", v("0.7.9-beta1"), v("0.7.9")));
     }
 }

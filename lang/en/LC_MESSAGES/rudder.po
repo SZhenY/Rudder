@@ -719,3 +719,9 @@ msgstr "Close"
 
 msgid "Restart"
 msgstr "Restart"
+
+msgid "Older version available"
+msgstr "Older version available"
+
+msgid "Download & switch"
+msgstr "Download & switch"

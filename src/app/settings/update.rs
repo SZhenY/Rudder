@@ -56,9 +56,17 @@ pub(crate) fn bind(w: &AppWindow, store: &Store) {
     let store_cb = store.clone();
     let weak = w.as_weak();
     w.on_set_update_channel(move |channel| {
+        let before = store_cb.borrow().update_channel().to_string();
         persist(&store_cb, |s| s.set_update_channel(channel.to_string()));
+        let after = store_cb.borrow().update_channel().to_string();
         if let Some(w) = weak.upgrade() {
-            w.set_update_channel(store_cb.borrow().update_channel().into());
+            w.set_update_channel(after.clone().into());
+            // 通道**真的变了**就立刻按新通道查一次（复用设置里「立即检查」那条链路，
+            // 结果同样就地显示 + 弹「自动更新」对话框）：
+            // 选了「正式版」而本机是测试版时，这一步会给出"可切换到旧版本"。
+            if before != after {
+                w.invoke_check_update_now();
+            }
         }
     });
 

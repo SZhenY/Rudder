@@ -728,3 +728,9 @@ msgstr "打开发布页"
 
 msgid "Close"
 msgstr "关闭"
+
+msgid "Older version available"
+msgstr "可切换到旧版本"
+
+msgid "Download & switch"
+msgstr "下载并切换"
