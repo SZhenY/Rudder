@@ -1607,19 +1607,42 @@ pub(crate) fn clipboard_set_text(text: String) {
 /// `http`/`https` scheme prefixes. A value without a (recognised) scheme is
 /// treated as SOCKS5, matching proxy.rs's parse default, so older configs that
 /// stored a bare `host:port` keep working.
-/// Parse a `"vX.Y.Z"` / `"X.Y.Z"` / `"X.Y.Z-fixN"` tag into a comparable
-/// tuple, or `None` if it isn't a three-part numeric version.
+/// Parse a `"vX.Y.Z"` / `"X.Y.Z"` / `"X.Y.Z-betaN"` / `"X.Y.Z-fixN"` tag into a
+/// comparable `(major, minor, patch, stage, num)` tuple, or `None` if it isn't a
+/// three-part numeric version.
 ///
-/// 第四位是 **fix 序号**（`-fixN` 补丁版，见 `docs/RELEASE.md`）：没有后缀时为
-/// 0，于是排序天然满足 `0.7.7 < 0.7.7-fix1 < 0.7.7-fix2 < 0.7.8` —— 少了这一位，
-/// `0.7.7-fix1` 会被算成和 `0.7.7` 相同，用户就永远收不到补丁版的更新提示。
+/// `stage` 决定**同版本号之内**的先后，`num` 是它的序号：
 ///
-/// 其它预发布后缀（`3-rc1`）按旧行为容忍：取 patch 的前导数字 (#48)。
-pub(crate) fn parse_version(s: &str) -> Option<(u32, u32, u32, u32)> {
+/// | stage | 含义 | 例 |
+/// |---|---|---|
+/// | 0 | 预发布（`-betaN` / `-alphaN` / `-rcN`） | `0.7.9-beta1` **<** `0.7.9` |
+/// | 1 | 正式版（无后缀） | `0.7.9` |
+/// | 2 | 补丁版（`-fixN`，**已弃用**的旧写法，只为老 tag 保留） | `0.7.9` **<** `0.7.9-fix1` |
+///
+/// 于是完整的排序是 `0.7.9-beta1 < 0.7.9 < 0.7.9-fix1 < 0.7.10-beta1` ——
+/// 少了 `stage` 这一位，`0.7.9-beta1` 会被算成**等于** `0.7.9`，用户就永远收不到
+/// beta 的更新提示（与当年 `-fixN` 那个坑同源，见 #48）。
+///
+/// 其它后缀（含 `-rc` 这类老写法）按预发布处理，但序号解析不出来时记 0。
+pub(crate) fn parse_version(s: &str) -> Option<(u32, u32, u32, u8, u32)> {
     let s = s.trim().trim_start_matches('v');
-    let (core, fix) = match s.split_once("-fix") {
-        Some((core, rest)) => (core, rest.parse().unwrap_or(0)),
-        None => (s, 0),
+    let (core, suffix) = match s.split_once('-') {
+        Some((core, rest)) => (core, rest),
+        None => (s, ""),
+    };
+    let (stage, num) = if suffix.is_empty() {
+        (1u8, 0u32)
+    } else if let Some(n) = suffix.strip_prefix("fix") {
+        (2, n.parse().unwrap_or(0))
+    } else if let Some(n) = suffix
+        .strip_prefix("beta")
+        .or_else(|| suffix.strip_prefix("alpha"))
+        .or_else(|| suffix.strip_prefix("rc"))
+    {
+        (0, n.parse().unwrap_or(0))
+    } else {
+        // 认不出来的后缀仍按"正式版"容忍（沿用旧行为）。
+        (1, 0)
     };
     let mut it = core.split('.');
     let major = it.next()?.parse().ok()?;
@@ -1630,7 +1653,7 @@ pub(crate) fn parse_version(s: &str) -> Option<(u32, u32, u32, u32)> {
         .next()?
         .parse()
         .ok()?;
-    Some((major, minor, patch, fix))
+    Some((major, minor, patch, stage, num))
 }
 
 #[cfg(test)]
@@ -1639,11 +1662,13 @@ mod version_tests {
 
     #[test]
     fn parses_plain_and_prefixed_versions() {
-        assert_eq!(parse_version("0.7.7"), Some((0, 7, 7, 0)));
-        assert_eq!(parse_version("v0.7.7"), Some((0, 7, 7, 0)));
-        assert_eq!(parse_version(" v1.20.3 "), Some((1, 20, 3, 0)));
-        // 旧行为保留：`-rc1` 这类后缀取 patch 的前导数字 (#48)。
-        assert_eq!(parse_version("0.7.3-rc1"), Some((0, 7, 3, 0)));
+        assert_eq!(parse_version("0.7.7"), Some((0, 7, 7, 1, 0)));
+        assert_eq!(parse_version("v0.7.7"), Some((0, 7, 7, 1, 0)));
+        assert_eq!(parse_version(" v1.20.3 "), Some((1, 20, 3, 1, 0)));
+        // 预发布后缀：stage 0，序号进第 5 位（旧行为是并进 patch，见 #48）。
+        assert_eq!(parse_version("0.7.3-rc1"), Some((0, 7, 3, 0, 1)));
+        assert_eq!(parse_version("0.7.9-beta2"), Some((0, 7, 9, 0, 2)));
+        assert_eq!(parse_version("v0.7.9-alpha3"), Some((0, 7, 9, 0, 3)));
         assert_eq!(parse_version("nonsense"), None);
         assert_eq!(parse_version("1.2"), None);
     }
@@ -1652,8 +1677,8 @@ mod version_tests {
     /// `0.7.7` 相等，更新检查就永远不会提示用户（release 流程上的静默失败）。
     #[test]
     fn fix_releases_sort_after_their_base_version() {
-        assert_eq!(parse_version("0.7.7-fix1"), Some((0, 7, 7, 1)));
-        assert_eq!(parse_version("v0.7.7-fix12"), Some((0, 7, 7, 12)));
+        assert_eq!(parse_version("0.7.7-fix1"), Some((0, 7, 7, 2, 1)));
+        assert_eq!(parse_version("v0.7.7-fix12"), Some((0, 7, 7, 2, 12)));
 
         let v = |s: &str| parse_version(s).unwrap();
         assert!(v("0.7.7-fix1") > v("0.7.7"), "补丁版必须新于它的基准版");
@@ -1661,6 +1686,19 @@ mod version_tests {
         assert!(v("0.7.8") > v("0.7.7-fix9"), "下一个小版本仍然更大");
         assert!(v("0.8.0") > v("0.7.7-fix1"));
         assert_eq!(v("0.7.7-fix1"), v("v0.7.7-fix1"), "v 前缀不影响比较");
+    }
+
+    /// **beta 必须排在它的基准版之前**（`0.7.9-beta1 < 0.7.9`）—— 这是新的中间版本
+    /// 写法：`-betaN` 取代了原来的 `-fixN`；正式版一旦发出去，beta 就不该再被判成"更新"。
+    #[test]
+    fn beta_releases_sort_before_their_base_version() {
+        let v = |s: &str| parse_version(s).unwrap();
+        assert!(v("0.7.9-beta1") < v("0.7.9"), "beta 早于正式版");
+        assert!(v("0.7.9-beta2") > v("0.7.9-beta1"), "beta 序号递增");
+        assert!(v("0.7.9") > v("0.7.9-rc1"), "rc 也算预发布");
+        assert!(v("0.7.9-beta9") > v("0.7.8"), "上一个正式版之后才轮到 beta");
+        assert!(v("0.7.10-beta1") > v("0.7.9"), "下一个版本的 beta 仍然更新");
+        assert!(v("0.7.9-fix1") > v("0.7.9-beta1"), "补丁版仍排在基准版之后");
     }
 }
 

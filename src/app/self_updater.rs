@@ -89,7 +89,7 @@ fn translocated_path(exe: &Path) -> bool {
 /// 查询 GitHub Releases，返回比 `current` 新的最新版本（无则 None）。
 ///
 /// 静默策略沿用既有检查逻辑：网络/解析失败返回 Err，但调用方只记录日志。
-pub(crate) fn latest_update(current: (u32, u32, u32, u32)) -> Result<Option<UpdateCandidate>> {
+pub(crate) fn latest_update(current: (u32, u32, u32, u8, u32)) -> Result<Option<UpdateCandidate>> {
     let body = ureq::get(&format!(
         "https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
     ))

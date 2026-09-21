@@ -41,7 +41,9 @@ cd rudder-*-linux-x86_64
 chmod +x install-linux.sh && ./install-linux.sh
 ```
 
-> 需要 glibc ≥ 2.35（Ubuntu 22.04+ / Debian 12+）。Wayland 下首次装完图标可能要注销重登一次。
+> 需要 glibc ≥ 2.39（Ubuntu 24.04+ / Debian 13+）。**更老的发行版**请下载文件名带
+> `-glibc228` 的变体 —— 它在 Debian 10 容器里构建，glibc ≥ 2.28 即可（Ubuntu 20.04+ / Debian 10+）。
+> Wayland 下首次装完图标可能要注销重登一次。
 
 从源码 `cargo run`（Linux Mint / Ubuntu / Debian）需要先安装 Slint/winit/rfd 等用到的系统开发包：
 
