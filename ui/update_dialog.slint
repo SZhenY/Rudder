@@ -1,0 +1,319 @@
+//! **「自动更新」对话框**（#48 检查 + #self-update 自更新）：发现新版本时弹出，
+//! 展示「当前版本 → 新版本」与发布说明，并承载「立即更新 / 重启」的整个过程。
+//!
+//! 它取代了原来的顶部横幅（`ui/update_banner.slint`）。横幅挂在主窗口的内容层里，
+//! 而设置面板是**最后挂载**的全窗遮罩（`InterfaceSettingsOverlay`，在 app.slint 末尾），
+//! 于是「设置面板一打开，横幅就点不到了」—— 用户报的正是这个 bug。对话框挂在设置遮罩
+//! **之后**，层序是：主界面 → 各面板/遮罩 → 设置面板 → 本对话框，因此压得住一切。
+//!
+//! 两个必须守住的老坑（都来自这个仓库自己的教训）：
+//! * **常驻 + `opacity` 过渡，不用 `if` 包着** —— 在事件派发栈上销毁正在处理事件的子树
+//!   会闪退（#323/#343）；
+//! * 常驻遮罩的 `TouchArea` 必须 `enabled: open` —— 否则关闭状态下这层全窗 TouchArea
+//!   会把整个界面的点击吞掉（`ModalCard` 的注释同样记着这条）。
+//!
+//! 文案走 `@tr(...)`（`lang/*/LC_MESSAGES/rudder.po`），与横幅保持同一套。
+
+import "fonts/MaterialIcons-Regular.ttf";
+import { AnimationSettings, Theme } from "theme.slint";
+import { CloseButton } from "components/buttons.slint";
+import { GhostButton, PrimaryButton } from "widgets.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export component UpdateDialog inherits Rectangle {
+    // ── 状态（窗口透传；全部由 Rust 侧的 updater 读写）──────────────────
+    in property <bool> open: false;
+    /// 通道徽章：正式版 / 测试版（按被提示的那个版本是不是测试版判定，Rust 侧给）。
+    in property <string> badge: "";
+    /// 当前版本与待更新版本（形如 `v0.7.9` / `v0.7.9-beta1`）。
+    in property <string> current-version: "";
+    in property <string> new-version: "";
+    /// 发布说明（release body，已由 Rust 侧清洗/截断；空串则不显示那块）。
+    in property <string> notes: "";
+    /// 0 空闲 / 1 下载中 / 2 安装中 / 3 已安装待重启 / 4 失败 / 5 无需更新。
+    in property <int> update-state: 0;
+    /// 目标版本比本机**低**（降级 / 切换通道）：换标题、换按钮、换成警示色。
+    /// 例：本机 `v0.7.9-beta1` 切到「正式版」，而正式版最新是 `v0.7.9`。
+    in property <bool> downgrade: false;
+    in property <float> update-progress: 0;
+    in property <string> update-status: "";
+
+    // ── 动作（上抛给窗口/Rust）────────────────────────────────────────
+    callback close-requested();
+    callback run-update();
+    callback restart-app();
+    callback open-releases();
+
+    // ── 由状态推出来的呈现（避免 Rust 侧多塞几个字符串）───────────────
+    // 5 = 无需更新（自更新前重新查了一遍，结果是没有新版）：与 4 分开，别把"没事"
+    // 显示成"失败"。
+    private property <string> heading: update-state == 3
+        ? @tr("Update installed — restart to apply")
+        : update-state == 4
+            ? @tr("Update failed")
+            : update-state == 5
+                ? @tr("Already up to date")
+                : (update-state == 1 || update-state == 2)
+                    ? @tr("Updating…")
+                    : root.downgrade
+                        ? @tr("Older version available")
+                        : @tr("Update available");
+    private property <brush> tone: update-state == 3
+        ? Theme.success
+        : update-state == 4
+            ? Theme.danger
+            : root.downgrade
+                ? Theme.warning
+                : Theme.accent;
+    // 进度条只在下载/安装时有意义（3/4 态只在状态行说话）。
+    private property <bool> running: update-state == 1 || update-state == 2;
+
+    // 尺寸与设置遮罩（`InterfaceSettingsOverlay`）保持同一套写法：`100%`。
+    // 之前在这里传 `avail-width/height: root.width/height`，实际算出来的高度只有窗口的一半 ——
+    // 卡片被压在上半屏，下半屏露出没被压暗的主界面（用户截图里那个红框就是这个）。
+    width: 100%;
+    height: 100%;
+    visible: self.opacity > 0.001;
+    opacity: open ? 1 : 0;
+    animate opacity {
+        duration: 160ms;
+        easing: AnimationSettings.color();
+        enabled: AnimationSettings.enabled;
+    }
+    background: #00000080;   // dim backdrop
+    TouchArea {
+        enabled: open;       // 隐藏期间禁命中（否则吞掉整窗点击）
+        clicked => { root.close-requested(); }
+    }
+
+    card := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 + (open ? 0px : 12px);
+        width: min(560px, parent.width - 40px);
+        height: min(520px, parent.height - 60px);
+        background: Theme.bg-panel;
+        border-radius: Theme.radius-lg;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: Theme.shadow-dialog-blur;
+        drop-shadow-color: Theme.shadow-dialog-color;
+        animate y {
+            duration: 200ms;
+            easing: AnimationSettings.spring-settle();
+            enabled: AnimationSettings.enabled;
+        }
+        TouchArea { enabled: open; }   // 吞掉卡片内部点击，不冒泡到遮罩
+
+        VerticalLayout {
+            padding: 0;
+            spacing: 0;
+
+            // ── 标题栏：标题 + 通道徽章 + ✕ ─────────────────────────────
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 8px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 10px;
+                HorizontalLayout {
+                    horizontal-stretch: 1;
+                    alignment: start;
+                    spacing: 8px;
+                    Text {
+                        text: @tr("Automatic update");
+                        color: Theme.text-primary;
+                        font-size: Theme.fs-lg;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {                       // 通道 pill 徽章
+                        border-radius: Theme.radius-sm;
+                        background: Theme.bg-panel-alt;
+                        VerticalLayout {
+                            alignment: center;
+                            HorizontalLayout {
+                                padding-left: 7px;
+                                padding-right: 7px;
+                                Text {
+                                    text: root.badge;
+                                    color: Theme.text-secondary;
+                                    font-size: Theme.fs-xs;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+                CloseButton {
+                    glyph-size: Theme.fs-sm;
+                    clicked => { root.close-requested(); }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.border-subtle; }
+
+            // ── 卡片主体 ────────────────────────────────────────────────
+            VerticalLayout {
+                vertical-stretch: 1;
+                padding: 20px;
+                spacing: 14px;
+
+                HorizontalLayout {
+                    spacing: 14px;
+                    // 圆底图标 + 状态色（成功=绿、失败=红、其余=强调色）
+                    Rectangle {
+                        width: 44px;
+                        height: 44px;
+                        border-radius: 22px;
+                        background: root.tone.with-alpha(0.16);
+                        Text {
+                            text: "\u{E2C4}";     // Material "file_download"
+                            font-family: "Material Icons";
+                            color: root.tone;
+                            font-size: 22px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 5px;
+                        Text {
+                            text: root.heading;
+                            color: Theme.text-primary;
+                            font-size: Theme.fs-xl;
+                            font-weight: 700;
+                        }
+                        HorizontalLayout {
+                            alignment: start;
+                            spacing: 8px;
+                            Text {
+                                text: root.current-version;
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-md;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: "→";
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-md;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: root.new-version;
+                                color: Theme.accent;
+                                font-size: Theme.fs-md;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // 发布说明：该版本 CHANGELOG 的中英对照段落（Rust 侧取 + 清洗）。
+                // 常驻、撑满中间的剩余空间，内容长了就上下滚动；确实取不到时给一行灰字提示，
+                // 而不是留一个空框（用户明确要求这块要有内容、且能滚）。
+                Rectangle {
+                    vertical-stretch: 1;
+                    border-radius: Theme.radius-md;
+                    border-width: 1px;
+                    border-color: Theme.border-subtle;
+                    background: Theme.bg-elevated;
+                    ScrollView {
+                        VerticalLayout {
+                            padding: 10px;
+                            Text {
+                                text: root.notes != ""
+                                    ? root.notes
+                                    : @tr("No release notes for this version");
+                                color: root.notes != "" ? Theme.text-secondary : Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                                line-height-factor: 1.35;
+                            }
+                        }
+                    }
+                }
+
+                // 进度 + 状态行（下载/安装中显示进度条；3/4 态只有一行状态）
+                if root.update-status != "" : HorizontalLayout {
+                    spacing: 10px;
+                    if root.running : Rectangle {
+                        width: 180px;
+                        height: 6px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 3px;
+                        background: Theme.bg-active;
+                        Rectangle {
+                            x: 0;
+                            y: 0;
+                            height: 6px;
+                            width: parent.width * root.update-progress;
+                            border-radius: 3px;
+                            background: root.tone;
+                        }
+                    }
+                    Text {
+                        text: root.update-status;
+                        color: root.update-state == 4 ? Theme.danger : Theme.text-muted;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.border-subtle; }
+
+            // ── 底部：浏览器兜底 + 关闭 / 主操作 ────────────────────────
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 12px;
+                padding-bottom: 12px;
+                spacing: 8px;
+                // 自更新失败时的兜底（原横幅的 Download 按钮）—— 常驻可点，
+                // 不随状态变化：任何一步卡住都能去发布页手动下。
+                HorizontalLayout {
+                    horizontal-stretch: 1;
+                    alignment: start;
+                    Rectangle {
+                        border-radius: Theme.radius-sm;
+                        background: rel-ta.has-hover ? Theme.bg-hover : transparent;
+                        VerticalLayout {
+                            alignment: center;
+                            HorizontalLayout {
+                                padding-left: 6px;
+                                padding-right: 6px;
+                                Text {
+                                    text: @tr("Open release page");
+                                    color: Theme.accent;
+                                    font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        rel-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.open-releases(); }
+                        }
+                    }
+                }
+                GhostButton {
+                    text: @tr("Close");
+                    clicked => { root.close-requested(); }
+                }
+                // 主操作：空闲/失败 = 立即更新（失败即重试），已安装 = 重启；
+                // 下载/安装中不显示（进行中再点一次没有意义），进度条在那里说话。
+                if root.update-state == 3 : PrimaryButton {
+                    text: @tr("Restart");
+                    clicked => { root.restart-app(); }
+                }
+                if root.update-state != 3 && !root.running : PrimaryButton {
+                    text: root.downgrade ? @tr("Download & switch") : @tr("Update now");
+                    clicked => { root.run-update(); }
+                }
+            }
+        }
+    }
+}

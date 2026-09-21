@@ -11,12 +11,15 @@
 脚本会：
 
 - 要求已跟踪文件没有未提交改动
-- 更新 `Cargo.toml` 和 `Cargo.lock` 里的 `meatshell` 版本号
+- 更新 `Cargo.toml` 和 `Cargo.lock` 里的 `rudder` 版本号
 - 运行 `cargo check --locked`
-- 验证 `meatshell --version` 输出匹配 tag
+- 验证 `rudder --version` 输出匹配 tag
 - 提交版本号变更
 - 创建 annotated tag
 - 传入 `-Push` 时推送当前分支和 tag
+- 发布页（GitHub Release）的说明**不用手写**：`release.yml` 的每个平台作业在建/更新 Release 前
+  都会跑 [`scripts/changelog-section.sh`](../scripts/changelog-section.sh)，从该 tag 的
+  `CHANGELOG.md` 里抽出该版本段落当 body（中英对照、手写，与 app「自动更新」弹窗里那份同源）
 
 如果想先在本地创建提交和 tag，不立即推送：
 
@@ -27,7 +30,7 @@ git push origin v0.5.7
 ```
 
 Release workflow 也会检查推送上来的 tag。比如 tag 名是 `v0.5.7` 时，
-`Cargo.toml`、`Cargo.lock` 和构建出的 `meatshell --version` 都必须是
+`Cargo.toml`、`Cargo.lock` 和构建出的 `rudder --version` 都必须是
 `0.5.7`，否则 workflow 会在发布前失败。
 
 <a name="english"></a>
@@ -44,12 +47,15 @@ matches the tag.
 The script:
 
 - requires no uncommitted tracked-file changes
-- updates `Cargo.toml` and the `meatshell` entry in `Cargo.lock`
+- updates `Cargo.toml` and the `rudder` entry in `Cargo.lock`
 - runs `cargo check --locked`
-- verifies that `meatshell --version` matches the tag
+- verifies that `rudder --version` matches the tag
 - commits the version bump
 - creates an annotated tag
 - pushes the current branch and tag when `-Push` is passed
+- the GitHub Release notes are **filled in automatically**: every platform job runs
+  [`scripts/changelog-section.sh`](../scripts/changelog-section.sh) before creating/updating the
+  release and uses that version's section from the tag's `CHANGELOG.md` as the body
 
 To prepare the commit and tag without pushing:
 
@@ -60,5 +66,5 @@ git push origin v0.5.7
 ```
 
 The release workflow also checks pushed tags. A tag named `v0.5.7` must match
-`Cargo.toml`, `Cargo.lock`, and the built `meatshell --version` output,
+`Cargo.toml`, `Cargo.lock`, and the built `rudder --version` output,
 otherwise the workflow fails before publishing.

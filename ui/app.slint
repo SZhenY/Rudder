@@ -46,7 +46,9 @@ import { ModalCard } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
-import { UpdateBanner } from "update_banner.slint";
+// 「自动更新」对话框：**必须**挂在文件末尾、设置遮罩（InterfaceSettingsOverlay）之后 ——
+// 否则会重演横幅那个 bug（设置面板是全窗遮罩，挂在最后，压住一切在它之前的东西）。
+import { UpdateDialog } from "update_dialog.slint";
 import { EditorFindResult, FileEditor } from "file_editor.slint";
 import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
 import { GroupDialog } from "group_dialog.slint";
@@ -477,6 +479,8 @@ export component AppWindow inherits Window {
     callback set-welcome-as-sidebar(bool);         // apply + persist
     in-out property <bool> update-check-enabled: true;   // startup new-version check (#184)
     callback set-update-check-enabled(bool);       // apply + persist
+    callback set-update-channel(string);
+    callback set-update-freq(int);
     // WSL profiles (upstream a64097e): managed in Interface → WSL.
     in property <[WslProfileInfo]> wsl-profiles;
     in-out property <string> wsl-new-directory: "~";
@@ -591,6 +595,20 @@ export component AppWindow inherits Window {
     // startup check toggle, result is shown inline in the settings row.
     in property <string> update-check-status: "";
     in property <bool> update-checking: false;
+    // 更新通道（stable / beta / all）与检查频率、上次检查时间（见 settings/pages/update.slint）。
+    in property <string> update-channel: "stable";
+    in property <[string]> update-freq-labels;
+    in-out property <int> update-freq-index: 0;
+    in property <string> update-last-check: "";
+    // 「自动更新」对话框（取代原顶部横幅）：Rust 在"自动检查发现新版本"或"手动检查发现"
+    // 时打开它；用户关掉后可由下一次检查再打开。
+    in-out property <bool> update-dialog-open: false;
+    in property <string> update-notes: "";            // 发布说明（Rust 侧已清洗 + 截断）
+    in property <string> update-current-version: "";  // 形如 "v0.7.9"
+    in property <string> update-badge: "";            // 通道徽章：正式版 / 测试版
+    // 目标版本比本机低（降级 / 切换通道）：对话框据此换标题、换措辞、换主操作按钮。
+    // 例：本机 v0.7.9-beta1，切到「正式版」而正式版最新是 v0.7.9。
+    in property <bool> update-downgrade: false;
     callback check-update-now();
 
     // --- Built-in file viewer/editor (#70) --------------------------------
@@ -861,9 +879,10 @@ export component AppWindow inherits Window {
         // in light mode. Left as a plain reserve (no TouchArea) so macOS's own title
         // bar keeps handling the window drag in this region.
     // 已抽成 `ui/titlebar_inset_strip.slint`：纯搬家，状态透传 + 动作转发。
+    // 不转发 `win-maximize-toggle`：这块留白区的双击由 AppKit 直接处理（见
+    // `ui/titlebar_inset_strip.slint` 里的说明 —— 我们再 toggle 一次就是跟系统抢）。
     if root.titlebar-inset > 0px : TitlebarInsetStrip {
         titlebar-inset : root.titlebar-inset;
-        win-maximize-toggle() => { root.win-maximize-toggle(); }
     }
 
         // Immersive custom title bar (#119) — only on frameless platforms
@@ -1922,22 +1941,9 @@ export component AppWindow inherits Window {
         }
     }
 
-    // --- Update-available banner (#48) ------------------------------------
-    // 已抽成 `ui/update_banner.slint`；这里只做显隐判断 + 状态透传 + 动作转发。
-    // A dismissible top-centre banner; the app stays usable on the current
-    // version. "Download" opens the GitHub release page in the browser.
-    // 版式：水平居中交给布局（`alignment: center`），不再手算
-    // `(parent.width - 420px) / 2`。布局本身不接收点击，横幅仍只在自身范围内可交互。
-    if root.update-available : UpdateBanner {
-        update-version: root.update-version;
-        update-status: root.update-status;
-        update-state: root.update-state;
-        update-progress: root.update-progress;
-        dismiss => { root.update-available = false; }
-        open-update-url => { root.open-update-url(); }
-        run-self-update => { root.run-self-update(); }
-        restart-app => { root.restart-app(); }
-    }
+    // --- Update-available prompt (#48) ------------------------------------
+    // 原顶部横幅已改成 `ui/update_dialog.slint` 的模态对话框，挂在**文件末尾**
+    // （设置遮罩之后）—— 横幅挂在内容层里，设置面板一开就被那块全窗遮罩压住、点不到。
     // --- Built-in file viewer / editor (#70) ------------------------------
     // View = read-only (selectable/copyable); Edit = writable, Ctrl+S or the
     // Save button uploads, and closing uploads any unsaved changes.
@@ -2284,6 +2290,10 @@ export component AppWindow inherits Window {
         update-check-enabled <=> root.update-check-enabled;
         update-check-status : root.update-check-status;
         update-checking : root.update-checking;
+        update-channel : root.update-channel;
+        update-freq-labels : root.update-freq-labels;
+        update-freq-index <=> root.update-freq-index;
+        update-last-check : root.update-last-check;
         webdav-accept-invalid-certs <=> root.webdav-accept-invalid-certs;
         webdav-enabled <=> root.webdav-enabled;
         webdav-password <=> root.webdav-password;
@@ -2332,10 +2342,32 @@ export component AppWindow inherits Window {
         set-ui-font(p0) => { root.set-ui-font(p0); }
         set-ui-scale(p0) => { root.set-ui-scale(p0); }
         set-update-check-enabled(p0) => { root.set-update-check-enabled(p0); }
+        set-update-channel(q0) => { root.set-update-channel(q0); }
+        set-update-freq(q1) => { root.set-update-freq(q1); }
         set-wallpaper(p0) => { root.set-wallpaper(p0); }
         set-welcome-as-sidebar(p0) => { root.set-welcome-as-sidebar(p0); }
         webdav-download() => { root.webdav-download(); }
         webdav-upload() => { root.webdav-upload(); }
+    }
+
+    // --- 「自动更新」对话框（AppWindow 的最后一个子元素）-----------------
+    // ⚠️ 位置是**功能性的**，不是排版偏好：设置面板 `InterfaceSettingsOverlay` 是全窗模态，
+    // 且挂在它之前，谁在后面谁就压得住它。放在这里，才是"设置面板开着也能点更新"。
+    // 组件内部常驻（`opacity`/`visible` 切换），所以这里的 `open` 只做显隐，不用 `if`。
+    UpdateDialog {
+        open: root.update-dialog-open;
+        badge: root.update-badge;
+        current-version: root.update-current-version;
+        new-version: root.update-version;
+        notes: root.update-notes;
+        update-state: root.update-state;
+        update-progress: root.update-progress;
+        update-status: root.update-status;
+        downgrade: root.update-downgrade;
+        close-requested => { root.update-dialog-open = false; }
+        run-update => { root.run-self-update(); }
+        restart-app => { root.restart-app(); }
+        open-releases => { root.open-update-url(); }
     }
 }
 

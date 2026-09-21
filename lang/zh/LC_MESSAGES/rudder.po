@@ -704,3 +704,33 @@ msgstr "重启"
 
 msgid "Download"
 msgstr "下载"
+
+msgid "Automatic update"
+msgstr "自动更新"
+
+msgid "Update available"
+msgstr "发现新版本"
+
+msgid "Updating…"
+msgstr "正在更新…"
+
+msgid "Update failed"
+msgstr "更新失败"
+
+msgid "Update installed — restart to apply"
+msgstr "更新已安装，重启生效"
+
+msgid "Already up to date"
+msgstr "已是最新版本"
+
+msgid "Open release page"
+msgstr "打开发布页"
+
+msgid "Close"
+msgstr "关闭"
+
+msgid "Older version available"
+msgstr "可切换到旧版本"
+
+msgid "Download & switch"
+msgstr "下载并切换"

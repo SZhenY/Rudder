@@ -32,7 +32,6 @@ import { ModalCard } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
-import { UpdateBanner } from "update_banner.slint";
 import { EditorFindResult, FileEditor } from "file_editor.slint";
 import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
 import { GroupDialog } from "group_dialog.slint";
@@ -100,6 +99,10 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     in-out property <bool> update-check-enabled:true;
     in property <string> update-check-status:"";
     in property <bool> update-checking:false;
+    in property <string> update-channel: "stable";
+    in property <[string]> update-freq-labels;
+    in-out property <int> update-freq-index: 0;
+    in property <string> update-last-check: "";
     in-out property <bool> webdav-accept-invalid-certs:false;
     in-out property <bool> webdav-enabled:false;
     in-out property <string> webdav-password;
@@ -150,6 +153,8 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     callback set-ui-font(string);
     callback set-ui-scale(int);
     callback set-update-check-enabled(bool);
+    callback set-update-channel(string);
+    callback set-update-freq(int);
     callback set-wallpaper(string);
     callback set-welcome-as-sidebar(bool);
     callback webdav-download();
@@ -290,6 +295,10 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                 update-check-enabled <=> update-check-enabled;
                 update-check-status: update-check-status;
                 update-checking: update-checking;
+                update-channel: update-channel;
+                update-freq-labels: update-freq-labels;
+                update-freq-index <=> update-freq-index;
+                update-last-check: update-last-check;
                 wallpaper-overlay <=> Theme.panel-alpha;
                 current-wallpaper: current-wallpaper;
                 custom-wallpaper-name: custom-wallpaper-name;
@@ -348,6 +357,8 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                     root.set-quick-commands-as-sidebar(v);
                 }
                 set-update-check-enabled(v) => { root.set-update-check-enabled(v); }
+                set-update-channel(w0) => { root.set-update-channel(w0); }
+                set-update-freq(w1) => { root.set-update-freq(w1); }
                 check-update-now() => { root.check-update-now(); }
                 add-wsl-profile(name, distribution, directory) => { root.add-wsl-profile(name, distribution, directory); }
                 remove-wsl-profile(id) => { root.remove-wsl-profile(id); }

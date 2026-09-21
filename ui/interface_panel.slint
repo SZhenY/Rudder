@@ -61,6 +61,10 @@ export component InterfacePanel inherits Rectangle {
     // Manual "check now" button next to the startup toggle (#self-update).
     in property <string> update-check-status;
     in property <bool> update-checking;
+    in property <string> update-channel: "stable";
+    in property <[string]> update-freq-labels;
+    in-out property <int> update-freq-index: 0;
+    in property <string> update-last-check: "";
     callback check-update-now();
     in-out property <float> wallpaper-overlay;   // frosted-panel opacity 0.30-1.00
     // Active wallpaper id: "" / "builtin:light" / "builtin:dark" / a file path.
@@ -114,6 +118,8 @@ export component InterfacePanel inherits Rectangle {
     callback set-quick-commands-as-sidebar(bool);
     callback set-show-cmd-bar(bool);
     callback set-update-check-enabled(bool);   // startup new-version check (#184)
+    callback set-update-channel(string);
+    callback set-update-freq(int);
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
     callback set-wallpaper(string);    // none / builtin selection
     in-out property <bool> hide-special-partitions: true;
@@ -327,8 +333,14 @@ export component InterfacePanel inherits Rectangle {
                             update-check-enabled <=> root.update-check-enabled;
                             update-check-status: root.update-check-status;
                             update-checking: root.update-checking;
+                            update-channel: root.update-channel;
+                            update-freq-labels: root.update-freq-labels;
+                            update-freq-index <=> root.update-freq-index;
+                            update-last-check: root.update-last-check;
                             check-update-now() => { root.check-update-now(); }
                             set-update-check-enabled(a0) => { root.set-update-check-enabled(a0); }
+                            set-update-channel(b0) => { root.set-update-channel(b0); }
+                            set-update-freq(b1) => { root.set-update-freq(b1); }
                     }
 
                 }

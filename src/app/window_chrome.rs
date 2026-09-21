@@ -33,9 +33,17 @@ pub(crate) fn wire_window_chrome(
         let weak = window.as_weak();
         window.on_win_maximize_toggle(move || {
             if let Some(w) = weak.upgrade() {
+                // ⚠️ macOS 上**不要**再自己 toggle：那块留白区的双击本来就是 AppKit 在处理
+                // （它把窗口 zoom 成屏幕大小、还原时回到 `standard_frame`，两个方向都对），
+                // 我们再补一次 `set_maximized`/`performZoom` 就等于"跟系统抢" —— 表现为
+                // 第一次能最大化、第二次"回弹一下又最大化"（0.7.9 起的老 bug，2026-09-21
+                // 用 `isZoomed` 日志抓到的：系统 zoom 完 ~0.5s 后我们的 handler 才跑）。
+                // macOS 上这个回调现在只有 Windows/Linux 的小窗口按钮用得到，
+                // 上面那条 `titlebar-inset-strip` 已不再派发它。
                 let now = w.window().with_winit_window(|ww| {
                     let m = !ww.is_maximized();
                     ww.set_maximized(m);
+                    tracing::debug!("maximize-toggle: target={m} after={}", ww.is_maximized());
                     m
                 });
                 if let Some(m) = now {

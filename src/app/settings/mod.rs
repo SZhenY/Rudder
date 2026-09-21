@@ -75,7 +75,7 @@ pub(super) fn with_ui_handles<R>(
 ///
 /// 这里走**防抖**写盘：设置是"丢了最多退回上一次的值"的数据，不值得为它每帧
 /// 写一次。退出路径负责 `flush`（见 `app.rs` 的关闭与 `run()` 返回处）。
-pub(super) fn persist(store: &Store, set: impl FnOnce(&mut ConfigStore)) {
+pub(crate) fn persist(store: &Store, set: impl FnOnce(&mut ConfigStore)) {
     {
         let mut s = store.borrow_mut();
         set(&mut s);

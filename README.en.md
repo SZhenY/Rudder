@@ -28,18 +28,18 @@
 
 Every `v*` tag triggers a GitHub Actions build that produces native binaries for
 **Windows / Linux / macOS**, published on the
-[Releases](https://github.com/jeff141/meatshell/releases) page.
+[Releases](https://github.com/SZhenY/Rudder/releases) page.
 
 ### Windows
 
-Download `meatshell-*-windows-x86_64.zip`, unzip, and run `meatshell.exe`.
+Download `rudder-*-windows-x86_64.zip`, unzip, and run `rudder.exe`.
 
 ### Linux
 
 ```bash
-tar -xzf meatshell-*-linux-x86_64.tar.gz
-cd meatshell-*-linux-x86_64
-./meatshell                                  # run it directly
+tar -xzf rudder-*-linux-x86_64.tar.gz
+cd rudder-*-linux-x86_64
+./rudder                                  # run it directly
 # Optional: install the app icon + launcher entry (shows the icon in the dock /
 # app list — no argument needed, it finds the binary next to the script)
 chmod +x install-linux.sh && ./install-linux.sh
@@ -64,20 +64,20 @@ sudo apt install -y --no-install-recommends \
 
 ### macOS
 
-The download is a `.zip` containing the `meatshell.app` bundle:
+The download is a `.zip` containing the `rudder.app` bundle:
 
 ```bash
 # Unzip (aarch64 = Apple Silicon, x86_64 = Intel)
-unzip meatshell-*-macos-*.zip
+unzip rudder-*-macos-*.zip
 # Move it to Applications (optional — it also runs in place)
-mv meatshell.app /Applications/
-# Clear the quarantine flag, otherwise macOS says "meatshell is damaged and can't be opened"
-xattr -dr com.apple.quarantine /Applications/meatshell.app
+mv rudder.app /Applications/
+# Clear the quarantine flag, otherwise macOS says "rudder is damaged and can't be opened"
+xattr -dr com.apple.quarantine /Applications/rudder.app
 # Open it (or double-click in Finder)
-open /Applications/meatshell.app
+open /Applications/rudder.app
 ```
 
-> If you didn't move it to `/Applications`, point both paths above at wherever the `.app` actually is (e.g. `~/Downloads/meatshell.app`).
+> If you didn't move it to `/Applications`, point both paths above at wherever the `.app` actually is (e.g. `~/Downloads/rudder.app`).
 
 > To build from source, see [Running](#running) below.
 
@@ -92,9 +92,10 @@ open /Applications/meatshell.app
 - [x] Color emoji, including skin tones, flags, and ZWJ sequences
 - [x] Tabs (welcome page + multiple sessions)
 - [x] Session management: create / edit / delete / groups, local JSON, export / import
-  - Config location: `%APPDATA%/meatshell/sessions.json` (Windows)
-    / `~/.config/meatshell/sessions.json` (Linux)
-    / `~/Library/Application Support/meatshell/sessions.json` (macOS)
+  - Config location (`directories::ProjectDirs::from("dev", "rudder", "rudder").config_dir()`):
+    `%APPDATA%\rudder\rudder\config\sessions.json` (Windows)
+    / `~/.config/rudder/sessions.json` (Linux, honours `XDG_CONFIG_HOME`)
+    / `~/Library/Application Support/dev.rudder.rudder/sessions.json` (macOS)
 - [x] SSH (`russh`, pure Rust): password / private key / encrypted key (passphrase)
 - [x] SFTP browser + upload / download (drag-and-drop) + in-terminal ZMODEM (`sz`) receive
 - [x] SSH port forwarding / tunnels: local -L / remote -R / dynamic -D (SOCKS5)
@@ -141,13 +142,13 @@ cargo run --release
 ```
 
 On first launch an empty session store is created at
-`%APPDATA%/meatshell/sessions.json`. Click **"＋ New Session"** in the top-right
+`%APPDATA%\rudder\rudder\config\sessions.json`. Click **"＋ New Session"** in the top-right
 to add your first server.
 
 ## Project layout
 
 ```
-meatshell/
+rudder/
 ├── Cargo.toml
 ├── build.rs                 # Slint compiler entry point
 ├── ui/
@@ -186,7 +187,7 @@ so the tag points at a commit that already contains the matching Cargo version:
 ```
 
 The script updates `Cargo.toml` / `Cargo.lock`, runs `cargo check --locked`,
-verifies `meatshell --version`, commits `Release v0.6.0`, creates an annotated
+verifies `rudder --version`, commits `Release v0.6.0`, creates an annotated
 tag, and pushes the current branch plus the tag. See
 [docs/release.md](docs/release.md) for details.
 

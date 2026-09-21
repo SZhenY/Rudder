@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Generate the meatshell app icon (braised pork-belly + terminal prompt).
+"""Generate the rudder app icon (braised pork-belly + terminal prompt).
 
 Pure-Pillow, 4x supersampled for crisp anti-aliasing.
-Outputs:  icon.png (256), icon@512.png, meatshell.ico (multi-size)
+Outputs:  icon.png (256), icon@512.png, rudder.ico (multi-size)
 """
 import math
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageChops
@@ -163,7 +163,7 @@ img512 = img.resize((512, 512), Image.LANCZOS)
 img256.save("icon.png")
 img512.save("icon@512.png")
 img.resize((512, 512), Image.LANCZOS).save("icon@1024_preview.png")  # for review
-img256.save("meatshell.ico", format="ICO",
+img256.save("rudder.ico", format="ICO",
             sizes=[(256, 256), (128, 128), (64, 64),
                    (48, 48), (32, 32), (16, 16)])
-print("OK: icon.png, icon@512.png, meatshell.ico written")
+print("OK: icon.png, icon@512.png, rudder.ico written")

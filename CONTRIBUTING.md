@@ -1,12 +1,12 @@
-# 参与 meatshell / Contributing to meatshell
+# 参与 rudder / Contributing to rudder
 
 > [English version below](#english)
 
 ## 中文
 
-感谢你对 meatshell 的关注！🙏
+感谢你对 rudder 的关注！🙏
 
-meatshell 目前是一个**个人实验性项目**。它的设计、取舍和代码风格都由我一个人把控，目的是保持产品方向的一致性，做一个**轻量、专注的 FinalShell 风格 SSH 客户端**——不做成大而全的工具。
+rudder 目前是一个**个人实验性项目**。它的设计、取舍和代码风格都由我一个人把控，目的是保持产品方向的一致性，做一个**轻量、专注的 FinalShell 风格 SSH 客户端**——不做成大而全的工具。
 
 ### 关于 Pull Request
 
@@ -21,7 +21,7 @@ meatshell 目前是一个**个人实验性项目**。它的设计、取舍和代
 
 ### 欢迎你这样参与
 
-- 🐛 **报告 Bug**：在 [Issues](https://github.com/jeff141/meatshell/issues) 里描述复现步骤、系统环境和期望行为。
+- 🐛 **报告 Bug**：在 [Issues](https://github.com/SZhenY/Rudder/issues) 里描述复现步骤、系统环境和期望行为。
 - 💡 **提出建议**：功能想法、交互改进、设计参考都欢迎在 Issue 区讨论。
 - ⭐ **Star / Fork**：如果你喜欢它，欢迎 fork 出自己的版本自由折腾。
 
@@ -32,9 +32,9 @@ meatshell 目前是一个**个人实验性项目**。它的设计、取舍和代
 <a name="english"></a>
 ## English
 
-Thanks for your interest in meatshell! 🙏
+Thanks for your interest in rudder! 🙏
 
-meatshell is currently a **personal, experimental project**. Its design,
+rudder is currently a **personal, experimental project**. Its design,
 trade-offs, and code style are all maintained by a single person, on purpose —
 the goal is a **lightweight, focused, FinalShell-style SSH client**, not an
 all-in-one tool.
@@ -56,7 +56,7 @@ in my own way.
 
 ### How you're very welcome to help
 
-- 🐛 **Report bugs**: open an [Issue](https://github.com/jeff141/meatshell/issues)
+- 🐛 **Report bugs**: open an [Issue](https://github.com/SZhenY/Rudder/issues)
   with repro steps, your OS/environment, and expected behavior.
 - 💡 **Suggest ideas**: feature requests, UX improvements, and design references
   are all welcome in the issue tracker.

@@ -33,7 +33,7 @@ env:
 jobs:
   check-version:
     name: Check tag version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -67,10 +67,11 @@ jobs:
     name: Test + lint gate
     needs: check-version
     # Pin to the same Ubuntu the Linux release builds use: the gate must run in
-    # the environment we actually ship from. `ubuntu-latest` (24.04) lacks the
-    # fontconfig dev package, so `yeslogic-fontconfig-sys` (fontdb) failed to
-    # build and redlined this job (#ci-quality-deps).
-    runs-on: ubuntu-22.04
+    # the environment we actually ship from (Ubuntu 24.04 since 2026-09-21).
+    # ⚠️ `yeslogic-fontconfig-sys`（fontdb 的链接层）要 `libfontconfig1-dev`，而 24.04
+    #    镜像**没有预装** —— 所以下面那步 "Install Linux GUI dependencies" 是必需的，
+    #    别删：历史上就是漏装它把本作业打红（#ci-quality-deps）。
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       # Same dependency set as the Linux build jobs below (kept in sync by
@@ -128,11 +129,11 @@ jobs:
             # Distinct from x86_64: sharing one upgrade code risks a
             # cross-architecture upgrade match.
             upgrade-code: 9C4E7B21-5D8A-4F3B-B2E1-7A6D5C4F3E2B
-          - os: ubuntu-22.04            # build on the oldest supported runner for
-            target: x86_64-unknown-linux-gnu   # broader glibc compatibility
-            name: linux-x86_64
+          - os: ubuntu-24.04            # 主力 Linux 构建（2026-09-21 起从 22.04 上移）
+            target: x86_64-unknown-linux-gnu   # ⚠️ glibc 底线随之抬到 2.39；需要更老
+            name: linux-x86_64                 # 发行版的用户请用 `*-glibc228` 变体
             bin: rudder
-          - os: ubuntu-22.04-arm       # free native arm64 runner (public repos)
+          - os: ubuntu-24.04-arm       # free native arm64 runner (public repos)
             target: aarch64-unknown-linux-gnu  # builds the Linux ARM64 .tar.gz (#82)
             name: linux-aarch64
             bin: rudder
@@ -322,9 +323,10 @@ jobs:
           $MSI_VERSION = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' |
             Select-Object -First 1).Matches[0].Groups[1].Value
           if (-not $MSI_VERSION) { $MSI_VERSION = $VERSION.TrimStart("v") }
-          # Patch releases: WiX's ProductVersion is numeric-only, so map the
-          # semver prerelease to a 4th field — `0.7.7-fix1` → `0.7.7.1`.
-          # 补丁版：`0.7.7-fix1` → `0.7.7.1`（WiX 不接受 `-`）
+          # 仅历史 `-fixN` 标签需要这条映射（WiX 的 ProductVersion 只能是数字）。
+          # 新命名 `-betaN` 不产 MSI —— 上面的 `if` 已经把 beta/alpha/rc 排除了，
+          # 因为 WiX 表达不了"早于 0.7.9"这种预发布语义。
+          # Legacy `-fixN` only: `0.7.7-fix1` → `0.7.7.1`（WiX rejects `-`）。
           $MSI_VERSION = $MSI_VERSION -replace '-fix(\d+)$', '.$1'
           # CLI and extension versions must match: pinning the CLI to 4.x while
           # resolving the extension to 7.0.0 left the cache entry "damaged"
@@ -365,33 +367,60 @@ jobs:
           name: ${{ matrix.name }}-msi
           path: ${{ env.MSI }}
 
+      - name: Release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
+
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.ASSET }}
+          # 发布页的说明 = tag 里那份 CHANGELOG 的该版本段落（中英对照，手写）。
+          # 每个平台作业都写一次是幂等的：谁先跑完谁建 Release，内容都一样；
+          # 没有该版本段落时读进来是空文件，等同于不写说明（与以前一致）。
+          body_path: notes.md
           fail_on_unmatched_files: true
           # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
           # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
           # 等于用户永远收不到补丁版。
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
+
+      - name: Release notes from CHANGELOG
+        if: matrix.name == 'linux-x86_64' && startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
 
       - name: Attach AppImage to GitHub Release
         if: matrix.name == 'linux-x86_64' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.APPIMAGE }}
+          # 发布页的说明 = tag 里那份 CHANGELOG 的该版本段落（中英对照，手写）。
+          # 每个平台作业都写一次是幂等的：谁先跑完谁建 Release，内容都一样；
+          # 没有该版本段落时读进来是空文件，等同于不写说明（与以前一致）。
+          body_path: notes.md
           fail_on_unmatched_files: true
           # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
           # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
           # 等于用户永远收不到补丁版。
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
 
+      - name: Release notes from CHANGELOG
+        if: startsWith(matrix.name, 'windows') && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
+
       - name: Attach MSI to GitHub Release
         if: startsWith(matrix.name, 'windows') && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.MSI }}
+          # 发布页的说明 = tag 里那份 CHANGELOG 的该版本段落（中英对照，手写）。
+          # 每个平台作业都写一次是幂等的：谁先跑完谁建 Release，内容都一样；
+          # 没有该版本段落时读进来是空文件，等同于不写说明（与以前一致）。
+          body_path: notes.md
           fail_on_unmatched_files: false
           # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
           # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
@@ -401,7 +430,7 @@ jobs:
   build-linux-aarch64-glibc228:
     name: linux-aarch64-glibc228
     needs: check-version
-    runs-on: ubuntu-22.04-arm
+    runs-on: ubuntu-24.04-arm
     container: debian:10
 
     steps:
@@ -480,11 +509,20 @@ jobs:
           name: linux-aarch64-glibc228
           path: ${{ env.ASSET }}
 
+      - name: Release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
+
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.ASSET }}
+          # 发布页的说明 = tag 里那份 CHANGELOG 的该版本段落（中英对照，手写）。
+          # 每个平台作业都写一次是幂等的：谁先跑完谁建 Release，内容都一样；
+          # 没有该版本段落时读进来是空文件，等同于不写说明（与以前一致）。
+          body_path: notes.md
           fail_on_unmatched_files: true
           # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
           # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
@@ -494,7 +532,7 @@ jobs:
   build-linux-x86_64-glibc228:
     name: linux-x86_64-glibc228
     needs: check-version
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     container: debian:10
 
     steps:
@@ -573,11 +611,20 @@ jobs:
           name: linux-x86_64-glibc228
           path: ${{ env.ASSET }}
 
+      - name: Release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
+
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.ASSET }}
+          # 发布页的说明 = tag 里那份 CHANGELOG 的该版本段落（中英对照，手写）。
+          # 每个平台作业都写一次是幂等的：谁先跑完谁建 Release，内容都一样；
+          # 没有该版本段落时读进来是空文件，等同于不写说明（与以前一致）。
+          body_path: notes.md
           fail_on_unmatched_files: true
           # 只有 beta/alpha/rc 是预发布；`-fixN` 补丁版必须是正式 release：
           # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease

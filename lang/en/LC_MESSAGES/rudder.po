@@ -692,3 +692,36 @@ msgstr "When expected text appears, send the response automatically. Responses a
 
 msgid "Windows-1252"
 msgstr "Windows-1252"
+
+msgid "Automatic update"
+msgstr "Automatic update"
+
+msgid "Update available"
+msgstr "Update available"
+
+msgid "Updating…"
+msgstr "Updating…"
+
+msgid "Update failed"
+msgstr "Update failed"
+
+msgid "Update installed — restart to apply"
+msgstr "Update installed — restart to apply"
+
+msgid "Already up to date"
+msgstr "Already up to date"
+
+msgid "Open release page"
+msgstr "Open release page"
+
+msgid "Close"
+msgstr "Close"
+
+msgid "Restart"
+msgstr "Restart"
+
+msgid "Older version available"
+msgstr "Older version available"
+
+msgid "Download & switch"
+msgstr "Download & switch"

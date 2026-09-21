@@ -3,18 +3,67 @@
 // 由 interface_panel.slint 按页拆分而来（阶段 B）。页面只声明自己用到的
 // 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
 // 因此可以保持与改造前逐字一致。
+//
+// 四行：自动检查更新 / 检查频率 / 更新通道 / 上次检查时间。
+// 通道语义见 `self_updater::fetch_channel_release`：`stable` 只提示正式版、
+// `beta` 只提示测试版（`-betaN` / `-alphaN` / `-rcN`）、`all` 两者都收，取版本最高的那个。
+// 排序按 `parse_version`：**同号的测试版比正式版新**（`0.7.9-beta1 > 0.7.9`）—— 测试版是
+// 正式版发布之后、在其上继续做出来的构建（旧的 `-fixN` 同此，线上时间线可印证）。
+//
+// 刻意**不写行内说明**：四项的标签与右侧控件已经自解释，短句堆四行只会显乱
+// （旧版那四条 desc 已删）；只有「上次检查时间」那行把**实时状态**放到 desc 位 ——
+// 它本来就是读者想看的那句话，为空时 `SettingRow` 会自动隐藏该行。
 
 import { Theme } from "../../theme.slint";
 import { SettingsSection } from "../section.slint";
 import { SettingRow, SettingSwitch } from "../chrome.slint";
+import { ComboBox } from "std-widgets.slint";
+
+/// 更新通道的一段（正式版 / 测试版 / 全通道最新版）。
+///
+/// 不用 `chrome.slint` 的 `CursorStyleButton`：那是**光标样式**专用件（固定 74px +
+/// 内含 14px 光标图形），拿来做通道选择既画出无意义的小方块、又因固定宽度溢出右边缘。
+component ChannelSegment inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 28px;
+    width: max(64px, seg-label.preferred-width + 24px);
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent : Theme.border-subtle;
+    background: root.selected ? Theme.bg-active : (seg-ta.has-hover ? Theme.bg-hover : transparent);
+
+    seg-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    seg-label := Text {
+        text: root.label;
+        font-size: 12px * Theme.panel-font;
+        color: root.selected ? Theme.text-primary : Theme.text-secondary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
 
 export component UpdatePage inherits VerticalLayout {
     in property <bool> lang-en;
     in-out property <bool> update-check-enabled;
     in property <string> update-check-status;
     in property <bool> update-checking;
+    /// `stable` / `beta` / `all`
+    in property <string> update-channel;
+    /// 「检查频率」下拉的选项下标（0 = 每次启动 / 1 = 每天一次）
+    in-out property <int> update-freq-index;
+    in property <[string]> update-freq-labels;
+    /// 上次检查时间（已在 Rust 侧本地化；空串 = 还没查过）
+    in property <string> update-last-check;
     callback check-update-now();
     callback set-update-check-enabled(bool);
+    callback set-update-channel(string);
+    callback set-update-freq(int);
 
     padding-left: 20px;
     padding-right: 20px;
@@ -28,34 +77,51 @@ export component UpdatePage inherits VerticalLayout {
         title-en: "UPDATE CHECK";
         title-height: 24px;
         SettingSwitch {
-            label: root.lang-en ? "Check for new versions on startup" : "启动时检查新版本";
-            desc: root.lang-en
-                ? "Off: Rudder no longer queries GitHub for releases and the update banner won't appear (takes effect next launch)."
-                : "关闭后:不再向 GitHub 查询新版本,也不会弹出更新提示(下次启动生效)。";
-
+            label: root.lang-en ? "Check for updates on every launch" : "启动时自动检查更新";
             checked <=> root.update-check-enabled;
             toggled(v) => { root.set-update-check-enabled(root.update-check-enabled); }
-
         }
         SettingRow {
-            label: root.lang-en ? "Check for updates now" : "手动检查更新";
-            desc: root.lang-en
-                ? "Queries GitHub immediately; independent of the startup check setting."
-                : "立即向 GitHub 查询新版本,不受上方开关影响。";
+            label: root.lang-en ? "Check frequency" : "检查频率";
+            ComboBox {
+                width: 160px;
+                model: root.update-freq-labels;
+                current-index <=> root.update-freq-index;
+                selected(v) => { root.set-update-freq(root.update-freq-index); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Update channel" : "更新通道";
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: end;
+                ChannelSegment {
+                    label: root.lang-en ? "Stable" : "正式版";
+                    selected: root.update-channel == "stable";
+                    clicked => { root.set-update-channel("stable"); }
+                }
+                ChannelSegment {
+                    label: root.lang-en ? "Beta" : "测试版";
+                    selected: root.update-channel == "beta";
+                    clicked => { root.set-update-channel("beta"); }
+                }
+                ChannelSegment {
+                    label: root.lang-en ? "All channels" : "全通道";
+                    selected: root.update-channel == "all";
+                    clicked => { root.set-update-channel("all"); }
+                }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Last checked" : "上次检查时间";
+            // 实时状态放在说明位：有结果才出现，为空时整行自动收起。
+            desc: root.update-check-status;
             show-divider: false;
             HorizontalLayout {
                 spacing: 10px;
-                alignment: center;
-                if root.update-check-status != "" : Text {
-                    text: root.update-check-status;
-                    font-size: 11px * Theme.panel-font;
-                    color: Theme.text-muted;
-                    vertical-alignment: center;
-                    overflow: elide;
-                    horizontal-stretch: 1;
-                }
+                alignment: end;
                 Rectangle {
-                    width: root.update-checking ? 76px : 64px;
+                    width: root.update-checking ? 92px : 80px;
                     height: 28px;
                     border-radius: Theme.radius-sm;
                     background: upd-ck-ta.has-hover && !root.update-checking ? Theme.bg-hover : Theme.bg-elevated;
@@ -69,12 +135,18 @@ export component UpdatePage inherits VerticalLayout {
                     Text {
                         text: root.update-checking
                             ? (root.lang-en ? "Checking…" : "检查中…")
-                            : (root.lang-en ? "Check now" : "检查");
+                            : (root.lang-en ? "Check now" : "立即检查");
                         font-size: 12px * Theme.panel-font;
                         color: Theme.text-primary;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
+                }
+                Text {
+                    text: root.update-last-check;
+                    font-size: 12px * Theme.panel-font;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
                 }
             }
         }

@@ -41,7 +41,9 @@ cd rudder-*-linux-x86_64
 chmod +x install-linux.sh && ./install-linux.sh
 ```
 
-> 需要 glibc ≥ 2.35（Ubuntu 22.04+ / Debian 12+）。Wayland 下首次装完图标可能要注销重登一次。
+> 需要 glibc ≥ 2.39（Ubuntu 24.04+ / Debian 13+）。**更老的发行版**请下载文件名带
+> `-glibc228` 的变体 —— 它在 Debian 10 容器里构建，glibc ≥ 2.28 即可（Ubuntu 20.04+ / Debian 10+）。
+> Wayland 下首次装完图标可能要注销重登一次。
 
 从源码 `cargo run`（Linux Mint / Ubuntu / Debian）需要先安装 Slint/winit/rfd 等用到的系统开发包：
 
@@ -86,9 +88,10 @@ open /Applications/rudder.app
 - [x] 彩色 emoji（支持肤色、旗帜及 ZWJ 组合序列）
 - [x] 多标签页（欢迎页 + 多个会话）
 - [x] 会话管理：新建 / 编辑 / 删除 / 分组，本地 JSON 持久化，导出 / 导入
-  - 配置位置：`%APPDATA%/rudder/sessions.json`（Windows）
-    / `~/.config/rudder/sessions.json`（Linux）
-    / `~/Library/Application Support/rudder/sessions.json`（macOS）
+  - 配置位置（`directories::ProjectDirs::from("dev", "rudder", "rudder").config_dir()`）：
+    `%APPDATA%\rudder\rudder\config\sessions.json`（Windows）
+    / `~/.config/rudder/sessions.json`（Linux，尊重 `XDG_CONFIG_HOME`）
+    / `~/Library/Application Support/dev.rudder.rudder/sessions.json`（macOS）
 - [x] SSH（`russh`，纯 Rust）：密码 / 私钥 / 加密私钥（密码短语）
 - [x] SFTP 文件浏览 + 上传 / 下载（拖拽）+ 终端内 ZMODEM（`sz`）接收
 - [x] SSH 端口转发 / 隧道：本地 -L / 远程 -R / 动态 -D（SOCKS5）
@@ -335,13 +338,38 @@ rudder/
 
 ## 发版
 
+### 分支与合并
+
+`main` 只接受**已验证**的合并，日常改动一律先走分支：
+
+- **分支名 = 当前主线版本 + `-betaN`**（按批次递增）—— 例如主线是 `0.7.9` 时用
+  `0.7.9-beta1` / `0.7.9-beta2` / …（分支名里不带斜杠，避免 CI 打包路径被当成目录）。
+- 分支上验证通过（本地门禁 + CI 六平台构建）后**直接发 beta 版**（见「打标签」）——
+  **不主动合入 `main`**：合不合、什么时候合，由维护者明确要求，要求了才合（一条提交）。
+- **分支不删。** `-betaN` 支线长期留着（远端也在），方便对照、回溯与后续补丁；
+  要清理时同样由维护者明确要求。
+- **主版本号只在发版时更新**：中间的分支改动 `Cargo.toml` / `Cargo.lock` 里的版本号不动，
+  免得同一个版本号对应好几份不同的代码。**发 beta 时例外**：那一刻版本号就写成带后缀的形式
+  （`0.7.9-beta1`），与 tag 一致 —— 工作流的 `Check tag version` 会逐字校验，对不上不发版。
+
+### 打标签
+
 不要直接手动修改 `Cargo.toml` 后再打标签。使用发布脚本，让 Git tag 指向的提交本身就已经包含正确版本号：
 
 ```powershell
-.\scripts\release.ps1 v0.7.9 -Push
+.\scripts\release.ps1 v0.7.9-beta1 -Push     # beta：Cargo.toml 写成 0.7.9-beta1，tag 同名
+.\scripts\release.ps1 v0.7.9 -Push           # 正式版
 ```
 
 脚本会更新 `Cargo.toml` / `Cargo.lock`，运行 `cargo check --locked`，验证 `rudder --version`，提交 `Release v0.7.9`，创建 annotated tag。
+
+**发完之后**：`CHANGELOG.md` 里那段已经变成 `## [<版本>] - <日期>` 了，记得在**顶部补一个空的
+`## [Unreleased]`** —— 下一批改动才有着落（tag 指向的那份 CHANGELOG 是冻结的，别再回头改它：
+「自动更新」对话框的发布说明正是取 tag 里那一段）。
+
+**发布页的说明不用手写**：`release.yml` 的每个平台作业在建/更新 Release 前都会跑
+[`scripts/changelog-section.sh`](scripts/changelog-section.sh)，从该 tag 的 `CHANGELOG.md` 里抽出
+该版本段落当 body（中英对照、手写）—— 与 app「自动更新」弹窗里显示的**同一份**内容。
 没有 PowerShell 的环境照这五步手工做即可（顺序一致）：改两个版本号 → `cargo check --locked` →
 `cargo run --locked -- --version` 应输出 `rudder <版本>` → `git commit -m "Release v<版本>"` +
 `git tag -a v<版本> -m "Release v<版本>"` → 推分支与 tag。，并推送当前分支和 tag。更多细节见 [docs/release.md](docs/release.md)。

@@ -3,6 +3,94 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（中文在前，English after）.
 
+## [Unreleased]
+
+### 变化 / Changed
+
+- **文档里的旧名 `meatshell` 全部改为 `rudder`**（英文 README / CONTRIBUTING / 两份发版文档 / 图标
+  脚本）：下载与运行说明（`rudder-*` 包、`rudder.exe`、`rudder.app`）、配置路径、`rudder --version`
+  校验、Issues 与 Releases 链接。
+  **Old `meatshell` name replaced with `rudder` throughout the docs.** 上游致谢（"fork of
+  yituorou/meatshell"）、内嵌字体名 `Meatshell Mono`、以及 CHANGELOG 里的历史记录按原样保留。
+
+### 修复 / Fixed
+
+- **README 里 Windows / macOS 的配置路径写错了。** 实际是 `ProjectDirs::from("dev", "rudder",
+  "rudder").config_dir()`：Windows 为 `%APPDATA%\rudder\rudder\config\`、macOS 为
+  `~/Library/Application Support/dev.rudder.rudder/`（Linux 的 `~/.config/rudder/` 原本就对）。
+  此前两处分别写成了 `%APPDATA%/rudder/` 与 `Application Support/rudder/`。
+  **Fixed the Windows / macOS config paths in the README** (they are `%APPDATA%\rudder\rudder\
+  config\` and `~/Library/Application Support/dev.rudder.rudder/`).
+
+## [0.7.9-beta1] - 2026-09-21
+
+### 新增 / Added
+
+- **切回「正式版」时会提示"可切换到旧版本"。** 本机跑 `0.7.9-beta1` 这类测试版、而正式版最新是
+  `0.7.9` 时，按「带 beta 的比同号正式版新」的约定，两者一比只会得出"已是最新版本" —— 于是
+  切回正式版的用户永远回不去。现在：「正式版」通道上发现目标版本**低于**本机时，弹的是
+  **「可切换到旧版本」**（警示色图标、按钮写「下载并切换」、说明区照旧是中英对照 CHANGELOG）；
+  而且**切换更新通道本身**也会立刻按新通道查一次（复用设置里「立即检查」那条链路，结果就地
+  显示 + 弹对话框）。`beta` / `all` 通道不给降级提示 —— 它们的语义就是"要更新的"，本机跑着比
+  线上一切都新的自编译版本时，在那两个通道上弹降级只会莫名其妙。启动时的自动检查也不弹降级
+  （否则每次启动都来一次），它只在用户**主动**切通道或点「立即检查」时出现。
+  **Switching back to the stable channel now offers an explicit downgrade prompt** — when the
+  newest stable release is *older* than the running build (e.g. `0.7.9-beta1` → `0.7.9`), the
+  update dialog says "Older version available" with a "Download & switch" button. Switching the
+  channel itself re-runs the check immediately; only the `stable` channel offers a downgrade, and
+  never during the silent startup check.
+
+- **「自动更新」对话框**（取代原来的顶部横幅）：发现新版本时弹出，展示 **当前版本 → 新版本**、
+  通道徽章（正式版 / 测试版），以及**中英对照的发布说明** —— 取自该版本在 `CHANGELOG.md` 里的
+  那一段（取不到才退回 release 正文），清洗 Markdown 后放进一块**常驻、可上下滚动**的区域，
+  取不到就显示一行灰字提示。承载「立即更新 → 重启」全过程（进度条 + 状态行）；失败给一句本地化
+  的话，并保留「打开发布页」兜底。自动检查（启动时）与设置里的「立即检查」两条路径都会弹它。
+  **The in-app update prompt is now a modal dialog** (replacing the top banner): current → new
+  version, the channel badge, and the **bilingual release notes pulled from that version's section
+  of `CHANGELOG.md`** (falling back to the release body) in a scrollable box — plus the full
+  download / install / restart flow.
+
+- **「新版本提示」页补齐四项**：自动检查更新 / **检查频率**（下拉：每次启动 / 每天 / 每周 /
+  每月 / 每半年 / 每年）/ **更新通道**（正式版 / 测试版 / 全通道）/ **上次检查时间**。
+  通道语义：正式版只提示正式版；测试版只提示测试版（`-betaN` 等）；全通道两者都收，按版本取最新 ——
+  **同号的 `-betaN` 比正式版新**（测试版是正式版发布之后、在其上继续做出来的构建，与旧的 `-fixN` 同源）。
+  频率按"距上次检查"节流（每次启动 = 不节流）。页面刻意不写行内说明，只有「上次检查时间」
+  一行把**实时状态**放在说明位（为空时自动收起）；开关标签写明「启动时」（检查只发生在启动时，
+  改动下次启动生效）。「立即检查」失败时给一句本地化提示（完整错误链进 `error.log`），
+  发现新版本时带上版本号。
+  **The update page now has a check-frequency picker, an update-channel selector
+  (stable / beta / all) and a “last checked” timestamp.**
+
+### 修复 / Fixed
+
+- **设置面板打开时点不到更新提示。** 原横幅挂在主窗口的内容层里，而设置面板是**最后挂载**的全窗
+  模态遮罩 —— 层序上谁在后面谁盖住谁，横幅于是被整块吞掉。改成对话框并挂在遮罩之后（`app.slint`
+  的最后一个子元素），这个层序问题从根上没有；对话框自身常驻 + `opacity` 过渡（不用 `if` 包着，
+  避免 `#323/#343` 那类闪退），关闭态不吞点击。
+  **The update prompt was unclickable while Settings was open** — the settings overlay is mounted
+  last and covered it; it is now a dialog mounted *after* that overlay.
+
+- **macOS：双击标题栏还原时的"回弹"修好了（0.7.9 起就存在）。** 给交通灯让位的那块留白区里，
+  双击本来就由 **AppKit 自己**处理 —— 它把窗口 zoom 到屏幕大小、还原时回到缩放前的尺寸
+  （`standard_frame`），两个方向都对。我们额外挂的那处"只处理双击"的 TouchArea 会在系统做完
+  之后再 toggle 一次，于是表现为"第一次能最大化、第二次回弹一下又重新最大化"。
+  现在把那处自绘双击整个去掉，手势完全交给系统（顺带也不再和系统抢指针，拖拽依旧原生）。
+  **Fixed: macOS double-click restore bouncing back** — the traffic-light inset strip added its own
+  double-click toggle on top of AppKit's, so restoring immediately re-maximised. The strip now
+  leaves that gesture entirely to the system.
+
+### 变化 / Changed
+
+- **中间版本改名：`-fixN` → `-betaN`。** 还没到正式版的构建以后一律用 `0.7.9-beta1` /
+  `-beta2` 这类 tag，语义上**早于** `0.7.9` 正式版（老写法 `0.7.7 < 0.7.7-fix1` 正好相反）。
+  老 `-fixN` tag 仍认得、不影响老用户，只是不再产生新的。更新检查按这个顺序比较，所以
+  beta 用户在正式版发布后能正确收到"已是最新"。
+  **Intermediate builds are tagged `-betaN` instead of `-fixN`** — a beta sorts *before*
+  its base version (`0.7.9-beta1 < 0.7.9`); old `-fixN` tags keep working.
+- **Linux 构建改在 Ubuntu 24.04 上做**（主矩阵 + 质检门一起上移）：主力产物的 glibc 底线随之
+  抬到 **2.39**，更老的发行版请下载 `-glibc228` 变体（Debian 10 容器构建，glibc ≥ 2.28）。
+  **Linux builds now run on Ubuntu 24.04**, raising the main artifacts' glibc floor to 2.39.
+
 ## [0.7.9] - 2026-09-19
 
 ### 新增 / Added
