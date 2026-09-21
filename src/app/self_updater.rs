@@ -181,7 +181,7 @@ pub(crate) fn latest_update(current: super::Version, channel: &str) -> Result<Op
         })
         .collect();
 
-    let notes = release_notes(json["body"].as_str().unwrap_or_default());
+    let notes = notes_for(&tag, json["body"].as_str().unwrap_or_default());
     for kw in asset_keywords() {
         if let Some((name, url)) = candidates.iter().find(|(n, _)| n.contains(kw)) {
             return Ok(Some(UpdateCandidate {
@@ -489,9 +489,69 @@ mod channel_tests {
     }
 }
 
-/// 发布说明在「自动更新」对话框里占多大：够看清几个要点即可，再多也没人读，
-/// 完整内容在发布页。按**字符**（不是字节）算，中文说明不会被截成半个字。
-pub(crate) const MAX_NOTES_CHARS: usize = 1400;
+/// 从 `CHANGELOG.md` 里取出某个版本的段落（`## [0.7.9] - …` 到下一个 `## [` 之间）。
+///
+/// 为什么发布说明不只用 release 的 `body`：它是 GitHub 自动生成的（我们线上那几个 release
+/// 实际上常常是空的），而 `CHANGELOG.md` 是**中英对照**手写的 —— 用户要看的就是那份。
+/// 段落里带 Markdown，交给 [`release_notes`] 清洗。
+///
+/// `version` 不带 `v`（tag 去掉前缀后的形式）。
+pub(crate) fn changelog_section(md: &str, version: &str) -> Option<String> {
+    let want = format!("[{version}]");
+    let mut started = false;
+    let mut out: Vec<&str> = Vec::new();
+    for line in md.lines() {
+        if let Some(head) = line.strip_prefix("## ") {
+            if started {
+                break; // 下一个版本段开始 → 本段结束
+            }
+            // `## [0.7.9] - 2026-09-19`；`[0.7.9]` 不会误配 `[0.7.9-beta1]`（差在中括号）。
+            started = head.trim().starts_with(&want);
+            continue;
+        }
+        if started {
+            out.push(line);
+        }
+    }
+    if !started || out.is_empty() {
+        return None;
+    }
+    let text = release_notes(&out.join("\n"));
+    if text.is_empty() { None } else { Some(text) }
+}
+
+/// 拉某个 tag 的 `CHANGELOG.md`（raw.githubusercontent）。失败返回 `None` ——
+/// 调用方会退回 release 的 `body`，网络不好时不至于没说明可看。
+fn fetch_changelog(tag: &str) -> Option<String> {
+    let url = format!("https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/{tag}/CHANGELOG.md");
+    ureq::get(&url)
+        .set("User-Agent", "rudder-self-update")
+        .timeout(std::time::Duration::from_secs(15))
+        .call()
+        .ok()?
+        .into_string()
+        .ok()
+}
+
+/// 「自动更新」对话框里那块发布说明的内容：优先取 **CHANGELOG.md 里该版本的段落**
+/// （中英对照、手写），取不到再退回 release 的 `body`。
+pub(crate) fn notes_for(tag: &str, body: &str) -> String {
+    let version = tag.trim().trim_start_matches('v');
+    let notes = if let Some(md) = fetch_changelog(tag)
+        && let Some(section) = changelog_section(&md, version)
+    {
+        section
+    } else {
+        release_notes(body)
+    };
+    // 给排查留一句话（debug 级，正式版默认 info 不打印）：这段说明来自哪儿、多长。
+    tracing::debug!("update notes for {tag}: {} chars", notes.chars().count());
+    notes
+}
+/// 发布说明的上限。对话框里那块是**可滚动**的，所以标准是"别把窗口撑坏"，而不是"少放点"：
+/// 一个版本的 CHANGELOG 段落一般 2~3 千字符，都放得下；这里只拦异常离谱的输入。
+/// 按**字符**（不是字节）算，中文说明不会被截成半个字。
+pub(crate) const MAX_NOTES_CHARS: usize = 4000;
 
 /// 把 release 的 `body` 清洗成能直接塞进普通 `Text` 的纯文本。
 ///
@@ -615,5 +675,56 @@ mod notes_tests {
     #[test]
     fn empty_body_is_empty() {
         assert_eq!(release_notes(""), "");
+    }
+}
+
+
+#[cfg(test)]
+mod changelog_tests {
+    use super::changelog_section;
+
+    const MD: &str = "\
+# Changelog\n\
+\n\
+## [Unreleased]\n\
+\n\
+### 新增 / Added\n\
+\n\
+- 还没发布的改动\n\
+\n\
+## [0.7.9] - 2026-09-19\n\
+\n\
+### 修复 / Fixed\n\
+\n\
+- **中英对照的一条** —— bilingual bullet\n\
+\n\
+## [0.7.8] - 2026-09-17\n\
+\n\
+- 上一个版本\n";
+
+    /// 取到的是该版本那一段，**不含**相邻版本的内容。
+    #[test]
+    fn extracts_only_the_requested_section() {
+        let s = changelog_section(MD, "0.7.9").expect("应找到 0.7.9 段");
+        assert!(s.contains("中英对照的一条 —— bilingual bullet"));
+        assert!(s.contains("修复 / Fixed"), "小节标题也在段落里（清洗成纯文本后保留）");
+        assert!(!s.contains("还没发布的改动"), "不该带 Unreleased 的内容");
+        assert!(!s.contains("上一个版本"), "不该带下一个版本段的内容");
+    }
+
+    /// `[0.7.9]` 不能误配 `[0.7.9-beta1]`、`[0.7.90]` 这类。
+    #[test]
+    fn does_not_match_a_longer_version() {
+        let md = "## [0.7.9-beta1] - 2026-09-21\n\n- 测试版改动\n\n## [0.7.90] - x\n\n- 别的\n";
+        assert!(changelog_section(md, "0.7.9").is_none(), "前缀相同但不是它");
+        assert!(changelog_section(md, "0.7.9-beta1").is_some(), "测试版段落要能取到");
+    }
+
+    /// 没有这个版本、或段落是空的 → `None`（调用方据此退回 release body）。
+    #[test]
+    fn missing_or_empty_section_is_none() {
+        assert!(changelog_section(MD, "9.9.9").is_none());
+        assert!(changelog_section("## [1.0.0] - x\n\n## [0.9.0] - y\n\n- z\n", "1.0.0").is_none());
+        assert!(changelog_section("", "0.7.9").is_none());
     }
 }

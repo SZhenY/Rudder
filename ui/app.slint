@@ -2352,8 +2352,6 @@ export component AppWindow inherits Window {
     // 且挂在它之前，谁在后面谁就压得住它。放在这里，才是"设置面板开着也能点更新"。
     // 组件内部常驻（`opacity`/`visible` 切换），所以这里的 `open` 只做显隐，不用 `if`。
     UpdateDialog {
-        avail-width: root.width;
-        avail-height: root.height;
         open: root.update-dialog-open;
         badge: root.update-badge;
         current-version: root.update-current-version;

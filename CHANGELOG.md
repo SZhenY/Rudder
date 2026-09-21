@@ -8,11 +8,14 @@ All notable changes are documented here. 本文件记录所有重要变更。
 ### 新增 / Added
 
 - **「自动更新」对话框**（取代原来的顶部横幅）：发现新版本时弹出，展示 **当前版本 → 新版本**、
-  通道徽章（正式版 / 测试版）与**发布说明**（release 正文，已清洗 Markdown 并按字符截断），
-  承载「立即更新 → 重启」的全过程（进度条 + 状态行）；失败给一句本地化的话，并保留
-  「打开发布页」兜底。自动检查（启动时）与设置里的「立即检查」两条路径都会弹它。
+  通道徽章（正式版 / 测试版），以及**中英对照的发布说明** —— 取自该版本在 `CHANGELOG.md` 里的
+  那一段（取不到才退回 release 正文），清洗 Markdown 后放进一块**常驻、可上下滚动**的区域，
+  取不到就显示一行灰字提示。承载「立即更新 → 重启」全过程（进度条 + 状态行）；失败给一句本地化
+  的话，并保留「打开发布页」兜底。自动检查（启动时）与设置里的「立即检查」两条路径都会弹它。
   **The in-app update prompt is now a modal dialog** (replacing the top banner): current → new
-  version, the channel badge, and cleaned-up release notes, with progress / restart / failure states.
+  version, the channel badge, and the **bilingual release notes pulled from that version's section
+  of `CHANGELOG.md`** (falling back to the release body) in a scrollable box — plus the full
+  download / install / restart flow.
 
 - **「新版本提示」页补齐四项**：自动检查更新 / **检查频率**（下拉：每次启动 / 每天 / 每周 /
   每月 / 每半年 / 每年）/ **更新通道**（正式版 / 测试版 / 全通道）/ **上次检查时间**。

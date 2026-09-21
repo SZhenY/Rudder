@@ -136,7 +136,9 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                     return;
                 }
                 let badge = version_badge(&tag);
-                let notes = crate::app::self_updater::release_notes(
+                // 发布说明：优先该 tag 的 CHANGELOG 段落（中英对照），否则 release body。
+                let notes = crate::app::self_updater::notes_for(
+                    &tag,
                     json["body"].as_str().unwrap_or_default(),
                 );
                 let _ = weak.upgrade_in_event_loop(move |w| {

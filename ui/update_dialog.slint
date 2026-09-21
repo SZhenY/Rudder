@@ -22,8 +22,6 @@ import { ScrollView } from "std-widgets.slint";
 
 export component UpdateDialog inherits Rectangle {
     // ── 状态（窗口透传；全部由 Rust 侧的 updater 读写）──────────────────
-    in property <length> avail-width: 100000px;
-    in property <length> avail-height: 100000px;
     in property <bool> open: false;
     /// 通道徽章：正式版 / 测试版（按被提示的那个版本是不是测试版判定，Rust 侧给）。
     in property <string> badge: "";
@@ -63,8 +61,11 @@ export component UpdateDialog inherits Rectangle {
     // 进度条只在下载/安装时有意义（3/4 态只在状态行说话）。
     private property <bool> running: update-state == 1 || update-state == 2;
 
-    width: avail-width;
-    height: avail-height;
+    // 尺寸与设置遮罩（`InterfaceSettingsOverlay`）保持同一套写法：`100%`。
+    // 之前在这里传 `avail-width/height: root.width/height`，实际算出来的高度只有窗口的一半 ——
+    // 卡片被压在上半屏，下半屏露出没被压暗的主界面（用户截图里那个红框就是这个）。
+    width: 100%;
+    height: 100%;
     visible: self.opacity > 0.001;
     opacity: open ? 1 : 0;
     animate opacity {
@@ -82,7 +83,7 @@ export component UpdateDialog inherits Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2 + (open ? 0px : 12px);
         width: min(560px, parent.width - 40px);
-        height: min(470px, parent.height - 40px);
+        height: min(520px, parent.height - 60px);
         background: Theme.bg-panel;
         border-radius: Theme.radius-lg;
         border-width: 1px;
@@ -202,21 +203,27 @@ export component UpdateDialog inherits Rectangle {
                     }
                 }
 
-                // 发布说明：有内容才出现（没有 body 的 tag 很常见，别留一个空框）
-                if root.notes != "" : Rectangle {
+                // 发布说明：该版本 CHANGELOG 的中英对照段落（Rust 侧取 + 清洗）。
+                // 常驻、撑满中间的剩余空间，内容长了就上下滚动；确实取不到时给一行灰字提示，
+                // 而不是留一个空框（用户明确要求这块要有内容、且能滚）。
+                Rectangle {
                     vertical-stretch: 1;
                     border-radius: Theme.radius-md;
                     border-width: 1px;
                     border-color: Theme.border-subtle;
                     background: Theme.bg-elevated;
                     ScrollView {
-                        content-width: self.width;   // 让说明按可见宽度折行
-                        Text {
-                            text: root.notes;
-                            color: Theme.text-secondary;
-                            font-size: Theme.fs-sm;
-                            wrap: word-wrap;
-                            line-height-factor: 1.35;
+                        VerticalLayout {
+                            padding: 10px;
+                            Text {
+                                text: root.notes != ""
+                                    ? root.notes
+                                    : @tr("No release notes for this version");
+                                color: root.notes != "" ? Theme.text-secondary : Theme.text-muted;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                                line-height-factor: 1.35;
+                            }
                         }
                     }
                 }
