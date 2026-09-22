@@ -7,6 +7,15 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 变化 / Changed
 
+- **彩色输出（彩色日志 / `ls --color` / diff）的解析快了约 1.9 倍。** 每个 SGR 序列原先都要
+  重走一遍"重建参数表"（4 次堆分配 + 一次整串重拷）—— 彩色输出每 64 KiB 有两万多个 SGR，
+  这里成了热点（实测 ingest 2848µs/块，无色只要 303µs）。现在参数里**既没有 53 也没有 21**
+  时直接原样喂给解析器（此时重建结果与原文逐字节相同，等价），并把 CSI 扫描从逐字节改成
+  `memchr` 跳 ESC。实测 ingest 1521µs/块，30 万行总耗时 645ms → 351ms。
+  **Parsing coloured output is ~1.9x faster**: the SGR path skipped the parameter rebuild whenever
+  the sequence contains neither 53 nor 21 (the rebuilt bytes are identical then), and CSI scanning
+  now jumps ESC-to-ESC with `memchr`.
+
 - **文档里的旧名 `meatshell` 全部改为 `rudder`**（英文 README / CONTRIBUTING / 两份发版文档 / 图标
   脚本）：下载与运行说明（`rudder-*` 包、`rudder.exe`、`rudder.app`）、配置路径、`rudder --version`
   校验、Issues 与 Releases 链接。

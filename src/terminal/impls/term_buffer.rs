@@ -476,6 +476,29 @@ impl TermBuffer {
         } else {
             &seq[..0]
         };
+
+        // ── 快路径：参数里既没有 53（我们拦截的 overline）也没有 21（要改写成 4:2）──
+        //
+        // 此时下面那套"重建参数表"的结果与原文**逐字节相同**（只丢 53 / 只改 21），
+        // 所以可以直接把原序列喂给解析器。彩色输出里每块（64 KiB）有两万多个 SGR，
+        // 走慢路径要为每个序列付 4 次堆分配 + 一次整串重拷 —— 这是 ingest 在彩色
+        // 语料上比无色慢 9 倍的主因。
+        //
+        // 唯一还必须做的是 overline 状态机：**任何不带 53 的 SGR** 在 overline 打开时
+        // 都要把它闭合（与下面那段 `!has_53 && self.overline_active` 同义）。
+        //
+        // 注意：这里用朴素的"参数里有没有 21/53"判断 —— 极端情况下 `38;2;53;100;200m`
+        // 这类**颜色分量**恰好是 21/53 会被判成"需要慢路径"，那是安全的（走下面已有的、
+        // 处理过 extended-colour 前缀的正确逻辑），只是少见而已。
+        let needs_rewrite = params.split(|&b| b == b';').any(|part| part == b"53" || part == b"21");
+        if !needs_rewrite {
+            if self.overline_active {
+                self.close_overline(row, col);
+            }
+            process_bytes(&mut self.processor, &mut self.term, seq);
+            return;
+        }
+
         let mut has_53 = false;
         let mut has_reset = false;
         // Drop the overline parameter and rewrite 21 → 4:2 (vte parses 21 as
@@ -911,11 +934,10 @@ fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
     }
     let mut seqs = Vec::new();
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] != 0x1b {
-            i += 1;
-            continue;
-        }
+    // 用 memchr 直接跳到下一个 ESC。原来是一条条 `i += 1` 走完全块 —— 彩色输出里
+    // 非 ESC 字节仍是绝大多数，那等于每个块都白扫一遍 64 KiB。语义与逐字节版一致。
+    while let Some(offset) = memchr::memchr(b'\x1b', &bytes[i..]) {
+        i += offset;
         if bytes.get(i + 1) != Some(&b'[') {
             // ESC + non-'[': two-byte escape (ESC 7 / ESC c …) or an OSC
             // introducer (ESC ] …) — skip past the next byte and continue.
