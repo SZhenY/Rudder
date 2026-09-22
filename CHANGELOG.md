@@ -24,6 +24,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
   另外三处"每秒全量重建模型"（上下网络曲线、磁盘列表、网卡下拉）改成就地写 —— 磁盘那 9 个不
   刷新的 tick 现在**一次通知都不发**；`SystemSnapshot.disks` 改 `Arc<[_]>`，挂载点字符串只在真
   刷新那一轮生成。侧栏每趟多了一行观测日志（`RUST_LOG=rudder::perf=debug`）。
+  动画并未完全取消：**变化 ≥10 个百分点**时才出弹簧（空闲时 1% 级别的抖动直接跳到位）。
   **The system-status sidebar now idles at ~1/12 of its former CPU** (debug build, 20 s idle:
   **24.15% → 1.90%** of one core; idle frame rate **15 fps → 1 fps**): the three CPU/memory/swap
   gauges used to restart a spring animation every second, and every animation frame repaints the
