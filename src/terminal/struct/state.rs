@@ -41,6 +41,12 @@ pub(crate) struct TermBuffer {
     pub(crate) raw: VecDeque<u8>,
     /// Row-level render cache: Some(line) when the live grid row has not
     /// changed since the last render, None for cold/invalidated rows.
+    /// 上一帧实时视口的构建统计（阶段 0 的测量基础）。
+    ///
+    /// 用途只有一个：让"这一帧到底做了多少行"可观测 —— 有了它，才能判断
+    /// alacritty 式的"只重建脏行"值不值得做（`flood_profile` 里 render 只占 p50 22µs，
+    /// 而 ingest 是 304µs，所以**先测再改**）。`rebuilt + reused` 应恒等于可见行数。
+    pub(crate) frame_stats: FrameStats,
     pub(crate) rendered: Vec<Option<RenderedLine>>,
     /// Row-level render cache for the SCROLLBACK view, keyed by absolute grid
     /// line (`GridLine`, negative into history).  Scrollback is immutable, so
@@ -77,6 +83,15 @@ pub(crate) struct TermBuffer {
     /// (#338). Seeded from the global setting when the buffer is created and
     /// flipped live by the settings toggle.
     pub(crate) json_format_output: bool,
+}
+
+/// 一帧实时视口的构建统计（见 `TermBuffer::frame_stats`）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FrameStats {
+    /// 走 `build_spans` 重排的行数（含"缓存未命中"与"内容真的变了"）。
+    pub(crate) rebuilt: u32,
+    /// 命中行缓存、只重跑 `render_term_span` 的行数（**仍然会产出新的 `Vec<TermSpan>`**）。
+    pub(crate) reused: u32,
 }
 
 /// Cached rendering for one live-screen row.  Stores raw HistSpan runs (our

@@ -188,7 +188,7 @@ pub(crate) mod auth_dialogs;
 pub(crate) mod self_updater;
 mod port_forward;
 mod quick_commands;
-mod resource_ui;
+pub(crate) mod resource_ui;
 mod session_event;
 mod session_models;
 mod session_runtime;

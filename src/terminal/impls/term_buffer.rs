@@ -1,5 +1,5 @@
 use crate::terminal::{
-    BuiltScreen, CsiState, HistSpan, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
+    BuiltScreen, CsiState, FrameStats, HistSpan, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
     ScrollLine, TermBuffer, build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
     merge_runs, process_bytes, refresh_overlines, render_term_span, resize_term, term_size,
 };
@@ -57,6 +57,7 @@ impl TermBuffer {
             csi_pending: Vec::new(),
             mouse_tracked: false,
             raw: std::collections::VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,
@@ -676,6 +677,8 @@ impl TermBuffer {
 
         // --- Live view (also alt-screen): render the current grid -----------
         if alt || self.view_offset == 0 {
+            // 每帧重置；本分支结束时写回 self.frame_stats（见字段文档）。
+            let mut stats = FrameStats::default();
             let mut spans = Vec::with_capacity(rows as usize * 6);
             let mut displayed = Vec::with_capacity(rows as usize);
             let mut last_content = 0i32;
@@ -705,6 +708,7 @@ impl TermBuffer {
                         && cached.raw_runs == runs
                         && cached.highlighted != alt
                     {
+                        stats.reused += 1;
                         let runs = merge_runs(&refresh_overlines(
                             &cached.runs,
                             &self.overline_ranges,
@@ -715,9 +719,11 @@ impl TermBuffer {
                             .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
                             .collect()
                     } else {
+                        stats.rebuilt += 1;
                         self.build_spans(r as i32, display_key, &runs, alt)
                     }
                 } else {
+                    stats.rebuilt += 1;
                     self.build_spans(r as i32, display_key, &runs, alt)
                 };
 
@@ -741,6 +747,7 @@ impl TermBuffer {
                 self.scroll_live_frames = 0;
             }
             let rows_used = if alt { rows as i32 } else { last_content + 1 };
+            self.frame_stats = stats;
             return BuiltScreen {
                 mouse_tracked: self.mouse_tracked,
                 spans,
@@ -957,6 +964,7 @@ mod tests {
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
             raw: std::collections::VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,
@@ -1129,7 +1137,15 @@ mod tests {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(220);
-        let line = b"line 123 abcdefghijklmnopqrstuvwxyz 0123456789\r\n";
+        // 语料两档：默认无色（每行 1 个 run），`RUDDER_FLOOD_COLOR=1` 时给每行塞 8 段
+        // 不同颜色 —— 后者才代表 `ls --color`、彩色日志、`git diff` 这类"**每行多 run、
+        // 一屏上千个 span**"的真实负载；模型写入那一段的代价只有在它上面才看得出。
+        let colorful = std::env::var("RUDDER_FLOOD_COLOR").is_ok();
+        let plain_line = b"line 123 abcdefghijklmnopqrstuvwxyz 0123456789\r\n";
+        let color_line =
+            b"\x1b[31mred\x1b[0m \x1b[32mgreen\x1b[0m \x1b[33myellow\x1b[0m \x1b[34mblue\x1b[0m \
+              \x1b[35mmagenta\x1b[0m \x1b[36mcyan\x1b[0m \x1b[1;37mbold\x1b[0m \x1b[4munder\x1b[0m\r\n";
+        let line: &[u8] = if colorful { color_line } else { plain_line };
 
         // 回滚环大小可调：用来判断"长尾是不是回滚环淘汰造成的"（0 = 不留历史）。
         let scrollback: usize = std::env::var("RUDDER_FLOOD_SCROLLBACK")
@@ -1144,6 +1160,11 @@ mod tests {
 
         let mut ingest_us = Vec::with_capacity(chunks);
         let mut render_us = Vec::with_capacity(chunks);
+        // 真实 UI 每帧还要把这份 spans **增量写进 Slint 模型**（`apply_rows_slice` 逐项
+        // `PartialEq` + `set_row_data`）—— 这段以前没被量过，而"一屏上千个 span"的固定开销
+        // 就落在这里，也是 alacritty 用 GPU 实例缓冲换掉的那一块。
+        let mut model_us = Vec::with_capacity(chunks);
+        let model = slint::VecModel::<crate::ui::TermSpan>::default();
         let start = Instant::now();
         for _ in 0..chunks {
             let t = Instant::now();
@@ -1154,6 +1175,10 @@ mod tests {
             let screen = buf.render();
             render_us.push(t.elapsed().as_micros());
             std::hint::black_box(&screen);
+
+            let t = Instant::now();
+            std::hint::black_box(crate::app::resource_ui::apply_rows_slice(&model, &screen.spans));
+            model_us.push(t.elapsed().as_micros());
         }
         let total = start.elapsed();
 
@@ -1175,10 +1200,13 @@ mod tests {
         // 先算"最慢的几次"（需要原始顺序），再排序求分位。
         let i_slow = slowest(&ingest_us, 5);
         let r_slow = slowest(&render_us, 5);
+        let m_slow = slowest(&model_us, 5);
         let (i50, i95, i99, imax) = stats(&mut ingest_us);
         let (r50, r95, r99, rmax) = stats(&mut render_us);
+        let (m50, m95, m99, mmax) = stats(&mut model_us);
         println!("最慢 ingest 块: {i_slow}");
         println!("最慢 render 帧: {r_slow}");
+        println!("最慢 model 帧: {m_slow}");
         println!("== flood profile ==");
         println!(
             "总耗时 {:?}（{chunks} 块 × {CHUNK_LINES} 行 ≈ {} 万行）",
@@ -1187,6 +1215,7 @@ mod tests {
         );
         println!("ingest / 块: p50={i50}us p95={i95}us p99={i99}us max={imax}us");
         println!("render / 帧: p50={r50}us p95={r95}us p99={r99}us max={rmax}us");
+        println!("model / 帧: p50={m50}us p95={m95}us p99={m99}us max={mmax}us");
     }
 
     /// 查找导航：**只朝搜索方向扫、命中即停**（以前会把全部命中收集完再挑 —— 20 万~50 万行
@@ -1307,6 +1336,7 @@ mod tests {
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
             raw: std::collections::VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,
@@ -1427,6 +1457,7 @@ mod real_file_overline_verify {
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
             raw: VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,
@@ -1487,6 +1518,7 @@ mod render_path_cube_tests {
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
             raw: std::collections::VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,

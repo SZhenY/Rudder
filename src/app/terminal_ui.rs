@@ -172,6 +172,14 @@ pub(crate) struct TabDisplay {
 pub(crate) fn compute_tab_display(buf: &mut TermBuffer) -> TabDisplay {
     let cols = crate::terminal::term_size(&buf.term).1;
     let b = buf.render(); // also refreshes buf.displayed_text
+    // 阶段 0 的观测点：默认不打印，RUST_LOG=rudder::perf=debug 时每帧一行。
+    tracing::debug!(
+        target: "rudder::perf",
+        rebuilt = buf.frame_stats.rebuilt,
+        reused = buf.frame_stats.reused,
+        spans = b.spans.len(),
+        "frame"
+    );
     let matches = compute_find_matches(&buf.displayed_text, &buf.find_query);
     let selection = buf.selection_rects_visible(cols);
     TabDisplay {

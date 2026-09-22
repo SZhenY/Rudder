@@ -30,7 +30,7 @@ pub(super) fn apply_rows<T: Clone + PartialEq + 'static>(vm: &VecModel<T>, next:
 
 /// `apply_rows` 的借用版：调用方只有 `&[T]` 时用（拿所有权会让每个调用点都得 clone 一遍）。
 /// 返回"是否真的写了东西"—— 内容完全没变时一次通知都不发。
-pub(super) fn apply_rows_slice<T: Clone + PartialEq + 'static>(vm: &VecModel<T>, next: &[T]) -> bool {
+pub(crate) fn apply_rows_slice<T: Clone + PartialEq + 'static>(vm: &VecModel<T>, next: &[T]) -> bool {
     let old_len = vm.row_count();
     let new_len = next.len();
     let mut changed = old_len != new_len;
