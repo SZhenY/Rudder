@@ -1182,6 +1182,23 @@ mod tests {
         }
         let total = start.elapsed();
 
+        // ── 回滚视图（`scroll_cache` 那条 path）：进入历史后连渲若干帧 ──────────────
+        // 与实时视图完全不同的分支：每帧 `for d in 0..win` 重走视口，靠 `scroll_cache`
+        // （按绝对行号 + generation，上限 4096）兜。**第一帧必然全部未命中**，后续帧才是
+        // 稳态 —— 两个数分开记，因为它们对应"滚一下"和"一直滚"两种体验。
+        const SCROLL_FRAMES: usize = 60;
+        buf.view_offset = 200;
+        let mut scroll_us = Vec::with_capacity(SCROLL_FRAMES);
+        let scroll_start = Instant::now();
+        for _ in 0..SCROLL_FRAMES {
+            let t = Instant::now();
+            let s = buf.render();
+            scroll_us.push(t.elapsed().as_micros());
+            std::hint::black_box(&s);
+        }
+        let scroll_total = scroll_start.elapsed();
+        let scroll_first_us = scroll_us.first().copied().unwrap_or(0);
+
         // 最慢的几次发生在第几块 / 第几帧 —— 周期性长尾（例如每 N 次一次）能一眼看出来。
         let slowest = |v: &[u128], n: usize| {
             let mut idx: Vec<usize> = (0..v.len()).collect();
@@ -1203,6 +1220,7 @@ mod tests {
         let m_slow = slowest(&model_us, 5);
         let (i50, i95, i99, imax) = stats(&mut ingest_us);
         let (r50, r95, r99, rmax) = stats(&mut render_us);
+        let (s50, s95, s99, smax) = stats(&mut scroll_us);
         let (m50, m95, m99, mmax) = stats(&mut model_us);
         println!("最慢 ingest 块: {i_slow}");
         println!("最慢 render 帧: {r_slow}");
@@ -1216,6 +1234,10 @@ mod tests {
         println!("ingest / 块: p50={i50}us p95={i95}us p99={i99}us max={imax}us");
         println!("render / 帧: p50={r50}us p95={r95}us p99={r99}us max={rmax}us");
         println!("model / 帧: p50={m50}us p95={m95}us p99={m99}us max={mmax}us");
+        println!(
+            "回滚 / 帧: 首帧={scroll_first_us}us（未命中） p50={s50}us p95={s95}us p99={s99}us max={smax}us \
+             （{SCROLL_FRAMES} 帧共 {scroll_total:?}）"
+        );
     }
 
     /// 查找导航：**只朝搜索方向扫、命中即停**（以前会把全部命中收集完再挑 —— 20 万~50 万行
