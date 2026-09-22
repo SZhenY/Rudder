@@ -5,6 +5,18 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 修复 / Fixed
+
+- **彩色刷屏时客户端会崩溃（`0.7.9-beta2` 引入）。** `scan_csi_sequences` 从"逐字节扫描"
+  改成 `memchr` 跳转时**丢了循环上界** ✗：`ESC` 后面不是 `[`（OSC 引子 `ESC ]`、`ESC 7`
+  这类）会 `i += 2` **一步跨过块尾**，下一轮 `&bytes[i..]` 直接越界 panic
+  （`range start index 32769 out of range for slice of length 32768` —— 32768 就是读缓冲大小）。
+  正式构建 `panic = "abort"`，所以表现为**直接闪退** ✗。已恢复 `i < bytes.len()` 上界，
+  并补两条回归测试（块尾是 `ESC` / `ESC ]` / 32 KiB 块尾截断 + 未结束 CSI 仍交给调用方缓存）。
+  **Fixed a crash on coloured output in `0.7.9-beta2`**: the memchr rewrite of
+  `scan_csi_sequences` lost its loop bound, so an `ESC` not followed by `[` at the end of a
+  read chunk advanced past the slice and panicked (abort → instant quit).
+
 ## [0.7.9-beta2] - 2026-09-22
 
 ### 变化 / Changed

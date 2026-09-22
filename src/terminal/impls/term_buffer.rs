@@ -936,7 +936,14 @@ fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
     let mut i = 0;
     // 用 memchr 直接跳到下一个 ESC。原来是一条条 `i += 1` 走完全块 —— 彩色输出里
     // 非 ESC 字节仍是绝大多数，那等于每个块都白扫一遍 64 KiB。语义与逐字节版一致。
-    while let Some(offset) = memchr::memchr(b'\x1b', &bytes[i..]) {
+    // ⚠️ 循环条件**必须**带 `i < bytes.len()`：下面 `i += 2`（ESC + 非 '['，比如 OSC 引子
+    // `ESC ]` 或 `ESC 7`）可能一步跨过块尾，此时 `&bytes[i..]` 会直接 panic
+    // （`range start index N out of range for slice of length M`）。
+    // 0.7.9-beta2 在彩色刷屏下崩过一次，就是这里丢了上界 —— 原来的逐字节版本有它。
+    while i < bytes.len() {
+        let Some(offset) = memchr::memchr(b'\x1b', &bytes[i..]) else {
+            break;
+        };
         i += offset;
         if bytes.get(i + 1) != Some(&b'[') {
             // ESC + non-'[': two-byte escape (ESC 7 / ESC c …) or an OSC
@@ -962,6 +969,34 @@ fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 块尾刚好落在转义序列中间时**不能 panic**。
+    ///
+    /// 0.7.9-beta2 在彩色刷屏下崩过（SIGABRT + `range start index 32769 out of range for
+    /// slice of length 32768`）：`ESC` 后面跟的不是 `[` 时 `i += 2` 会跨过块尾，下一轮
+    /// `&bytes[i..]` 越界。32768 正是读缓冲的块大小。
+    #[test]
+    fn scan_csi_survives_escape_at_chunk_tail() {
+        assert_eq!(scan_csi_sequences(b"abc\x1b"), (vec![], None), "块尾就是 ESC");
+        assert_eq!(scan_csi_sequences(b"abc\x1b]"), (vec![], None), "ESC ]（OSC 引子）");
+        assert_eq!(scan_csi_sequences(b"abc\x1b7"), (vec![], None), "ESC 7（保存光标）");
+        assert_eq!(scan_csi_sequences(b"\x1b"), (vec![], None), "整块只有一个 ESC");
+
+        let mut big = vec![b'a'; 32768];
+        big.push(0x1b);
+        assert_eq!(scan_csi_sequences(&big), (vec![], None), "32 KiB 块尾是 ESC");
+
+        let mut big2 = vec![b'a'; 32767];
+        big2.extend_from_slice(b"\x1b]");
+        assert_eq!(scan_csi_sequences(&big2), (vec![], None), "32 KiB 块尾是 ESC ]");
+    }
+
+    /// 未结束的 CSI 仍要交给调用方缓存 —— 这是 split-read 时保住 SGR 53 / 21 的机制。
+    #[test]
+    fn scan_csi_reports_unterminated_csi_tail_and_finds_sgr() {
+        assert_eq!(scan_csi_sequences(b"abc\x1b[38;5"), (vec![], Some(3)));
+        assert_eq!(scan_csi_sequences(b"abc\x1b[31mX"), (vec![(3, 8)], None));
+    }
     use alacritty_terminal::index::{Column, Line, Point};
     use crate::terminal::{
         CsiState, OutputHighlightPreset, TermColor, UnderlineStyle, attr_from_cell,
