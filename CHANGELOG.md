@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.9-beta2] - 2026-09-22
+
 ### 变化 / Changed
 
 - **彩色输出（彩色日志 / `ls --color` / diff）的解析快了约 1.9 倍。** 每个 SGR 序列原先都要
@@ -17,7 +19,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
   now jumps ESC-to-ESC with `memchr`.
 
 - **系统状态侧边栏：空闲 CPU 降到 1/12.7**（实测 debug 构建静置 20 s：单核 **24.15% → 1.90%**；
-  空闲帧率 **15 fps → 1 fps**）。根因是三条 CPU/内存/交换进度条：`animate width spring` 的输入是
+  空闲帧率 **15 fps → 1 fps**；release 构建 + 真实配置另测 **0.06%**）。根因是三条 CPU/内存/交换进度条：`animate width spring` 的输入是
   1 Hz 采样，动画**每秒被重新触发**，而 Slint 一次重绘 = **重画整个窗口**（不做局部重绘；侧栏也
   不走终端那套 30 Hz 节流）—— 于是"空闲"时整窗每秒被重画十几次。现在条宽**不做动画**（仪表不是
   交互元素，跳变只 1 个百分点），并跟**取整后的百分比**走。
@@ -36,6 +38,13 @@ All notable changes are documented here. 本文件记录所有重要变更。
   校验、Issues 与 Releases 链接。
   **Old `meatshell` name replaced with `rudder` throughout the docs.** 上游致谢（"fork of
   yituorou/meatshell"）、内嵌字体名 `Meatshell Mono`、以及 CHANGELOG 里的历史记录按原样保留。
+
+- **新增性能观测点与压测工具**（只在调试/测试构建里生效，正式运行不打印）：
+  终端每帧记「重建/复用」行数、侧栏每趟记采样耗时与模型写次数，都用
+  `RUST_LOG=rudder::perf=debug`；另有 `flood_profile` 压测
+  （`cargo test --release -- --ignored --nocapture flood_profile`，`RUDDER_FLOOD_COLOR=1`
+  可切彩色语料），用来量化 `seq` 刷屏 / `cat` 大文件这类场景。
+  **Added perf observation points and a flood benchmark** (debug/test builds only).
 
 ### 修复 / Fixed
 
