@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.9-beta3] - 2026-09-22
+
 ### 修复 / Fixed
 
 - **彩色刷屏时客户端会崩溃（`0.7.9-beta2` 引入）。** `scan_csi_sequences` 从"逐字节扫描"
