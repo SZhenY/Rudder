@@ -3,6 +3,7 @@
 //! `sysinfo` is already a dependency for many Rust desktop apps; it gives us
 //! cross-platform data with ~2% CPU overhead at 1-second cadence.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use sysinfo::{Disks, Networks, System};
@@ -27,10 +28,12 @@ impl SystemSampler {
         let last_rx_total = nets.values().map(|d| d.total_received()).sum();
         let last_tx_total = nets.values().map(|d| d.total_transmitted()).sum();
         let disks = Disks::new_with_refreshed_list();
+        let cached_disks = disk_rows(&disks);
         Self {
             sys,
             nets,
             disks,
+            cached_disks,
             disk_tick: 0,
             last_rx_total,
             last_tx_total,
@@ -87,20 +90,13 @@ impl SystemSampler {
         // list barely changes. The previous list is reused in between.
         if self.disk_tick == 0 || self.disks.is_empty() {
             self.disks.refresh(true);
+            // 挂载点字符串只在这**一轮**生成：`to_string_lossy().to_string()` 是磁盘这一项里
+            // 唯一原本每个 tick 都会发生的成本（`available_space()` 读的是同一份已缓存的
+            // `Disks`，数值本来就只在刷新轮变化）—— 所以缓存与逐 tick 重建完全等价。
+            self.cached_disks = disk_rows(&self.disks);
         }
         self.disk_tick = (self.disk_tick + 1) % DISK_REFRESH_EVERY;
-        let disks: Vec<(String, u64, u64)> = self
-            .disks
-            .iter()
-            .map(|d| {
-                (
-                    d.mount_point().to_string_lossy().to_string(),
-                    d.available_space(),
-                    d.total_space(),
-                )
-            })
-            .filter(|(_, _, total)| *total > 0)
-            .collect();
+        let disks = self.cached_disks.clone();
 
         SystemSnapshot {
             cpu_percent,
@@ -116,6 +112,25 @@ impl SystemSampler {
             disks,
         }
     }
+}
+
+/// 挂载点 → (mount, available, total)，滤掉总容量为 0 的伪挂载点。
+///
+/// 只在真正 refresh 磁盘那一轮调用（见 `DISK_REFRESH_EVERY`）；返回 `Arc<[_]>` 是为了让
+/// "每秒一次的快照克隆"退化成引用计数 +1。
+fn disk_rows(disks: &Disks) -> Arc<[(String, u64, u64)]> {
+    let rows: Vec<(String, u64, u64)> = disks
+        .iter()
+        .map(|d| {
+            (
+                d.mount_point().to_string_lossy().to_string(),
+                d.available_space(),
+                d.total_space(),
+            )
+        })
+        .filter(|(_, _, total)| *total > 0)
+        .collect();
+    Arc::from(rows)
 }
 
 /// Format a used/total memory pair (both in MiB) for the narrow sidebar.

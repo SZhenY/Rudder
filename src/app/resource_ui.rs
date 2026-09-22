@@ -9,10 +9,16 @@ pub(super) fn push_ring(buf: &mut Vec<f32>, val: f32) {
     buf.push(val);
 }
 
-pub(super) fn normalized_model(buf: &[f32]) -> ModelRc<f32> {
+/// 折线图归一化：除以峰值（峰值从 1.0 起算，所以低流量不会被拉满整图）。
+pub(super) fn normalize(buf: &[f32]) -> Vec<f32> {
     let max = buf.iter().cloned().fold(1.0_f32, f32::max);
-    let scaled: Vec<f32> = buf.iter().map(|v| (v / max).clamp(0.0, 1.0)).collect();
-    ModelRc::from(Rc::new(VecModel::from(scaled)))
+    buf.iter().map(|v| (v / max).clamp(0.0, 1.0)).collect()
+}
+
+/// 归一化结果对应的**新**模型 —— 只在第一次（或模型被别人换过）时用一次。
+/// （名字里的 graph 是为了避开 `history_model`：那是命令历史用的，glob 导入后会歧义。）
+pub(super) fn graph_model(scaled: &[f32]) -> ModelRc<f32> {
+    ModelRc::from(Rc::new(VecModel::from(scaled.to_vec())))
 }
 
 /// 把算好的一批行**增量**写进模型：逐行比对内容，只更新真正变化的行，长度变化时才在
@@ -465,11 +471,11 @@ mod tests {
         );
     }
 
-    // ---------- normalized_model：折线图归一化 ----------
+    // ---------- normalize / graph_model：折线图归一化 ----------
 
     #[test]
-    fn normalized_model_scales_by_max() {
-        let m = normalized_model(&[2.0, 4.0]);
+    fn normalize_scales_by_max() {
+        let m = graph_model(&normalize(&[2.0, 4.0]));
         assert_eq!(m.row_count(), 2);
         assert_eq!(m.row_data(0).unwrap(), 0.5);
         assert_eq!(m.row_data(1).unwrap(), 1.0);
@@ -477,16 +483,16 @@ mod tests {
 
     /// 峰值不超过 1.0 时**不放大**（`max` 从 1.0 起算）：低流量不该被拉满整个图。
     #[test]
-    fn normalized_model_does_not_amplify_sub_unit_values() {
-        let m = normalized_model(&[0.25, 1.0]);
+    fn normalize_does_not_amplify_sub_unit_values() {
+        let m = graph_model(&normalize(&[0.25, 1.0]));
         assert_eq!(m.row_data(0).unwrap(), 0.25, "小值保持原样");
     }
 
     #[test]
-    fn normalized_model_clamps_negatives_and_tolerates_empty() {
-        let m = normalized_model(&[-3.0, 0.0]);
+    fn normalize_clamps_negatives_and_tolerates_empty() {
+        let m = graph_model(&normalize(&[-3.0, 0.0]));
         assert_eq!(m.row_data(0).unwrap(), 0.0, "负数压到 0");
-        assert_eq!(normalized_model(&[]).row_count(), 0, "空输入不 panic");
+        assert_eq!(graph_model(&normalize(&[])).row_count(), 0, "空输入不 panic");
     }
 
     // ---------- disk_rows ----------

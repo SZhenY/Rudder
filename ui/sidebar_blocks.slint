@@ -50,10 +50,14 @@ export component StatRow inherits HorizontalLayout {
             x: 0;
             y: 0;
             height: parent.height;
-            width: parent.width * clamp(percent, 0.0, 1.0);
+            // 条宽跟**取整后的百分比**走（右侧显示的数字本来就是整数百分比）：原始 f32
+            // 每秒都在微微变化，会让弹簧动画每秒被重新触发 —— 而 Slint 一次重绘 = 重画
+            // **整个窗口**，于是侧栏可见时几乎永远处于动画中（空闲耗电的主因）。
+            // 取整之后"没变就不动"；时长也从 500ms 压到 160ms，动画占空比从约一半降到约 1/6。
+            width: parent.width * clamp(Math.round(percent * 100) / 100, 0.0, 1.0);
             background: bar-color;
             border-radius: 2px;
-            animate width { duration: 500ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
+            animate width { duration: 160ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
         }
 
         Text {
