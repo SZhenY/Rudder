@@ -16,17 +16,19 @@ All notable changes are documented here. 本文件记录所有重要变更。
   the sequence contains neither 53 nor 21 (the rebuilt bytes are identical then), and CSI scanning
   now jumps ESC-to-ESC with `memchr`.
 
-- **系统状态侧边栏：空闲 CPU 降到约 1/3**（实测 debug 构建静置 20 s：单核 24.15% → 7.60%）。
-  三条进度条原本 `animate width 500ms spring` + 数据每秒更新 = 每秒重启动画，而一次重绘要
-  **重画整个窗口**（侧栏不走终端那套 30 Hz 节流），于是"空闲"时约一半时间在跑动画帧；现在条宽
-  跟**取整后的百分比**走（没变就不动）、时长压到 160 ms。另外三处"每秒全量重建模型"（上下
-  网络曲线、磁盘列表、网卡下拉）改成就地写 —— 磁盘那 9 个不刷新的 tick 现在**一次通知都不发**；
-  `SystemSnapshot.disks` 改 `Arc<[_]>`，挂载点字符串只在真刷新那一轮生成。侧栏每趟多了一行
-  观测日志（`RUST_LOG=rudder::perf=debug`）。
-  **The system-status sidebar now idles at ~1/3 of its former CPU** (debug build, 20 s idle:
-  24.15% → 7.60% of one core): the progress bars no longer restart a 500 ms spring every second
-  (that kept the whole window repainting ~half of the time), and three per-tick model rebuilds
-  (network curves, disk list, NIC list) were switched to in-place writes.
+- **系统状态侧边栏：空闲 CPU 降到 1/12.7**（实测 debug 构建静置 20 s：单核 **24.15% → 1.90%**；
+  空闲帧率 **15 fps → 1 fps**）。根因是三条 CPU/内存/交换进度条：`animate width spring` 的输入是
+  1 Hz 采样，动画**每秒被重新触发**，而 Slint 一次重绘 = **重画整个窗口**（不做局部重绘；侧栏也
+  不走终端那套 30 Hz 节流）—— 于是"空闲"时整窗每秒被重画十几次。现在条宽**不做动画**（仪表不是
+  交互元素，跳变只 1 个百分点），并跟**取整后的百分比**走。
+  另外三处"每秒全量重建模型"（上下网络曲线、磁盘列表、网卡下拉）改成就地写 —— 磁盘那 9 个不
+  刷新的 tick 现在**一次通知都不发**；`SystemSnapshot.disks` 改 `Arc<[_]>`，挂载点字符串只在真
+  刷新那一轮生成。侧栏每趟多了一行观测日志（`RUST_LOG=rudder::perf=debug`）。
+  **The system-status sidebar now idles at ~1/12 of its former CPU** (debug build, 20 s idle:
+  **24.15% → 1.90%** of one core; idle frame rate **15 fps → 1 fps**): the three CPU/memory/swap
+  gauges used to restart a spring animation every second, and every animation frame repaints the
+  *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
+  list, NIC list) were also switched to in-place writes.
 
 - **文档里的旧名 `meatshell` 全部改为 `rudder`**（英文 README / CONTRIBUTING / 两份发版文档 / 图标
   脚本）：下载与运行说明（`rudder-*` 包、`rudder.exe`、`rudder.app`）、配置路径、`rudder --version`

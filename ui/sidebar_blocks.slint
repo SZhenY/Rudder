@@ -5,7 +5,7 @@
 //! 以便被 `sidebar.slint` 导入，并保留 `DiskInfo` 的导出）。
 //! `Sidebar` 自身留在原文件，负责把所有区块拼起来。
 
-import { Theme, AnimationSettings } from "theme.slint";
+import { Theme } from "theme.slint";
 import { Sparkline } from "widgets.slint";
 import { Divider, VDivider } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
@@ -50,14 +50,14 @@ export component StatRow inherits HorizontalLayout {
             x: 0;
             y: 0;
             height: parent.height;
-            // 条宽跟**取整后的百分比**走（右侧显示的数字本来就是整数百分比）：原始 f32
-            // 每秒都在微微变化，会让弹簧动画每秒被重新触发 —— 而 Slint 一次重绘 = 重画
-            // **整个窗口**，于是侧栏可见时几乎永远处于动画中（空闲耗电的主因）。
-            // 取整之后"没变就不动"；时长也从 500ms 压到 160ms，动画占空比从约一半降到约 1/6。
+            // 条宽**不做动画**：它是仪表、不是交互元素 —— 输入是 1 Hz 采样，每秒都会换目标，
+            // 任何 `animate` 都会被每秒重新触发；而 Slint 一次重绘 = 重画**整个窗口**（不做
+            // 局部重绘），空闲帧率于是被抬到 15 fps。实测同一场景：带 160ms 弹簧 = 15 fps，
+            // 去掉动画 = 2 fps（只剩数据本身那一次重绘）。
+            // 条宽跟着**取整后的百分比**（右侧数字本来就是整数百分比），跳变只 1 个百分点。
             width: parent.width * clamp(Math.round(percent * 100) / 100, 0.0, 1.0);
             background: bar-color;
             border-radius: 2px;
-            animate width { duration: 160ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
         }
 
         Text {
