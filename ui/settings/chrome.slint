@@ -401,13 +401,15 @@ export component CursorColorInput inherits Rectangle {
                 }
 
                 // ── 色相条 + 当前颜色预览 ─────────────────────────────────
+                // ⚠️ 这一行**不能**写 `alignment: center`：带 alignment 的布局不会沿主轴
+                // 伸展子项（`horizontal-stretch` 失效），色相条会被压成 0 宽而"消失"。
+                // 行高由色相条自己（34px）与右侧预览（34px）决定，本来就不需要居中。
                 HorizontalLayout {
                     spacing: 10px;
-                    alignment: center;
                     hue-bar := Rectangle {
                         height: 34px;
-                        // ⚠️ 布局里**不能**写 `width: 100%`：那表示"占满整个布局宽度"，
-                        // 右侧的圆形预览就会被挤出面板（`horizontal-stretch` 才会给它让位）。
+                        // ⚠️ 布局里也**不能**写 `width: 100%`：那表示"占满整个布局宽度"，
+                        // 右侧的圆形预览会被挤出面板（`horizontal-stretch` 才会给它让位）。
                         horizontal-stretch: 1;
                         Rectangle {
                             y: 11px;
@@ -454,9 +456,9 @@ export component CursorColorInput inherits Rectangle {
                 }
 
                 // ── HEX 输入 ─────────────────────────────────────────────
+                // 同上：不要 `alignment: center`，否则下面的输入框会被压成 0 宽。
                 HorizontalLayout {
                     spacing: 10px;
-                    alignment: center;
                     Text {
                         text: "HEX";
                         color: Theme.text-secondary;
