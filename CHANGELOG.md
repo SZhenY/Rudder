@@ -5,6 +5,129 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.9-beta4] - 2026-09-23
+
+### 新增 / Added
+
+- **终端设置的三处改进。** ① 选**自定义壁纸**（上传的图片）时，光标色默认落到"浅色档的暗色"
+  （照片的明暗不可预知，"跟随主题"那套在照片上不成立）—— 只在用户还没自己挑过光标色（配置为空）
+  时才动，不覆盖他的选择；② 光标颜色那一行改成与「主题色」同规格：左边一排预设色块（第一项是
+  「跟随主题」），下面是自定义取色盘。输入框显示**实际生效**的色号，色块选中态看配置里存的值 ——
+  两者本就不同，故新增 `term-cursor-choice`；③ 终端页的字体下拉也加了上传字体按钮（与界面字体
+  同一个回调：复制进 `config/fonts`、注册后立即可选、两个列表一起刷新）。
+  **Three terminal-settings improvements**: a custom wallpaper now defaults the cursor colour to the
+  dark tone, the cursor colour row mirrors the accent row (preset swatches + picker), and the terminal
+  font dropdown gained the same upload button as the interface font row.
+
+- **「配色」分区的主题行改名「壁纸」：一个下拉同时管主题与背景图。** 选项 = 跟随系统 / 深色 /
+  浅色 + `config/wallpapers` 里上传的图片，右侧一个上传按钮（图片被**复制**进那个目录，重名不
+  覆盖）。**深色 / 浅色就是原来的「简约·暗 / 简约·浅」** —— 深浅档与配套的那张内置底图是**同一个
+  选择**，不再分两处设置；选「跟随系统」时底图也跟着系统外观走（系统外观变了两者一起变）。上传
+  的图片只换图，深浅档保持用户当前的选择。原来的色块版壁纸段与「自定义」上传段（共 153 行）由
+  这一行取代；主题色与自定义颜色两行不变。
+  **The theme row is now "Wallpaper"**: one dropdown covering both the light/dark choice and the
+  backdrop image (the built-ins *are* the old "Meat Light / Meat Dark"), plus an upload button that
+  copies images into `config/wallpapers`.
+
+- **「配色」分区改名「壁纸」，并把主题与壁纸合并到一起。** 原来的**色块版**壁纸与「自定义」上传段
+  被一个选择器取代：下拉里是「无 / 简约·浅 / 简约·暗 + `config/wallpapers` 里的图片」，右边一个
+  上传按钮 —— 与界面字体选择器同一套形状（界面拿显示名、配置存稳定 id，由 Rust 侧纯函数互查）。
+  上传是把图片**复制**进 `config/wallpapers`：旧行为是记住原路径，原文件一移走 / 删掉壁纸就失效，
+  重名也不覆盖（改成 `<名字> 2.png`）。「主题 / 主题色 / 自定义颜色」三行原样保留，「遮罩」仍是
+  下面独立的一段；壁纸功能随之重新开放（两个成对开关置回 true）。
+  **界面字体一行也加了同样的上传按钮**：字体文件复制进 `config/fonts`，注册后**不必重启**即可
+  选中，终端与界面两个字体列表（以及各自的下标）会一起刷新。
+  **The Colours section is now "Wallpaper" and merges the theme controls with the wallpaper feature**:
+  a picker listing the built-ins plus everything in `config/wallpapers`, with an upload button that
+  *copies* the image into that folder (the old behaviour remembered the original path). The interface
+  font row gets the same upload button (fonts are copied into `config/fonts` and registered at once,
+  no restart needed).
+
+- **自定义颜色改成完整的 HSV 调色盘**（原来是三行预设色块）：饱和度/明度方块 + 色相条 +
+  圆形预览 + HEX 输入 + 预设色块。换算全在 Slint 侧完成（`color.to-hsv()` 给色相 0-360°/饱和度与
+  明度 0-1，反向用内建的 `hsv(h, s, v)`）；拖动只改本地状态，**松手时才提交一次** —— Slint 没有
+  hex 格式化能力，所以提交走新回调把三个分量交给 Rust 转成 `#RRGGBB`。顺带修掉一个隐患：自定义色
+  的"浅色档压深"从 Rust 挪到 `theme.slint`（`accent-custom` + `.darker(0.25)` 现算），否则取色盘
+  每提交一次都会在**已经压深过的值**上再压一次，连改几次就越改越暗。
+  **The custom colour is now a full HSV picker** (saturation/value square + hue bar + round preview +
+  HEX field + preset swatches): conversion happens in Slint via `to-hsv()` / the built-in `hsv()`, and a
+  drag only commits once — on release — through a new callback that hands the RGB components to Rust.
+  Light-mode darkening of custom colours moved from Rust into `theme.slint` so repeated edits no longer
+  compound it.
+
+- **「配色」覆盖到设置页里的各个控件。** 左侧导航选中项、光标形状按钮的选中态改用主题色淡底
+  （新增 `Theme.accent-tint`）；**开关改成自绘** —— 原来用的官方 `Switch` 取色走 std-widgets 的
+  `Palette.accent-background`，而 fluent 风格里它是**派生属性**（`accentify(#0078D4)`，跟随系统
+  强调色），换配色时它是设置页里唯一纹丝不动的一处。自绘版对外语义不变（`checked` 双向绑定 +
+  `toggled(v)`），代价是外观/无障碍不再由官方维护；官方若开放强调色可以换回去。
+  **The colour scheme now reaches the settings widgets**: selected nav rows and cursor-style buttons
+  use an accent tint, and the switch is drawn in-app because std-widgets' accent is a derived
+  (unwritable) palette property that always follows the OS accent.
+
+- **终端光标色跟随深浅档：深色档用亮色、浅色档用暗色，切换主题时同步更新（设置页显示也同步）。**
+  此前配置里存的是写死的 `#FFFFFF` —— "空串 = 跟随主题"只写在注释里、从未实现，于是浅色主题下
+  光标几乎看不见。现在 `terminal_cursor_color` **留空 = 跟随主题**（与界面字体、主题色同一套约定）：
+  深色档 `#D4D4D4`（亮）/ 浅色档 `#2D2D2F`（暗）；换主题（手动切、跟随系统变化、还原默认）都会
+  重新解析，并同步到设置页的输入框与预览色块。自己填了颜色则以那个值为准、不随主题变；清空即
+  回到跟随。旧的 `#FFFFFF` 按"跟随主题"处理 —— 它是默认值，不是"用户显式挑了白"，且不会再被
+  程序化回填写进配置。
+  **The terminal cursor colour now follows light/dark**: leave the setting empty and it resolves to a
+  bright colour in dark mode and a dark one in light mode, re-resolving on every theme change (manual,
+  system-follow, or restore-defaults) and syncing the settings page. An explicit colour still wins.
+
+- **新增「配色」分区：主题（跟随系统 / 深色 / 浅色）+ 主题色可以自己挑。** 位于设置 › 外观页
+  最上方，三行：① 主题下拉 —— **「跟随系统」现在是实时的**（每 5 秒问一次系统，改了系统外观
+  界面几秒内跟着变；仅在偏好为"跟随系统"时才真的去问，`dark_light` 实测 4.8 ms/次 ≈ 0.1%
+  单核）；② 一排预设主题色（极光蓝 / 天青 / 松绿 / 靛蓝 / 紫晶 / 品红 / 石墨）；③ 自定义
+  颜色（任意 `#RRGGBB`，`#RGB` 简写自动展开，非法值标红且**既不应用也不持久化**）。
+  **预设色是照着终端客户端挑的，不是照抄别家**：绕开红 / 橙 / 琥珀（与 `danger` / `warning`
+  撞车 —— 主色一红，按钮就和"删除 / 警告"分不清），绿色只留深松绿（与 `success` 的亮薄荷拉开
+  明度），石墨是低饱和档（终端里花花绿绿的 ANSI 输出才是主角，主色不该抢戏）；每个预设在深浅
+  两档**各有一个取值** —— 同一个 hex 两档通用，必然有一档发灰或对比度不够。换深浅档时主题色
+  会按新档位重新解析（自定义色在浅色档自动压深 25%，浅底上才读得清）。
+  配置新增 `appearance.accent`："" = 出厂默认 / 预设 id / `#RRGGBB`，老配置不受影响。
+  **壁纸相关分区（壁纸 / 自定义上传 / 遮罩）暂时隐藏** —— 主题色完全由「配色」决定，不再由
+  壁纸派生；代码一行不删，把 `appearance.slint` 里的 `wallpaper-enabled` 置回 `true` 即可恢复。
+  **New "Colours" section** in Settings › Appearance: theme (system / dark / light, with live
+  "follow system" polled every 5 s) plus the accent colour (7 presets or any `#RRGGBB`). The
+  wallpaper sections are hidden behind a single `wallpaper-enabled` switch. Each preset ships a
+  dark and a light variant, and the set avoids hues that clash with the danger/warning colours.
+
+- **压测脚本收进仓库**（`scripts/flood-test.sh`）：9 种压力逐段跑，每段打印「纯产生 / 终端内 /
+  终端额外」三个数 —— 用来量化 `seq` 刷屏 / `cat` 大文件这类场景，与 `RUDDER_FLOOD_COLOR=1`
+  的 `flood_profile` 配套。**Added the flood-test script to the repo** (`scripts/flood-test.sh`).
+
+### 修复 / Fixed
+
+- **设置页里现在直接显示"实际生效的颜色"，并修好回填把选择写死的问题。** 光标颜色与自定义颜色
+  两个输入框回填的都是**当前真正生效的色号**（预设主题色也给具体 `#RRGGBB`，跟随主题时给解析
+  结果），切深色 / 浅色 / 跟随系统时输入框与预览色块都会同步更新。为此加了「回声」判定：输入框
+  显示的就是我们回填的值，Slint 的 `changed` 会把这次回填也报上来 —— 若不区分，预设主题色会被
+  固化成自定义色、光标色的"跟随主题"会被写死成一个具体颜色。判定**两档都认**（设置页是打开面板
+  时才创建的，`changed` 可能晚于回填、期间深浅档已翻过一轮）。另外外观页「还原本页默认」也会按
+  还原后的深浅档重新解析光标色。
+  **The settings pages now show the colour that is actually in effect** (presets display their concrete
+  `#RRGGBB`, "follow theme" shows the resolved value), updating live when the theme changes. An "echo"
+  check keeps that programmatic feed-back from being mistaken for a user edit — otherwise a preset
+  would be frozen into a custom colour and "follow theme" into a hard-coded one.
+
+- **修掉三处配色问题：浅色主题下窗口底色仍是深的、主题色只作用于一部分界面、「默认蓝」找不回来。**
+  ① **壁纸分区隐藏后，壁纸现在被真正停用** —— 此前只藏了界面，配置里默认的 `builtin:dark` 仍在给
+  窗口压一层深色底（壁纸盖住 `window-base`、面板再磨砂叠上去），于是"选了浅色，面板是浅的、窗口
+  底色还是深的"，浅色主题永远调不亮；`apply_wallpaper` 现在整体按"没有壁纸"处理，开关与 Rust 常量
+  由 `wallpaper_switch_matches_ui` 测试钉住。② **换配色时标签页 / 工具栏也跟着变**：活动标签底色
+  原先取的是壁纸派生色、工具栏"面板正开着"的常亮态原先是中性灰，现在都走主题色（新增
+  `Theme.accent-tint`）；SFTP 选中行等原先写死的蓝也一并换掉。③ **色表第一条就是「默认蓝」**
+  （Rudder 一直以来的出厂色），并在色块右侧显示当前方案名；老配置里的 `aurora` 自动归到它 ——
+  与出厂色本来就是同一个颜色。新增一致性测试：色表 ↔ `theme.slint` 的 `accent-default`、壁纸开关
+  ↔ Rust 常量，防止"色块是蓝的、界面不是"这类无人会查的分叉。
+  **Three colour fixes**: the wallpaper is now actually disabled (hiding its section left the default
+  `builtin:dark` still darkening the window, so light mode only turned the panels light), the active
+  tab and toolbar "panel is open" states follow the accent instead of wallpaper-derived / neutral
+  grey, and the scheme list now starts with **Original** (the factory blue, with the current scheme
+  name shown next to the swatches).
+
+
 ## [0.7.9-beta3] - 2026-09-22
 
 ### 修复 / Fixed
@@ -47,118 +170,6 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
-- **终端设置的三处改进。** ① 选**自定义壁纸**（上传的图片）时，光标色默认落到"浅色档的暗色"
-  （照片的明暗不可预知，"跟随主题"那套在照片上不成立）—— 只在用户还没自己挑过光标色（配置为空）
-  时才动，不覆盖他的选择；② 光标颜色那一行改成与「主题色」同规格：左边一排预设色块（第一项是
-  「跟随主题」），下面是自定义取色盘。输入框显示**实际生效**的色号，色块选中态看配置里存的值 ——
-  两者本就不同，故新增 `term-cursor-choice`；③ 终端页的字体下拉也加了上传字体按钮（与界面字体
-  同一个回调：复制进 `config/fonts`、注册后立即可选、两个列表一起刷新）。
-  **Three terminal-settings improvements**: a custom wallpaper now defaults the cursor colour to the
-  dark tone, the cursor colour row mirrors the accent row (preset swatches + picker), and the terminal
-  font dropdown gained the same upload button as the interface font row.
-
-- **「配色」分区的主题行改名「壁纸」：一个下拉同时管主题与背景图。** 选项 = 跟随系统 / 深色 /
-  浅色 + `config/wallpapers` 里上传的图片，右侧一个上传按钮（图片被**复制**进那个目录，重名不
-  覆盖）。**深色 / 浅色就是原来的「简约·暗 / 简约·浅」** —— 深浅档与配套的那张内置底图是**同一个
-  选择**，不再分两处设置；选「跟随系统」时底图也跟着系统外观走（系统外观变了两者一起变）。上传
-  的图片只换图，深浅档保持用户当前的选择。原来的色块版壁纸段与「自定义」上传段（共 153 行）由
-  这一行取代；主题色与自定义颜色两行不变。
-  **The theme row is now "Wallpaper"**: one dropdown covering both the light/dark choice and the
-  backdrop image (the built-ins *are* the old "Meat Light / Meat Dark"), plus an upload button that
-  copies images into `config/wallpapers`.
-
-- **「配色」分区改名「壁纸」，并把主题与壁纸合并到一起。** 原来的**色块版**壁纸与「自定义」上传段
-  被一个选择器取代：下拉里是「无 / 简约·浅 / 简约·暗 + `config/wallpapers` 里的图片」，右边一个
-  上传按钮 —— 与界面字体选择器同一套形状（界面拿显示名、配置存稳定 id，由 Rust 侧纯函数互查）。
-  上传是把图片**复制**进 `config/wallpapers`：旧行为是记住原路径，原文件一移走 / 删掉壁纸就失效，
-  重名也不覆盖（改成 `<名字> 2.png`）。「主题 / 主题色 / 自定义颜色」三行原样保留，「遮罩」仍是
-  下面独立的一段；壁纸功能随之重新开放（两个成对开关置回 true）。
-  **界面字体一行也加了同样的上传按钮**：字体文件复制进 `config/fonts`，注册后**不必重启**即可
-  选中，终端与界面两个字体列表（以及各自的下标）会一起刷新。
-  **The Colours section is now "Wallpaper" and merges the theme controls with the wallpaper feature**:
-  a picker listing the built-ins plus everything in `config/wallpapers`, with an upload button that
-  *copies* the image into that folder (the old behaviour remembered the original path). The interface
-  font row gets the same upload button (fonts are copied into `config/fonts` and registered at once,
-  no restart needed).
-
-- **设置页里现在直接显示"实际生效的颜色"，并修好回填把选择写死的问题。** 光标颜色与自定义颜色
-  两个输入框回填的都是**当前真正生效的色号**（预设主题色也给具体 `#RRGGBB`，跟随主题时给解析
-  结果），切深色 / 浅色 / 跟随系统时输入框与预览色块都会同步更新。为此加了「回声」判定：输入框
-  显示的就是我们回填的值，Slint 的 `changed` 会把这次回填也报上来 —— 若不区分，预设主题色会被
-  固化成自定义色、光标色的"跟随主题"会被写死成一个具体颜色。判定**两档都认**（设置页是打开面板
-  时才创建的，`changed` 可能晚于回填、期间深浅档已翻过一轮）。另外外观页「还原本页默认」也会按
-  还原后的深浅档重新解析光标色。
-  **The settings pages now show the colour that is actually in effect** (presets display their concrete
-  `#RRGGBB`, "follow theme" shows the resolved value), updating live when the theme changes. An "echo"
-  check keeps that programmatic feed-back from being mistaken for a user edit — otherwise a preset
-  would be frozen into a custom colour and "follow theme" into a hard-coded one.
-
-- **自定义颜色改成完整的 HSV 调色盘**（原来是三行预设色块）：饱和度/明度方块 + 色相条 +
-  圆形预览 + HEX 输入 + 预设色块。换算全在 Slint 侧完成（`color.to-hsv()` 给色相 0-360°/饱和度与
-  明度 0-1，反向用内建的 `hsv(h, s, v)`）；拖动只改本地状态，**松手时才提交一次** —— Slint 没有
-  hex 格式化能力，所以提交走新回调把三个分量交给 Rust 转成 `#RRGGBB`。顺带修掉一个隐患：自定义色
-  的"浅色档压深"从 Rust 挪到 `theme.slint`（`accent-custom` + `.darker(0.25)` 现算），否则取色盘
-  每提交一次都会在**已经压深过的值**上再压一次，连改几次就越改越暗。
-  **The custom colour is now a full HSV picker** (saturation/value square + hue bar + round preview +
-  HEX field + preset swatches): conversion happens in Slint via `to-hsv()` / the built-in `hsv()`, and a
-  drag only commits once — on release — through a new callback that hands the RGB components to Rust.
-  Light-mode darkening of custom colours moved from Rust into `theme.slint` so repeated edits no longer
-  compound it.
-
-- **「配色」覆盖到设置页里的各个控件。** 左侧导航选中项、光标形状按钮的选中态改用主题色淡底
-  （新增 `Theme.accent-tint`）；**开关改成自绘** —— 原来用的官方 `Switch` 取色走 std-widgets 的
-  `Palette.accent-background`，而 fluent 风格里它是**派生属性**（`accentify(#0078D4)`，跟随系统
-  强调色），换配色时它是设置页里唯一纹丝不动的一处。自绘版对外语义不变（`checked` 双向绑定 +
-  `toggled(v)`），代价是外观/无障碍不再由官方维护；官方若开放强调色可以换回去。
-  **The colour scheme now reaches the settings widgets**: selected nav rows and cursor-style buttons
-  use an accent tint, and the switch is drawn in-app because std-widgets' accent is a derived
-  (unwritable) palette property that always follows the OS accent.
-
-- **终端光标色跟随深浅档：深色档用亮色、浅色档用暗色，切换主题时同步更新（设置页显示也同步）。**
-  此前配置里存的是写死的 `#FFFFFF` —— "空串 = 跟随主题"只写在注释里、从未实现，于是浅色主题下
-  光标几乎看不见。现在 `terminal_cursor_color` **留空 = 跟随主题**（与界面字体、主题色同一套约定）：
-  深色档 `#D4D4D4`（亮）/ 浅色档 `#2D2D2F`（暗）；换主题（手动切、跟随系统变化、还原默认）都会
-  重新解析，并同步到设置页的输入框与预览色块。自己填了颜色则以那个值为准、不随主题变；清空即
-  回到跟随。旧的 `#FFFFFF` 按"跟随主题"处理 —— 它是默认值，不是"用户显式挑了白"，且不会再被
-  程序化回填写进配置。
-  **The terminal cursor colour now follows light/dark**: leave the setting empty and it resolves to a
-  bright colour in dark mode and a dark one in light mode, re-resolving on every theme change (manual,
-  system-follow, or restore-defaults) and syncing the settings page. An explicit colour still wins.
-
-- **修掉三处配色问题：浅色主题下窗口底色仍是深的、主题色只作用于一部分界面、「默认蓝」找不回来。**
-  ① **壁纸分区隐藏后，壁纸现在被真正停用** —— 此前只藏了界面，配置里默认的 `builtin:dark` 仍在给
-  窗口压一层深色底（壁纸盖住 `window-base`、面板再磨砂叠上去），于是"选了浅色，面板是浅的、窗口
-  底色还是深的"，浅色主题永远调不亮；`apply_wallpaper` 现在整体按"没有壁纸"处理，开关与 Rust 常量
-  由 `wallpaper_switch_matches_ui` 测试钉住。② **换配色时标签页 / 工具栏也跟着变**：活动标签底色
-  原先取的是壁纸派生色、工具栏"面板正开着"的常亮态原先是中性灰，现在都走主题色（新增
-  `Theme.accent-tint`）；SFTP 选中行等原先写死的蓝也一并换掉。③ **色表第一条就是「默认蓝」**
-  （Rudder 一直以来的出厂色），并在色块右侧显示当前方案名；老配置里的 `aurora` 自动归到它 ——
-  与出厂色本来就是同一个颜色。新增一致性测试：色表 ↔ `theme.slint` 的 `accent-default`、壁纸开关
-  ↔ Rust 常量，防止"色块是蓝的、界面不是"这类无人会查的分叉。
-  **Three colour fixes**: the wallpaper is now actually disabled (hiding its section left the default
-  `builtin:dark` still darkening the window, so light mode only turned the panels light), the active
-  tab and toolbar "panel is open" states follow the accent instead of wallpaper-derived / neutral
-  grey, and the scheme list now starts with **Original** (the factory blue, with the current scheme
-  name shown next to the swatches).
-
-- **新增「配色」分区：主题（跟随系统 / 深色 / 浅色）+ 主题色可以自己挑。** 位于设置 › 外观页
-  最上方，三行：① 主题下拉 —— **「跟随系统」现在是实时的**（每 5 秒问一次系统，改了系统外观
-  界面几秒内跟着变；仅在偏好为"跟随系统"时才真的去问，`dark_light` 实测 4.8 ms/次 ≈ 0.1%
-  单核）；② 一排预设主题色（极光蓝 / 天青 / 松绿 / 靛蓝 / 紫晶 / 品红 / 石墨）；③ 自定义
-  颜色（任意 `#RRGGBB`，`#RGB` 简写自动展开，非法值标红且**既不应用也不持久化**）。
-  **预设色是照着终端客户端挑的，不是照抄别家**：绕开红 / 橙 / 琥珀（与 `danger` / `warning`
-  撞车 —— 主色一红，按钮就和"删除 / 警告"分不清），绿色只留深松绿（与 `success` 的亮薄荷拉开
-  明度），石墨是低饱和档（终端里花花绿绿的 ANSI 输出才是主角，主色不该抢戏）；每个预设在深浅
-  两档**各有一个取值** —— 同一个 hex 两档通用，必然有一档发灰或对比度不够。换深浅档时主题色
-  会按新档位重新解析（自定义色在浅色档自动压深 25%，浅底上才读得清）。
-  配置新增 `appearance.accent`："" = 出厂默认 / 预设 id / `#RRGGBB`，老配置不受影响。
-  **壁纸相关分区（壁纸 / 自定义上传 / 遮罩）暂时隐藏** —— 主题色完全由「配色」决定，不再由
-  壁纸派生；代码一行不删，把 `appearance.slint` 里的 `wallpaper-enabled` 置回 `true` 即可恢复。
-  **New "Colours" section** in Settings › Appearance: theme (system / dark / light, with live
-  "follow system" polled every 5 s) plus the accent colour (7 presets or any `#RRGGBB`). The
-  wallpaper sections are hidden behind a single `wallpaper-enabled` switch. Each preset ships a
-  dark and a light variant, and the set avoids hues that clash with the danger/warning colours.
-
 - **文档里的旧名 `meatshell` 全部改为 `rudder`**（英文 README / CONTRIBUTING / 两份发版文档 / 图标
   脚本）：下载与运行说明（`rudder-*` 包、`rudder.exe`、`rudder.app`）、配置路径、`rudder --version`
   校验、Issues 与 Releases 链接。
@@ -169,8 +180,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
   终端每帧记「重建/复用」行数、侧栏每趟记采样耗时与模型写次数，都用
   `RUST_LOG=rudder::perf=debug`；另有 `flood_profile` 压测
   （`cargo test --release -- --ignored --nocapture flood_profile`，`RUDDER_FLOOD_COLOR=1`
-  可切彩色语料），用来量化 `seq` 刷屏 / `cat` 大文件这类场景；脚本本身也收进了仓库
-  （`scripts/flood-test.sh`，9 种压力 + 每段打印「纯产生 / 终端内 / 终端额外」）。
+  可切彩色语料），用来量化 `seq` 刷屏 / `cat` 大文件这类场景。
   **Added perf observation points and a flood benchmark** (debug/test builds only).
 
 ### 修复 / Fixed
