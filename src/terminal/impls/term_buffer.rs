@@ -426,11 +426,43 @@ impl TermBuffer {
     /// whole sequence to act on SGR 53 / 21.
     fn ingest_segments(&mut self, bytes: &[u8]) {
         if self.sgr_buf.is_empty() {
-            self.ingest_segments_inner(bytes);
+            self.route_chunk(bytes);
         } else {
             let mut combined = std::mem::take(&mut self.sgr_buf);
             combined.extend_from_slice(bytes);
-            self.ingest_segments_inner(&combined);
+            self.route_chunk(&combined);
+        }
+    }
+
+    /// 单遍快路径的入口：**决定这一块要不要在 SGR 处停顿**。
+    ///
+    /// 停顿（切段 + 逐段 `advance`）只服务两件事：记录 SGR 53 的起止位置、把 SGR 21
+    /// 改写成 `4:2`。这两样都很罕见，而彩色输出每 64 KiB 有两万多个 SGR —— 逐段重入
+    /// `advance` 两万多次正是彩色路径的热点。所以：
+    ///
+    /// | 这一块的情况 | 走哪条路 |
+    /// |---|---|
+    /// | 含 `53` / 含 `21` / 有未闭合的 overline 区间 | 旧的切段路径（`ingest_segments_inner`） |
+    /// | 块尾是半截 CSI | 尾部留到下一块再判；前面单遍喂掉 |
+    /// | 其它（普通输出、彩色日志、`ls --color`…） | **整块一次 `advance`** |
+    ///
+    /// 判据用的是 [`sgr_probe`]，与 `apply_sgr` 的分类规则同源（有测试对照）。
+    fn route_chunk(&mut self, bytes: &[u8]) {
+        if !bytes.contains(&0x1b) {
+            // 没有 ESC：不可能有 53 / 21，也没有半截序列。
+            process_bytes(&mut self.processor, &mut self.term, bytes);
+            return;
+        }
+        let probe = sgr_probe(bytes);
+        if probe.has_53 || probe.has_21 || self.overline_active {
+            self.ingest_segments_inner(bytes);
+        } else if let Some(t) = probe.tail {
+            if t > 0 {
+                process_bytes(&mut self.processor, &mut self.term, &bytes[..t]);
+            }
+            self.sgr_buf = bytes[t..].to_vec();
+        } else {
+            process_bytes(&mut self.processor, &mut self.term, bytes);
         }
     }
 
@@ -927,6 +959,80 @@ impl TermBuffer {
 /// CSI sequence at the end of the slice (ESC seen, final byte not yet) — the
 /// caller buffers `bytes[tail..]` and prepends it to the next chunk so
 /// split reads (SSH/pipe) don't lose SGR 53 / 21.
+/// `sgr_probe` 的结论：这一块里有没有需要停顿的 SGR，以及块尾有没有半截 CSI。
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SgrProbe {
+    /// 含 SGR 53（overline）—— 需要记录起止位置。
+    has_53: bool,
+    /// 含 SGR 21（要改写成 `4:2`，vte 把它解析成 CancelBold）。
+    has_21: bool,
+    /// 块尾半截 CSI 的起点：留到下一块（可能凑成 53 / 21）。
+    tail: Option<usize>,
+}
+
+/// 判断一块字节里是否存在"必须在 SGR 处停顿"的序列。
+///
+/// 分类规则与 `apply_sgr` 一致：`38;5;N` / `38;2;R;G;B` / `48…` / `58…` 这些扩展色的
+/// **分量**即便等于 53 / 21 也不算（`38;2;53;100;200m` 那个 53 是颜色，不是 overline）。
+/// 这里不分配、不构造参数表，只用 memchr 跳到下一个 ESC。
+fn sgr_probe(bytes: &[u8]) -> SgrProbe {
+    let mut out = SgrProbe::default();
+    let mut i = 0;
+    while i < bytes.len() {
+        let Some(offset) = memchr::memchr(b'\x1b', &bytes[i..]) else {
+            break;
+        };
+        i += offset;
+        if bytes.get(i + 1) != Some(&b'[') {
+            // ESC 后面**没有下一个字节** = 序列刚开始 ⇒ 块尾留到下一块再判
+            // （否则 1 字节分块时 `ESC` / `[` / `5` / `3` / `m` 会被当成互不相干的块，
+            //   而 `53` 恰恰是我们要拦的那个 —— 分块等价测试就是这么抓到的）。
+            if i + 1 >= bytes.len() {
+                out.tail = Some(i);
+                return out;
+            }
+            i += 2; // ESC + 非 '['（OSC 引子 / ESC 7 …）
+            continue;
+        }
+        let mut j = i + 2;
+        while j < bytes.len() && !(0x40..=0x7e).contains(&bytes[j]) {
+            j += 1;
+        }
+        if j >= bytes.len() {
+            out.tail = Some(i);
+            return out;
+        }
+        if bytes[j] == b'm' {
+            let params = &bytes[i + 2..j];
+            let mut skip = 0usize;
+            let mut parts = params.split(|&b| b == b';');
+            while let Some(part) = parts.next() {
+                if skip > 0 {
+                    skip -= 1;
+                    continue;
+                }
+                if matches!(part, b"38" | b"48" | b"58") {
+                    match (parts.clone().next(), parts.clone().nth(1)) {
+                        (Some(b"5"), _) => skip = 2, // 38;5;N
+                        (Some(b"2"), _) => skip = 4, // 38;2;R;G;B
+                        _ => {}
+                    }
+                    if skip > 0 {
+                        continue;
+                    }
+                }
+                if part == b"53" {
+                    out.has_53 = true;
+                } else if part == b"21" {
+                    out.has_21 = true;
+                }
+            }
+        }
+        i = j + 1;
+    }
+    out
+}
+
 fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
     // 普通输出没有 ESC：一次 memchr 就够，省掉逐字节循环（`Vec::new()` 不分配）。
     if memchr::memchr(b'\x1b', bytes).is_none() {
@@ -946,6 +1052,11 @@ fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
         };
         i += offset;
         if bytes.get(i + 1) != Some(&b'[') {
+            // ESC 后面没有下一个字节 = 序列刚开头 ⇒ 块尾留到下一块再判（与 `sgr_probe`
+            // 同一条规则；两边不一致的话，1 字节分块会把半截 SGR 裸喂进解析器）。
+            if i + 1 >= bytes.len() {
+                return (seqs, Some(i));
+            }
             // ESC + non-'[': two-byte escape (ESC 7 / ESC c …) or an OSC
             // introducer (ESC ] …) — skip past the next byte and continue.
             i += 2;
@@ -970,6 +1081,87 @@ fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
 mod tests {
     use super::*;
 
+    /// 探针的分类必须与 `apply_sgr` 同源：扩展色的**分量**等于 53 / 21 不算 overline / 21。
+    #[test]
+    fn sgr_probe_matches_apply_sgr_classification() {
+        let p = |b: &[u8]| sgr_probe(b);
+        assert!(p(b"\x1b[53m").has_53);
+        assert!(p(b"\x1b[0;53;1m").has_53);
+        assert!(p(b"\x1b[21m").has_21);
+        assert!(p(b"\x1b[1;21m").has_21);
+        assert!(!p(b"\x1b[38;2;53;100;200m").has_53, "真彩分量 53 不是 overline");
+        assert!(!p(b"\x1b[38;5;53m").has_53, "256 色索引 53 不是 overline");
+        assert!(!p(b"\x1b[48;2;21;21;21m").has_21, "背景色分量 21 不是 SGR 21");
+        assert!(!p(b"\x1b[58;5;21m").has_21, "下划线色分量 21 不是 SGR 21");
+        assert!(!p(b"\x1b[4:2m").has_21, "4:2 本来就是双下划线，不需要改写");
+        assert!(!p(b"plain text, no escapes").has_53);
+        // 块尾半截 CSI → 交给调用方缓存（可能凑成 53 / 21）
+        assert_eq!(p(b"abc\x1b[38;5").tail, Some(3));
+        assert_eq!(p(b"abc\x1b").tail, Some(3), "块尾孤立 ESC 要留给下一块（可能是 53 的一半）");
+    }
+
+    /// **逐字节分块也要拦住 SGR 53** —— 半截序列（`ESC` 在前一块、`[53m` 在后几块）
+    /// 必须被完整地看到，否则 overline 区间会丢。
+    ///
+    /// 这条测试抓过一次真 bug：`sgr_probe` 认得"块尾孤立 ESC"，而 `scan_csi_sequences`
+    /// 不认 —— 两个扫描器规则不一致时，`ESC` 被裸喂进解析器，后面的 `[0m` 就再也不是
+    /// 完整序列，区间永远闭合不了（1 字节分块下实测 `active=true ranges=0`）。
+    #[test]
+    fn one_byte_chunks_still_intercept_overline() {
+        let seq: &[u8] = b"\x1b[53mover\x1b[0m";
+        let mut b = make_buffer();
+        for byte in seq {
+            b.ingest(std::slice::from_ref(byte));
+        }
+        assert!(!b.overline_active, "闭合的 SGR 必须让 overline 状态复位");
+        assert_eq!(b.overline_ranges.len(), 1, "over 四格应记成一个区间");
+        assert_eq!(
+            (b.overline_ranges[0].col_start, b.overline_ranges[0].col_end),
+            (0, 4)
+        );
+    }
+
+    /// **分块喂与整块喂必须等价** —— 这是 0.7.9-beta2 那次闪退的同类边界。
+    ///
+    /// 语料刻意包含：SGR、OSC 引子、SGR 53、SGR 21、真彩分量里出现的 53/21、分号参数、
+    /// CR/LF、TAB；按 1..=7 字节切块重喂，逐格比对 cell 属性 + overline 区间。
+    #[test]
+    fn chunked_ingest_matches_whole_chunk() {
+        let corpus: &[u8] = b"a\x1b[31mred\x1b[0m b\x1b]0;title\x07c\x1b[53mover\x1b[0m d\r\n\
+x1b[21munder\x1b[4:2m\x1b[38;2;53;100;200mtrue\x1b[0m tail";
+
+        /// 快照"真正画出来的东西"：每段（行/列/格宽/下划线/overline/emoji/文本）+ overline 区间数。
+        /// 用 `render()` 而不是逐格 `CellAttr`，是因为后者没有 `PartialEq`。
+        fn snapshot(buf: &mut TermBuffer) -> (Vec<String>, usize) {
+            let drawn = buf
+                .render()
+                .spans
+                .iter()
+                .map(|s| {
+                    format!(
+                        "{}:{}:{}:{:?}:{}:{}:{}",
+                        s.row, s.col, s.cells, s.underline, s.overline, s.emoji, s.text
+                    )
+                })
+                .collect();
+            (drawn, buf.overline_ranges.len())
+        }
+
+        let whole = {
+            let mut b = make_buffer();
+            b.ingest(corpus);
+            snapshot(&mut b)
+        };
+        assert!(whole.1 > 0, "语料里应至少有一个 53 区间（否则测试没测到东西）");
+        for step in 1..=7 {
+            let mut b = make_buffer();
+            for part in corpus.chunks(step) {
+                b.ingest(part);
+            }
+            assert_eq!(snapshot(&mut b), whole, "按 {step} 字节分块喂必须与整块喂等价");
+        }
+    }
+
     /// 块尾刚好落在转义序列中间时**不能 panic**。
     ///
     /// 0.7.9-beta2 在彩色刷屏下崩过（SIGABRT + `range start index 32769 out of range for
@@ -977,14 +1169,14 @@ mod tests {
     /// `&bytes[i..]` 越界。32768 正是读缓冲的块大小。
     #[test]
     fn scan_csi_survives_escape_at_chunk_tail() {
-        assert_eq!(scan_csi_sequences(b"abc\x1b"), (vec![], None), "块尾就是 ESC");
+        assert_eq!(scan_csi_sequences(b"abc\x1b"), (vec![], Some(3)), "块尾孤立 ESC → 留给下一块");
         assert_eq!(scan_csi_sequences(b"abc\x1b]"), (vec![], None), "ESC ]（OSC 引子）");
         assert_eq!(scan_csi_sequences(b"abc\x1b7"), (vec![], None), "ESC 7（保存光标）");
-        assert_eq!(scan_csi_sequences(b"\x1b"), (vec![], None), "整块只有一个 ESC");
+        assert_eq!(scan_csi_sequences(b"\x1b"), (vec![], Some(0)), "整块只有一个 ESC → 留给下一块");
 
         let mut big = vec![b'a'; 32768];
         big.push(0x1b);
-        assert_eq!(scan_csi_sequences(&big), (vec![], None), "32 KiB 块尾是 ESC");
+        assert_eq!(scan_csi_sequences(&big), (vec![], Some(32768)), "32 KiB 块尾是 ESC → 留给下一块");
 
         let mut big2 = vec![b'a'; 32767];
         big2.extend_from_slice(b"\x1b]");

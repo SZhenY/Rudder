@@ -57,7 +57,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
   终端每帧记「重建/复用」行数、侧栏每趟记采样耗时与模型写次数，都用
   `RUST_LOG=rudder::perf=debug`；另有 `flood_profile` 压测
   （`cargo test --release -- --ignored --nocapture flood_profile`，`RUDDER_FLOOD_COLOR=1`
-  可切彩色语料），用来量化 `seq` 刷屏 / `cat` 大文件这类场景。
+  可切彩色语料），用来量化 `seq` 刷屏 / `cat` 大文件这类场景；脚本本身也收进了仓库
+  （`scripts/flood-test.sh`，9 种压力 + 每段打印「纯产生 / 终端内 / 终端额外」）。
   **Added perf observation points and a flood benchmark** (debug/test builds only).
 
 ### 修复 / Fixed
