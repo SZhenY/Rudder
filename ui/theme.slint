@@ -61,12 +61,11 @@ export global Theme {
     // grey labels stay legible even at a low wallpaper overlay (user request).
     out property <brush> bg-panel-strong: frost(base-bg-panel, min(1.0, root.panel-alpha + 0.20));
 
-    // Active terminal tab: with wallpaper, pull from the image's average colour
-    // so the strip feels immersed; without wallpaper, make the active tab one
-    // clear step darker/lighter than the surrounding tab bar (#200).
-    out property <brush> tab-active-bg: root.wallpaper-active
-        ? root.wp-tint.mix(root.wp-accent, 0.68).with-alpha(min(1.0, root.panel-alpha + 0.10))
-        : (dark ? #171a20 : #ffffff);
+    // 活动标签底色：由**主题色**轻微染色（不再是壁纸色 —— 换「配色」时标签条也要跟着变），
+    // 与 tabs.slint 那条 2px 的 accent 边框同源。保持很淡：真正标记"当前标签"的是那条边框。
+    out property <brush> tab-active-bg: root.accent-solid.mix(dark ? #171a20 : #ffffff, 0.86);
+    // 「这个面板正开着」这类**常亮**态用的主题色淡底。hover 仍用中性灰：hover 不是选中。
+    out property <brush> accent-tint: root.accent-solid.with-alpha(dark ? 0.20 : 0.16);
 
     out property <brush> border-subtle: dark ? #3a3d46 : #e2e2e8;
     out property <brush> border-strong: dark ? #4a4e59 : #c7c7cc;

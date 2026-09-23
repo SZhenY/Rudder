@@ -32,7 +32,11 @@ export component IconButton inherits Rectangle {
     background: transparent;
     // hover 是"正交视觉状态"，交给 states 表达（同一组状态被 Text 复用）。
     states [
-        lit when touch.has-hover || root.active : { background: Theme.bg-hover; }
+        // 常亮（"这个面板正开着"）用主题色淡底，与 hover 的中性灰区分开 —— 这样换「配色」
+        // 时"哪个按钮开着"也跟着变。
+        lit when touch.has-hover || root.active : {
+            background: root.active ? Theme.accent-tint : Theme.bg-hover;
+        }
     ]
     animate background { duration: 120ms;
             easing: AnimationSettings.color();

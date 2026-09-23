@@ -76,6 +76,7 @@ export component InterfacePanel inherits Rectangle {
     in property <string> accent-choice;
     in property <[AccentPreset]> accent-presets;
     in-out property <string> accent-hex;
+    in property <string> accent-name;
     in property <[WslProfileInfo]> wsl-profiles;
     private property <string> wsl-new-name: "WSL";
     private property <string> wsl-new-distribution;
@@ -263,6 +264,7 @@ export component InterfacePanel inherits Rectangle {
                     if root.ifd-page == "appearance" : AppearancePage {
                             accent-choice: root.accent-choice;
                             accent-hex <=> root.accent-hex;
+                            accent-name: root.accent-name;
                             accent-mode: root.accent-mode;
                             accent-presets: root.accent-presets;
                             current-wallpaper: root.current-wallpaper;

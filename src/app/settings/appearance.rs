@@ -231,16 +231,32 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
 //   按钮就和"删除 / 警告"分不清了；
 // * 绿色只留深松绿：与 `success`（亮薄荷 #4ec9b0）拉开明度，不至于混淆；
 // * 石墨是近中性的低饱和档：终端里花花绿绿的 ANSI 输出才是主角，主色不该抢戏。
+/// 出厂默认主题色（深色档 / 浅色档）。**必须与 `ui/theme.slint` 的 `accent-default` 一致**
+/// —— 由 `default_accent_matches_theme_slint` 测试钉住：色块上显示的颜色与实际生效的颜色
+/// 不能分叉（改了这边忘了那边，用户看到的"原版"就不是原版了）。
+pub(crate) const ACCENT_DEFAULT: (&str, &str) = ("#4a90e2", "#0071e3");
+
 const ACCENT_PRESETS: &[(&str, &str, &str, &str, &str)] = &[
-    // id,         深色档,     浅色档,     中文名,   英文名
-    ("aurora",   "#4a90e2", "#0071e3", "极光蓝", "Aurora"),
-    ("azure",    "#22a2c9", "#0d7f9e", "天青",   "Azure"),
-    ("pine",     "#2fb37e", "#14855a", "松绿",   "Pine"),
-    ("indigo",   "#6c7ff0", "#4453d8", "靛蓝",   "Indigo"),
-    ("violet",   "#9a6cf0", "#7a3fd6", "紫晶",   "Violet"),
-    ("magenta",  "#d456b0", "#b52f8c", "品红",   "Magenta"),
-    ("graphite", "#8b929e", "#5f6672", "石墨",   "Graphite"),
+    // id,       深色档,     浅色档,     中文名,        英文名
+    // 第一条是**原版**（Rudder 一直以来的默认蓝）。id 为空串 = 配置里"未选"，
+    // 界面上的「原版」色块就是它；`resolve_accent("")` 直接返回 None（不覆盖），
+    // 真正的生效值来自 `theme.slint` 的 `accent-default`。
+    ("",         ACCENT_DEFAULT.0, ACCENT_DEFAULT.1, "原版（默认）", "Original"),
+    ("azure",    "#22a2c9", "#0d7f9e", "天青",         "Azure"),
+    ("pine",     "#2fb37e", "#14855a", "松绿",         "Pine"),
+    ("indigo",   "#6c7ff0", "#4453d8", "靛蓝",         "Indigo"),
+    ("violet",   "#9a6cf0", "#7a3fd6", "紫晶",         "Violet"),
+    ("magenta",  "#d456b0", "#b52f8c", "品红",         "Magenta"),
+    ("graphite", "#8b929e", "#5f6672", "石墨",         "Graphite"),
 ];
+
+/// 壁纸相关分区是否开放（与 `ui/settings/pages/appearance.slint` 里的
+/// `property <bool> wallpaper-enabled` **成对**，由 `wallpaper_switch_matches_ui` 测试钉住）。
+///
+/// 关闭时不只是"藏起界面"：`apply_wallpaper` 会整体按"没有壁纸"处理 —— 否则配置里默认的
+/// `builtin:dark` 仍然生效，表现为"选了浅色主题，面板是浅的、窗口底色还是深的"（壁纸盖住
+/// `window-base`，面板再磨砂叠在它上面），配色分区也就永远调不出亮底。
+pub(crate) const WALLPAPER_UI_ENABLED: bool = false;
 
 /// 把界面上的输入归一化成可存储的值：`""`（出厂默认）/ 预设 id / `#RRGGBB`。
 ///
@@ -249,6 +265,10 @@ const ACCENT_PRESETS: &[(&str, &str, &str, &str, &str)] = &[
 pub(crate) fn normalize_accent(input: &str) -> Option<String> {
     let s = input.trim();
     if s.is_empty() {
+        return Some(String::new());
+    }
+    // 老配置里的 "aurora"（当时的"极光蓝"，其实就是出厂色）统一落到「原版」。
+    if s == "aurora" {
         return Some(String::new());
     }
     if let Some(digits) = s.strip_prefix('#') {
@@ -306,6 +326,21 @@ fn accent_presets_model(dark: bool) -> ModelRc<AccentPreset> {
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
+/// 界面上「当前配色」显示的名字：预设名 / 自定义色原样 / 原版。
+fn accent_display_name(choice: &str) -> SharedString {
+    if choice.is_empty() {
+        return t("原版（默认）", "Original").into();
+    }
+    if choice.starts_with('#') {
+        return choice.into();
+    }
+    ACCENT_PRESETS
+        .iter()
+        .find(|p| p.0 == choice)
+        .map(|p| SharedString::from(t(p.3, p.4)))
+        .unwrap_or_else(|| choice.into())
+}
+
 /// 把配置里的主题色套到界面上。
 ///
 /// ⚠️ 换深浅档后**必须再调一次**：预设的两档本来就是两个颜色，自定义色在浅色档还要压深。
@@ -326,6 +361,7 @@ pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
         SharedString::new()
     });
     w.set_accent_presets(accent_presets_model(dark));
+    w.set_accent_name(accent_display_name(choice));
 }
 
 /// 「还原本页默认」：替换外观域为出厂默认，再走与 `bind` 相同的落点。
@@ -438,13 +474,15 @@ mod tests {
     fn accent_normalizes_presets_and_hex() {
         assert_eq!(normalize_accent("").unwrap(), "");
         assert_eq!(normalize_accent("   ").unwrap(), "");
-        assert_eq!(normalize_accent("aurora").unwrap(), "aurora");
         assert_eq!(normalize_accent("graphite").unwrap(), "graphite");
+        // 老配置里的 "aurora"（当时的"极光蓝"= 出厂色）统一落到「原版」（空串）。
+        assert_eq!(normalize_accent("aurora").unwrap(), "");
         // `#RGB` 简写展开 + 大写：与预设 id 的大小写约定一致，比较时不必再忽略大小写。
         assert_eq!(normalize_accent("#abc").unwrap(), "#AABBCC");
         assert_eq!(normalize_accent(" #1f9fd0 ").unwrap(), "#1F9FD0");
         // 非法：不是预设 id、也不是合法十六进制。
         assert!(normalize_accent("AURORA").is_none());
+        assert!(normalize_accent("azurex").is_none());
         assert!(normalize_accent("#12345").is_none());
         assert!(normalize_accent("#gggggg").is_none());
         assert!(normalize_accent("blue").is_none());
@@ -455,10 +493,12 @@ mod tests {
     fn accent_resolves_per_theme() {
         assert!(resolve_accent("", true).is_none());
         assert!(resolve_accent("", false).is_none());
-        // 两档必须是两个颜色：同一个 hex 两档通用，必然有一档发灰 / 对比度不够。
+        // 「原版」就是出厂默认：不覆盖（`None`），交给 Theme 里每档的常量。
+        assert!(resolve_accent("aurora", true).is_none()); // 老配置的 aurora 也归到原版
+        // 预设两档必须是两个颜色：同一个 hex 两档通用，必然有一档发灰 / 对比度不够。
         assert_ne!(
-            resolve_accent("aurora", true).unwrap(),
-            resolve_accent("aurora", false).unwrap()
+            resolve_accent("azure", true).unwrap(),
+            resolve_accent("azure", false).unwrap()
         );
         // 自定义色在浅色档压深（浅底上保对比度）。
         let on_dark = resolve_accent("#8899AA", true).unwrap();

@@ -463,6 +463,7 @@ export component AppWindow inherits Window {
     in property <string> accent-choice: "";
     in property <[AccentPreset]> accent-presets;
     in-out property <string> accent-hex: "";
+    in property <string> accent-name: "";          // 当前配色的显示名（原版 / 预设 / hex）
     callback set-accent(string) -> bool;           // 预设 id / "#RRGGBB" / ""；非法返回 false
     callback set-appearance-mode(string);          // system / dark / light
     // SFTP follows the terminal's cd; opt out in Interface settings.
@@ -2257,6 +2258,7 @@ export component AppWindow inherits Window {
         accent-choice : root.accent-choice;
         accent-presets : root.accent-presets;
         accent-hex <=> root.accent-hex;
+        accent-name : root.accent-name;
         collapse-sftp-default <=> root.collapse-sftp-default;
         collapse-sidebar-default <=> root.collapse-sidebar-default;
         convert-eol <=> root.convert-eol;

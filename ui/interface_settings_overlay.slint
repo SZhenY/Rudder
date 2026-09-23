@@ -57,6 +57,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     in property <string> accent-choice:"";
     in property <[AccentPreset]> accent-presets;
     in-out property <string> accent-hex:"";
+    in property <string> accent-name:"";
     in-out property <bool> collapse-sftp-default:false;
     in-out property <bool> collapse-sidebar-default:false;
     in-out property <bool> convert-eol:false;
@@ -310,6 +311,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                 accent-choice: accent-choice;
                 accent-presets: accent-presets;
                 accent-hex <=> accent-hex;
+                accent-name: accent-name;
                 wallpaper-overlay <=> Theme.panel-alpha;
                 current-wallpaper: current-wallpaper;
                 custom-wallpaper-name: custom-wallpaper-name;

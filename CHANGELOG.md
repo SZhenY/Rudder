@@ -47,6 +47,22 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **修掉三处配色问题：浅色主题下窗口底色仍是深的、主题色只作用于一部分界面、「原版」找不回来。**
+  ① **壁纸分区隐藏后，壁纸现在被真正停用** —— 此前只藏了界面，配置里默认的 `builtin:dark` 仍在给
+  窗口压一层深色底（壁纸盖住 `window-base`、面板再磨砂叠上去），于是"选了浅色，面板是浅的、窗口
+  底色还是深的"，浅色主题永远调不亮；`apply_wallpaper` 现在整体按"没有壁纸"处理，开关与 Rust 常量
+  由 `wallpaper_switch_matches_ui` 测试钉住。② **换配色时标签页 / 工具栏也跟着变**：活动标签底色
+  原先取的是壁纸派生色、工具栏"面板正开着"的常亮态原先是中性灰，现在都走主题色（新增
+  `Theme.accent-tint`）；SFTP 选中行等原先写死的蓝也一并换掉。③ **色表第一条就是「原版（默认）」**
+  （Rudder 一直以来的默认蓝），并在色块右侧显示当前方案名；老配置里的 `aurora` 自动归到原版 —— 它
+  与出厂色本来就是同一个颜色。新增一致性测试：色表 ↔ `theme.slint` 的 `accent-default`、壁纸开关
+  ↔ Rust 常量，防止"色块是蓝的、界面不是"这类无人会查的分叉。
+  **Three colour fixes**: the wallpaper is now actually disabled (hiding its section left the default
+  `builtin:dark` still darkening the window, so light mode only turned the panels light), the active
+  tab and toolbar "panel is open" states follow the accent instead of wallpaper-derived / neutral
+  grey, and the scheme list now starts with **Original** (the factory blue, with the current scheme
+  name shown next to the swatches).
+
 - **新增「配色」分区：主题（跟随系统 / 深色 / 浅色）+ 主题色可以自己挑。** 位于设置 › 外观页
   最上方，三行：① 主题下拉 —— **「跟随系统」现在是实时的**（每 5 秒问一次系统，改了系统外观
   界面几秒内跟着变；仅在偏好为"跟随系统"时才真的去问，`dark_light` 实测 4.8 ms/次 ≈ 0.1%

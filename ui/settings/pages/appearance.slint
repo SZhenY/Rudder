@@ -44,6 +44,9 @@ export component AppearancePage inherits VerticalLayout {
     in property <string> accent-mode;
     in property <string> accent-choice;
     in property <[AccentPreset]> accent-presets;
+    // 当前配色的显示名（原版 / 预设名 / 自定义 hex），由 Rust 提供 —— 色表在 Rust 里，
+    // Slint 侧不做名称查找。
+    in property <string> accent-name;
     // 自定义颜色的输入框内容（双向：用户边打边改，Rust 在切到预设时清空它）。
     in-out property <string> accent-hex;
 
@@ -137,23 +140,26 @@ export component AppearancePage inherits VerticalLayout {
         SettingRow {
             label: root.lang-en ? "Accent colour" : "主题色";
             desc: root.lang-en
-                ? "Buttons, the active tab and selections follow this colour."
-                : "按钮、活动标签与选中态都跟随这个颜色。";
+                ? "Buttons, tabs, selections and highlights follow this colour."
+                : "按钮、标签页、选中态与高亮都跟随这个颜色。";
             HorizontalLayout {
                 spacing: 8px;
                 alignment: start;
-                // 「默认」= 出厂色（跟随深浅档），清空配置里的主题色。
-                CursorPaletteSwatch {
-                    hex: "";
-                    swatch-color: Theme.accent-default;
-                    selected: root.accent-choice == "";
-                    chosen => { root.set-accent(""); }
-                }
+                // 色表由 Rust 提供，**第一条就是「原版」**（id 为空串 = 配置未选，即 Rudder
+                // 一直以来的默认蓝）；自定义色在最右边的输入框里。
                 for p in root.accent-presets : CursorPaletteSwatch {
                     hex: p.id;
                     swatch-color: p.color;
                     selected: root.accent-choice == p.id;
                     chosen(id) => { root.set-accent(id); }
+                }
+                Text {
+                    text: root.accent-name;
+                    color: Theme.text-secondary;
+                    font-size: 12px * Theme.panel-font;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
                 }
             }
         }

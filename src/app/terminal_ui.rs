@@ -343,6 +343,13 @@ pub(super) fn apply_wallpaper(
     id: &str,
     apply_builtin_theme: bool,
 ) {
+    // 壁纸分区暂时关闭时（见 `WALLPAPER_UI_ENABLED`）整体按"没有壁纸"处理：只藏界面不够
+    // ——配置里默认的 `builtin:dark` 会继续压在 `window-base` 上，浅色主题只剩面板是浅的。
+    let id = if crate::app::settings::appearance::WALLPAPER_UI_ENABLED {
+        id
+    } else {
+        ""
+    };
     match crate::wallpaper::load(id) {
         Some(wp) => {
             let (ar, ag, ab) = wp.palette.accent;

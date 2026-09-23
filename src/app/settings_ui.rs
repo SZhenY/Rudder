@@ -759,6 +759,7 @@ mod wiring_tests {
         ("custom-wallpaper-name", "apply_wallpaper 内写入"),
         ("wp-is-custom", "apply_wallpaper 内写入"),
         ("accent-choice", "apply_accent 内写入"),
+        ("accent-name", "apply_accent 内写入"),
         ("accent-hex", "apply_accent 内写入"),
         ("accent-presets", "apply_accent 内写入"),
     ];
@@ -866,4 +867,35 @@ mod wiring_tests {
         }
     }
 
+    /// 「原版」那条色表行的两个 hex 必须与 `theme.slint` 的 `accent-default` 一致。
+    ///
+    /// 两处都在描述"出厂默认蓝"：色块显示的是色表里的值，真正生效的是 Theme 里的值 ——
+    /// 一处分叉就会出现"色块是蓝的、界面不是"这种没人会去查的差异。
+    #[test]
+    fn default_accent_matches_theme_slint() {
+        let theme = include_str!("../../ui/theme.slint");
+        let (dark, light) = crate::app::settings::appearance::ACCENT_DEFAULT;
+        let expected = format!("accent-default: dark ? {dark} : {light}");
+        assert!(
+            theme.contains(&expected),
+            "theme.slint 里找不到 `{expected}` —— 出厂默认蓝与色表已经分叉"
+        );
+    }
+
+    /// 壁纸开关：Rust 常量与 Slint 的 `wallpaper-enabled` 必须一致。
+    ///
+    /// 二者不一致就有过真 bug：界面藏起来了、`apply_wallpaper` 仍在给窗口压壁纸，
+    /// 表现是"选了浅色主题，面板是浅的、窗口底色还是深的"。
+    #[test]
+    fn wallpaper_switch_matches_ui() {
+        let page = include_str!("../../ui/settings/pages/appearance.slint");
+        let expected = format!(
+            "wallpaper-enabled: {}",
+            crate::app::settings::appearance::WALLPAPER_UI_ENABLED
+        );
+        assert!(
+            page.contains(&expected),
+            "appearance.slint 里的 `{expected}` 与 Rust 的 WALLPAPER_UI_ENABLED 不一致"
+        );
+    }
 }
