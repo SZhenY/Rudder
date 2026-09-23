@@ -306,7 +306,10 @@ const ACCENT_PRESETS: &[(&str, &str, &str, &str, &str)] = &[
 /// 关闭时不只是"藏起界面"：`apply_wallpaper` 会整体按"没有壁纸"处理 —— 否则配置里默认的
 /// `builtin:dark` 仍然生效，表现为"选了浅色主题，面板是浅的、窗口底色还是深的"（壁纸盖住
 /// `window-base`，面板再磨砂叠在它上面），配色分区也就永远调不出亮底。
-pub(crate) const WALLPAPER_UI_ENABLED: bool = true;
+///
+/// 置回 `true`（同时把 Slint 那侧一起改，测试会钉住）即可重新开放；`on_set_wallpaper`
+/// 里那段"选内置壁纸后刷新「配色」分区"的联动是为重新开放准备的，与开关状态无关。
+pub(crate) const WALLPAPER_UI_ENABLED: bool = false;
 
 /// 把界面上的输入归一化成可存储的值：`""`（出厂默认）/ 预设 id / `#RRGGBB`。
 ///

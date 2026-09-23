@@ -36,8 +36,8 @@ export component AppearancePage inherits VerticalLayout {
 
     // 壁纸相关分区（壁纸 / 自定义上传 / 遮罩）的开关 —— 与 Rust 的 `WALLPAPER_UI_ENABLED`
     // **成对**（`wallpaper_switch_matches_ui` 测试钉住）：关掉时不只是藏界面，
-    // `apply_wallpaper` 也会整体按"没有壁纸"处理。
-    property <bool> wallpaper-enabled: true;
+    // `apply_wallpaper` 也会整体按"没有壁纸"处理。置回 true 即重新开放。
+    property <bool> wallpaper-enabled: false;
 
     // 配色：主题（深浅）+ 主题色。
     // `accent-presets` 由 Rust 提供（含"当前深浅档下已解析好的颜色"），Slint 侧不存
