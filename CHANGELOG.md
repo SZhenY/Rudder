@@ -47,6 +47,15 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **「配色」覆盖到设置页里的各个控件。** 左侧导航选中项、光标形状按钮的选中态改用主题色淡底
+  （新增 `Theme.accent-tint`）；**开关改成自绘** —— 原来用的官方 `Switch` 取色走 std-widgets 的
+  `Palette.accent-background`，而 fluent 风格里它是**派生属性**（`accentify(#0078D4)`，跟随系统
+  强调色），换配色时它是设置页里唯一纹丝不动的一处。自绘版对外语义不变（`checked` 双向绑定 +
+  `toggled(v)`），代价是外观/无障碍不再由官方维护；官方若开放强调色可以换回去。
+  **The colour scheme now reaches the settings widgets**: selected nav rows and cursor-style buttons
+  use an accent tint, and the switch is drawn in-app because std-widgets' accent is a derived
+  (unwritable) palette property that always follows the OS accent.
+
 - **终端光标色跟随深浅档：深色档用亮色、浅色档用暗色，切换主题时同步更新（设置页显示也同步）。**
   此前配置里存的是写死的 `#FFFFFF` —— "空串 = 跟随主题"只写在注释里、从未实现，于是浅色主题下
   光标几乎看不见。现在 `terminal_cursor_color` **留空 = 跟随主题**（与界面字体、主题色同一套约定）：

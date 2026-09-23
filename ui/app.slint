@@ -366,6 +366,11 @@ export component AppWindow inherits Window {
     property <bool> dark-mode-watch: Theme.dark;
     init => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }
     changed dark-mode-watch => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }
+
+    // ⚠️ 官方控件的**强调色**没法用同一套写法带过来：fluent 风格里 `Palette.accent-background`
+    // 等颜色属性都是 `out`（`FluentPalette` 内部由 `accentify(#0078D4)` 派生，跟随系统强调色），
+    // 只有 `color-scheme` 可写。所以 std-widgets 的 Switch / ComboBox 无法跟着「配色」变 ——
+    // `SettingSwitch` 因此改成自绘（见 ui/settings/chrome.slint）。
     in-out property <int> term-font-index: 0;   // picker selection into term-fonts
     in-out property <string> term-cursor-style: "block";
     in-out property <string> term-cursor-color-hex: Theme.dark ? "#D4D4D4" : "#2D2D2F";

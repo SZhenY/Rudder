@@ -5,8 +5,7 @@
 //
 // 约定：@children 只用于"右侧控件槽"，属性均为 `in`，事件一律用 callback 上抛，
 // 组件内部不持久化任何状态 —— 状态归 Rust 侧 config，"谁拥有状态谁负责写盘"。
-import { Theme } from "../theme.slint";
-import { Switch } from "std-widgets.slint";
+import { Theme, AnimationSettings } from "../theme.slint";
 import { Divider, VDivider } from "../components/surfaces.slint";
 import { IconText } from "../components/text.slint";
 
@@ -20,7 +19,8 @@ export component NavItem inherits Rectangle {
     border-radius: 6px;
     background: transparent;
     states [
-        current when root.active : { background: Theme.bg-active; }
+        // 选中项用**主题色淡底**（跟随「配色」分区），hover 仍是中性灰：hover 不是选中。
+        current when root.active : { background: Theme.accent-tint; }
         hovered when ta.has-hover : { background: Theme.bg-hover; }
     ]
     ta := TouchArea {
@@ -79,19 +79,53 @@ export component SettingRow inherits Rectangle {
 /// 「说明 + 开关」的设置行：此前每个设置页都手写一遍
 /// `SettingRow { label/desc/show-divider + Switch { checked <=> …; toggled => { … } } }`。
 ///
-/// 组件只是 `SettingRow` 加一个 Switch（元素落在基类的 `@children` 槽里），
+/// 组件只是 `SettingRow` 加一个开关（元素落在基类的 `@children` 槽里），
 /// 因此 `label` / `desc` / `show-divider` 的用法与以前完全一样。
 ///
-/// 注意：`Switch.toggled` 在 std-widgets 里是**无参**回调（传参会编译报错），
-/// 所以这里统一由组件把当前值 `root.checked` 转发出来，调用方写
-/// `toggled(v) => { … }` 即可 —— 与旧写法的语义一致。
+/// 开关由组件自己画（见下面的注释），但**对外语义不变**：`checked` 双向绑定，
+/// 点击后把新值通过 `toggled(v)` 转发出来 —— 调用方写法与官方 Switch 时代一致。
 export component SettingSwitch inherits SettingRow {
     in-out property <bool> checked;
     callback toggled(bool);
 
-    Switch {
-        checked <=> root.checked;
-        toggled => { root.toggled(root.checked); }
+    // ⚠️ 自绘开关（原来是官方 std-widgets 的 `Switch`）。改回来的理由：fluent 风格里
+    // `Palette.accent-background` 是**派生属性**（`accentify(#0078D4)`，跟随系统强调色），
+    // 官方 Switch 的"开"态因此永远是自己那套蓝，换「配色」时它是设置页里最扎眼的一处死角。
+    // 代价：外观与无障碍不再由官方维护 —— 若将来官方开放强调色，可以换回去。
+    Rectangle {
+        width: 40px;
+        height: 22px;
+        border-radius: 11px;
+        border-width: 1px;
+        border-color: root.checked ? Theme.accent : Theme.border-strong;
+        background: root.checked ? Theme.accent : Theme.bg-hover;
+        animate background {
+            duration: 120ms;
+            easing: AnimationSettings.color();
+            enabled: AnimationSettings.enabled;
+        }
+
+        knob := Rectangle {
+            x: root.checked ? parent.width - self.width - 3px : 3px;
+            y: 3px;
+            width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            background: root.checked ? #ffffff : Theme.text-secondary;
+            animate x {
+                duration: 120ms;
+                easing: AnimationSettings.layout();
+                enabled: AnimationSettings.enabled;
+            }
+        }
+
+        switch-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.checked = !root.checked;
+                root.toggled(root.checked);
+            }
+        }
     }
 }
 
@@ -162,7 +196,7 @@ export component CursorStyleButton inherits Rectangle {
     states [
         selected when root.selected : {
             border-color: Theme.accent;
-            background: Theme.bg-active;
+            background: Theme.accent-tint;
         }
         hovered when cursor-ta.has-hover : { background: Theme.bg-hover; }
     ]
