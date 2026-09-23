@@ -5,13 +5,60 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.9-beta3] - 2026-09-22
+
+### 修复 / Fixed
+
+- **彩色刷屏时客户端会崩溃（`0.7.9-beta2` 引入）。** `scan_csi_sequences` 从"逐字节扫描"
+  改成 `memchr` 跳转时**丢了循环上界** ✗：`ESC` 后面不是 `[`（OSC 引子 `ESC ]`、`ESC 7`
+  这类）会 `i += 2` **一步跨过块尾**，下一轮 `&bytes[i..]` 直接越界 panic
+  （`range start index 32769 out of range for slice of length 32768` —— 32768 就是读缓冲大小）。
+  正式构建 `panic = "abort"`，所以表现为**直接闪退** ✗。已恢复 `i < bytes.len()` 上界，
+  并补两条回归测试（块尾是 `ESC` / `ESC ]` / 32 KiB 块尾截断 + 未结束 CSI 仍交给调用方缓存）。
+  **Fixed a crash on coloured output in `0.7.9-beta2`**: the memchr rewrite of
+  `scan_csi_sequences` lost its loop bound, so an `ESC` not followed by `[` at the end of a
+  read chunk advanced past the slice and panicked (abort → instant quit).
+
+## [0.7.9-beta2] - 2026-09-22
+
 ### 变化 / Changed
+
+- **彩色输出（彩色日志 / `ls --color` / diff）的解析快了约 1.9 倍。** 每个 SGR 序列原先都要
+  重走一遍"重建参数表"（4 次堆分配 + 一次整串重拷）—— 彩色输出每 64 KiB 有两万多个 SGR，
+  这里成了热点（实测 ingest 2848µs/块，无色只要 303µs）。现在参数里**既没有 53 也没有 21**
+  时直接原样喂给解析器（此时重建结果与原文逐字节相同，等价），并把 CSI 扫描从逐字节改成
+  `memchr` 跳 ESC。实测 ingest 1521µs/块，30 万行总耗时 645ms → 351ms。
+  **Parsing coloured output is ~1.9x faster**: the SGR path skipped the parameter rebuild whenever
+  the sequence contains neither 53 nor 21 (the rebuilt bytes are identical then), and CSI scanning
+  now jumps ESC-to-ESC with `memchr`.
+
+- **系统状态侧边栏：空闲 CPU 降到 1/12.7**（实测 debug 构建静置 20 s：单核 **24.15% → 1.90%**；
+  空闲帧率 **15 fps → 1 fps**；release 构建 + 真实配置另测 **0.06%**）。根因是三条 CPU/内存/交换进度条：`animate width spring` 的输入是
+  1 Hz 采样，动画**每秒被重新触发**，而 Slint 一次重绘 = **重画整个窗口**（不做局部重绘；侧栏也
+  不走终端那套 30 Hz 节流）—— 于是"空闲"时整窗每秒被重画十几次。现在条宽**不做动画**（仪表不是
+  交互元素，跳变只 1 个百分点），并跟**取整后的百分比**走。
+  另外三处"每秒全量重建模型"（上下网络曲线、磁盘列表、网卡下拉）改成就地写 —— 磁盘那 9 个不
+  刷新的 tick 现在**一次通知都不发**；`SystemSnapshot.disks` 改 `Arc<[_]>`，挂载点字符串只在真
+  刷新那一轮生成。侧栏每趟多了一行观测日志（`RUST_LOG=rudder::perf=debug`）。
+  动画并未完全取消：**变化 ≥10 个百分点**时才出弹簧（空闲时 1% 级别的抖动直接跳到位）。
+  **The system-status sidebar now idles at ~1/12 of its former CPU** (debug build, 20 s idle:
+  **24.15% → 1.90%** of one core; idle frame rate **15 fps → 1 fps**): the three CPU/memory/swap
+  gauges used to restart a spring animation every second, and every animation frame repaints the
+  *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
+  list, NIC list) were also switched to in-place writes.
 
 - **文档里的旧名 `meatshell` 全部改为 `rudder`**（英文 README / CONTRIBUTING / 两份发版文档 / 图标
   脚本）：下载与运行说明（`rudder-*` 包、`rudder.exe`、`rudder.app`）、配置路径、`rudder --version`
   校验、Issues 与 Releases 链接。
   **Old `meatshell` name replaced with `rudder` throughout the docs.** 上游致谢（"fork of
   yituorou/meatshell"）、内嵌字体名 `Meatshell Mono`、以及 CHANGELOG 里的历史记录按原样保留。
+
+- **新增性能观测点与压测工具**（只在调试/测试构建里生效，正式运行不打印）：
+  终端每帧记「重建/复用」行数、侧栏每趟记采样耗时与模型写次数，都用
+  `RUST_LOG=rudder::perf=debug`；另有 `flood_profile` 压测
+  （`cargo test --release -- --ignored --nocapture flood_profile`，`RUDDER_FLOOD_COLOR=1`
+  可切彩色语料），用来量化 `seq` 刷屏 / `cat` 大文件这类场景。
+  **Added perf observation points and a flood benchmark** (debug/test builds only).
 
 ### 修复 / Fixed
 

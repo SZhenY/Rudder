@@ -758,6 +758,42 @@ mod color_emoji_tests {
         assert_eq!(spans[0].row, 3);
     }
 
+    /// flood 压测里 `cjk` 那行的原样语料：CJK + 全角字母 + 组合重音 + TAB + ZWJ 家庭 emoji。
+    ///
+    /// 钉住四件事：① ZWJ 家庭序列是**一张 2 格 emoji 图片**（不被拆成 4 个）；② 组合重音
+    /// 留在基础字母**同一段文本**里（交给整形器，不要自己拆）；③ TAB 原样交给渲染器；
+    /// ④ 各段列号首尾相接、合计格宽 = 终端列宽。
+    ///
+    /// 顺带记一笔**不是 bug 的观感问题**：`twemoji-assets` 17.x 把 `👨‍👩‍👧‍👦` 这类 ZWJ 家庭
+    /// 序列画成了"蓝底白色一家四口"的**象形图标**（Unicode 已把家庭从 RGI 推荐里移除），
+    /// 与 Apple 系统 emoji 字体的"四个人物"观感不同 —— 那是素材本身，不是渲染错误。
+    #[test]
+    fn cjk_corpus_line_keeps_grid_width_and_keeps_zwj_whole() {
+        let line = "汉字宽字符 mixed ＡＢＣ ｅｍｏｊｉ 👨‍👩‍👧‍👦 e\u{301} tab\tend";
+        let spans = render_term_span(&run(line, 60), 0, true);
+        for sp in spans.iter() {
+            println!(
+                "  col={:<3} cells={:<3} emoji={:<5} cjk={:<5} text={:?}",
+                sp.col, sp.cells, sp.emoji, sp.cjk, sp.text.as_str()
+            );
+        }
+        assert_eq!(spans.len(), 3, "CJK 文本 / emoji 图片 / 其余文本");
+        assert!(spans[0].cjk && !spans[0].emoji);
+        assert!(spans[1].emoji, "ZWJ 家庭序列应走 emoji 图片通路");
+        assert_eq!(spans[1].cells, 2, "2 格宽带");
+        assert!(
+            spans[2].text.as_str().contains("e\u{301}"),
+            "组合重音留在基础字母同一段文本里"
+        );
+        assert!(spans[2].text.as_str().contains('\t'), "TAB 原样交给渲染器");
+        let mut col = spans[0].col;
+        for sp in spans.iter() {
+            assert_eq!(sp.col, col, "span 列号必须首尾相接");
+            col += sp.cells;
+        }
+        assert_eq!(col - spans[0].col, 60, "合计格宽 = 终端列宽");
+    }
+
     #[test]
     fn emoji_row_columns_conserve_grid_width() {
         // [8] row 5 of the char test suite: 2 bars + 20 emoji × 2 cells = 42.

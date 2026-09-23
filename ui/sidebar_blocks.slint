@@ -25,6 +25,19 @@ export component StatRow inherits HorizontalLayout {
     in property <string> detail;
     in property <brush> bar-color: Theme.accent;
 
+    // 条宽的目标值 + "这一次要不要动画"。
+    //
+    // 输入是 1 Hz 采样，条每秒都会换目标；而**任何一帧动画都会让 Slint 重画整个窗口**
+    // （不做局部重绘）。空闲时 CPU 在 1~2% 之间抖，每秒重放动画就等于每秒重画十几次
+    // （实测空闲帧率 15 fps ✗）。所以只有**真正的跳变**（≥10 个百分点）才出动画，
+    // 小抖动直接跳到位 —— 空闲帧率因此回到 1 fps。
+    property <float> shown: percent;
+    property <bool> smooth: false;
+    changed percent => {
+        root.smooth = Math.abs(percent - root.shown) >= 0.10;
+        root.shown = percent;
+    }
+
     spacing: 6px;
     padding-left: 8px;
     padding-right: 8px;
@@ -50,10 +63,16 @@ export component StatRow inherits HorizontalLayout {
             x: 0;
             y: 0;
             height: parent.height;
-            width: parent.width * clamp(percent, 0.0, 1.0);
+            // 条宽跟着**取整后的百分比**（右侧数字本来就是整数百分比），跳变只有 1 个百分点。
+            // 动画只在 `root.smooth`（变化 ≥10 个百分点）时生效，见上面 `changed percent`。
+            width: parent.width * clamp(Math.round(shown * 100) / 100, 0.0, 1.0);
             background: bar-color;
             border-radius: 2px;
-            animate width { duration: 500ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
+            animate width {
+                duration: 260ms;
+                easing: AnimationSettings.spring-settle();
+                enabled: AnimationSettings.enabled && root.smooth;
+            }
         }
 
         Text {

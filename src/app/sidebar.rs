@@ -1,47 +1,91 @@
 use super::*;
 
+/// 这一趟刷新在**模型**上做了哪些动作 —— 只用于给 `RUST_LOG=rudder::perf=debug` 记账。
+///
+/// `replaced` = "模型身份被换掉"的次数：那会让 Slint 把对应 Repeater 的每一项都当新项
+/// 重建（行内状态、悬停、动画全丢），所以目标是**常年为 0**；`written` / `unchanged` 是
+/// 就地写的结果 —— 就地写不换身份，Slint 只收到真正变化的行。
+#[derive(Default, Clone, Copy)]
+pub(crate) struct SidebarStats {
+    pub(crate) replaced: u32,
+    pub(crate) written: u32,
+    pub(crate) unchanged: u32,
+}
+
+/// 就地写模型并记账；拿不到 `VecModel`（首次 / 被别人换过）时才用 `fresh` 新建一个 set 一次。
+fn write_model<T: Clone + PartialEq + 'static>(
+    stats: &mut SidebarStats,
+    model: &ModelRc<T>,
+    next: &[T],
+    fresh: impl FnOnce() -> ModelRc<T>,
+    set: impl FnOnce(ModelRc<T>),
+) {
+    match try_write_rows_changed(model, next) {
+        Some(true) => stats.written += 1,
+        Some(false) => stats.unchanged += 1,
+        None => {
+            set(fresh());
+            stats.replaced += 1;
+        }
+    }
+}
+
+/// 磁盘列表：能就地写就就地写 —— 磁盘 10 秒才真刷新一次，中间那些 tick 内容没变，
+/// 一次通知都不该发（原来每秒整张重建 + 换模型，列表里每一行都跟着重建）。
+fn write_disks(stats: &mut SidebarStats, win: &AppWindow, disks: &[(String, u64, u64)]) {
+    let rows = disk_rows(disks, &mount_filter(), hide_special_partitions());
+    write_model(
+        stats,
+        &win.get_disks(),
+        &rows,
+        || disk_model(disks, &mount_filter(), hide_special_partitions()),
+        |m| win.set_disks(m),
+    );
+}
+
 pub(super) fn refresh_sidebar(
     win: &AppWindow,
     statuses: &TabStatuses,
     local: &LocalSnap,
     local_net_hist: &NetHist,
-) {
+) -> SidebarStats {
+    let mut stats = SidebarStats::default();
     let pct = |used: u64, total: u64| usage_pct(used, total);
     // A poisoned lock must not take the client down — release builds use
     // panic = "abort". Skip this refresh pass instead; the sampler will
     // publish a fresh snapshot on the next tick.
     let Ok(snap) = local.lock().map(|s| s.clone()) else {
-        return;
+        return SidebarStats::default();
     };
 
     // --- Bottom network graph: always the local machine --------------------
     win.set_net_bot_up(format_bytes_per_sec(snap.net_tx_per_sec).into());
     win.set_net_bot_down(format_bytes_per_sec(snap.net_rx_per_sec).into());
-    // Snapshot the history *before* writing the Slint property: writing can
-    // re-enter UI code, which must not happen while the mutex is held.
-    let bot_hist = local_net_hist
-        .lock()
-        .map(|h| normalized_model(&h))
-        .unwrap_or_default();
-    win.set_net_bot_history(bot_hist);
+    // 先取历史（锁内只做纯计算），**出锁之后**才碰 Slint 属性 —— 写属性可能重入 UI 代码。
+    // 归一化只算一次：上下两个图共用同一个环形缓冲。
+    let Ok(scaled) = local_net_hist.lock().map(|h| normalize(&h)) else {
+        return SidebarStats::default();
+    };
+    let bot = win.get_net_bot_history();
+    write_model(&mut stats, &bot, &scaled, || graph_model(&scaled), |m| {
+        win.set_net_bot_history(m)
+    });
 
-    let set_top_local = |win: &AppWindow| {
+    let set_top_local = |win: &AppWindow, stats: &mut SidebarStats| {
         win.set_net_top_up(format_bytes_per_sec(snap.net_tx_per_sec).into());
         win.set_net_top_down(format_bytes_per_sec(snap.net_rx_per_sec).into());
-        let top_hist = local_net_hist
-            .lock()
-            .map(|h| normalized_model(&h))
-            .unwrap_or_default();
-        win.set_net_top_history(top_hist);
+        let top = win.get_net_top_history();
+        write_model(stats, &top, &scaled, || graph_model(&scaled), |m| {
+            win.set_net_top_history(m)
+        });
         win.set_net_show_selector(false);
         win.set_net_selected("".into());
-        win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
+        // 本机没有网卡下拉列表：只在"上一轮写的是远端列表"时清一次，不再每秒塞一个新模型。
+        if win.get_net_ifaces().row_count() > 0 {
+            win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
+        }
         // Non-connected tabs show the local machine's filesystems.
-        win.set_disks(disk_model(
-            &snap.disks,
-            &mount_filter(),
-            hide_special_partitions(),
-        ));
+        write_disks(stats, win, &snap.disks);
     };
     let show_local_res = |win: &AppWindow| {
         win.set_resource_title(t("本机资源", "Local resources").into());
@@ -190,7 +234,7 @@ pub(super) fn refresh_sidebar(
             win.set_connection_state(connection_label(st.state, &st.host).into());
             win.set_conn_host(conn_ip(&st.host).into());
             show_local_res(win);
-            set_top_local(win);
+            set_top_local(win, &mut stats);
             show_local_system_models(win);
         }
         // A live session tab → remote resources + remote NIC on top.
@@ -209,16 +253,24 @@ pub(super) fn refresh_sidebar(
             let (name, rx, tx) = selected_iface(&st);
             win.set_net_top_up(format_bytes_per_sec(tx).into());
             win.set_net_top_down(format_bytes_per_sec(rx).into());
-            win.set_net_top_history(normalized_model(&st.net_hist));
+            let hist = normalize(&st.net_hist);
+            let top = win.get_net_top_history();
+            write_model(&mut stats, &top, &hist, || graph_model(&hist), |m| {
+                win.set_net_top_history(m)
+            });
             win.set_net_show_selector(!st.net.is_empty());
             win.set_net_selected(name.into());
             let ifaces: Vec<SharedString> = st.net.iter().map(|e| e.0.clone().into()).collect();
-            win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::from(ifaces))));
-            win.set_disks(disk_model(
-                &st.disks,
-                &mount_filter(),
-                hide_special_partitions(),
-            ));
+            // 网卡列表很少变：内容一样就别换模型（换身份 = Repeater 重建整个列表）。
+            let iface_model = win.get_net_ifaces();
+            write_model(
+                &mut stats,
+                &iface_model,
+                &ifaces,
+                || ModelRc::from(Rc::new(VecModel::from(ifaces.clone()))),
+                |m| win.set_net_ifaces(m),
+            );
+            write_disks(&mut stats, win, &st.disks);
             win.set_proc_available(true);
             win.set_system_info_available(true);
             set_procs(win, &st.procs, &st.user, &active);
@@ -240,7 +292,7 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_top_local(win);
+            set_top_local(win, &mut stats);
             set_system_models(
                 win,
                 0.0,
@@ -259,7 +311,7 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_top_local(win);
+            set_top_local(win, &mut stats);
             set_system_models(
                 win,
                 0.0,
@@ -277,10 +329,11 @@ pub(super) fn refresh_sidebar(
             win.set_connection_state(t("未连接", "Not connected").into());
             win.set_conn_host("".into());
             show_local_res(win);
-            set_top_local(win);
+            set_top_local(win, &mut stats);
             show_local_system_models(win);
         }
     }
+    stats
 }
 /// 使用率：`total == 0` 时不能用 0 除（还没采到样本的本地快照就是这样）。
 fn usage_pct(used: u64, total: u64) -> f32 {

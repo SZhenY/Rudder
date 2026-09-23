@@ -18,8 +18,12 @@ pub(crate) struct SystemSnapshot {
     pub net_bytes_per_sec: u64,
     pub net_rx_per_sec: u64,
     pub net_tx_per_sec: u64,
-    /// Per-filesystem (mount, available_bytes, total_bytes).
-    pub disks: Vec<(String, u64, u64)>,
+    /// Per-filesystem (mount, available_bytes, total_bytes)。
+    ///
+    /// 用 `Arc<[_]>` 而不是 `Vec<_>`：这份快照每秒被克隆两次（采样线程存一份、界面读一份），
+    /// `Vec` 版本每次都要把每个挂载点的字符串深拷贝一遍 —— 而磁盘数据本来就只在
+    /// `DISK_REFRESH_EVERY` 那一轮才变，那份深拷贝纯属白做。
+    pub disks: Arc<[(String, u64, u64)]>,
 }
 
 /// Stateful sampler. Construct once per process and poll via [`Self::sample`].
@@ -32,6 +36,8 @@ pub(crate) struct SystemSampler {
     pub(crate) disks: Disks,
     /// Counts down to the next disk re-enumeration; see `DISK_REFRESH_EVERY`.
     pub(crate) disk_tick: u32,
+    /// 上一次磁盘 refresh 算出来的挂载点行（`Arc`：每秒分发一份只是加引用计数）。
+    pub(crate) cached_disks: Arc<[(String, u64, u64)]>,
     pub(crate) last_rx_total: u64,
     pub(crate) last_tx_total: u64,
     pub(crate) last_instant: std::time::Instant,

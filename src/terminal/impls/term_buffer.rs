@@ -1,5 +1,5 @@
 use crate::terminal::{
-    BuiltScreen, CsiState, HistSpan, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
+    BuiltScreen, CsiState, FrameStats, HistSpan, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
     ScrollLine, TermBuffer, build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
     merge_runs, process_bytes, refresh_overlines, render_term_span, resize_term, term_size,
 };
@@ -57,6 +57,7 @@ impl TermBuffer {
             csi_pending: Vec::new(),
             mouse_tracked: false,
             raw: std::collections::VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,
@@ -475,6 +476,29 @@ impl TermBuffer {
         } else {
             &seq[..0]
         };
+
+        // ── 快路径：参数里既没有 53（我们拦截的 overline）也没有 21（要改写成 4:2）──
+        //
+        // 此时下面那套"重建参数表"的结果与原文**逐字节相同**（只丢 53 / 只改 21），
+        // 所以可以直接把原序列喂给解析器。彩色输出里每块（64 KiB）有两万多个 SGR，
+        // 走慢路径要为每个序列付 4 次堆分配 + 一次整串重拷 —— 这是 ingest 在彩色
+        // 语料上比无色慢 9 倍的主因。
+        //
+        // 唯一还必须做的是 overline 状态机：**任何不带 53 的 SGR** 在 overline 打开时
+        // 都要把它闭合（与下面那段 `!has_53 && self.overline_active` 同义）。
+        //
+        // 注意：这里用朴素的"参数里有没有 21/53"判断 —— 极端情况下 `38;2;53;100;200m`
+        // 这类**颜色分量**恰好是 21/53 会被判成"需要慢路径"，那是安全的（走下面已有的、
+        // 处理过 extended-colour 前缀的正确逻辑），只是少见而已。
+        let needs_rewrite = params.split(|&b| b == b';').any(|part| part == b"53" || part == b"21");
+        if !needs_rewrite {
+            if self.overline_active {
+                self.close_overline(row, col);
+            }
+            process_bytes(&mut self.processor, &mut self.term, seq);
+            return;
+        }
+
         let mut has_53 = false;
         let mut has_reset = false;
         // Drop the overline parameter and rewrite 21 → 4:2 (vte parses 21 as
@@ -676,6 +700,8 @@ impl TermBuffer {
 
         // --- Live view (also alt-screen): render the current grid -----------
         if alt || self.view_offset == 0 {
+            // 每帧重置；本分支结束时写回 self.frame_stats（见字段文档）。
+            let mut stats = FrameStats::default();
             let mut spans = Vec::with_capacity(rows as usize * 6);
             let mut displayed = Vec::with_capacity(rows as usize);
             let mut last_content = 0i32;
@@ -705,6 +731,7 @@ impl TermBuffer {
                         && cached.raw_runs == runs
                         && cached.highlighted != alt
                     {
+                        stats.reused += 1;
                         let runs = merge_runs(&refresh_overlines(
                             &cached.runs,
                             &self.overline_ranges,
@@ -715,9 +742,11 @@ impl TermBuffer {
                             .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
                             .collect()
                     } else {
+                        stats.rebuilt += 1;
                         self.build_spans(r as i32, display_key, &runs, alt)
                     }
                 } else {
+                    stats.rebuilt += 1;
                     self.build_spans(r as i32, display_key, &runs, alt)
                 };
 
@@ -741,6 +770,7 @@ impl TermBuffer {
                 self.scroll_live_frames = 0;
             }
             let rows_used = if alt { rows as i32 } else { last_content + 1 };
+            self.frame_stats = stats;
             return BuiltScreen {
                 mouse_tracked: self.mouse_tracked,
                 spans,
@@ -904,11 +934,17 @@ fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
     }
     let mut seqs = Vec::new();
     let mut i = 0;
+    // 用 memchr 直接跳到下一个 ESC。原来是一条条 `i += 1` 走完全块 —— 彩色输出里
+    // 非 ESC 字节仍是绝大多数，那等于每个块都白扫一遍 64 KiB。语义与逐字节版一致。
+    // ⚠️ 循环条件**必须**带 `i < bytes.len()`：下面 `i += 2`（ESC + 非 '['，比如 OSC 引子
+    // `ESC ]` 或 `ESC 7`）可能一步跨过块尾，此时 `&bytes[i..]` 会直接 panic
+    // （`range start index N out of range for slice of length M`）。
+    // 0.7.9-beta2 在彩色刷屏下崩过一次，就是这里丢了上界 —— 原来的逐字节版本有它。
     while i < bytes.len() {
-        if bytes[i] != 0x1b {
-            i += 1;
-            continue;
-        }
+        let Some(offset) = memchr::memchr(b'\x1b', &bytes[i..]) else {
+            break;
+        };
+        i += offset;
         if bytes.get(i + 1) != Some(&b'[') {
             // ESC + non-'[': two-byte escape (ESC 7 / ESC c …) or an OSC
             // introducer (ESC ] …) — skip past the next byte and continue.
@@ -933,6 +969,34 @@ fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 块尾刚好落在转义序列中间时**不能 panic**。
+    ///
+    /// 0.7.9-beta2 在彩色刷屏下崩过（SIGABRT + `range start index 32769 out of range for
+    /// slice of length 32768`）：`ESC` 后面跟的不是 `[` 时 `i += 2` 会跨过块尾，下一轮
+    /// `&bytes[i..]` 越界。32768 正是读缓冲的块大小。
+    #[test]
+    fn scan_csi_survives_escape_at_chunk_tail() {
+        assert_eq!(scan_csi_sequences(b"abc\x1b"), (vec![], None), "块尾就是 ESC");
+        assert_eq!(scan_csi_sequences(b"abc\x1b]"), (vec![], None), "ESC ]（OSC 引子）");
+        assert_eq!(scan_csi_sequences(b"abc\x1b7"), (vec![], None), "ESC 7（保存光标）");
+        assert_eq!(scan_csi_sequences(b"\x1b"), (vec![], None), "整块只有一个 ESC");
+
+        let mut big = vec![b'a'; 32768];
+        big.push(0x1b);
+        assert_eq!(scan_csi_sequences(&big), (vec![], None), "32 KiB 块尾是 ESC");
+
+        let mut big2 = vec![b'a'; 32767];
+        big2.extend_from_slice(b"\x1b]");
+        assert_eq!(scan_csi_sequences(&big2), (vec![], None), "32 KiB 块尾是 ESC ]");
+    }
+
+    /// 未结束的 CSI 仍要交给调用方缓存 —— 这是 split-read 时保住 SGR 53 / 21 的机制。
+    #[test]
+    fn scan_csi_reports_unterminated_csi_tail_and_finds_sgr() {
+        assert_eq!(scan_csi_sequences(b"abc\x1b[38;5"), (vec![], Some(3)));
+        assert_eq!(scan_csi_sequences(b"abc\x1b[31mX"), (vec![(3, 8)], None));
+    }
     use alacritty_terminal::index::{Column, Line, Point};
     use crate::terminal::{
         CsiState, OutputHighlightPreset, TermColor, UnderlineStyle, attr_from_cell,
@@ -957,6 +1021,7 @@ mod tests {
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
             raw: std::collections::VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,
@@ -1129,7 +1194,15 @@ mod tests {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(220);
-        let line = b"line 123 abcdefghijklmnopqrstuvwxyz 0123456789\r\n";
+        // 语料两档：默认无色（每行 1 个 run），`RUDDER_FLOOD_COLOR=1` 时给每行塞 8 段
+        // 不同颜色 —— 后者才代表 `ls --color`、彩色日志、`git diff` 这类"**每行多 run、
+        // 一屏上千个 span**"的真实负载；模型写入那一段的代价只有在它上面才看得出。
+        let colorful = std::env::var("RUDDER_FLOOD_COLOR").is_ok();
+        let plain_line = b"line 123 abcdefghijklmnopqrstuvwxyz 0123456789\r\n";
+        let color_line =
+            b"\x1b[31mred\x1b[0m \x1b[32mgreen\x1b[0m \x1b[33myellow\x1b[0m \x1b[34mblue\x1b[0m \
+              \x1b[35mmagenta\x1b[0m \x1b[36mcyan\x1b[0m \x1b[1;37mbold\x1b[0m \x1b[4munder\x1b[0m\r\n";
+        let line: &[u8] = if colorful { color_line } else { plain_line };
 
         // 回滚环大小可调：用来判断"长尾是不是回滚环淘汰造成的"（0 = 不留历史）。
         let scrollback: usize = std::env::var("RUDDER_FLOOD_SCROLLBACK")
@@ -1144,6 +1217,11 @@ mod tests {
 
         let mut ingest_us = Vec::with_capacity(chunks);
         let mut render_us = Vec::with_capacity(chunks);
+        // 真实 UI 每帧还要把这份 spans **增量写进 Slint 模型**（`apply_rows_slice` 逐项
+        // `PartialEq` + `set_row_data`）—— 这段以前没被量过，而"一屏上千个 span"的固定开销
+        // 就落在这里，也是 alacritty 用 GPU 实例缓冲换掉的那一块。
+        let mut model_us = Vec::with_capacity(chunks);
+        let model = slint::VecModel::<crate::ui::TermSpan>::default();
         let start = Instant::now();
         for _ in 0..chunks {
             let t = Instant::now();
@@ -1154,8 +1232,29 @@ mod tests {
             let screen = buf.render();
             render_us.push(t.elapsed().as_micros());
             std::hint::black_box(&screen);
+
+            let t = Instant::now();
+            std::hint::black_box(crate::app::resource_ui::apply_rows_slice(&model, &screen.spans));
+            model_us.push(t.elapsed().as_micros());
         }
         let total = start.elapsed();
+
+        // ── 回滚视图（`scroll_cache` 那条 path）：进入历史后连渲若干帧 ──────────────
+        // 与实时视图完全不同的分支：每帧 `for d in 0..win` 重走视口，靠 `scroll_cache`
+        // （按绝对行号 + generation，上限 4096）兜。**第一帧必然全部未命中**，后续帧才是
+        // 稳态 —— 两个数分开记，因为它们对应"滚一下"和"一直滚"两种体验。
+        const SCROLL_FRAMES: usize = 60;
+        buf.view_offset = 200;
+        let mut scroll_us = Vec::with_capacity(SCROLL_FRAMES);
+        let scroll_start = Instant::now();
+        for _ in 0..SCROLL_FRAMES {
+            let t = Instant::now();
+            let s = buf.render();
+            scroll_us.push(t.elapsed().as_micros());
+            std::hint::black_box(&s);
+        }
+        let scroll_total = scroll_start.elapsed();
+        let scroll_first_us = scroll_us.first().copied().unwrap_or(0);
 
         // 最慢的几次发生在第几块 / 第几帧 —— 周期性长尾（例如每 N 次一次）能一眼看出来。
         let slowest = |v: &[u128], n: usize| {
@@ -1175,10 +1274,14 @@ mod tests {
         // 先算"最慢的几次"（需要原始顺序），再排序求分位。
         let i_slow = slowest(&ingest_us, 5);
         let r_slow = slowest(&render_us, 5);
+        let m_slow = slowest(&model_us, 5);
         let (i50, i95, i99, imax) = stats(&mut ingest_us);
         let (r50, r95, r99, rmax) = stats(&mut render_us);
+        let (s50, s95, s99, smax) = stats(&mut scroll_us);
+        let (m50, m95, m99, mmax) = stats(&mut model_us);
         println!("最慢 ingest 块: {i_slow}");
         println!("最慢 render 帧: {r_slow}");
+        println!("最慢 model 帧: {m_slow}");
         println!("== flood profile ==");
         println!(
             "总耗时 {:?}（{chunks} 块 × {CHUNK_LINES} 行 ≈ {} 万行）",
@@ -1187,6 +1290,11 @@ mod tests {
         );
         println!("ingest / 块: p50={i50}us p95={i95}us p99={i99}us max={imax}us");
         println!("render / 帧: p50={r50}us p95={r95}us p99={r99}us max={rmax}us");
+        println!("model / 帧: p50={m50}us p95={m95}us p99={m99}us max={mmax}us");
+        println!(
+            "回滚 / 帧: 首帧={scroll_first_us}us（未命中） p50={s50}us p95={s95}us p99={s99}us max={smax}us \
+             （{SCROLL_FRAMES} 帧共 {scroll_total:?}）"
+        );
     }
 
     /// 查找导航：**只朝搜索方向扫、命中即停**（以前会把全部命中收集完再挑 —— 20 万~50 万行
@@ -1307,6 +1415,7 @@ mod tests {
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
             raw: std::collections::VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,
@@ -1427,6 +1536,7 @@ mod real_file_overline_verify {
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
             raw: VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,
@@ -1487,6 +1597,7 @@ mod render_path_cube_tests {
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
             raw: std::collections::VecDeque::new(),
+            frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
             scroll_live_frames: 0,

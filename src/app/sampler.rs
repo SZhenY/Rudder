@@ -52,6 +52,7 @@ pub(crate) fn spawn_system_sampler(
                 }
                 WinActivity::Active => {}
             }
+            let t_start = std::time::Instant::now();
             let snap = {
                 // A poisoned sampler mutex must not take the client down:
                 // release builds use panic = "abort", so the old expect() here
@@ -62,6 +63,7 @@ pub(crate) fn spawn_system_sampler(
                 };
                 s.sample()
             };
+            let sample_ms = t_start.elapsed().as_secs_f64() * 1000.0;
             // Append the raw local throughput to the bottom-graph ring buffer
             // (normalisation happens at display time so the graph auto-scales).
             if let Ok(mut net) = tick_net.lock() {
@@ -73,11 +75,24 @@ pub(crate) fn spawn_system_sampler(
                 *local = snap.clone();
             }
 
-            if let Some(w) = weak.upgrade() {
-                // Everything (status, CPU/mem/swap, both graphs) follows the
-                // active tab; refresh_sidebar reads the stores we just updated.
-                refresh_sidebar(&w, &tick_statuses, &tick_local, &tick_net);
-            }
+            // Everything (status, CPU/mem/swap, both graphs) follows the active
+            // tab; refresh_sidebar reads the stores we just updated.
+            let stats = weak
+                .upgrade()
+                .map(|w| refresh_sidebar(&w, &tick_statuses, &tick_local, &tick_net))
+                .unwrap_or_default();
+            // 侧栏的观测点：默认不打印，RUST_LOG=rudder::perf=debug 时每趟一行。
+            // `replaced` = 模型身份被换掉的次数（目标 0）；`written` / `unchanged` 是就地写
+            // 模型的结果 —— 磁盘那 9 个不刷新的 tick 应该落在 `unchanged` 上。
+            tracing::debug!(
+                target: "rudder::perf",
+                sample_ms,
+                total_ms = t_start.elapsed().as_secs_f64() * 1000.0,
+                replaced = stats.replaced,
+                written = stats.written,
+                unchanged = stats.unchanged,
+                "sidebar tick"
+            );
         },
     );
     // Keep the timer alive for the entire event loop by parking it on a
