@@ -34,9 +34,10 @@ export component AppearancePage inherits VerticalLayout {
     in property <float> ui-scale;
     in-out property <float> wallpaper-overlay;
 
-    // 临时开关：壁纸相关分区（壁纸 / 自定义上传 / 遮罩）暂不开放。置回 true 即可恢复
-    // ——分区内容原样保留、一行不删，所以恢复时不需要重建任何接线。
-    property <bool> wallpaper-enabled: false;
+    // 壁纸相关分区（壁纸 / 自定义上传 / 遮罩）的开关 —— 与 Rust 的 `WALLPAPER_UI_ENABLED`
+    // **成对**（`wallpaper_switch_matches_ui` 测试钉住）：关掉时不只是藏界面，
+    // `apply_wallpaper` 也会整体按"没有壁纸"处理。
+    property <bool> wallpaper-enabled: true;
 
     // 配色：主题（深浅）+ 主题色。
     // `accent-presets` 由 Rust 提供（含"当前深浅档下已解析好的颜色"），Slint 侧不存
@@ -207,8 +208,8 @@ export component AppearancePage inherits VerticalLayout {
         title-height: 24px;
         Text {
             text: root.lang-en
-                ? "Pick a wallpaper — the interface tints itself to match (accent, panels, light/dark)."
-                : "选一张壁纸,界面会沉浸式地适配它的颜色(强调色、面板、深浅)。";
+                ? "Pick a wallpaper — panels and the light/dark pairing follow it (the accent colour stays yours)."
+                : "选一张壁纸,界面会沉浸式地适配它的颜色(面板与深浅)。主题色是上面「配色」分区的事。";
             color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
             line-height-factor: 1.3;
         }

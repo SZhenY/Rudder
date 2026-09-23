@@ -47,6 +47,18 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **壁纸功能重新开放**（"配色"分区落地时曾暂时隐藏）：壁纸 / 自定义上传 / 遮罩三个分区回来了，
+  两个成对的开关（Rust 的 `WALLPAPER_UI_ENABLED` 与 Slint 的 `wallpaper-enabled`）一并置回
+  true —— 二者由 `wallpaper_switch_matches_ui` 测试钉住，不会只改一边。开关关闭时 `apply_wallpaper`
+  会整体按"没有壁纸"处理，所以"解开"必须两边一起。同时补上一处联动：选择内置壁纸会套用它配对的
+  深浅档，过去只写配置、不刷新界面 —— 现在「配色」分区的下拉框、主题色与光标色都会跟着走，不再
+  出现"下拉框停在旧档位"的自相矛盾。另外壁纸分区的说明文案改了口径：主题色由「配色」分区决定，
+  壁纸只负责面板与深浅。
+  **Wallpaper support is re-enabled** (it was hidden while the Colours section landed): the wallpaper /
+  custom-upload / overlay sections are back, and both paired switches are on again. Choosing a built-in
+  wallpaper still applies its paired light/dark, and now also refreshes the Colours section (dropdown,
+  accent, cursor colour) so the panel can no longer contradict itself.
+
 - **设置页里现在直接显示"实际生效的颜色"，并修好回填把选择写死的问题。** 光标颜色与自定义颜色
   两个输入框回填的都是**当前真正生效的色号**（预设主题色也给具体 `#RRGGBB`，跟随主题时给解析
   结果），切深色 / 浅色 / 跟随系统时输入框与预览色块都会同步更新。为此加了「回声」判定：输入框

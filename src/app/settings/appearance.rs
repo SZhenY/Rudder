@@ -126,6 +126,22 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                     s.set_theme_pref(if dark { "dark" } else { "light" }.to_string());
                 }
             });
+            // 内置壁纸带的是"它配对的深浅档"（上面刚写进 `theme_pref`）—— 那「配色」分区的
+            // 三个落点都要跟着走，否则设置页会自相矛盾：下拉框停在旧的档位、主题色与光标色
+            // 还按旧档位取（后两者在两档下本来就是不同的值）。
+            if let Some(w) = weak.upgrade() {
+                let (mode, choice, cursor) = {
+                    let s = store.borrow();
+                    (
+                        s.theme_pref().to_string(),
+                        s.accent().to_string(),
+                        s.terminal_cursor_color().to_string(),
+                    )
+                };
+                w.set_accent_mode(mode.into());
+                apply_accent(&w, &choice);
+                super::terminal::apply_cursor_color(&w, &cursor);
+            }
         });
     }
 
@@ -290,7 +306,7 @@ const ACCENT_PRESETS: &[(&str, &str, &str, &str, &str)] = &[
 /// 关闭时不只是"藏起界面"：`apply_wallpaper` 会整体按"没有壁纸"处理 —— 否则配置里默认的
 /// `builtin:dark` 仍然生效，表现为"选了浅色主题，面板是浅的、窗口底色还是深的"（壁纸盖住
 /// `window-base`，面板再磨砂叠在它上面），配色分区也就永远调不出亮底。
-pub(crate) const WALLPAPER_UI_ENABLED: bool = false;
+pub(crate) const WALLPAPER_UI_ENABLED: bool = true;
 
 /// 把界面上的输入归一化成可存储的值：`""`（出厂默认）/ 预设 id / `#RRGGBB`。
 ///
