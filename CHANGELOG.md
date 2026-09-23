@@ -47,6 +47,16 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **「配色」分区的主题行改名「壁纸」：一个下拉同时管主题与背景图。** 选项 = 跟随系统 / 深色 /
+  浅色 + `config/wallpapers` 里上传的图片，右侧一个上传按钮（图片被**复制**进那个目录，重名不
+  覆盖）。**深色 / 浅色就是原来的「简约·暗 / 简约·浅」** —— 深浅档与配套的那张内置底图是**同一个
+  选择**，不再分两处设置；选「跟随系统」时底图也跟着系统外观走（系统外观变了两者一起变）。上传
+  的图片只换图，深浅档保持用户当前的选择。原来的色块版壁纸段与「自定义」上传段（共 153 行）由
+  这一行取代；主题色与自定义颜色两行不变。
+  **The theme row is now "Wallpaper"**: one dropdown covering both the light/dark choice and the
+  backdrop image (the built-ins *are* the old "Meat Light / Meat Dark"), plus an upload button that
+  copies images into `config/wallpapers`.
+
 - **「配色」分区改名「壁纸」，并把主题与壁纸合并到一起。** 原来的**色块版**壁纸与「自定义」上传段
   被一个选择器取代：下拉里是「无 / 简约·浅 / 简约·暗 + `config/wallpapers` 里的图片」，右边一个
   上传按钮 —— 与界面字体选择器同一套形状（界面拿显示名、配置存稳定 id，由 Rust 侧纯函数互查）。

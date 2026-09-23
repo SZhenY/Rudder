@@ -114,6 +114,19 @@ fn start_system_theme_watcher(window: &AppWindow, store: &Store, bufs: &TermBuff
             settings::appearance::apply_accent(&w, &choice);
             let cursor = store.borrow().terminal_cursor_color().to_string();
             settings::terminal::apply_cursor_color(&w, &cursor);
+            // 背景图也跟着系统走：「跟随系统」用的内置图是按深浅档取的，不重取就会出现
+            // "浅色界面配深色底图"。上传的图片与系统外观无关，跳过。
+            let wallpaper_now = store.borrow().wallpaper().to_string();
+            if crate::wallpaper::is_builtin(&wallpaper_now) {
+                let id = settings::appearance::builtin_wallpaper_for("system", dark);
+                if id != wallpaper_now {
+                    apply_wallpaper(&w, &store.borrow(), &bufs_watch, id, false);
+                    settings::persist(&store, |s| {
+                        s.set_wallpaper(id.to_string());
+                    });
+                    settings::appearance::publish_wallpaper_choices(&w, &store);
+                }
+            }
         },
     );
     // Timer 被 drop 就停 —— 这里 `leak` 保活（与侧栏采样器同一套做法）。
@@ -202,11 +215,9 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         // light/dark preference. Built-in wallpapers only suggest their paired
         // theme when the user actively selects them (#theme-persistence).
         apply_wallpaper(window, &store.borrow(), bufs, &id, false);
-        // 壁纸下拉（内置 + `config/wallpapers` 里的文件）：标签与选中下标都由 Rust 算，
-        // 界面只负责画 —— 与界面字体的选择器同一套形状。
-        let choices = settings::appearance::wallpaper_choices();
-        window.set_wallpaper_labels(settings::appearance::wallpaper_labels_model(&choices));
-        window.set_wallpaper_index(settings::appearance::wallpaper_index_of(&choices, &id));
+        // 「壁纸」下拉（跟随系统 / 深色 / 浅色 + `config/wallpapers` 里的图片）：标签与
+        // 选中下标都由 Rust 算，界面只负责画 —— 与界面字体的选择器同一套形状。
+        settings::appearance::publish_wallpaper_choices(window, store);
     }
 
     // 主题色 + 主题（深浅）：放在换肤**之后** —— 壁纸会决定深浅档，而主题色要按最终
@@ -765,6 +776,8 @@ mod wiring_tests {
         ("wp-is-custom", "apply_wallpaper 内写入"),
         ("accent-choice", "apply_accent 内写入"),
         ("accent-name", "apply_accent 内写入"),
+        ("wallpaper-labels", "publish_wallpaper_choices 内写入"),
+        ("wallpaper-index", "publish_wallpaper_choices 内写入"),
         ("term-cursor-color", "apply_cursor_color 内写入"),
         ("term-cursor-color-hex", "apply_cursor_color 内写入"),
         ("accent-hex", "apply_accent 内写入"),

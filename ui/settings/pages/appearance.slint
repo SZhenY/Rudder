@@ -131,22 +131,10 @@ export component AppearancePage inherits VerticalLayout {
         title-en: "WALLPAPER";
         title-height: 24px;
         SettingRow {
-            label: root.lang-en ? "Theme" : "主题";
-            desc: root.lang-en
-                ? "Follow the system appearance, or pin dark / light."
-                : "跟随系统外观,或固定为深色 / 浅色。";
-            ComboBox {
-                width: 220px;
-                model: [root.lbl-system, root.lbl-dark, root.lbl-light];
-                current-value: root.theme-label-of(root.accent-mode);
-                selected(v) => { root.set-appearance-mode(root.theme-mode-of(v)); }
-            }
-        }
-        SettingRow {
             label: root.lang-en ? "Wallpaper" : "壁纸";
             desc: root.lang-en
-                ? "Built-in look or anything you upload — uploads are copied into config/wallpapers."
-                : "内置外观,或上传自己的图片;上传的图片会复制到 config/wallpapers。";
+                ? "Dark / light (each with its matching backdrop), or anything you upload — uploads are copied into config/wallpapers."
+                : "深色 / 浅色(各自带配套底图),或上传自己的图片;上传的图片会复制到 config/wallpapers。";
             HorizontalLayout {
                 spacing: 10px;
                 ComboBox {
