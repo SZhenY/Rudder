@@ -70,7 +70,9 @@ impl Default for TerminalSettings {
             convert_eol: true,
             osc52_clipboard: true,
             terminal_cursor_style: "bar".to_string(),
-            terminal_cursor_color: "#FFFFFF".to_string(),
+            // 空串 = **跟随主题**：换深浅档时按档解析（深色档亮色 / 浅色档暗色）。
+            // 旧版本的出厂默认是写死的 "#FFFFFF"（见 config.rs 访问器里的兼容说明）。
+            terminal_cursor_color: String::new(),
             output_highlight_disabled: false,
             json_format_disabled: false,
             output_highlight_preset: "builtin".to_string(),

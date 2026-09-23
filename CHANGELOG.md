@@ -47,6 +47,17 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **终端光标色跟随深浅档：深色档用亮色、浅色档用暗色，切换主题时同步更新（设置页显示也同步）。**
+  此前配置里存的是写死的 `#FFFFFF` —— "空串 = 跟随主题"只写在注释里、从未实现，于是浅色主题下
+  光标几乎看不见。现在 `terminal_cursor_color` **留空 = 跟随主题**（与界面字体、主题色同一套约定）：
+  深色档 `#D4D4D4`（亮）/ 浅色档 `#2D2D2F`（暗）；换主题（手动切、跟随系统变化、还原默认）都会
+  重新解析，并同步到设置页的输入框与预览色块。自己填了颜色则以那个值为准、不随主题变；清空即
+  回到跟随。旧的 `#FFFFFF` 按"跟随主题"处理 —— 它是默认值，不是"用户显式挑了白"，且不会再被
+  程序化回填写进配置。
+  **The terminal cursor colour now follows light/dark**: leave the setting empty and it resolves to a
+  bright colour in dark mode and a dark one in light mode, re-resolving on every theme change (manual,
+  system-follow, or restore-defaults) and syncing the settings page. An explicit colour still wins.
+
 - **修掉三处配色问题：浅色主题下窗口底色仍是深的、主题色只作用于一部分界面、「原版」找不回来。**
   ① **壁纸分区隐藏后，壁纸现在被真正停用** —— 此前只藏了界面，配置里默认的 `builtin:dark` 仍在给
   窗口压一层深色底（壁纸盖住 `window-base`、面板再磨砂叠上去），于是"选了浅色，面板是浅的、窗口

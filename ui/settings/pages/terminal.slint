@@ -122,8 +122,9 @@ export component TerminalPage inherits VerticalLayout {
         }
         SettingRow {
             label: root.lang-en ? "Cursor color" : "光标颜色";
-            desc: root.lang-en ? "Enter a hexadecimal RGB color."
-                               : "输入十六进制 RGB 颜色。";
+            desc: root.lang-en
+                ? "Enter a hexadecimal RGB color. Leave empty to follow the theme (light on dark, dark on light)."
+                : "输入十六进制 RGB 颜色;留空则跟随主题(深色档亮色 / 浅色档暗色)。";
             CursorColorInput {
                 value <=> root.term-cursor-color-hex;
                 preview-color: root.term-cursor-color;

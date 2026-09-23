@@ -754,6 +754,9 @@ pub fn run() -> Result<()> {
             // 浅色档要压深）。
             let accent_choice = store.borrow().accent().to_string();
             crate::app::settings::appearance::apply_accent(&w, &accent_choice);
+            // 光标色同理："跟随主题"（配置留空）时深色档取亮色 / 浅色档取暗色。
+            let cursor = store.borrow().terminal_cursor_color().to_string();
+            crate::app::settings::terminal::apply_cursor_color(&w, &cursor);
             // Mirror the flip onto the detached process window (its Theme global
             // is a separate instance) so an open process window follows.
             if let Some(p) = proc_weak.upgrade() {

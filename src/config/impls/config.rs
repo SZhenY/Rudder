@@ -1770,16 +1770,28 @@ impl ConfigStore {
         };
     }
 
+    /// 光标颜色；**空串 = 跟随主题**（深浅切换时按当前档位重新解析）。
+    ///
+    /// ⚠️ `#FFFFFF` 是"跟随主题"落地之前写死的出厂默认值：那个版本不管深浅档都给白光标，
+    /// 浅色主题下几乎看不见。旧配置按**跟随主题**处理 —— 它是默认值，不是"用户显式挑了白"。
     pub fn terminal_cursor_color(&self) -> &str {
-        if normalize_hex_color(&self.cache.terminal.terminal_cursor_color).is_some() {
-            &self.cache.terminal.terminal_cursor_color
-        } else {
+        let stored = self.cache.terminal.terminal_cursor_color.as_str();
+        let legacy_white = stored == "#FFFFFF";
+        if legacy_white || normalize_hex_color(stored).is_none() {
             ""
+        } else {
+            stored
         }
     }
 
     pub fn set_terminal_cursor_color(&mut self, color: &str) -> bool {
-        let Some(normalized) = normalize_hex_color(color) else {
+        // 空串不是一个颜色，而是"跟随主题"这个选项本身。
+        let trimmed = color.trim();
+        if trimmed.is_empty() {
+            self.cache.terminal.terminal_cursor_color = String::new();
+            return true;
+        }
+        let Some(normalized) = normalize_hex_color(trimmed) else {
             return false;
         };
         self.cache.terminal.terminal_cursor_color = normalized;
@@ -3232,11 +3244,24 @@ mod tests {
         assert_eq!(store.renderer_mode(), "femtovg-wgpu");
     }
 
+    /// 旧配置里写死的出厂默认 `#FFFFFF` 按**跟随主题**处理 —— 它是默认值，
+    /// 不是"用户显式挑了白色"（浅色主题下的白光标几乎看不见）。
+    #[test]
+    fn legacy_white_cursor_follows_the_theme() {
+        let mut store = temp_store();
+        store.set_terminal_cursor_color("#FFFFFF");
+        assert_eq!(store.terminal_cursor_color(), "");
+    }
+
     #[test]
     fn terminal_cursor_color_normalizes_and_rejects_invalid_values() {
         let mut store = temp_store();
-        // 出厂默认 = #FFFFFF（此前是空串=跟随主题，按规格改为显式白色）。
-        assert_eq!(store.terminal_cursor_color(), "#FFFFFF");
+        // 出厂默认 = 空串（**跟随主题**：深色档亮色 / 浅色档暗色）。历史上曾改成写死的
+        // #FFFFFF，代价是浅色主题下光标几乎看不见 —— 用户要求改回跟随（见 CHANGELOG）。
+        assert_eq!(store.terminal_cursor_color(), "");
+        // 清空 = 回到"跟随主题"（空串是一个**选项**，不是非法值）。
+        assert!(store.set_terminal_cursor_color("   "));
+        assert_eq!(store.terminal_cursor_color(), "");
 
         assert!(store.set_terminal_cursor_color("#1a2B3c"));
         assert_eq!(store.terminal_cursor_color(), "#1A2B3C");

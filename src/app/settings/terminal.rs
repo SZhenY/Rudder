@@ -20,24 +20,58 @@ use super::{FontCatalog, Store};
 use crate::terminal::TermBuffers;
 use crate::ui::{ AppWindow, Theme };
 
+/// 光标色的解析结果：空串（跟随主题）时按深浅档取 —— **深色档亮色 / 浅色档暗色**。
+///
+/// 两个取值沿用 `Theme.term-fg`（终端正文色）：光标与正文同色系，深浅两档都读得清。
+/// 用户显式挑过就用那个值（不随主题变）。
+pub(crate) fn resolve_cursor_color(dark: bool, stored: &str) -> String {
+    if stored.is_empty() {
+        return (if dark { "#D4D4D4" } else { "#2D2D2F" }).to_string();
+    }
+    stored.to_string()
+}
+
+/// 把光标色写到窗口 —— 并在"跟随主题"时按**当前深浅档**解析。
+///
+/// ⚠️ 换深浅档后**必须再调一次**，与「配色」分区的主题色是同一个道理。
+pub(crate) fn apply_cursor_color(w: &AppWindow, stored: &str) {
+    let dark = w.global::<Theme>().get_dark();
+    let effective = resolve_cursor_color(dark, stored);
+    // ⚠️ 输入框**只回填存储值**（跟随主题时是空串），**绝不**回填解析结果：
+    // `CursorColorInput` 的 `text <=> value` 会在被程序化赋值时触发 `changed text`
+    // → `apply-color` → 持久化，于是"跟随主题"被写死成一个具体颜色，下一次换深浅档
+    // 就不再跟随（正是这次要修的现象）。真实颜色走 `preview-color`（绑 `term-cursor-color`）。
+    w.set_term_cursor_color_hex(stored.into());
+    if let Some(color) = parse_hex_color(&effective) {
+        w.set_term_cursor_color(color);
+    }
+}
+
 /// 播种 + 注册持久化回调。
 pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
     {
         let weak = window.as_weak();
         let store = store.clone();
         window.on_set_term_cursor_color(move |value: SharedString| {
-            let Some(color) = parse_hex_color(value.as_str()) else {
+            // 空串 = 回到"跟随主题"；其余必须是合法 hex（与界面上的红框校验一致）。
+            let v = value.as_str().trim();
+            if !v.is_empty() && parse_hex_color(v).is_none() {
                 return false;
-            };
+            }
             {
                 let mut s = store.borrow_mut();
-                if !s.set_terminal_cursor_color(value.as_str()) {
-                    return false;
+                // 播种 / 换深浅档的程序化回填也走这条回调：值没变就**不要写盘**
+                // （否则每次启动都会把配置重写一遍，还让"上次修改时间"平白变化）。
+                if s.terminal_cursor_color() != v {
+                    if !s.set_terminal_cursor_color(v) {
+                        return false;
+                    }
+                    s.save_logging();
                 }
-                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
-                w.set_term_cursor_color(color);
+                let stored = store.borrow().terminal_cursor_color().to_string();
+                apply_cursor_color(&w, &stored);
             }
             true
         });
@@ -339,10 +373,8 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, bufs: &TermBuffers, fonts: &Fo
         w.global::<Theme>().set_term_font_size(s.font_size() as f32);
         w.global::<Theme>().set_term_font_bold(s.terminal_bold());
         w.set_term_cursor_style(s.terminal_cursor_style().into());
-        w.set_term_cursor_color_hex(s.terminal_cursor_color().into());
-        if let Some(color) = parse_hex_color(s.terminal_cursor_color()) {
-            w.set_term_cursor_color(color);
-        }
+        // 跟随主题时按还原后的深浅档解析（还原出厂默认 = 空串 → 跟随主题）。
+        apply_cursor_color(w, s.terminal_cursor_color());
         w.set_scrollback_lines(s.scrollback_lines().to_string().into());
         w.set_large_scrollback(s.large_scrollback());
         w.set_output_highlight_enabled(s.output_highlight_enabled());
@@ -380,6 +412,16 @@ fn parse_scrollback(raw: &str, max: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 光标色按深浅档解析：**深色档亮 / 浅色档暗**；用户显式挑过则以显式值为准。
+    #[test]
+    fn cursor_color_follows_theme_until_set_explicitly() {
+        assert_eq!(resolve_cursor_color(true, ""), "#D4D4D4");
+        assert_eq!(resolve_cursor_color(false, ""), "#2D2D2F");
+        // 显式值不随主题变。
+        assert_eq!(resolve_cursor_color(true, "#FF8800"), "#FF8800");
+        assert_eq!(resolve_cursor_color(false, "#FF8800"), "#FF8800");
+    }
 
     #[test]
     fn parse_scrollback_accepts_the_valid_range_only() {

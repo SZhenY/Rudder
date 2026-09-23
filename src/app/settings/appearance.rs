@@ -193,6 +193,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             apply_dark_mode(&w, &bufs_mode, theme_pref_is_dark(&store.borrow()));
             let choice = store.borrow().accent().to_string();
             apply_accent(&w, &choice);
+            // 光标色在"跟随主题"时也要按新档位重新取。
+            let cursor = store.borrow().terminal_cursor_color().to_string();
+            super::terminal::apply_cursor_color(&w, &cursor);
             w.set_accent_mode(normalized.into());
             if let Some(p) = proc_weak.upgrade() {
                 sync_proc_theme(&w, &p);

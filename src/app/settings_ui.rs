@@ -109,9 +109,11 @@ fn start_system_theme_watcher(window: &AppWindow, store: &Store, bufs: &TermBuff
             }
             apply_dark_mode(&w, &bufs_watch, dark);
             // 深浅档变了 → 主题色要按新档位重新解析（预设两档是两个颜色，自定义色在
-            // 浅色档要压深）。
+            // 浅色档要压深）；光标色在"跟随主题"时同样按新档位取（深→亮 / 浅→暗）。
             let choice = store.borrow().accent().to_string();
             settings::appearance::apply_accent(&w, &choice);
+            let cursor = store.borrow().terminal_cursor_color().to_string();
+            settings::terminal::apply_cursor_color(&w, &cursor);
         },
     );
     // Timer 被 drop 就停 —— 这里 `leak` 保活（与侧栏采样器同一套做法）。
@@ -181,10 +183,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_scrollback_lines(s.scrollback_lines().to_string().into());
         window.set_large_scrollback(s.large_scrollback());
         window.set_term_cursor_style(s.terminal_cursor_style().into());
-        if let Some(color) = parse_hex_color(s.terminal_cursor_color()) {
-            window.set_term_cursor_color_hex(s.terminal_cursor_color().into());
-            window.set_term_cursor_color(color);
-        }
+        // 光标色：空串 = 跟随主题 → 按当前（已确定的）深浅档解析。
+        settings::terminal::apply_cursor_color(window, s.terminal_cursor_color());
         window.set_output_highlight_enabled(s.output_highlight_enabled());
         window.set_output_highlight_preset(s.output_highlight_preset().into());
         window.set_output_highlight_rules(output_highlight_rule_model(&s));
@@ -760,6 +760,8 @@ mod wiring_tests {
         ("wp-is-custom", "apply_wallpaper 内写入"),
         ("accent-choice", "apply_accent 内写入"),
         ("accent-name", "apply_accent 内写入"),
+        ("term-cursor-color", "apply_cursor_color 内写入"),
+        ("term-cursor-color-hex", "apply_cursor_color 内写入"),
         ("accent-hex", "apply_accent 内写入"),
         ("accent-presets", "apply_accent 内写入"),
     ];
