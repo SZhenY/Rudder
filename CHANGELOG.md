@@ -9,6 +9,18 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 新增 / Added
 
+- **彩色输出的解析再快一截：SGR 路径改成单遍 —— 不再"每个 SGR 都把字节流切开"。** 原先 ingest
+  在每个 SGR 处切段、逐段重入 `advance`：彩色输出每 64 KiB 有两万多个 SGR，等于每块重入两万
+  多次；而切段的唯一目的是两件罕见的事（记录 SGR 53 的 overline 区间、把 SGR 21 改写成 `4:2`）。
+  现在按"这一块需不需要停顿"路由：含 53 / 含 21 / 有未闭合的 overline 区间 → 仍走旧的切段路径
+  （罕见）；块尾是半截 CSI（含**孤立 `ESC`**）→ 尾部留给下一块、前面单遍喂掉；其余（普通输出、
+  彩色日志、`ls --color`）→ **整块一次 `advance`**。判据是新的 `sgr_probe`：`memchr` 驱动、不分配，
+  分类规则与 `apply_sgr` 同源（有对照测试，覆盖"颜色分量恰好是 53 / 21"这类陷阱）。顺带修掉一个
+  **潜伏的分块 bug**：两个扫描器对"块尾孤立 ESC"的看法不一致时，1 字节分块会把半截 SGR 裸喂进
+  解析器、overline 永远闭合不了。实测彩色语料 ingest **1521 → 1310 µs**（相对最初的 2848 µs
+  **累计 2.17×**）。**The SGR path is now single-pass** — chunks are no longer split at every SGR
+  (that split only existed to track SGR 53 and rewrite SGR 21, both rare), so coloured output goes
+  through one `advance` per chunk. Coloured ingest: 1521 → 1310 µs (2.17x vs. the original).
 - **终端设置的三处改进。** ① 选**自定义壁纸**（上传的图片）时，光标色默认落到"浅色档的暗色"
   （照片的明暗不可预知，"跟随主题"那套在照片上不成立）—— 只在用户还没自己挑过光标色（配置为空）
   时才动，不覆盖他的选择；② 光标颜色那一行改成与「主题色」同规格：左边一排预设色块（第一项是
