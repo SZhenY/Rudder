@@ -86,6 +86,36 @@ pub(crate) fn scan_font_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// 把用户挑的字体文件**复制**进字体目录（重名不覆盖，加 " 2"、" 3"…），返回落点。
+///
+/// 与"直接引用原路径"的区别同壁纸：原文件挪走 / 删掉之后字体不会失效，重装也还在。
+pub(crate) fn import_font_file(src: &Path) -> Option<PathBuf> {
+    let dir = external_fonts_dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    let file_name = src.file_name()?.to_string_lossy().into_owned();
+    let (stem, ext) = match file_name.rsplit_once('.') {
+        Some((stem, ext)) => (stem.to_string(), format!(".{ext}")),
+        None => (file_name.clone(), String::new()),
+    };
+    let mut dst = dir.join(&file_name);
+    let mut n = 2;
+    while dst.exists() {
+        dst = dir.join(format!("{stem} {n}{ext}"));
+        n += 1;
+    }
+    std::fs::copy(src, &dst).ok()?;
+    Some(dst)
+}
+
+/// 某个字体文件里的第一个家族名 —— 上传之后用它把选择器定位到新条目。
+pub(crate) fn family_name_of(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let mut db = fontdb::Database::new();
+    db.load_font_data(bytes);
+    db.faces()
+        .find_map(|face| face.families.first().map(|(name, _)| name.clone()))
+}
+
 /// Family names inside one font file (first English family of each face,
 /// deduplicated and sorted). Used by tests only.
 #[cfg(test)]

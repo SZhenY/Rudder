@@ -18,10 +18,6 @@ export component AppearancePage inherits VerticalLayout {
     // 页面私有状态（原为 InterfacePanel 的私有 property，随页面一起搬过来）：
     // “当前壁纸是不是自定义图片”与“换渲染后端需重启才生效”。
     property <bool> renderer-restart-required;
-    property <bool> wp-is-custom:
-        root.current-wallpaper != "" && root.current-wallpaper != "builtin:light"
-        && root.current-wallpaper != "builtin:dark" && root.current-wallpaper != "builtin:tech"
-        && root.current-wallpaper != "builtin:miku" && root.current-wallpaper != "builtin:ms";
 
     in property <string> custom-wallpaper-name;
     in-out property <bool> hide-special-partitions;
@@ -37,7 +33,7 @@ export component AppearancePage inherits VerticalLayout {
     // 壁纸相关分区（壁纸 / 自定义上传 / 遮罩）的开关 —— 与 Rust 的 `WALLPAPER_UI_ENABLED`
     // **成对**（`wallpaper_switch_matches_ui` 测试钉住）：关掉时不只是藏界面，
     // `apply_wallpaper` 也会整体按"没有壁纸"处理。置回 true 即重新开放。
-    property <bool> wallpaper-enabled: false;
+    property <bool> wallpaper-enabled: true;
 
     // 配色：主题（深浅）+ 主题色。
     // `accent-presets` 由 Rust 提供（含"当前深浅档下已解析好的颜色"），Slint 侧不存
@@ -48,6 +44,10 @@ export component AppearancePage inherits VerticalLayout {
     // 当前配色的显示名（默认蓝 / 预设名 / 自定义 hex），由 Rust 提供 —— 色表在 Rust 里，
     // Slint 侧不做名称查找。
     in property <string> accent-name;
+    // 壁纸选择器（内置 + `config/wallpapers` 里的文件）：标签与索引同样由 Rust 算，
+    // 形状与界面字体的 `ui-fonts` / `ui-font-index` 一致 —— 配置里存的仍是稳定 id。
+    in property <[string]> wallpaper-labels;
+    in-out property <int> wallpaper-index;
     // 自定义颜色的输入框内容（双向：用户边打边改，Rust 在切到预设时清空它）。
     in-out property <string> accent-hex;
 
@@ -63,6 +63,7 @@ export component AppearancePage inherits VerticalLayout {
     callback set-panel-font(int);
     callback set-renderer-mode(string);
     callback set-ui-font(string);
+    callback upload-ui-font();
     callback set-ui-scale(int);
     callback set-wallpaper(string);
 
@@ -122,10 +123,12 @@ export component AppearancePage inherits VerticalLayout {
     alignment: start;
 
     SettingsSection {
+        // id 仍是 `appearance.colors`：它只是分区排序的键，改 id 等于"删旧增新"
+        // （旧顺序会被归一化剪掉）。名字才是给用户看的。
         section-id: "appearance.colors";
         lang-en: root.lang-en;
-        title-zh: "配色";
-        title-en: "COLORS";
+        title-zh: "壁纸";
+        title-en: "WALLPAPER";
         title-height: 24px;
         SettingRow {
             label: root.lang-en ? "Theme" : "主题";
@@ -137,6 +140,41 @@ export component AppearancePage inherits VerticalLayout {
                 model: [root.lbl-system, root.lbl-dark, root.lbl-light];
                 current-value: root.theme-label-of(root.accent-mode);
                 selected(v) => { root.set-appearance-mode(root.theme-mode-of(v)); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Wallpaper" : "壁纸";
+            desc: root.lang-en
+                ? "Built-in look or anything you upload — uploads are copied into config/wallpapers."
+                : "内置外观,或上传自己的图片;上传的图片会复制到 config/wallpapers。";
+            HorizontalLayout {
+                spacing: 10px;
+                ComboBox {
+                    width: 176px;
+                    model: root.wallpaper-labels;
+                    current-index <=> root.wallpaper-index;
+                    selected(v) => { root.set-wallpaper(v); }
+                }
+                // 上传：挑一张图片 → 复制进 `config/wallpapers` → 立刻出现在上面的列表里。
+                Rectangle {
+                    width: 34px;
+                    height: 30px;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: Theme.border-subtle;
+                    background: upload-ta.has-hover ? Theme.accent-tint : Theme.bg-elevated;
+                    upload-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.pick-wallpaper-file(); }
+                    }
+                    IconText {
+                        centered: true;
+                        text: "\u{E2C6}"; // folder-open
+                        color: Theme.text-secondary;
+                        font-size: 16px * Theme.panel-font;
+                        width: 100%; height: 100%;
+                    }
+                }
             }
         }
         SettingRow {
@@ -191,163 +229,33 @@ export component AppearancePage inherits VerticalLayout {
             desc: root.lang-en
                 ? "Choose a font for menus, settings and dialogs. Changes take effect immediately."
                 : "选择菜单、设置和对话框的字体。修改后即时生效。";
-            ComboBox {
-                width: 220px;
-                model: root.ui-fonts;
-                current-index <=> root.ui-font-index;
-                selected(v) => { root.set-ui-font(v); }
-            }
-        }
-
-    }
-    if root.wallpaper-enabled : SettingsSection {
-        section-id: "appearance.wallpaper";
-        lang-en: root.lang-en;
-        title-zh: "壁纸";
-        title-en: "WALLPAPER";
-        title-height: 24px;
-        Text {
-            text: root.lang-en
-                ? "Pick a wallpaper — panels and the light/dark pairing follow it (the accent colour stays yours)."
-                : "选一张壁纸,界面会沉浸式地适配它的颜色(面板与深浅)。主题色是上面「配色」分区的事。";
-            color: Theme.text-muted; font-size: 11px * Theme.panel-font; wrap: word-wrap;
-            line-height-factor: 1.3;
-        }
-        // 分组留白（原为空 `Rectangle` 占位）：12px → 12px（gap-md），无差异
-        GroupGap {
-            gap: Theme.gap-md;
-
-            // Built-in choices: keep this row horizontally scrollable as
-            // bundled wallpapers grow.
-            builtin-wallpapers-scroll := ScrollView {
-                height: 106px;
-                width: 100%;
-                content-width: max(self.visible-width, builtin-wallpapers-row.preferred-width);
-                content-height: self.visible-height;
-
-                builtin-wallpapers-row := HorizontalLayout {
-                    spacing: 11px;
-                    alignment: start;
-                VerticalLayout {
-                    spacing: 5px;
-                    WallpaperSwatch {
-                        width: 100px;
-                        selected: root.current-wallpaper == "";
-                        clicked => { root.set-wallpaper(""); }
-                        Rectangle {
-                            width: 100%; height: 100%;
-                            background: Theme.window-base;
-                            IconText {
-                                centered: true;
-                                text: "\u{E14C}"; // clear / none
-            color: Theme.text-muted;
-                                font-size: 22px * Theme.panel-font;
-                                width: 100%; height: 100%;
-
-                            }
-                        }
+            HorizontalLayout {
+                spacing: 10px;
+                ComboBox {
+                    width: 176px;
+                    model: root.ui-fonts;
+                    current-index <=> root.ui-font-index;
+                    selected(v) => { root.set-ui-font(v); }
+                }
+                // 上传：复制进 `config/fonts`（与壁纸同一条规则），注册后立刻可选，不必重启。
+                Rectangle {
+                    width: 34px;
+                    height: 30px;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: Theme.border-subtle;
+                    background: font-upload-ta.has-hover ? Theme.accent-tint : Theme.bg-elevated;
+                    font-upload-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.upload-ui-font(); }
                     }
-                    Text { text: root.lang-en ? "None" : "无"; font-size: 11px * Theme.panel-font;
-                           color: Theme.text-secondary; horizontal-alignment: center; }
-                }
-                VerticalLayout {
-                    spacing: 5px;
-                    WallpaperSwatch {
-                        width: 100px;
-                        selected: root.current-wallpaper == "builtin:light";
-                        clicked => { root.set-wallpaper("builtin:light"); }
-                        Rectangle {
-                            width: 100%; height: 100%;
-                            background: @linear-gradient(135deg, #eff3fb 0%, #d5e1f2 100%);
-                            Rectangle {
-                                x: parent.width * 0.66; y: -parent.height * 0.2;
-                                width: 56px; height: 56px; border-radius: 28px;
-                                background: #4a90e2; opacity: 0.30;
-                            }
-                        }
-                    }
-                    Text { text: root.lang-en ? "Meat Light" : "简约·浅"; font-size: 11px * Theme.panel-font;
-                           color: Theme.text-secondary; horizontal-alignment: center; }
-                }
-                VerticalLayout {
-                    spacing: 5px;
-                    WallpaperSwatch {
-                        width: 100px;
-                        selected: root.current-wallpaper == "builtin:dark";
-                        clicked => { root.set-wallpaper("builtin:dark"); }
-                        Rectangle {
-                            width: 100%; height: 100%;
-                            background: @linear-gradient(135deg, #10131a 0%, #1b2233 100%);
-                            Rectangle {
-                                x: parent.width * 0.66; y: -parent.height * 0.2;
-                                width: 56px; height: 56px; border-radius: 28px;
-                                background: #4a6ce0; opacity: 0.40;
-                            }
-                        }
-                    }
-                    Text { text: root.lang-en ? "Meat Dark" : "简约·暗"; font-size: 11px * Theme.panel-font;
-                           color: Theme.text-secondary; horizontal-alignment: center; }
-                }
-                }
-            }
-        }
-
-    }
-    if root.wallpaper-enabled : SettingsSection {
-        bottom-gap: Theme.gap-lg;
-        section-id: "appearance.custom";
-        lang-en: root.lang-en;
-        title-zh: "自定义";
-        title-en: "CUSTOM";
-        title-height: 22px;
-        HorizontalLayout {
-            spacing: 14px;
-            alignment: start;
-            WallpaperSwatch {
-                selected: root.wp-is-custom;
-                clicked => { root.pick-wallpaper-file(); }
-                // Show the real image when a custom one is active, else a
-                // "choose a file" placeholder.
-                if root.wp-is-custom : Image {
-                    width: 100%; height: 100%;
-                    source: Theme.wallpaper;
-                    image-fit: cover;
-                }
-                if !root.wp-is-custom : Rectangle {
-                    width: 100%; height: 100%;
-                    background: Theme.bg-elevated;
                     IconText {
                         centered: true;
                         text: "\u{E2C6}"; // folder-open
-color: Theme.text-secondary;
-                        font-size: 22px * Theme.panel-font;
+                        color: Theme.text-secondary;
+                        font-size: 16px * Theme.panel-font;
                         width: 100%; height: 100%;
-
                     }
-                }
-            }
-            VerticalLayout {
-                alignment: center;
-                spacing: 6px;
-                Rectangle {
-                    width: 130px; height: 30px;
-                    border-radius: 6px;
-                    background: pick-ta.has-hover ? Theme.accent-hover : Theme.accent;
-                    pick-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.pick-wallpaper-file(); }
-                    }
-                    Text {
-                        text: root.lang-en ? "Choose file…" : "选择文件…";
-                        color: white; font-size: 12px * Theme.panel-font;
-                        width: 100%; height: 100%;
-                        horizontal-alignment: center; vertical-alignment: center;
-                    }
-                }
-                if root.wp-is-custom : Text {
-                    text: root.custom-wallpaper-name;
-                    color: Theme.text-muted; font-size: 11px * Theme.panel-font;
-                    width: 150px; overflow: elide;
                 }
             }
         }

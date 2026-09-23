@@ -30,7 +30,8 @@ export component InterfacePanel inherits Rectangle {
     in-out property <int> term-font-index: 0;   // picker selection; labels carry a source prefix
     in property <[string]> ui-fonts;        // all font families for UI picker
     in-out property <int> ui-font-index: 0;     // UI font picker selection
-    callback set-ui-font(string);            // persist UI font choice
+    callback set-ui-font(string);
+    callback upload-ui-font();                    // 上传字体（复制进 config/fonts）            // persist UI font choice
     in property <length> term-font-size;
     in-out property <bool> term-font-bold;
     in-out property <string> term-cursor-style: "block";
@@ -70,6 +71,9 @@ export component InterfacePanel inherits Rectangle {
     // Active wallpaper id: "" / "builtin:light" / "builtin:dark" / a file path.
     in property <string> current-wallpaper;
     in property <string> custom-wallpaper-name;   // basename for the file row
+    // 壁纸选择器：标签列表与选中下标（由 Rust 从内置 + `config/wallpapers` 算出）。
+    in property <[string]> wallpaper-labels;
+    in-out property <int> wallpaper-index;
     // 配色：主题（深浅）+ 主题色。`accent-presets` 由 Rust 提供（含当前深浅档已解析好的
     // 颜色），`accent-choice` 是配置原值（""=出厂默认 / 预设 id / "#RRGGBB"）。
     in property <string> accent-mode;
@@ -270,6 +274,8 @@ export component InterfacePanel inherits Rectangle {
                             accent-name: root.accent-name;
                             accent-mode: root.accent-mode;
                             accent-presets: root.accent-presets;
+                            wallpaper-labels: root.wallpaper-labels;
+                            wallpaper-index <=> root.wallpaper-index;
                             current-wallpaper: root.current-wallpaper;
                             custom-wallpaper-name: root.custom-wallpaper-name;
                             hide-special-partitions <=> root.hide-special-partitions;
@@ -293,6 +299,7 @@ export component InterfacePanel inherits Rectangle {
                             set-panel-font(a0) => { root.set-panel-font(a0); }
                             set-renderer-mode(a0) => { root.set-renderer-mode(a0); }
                             set-ui-font(a0) => { root.set-ui-font(a0); }
+                            upload-ui-font() => { root.upload-ui-font(); }
                             set-ui-scale(a0) => { root.set-ui-scale(a0); }
                             set-wallpaper(a0) => { root.set-wallpaper(a0); }
                     }

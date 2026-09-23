@@ -9,6 +9,61 @@
 //! so the whole UI can recolour itself to match the image ("immersive" mode).
 
 use slint::{Image, Rgba8Pixel, SharedPixelBuffer};
+use std::path::{Path, PathBuf};
+
+// ── 用户壁纸目录（与字体目录**并排**：`config/wallpapers`）────────────────────
+//
+// 位置规则直接复用字体那套（Windows 在 exe 旁的 config 下、其余平台在每用户配置目录下），
+// 靠 `with_file_name` 保证两者始终并排 —— 用户找字体和找壁纸是同一个地方。
+// 上传的图片**复制**到这里（旧行为是记住原文件路径：原文件一移走壁纸就失效）。
+
+/// 用户壁纸目录：上传的图片落在这里，也是选择器扫描的来源。
+pub(crate) fn external_wallpapers_dir() -> PathBuf {
+    crate::fonts::external_fonts_dir().with_file_name("wallpapers")
+}
+
+/// 接受的图片扩展名（与文件对话框的过滤器一致）。
+const WALLPAPER_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp"];
+
+/// 扫描用户壁纸目录（按文件名排序；目录不存在给空表）。
+pub(crate) fn scan_wallpaper_files(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().and_then(|x| x.to_str()).is_some_and(|x| {
+                WALLPAPER_EXTS
+                    .iter()
+                    .any(|ext| x.eq_ignore_ascii_case(ext))
+            })
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+/// 把用户挑的图片**复制**进壁纸目录，返回落点；重名时**不覆盖**，
+/// 改成 `<名字> 2.png`、`<名字> 3.png`……
+pub(crate) fn import_wallpaper_file(src: &Path) -> Option<PathBuf> {
+    let dir = external_wallpapers_dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    let file_name = src.file_name()?.to_string_lossy().into_owned();
+    let (stem, ext) = match file_name.rsplit_once('.') {
+        Some((stem, ext)) => (stem.to_string(), format!(".{ext}")),
+        None => (file_name.clone(), String::new()),
+    };
+    let mut dst = dir.join(&file_name);
+    let mut n = 2;
+    while dst.exists() {
+        dst = dir.join(format!("{stem} {n}{ext}"));
+        n += 1;
+    }
+    std::fs::copy(src, &dst).ok()?;
+    Some(dst)
+}
 
 /// Render size for the built-in wallpapers. `image-fit: cover` in the UI scales
 /// this up to the window, so a fixed, generous size stays crisp without any

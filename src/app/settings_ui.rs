@@ -202,6 +202,11 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         // light/dark preference. Built-in wallpapers only suggest their paired
         // theme when the user actively selects them (#theme-persistence).
         apply_wallpaper(window, &store.borrow(), bufs, &id, false);
+        // 壁纸下拉（内置 + `config/wallpapers` 里的文件）：标签与选中下标都由 Rust 算，
+        // 界面只负责画 —— 与界面字体的选择器同一套形状。
+        let choices = settings::appearance::wallpaper_choices();
+        window.set_wallpaper_labels(settings::appearance::wallpaper_labels_model(&choices));
+        window.set_wallpaper_index(settings::appearance::wallpaper_index_of(&choices, &id));
     }
 
     // 主题色 + 主题（深浅）：放在换肤**之后** —— 壁纸会决定深浅档，而主题色要按最终

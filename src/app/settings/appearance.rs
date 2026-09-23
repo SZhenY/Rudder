@@ -9,7 +9,8 @@ use std::rc::Rc;
 
 use super::{FontCatalog, Store, persist};
 use crate::app::apply_wallpaper;
-use crate::app::fonts_ui::{family_from_label, resolve_ui_font_family};
+use crate::app::FontEntry;
+use crate::app::fonts_ui::{auto_font_label, family_from_label, font_choices, resolve_ui_font_family};
 use crate::app::resource_ui::sync_proc_theme;
 use crate::app::terminal_ui::{
     apply_dark_mode, hex_from_rgb, parse_hex_color, theme_pref_is_dark,
@@ -104,8 +105,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         let store = store.clone();
         let bufs_wp = bufs.clone();
         let proc_weak = proc_win.as_weak();
-        window.on_set_wallpaper(move |id: SharedString| {
-            let id = id.to_string();
+        window.on_set_wallpaper(move |label: SharedString| {
+            // ComboBox 给的是**显示名**（与字体选择器一致），这里换回配置里那种稳定 id。
+            let id = wallpaper_id_of_label(label.as_str());
             let mut selected_builtin_theme = None;
             if let Some(w) = weak.upgrade() {
                 apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, true);
@@ -118,7 +120,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 }
             }
             persist(&store, |s| {
-                s.set_wallpaper(id);
+                // `clone`：下面的下拉框刷新还要用 id（闭包是 FnOnce，不能把值搬走）。
+                s.set_wallpaper(id.clone());
                 // Choosing a built-in wallpaper applies its recommended palette once;
                 // persist that result so it too survives the next launch. A later
                 // manual theme toggle will overwrite this preference as expected.
@@ -141,6 +144,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 w.set_accent_mode(mode.into());
                 apply_accent(&w, &choice);
                 super::terminal::apply_cursor_color(&w, &cursor);
+                // 下拉框回到"配置里那个 id"对应的条目（上传后也可能需要重扫列表）。
+                let choices = wallpaper_choices();
+                w.set_wallpaper_labels(wallpaper_labels_model(&choices));
+                w.set_wallpaper_index(wallpaper_index_of(&choices, &id));
             }
         });
     }
@@ -152,21 +159,30 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         let proc_weak = proc_win.as_weak();
         window.on_pick_wallpaper_file(move || {
             let picked = rfd::FileDialog::new()
-                .set_title(t("选择壁纸", "Choose wallpaper"))
+                .set_title(t("上传壁纸", "Upload wallpaper"))
                 .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp"])
                 .pick_file();
-            if let Some(path) = picked {
-                let id = path.to_string_lossy().to_string();
-                if let Some(w) = weak.upgrade() {
-                    apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, false);
-                    if let Some(p) = proc_weak.upgrade() {
-                        sync_proc_theme(&w, &p);
-                    }
+            let Some(src) = picked else { return };
+            // **复制**进 `config/wallpapers` —— 旧行为是记住原始路径，原文件一移走 / 删掉，
+            // 壁纸就失效了；复制之后它跟字体一样是"应用自己的资源"。
+            let Some(dst) = crate::wallpaper::import_wallpaper_file(&src) else {
+                tracing::warn!("导入壁纸失败: {src:?}");
+                return;
+            };
+            let id = dst.to_string_lossy().into_owned();
+            if let Some(w) = weak.upgrade() {
+                apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, false);
+                // 刚落盘的文件要立刻出现在下拉框里，并选中它。
+                let choices = wallpaper_choices();
+                w.set_wallpaper_labels(wallpaper_labels_model(&choices));
+                w.set_wallpaper_index(wallpaper_index_of(&choices, &id));
+                if let Some(p) = proc_weak.upgrade() {
+                    sync_proc_theme(&w, &p);
                 }
-                persist(&store, |s| {
-                    s.set_wallpaper(id);
-                });
             }
+            persist(&store, |s| {
+                s.set_wallpaper(id);
+            });
         });
     }
 
@@ -246,6 +262,59 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
     }
 
     {
+        // 上传字体：**复制**进字体目录（`config/fonts`，与壁纸同一条规则）→ 重新扫描并注册
+        // —— `load_external_fonts` 会把新文件交给 Slint 的字体集合，所以**不必重启** ——
+        // 然后刷新两个字体列表、选中新家族并立即应用。
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_upload_ui_font(move || {
+            let picked = rfd::FileDialog::new()
+                .set_title(t("上传字体", "Upload font"))
+                .add_filter("Fonts", &["ttf", "otf", "ttc", "otc"])
+                .pick_file();
+            let Some(src) = picked else { return };
+            let Some(dst) = crate::fonts::import_font_file(&src) else {
+                tracing::warn!("导入字体失败: {src:?}");
+                return;
+            };
+            let external = crate::fonts::load_external_fonts(&crate::fonts::external_fonts_dirs());
+            let family = crate::fonts::family_name_of(&dst).unwrap_or_default();
+
+            let (term_labels, term_entries) = font_choices(&external, true);
+            let (mut ui_labels, mut ui_entries) = font_choices(&external, false);
+            // 界面字体列表最前面那项「跟随系统（自动）」（见 seed_settings 的同款注释）。
+            ui_labels.insert(0, auto_font_label().into());
+            ui_entries.insert(0, FontEntry::Auto);
+
+            if let Some(w) = weak.upgrade() {
+                w.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(term_labels))));
+                w.set_ui_fonts(ModelRc::from(Rc::new(VecModel::from(ui_labels))));
+                // 列表插入新条目会让后面的下标整体后移 —— 两个选择器的下标都要按**当前
+                // 存储值**重算，否则会停在错的那一项上。
+                let term_family = store.borrow().font_family().to_string();
+                w.set_term_font_index(
+                    term_entries
+                        .iter()
+                        .position(|e| matches!(e, FontEntry::Family(f) if *f == term_family))
+                        .unwrap_or(0) as i32,
+                );
+                if !family.is_empty() {
+                    persist(&store, |s| {
+                        s.set_ui_font_family(family.clone());
+                    });
+                    w.set_ui_font_index(
+                        ui_entries
+                            .iter()
+                            .position(|e| matches!(e, FontEntry::Family(f) if *f == family))
+                            .unwrap_or(0) as i32,
+                    );
+                    w.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
+                }
+            }
+        });
+    }
+
+    {
         // 调色盘提交（拖动松手时一次）。Slint 侧没有 hex 格式化能力，所以送过来的是
         // 三个通道值，在这里转成配置里那种 `#RRGGBB`。
         let weak = window.as_weak();
@@ -307,9 +376,9 @@ const ACCENT_PRESETS: &[(&str, &str, &str, &str, &str)] = &[
 /// `builtin:dark` 仍然生效，表现为"选了浅色主题，面板是浅的、窗口底色还是深的"（壁纸盖住
 /// `window-base`，面板再磨砂叠在它上面），配色分区也就永远调不出亮底。
 ///
-/// 置回 `true`（同时把 Slint 那侧一起改，测试会钉住）即可重新开放；`on_set_wallpaper`
-/// 里那段"选内置壁纸后刷新「配色」分区"的联动是为重新开放准备的，与开关状态无关。
-pub(crate) const WALLPAPER_UI_ENABLED: bool = false;
+/// 现在壁纸功能已并进「壁纸」分区（内置 + 用户上传的选择器 + 遮罩），所以是 `true`。
+/// 置 `false`（同时把 Slint 那侧一起改，测试会钉住）即可整体停用：界面藏起来 + 不再套用壁纸。
+pub(crate) const WALLPAPER_UI_ENABLED: bool = true;
 
 /// 把界面上的输入归一化成可存储的值：`""`（出厂默认）/ 预设 id / `#RRGGBB`。
 ///
@@ -369,6 +438,56 @@ fn accent_presets_model(dark: bool) -> ModelRc<AccentPreset> {
         })
         .collect();
     ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
+// ── 「壁纸」分区的选择器（内置 + 用户上传）────────────────────────────────
+//
+// 形状照 `FontCatalog`：界面拿到的是一串**显示名**，配置里存的是**稳定 id**，两边靠
+// 下面这几个纯函数互查。用户上传的图片被复制进 `config/wallpapers`（见 wallpaper 模块），
+// 所以列表的第三段就是那个目录里扫到的文件。
+
+/// 可选的壁纸：(显示名, id)。内置三条 + 用户目录里的文件（名字取文件名，按名排序）。
+pub(crate) fn wallpaper_choices() -> Vec<(String, String)> {
+    let mut choices = vec![
+        (t("无", "None").to_string(), String::new()),
+        (
+            t("简约·浅", "Meat Light").to_string(),
+            "builtin:light".to_string(),
+        ),
+        (
+            t("简约·暗", "Meat Dark").to_string(),
+            "builtin:dark".to_string(),
+        ),
+    ];
+    for path in crate::wallpaper::scan_wallpaper_files(&crate::wallpaper::external_wallpapers_dir())
+    {
+        let name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        choices.push((name, path.to_string_lossy().into_owned()));
+    }
+    choices
+}
+
+/// 送给 ComboBox 的标签模型。
+pub(crate) fn wallpaper_labels_model(choices: &[(String, String)]) -> ModelRc<SharedString> {
+    let labels: Vec<SharedString> = choices.iter().map(|(name, _)| name.as_str().into()).collect();
+    ModelRc::from(Rc::new(VecModel::from(labels)))
+}
+
+/// id → 列表下标（找不到 → 0「无」）。
+pub(crate) fn wallpaper_index_of(choices: &[(String, String)], id: &str) -> i32 {
+    choices.iter().position(|(_, i)| i == id).unwrap_or(0) as i32
+}
+
+/// 显示名 → id（找不到 → 空 = 无）。ComboBox 给的是**文本**，这里换回稳定 id。
+fn wallpaper_id_of_label(label: &str) -> String {
+    wallpaper_choices()
+        .into_iter()
+        .find(|(name, _)| name == label)
+        .map(|(_, id)| id)
+        .unwrap_or_default()
 }
 
 /// 当前**生效**的主题色（`#RRGGBB`）：未选时就是出厂色（色表第一条 = `theme.slint` 的
@@ -473,6 +592,10 @@ pub(crate) fn reset(
     // "背景已经变暗、外层还罩着一层白"的错配 —— 而且重启也不会自愈，因为
     // `theme_pref` 仍是浅色。与"用户手选内置壁纸"完全同一套规则。
     apply_wallpaper(w, &store.borrow(), bufs, &d.appearance.wallpaper, true);
+    // 壁纸下拉也要回到出厂默认那一项。
+    let wallpaper_choices_now = wallpaper_choices();
+    w.set_wallpaper_labels(wallpaper_labels_model(&wallpaper_choices_now));
+    w.set_wallpaper_index(wallpaper_index_of(&wallpaper_choices_now, &d.appearance.wallpaper));
     if crate::wallpaper::is_builtin(&d.appearance.wallpaper) {
         // 把刚套用的深浅色持久化（同 on_set_wallpaper），否则下次启动又回到旧偏好。
         let dark = w.global::<Theme>().get_dark();
@@ -551,6 +674,22 @@ mod tests {
         assert!(normalize_accent("#12345").is_none());
         assert!(normalize_accent("#gggggg").is_none());
         assert!(normalize_accent("blue").is_none());
+    }
+
+    /// 壁纸选择器：前三项固定是 无 / 简约·浅 / 简约·暗，其余来自 `config/wallpapers`；
+    /// 界面给的是**显示名**、配置里存的是 **id**，两者要能互查。
+    #[test]
+    fn wallpaper_choices_start_with_builtins_and_map_back() {
+        let choices = wallpaper_choices();
+        assert!(choices.len() >= 3, "至少要有三条内置项");
+        assert_eq!(choices[0].1, "");
+        assert_eq!(choices[1].1, "builtin:light");
+        assert_eq!(choices[2].1, "builtin:dark");
+        // 显示名 → id（界面回传的是名字）
+        assert_eq!(wallpaper_id_of_label(&choices[1].0), "builtin:light");
+        // id → 下标（找不到 = 「无」）
+        assert_eq!(wallpaper_index_of(&choices, "builtin:dark"), 2);
+        assert_eq!(wallpaper_index_of(&choices, "不存在的 id"), 0);
     }
 
     /// 「回声」判定（主色）：预设两档的解析结果都不该被当成用户改动 —— 否则预设会被

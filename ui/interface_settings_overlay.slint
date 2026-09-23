@@ -63,6 +63,8 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     in-out property <bool> convert-eol:false;
     in property <string> current-wallpaper:"";
     in property <string> custom-wallpaper-name:"";
+    in property <[string]> wallpaper-labels;
+    in-out property <int> wallpaper-index;
     in-out property <bool> download-always-ask:false;
     in-out property <bool> hide-special-partitions:true;
     in-out property <length> ifd-base-h;
@@ -158,6 +160,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     callback set-term-font-bold(bool);
     callback set-term-font-size(int);
     callback set-ui-font(string);
+    callback upload-ui-font();
     callback set-ui-scale(int);
     callback set-accent(string) -> bool;
     callback set-accent-rgb(int, int, int) -> bool;
@@ -317,6 +320,8 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                 wallpaper-overlay <=> Theme.panel-alpha;
                 current-wallpaper: current-wallpaper;
                 custom-wallpaper-name: custom-wallpaper-name;
+                wallpaper-labels: wallpaper-labels;
+                wallpaper-index <=> wallpaper-index;
                 wsl-profiles: wsl-profiles;
                 wsl-new-directory <=> wsl-new-directory;
                 set-accent(v) => { return root.set-accent(v); }
@@ -326,6 +331,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                 pick-wallpaper-file() => { root.pick-wallpaper-file(); }
                 set-term-font(v) => { root.set-term-font(v); }
                 set-ui-font(v) => { root.set-ui-font(v); }
+                upload-ui-font() => { root.upload-ui-font(); }
                 set-term-font-size(v) => { root.set-term-font-size(v); }
                 set-term-font-bold(v) => { root.set-term-font-bold(v); }
                 set-term-cursor-style(v) => { root.set-term-cursor-style(v); }

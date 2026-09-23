@@ -47,6 +47,20 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **「配色」分区改名「壁纸」，并把主题与壁纸合并到一起。** 原来的**色块版**壁纸与「自定义」上传段
+  被一个选择器取代：下拉里是「无 / 简约·浅 / 简约·暗 + `config/wallpapers` 里的图片」，右边一个
+  上传按钮 —— 与界面字体选择器同一套形状（界面拿显示名、配置存稳定 id，由 Rust 侧纯函数互查）。
+  上传是把图片**复制**进 `config/wallpapers`：旧行为是记住原路径，原文件一移走 / 删掉壁纸就失效，
+  重名也不覆盖（改成 `<名字> 2.png`）。「主题 / 主题色 / 自定义颜色」三行原样保留，「遮罩」仍是
+  下面独立的一段；壁纸功能随之重新开放（两个成对开关置回 true）。
+  **界面字体一行也加了同样的上传按钮**：字体文件复制进 `config/fonts`，注册后**不必重启**即可
+  选中，终端与界面两个字体列表（以及各自的下标）会一起刷新。
+  **The Colours section is now "Wallpaper" and merges the theme controls with the wallpaper feature**:
+  a picker listing the built-ins plus everything in `config/wallpapers`, with an upload button that
+  *copies* the image into that folder (the old behaviour remembered the original path). The interface
+  font row gets the same upload button (fonts are copied into `config/fonts` and registered at once,
+  no restart needed).
+
 - **设置页里现在直接显示"实际生效的颜色"，并修好回填把选择写死的问题。** 光标颜色与自定义颜色
   两个输入框回填的都是**当前真正生效的色号**（预设主题色也给具体 `#RRGGBB`，跟随主题时给解析
   结果），切深色 / 浅色 / 跟随系统时输入框与预览色块都会同步更新。为此加了「回声」判定：输入框

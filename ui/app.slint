@@ -404,7 +404,8 @@ export component AppWindow inherits Window {
     in property <[string]> term-fonts;             // installed monospace families
     in property <[string]> ui-fonts;              // all families for UI font picker
     in-out property <int> ui-font-index: 0;           // picker selection into ui-fonts
-    callback set-ui-font(string);                  // persist UI font choice
+    callback set-ui-font(string);
+    callback upload-ui-font();                      // 上传字体（复制进 config/fonts）                  // persist UI font choice
     in-out property <bool> interface-open: false;  // Interface settings overlay
     // Interface card position (draggable by its title bar, clamped inside the
     // window so it can't leave the parent); init centered.
@@ -459,6 +460,9 @@ export component AppWindow inherits Window {
     // feed the Interface → Wallpaper picker.
     in-out property <string> current-wallpaper: "";
     in-out property <string> custom-wallpaper-name: "";
+    // 壁纸选择器：标签与下标（Rust 从内置 + `config/wallpapers` 里的文件算出）。
+    in property <[string]> wallpaper-labels;
+    in-out property <int> wallpaper-index;
     callback set-wallpaper(string);                // apply + persist a wallpaper id
     callback pick-wallpaper-file();                // open the OS file dialog (Rust)
 
@@ -2271,6 +2275,8 @@ export component AppWindow inherits Window {
         convert-eol <=> root.convert-eol;
         current-wallpaper : root.current-wallpaper;
         custom-wallpaper-name : root.custom-wallpaper-name;
+        wallpaper-labels : root.wallpaper-labels;
+        wallpaper-index <=> root.wallpaper-index;
         download-always-ask <=> root.download-always-ask;
         hide-special-partitions <=> root.hide-special-partitions;
         ifd-base-h <=> root.ifd-base-h;
@@ -2367,6 +2373,7 @@ export component AppWindow inherits Window {
         set-term-font-bold(p0) => { root.set-term-font-bold(p0); }
         set-term-font-size(p0) => { root.set-term-font-size(p0); }
         set-ui-font(p0) => { root.set-ui-font(p0); }
+        upload-ui-font() => { root.upload-ui-font(); }
         set-ui-scale(p0) => { root.set-ui-scale(p0); }
         set-update-check-enabled(p0) => { root.set-update-check-enabled(p0); }
         set-update-channel(q0) => { root.set-update-channel(q0); }
