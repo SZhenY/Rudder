@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rudder 终端「流畅性 + 耗时」压测脚本 —— 只用系统自带工具（seq / awk / head / tr / perl）
 #
-# 用法: bash /tmp/rudder-flood.sh <模式> [数量]
+# 用法: bash scripts/flood-test.sh <模式> [数量]
 #
 #   plain      无色大流量（= seq -f ... 的放大版）              默认 100 万行
 #   color      每行 8 色交替（SGR 密集）                        默认 50 万行
@@ -26,9 +26,9 @@
 #   NOBASELINE=1   跳过"纯产生"那一次（跑超大流量时省一半时间）
 #   FLOOD_SMALL=1  所有默认规模缩到 1/100（快速过一遍用）
 #
-# 例: bash /tmp/rudder-flood.sh all
-#     bash /tmp/rudder-flood.sh plain 3000000
-#     FLOOD_SMALL=1 bash /tmp/rudder-flood.sh all
+# 例: bash scripts/flood-test.sh all
+#     bash scripts/flood-test.sh plain 3000000
+#     FLOOD_SMALL=1 bash scripts/flood-test.sh all
 set -u
 
 mode=${1:-plain}

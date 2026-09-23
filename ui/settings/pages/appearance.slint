@@ -96,26 +96,6 @@ export component AppearancePage inherits VerticalLayout {
         return root.lbl-gpu;
     }
 
-    // ── 主题（深浅）档位 ─────────────────────────────────────────────────
-    // 与渲染档位同一套写法：显示名 ↔ 配置取值只有一个映射处，选中/回填/比较都走它。
-    property <string> lbl-system: root.lang-en ? "Follow system" : "跟随系统";
-    property <string> lbl-dark: root.lang-en ? "Dark" : "深色";
-    property <string> lbl-light: root.lang-en ? "Light" : "浅色";
-
-    /// 显示名 → 配置取值（认不出来就按"跟随系统"，与空串同义）。
-    pure function theme-mode-of(label: string) -> string {
-        if (label == root.lbl-dark) { return "dark"; }
-        if (label == root.lbl-light) { return "light"; }
-        return "system";
-    }
-
-    /// 配置取值 → 显示名。
-    pure function theme-label-of(mode: string) -> string {
-        if (mode == "dark") { return root.lbl-dark; }
-        if (mode == "light") { return root.lbl-light; }
-        return root.lbl-system;
-    }
-
     padding-left: 20px;
     padding-right: 20px;
     padding-top: 14px;
