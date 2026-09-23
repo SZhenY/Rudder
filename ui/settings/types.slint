@@ -19,3 +19,16 @@ export struct WslProfileInfo {
     distribution: string,
     directory: string,
 }
+
+/// 配色方案里的一个预设主题色。
+///
+/// `color` 是**当前深浅档下已解析好的颜色** —— 深浅两档的可读性要求不同（浅底上要
+/// 更深的同色系），色表因此在 Rust 侧按档位取值后送进来；Slint 侧只负责画，不存
+/// 第二份色表（否则两处必然漂移）。
+export struct AccentPreset {
+    /// 稳定的预设 id（存进配置），如 "aurora"。
+    id: string,
+    /// 已按语言选好的显示名。
+    name: string,
+    color: color,
+}

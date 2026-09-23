@@ -87,6 +87,12 @@ pub struct AppearanceSettings {
     pub language: String,
     /// 主题偏好："system" / "dark" / "light"；空 = system。
     pub theme_pref: String,
+    /// 主题色："" = 出厂默认 / 预设 id（如 "aurora"）/ "#RRGGBB" 自定义色。
+    ///
+    /// 只存**一个值**而不是"预设 id + 自定义色"两个字段：二者互斥，两个字段就会出现
+    /// "两个都有值"这种需要额外裁决的状态（rayburst 也是一份 `colorScheme` + 一份
+    /// `customColorScheme`，靠约定消歧；这里直接用取值本身区分）。
+    pub accent: String,
     /// 平台渲染后端；空 = 平台默认（macOS → femtovg）。
     pub renderer_mode: String,
     /// 界面字体族；空 = 按平台自动探测 CJK 字体。
@@ -112,6 +118,7 @@ impl Default for AppearanceSettings {
         Self {
             language: String::new(),
             theme_pref: String::new(),
+            accent: String::new(),
             renderer_mode: String::new(),
             ui_font_family: String::new(),
             ui_scale: 100,

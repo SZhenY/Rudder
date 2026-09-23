@@ -24,7 +24,7 @@ import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset } from "settings/types.slint";
 import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
@@ -52,6 +52,11 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     in property <bool> open: false;
     visible: open;
     // ── 状态（窗口透传）──────────────────────────────────────────────
+    // 配色：主题（深浅）+ 主题色（由 Rust 播种；预设色已按当前深浅档解析好颜色）。
+    in property <string> accent-mode:"system";
+    in property <string> accent-choice:"";
+    in property <[AccentPreset]> accent-presets;
+    in-out property <string> accent-hex:"";
     in-out property <bool> collapse-sftp-default:false;
     in-out property <bool> collapse-sidebar-default:false;
     in-out property <bool> convert-eol:false;
@@ -152,6 +157,8 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     callback set-term-font-size(int);
     callback set-ui-font(string);
     callback set-ui-scale(int);
+    callback set-accent(string) -> bool;
+    callback set-appearance-mode(string);
     callback set-update-check-enabled(bool);
     callback set-update-channel(string);
     callback set-update-freq(int);
@@ -299,11 +306,17 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                 update-freq-labels: update-freq-labels;
                 update-freq-index <=> update-freq-index;
                 update-last-check: update-last-check;
+                accent-mode: accent-mode;
+                accent-choice: accent-choice;
+                accent-presets: accent-presets;
+                accent-hex <=> accent-hex;
                 wallpaper-overlay <=> Theme.panel-alpha;
                 current-wallpaper: current-wallpaper;
                 custom-wallpaper-name: custom-wallpaper-name;
                 wsl-profiles: wsl-profiles;
                 wsl-new-directory <=> wsl-new-directory;
+                set-accent(v) => { return root.set-accent(v); }
+                set-appearance-mode(v) => { root.set-appearance-mode(v); }
                 set-wallpaper(v) => { root.set-wallpaper(v); }
                 pick-wallpaper-file() => { root.pick-wallpaper-file(); }
                 set-term-font(v) => { root.set-term-font(v); }

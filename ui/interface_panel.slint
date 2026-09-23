@@ -8,7 +8,7 @@
 
 import { Theme } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
-import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset } from "settings/types.slint";
 
 import { NavItem } from "settings/chrome.slint";
 import { ResetBar } from "settings/reset_bar.slint";
@@ -70,6 +70,12 @@ export component InterfacePanel inherits Rectangle {
     // Active wallpaper id: "" / "builtin:light" / "builtin:dark" / a file path.
     in property <string> current-wallpaper;
     in property <string> custom-wallpaper-name;   // basename for the file row
+    // 配色：主题（深浅）+ 主题色。`accent-presets` 由 Rust 提供（含当前深浅档已解析好的
+    // 颜色），`accent-choice` 是配置原值（""=出厂默认 / 预设 id / "#RRGGBB"）。
+    in property <string> accent-mode;
+    in property <string> accent-choice;
+    in property <[AccentPreset]> accent-presets;
+    in-out property <string> accent-hex;
     in property <[WslProfileInfo]> wsl-profiles;
     private property <string> wsl-new-name: "WSL";
     private property <string> wsl-new-distribution;
@@ -122,6 +128,8 @@ export component InterfacePanel inherits Rectangle {
     callback set-update-freq(int);
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
     callback set-wallpaper(string);    // none / builtin selection
+    callback set-accent(string) -> bool;   // preset id / "#RRGGBB" / ""; false = 非法值
+    callback set-appearance-mode(string);  // system / dark / light
     in-out property <bool> hide-special-partitions: true;
     callback set-hide-special-partitions(bool);
     in-out property <string> mount-filter: "";
@@ -253,6 +261,10 @@ export component InterfacePanel inherits Rectangle {
                         set-term-font-size(a0) => { root.set-term-font-size(a0); }
                     }
                     if root.ifd-page == "appearance" : AppearancePage {
+                            accent-choice: root.accent-choice;
+                            accent-hex <=> root.accent-hex;
+                            accent-mode: root.accent-mode;
+                            accent-presets: root.accent-presets;
                             current-wallpaper: root.current-wallpaper;
                             custom-wallpaper-name: root.custom-wallpaper-name;
                             hide-special-partitions <=> root.hide-special-partitions;
@@ -267,6 +279,8 @@ export component InterfacePanel inherits Rectangle {
                             persist-wallpaper-overlay(a0) => { root.persist-wallpaper-overlay(a0); }
                             pick-wallpaper-file() => { root.pick-wallpaper-file(); }
                             reset-page(a0) => { root.reset-page(a0); }
+                            set-accent(a0) => { return root.set-accent(a0); }
+                            set-appearance-mode(a0) => { root.set-appearance-mode(a0); }
                             set-animations-enabled(a0) => { root.set-animations-enabled(a0); }
                             set-hide-special-partitions(a0) => { root.set-hide-special-partitions(a0); }
                             set-mount-filter(a0) => { root.set-mount-filter(a0); }

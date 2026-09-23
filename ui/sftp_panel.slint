@@ -554,7 +554,7 @@ export component SftpPanel inherits Rectangle {
                             background: node-ta.has-hover
                                 ? Theme.bg-hover
                                 : (node.path == root.current-path
-                                    ? #4a90e230
+                                    ? Theme.accent-solid.with-alpha(0.19)
                                     : (mod(i, 2) == 0 ? transparent : #ffffff08));
 
                             node-ta := TouchArea {
@@ -694,12 +694,13 @@ export component SftpPanel inherits Rectangle {
 
                             for entry[i] in root.entries : row := Rectangle {
                                 height: 24px;
+                                // 跟随「配色」分区的主题色（原来是写死的蓝，换色后这里是死角）。
                                 background: entry.selected
-                                    ? #4a90e235
+                                    ? Theme.accent-solid.with-alpha(0.21)
                                     : (i == root.selected-row
-                                        ? #4a90e240
+                                        ? Theme.accent-solid.with-alpha(0.25)
                                         : (row-ta.has-hover
-                                            ? #4a90e225
+                                            ? Theme.accent-solid.with-alpha(0.15)
                                             : (mod(i, 2) == 0 ? transparent : #ffffff08)));
 
                                 row-ta := TouchArea {

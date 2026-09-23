@@ -77,9 +77,24 @@ export global Theme {
     out property <brush> text-secondary: dark ? #b4b9c4 : #45454a;
     out property <brush> text-muted:     dark ? #9196a3 : #606066;
 
-    out property <brush> accent:         root.wallpaper-active ? root.wp-accent          : (dark ? #4a90e2 : #0071e3);
-    out property <brush> accent-hover:   root.wallpaper-active ? root.wp-accent.brighter(0.12) : (dark ? #5aa0f2 : #0077ed);
-    out property <brush> accent-pressed: root.wallpaper-active ? root.wp-accent.darker(0.12)   : (dark ? #3a80d2 : #006adb);
+    // --- 主题色（「配色」分区：由用户自己设定）-----------------------------
+    // 出厂默认仍是一档一个常量（暗 #4a90e2 / 浅 #0071e3）。用户在「配色」分区选定后
+    // 由 `accent-overridden` + `accent-seed` 接管：`accent-seed` 是**当前深浅档下已解析
+    // 好的颜色** —— 预设色由 Rust 从唯一一份色表按档位取值，自定义色在浅色档自动压深
+    // 25%（浅底上要保住对比度）。Slint 侧不存第二份色表，避免两处漂移。
+    //
+    // ⚠️ 壁纸不再参与主色：主题色完全由「配色」分区决定（壁纸仍负责面板磨砂染色
+    // `wp-tint` 与活动标签底色 —— 那些是"沉浸感"，不是"主色"）。
+    in-out property <bool> accent-overridden: false;
+    in-out property <color> accent-seed: #4a90e2;
+    out property <color> accent-default: dark ? #4a90e2 : #0071e3;
+    /// 解析后的**纯色**：需要调透明度的地方（选中行底色等）用它 —— `accent` 是 `brush`
+    ///（将来可能放渐变），`brush` 上没有 `with-alpha`。
+    out property <color> accent-solid: root.accent-overridden ? root.accent-seed : root.accent-default;
+
+    out property <brush> accent:         root.accent-solid;
+    out property <brush> accent-hover:   root.accent-overridden ? root.accent-solid.brighter(0.12) : (dark ? #5aa0f2 : #0077ed);
+    out property <brush> accent-pressed: root.accent-overridden ? root.accent-solid.darker(0.12)   : (dark ? #3a80d2 : #006adb);
 
     out property <brush> success: dark ? #4ec9b0 : #34c759;
     out property <brush> warning: dark ? #e2a84a : #ff9f0a;

@@ -1534,16 +1534,31 @@ impl ConfigStore {
     }
 
     /// Theme preference: "system" (default) | "dark" | "light".
+    ///
+    /// 未知取值（含老配置里的空串与大小写变体）一律按 "system"。
     pub fn theme_pref(&self) -> &str {
-        if self.cache.appearance.theme_pref.is_empty() {
-            "system"
-        } else {
-            &self.cache.appearance.theme_pref
+        match self.cache.appearance.theme_pref.as_str() {
+            "dark" | "light" => &self.cache.appearance.theme_pref,
+            _ => "system",
         }
     }
 
+    /// 只接受三个取值，其余（含大小写变体）落到 "system" —— 免得界面下拉框回落到一个
+    /// 既不是"跟随系统"也认不出来的空档。
     pub fn set_theme_pref(&mut self, pref: String) {
-        self.cache.appearance.theme_pref = pref;
+        self.cache.appearance.theme_pref = match pref.as_str() {
+            "dark" | "light" => pref,
+            _ => "system".to_string(),
+        };
+    }
+
+    /// 主题色："" = 出厂默认 / 预设 id / "#RRGGBB"。
+    pub fn accent(&self) -> &str {
+        &self.cache.appearance.accent
+    }
+
+    pub fn set_accent(&mut self, accent: String) {
+        self.cache.appearance.accent = accent;
     }
 
     /// Renderer preference for the current platform.

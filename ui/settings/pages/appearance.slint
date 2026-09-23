@@ -5,8 +5,9 @@
 // 因此可以保持与改造前逐字一致。
 
 import { Theme, AnimationSettings } from "../../theme.slint";
-import { SettingRow, Stepper, WallpaperSwatch, SettingSwitch } from "../chrome.slint";
+import { SettingRow, Stepper, WallpaperSwatch, SettingSwitch, CursorPaletteSwatch, CursorColorInput } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
+import { AccentPreset } from "../types.slint";
 import { ResetBar } from "../reset_bar.slint";
 import { ComboBox, ScrollView, Slider } from "std-widgets.slint";
 import { IconText } from "../../components/text.slint";
@@ -32,9 +33,25 @@ export component AppearancePage inherits VerticalLayout {
     in property <[string]> ui-fonts;
     in property <float> ui-scale;
     in-out property <float> wallpaper-overlay;
+
+    // 临时开关：壁纸相关分区（壁纸 / 自定义上传 / 遮罩）暂不开放。置回 true 即可恢复
+    // ——分区内容原样保留、一行不删，所以恢复时不需要重建任何接线。
+    property <bool> wallpaper-enabled: false;
+
+    // 配色：主题（深浅）+ 主题色。
+    // `accent-presets` 由 Rust 提供（含"当前深浅档下已解析好的颜色"），Slint 侧不存
+    // 第二份色表；`accent-choice` 是配置里的原值："" = 出厂默认 / 预设 id / "#RRGGBB"。
+    in property <string> accent-mode;
+    in property <string> accent-choice;
+    in property <[AccentPreset]> accent-presets;
+    // 自定义颜色的输入框内容（双向：用户边打边改，Rust 在切到预设时清空它）。
+    in-out property <string> accent-hex;
+
     callback persist-wallpaper-overlay(float);
     callback pick-wallpaper-file();
     callback reset-page(string);
+    callback set-accent(string) -> bool;
+    callback set-appearance-mode(string);
     callback set-animations-enabled(bool);
     callback set-hide-special-partitions(bool);
     callback set-mount-filter(string);
@@ -73,12 +90,87 @@ export component AppearancePage inherits VerticalLayout {
         return root.lbl-gpu;
     }
 
+    // ── 主题（深浅）档位 ─────────────────────────────────────────────────
+    // 与渲染档位同一套写法：显示名 ↔ 配置取值只有一个映射处，选中/回填/比较都走它。
+    property <string> lbl-system: root.lang-en ? "Follow system" : "跟随系统";
+    property <string> lbl-dark: root.lang-en ? "Dark" : "深色";
+    property <string> lbl-light: root.lang-en ? "Light" : "浅色";
+
+    /// 显示名 → 配置取值（认不出来就按"跟随系统"，与空串同义）。
+    pure function theme-mode-of(label: string) -> string {
+        if (label == root.lbl-dark) { return "dark"; }
+        if (label == root.lbl-light) { return "light"; }
+        return "system";
+    }
+
+    /// 配置取值 → 显示名。
+    pure function theme-label-of(mode: string) -> string {
+        if (mode == "dark") { return root.lbl-dark; }
+        if (mode == "light") { return root.lbl-light; }
+        return root.lbl-system;
+    }
+
     padding-left: 20px;
     padding-right: 20px;
     padding-top: 14px;
     spacing: 0;
     alignment: start;
 
+    SettingsSection {
+        section-id: "appearance.colors";
+        lang-en: root.lang-en;
+        title-zh: "配色";
+        title-en: "COLORS";
+        title-height: 24px;
+        SettingRow {
+            label: root.lang-en ? "Theme" : "主题";
+            desc: root.lang-en
+                ? "Follow the system appearance, or pin dark / light."
+                : "跟随系统外观,或固定为深色 / 浅色。";
+            ComboBox {
+                width: 220px;
+                model: [root.lbl-system, root.lbl-dark, root.lbl-light];
+                current-value: root.theme-label-of(root.accent-mode);
+                selected(v) => { root.set-appearance-mode(root.theme-mode-of(v)); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Accent colour" : "主题色";
+            desc: root.lang-en
+                ? "Buttons, the active tab and selections follow this colour."
+                : "按钮、活动标签与选中态都跟随这个颜色。";
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                // 「默认」= 出厂色（跟随深浅档），清空配置里的主题色。
+                CursorPaletteSwatch {
+                    hex: "";
+                    swatch-color: Theme.accent-default;
+                    selected: root.accent-choice == "";
+                    chosen => { root.set-accent(""); }
+                }
+                for p in root.accent-presets : CursorPaletteSwatch {
+                    hex: p.id;
+                    swatch-color: p.color;
+                    selected: root.accent-choice == p.id;
+                    chosen(id) => { root.set-accent(id); }
+                }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "Custom colour" : "自定义颜色";
+            desc: root.lang-en
+                ? "Any #RRGGBB value; darkened a little in light mode so it stays legible."
+                : "任意 #RRGGBB 颜色;浅色模式下会自动压深以保证可读。";
+            show-divider: false;
+            CursorColorInput {
+                value <=> root.accent-hex;
+                preview-color: Theme.accent-seed;
+                apply-color(v) => { return root.set-accent(v); }
+            }
+        }
+
+    }
     SettingsSection {
         section-id: "appearance.ui-font";
         lang-en: root.lang-en;
@@ -99,7 +191,7 @@ export component AppearancePage inherits VerticalLayout {
         }
 
     }
-    SettingsSection {
+    if root.wallpaper-enabled : SettingsSection {
         section-id: "appearance.wallpaper";
         lang-en: root.lang-en;
         title-zh: "壁纸";
@@ -192,7 +284,7 @@ export component AppearancePage inherits VerticalLayout {
         }
 
     }
-    SettingsSection {
+    if root.wallpaper-enabled : SettingsSection {
         bottom-gap: Theme.gap-lg;
         section-id: "appearance.custom";
         lang-en: root.lang-en;
@@ -252,7 +344,7 @@ color: Theme.text-secondary;
         }
 
     }
-    SettingsSection {
+    if root.wallpaper-enabled : SettingsSection {
         bottom-gap: Theme.gap-lg;
         section-id: "appearance.overlay";
         lang-en: root.lang-en;

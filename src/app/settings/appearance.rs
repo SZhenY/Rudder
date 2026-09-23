@@ -4,15 +4,17 @@
 //! * `ui-font-index`（字体选择器索引）—— 只改 family 会让下拉框停在旧项；
 //! * 壁纸切换要走 `apply_wallpaper`（完整的换肤与调色板派生），不能只 set 属性。
 
-use slint::{ComponentHandle, SharedString};
+use slint::{Color, ComponentHandle, ModelRc, SharedString, VecModel};
+use std::rc::Rc;
 
 use super::{FontCatalog, Store, persist};
 use crate::app::apply_wallpaper;
 use crate::app::fonts_ui::{family_from_label, resolve_ui_font_family};
 use crate::app::resource_ui::sync_proc_theme;
+use crate::app::terminal_ui::{apply_dark_mode, parse_hex_color, theme_pref_is_dark};
 use crate::i18n::t;
 use crate::terminal::TermBuffers;
-use crate::ui::{ AnimationSettings, AppWindow, ProcWindow, Theme };
+use crate::ui::{ AccentPreset, AnimationSettings, AppWindow, ProcWindow, Theme };
 
 /// 播种 + 注册持久化回调。
 pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_win: &ProcWindow) {
@@ -171,6 +173,159 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             }
         });
     }
+
+    {
+        // 主题（深浅）：跟随系统 / 深色 / 浅色。切档要同时做三件事 —— 写偏好、换肤、
+        // **按新档位重新解析主题色**（预设两档是两个颜色，自定义色在浅色档要压深）。
+        let weak = window.as_weak();
+        let store = store.clone();
+        let bufs_mode = bufs.clone();
+        let proc_weak = proc_win.as_weak();
+        window.on_set_appearance_mode(move |mode: SharedString| {
+            let normalized = match mode.as_str() {
+                "dark" | "light" => mode.to_string(),
+                _ => "system".to_string(),
+            };
+            persist(&store, |s| {
+                s.set_theme_pref(normalized.clone());
+            });
+            let Some(w) = weak.upgrade() else { return };
+            apply_dark_mode(&w, &bufs_mode, theme_pref_is_dark(&store.borrow()));
+            let choice = store.borrow().accent().to_string();
+            apply_accent(&w, &choice);
+            w.set_accent_mode(normalized.into());
+            if let Some(p) = proc_weak.upgrade() {
+                sync_proc_theme(&w, &p);
+            }
+        });
+    }
+
+    {
+        // 主题色：预设 id / "#RRGGBB" / ""（出厂默认）。非法值返回 false —— 界面据此
+        // 标红，并且**既不应用也不持久化**（与光标取色框同一套约定）。
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_accent(move |v: SharedString| -> bool {
+            let Some(normalized) = normalize_accent(v.as_str()) else {
+                return false;
+            };
+            persist(&store, |s| {
+                s.set_accent(normalized.clone());
+            });
+            if let Some(w) = weak.upgrade() {
+                apply_accent(&w, &normalized);
+            }
+            true
+        });
+    }
+}
+
+// ── 配色：主题色 ────────────────────────────────────────────────────────
+//
+// 预设色表是**唯一出处**：界面上的一排色块由它生成（颜色按当前深浅档解析好再送进
+// Slint），配置里只存 `id`（或自定义色的 `#RRGGBB`）—— 所以"加一个预设"只改这一处。
+//
+// 选色取舍 —— 这是给**终端 / SSH 客户端**挑的，不是照抄别家的种子色：
+// * 深浅两档各给一个值：浅底上要更深才够对比度，同一个 hex 两档通用必然有一档发灰；
+// * 绕开红 / 橙 / 琥珀 —— 与状态色 `danger`(#e25c5c)、`warning`(#e2a84a) 撞车：主色一红，
+//   按钮就和"删除 / 警告"分不清了；
+// * 绿色只留深松绿：与 `success`（亮薄荷 #4ec9b0）拉开明度，不至于混淆；
+// * 石墨是近中性的低饱和档：终端里花花绿绿的 ANSI 输出才是主角，主色不该抢戏。
+const ACCENT_PRESETS: &[(&str, &str, &str, &str, &str)] = &[
+    // id,         深色档,     浅色档,     中文名,   英文名
+    ("aurora",   "#4a90e2", "#0071e3", "极光蓝", "Aurora"),
+    ("azure",    "#22a2c9", "#0d7f9e", "天青",   "Azure"),
+    ("pine",     "#2fb37e", "#14855a", "松绿",   "Pine"),
+    ("indigo",   "#6c7ff0", "#4453d8", "靛蓝",   "Indigo"),
+    ("violet",   "#9a6cf0", "#7a3fd6", "紫晶",   "Violet"),
+    ("magenta",  "#d456b0", "#b52f8c", "品红",   "Magenta"),
+    ("graphite", "#8b929e", "#5f6672", "石墨",   "Graphite"),
+];
+
+/// 把界面上的输入归一化成可存储的值：`""`（出厂默认）/ 预设 id / `#RRGGBB`。
+///
+/// 返回 `None` = 不合法（界面据此标红、既不应用也不持久化）。`#RGB` 简写会展开成
+/// 6 位并转大写 —— 与预设 id 的大小写约定一致，比较时不必再 `eq_ignore_ascii_case`。
+pub(crate) fn normalize_accent(input: &str) -> Option<String> {
+    let s = input.trim();
+    if s.is_empty() {
+        return Some(String::new());
+    }
+    if let Some(digits) = s.strip_prefix('#') {
+        let hex = match digits.len() {
+            3 => digits.chars().flat_map(|c| [c, c]).collect::<String>(),
+            6 => digits.to_string(),
+            _ => return None,
+        };
+        if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        return Some(format!("#{}", hex.to_uppercase()));
+    }
+    ACCENT_PRESETS
+        .iter()
+        .find(|p| p.0 == s)
+        .map(|p| p.0.to_string())
+}
+
+/// 当前深浅档下该用什么颜色；`None` = 出厂默认（交给 Theme 里每档的常量）。
+fn resolve_accent(choice: &str, dark: bool) -> Option<Color> {
+    let s = choice.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if s.starts_with('#') {
+        let c = parse_hex_color(s)?;
+        // 自定义色：浅色档压深 25%，保证在浅面板上仍然读得清。
+        return Some(if dark { c } else { scale_color(c, 0.75) });
+    }
+    let preset = ACCENT_PRESETS.iter().find(|p| p.0 == s)?;
+    parse_hex_color(if dark { preset.1 } else { preset.2 })
+}
+
+/// 按比例压暗（Slint 语言里的 `.darker()` 在 Rust 侧没有对应 API，这里直接乘通道）。
+fn scale_color(c: Color, k: f32) -> Color {
+    Color::from_rgb_u8(
+        (c.red() as f32 * k) as u8,
+        (c.green() as f32 * k) as u8,
+        (c.blue() as f32 * k) as u8,
+    )
+}
+
+/// 送给界面的预设列表：颜色已按当前深浅档解析好，界面只管画（不存第二份色表）。
+fn accent_presets_model(dark: bool) -> ModelRc<AccentPreset> {
+    let rows: Vec<AccentPreset> = ACCENT_PRESETS
+        .iter()
+        .map(|(id, dark_hex, light_hex, zh, en)| AccentPreset {
+            id: (*id).into(),
+            name: t(zh, en).into(),
+            color: parse_hex_color(if dark { dark_hex } else { light_hex })
+                .unwrap_or(Color::from_rgb_u8(0x4a, 0x90, 0xe2)),
+        })
+        .collect();
+    ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
+/// 把配置里的主题色套到界面上。
+///
+/// ⚠️ 换深浅档后**必须再调一次**：预设的两档本来就是两个颜色，自定义色在浅色档还要压深。
+pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
+    let dark = w.global::<Theme>().get_dark();
+    let (overridden, seed) = match resolve_accent(choice, dark) {
+        Some(c) => (true, c),
+        // 未选（出厂默认）：不覆盖，交给 Theme 里每档的常量。
+        None => (false, Color::from_rgb_u8(0x4a, 0x90, 0xe2)),
+    };
+    w.global::<Theme>().set_accent_overridden(overridden);
+    w.global::<Theme>().set_accent_seed(seed);
+    w.set_accent_choice(choice.into());
+    // 自定义色时输入框回显它；切到预设 / 默认就清空输入框（免得显示一个没生效的值）。
+    w.set_accent_hex(if choice.starts_with('#') {
+        choice.into()
+    } else {
+        SharedString::new()
+    });
+    w.set_accent_presets(accent_presets_model(dark));
 }
 
 /// 「还原本页默认」：替换外观域为出厂默认，再走与 `bind` 相同的落点。
@@ -195,6 +350,7 @@ pub(crate) fn reset(
             s.set_renderer_mode(d.appearance.renderer_mode.clone());
             s.set_wallpaper(d.appearance.wallpaper.clone());
             s.set_wallpaper_overlay(d.appearance.wallpaper_overlay);
+            s.set_accent(d.appearance.accent.clone());
             s.set_hide_special_partitions(d.appearance.hide_special_partitions);
         });
     }
@@ -227,6 +383,10 @@ pub(crate) fn reset(
             s.set_theme_pref(if dark { "dark" } else { "light" }.to_string());
         });
     }
+    // 主题色：出厂默认是"未选（跟随每档常量）"。放在换肤**之后** —— 壁纸会决定深浅档，
+    // 而主题色要按最终档位解析；下拉框也要跟着回到还原后的 theme_pref。
+    apply_accent(w, store.borrow().accent());
+    w.set_accent_mode(store.borrow().theme_pref().into());
     // 已打开的进程监视窗要跟着换肤（窗口可能没开，upgrade 失败就跳过）。
     if let Some(p) = proc_win.upgrade() {
         sync_proc_theme(w, &p);
@@ -269,5 +429,42 @@ mod tests {
         assert_eq!(clamp_panel_font(160), 160);
         assert_eq!(clamp_panel_font(161), 160);
         assert_eq!(clamp_panel_font(i32::MAX), 160);
+    }
+
+    /// 主题色输入的归一化：`""` / 预设 id / `#RRGGBB`；`#RGB` 展开并大写；其余非法。
+    ///
+    /// 非法返回 `None` —— 界面据此标红，且**既不应用也不持久化**。
+    #[test]
+    fn accent_normalizes_presets_and_hex() {
+        assert_eq!(normalize_accent("").unwrap(), "");
+        assert_eq!(normalize_accent("   ").unwrap(), "");
+        assert_eq!(normalize_accent("aurora").unwrap(), "aurora");
+        assert_eq!(normalize_accent("graphite").unwrap(), "graphite");
+        // `#RGB` 简写展开 + 大写：与预设 id 的大小写约定一致，比较时不必再忽略大小写。
+        assert_eq!(normalize_accent("#abc").unwrap(), "#AABBCC");
+        assert_eq!(normalize_accent(" #1f9fd0 ").unwrap(), "#1F9FD0");
+        // 非法：不是预设 id、也不是合法十六进制。
+        assert!(normalize_accent("AURORA").is_none());
+        assert!(normalize_accent("#12345").is_none());
+        assert!(normalize_accent("#gggggg").is_none());
+        assert!(normalize_accent("blue").is_none());
+    }
+
+    /// 预设解析：深浅两档**各自**取色；未选（`""`）返回 `None` → 交给 Theme 的每档常量。
+    #[test]
+    fn accent_resolves_per_theme() {
+        assert!(resolve_accent("", true).is_none());
+        assert!(resolve_accent("", false).is_none());
+        // 两档必须是两个颜色：同一个 hex 两档通用，必然有一档发灰 / 对比度不够。
+        assert_ne!(
+            resolve_accent("aurora", true).unwrap(),
+            resolve_accent("aurora", false).unwrap()
+        );
+        // 自定义色在浅色档压深（浅底上保对比度）。
+        let on_dark = resolve_accent("#8899AA", true).unwrap();
+        let on_light = resolve_accent("#8899AA", false).unwrap();
+        assert!(on_light.red() < on_dark.red());
+        assert!(on_light.green() < on_dark.green());
+        assert!(on_light.blue() < on_dark.blue());
     }
 }

@@ -83,6 +83,41 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
 
 
 
+/// 「跟随系统」的**实时**跟随：启动时只探测一次，之后系统外观改了界面不会自己变。
+///
+/// 用一个低频定时器补上这一步：**只有** preference 是 `system` 时才真的去问系统
+/// （其它偏好下只是读一次配置就返回）。`dark_light::detect()` 实测 ≈ 4.8 ms/次
+/// （20 次 95 ms），5 s 一次约 0.1% 单核 —— 换来"改系统外观 → 界面几秒内跟着变"。
+///
+/// 定时器**故意不 stop**：它随窗口活到进程结束（与侧栏采样器同一套做法）。
+fn start_system_theme_watcher(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
+    let timer = slint::Timer::default();
+    let weak = window.as_weak();
+    let store = store.clone();
+    let bufs_watch = bufs.clone();
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(5),
+        move || {
+            let Some(w) = weak.upgrade() else { return };
+            if store.borrow().theme_pref() != "system" {
+                return;
+            }
+            let dark = theme_pref_is_dark(&store.borrow());
+            if dark == w.global::<Theme>().get_dark() {
+                return;
+            }
+            apply_dark_mode(&w, &bufs_watch, dark);
+            // 深浅档变了 → 主题色要按新档位重新解析（预设两档是两个颜色，自定义色在
+            // 浅色档要压深）。
+            let choice = store.borrow().accent().to_string();
+            settings::appearance::apply_accent(&w, &choice);
+        },
+    );
+    // Timer 被 drop 就停 —— 这里 `leak` 保活（与侧栏采样器同一套做法）。
+    Box::leak(Box::new(timer));
+}
+
 pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &AppContext) {
     let AppContext {
         store,
@@ -168,6 +203,19 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         // theme when the user actively selects them (#theme-persistence).
         apply_wallpaper(window, &store.borrow(), bufs, &id, false);
     }
+
+    // 主题色 + 主题（深浅）：放在换肤**之后** —— 壁纸会决定深浅档，而主题色要按最终
+    // 档位解析（预设两档是两个颜色，自定义色在浅色档要压深）。
+    {
+        let (choice, mode) = {
+            let s = store.borrow();
+            (s.accent().to_string(), s.theme_pref().to_string())
+        };
+        settings::appearance::apply_accent(window, &choice);
+        window.set_accent_mode(mode.into());
+    }
+
+    start_system_theme_watcher(window, store, bufs);
     // Editable inputs (e.g. the SFTP path bar) need a CJK-capable font: the
     // embedded mono font has no Chinese glyphs and native TextInput doesn't
     // glyph-fallback like Text does, so typed Chinese would render as tofu (#54).
@@ -685,6 +733,11 @@ mod wiring_tests {
         // 渲染档位的**显示名**（不是配置字段）：真正参与还原的是 `renderer-mode`，
         // 这几个只是「值 ↔ 界面文字」映射用的常量，随语言/平台变化。
         "lbl-auto", "lbl-soft", "lbl-gpu",
+        // 主题（深浅）档位的**显示名**：真正参与还原的是配置里的 `theme_pref`，
+        // 这三个只是"值 ↔ 界面文字"映射用的常量，随语言变化。
+        "lbl-system", "lbl-dark", "lbl-light",
+        // 壁纸分区的临时开关：编译期常量（置回 true 即恢复），不是设置项。
+        "wallpaper-enabled",
         // 一次性瞬态
         "renderer-restart-required",
         // 选择器数据源（列表本身不随还原变化）
@@ -705,6 +758,9 @@ mod wiring_tests {
         ("current-wallpaper", "apply_wallpaper 内写入"),
         ("custom-wallpaper-name", "apply_wallpaper 内写入"),
         ("wp-is-custom", "apply_wallpaper 内写入"),
+        ("accent-choice", "apply_accent 内写入"),
+        ("accent-hex", "apply_accent 内写入"),
+        ("accent-presets", "apply_accent 内写入"),
     ];
 
     fn snake(kebab: &str) -> String {

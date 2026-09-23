@@ -750,12 +750,18 @@ pub fn run() -> Result<()> {
             let next_dark = !w.global::<Theme>().get_dark();
             // Flip theme + every terminal buffer + re-render (shared with wallpaper).
             apply_dark_mode(&w, &bufs_theme, next_dark);
+            // 深浅档变了 → 主题色要按新档位重新解析（预设两档是两个颜色，自定义色在
+            // 浅色档要压深）。
+            let accent_choice = store.borrow().accent().to_string();
+            crate::app::settings::appearance::apply_accent(&w, &accent_choice);
             // Mirror the flip onto the detached process window (its Theme global
             // is a separate instance) so an open process window follows.
             if let Some(p) = proc_weak.upgrade() {
                 sync_proc_theme(&w, &p);
             }
             let pref = if next_dark { "dark" } else { "light" };
+            // 下拉框要跟着走：手动切档后 preference 不再是 system。
+            w.set_accent_mode(pref.into());
             let mut s = store.borrow_mut();
             s.set_theme_pref(pref.to_string());
             s.save_logging();

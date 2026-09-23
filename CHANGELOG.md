@@ -47,6 +47,24 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **新增「配色」分区：主题（跟随系统 / 深色 / 浅色）+ 主题色可以自己挑。** 位于设置 › 外观页
+  最上方，三行：① 主题下拉 —— **「跟随系统」现在是实时的**（每 5 秒问一次系统，改了系统外观
+  界面几秒内跟着变；仅在偏好为"跟随系统"时才真的去问，`dark_light` 实测 4.8 ms/次 ≈ 0.1%
+  单核）；② 一排预设主题色（极光蓝 / 天青 / 松绿 / 靛蓝 / 紫晶 / 品红 / 石墨）；③ 自定义
+  颜色（任意 `#RRGGBB`，`#RGB` 简写自动展开，非法值标红且**既不应用也不持久化**）。
+  **预设色是照着终端客户端挑的，不是照抄别家**：绕开红 / 橙 / 琥珀（与 `danger` / `warning`
+  撞车 —— 主色一红，按钮就和"删除 / 警告"分不清），绿色只留深松绿（与 `success` 的亮薄荷拉开
+  明度），石墨是低饱和档（终端里花花绿绿的 ANSI 输出才是主角，主色不该抢戏）；每个预设在深浅
+  两档**各有一个取值** —— 同一个 hex 两档通用，必然有一档发灰或对比度不够。换深浅档时主题色
+  会按新档位重新解析（自定义色在浅色档自动压深 25%，浅底上才读得清）。
+  配置新增 `appearance.accent`："" = 出厂默认 / 预设 id / `#RRGGBB`，老配置不受影响。
+  **壁纸相关分区（壁纸 / 自定义上传 / 遮罩）暂时隐藏** —— 主题色完全由「配色」决定，不再由
+  壁纸派生；代码一行不删，把 `appearance.slint` 里的 `wallpaper-enabled` 置回 `true` 即可恢复。
+  **New "Colours" section** in Settings › Appearance: theme (system / dark / light, with live
+  "follow system" polled every 5 s) plus the accent colour (7 presets or any `#RRGGBB`). The
+  wallpaper sections are hidden behind a single `wallpaper-enabled` switch. Each preset ships a
+  dark and a light variant, and the set avoids hues that clash with the danger/warning colours.
+
 - **文档里的旧名 `meatshell` 全部改为 `rudder`**（英文 README / CONTRIBUTING / 两份发版文档 / 图标
   脚本）：下载与运行说明（`rudder-*` 包、`rudder.exe`、`rudder.app`）、配置路径、`rudder --version`
   校验、Issues 与 Releases 链接。
