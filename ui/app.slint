@@ -375,6 +375,7 @@ export component AppWindow inherits Window {
     in-out property <string> term-cursor-style: "block";
     in-out property <string> term-cursor-color-hex: Theme.dark ? "#D4D4D4" : "#2D2D2F";
     in-out property <color> term-cursor-color: Theme.term-fg;
+    in-out property <string> term-cursor-choice: "";   // 配置里存的光标色（"" = 跟随主题）
     in-out property <bool> output-highlight-enabled: true;
     in-out property <bool> json-format-output: true;
     in-out property <string> scrollback-lines: "5000";
@@ -2310,6 +2311,7 @@ export component AppWindow inherits Window {
         show-cmd-bar <=> root.show-cmd-bar;
         sync-upload-enabled <=> root.sync-upload-enabled;
         term-cursor-color : root.term-cursor-color;
+        term-cursor-choice : root.term-cursor-choice;
         term-cursor-color-hex <=> root.term-cursor-color-hex;
         term-cursor-style <=> root.term-cursor-style;
         term-font-index <=> root.term-font-index;

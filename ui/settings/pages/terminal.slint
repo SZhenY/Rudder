@@ -5,7 +5,7 @@
 // 因此可以保持与改造前逐字一致。
 
 import { Theme } from "../../theme.slint";
-import { CursorColorInput, CursorStyleButton, SettingRow, Stepper, SettingSwitch } from "../chrome.slint";
+import { CursorColorInput, CursorPaletteSwatch, CursorStyleButton, SettingRow, Stepper, SettingSwitch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
 import { OutputRuleItem } from "../types.slint";
@@ -27,6 +27,9 @@ export component TerminalPage inherits VerticalLayout {
     in-out property <bool> large-scrollback;
     in property <color> term-cursor-color;
     in-out property <string> term-cursor-color-hex;
+    // 配置里**存**的光标色（"" = 跟随主题）。与上面那个"当前生效色"分开：
+    // 输入框显示生效色，色块的选中态则看这个。
+    in property <string> term-cursor-choice;
     in-out property <string> term-cursor-style;
     in-out property <bool> term-font-bold;
     in-out property <int> term-font-index;
@@ -36,6 +39,7 @@ export component TerminalPage inherits VerticalLayout {
     callback remove-output-highlight-rule(int);
     callback reset-page(string);
     callback set-convert-eol(bool);
+    callback upload-ui-font();                    // 上传字体（复制进 config/fonts）
     callback set-json-format-output(bool);
     callback set-osc52-clipboard(bool);
     callback set-output-highlight(bool, string);
@@ -72,11 +76,34 @@ export component TerminalPage inherits VerticalLayout {
         title-height: 24px;
         SettingRow {
             label: root.lang-en ? "Terminal font" : "终端字体";
-            ComboBox {
-                width: 220px;
-                model: root.term-fonts;
-                current-index <=> root.term-font-index;
-                selected(v) => { root.set-term-font(v); }
+            HorizontalLayout {
+                spacing: 10px;
+                ComboBox {
+                    width: 176px;
+                    model: root.term-fonts;
+                    current-index <=> root.term-font-index;
+                    selected(v) => { root.set-term-font(v); }
+                }
+                // 上传：复制进 `config/fonts`（与界面字体那行同一个回调），注册后立刻可选。
+                Rectangle {
+                    width: 34px;
+                    height: 30px;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: Theme.border-subtle;
+                    background: term-font-upload-ta.has-hover ? Theme.accent-tint : Theme.bg-elevated;
+                    term-font-upload-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.upload-ui-font(); }
+                    }
+                    IconText {
+                        centered: true;
+                        text: "\u{E2C6}"; // folder-open
+                        color: Theme.text-secondary;
+                        font-size: 16px * Theme.panel-font;
+                        width: 100%; height: 100%;
+                    }
+                }
             }
         }
         SettingRow {
@@ -124,13 +151,35 @@ export component TerminalPage inherits VerticalLayout {
         SettingRow {
             label: root.lang-en ? "Cursor color" : "光标颜色";
             desc: root.lang-en
-                ? "Enter a hexadecimal RGB color. Leave empty to follow the theme (light on dark, dark on light)."
-                : "输入十六进制 RGB 颜色;留空则跟随主题(深色档亮色 / 浅色档暗色)。";
-            CursorColorInput {
-                value <=> root.term-cursor-color-hex;
-                preview-color: root.term-cursor-color;
-                apply-color(v) => { root.set-term-cursor-color(v) }
-                apply-color-rgb(r, g, b) => { return root.set-term-cursor-color-rgb(r, g, b); }
+                ? "Pick a preset, type a hexadecimal RGB color, or leave it empty to follow the theme (light on dark, dark on light)."
+                : "点一个预设、或输入十六进制 RGB 颜色;留空则跟随主题(深色档亮色 / 浅色档暗色)。";
+            VerticalLayout {
+                spacing: 7px;
+                alignment: center;
+                // 与「主题色」那一行同规格：左边一排预设，下面是自定义（取色盘）。
+                HorizontalLayout {
+                    spacing: 6px;
+                    // 第一个是「跟随主题」：深底亮色 / 浅底暗色，由深浅档决定。
+                    CursorPaletteSwatch {
+                        hex: "";
+                        swatch-color: root.term-cursor-color;
+                        selected: root.term-cursor-choice == "";
+                        chosen => { root.set-term-cursor-color(""); }
+                    }
+                    CursorPaletteSwatch { hex: "#FFFFFF"; swatch-color: #FFFFFF; selected: root.term-cursor-choice == "#FFFFFF"; chosen(v) => { root.set-term-cursor-color(v); } }
+                    CursorPaletteSwatch { hex: "#D4D4D4"; swatch-color: #D4D4D4; selected: root.term-cursor-choice == "#D4D4D4"; chosen(v) => { root.set-term-cursor-color(v); } }
+                    CursorPaletteSwatch { hex: "#FF5252"; swatch-color: #FF5252; selected: root.term-cursor-choice == "#FF5252"; chosen(v) => { root.set-term-cursor-color(v); } }
+                    CursorPaletteSwatch { hex: "#69F0AE"; swatch-color: #69F0AE; selected: root.term-cursor-choice == "#69F0AE"; chosen(v) => { root.set-term-cursor-color(v); } }
+                    CursorPaletteSwatch { hex: "#40C4FF"; swatch-color: #40C4FF; selected: root.term-cursor-choice == "#40C4FF"; chosen(v) => { root.set-term-cursor-color(v); } }
+                    CursorPaletteSwatch { hex: "#7C4DFF"; swatch-color: #7C4DFF; selected: root.term-cursor-choice == "#7C4DFF"; chosen(v) => { root.set-term-cursor-color(v); } }
+                    CursorPaletteSwatch { hex: "#2D2D2F"; swatch-color: #2D2D2F; selected: root.term-cursor-choice == "#2D2D2F"; chosen(v) => { root.set-term-cursor-color(v); } }
+                }
+                CursorColorInput {
+                    value <=> root.term-cursor-color-hex;
+                    preview-color: root.term-cursor-color;
+                    apply-color(v) => { root.set-term-cursor-color(v) }
+                    apply-color-rgb(r, g, b) => { return root.set-term-cursor-color-rgb(r, g, b); }
+                }
             }
         }
     }

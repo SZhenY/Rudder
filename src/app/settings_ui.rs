@@ -779,6 +779,7 @@ mod wiring_tests {
         ("wallpaper-labels", "publish_wallpaper_choices 内写入"),
         ("wallpaper-index", "publish_wallpaper_choices 内写入"),
         ("term-cursor-color", "apply_cursor_color 内写入"),
+        ("term-cursor-choice", "apply_cursor_color 内写入"),
         ("term-cursor-color-hex", "apply_cursor_color 内写入"),
         ("accent-hex", "apply_accent 内写入"),
         ("accent-presets", "apply_accent 内写入"),

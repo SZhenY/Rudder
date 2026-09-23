@@ -47,6 +47,16 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **终端设置的三处改进。** ① 选**自定义壁纸**（上传的图片）时，光标色默认落到"浅色档的暗色"
+  （照片的明暗不可预知，"跟随主题"那套在照片上不成立）—— 只在用户还没自己挑过光标色（配置为空）
+  时才动，不覆盖他的选择；② 光标颜色那一行改成与「主题色」同规格：左边一排预设色块（第一项是
+  「跟随主题」），下面是自定义取色盘。输入框显示**实际生效**的色号，色块选中态看配置里存的值 ——
+  两者本就不同，故新增 `term-cursor-choice`；③ 终端页的字体下拉也加了上传字体按钮（与界面字体
+  同一个回调：复制进 `config/fonts`、注册后立即可选、两个列表一起刷新）。
+  **Three terminal-settings improvements**: a custom wallpaper now defaults the cursor colour to the
+  dark tone, the cursor colour row mirrors the accent row (preset swatches + picker), and the terminal
+  font dropdown gained the same upload button as the interface font row.
+
 - **「配色」分区的主题行改名「壁纸」：一个下拉同时管主题与背景图。** 选项 = 跟随系统 / 深色 /
   浅色 + `config/wallpapers` 里上传的图片，右侧一个上传按钮（图片被**复制**进那个目录，重名不
   覆盖）。**深色 / 浅色就是原来的「简约·暗 / 简约·浅」** —— 深浅档与配套的那张内置底图是**同一个

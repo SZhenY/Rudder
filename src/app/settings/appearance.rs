@@ -134,6 +134,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             // 下拉也要回到配置里那一项。
             let choice = store.borrow().accent().to_string();
             apply_accent(&w, &choice);
+            // 自定义壁纸（上传的图片）另给光标一个默认值：照片上的"跟随主题"不成立。
+            if theme.is_empty() {
+                default_cursor_for_custom_wallpaper(&w, &store);
+            }
             let cursor = store.borrow().terminal_cursor_color().to_string();
             super::terminal::apply_cursor_color(&w, &cursor);
             w.set_accent_mode(store.borrow().theme_pref().into());
@@ -165,6 +169,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             if let Some(w) = weak.upgrade() {
                 // 上传的图片只换图：深浅档保持用户当前的选择（与主题项不同）。
                 apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, false);
+                // 自定义壁纸：光标给个稳妥的默认值（未挑过时才动）。
+                default_cursor_for_custom_wallpaper(&w, &store);
                 persist(&store, |s| {
                     s.set_wallpaper(id.clone());
                 });
@@ -532,6 +538,24 @@ fn wallpaper_choice_of_label(label: &str) -> (String, String) {
         .find(|c| c.label == label)
         .map(|c| (c.theme.to_string(), c.wallpaper))
         .unwrap_or_else(|| ("system".to_string(), String::new()))
+}
+
+/// 选**自定义**壁纸（上传的图片）时，给光标一个稳妥的默认值。
+///
+/// 取的是"浅色档的暗色"（`resolve_cursor_color(false, "")`）—— 照片的明暗不可预知，
+/// "跟随主题"那套（浅底暗光标 / 深底亮光标）在照片上不成立，暗色在任何底图上都还算看得见。
+///
+/// ⚠️ 只在用户**还没自己挑过**光标色（配置为空 = 跟随主题）时才动，免得覆盖他的选择。
+fn default_cursor_for_custom_wallpaper(w: &AppWindow, store: &Store) {
+    if !store.borrow().terminal_cursor_color().is_empty() {
+        return;
+    }
+    let fallback = super::terminal::resolve_cursor_color(false, "");
+    persist(store, |s| {
+        s.set_terminal_cursor_color(&fallback);
+    });
+    let stored = store.borrow().terminal_cursor_color().to_string();
+    super::terminal::apply_cursor_color(w, &stored);
 }
 
 /// 把「壁纸」下拉的内容与选中项推给界面（内容 = 三个主题 + 上传的图片）。

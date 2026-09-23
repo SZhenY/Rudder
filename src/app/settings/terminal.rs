@@ -52,6 +52,8 @@ pub(crate) fn apply_cursor_color(w: &AppWindow, stored: &str) {
     // 看得到真实值。这次程序化回填会触发输入框的 `changed text` → `on_set_term_cursor_color`，
     // 那里的「回声」判定把它当无操作，不会把"跟随主题"写死成具体颜色。
     w.set_term_cursor_color_hex(effective.as_str().into());
+    // 色块的选中态看**存储值**（"" = 跟随主题那一项），输入框看生效色 —— 两者本就不同。
+    w.set_term_cursor_choice(stored.into());
     if let Some(color) = parse_hex_color(&effective) {
         w.set_term_cursor_color(color);
     }

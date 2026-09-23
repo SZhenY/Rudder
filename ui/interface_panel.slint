@@ -37,6 +37,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <string> term-cursor-style: "block";
     in-out property <string> term-cursor-color-hex: "#D4D4D4";
     in property <color> term-cursor-color: #D4D4D4;
+    in property <string> term-cursor-choice;   // 配置里存的光标色（"" = 跟随主题）
     in-out property <bool> output-highlight-enabled;
     in-out property <bool> json-format-output: true;
     in-out property <string> output-highlight-preset;
@@ -245,6 +246,7 @@ export component InterfacePanel inherits Rectangle {
                         scrollback-lines <=> root.scrollback-lines;
                         large-scrollback <=> root.large-scrollback;
                         term-cursor-color: root.term-cursor-color;
+                        term-cursor-choice: root.term-cursor-choice;
                         term-cursor-color-hex <=> root.term-cursor-color-hex;
                         term-cursor-style <=> root.term-cursor-style;
                         term-font-bold <=> root.term-font-bold;
@@ -263,6 +265,7 @@ export component InterfacePanel inherits Rectangle {
                         set-large-scrollback(a0) => { root.set-large-scrollback(a0); }
                         set-term-cursor-color(a0) => { return root.set-term-cursor-color(a0); }
                         set-term-cursor-color-rgb(a0, a1, a2) => { return root.set-term-cursor-color-rgb(a0, a1, a2); }
+                        upload-ui-font() => { root.upload-ui-font(); }
                         set-term-cursor-style(a0) => { root.set-term-cursor-style(a0); }
                         set-term-font(a0) => { root.set-term-font(a0); }
                         set-term-font-bold(a0) => { root.set-term-font-bold(a0); }

@@ -98,6 +98,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     in-out property <bool> show-cmd-bar:true;
     in-out property <bool> sync-upload-enabled:false;
     in property <color> term-cursor-color:Theme.term-fg;
+    in property <string> term-cursor-choice;
     in-out property <string> term-cursor-color-hex:Theme.dark ? "#D4D4D4" : "#2D2D2F";
     in-out property <string> term-cursor-style:"block";
     in-out property <int> term-font-index:0;
@@ -277,6 +278,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                 term-cursor-style <=> term-cursor-style;
                 term-cursor-color-hex <=> term-cursor-color-hex;
                 term-cursor-color: term-cursor-color;
+                term-cursor-choice: term-cursor-choice;
                 output-highlight-enabled <=> output-highlight-enabled;
                 json-format-output <=> json-format-output;
                 scrollback-lines <=> scrollback-lines;
