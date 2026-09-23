@@ -344,7 +344,7 @@ export component CursorColorInput inherits Rectangle {
     color-picker := PopupWindow {
         x: parent.width - self.width;
         y: parent.height + 4px;
-        width: 232px;
+        width: 248px;
         height: 400px;
         Rectangle {
             background: Theme.bg-panel;
@@ -406,7 +406,9 @@ export component CursorColorInput inherits Rectangle {
                     alignment: center;
                     hue-bar := Rectangle {
                         height: 34px;
-                        width: 100%;
+                        // ⚠️ 布局里**不能**写 `width: 100%`：那表示"占满整个布局宽度"，
+                        // 右侧的圆形预览就会被挤出面板（`horizontal-stretch` 才会给它让位）。
+                        horizontal-stretch: 1;
                         Rectangle {
                             y: 11px;
                             height: 12px;
@@ -462,7 +464,8 @@ export component CursorColorInput inherits Rectangle {
                         vertical-alignment: center;
                     }
                     Rectangle {
-                        width: 100%;
+                        // 同上：让输入框吃掉剩余宽度，而不是"占满布局"。
+                        horizontal-stretch: 1;
                         height: 30px;
                         border-radius: 6px;
                         border-width: 1px;
