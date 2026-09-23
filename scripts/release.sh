@@ -5,9 +5,13 @@
 # 版本形态（见 docs/release-process.md）：
 #   X.Y.Z          正式版（把 CHANGELOG 的 [Unreleased] 提升为这一版）
 #   X.Y.Z-fixN     补丁版：正式版之后、下一个小版本之前的紧急修复，N 从 1 递增
+#   X.Y.Z-alphaN / -betaN / -rcN
+#                  预发布版：与 -fixN 同一种思路的不同成熟度（正式版之上继续做出来的
+#                  构建），同样把 [Unreleased] 提升为这一版
 #
 # 用法：
 #   scripts/release.sh 0.7.8              # 正式版
+#   scripts/release.sh 0.7.9-beta5        # 预发布版（beta / alpha / rc 同理）
 #   scripts/release.sh 0.7.7-fix1         # 指定补丁号
 #   scripts/release.sh fix                # 自动取下一个补丁号（0.7.7 → 0.7.7-fix1）
 #   scripts/release.sh fix --base 0.7.6   # 指定基准
@@ -55,18 +59,30 @@ run() {
     fi
 }
 
-# ── 版本比较：0.7.7 < 0.7.7-fix1 < 0.7.7-fix2 < 0.7.8 ──────────────────────
-# 必须与 src/app.rs 的 parse_version 语义一致（多出来的第 4 段是 fix 序号）。
+# ── 版本比较：五元组 (major minor patch stage num) ──────────────────────────
+# 与 src/app.rs 的 parse_version **逐位一致**（stage：1=正式版 2=fix 3=alpha 4=beta 5=rc）。
+#
+# ⚠️ 这个顺序意味着 `0.7.9-beta1 > 0.7.9` —— 这是用户 2026/09/21 明确的约定：
+# `-betaN` 是"正式版发出去之后、在它之上继续做出来的构建"（`-fixN` 的替代写法），
+# 所以 `0.7.9-beta4` 的下一步是 **0.7.10**，而不是回头再发一次 `0.7.9`。
+# 反过来写的话，应用的更新检查永远提示不出测试版（`latest <= current` 会判成"更旧"）。
 ver_key() {
-    local v="${1#v}" core="$1" fix=0
-    core="${v%%-fix*}"
-    if [ "$v" != "$core" ]; then
-        fix="${v##*-fix}"
-        case "$fix" in ''|*[!0-9]*) fix=0 ;; esac
+    local v="${1#v}" core="$1" stage=1 num=0 suffix=""
+    if [ "${v#*-}" != "$v" ]; then
+        core="${v%%-*}"
+        suffix="${v#*-}"
+        case "$suffix" in
+            fix*)   stage=2; num="${suffix#fix}" ;;
+            alpha*) stage=3; num="${suffix#alpha}" ;;
+            beta*)  stage=4; num="${suffix#beta}" ;;
+            rc*)    stage=5; num="${suffix#rc}" ;;
+            *)      stage=1; num=0 ;;   # 认不出来的后缀按正式版容忍（同 app.rs）
+        esac
+        case "$num" in ''|*[!0-9]*) num=0 ;; esac
     fi
     local a b c
     IFS='.' read -r a b c <<<"$core"
-    echo "${a:-0} ${b:-0} ${c:-0} $fix"
+    echo "${a:-0} ${b:-0} ${c:-0} $stage $num"
 }
 
 ver_gt() { # $1 > $2
@@ -74,7 +90,7 @@ ver_gt() { # $1 > $2
     read -r -a x <<<"$(ver_key "$1")"
     read -r -a y <<<"$(ver_key "$2")"
     local i
-    for i in 0 1 2 3; do
+    for i in 0 1 2 3 4; do
         if [ "${x[$i]}" -gt "${y[$i]}" ] 2>/dev/null; then return 0; fi
         if [ "${x[$i]}" -lt "${y[$i]}" ] 2>/dev/null; then return 1; fi
     done
@@ -93,7 +109,8 @@ PY
 # ── 解析目标版本 ────────────────────────────────────────────────────────────
 if [ "$ARG" = "fix" ]; then
     [ -n "$BASE" ] || BASE="$(current_version)"
-    BASE_CORE="${BASE%%-fix*}"
+    # 基准若带后缀（-beta4 / -fix1），先剥掉：补丁号永远接在**正式版**后面。
+    BASE_CORE="${BASE%%-*}"
     NEXT=1
     while git rev-parse -q --verify "refs/tags/v${BASE_CORE}-fix${NEXT}" >/dev/null; do
         NEXT=$((NEXT + 1))
@@ -113,8 +130,8 @@ if [ "$IS_FIX" -eq 1 ]; then
         ''|*[!0-9]*) echo "错误：补丁号必须是数字，如 0.7.7-fix1（收到 $VERSION）" >&2; exit 1 ;;
     esac
 fi
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-fix[0-9]+)?$ ]]; then
-    echo "错误：版本号格式应为 X.Y.Z 或 X.Y.Z-fixN（收到 $VERSION）" >&2
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(fix|alpha|beta|rc)[0-9]+)?$ ]]; then
+    echo "错误：版本号格式应为 X.Y.Z，或带 -fixN / -alphaN / -betaN / -rcN 后缀（收到 $VERSION）" >&2
     exit 1
 fi
 
@@ -122,7 +139,14 @@ CUR="$(current_version)"
 if [ -z "$CUR" ]; then echo "错误：读不到 Cargo.toml 里的 [package].version" >&2; exit 1; fi
 
 echo "当前版本: $CUR"
-echo "目标版本: $VERSION$( [ "$IS_FIX" -eq 1 ] && echo '  (补丁版)' )"
+case "$VERSION" in
+    *-fix*)   KIND="  (补丁版)" ;;
+    *-beta*)  KIND="  (测试版)" ;;
+    *-alpha*) KIND="  (内测版)" ;;
+    *-rc*)    KIND="  (候选版)" ;;
+    *)        KIND="" ;;
+esac
+echo "目标版本: $VERSION$KIND"
 
 if ! ver_gt "$VERSION" "$CUR"; then
     echo "错误：$VERSION 不大于当前版本 $CUR" >&2
