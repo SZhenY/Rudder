@@ -44,7 +44,7 @@ export component AppearancePage inherits VerticalLayout {
     in property <string> accent-mode;
     in property <string> accent-choice;
     in property <[AccentPreset]> accent-presets;
-    // 当前配色的显示名（原版 / 预设名 / 自定义 hex），由 Rust 提供 —— 色表在 Rust 里，
+    // 当前配色的显示名（默认蓝 / 预设名 / 自定义 hex），由 Rust 提供 —— 色表在 Rust 里，
     // Slint 侧不做名称查找。
     in property <string> accent-name;
     // 自定义颜色的输入框内容（双向：用户边打边改，Rust 在切到预设时清空它）。
@@ -145,7 +145,7 @@ export component AppearancePage inherits VerticalLayout {
             HorizontalLayout {
                 spacing: 8px;
                 alignment: start;
-                // 色表由 Rust 提供，**第一条就是「原版」**（id 为空串 = 配置未选，即 Rudder
+                // 色表由 Rust 提供，**第一条就是「默认蓝」**（id 为空串 = 配置未选，即 Rudder
                 // 一直以来的默认蓝）；自定义色在最右边的输入框里。
                 for p in root.accent-presets : CursorPaletteSwatch {
                     hex: p.id;

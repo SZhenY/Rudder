@@ -869,7 +869,7 @@ mod wiring_tests {
         }
     }
 
-    /// 「原版」那条色表行的两个 hex 必须与 `theme.slint` 的 `accent-default` 一致。
+    /// 「默认蓝」那条色表行的两个 hex 必须与 `theme.slint` 的 `accent-default` 一致。
     ///
     /// 两处都在描述"出厂默认蓝"：色块显示的是色表里的值，真正生效的是 Theme 里的值 ——
     /// 一处分叉就会出现"色块是蓝的、界面不是"这种没人会去查的差异。

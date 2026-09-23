@@ -236,15 +236,15 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
 // * 石墨是近中性的低饱和档：终端里花花绿绿的 ANSI 输出才是主角，主色不该抢戏。
 /// 出厂默认主题色（深色档 / 浅色档）。**必须与 `ui/theme.slint` 的 `accent-default` 一致**
 /// —— 由 `default_accent_matches_theme_slint` 测试钉住：色块上显示的颜色与实际生效的颜色
-/// 不能分叉（改了这边忘了那边，用户看到的"原版"就不是原版了）。
+/// 不能分叉（改了这边忘了那边，用户看到的"默认蓝"就不是默认蓝了）。
 pub(crate) const ACCENT_DEFAULT: (&str, &str) = ("#4a90e2", "#0071e3");
 
 const ACCENT_PRESETS: &[(&str, &str, &str, &str, &str)] = &[
     // id,       深色档,     浅色档,     中文名,        英文名
-    // 第一条是**原版**（Rudder 一直以来的默认蓝）。id 为空串 = 配置里"未选"，
-    // 界面上的「原版」色块就是它；`resolve_accent("")` 直接返回 None（不覆盖），
+    // 第一条是**默认蓝**（Rudder 一直以来的出厂色）。id 为空串 = 配置里"未选"，
+    // 界面上的「默认蓝」色块就是它；`resolve_accent("")` 直接返回 None（不覆盖），
     // 真正的生效值来自 `theme.slint` 的 `accent-default`。
-    ("",         ACCENT_DEFAULT.0, ACCENT_DEFAULT.1, "原版（默认）", "Original"),
+    ("",         ACCENT_DEFAULT.0, ACCENT_DEFAULT.1, "默认蓝",       "Default Blue"),
     ("azure",    "#22a2c9", "#0d7f9e", "天青",         "Azure"),
     ("pine",     "#2fb37e", "#14855a", "松绿",         "Pine"),
     ("indigo",   "#6c7ff0", "#4453d8", "靛蓝",         "Indigo"),
@@ -270,7 +270,7 @@ pub(crate) fn normalize_accent(input: &str) -> Option<String> {
     if s.is_empty() {
         return Some(String::new());
     }
-    // 老配置里的 "aurora"（当时的"极光蓝"，其实就是出厂色）统一落到「原版」。
+    // 老配置里的 "aurora"（当时的"极光蓝"，其实就是出厂色）统一落到「默认蓝」。
     if s == "aurora" {
         return Some(String::new());
     }
@@ -329,10 +329,10 @@ fn accent_presets_model(dark: bool) -> ModelRc<AccentPreset> {
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
-/// 界面上「当前配色」显示的名字：预设名 / 自定义色原样 / 原版。
+/// 界面上「当前配色」显示的名字：预设名 / 自定义色原样 / 默认蓝。
 fn accent_display_name(choice: &str) -> SharedString {
     if choice.is_empty() {
-        return t("原版（默认）", "Original").into();
+        return t("默认蓝", "Default Blue").into();
     }
     if choice.starts_with('#') {
         return choice.into();
@@ -478,7 +478,7 @@ mod tests {
         assert_eq!(normalize_accent("").unwrap(), "");
         assert_eq!(normalize_accent("   ").unwrap(), "");
         assert_eq!(normalize_accent("graphite").unwrap(), "graphite");
-        // 老配置里的 "aurora"（当时的"极光蓝"= 出厂色）统一落到「原版」（空串）。
+        // 老配置里的 "aurora"（当时的"极光蓝"= 出厂色）统一落到「默认蓝」（空串）。
         assert_eq!(normalize_accent("aurora").unwrap(), "");
         // `#RGB` 简写展开 + 大写：与预设 id 的大小写约定一致，比较时不必再忽略大小写。
         assert_eq!(normalize_accent("#abc").unwrap(), "#AABBCC");
@@ -496,8 +496,8 @@ mod tests {
     fn accent_resolves_per_theme() {
         assert!(resolve_accent("", true).is_none());
         assert!(resolve_accent("", false).is_none());
-        // 「原版」就是出厂默认：不覆盖（`None`），交给 Theme 里每档的常量。
-        assert!(resolve_accent("aurora", true).is_none()); // 老配置的 aurora 也归到原版
+        // 「默认蓝」就是出厂默认：不覆盖（`None`），交给 Theme 里每档的常量。
+        assert!(resolve_accent("aurora", true).is_none()); // 老配置的 aurora 也归到默认蓝
         // 预设两档必须是两个颜色：同一个 hex 两档通用，必然有一档发灰 / 对比度不够。
         assert_ne!(
             resolve_accent("azure", true).unwrap(),

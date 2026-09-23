@@ -67,14 +67,14 @@ All notable changes are documented here. 本文件记录所有重要变更。
   bright colour in dark mode and a dark one in light mode, re-resolving on every theme change (manual,
   system-follow, or restore-defaults) and syncing the settings page. An explicit colour still wins.
 
-- **修掉三处配色问题：浅色主题下窗口底色仍是深的、主题色只作用于一部分界面、「原版」找不回来。**
+- **修掉三处配色问题：浅色主题下窗口底色仍是深的、主题色只作用于一部分界面、「默认蓝」找不回来。**
   ① **壁纸分区隐藏后，壁纸现在被真正停用** —— 此前只藏了界面，配置里默认的 `builtin:dark` 仍在给
   窗口压一层深色底（壁纸盖住 `window-base`、面板再磨砂叠上去），于是"选了浅色，面板是浅的、窗口
   底色还是深的"，浅色主题永远调不亮；`apply_wallpaper` 现在整体按"没有壁纸"处理，开关与 Rust 常量
   由 `wallpaper_switch_matches_ui` 测试钉住。② **换配色时标签页 / 工具栏也跟着变**：活动标签底色
   原先取的是壁纸派生色、工具栏"面板正开着"的常亮态原先是中性灰，现在都走主题色（新增
-  `Theme.accent-tint`）；SFTP 选中行等原先写死的蓝也一并换掉。③ **色表第一条就是「原版（默认）」**
-  （Rudder 一直以来的默认蓝），并在色块右侧显示当前方案名；老配置里的 `aurora` 自动归到原版 —— 它
+  `Theme.accent-tint`）；SFTP 选中行等原先写死的蓝也一并换掉。③ **色表第一条就是「默认蓝」**
+  （Rudder 一直以来的出厂色），并在色块右侧显示当前方案名；老配置里的 `aurora` 自动归到它 ——
   与出厂色本来就是同一个颜色。新增一致性测试：色表 ↔ `theme.slint` 的 `accent-default`、壁纸开关
   ↔ Rust 常量，防止"色块是蓝的、界面不是"这类无人会查的分叉。
   **Three colour fixes**: the wallpaper is now actually disabled (hiding its section left the default
