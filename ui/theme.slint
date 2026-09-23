@@ -86,10 +86,15 @@ export global Theme {
     // `wp-tint` 与活动标签底色 —— 那些是"沉浸感"，不是"主色"）。
     in-out property <bool> accent-overridden: false;
     in-out property <color> accent-seed: #4a90e2;
+    // `accent-seed` 是**自定义色**（而不是预设的两档取值）时为 true。
+    // 自定义色只存一份原值，浅色档的压深在下面用 `darker()` 现算 —— 这样取色盘里
+    // 显示的、配置里存的、用户选的是同一个值，不会"每改一次就更暗一点"。
+    in-out property <bool> accent-custom: false;
     out property <color> accent-default: dark ? #4a90e2 : #0071e3;
     /// 解析后的**纯色**：需要调透明度的地方（选中行底色等）用它 —— `accent` 是 `brush`
     ///（将来可能放渐变），`brush` 上没有 `with-alpha`。
-    out property <color> accent-solid: root.accent-overridden ? root.accent-seed : root.accent-default;
+    out property <color> accent-solid: !root.accent-overridden ? root.accent-default
+        : (root.accent-custom && !dark ? root.accent-seed.darker(0.25) : root.accent-seed);
 
     out property <brush> accent:         root.accent-solid;
     out property <brush> accent-hover:   root.accent-overridden ? root.accent-solid.brighter(0.12) : (dark ? #5aa0f2 : #0077ed);

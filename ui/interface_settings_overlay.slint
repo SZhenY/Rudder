@@ -152,6 +152,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     callback set-show-cmd-bar(bool);
     callback set-sync-upload-enabled(bool);
     callback set-term-cursor-color(string) -> bool;
+    callback set-term-cursor-color-rgb(int, int, int) -> bool;
     callback set-term-cursor-style(string);
     callback set-term-font(string);
     callback set-term-font-bold(bool);
@@ -159,6 +160,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     callback set-ui-font(string);
     callback set-ui-scale(int);
     callback set-accent(string) -> bool;
+    callback set-accent-rgb(int, int, int) -> bool;
     callback set-appearance-mode(string);
     callback set-update-check-enabled(bool);
     callback set-update-channel(string);
@@ -318,6 +320,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                 wsl-profiles: wsl-profiles;
                 wsl-new-directory <=> wsl-new-directory;
                 set-accent(v) => { return root.set-accent(v); }
+                set-accent-rgb(a0, a1, a2) => { return root.set-accent-rgb(a0, a1, a2); }
                 set-appearance-mode(v) => { root.set-appearance-mode(v); }
                 set-wallpaper(v) => { root.set-wallpaper(v); }
                 pick-wallpaper-file() => { root.pick-wallpaper-file(); }
@@ -327,6 +330,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                 set-term-font-bold(v) => { root.set-term-font-bold(v); }
                 set-term-cursor-style(v) => { root.set-term-cursor-style(v); }
                 set-term-cursor-color(v) => { root.set-term-cursor-color(v) }
+                set-term-cursor-color-rgb(a0, a1, a2) => { return root.set-term-cursor-color-rgb(a0, a1, a2); }
                 set-output-highlight(enabled, preset) => {
                     root.set-output-highlight(enabled, preset);
                 }

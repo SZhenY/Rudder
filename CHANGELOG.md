@@ -47,6 +47,18 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **自定义颜色改成完整的 HSV 调色盘**（原来是三行预设色块）：饱和度/明度方块 + 色相条 +
+  圆形预览 + HEX 输入 + 预设色块。换算全在 Slint 侧完成（`color.to-hsv()` 给色相 0-360°/饱和度与
+  明度 0-1，反向用内建的 `hsv(h, s, v)`）；拖动只改本地状态，**松手时才提交一次** —— Slint 没有
+  hex 格式化能力，所以提交走新回调把三个分量交给 Rust 转成 `#RRGGBB`。顺带修掉一个隐患：自定义色
+  的"浅色档压深"从 Rust 挪到 `theme.slint`（`accent-custom` + `.darker(0.25)` 现算），否则取色盘
+  每提交一次都会在**已经压深过的值**上再压一次，连改几次就越改越暗。
+  **The custom colour is now a full HSV picker** (saturation/value square + hue bar + round preview +
+  HEX field + preset swatches): conversion happens in Slint via `to-hsv()` / the built-in `hsv()`, and a
+  drag only commits once — on release — through a new callback that hands the RGB components to Rust.
+  Light-mode darkening of custom colours moved from Rust into `theme.slint` so repeated edits no longer
+  compound it.
+
 - **「配色」覆盖到设置页里的各个控件。** 左侧导航选中项、光标形状按钮的选中态改用主题色淡底
   （新增 `Theme.accent-tint`）；**开关改成自绘** —— 原来用的官方 `Switch` 取色走 std-widgets 的
   `Palette.accent-background`，而 fluent 风格里它是**派生属性**（`accentify(#0078D4)`，跟随系统

@@ -10,7 +10,7 @@ use slint::{ComponentHandle, SharedString};
 
 use crate::app::fonts_ui::{family_from_label, term_font_covers_cjk};
 use crate::app::terminal_ui::{
-    apply_custom_output_rules, apply_output_highlight, for_each_buffer,
+    apply_custom_output_rules, apply_output_highlight, for_each_buffer, hex_from_rgb,
     output_highlight_rule_model, parse_hex_color, validate_output_highlight_rule,
 };
 use crate::config::OutputHighlightRule;
@@ -68,6 +68,27 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                     }
                     s.save_logging();
                 }
+            }
+            if let Some(w) = weak.upgrade() {
+                let stored = store.borrow().terminal_cursor_color().to_string();
+                apply_cursor_color(&w, &stored);
+            }
+            true
+        });
+    }
+
+    {
+        // 调色盘提交（拖动松手时一次）：Slint 侧没有 hex 格式化能力，送过来的是三个通道值。
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_term_cursor_color_rgb(move |red: i32, green: i32, blue: i32| {
+            let hex = hex_from_rgb(red, green, blue);
+            {
+                let mut s = store.borrow_mut();
+                if !s.set_terminal_cursor_color(&hex) {
+                    return false;
+                }
+                s.save_logging();
             }
             if let Some(w) = weak.upgrade() {
                 let stored = store.borrow().terminal_cursor_color().to_string();

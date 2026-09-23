@@ -441,6 +441,7 @@ export component AppWindow inherits Window {
     callback set-term-font-bold(bool);             // apply + persist bold terminal text
     callback set-term-cursor-style(string);        // apply + persist cursor shape (#275)
     callback set-term-cursor-color(string) -> bool;// validate + persist cursor colour (#275)
+    callback set-term-cursor-color-rgb(int, int, int) -> bool;   // 调色盘提交（Slint 无 hex 格式化）
     callback set-output-highlight(bool, string);   // enable + built-in preset
     callback set-json-format-output(bool);         // pretty-print + colour JSON lines (#338)
     callback set-scrollback-lines(string) -> bool;  // persist terminal history lines
@@ -470,6 +471,7 @@ export component AppWindow inherits Window {
     in-out property <string> accent-hex: "";
     in property <string> accent-name: "";          // 当前配色的显示名（默认蓝 / 预设 / hex）
     callback set-accent(string) -> bool;           // 预设 id / "#RRGGBB" / ""；非法返回 false
+    callback set-accent-rgb(int, int, int) -> bool;// 调色盘提交（Slint 无 hex 格式化）
     callback set-appearance-mode(string);          // system / dark / light
     // SFTP follows the terminal's cd; opt out in Interface settings.
     in-out property <bool> sftp-follow-cd: true;
@@ -2337,6 +2339,7 @@ export component AppWindow inherits Window {
         reset-page(p0) => { root.reset-page(p0); }
         save-webdav-settings(p0, p1, p2, p3, p4, p5) => { root.save-webdav-settings(p0, p1, p2, p3, p4, p5); }
         set-accent(p0) => { return root.set-accent(p0); }
+        set-accent-rgb(p0, p1, p2) => { return root.set-accent-rgb(p0, p1, p2); }
         set-appearance-mode(p0) => { root.set-appearance-mode(p0); }
         set-animations-enabled(p0) => { root.set-animations-enabled(p0); }
         set-collapse-sftp-default(p0) => { root.set-collapse-sftp-default(p0); }
@@ -2358,6 +2361,7 @@ export component AppWindow inherits Window {
         set-show-cmd-bar(p0) => { root.set-show-cmd-bar(p0); }
         set-sync-upload-enabled(p0) => { root.set-sync-upload-enabled(p0); }
         set-term-cursor-color(p0) => { return root.set-term-cursor-color(p0); }
+        set-term-cursor-color-rgb(p0, p1, p2) => { return root.set-term-cursor-color-rgb(p0, p1, p2); }
         set-term-cursor-style(p0) => { root.set-term-cursor-style(p0); }
         set-term-font(p0) => { root.set-term-font(p0); }
         set-term-font-bold(p0) => { root.set-term-font-bold(p0); }

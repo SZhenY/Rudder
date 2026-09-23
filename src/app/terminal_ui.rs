@@ -42,6 +42,15 @@ pub(super) fn parse_hex_color(value: &str) -> Option<slint::Color> {
     Some(slint::Color::from_rgb_u8(red, green, blue))
 }
 
+/// `parse_hex_color` 的反函数：三个通道 → `#RRGGBB`（大写）。
+///
+/// 需要它是因为 Slint 侧**没有 hex 格式化能力**：调色盘只能把分量送过来，由这边转成
+/// 配置里那种规范形式（`normalize_*` 只认 6 位十六进制）。
+pub(super) fn hex_from_rgb(red: i32, green: i32, blue: i32) -> String {
+    let c = |v: i32| v.clamp(0, 255) as u8;
+    format!("#{:02X}{:02X}{:02X}", c(red), c(green), c(blue))
+}
+
 pub(super) fn validate_output_highlight_rule(
     pattern: &str,
     is_regex: bool,
@@ -495,6 +504,17 @@ mod tests {
         assert_eq!(parse_hex_color("#ff0000"), Some(red));
         assert_eq!(parse_hex_color("ff0000"), Some(red), "可不带 #");
         assert_eq!(parse_hex_color("  #FF0000  "), Some(red), "两端空白应忽略");
+    }
+
+    /// `hex_from_rgb` 是 `parse_hex_color` 的反函数（调色盘只送分量过来）；
+    /// 越界分量夹住而不是回绕。
+    #[test]
+    fn hex_from_rgb_round_trips_through_parse_hex_color() {
+        assert_eq!(hex_from_rgb(0x4a, 0x90, 0xe2), "#4A90E2");
+        assert_eq!(hex_from_rgb(0, 0, 0), "#000000");
+        assert_eq!(hex_from_rgb(-5, 300, 128), "#00FF80");
+        let c = parse_hex_color(&hex_from_rgb(18, 52, 86)).expect("round-trip");
+        assert_eq!((c.red(), c.green(), c.blue()), (18, 52, 86));
     }
 
     #[test]

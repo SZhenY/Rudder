@@ -253,13 +253,61 @@ export component CursorPaletteSwatch inherits Rectangle {
     }
 }
 
-// Hex RGB editor with a live swatch. Incomplete/invalid input remains editable
-// but is marked red and is not applied or persisted.
+// 取色控件：左边一个色块按钮、右边 Hex 输入框；点色块打开 **HSV 调色盘**
+// （饱和度/明度方块 + 色相条 + 圆形预览 + HEX 输入 + 预设色块）。
+//
+// 颜色换算全在 Slint 侧：`color.to-hsv()` 给色相（0-360°）与饱和度/明度（0-1），
+// 反向用内建的 `hsv(h, s, v)` 构造 —— 只有"提交"才过一次 Rust（`apply-color-rgb`），
+// 且**只在松手时提交一次**，免得拖动过程中每帧都去写盘。
+//
+// 非法 / 不完整的 Hex 仍可编辑，但标红且不应用、不持久化。
 export component CursorColorInput inherits Rectangle {
     in-out property <string> value;
     in property <color> preview-color;
     property <bool> valid: true;
     callback apply-color(string) -> bool;
+    // 调色盘提交：由 Rust 转成 `#RRGGBB` 并持久化（Slint 侧没有 hex 格式化能力）。
+    callback apply-color-rgb(int, int, int) -> bool;
+
+    // 调色盘的实时状态。外部颜色变了（打开面板 / 打字 / 预设 / Rust 回写）就重新同步。
+    property <float> hue: 0;
+    property <float> sat: 1;
+    property <float> val: 1;
+
+    /// 拖动中的实时颜色：不经过 Rust，松手才提交。
+    pure function live-color() -> color { return hsv(root.hue, root.sat, root.val); }
+
+    pure function clamp01(v: float) -> float { return max(0.0, min(1.0, v)); }
+
+    /// 方块内的坐标 → 饱和度（横轴）/ 明度（纵轴）。尺寸由调用处传入，免得函数里
+    /// 前向引用元素。
+    function set-sv(x: length, y: length, w: length, h: length) {
+        root.sat = root.clamp01(x / w);
+        root.val = root.clamp01(1.0 - y / h);
+    }
+
+    /// 色相条位置 → 色相（0-360；上界取 359.9 免得正好回到 0 时指示圈弹到最左）。
+    pure function hue-from(x: length, w: length) -> float {
+        return max(0.0, min(359.9, (x / w) * 360.0));
+    }
+
+    /// 从当前颜色反推 H/S/V。
+    function sync-from-color() {
+        let c = root.preview-color.to-hsv();
+        root.hue = c.hue;
+        root.sat = c.saturation;
+        root.val = c.value;
+    }
+
+    /// 松手提交一次：Rust 负责转 hex、持久化，并把结果回写到 `value` / `preview-color`。
+    function commit() {
+        let c = root.live-color();
+        root.valid = root.apply-color-rgb(c.red, c.green, c.blue);
+    }
+
+    init => { root.sync-from-color(); }
+    changed preview-color => { root.sync-from-color(); }
+
     width: 160px;
     height: 30px;
     border-radius: 6px;
@@ -296,8 +344,8 @@ export component CursorColorInput inherits Rectangle {
     color-picker := PopupWindow {
         x: parent.width - self.width;
         y: parent.height + 4px;
-        width: 210px;
-        height: 160px;
+        width: 232px;
+        height: 400px;
         Rectangle {
             background: Theme.bg-panel;
             border-radius: 8px;
@@ -307,13 +355,133 @@ export component CursorColorInput inherits Rectangle {
             drop-shadow-color: Theme.shadow-popup-color;
             VerticalLayout {
                 padding: 10px;
-                spacing: 7px;
-                Text {
-                    text: root.value;
-                    color: Theme.text-secondary;
-                    font-family: Theme.term-font-family;
-                    font-size: 11px * Theme.panel-font;
-                    vertical-alignment: center;
+                spacing: 9px;
+
+                // ── 饱和度（横）/ 明度（纵）方块 ──────────────────────────
+                // 底色 = 当前色相拉满，再横向叠"白 → 该色相"；纵向叠"透明 → 黑"。
+                sv-square := Rectangle {
+                    height: 150px;
+                    width: 100%;
+                    border-radius: 6px;
+                    clip: true;
+                    background: @linear-gradient(90deg, #ffffff 0%, hsv(root.hue, 1.0, 1.0) 100%);
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        background: @linear-gradient(180deg, transparent 0%, #000000 100%);
+                    }
+                    // 拖动只改本地 H/S/V（不写盘），**松手时**才提交一次。
+                    sv-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        moved => {
+                            if (sv-ta.pressed) {
+                                root.set-sv(sv-ta.mouse-x, sv-ta.mouse-y, sv-square.width, sv-square.height);
+                            }
+                        }
+                        pointer-event(ev) => {
+                            if (ev.kind == PointerEventKind.down) {
+                                root.set-sv(sv-ta.mouse-x, sv-ta.mouse-y, sv-square.width, sv-square.height);
+                            }
+                            if (ev.kind == PointerEventKind.up) { root.commit(); }
+                        }
+                    }
+                    // 指示圈：位置由 S/V 决定（贴着边缘时不会被裁掉）。
+                    Rectangle {
+                        x: root.sat * (parent.width - self.width);
+                        y: (1.0 - root.val) * (parent.height - self.height);
+                        width: 14px;
+                        height: 14px;
+                        border-radius: 7px;
+                        border-width: 2px;
+                        border-color: #ffffff;
+                        background: transparent;
+                        drop-shadow-blur: 3px;
+                        drop-shadow-color: #000000a0;
+                    }
+                }
+
+                // ── 色相条 + 当前颜色预览 ─────────────────────────────────
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: center;
+                    hue-bar := Rectangle {
+                        height: 34px;
+                        width: 100%;
+                        Rectangle {
+                            y: 11px;
+                            height: 12px;
+                            width: 100%;
+                            border-radius: 6px;
+                            background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%);
+                        }
+                        hue-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            moved => {
+                                if (hue-ta.pressed) {
+                                    root.hue = root.hue-from(hue-ta.mouse-x, hue-ta.width);
+                                }
+                            }
+                            pointer-event(ev) => {
+                                if (ev.kind == PointerEventKind.down) {
+                                    root.hue = root.hue-from(hue-ta.mouse-x, hue-ta.width);
+                                }
+                                if (ev.kind == PointerEventKind.up) { root.commit(); }
+                            }
+                        }
+                        Rectangle {
+                            x: (root.hue / 360.0) * (parent.width - self.width);
+                            y: (parent.height - self.height) / 2;
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 8px;
+                            border-width: 2px;
+                            border-color: #ffffff;
+                            background: transparent;
+                            drop-shadow-blur: 3px;
+                            drop-shadow-color: #000000a0;
+                        }
+                    }
+                    Rectangle {
+                        width: 34px;
+                        height: 34px;
+                        border-radius: 17px;
+                        border-width: 1px;
+                        border-color: Theme.border-strong;
+                        background: root.live-color();
+                    }
+                }
+
+                // ── HEX 输入 ─────────────────────────────────────────────
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: center;
+                    Text {
+                        text: "HEX";
+                        color: Theme.text-secondary;
+                        font-size: 12px * Theme.panel-font;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        width: 100%;
+                        height: 30px;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: root.valid ? Theme.border-subtle : #e05252;
+                        background: Theme.bg-elevated;
+                        TextInput {
+                            input-method-hints: Theme.plain-input-hints;
+                            x: 8px;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            text: root.value;
+                            color: Theme.text-primary;
+                            font-family: Theme.term-font-family;
+                            font-size: 12px * Theme.panel-font;
+                            vertical-alignment: center;
+                            single-line: true;
+                            edited => { root.valid = root.apply-color(self.text); }
+                        }
+                    }
                 }
                 HorizontalLayout {
                     spacing: 6px;

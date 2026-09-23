@@ -43,6 +43,7 @@ export component TerminalPage inherits VerticalLayout {
     callback set-scrollback-lines(string) -> bool;
     callback set-large-scrollback(bool);
     callback set-term-cursor-color(string) -> bool;
+    callback set-term-cursor-color-rgb(int, int, int) -> bool;
     // 页面私有状态（原为 InterfacePanel 的私有 property，随页面一起搬过来）：
     // "添加规则"表单的草稿值 + 回滚行数输入的校验态。它们不参与持久化。
     property <string> new-rule-pattern;
@@ -129,6 +130,7 @@ export component TerminalPage inherits VerticalLayout {
                 value <=> root.term-cursor-color-hex;
                 preview-color: root.term-cursor-color;
                 apply-color(v) => { root.set-term-cursor-color(v) }
+                apply-color-rgb(r, g, b) => { return root.set-term-cursor-color-rgb(r, g, b); }
             }
         }
     }

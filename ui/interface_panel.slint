@@ -96,6 +96,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-term-font-bold(bool);
     callback set-term-cursor-style(string);
     callback set-term-cursor-color(string) -> bool;
+    callback set-term-cursor-color-rgb(int, int, int) -> bool;   // 调色盘提交
     in-out property <string> scrollback-lines: "5000";
     in-out property <bool> large-scrollback;
     property <bool> scrollback-valid: true;
@@ -130,6 +131,7 @@ export component InterfacePanel inherits Rectangle {
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
     callback set-wallpaper(string);    // none / builtin selection
     callback set-accent(string) -> bool;   // preset id / "#RRGGBB" / ""; false = 非法值
+    callback set-accent-rgb(int, int, int) -> bool;          // 调色盘提交
     callback set-appearance-mode(string);  // system / dark / light
     in-out property <bool> hide-special-partitions: true;
     callback set-hide-special-partitions(bool);
@@ -256,6 +258,7 @@ export component InterfacePanel inherits Rectangle {
                         set-scrollback-lines(a0) => { return root.set-scrollback-lines(a0); }
                         set-large-scrollback(a0) => { root.set-large-scrollback(a0); }
                         set-term-cursor-color(a0) => { return root.set-term-cursor-color(a0); }
+                        set-term-cursor-color-rgb(a0, a1, a2) => { return root.set-term-cursor-color-rgb(a0, a1, a2); }
                         set-term-cursor-style(a0) => { root.set-term-cursor-style(a0); }
                         set-term-font(a0) => { root.set-term-font(a0); }
                         set-term-font-bold(a0) => { root.set-term-font-bold(a0); }
@@ -282,6 +285,7 @@ export component InterfacePanel inherits Rectangle {
                             pick-wallpaper-file() => { root.pick-wallpaper-file(); }
                             reset-page(a0) => { root.reset-page(a0); }
                             set-accent(a0) => { return root.set-accent(a0); }
+                            set-accent-rgb(a0, a1, a2) => { return root.set-accent-rgb(a0, a1, a2); }
                             set-appearance-mode(a0) => { root.set-appearance-mode(a0); }
                             set-animations-enabled(a0) => { root.set-animations-enabled(a0); }
                             set-hide-special-partitions(a0) => { root.set-hide-special-partitions(a0); }

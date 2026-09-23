@@ -11,7 +11,9 @@ use super::{FontCatalog, Store, persist};
 use crate::app::apply_wallpaper;
 use crate::app::fonts_ui::{family_from_label, resolve_ui_font_family};
 use crate::app::resource_ui::sync_proc_theme;
-use crate::app::terminal_ui::{apply_dark_mode, parse_hex_color, theme_pref_is_dark};
+use crate::app::terminal_ui::{
+    apply_dark_mode, hex_from_rgb, parse_hex_color, theme_pref_is_dark,
+};
 use crate::i18n::t;
 use crate::terminal::TermBuffers;
 use crate::ui::{ AccentPreset, AnimationSettings, AppWindow, ProcWindow, Theme };
@@ -221,6 +223,26 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             true
         });
     }
+
+    {
+        // 调色盘提交（拖动松手时一次）。Slint 侧没有 hex 格式化能力，所以送过来的是
+        // 三个通道值，在这里转成配置里那种 `#RRGGBB`。
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_accent_rgb(move |red: i32, green: i32, blue: i32| -> bool {
+            let hex = hex_from_rgb(red, green, blue);
+            let Some(normalized) = normalize_accent(&hex) else {
+                return false;
+            };
+            persist(&store, |s| {
+                s.set_accent(normalized.clone());
+            });
+            if let Some(w) = weak.upgrade() {
+                apply_accent(&w, &normalized);
+            }
+            true
+        });
+    }
 }
 
 // ── 配色：主题色 ────────────────────────────────────────────────────────
@@ -298,21 +320,13 @@ fn resolve_accent(choice: &str, dark: bool) -> Option<Color> {
         return None;
     }
     if s.starts_with('#') {
-        let c = parse_hex_color(s)?;
-        // 自定义色：浅色档压深 25%，保证在浅面板上仍然读得清。
-        return Some(if dark { c } else { scale_color(c, 0.75) });
+        // 自定义色**原样**返回：浅色档的压深交给 `theme.slint` 现算（`accent-custom` +
+        // `.darker(0.25)`）。若在这里就压深，取色盘每次提交都会在"已经压深过的值"上再压
+        // 一次 —— 连改几次就越改越暗。
+        return parse_hex_color(s);
     }
     let preset = ACCENT_PRESETS.iter().find(|p| p.0 == s)?;
     parse_hex_color(if dark { preset.1 } else { preset.2 })
-}
-
-/// 按比例压暗（Slint 语言里的 `.darker()` 在 Rust 侧没有对应 API，这里直接乘通道）。
-fn scale_color(c: Color, k: f32) -> Color {
-    Color::from_rgb_u8(
-        (c.red() as f32 * k) as u8,
-        (c.green() as f32 * k) as u8,
-        (c.blue() as f32 * k) as u8,
-    )
 }
 
 /// 送给界面的预设列表：颜色已按当前深浅档解析好，界面只管画（不存第二份色表）。
@@ -356,6 +370,8 @@ pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
     };
     w.global::<Theme>().set_accent_overridden(overridden);
     w.global::<Theme>().set_accent_seed(seed);
+    // 自定义色（而不是预设的两档取值）：浅色档由 theme.slint 现算压深。
+    w.global::<Theme>().set_accent_custom(choice.trim().starts_with('#'));
     w.set_accent_choice(choice.into());
     // 自定义色时输入框回显它；切到预设 / 默认就清空输入框（免得显示一个没生效的值）。
     w.set_accent_hex(if choice.starts_with('#') {
@@ -503,11 +519,12 @@ mod tests {
             resolve_accent("azure", true).unwrap(),
             resolve_accent("azure", false).unwrap()
         );
-        // 自定义色在浅色档压深（浅底上保对比度）。
-        let on_dark = resolve_accent("#8899AA", true).unwrap();
-        let on_light = resolve_accent("#8899AA", false).unwrap();
-        assert!(on_light.red() < on_dark.red());
-        assert!(on_light.green() < on_dark.green());
-        assert!(on_light.blue() < on_dark.blue());
+        // 自定义色**原样**返回（两档同一个值）：浅色档的压深由 `theme.slint` 用
+        // `accent-custom` + `.darker(0.25)` 现算 —— 在这里压深的话，取色盘每提交一次就会
+        // 在"已经压深过的值"上再压一次，连改几次就越改越暗。
+        assert_eq!(
+            resolve_accent("#8899AA", true).unwrap(),
+            resolve_accent("#8899AA", false).unwrap()
+        );
     }
 }
