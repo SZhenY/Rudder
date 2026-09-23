@@ -47,6 +47,18 @@ All notable changes are documented here. 本文件记录所有重要变更。
   *whole* window. They no longer animate. Three per-tick model rebuilds (network curves, disk
   list, NIC list) were also switched to in-place writes.
 
+- **设置页里现在直接显示"实际生效的颜色"，并修好回填把选择写死的问题。** 光标颜色与自定义颜色
+  两个输入框回填的都是**当前真正生效的色号**（预设主题色也给具体 `#RRGGBB`，跟随主题时给解析
+  结果），切深色 / 浅色 / 跟随系统时输入框与预览色块都会同步更新。为此加了「回声」判定：输入框
+  显示的就是我们回填的值，Slint 的 `changed` 会把这次回填也报上来 —— 若不区分，预设主题色会被
+  固化成自定义色、光标色的"跟随主题"会被写死成一个具体颜色。判定**两档都认**（设置页是打开面板
+  时才创建的，`changed` 可能晚于回填、期间深浅档已翻过一轮）。另外外观页「还原本页默认」也会按
+  还原后的深浅档重新解析光标色。
+  **The settings pages now show the colour that is actually in effect** (presets display their concrete
+  `#RRGGBB`, "follow theme" shows the resolved value), updating live when the theme changes. An "echo"
+  check keeps that programmatic feed-back from being mistaken for a user edit — otherwise a preset
+  would be frozen into a custom colour and "follow theme" into a hard-coded one.
+
 - **自定义颜色改成完整的 HSV 调色盘**（原来是三行预设色块）：饱和度/明度方块 + 色相条 +
   圆形预览 + HEX 输入 + 预设色块。换算全在 Slint 侧完成（`color.to-hsv()` 给色相 0-360°/饱和度与
   明度 0-1，反向用内建的 `hsv(h, s, v)`）；拖动只改本地状态，**松手时才提交一次** —— Slint 没有

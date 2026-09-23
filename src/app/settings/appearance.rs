@@ -214,6 +214,11 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             let Some(normalized) = normalize_accent(v.as_str()) else {
                 return false;
             };
+            // 「回声」判定：输入框里显示的本来就是**当前生效色**（预设与出厂色也填具体
+            // 色号），那次程序化回显会走到这里 —— 若当成用户改动，预设就被固化成自定义色了。
+            if is_accent_echo(&normalized, store.borrow().accent()) {
+                return true;
+            }
             persist(&store, |s| {
                 s.set_accent(normalized.clone());
             });
@@ -234,6 +239,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             let Some(normalized) = normalize_accent(&hex) else {
                 return false;
             };
+            // 与 hex 输入同一条「回声」判定：拖到与当前生效色相同的位置时不必变成自定义色。
+            if is_accent_echo(&normalized, store.borrow().accent()) {
+                return true;
+            }
             persist(&store, |s| {
                 s.set_accent(normalized.clone());
             });
@@ -343,6 +352,22 @@ fn accent_presets_model(dark: bool) -> ModelRc<AccentPreset> {
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
+/// 当前**生效**的主题色（`#RRGGBB`）：未选时就是出厂色（色表第一条 = `theme.slint` 的
+/// `accent-default`）。界面上的"自定义颜色"输入框显示它 —— 用户因此始终看得到真实颜色。
+pub(crate) fn effective_accent_hex(choice: &str, dark: bool) -> String {
+    let fallback = if dark { ACCENT_DEFAULT.0 } else { ACCENT_DEFAULT.1 };
+    match resolve_accent(choice, dark).or_else(|| parse_hex_color(fallback)) {
+        Some(c) => hex_from_rgb(c.red() as i32, c.green() as i32, c.blue() as i32),
+        None => String::new(),
+    }
+}
+
+/// 是不是"回填造成的回声"。两档都认 —— 理由同 `terminal::is_follow_echo`：设置页是打开
+/// 面板时才创建的，`changed` 可能**晚于**回填执行，期间深浅档可能已经翻过一轮。
+fn is_accent_echo(v: &str, stored: &str) -> bool {
+    v == effective_accent_hex(stored, true) || v == effective_accent_hex(stored, false)
+}
+
 /// 界面上「当前配色」显示的名字：预设名 / 自定义色原样 / 默认蓝。
 fn accent_display_name(choice: &str) -> SharedString {
     if choice.is_empty() {
@@ -373,12 +398,10 @@ pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
     // 自定义色（而不是预设的两档取值）：浅色档由 theme.slint 现算压深。
     w.global::<Theme>().set_accent_custom(choice.trim().starts_with('#'));
     w.set_accent_choice(choice.into());
-    // 自定义色时输入框回显它；切到预设 / 默认就清空输入框（免得显示一个没生效的值）。
-    w.set_accent_hex(if choice.starts_with('#') {
-        choice.into()
-    } else {
-        SharedString::new()
-    });
+    // 输入框回显**当前生效的颜色**（预设 / 出厂色也给具体色号）—— 用户一眼能看到实际值。
+    // 这次回显会触发输入框的 `changed text` → `on_set_accent`，那里的"回声判定"会把它
+    // 当成无操作，不会把预设变成自定义色。
+    w.set_accent_hex(effective_accent_hex(choice, dark).into());
     w.set_accent_presets(accent_presets_model(dark));
     w.set_accent_name(accent_display_name(choice));
 }
@@ -442,6 +465,10 @@ pub(crate) fn reset(
     // 而主题色要按最终档位解析；下拉框也要跟着回到还原后的 theme_pref。
     apply_accent(w, store.borrow().accent());
     w.set_accent_mode(store.borrow().theme_pref().into());
+    // 终端光标色同理：本页还原会把主题改回出厂默认（深浅档可能因此翻转），光标色在
+    // "跟随主题"时要按**新的**档位重新解析 —— 否则设置页与终端里都还留着旧档位的颜色。
+    let cursor = store.borrow().terminal_cursor_color().to_string();
+    super::terminal::apply_cursor_color(w, &cursor);
     // 已打开的进程监视窗要跟着换肤（窗口可能没开，upgrade 失败就跳过）。
     if let Some(p) = proc_win.upgrade() {
         sync_proc_theme(w, &p);
@@ -505,6 +532,31 @@ mod tests {
         assert!(normalize_accent("#12345").is_none());
         assert!(normalize_accent("#gggggg").is_none());
         assert!(normalize_accent("blue").is_none());
+    }
+
+    /// 「回声」判定（主色）：预设两档的解析结果都不该被当成用户改动 —— 否则预设会被
+    /// 固化成自定义色；用户真的选了别的颜色则照常写入。
+    #[test]
+    fn accent_echo_ignores_both_modes() {
+        assert!(is_accent_echo("#22A2C9", "azure"));
+        assert!(is_accent_echo("#0D7F9E", "azure"));
+        assert!(is_accent_echo("#4A90E2", ""));
+        assert!(!is_accent_echo("#FF0000", "azure"));
+    }
+
+    /// 「自定义颜色」输入框显示的是**当前生效色**（预设与出厂色也给具体色号）——
+    /// 用户因此始终看得到真实颜色；回显时由「回声」判定保证不会把手上的选择改掉。
+    #[test]
+    fn effective_accent_hex_covers_presets_and_defaults() {
+        assert_eq!(effective_accent_hex("", true), "#4A90E2");
+        assert_eq!(effective_accent_hex("", false), "#0071E3");
+        assert_eq!(effective_accent_hex("azure", true), "#22A2C9");
+        assert_eq!(effective_accent_hex("azure", false), "#0D7F9E");
+        // 自定义色原样（浅色档的压深在 Slint 侧，不影响这里显示的值）。
+        assert_eq!(effective_accent_hex("#8899aa", true), "#8899AA");
+        assert_eq!(effective_accent_hex("#8899aa", false), "#8899AA");
+        // 认不出来的取值退回出厂色，而不是显示空白。
+        assert_eq!(effective_accent_hex("nonsense", true), "#4A90E2");
     }
 
     /// 预设解析：深浅两档**各自**取色；未选（`""`）返回 `None` → 交给 Theme 的每档常量。
