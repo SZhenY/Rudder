@@ -425,7 +425,10 @@ export component SettingsWindow inherits Window {
     if root.webdav-url-editor-open : ModalCard {
         // 宽输入：这里能一眼看全上百字符的地址，同步页里那行放不下。
         card-width: min(parent.width - 96px, 760px);
-        card-height: 150px;
+        // 高度随内容（`auto-height` 用 body 的 preferred-height，上限是宿主高度 - 40px）——
+        // 下面那段自动换行的完整地址有几行，卡片就有多高。
+        auto-height: true;
+        card-height: 220px;
         dismissed => { root.webdav-url-editor-open = false; }
         VerticalLayout {
             spacing: 10px;
@@ -436,6 +439,16 @@ export component SettingsWindow inherits Window {
                 value <=> root.webdav-url-draft;
                 accepted => { root.commit-webdav-url(); }
                 canceled => { root.webdav-url-editor-open = false; }
+            }
+            // 输入框是单行的（`TextInput` 失焦后只从头部显示），200+ 字符的地址在这里照样看不全
+            // —— 所以始终再摊开一份**自动换行**的完整地址；它跟输入框绑同一个草稿，边打边跟着变。
+            Text {
+                text: root.webdav-url-draft;
+                color: Theme.text-secondary;
+                font-size: 11px * Theme.panel-font;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+                max-height: 96px;   // 极端长地址时兜个上限，避免卡片顶到窗口外
             }
             HorizontalLayout {
                 alignment: end;

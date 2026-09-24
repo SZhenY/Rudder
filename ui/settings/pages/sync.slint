@@ -81,7 +81,11 @@ export component SyncPage inherits VerticalLayout {
         HorizontalLayout {
             spacing: 8px;
             LabeledInput {
-                horizontal-stretch: 1;
+                // ⚠ 必须显式给宽度：`TextInput` 的 preferred-width 会跟着 placeholder / 内容
+                // 一起变长，在**横向**布局里就会把右边的按钮挤掉、文字压到按钮上（用户报的现象）。
+                // 页面上其它输入框没这问题，是因为它们在纵向布局里、宽度由容器给。
+                // 64px = 56px 按钮 + 8px 间距。
+                width: parent.width - 64px;
                 label: root.lang-en ? "Endpoint URL" : "WebDAV 地址";
                 placeholder: "https://nas:5006/all/ or https://nas:5006/all/rudder-connections.json";
                 value <=> root.webdav-url;
@@ -90,6 +94,7 @@ export component SyncPage inherits VerticalLayout {
             VerticalLayout {
                 alignment: end;
                 GhostButton {
+                    width: 56px;
                     text: root.lang-en ? "Edit…" : "编辑…";
                     clicked => { root.edit-webdav-url(); }
                 }
