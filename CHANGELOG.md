@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.9-beta5] - 2026-09-24
+
 ### 变更 / Changed
 
 - **设置页从"叠在主窗口上的覆盖层"改成真正的独立窗口（原生标题栏）。** 这是本轮性能优化的主项，
