@@ -346,6 +346,10 @@ export component CursorColorInput inherits Rectangle {
         y: parent.height + 4px;
         width: 248px;
         height: 400px;
+        // ⚠ 默认策略是 `CloseOnClick` = **点任何地方都关**（Slint 里 `CloseOnClickOutside`
+        // 才是"点弹层外面才关"，见 i-slint-core/window.rs:990-997）—— 于是调色盘里点一下就
+        // 被关掉、根本选不中颜色。这里显式改成"点外面才关"，与用户的直觉一致。
+        close-policy: close-on-click-outside;
         Rectangle {
             background: Theme.bg-panel;
             border-radius: 8px;
