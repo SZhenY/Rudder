@@ -5,6 +5,56 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 变更 / Changed
+
+- **设置页从"叠在主窗口上的覆盖层"改成真正的独立窗口（原生标题栏）。** 这是本轮性能优化的主项，
+  也是外观上唯一明显的改动。三条实测驱动的决策：① Slint 1.18 里**嵌套 `Window` 并不创建独立
+  窗口**（编译器原话 `Window elements as children do not create separate windows`）—— 只是同一张
+  表面的另一个根，主窗口照样被带着重绘，等于白改；② `PopupWindow` 确实是独立 surface，但**无边框**，
+  拿不到原生关闭 / 拖动 / 缩放；③ 所以走**独立 root 窗口**（`SettingsWindow::new()`，与 `ProcWindow`
+  / `SystemInfoWindow` 同一条路），`no-frame` 留默认 → 三平台都是原生装饰。macOS 上额外用一小段
+  AppKit 调用（`standardWindowButton:` + `setHidden:`）隐藏「最小化(黄)」「缩放(绿)」，只留「关闭(红)」
+  —— Slint 与 winit 0.30 都没有这个开关（`maximizable` 在 winit 里只是 X11 内部按 `resizable` 派生），
+  Windows / Linux 维持平台惯例。顺带把自写的 44px 标题栏、拖动把手、右下角缩放把手、12 个 `ifd-*`
+  状态**全部删掉**：旧文件 `ui/interface_settings_overlay.slint`（434 行）整体退休，`app.slint` 净减约
+  180 行。面板那圈 **24px `drop-shadow` 也整根消失** —— 原生窗口的边框与阴影由系统合成器画，而高斯
+  模糊成本按半径平方涨，它原本是滚动时 GPU 占用最粗的一根。
+  **The settings page is now a real top-level window** with native decorations instead of an overlay;
+  the 24px dialog drop-shadow and the custom titlebar / drag / resize machinery are gone.
+- **设置窗口的观感与主界面同源（内置壁纸、自定义壁纸、遮罩透明度都跟着走）。** 之前它只画一层
+  `bg-panel-strong`，而这个 token 的 alpha 是 `min(1.0, panel-alpha + 0.20)` = **1.0 全不透明**，把
+  `frost()` 已经做好的"朝壁纸平均色 `wp-tint` 靠拢"整个挡掉了，底下也没有壁纸层 —— 于是只剩生灰。
+  现在照 `proc_window.slint` 的合成方式补齐：`window-base` 不透明底 + `if Theme.wallpaper-active :
+  Image` 壁纸层 + `bg-panel` 磨砂面板，所以内置的"深灰带蓝 / 浅灰白带蓝"、用户上传的自定义图片、
+  以及「壁纸遮罩透明度」滑杆都会同步体现。**The settings window now uses the same background
+  composition as the main window** (window base + wallpaper layer + frosted panel).
+- **独立窗口带来的"每窗口一份"的坑，以及跨窗口联动。** Slint 的 `Theme` 与 std-widgets 的 `Palette`
+  都是**按窗口各自实例化**（不是共享）的，所以：① 设置窗口新增 11 个 `<=> Theme.*` + Rust 侧
+  `sync_settings_theme` 逐项同步（含 `is-mac` —— 仓库 `proc_window.slint:169` 早有注释：子窗口里
+  `Theme.is-mac` 恒为 false，而设置页的更新频道文案与圆角尺寸都依赖它；以及主题色与 `panel-alpha`）；
+  ② 48 个回调转发之后一律**回灌一次**，所以在设置页里切深浅 / 配色时窗口当场跟着变；③ 在**窗口之外**
+  改主题的 7 条路径（工具栏深浅开关、外观页各回调、「跟随系统」每 5 秒的自动跟随与随之切换的内置壁纸）
+  也顺手回灌；④ macOS 上新映射的第二个窗口**不会自动产生首帧**（表现是"只有标题栏、没有内容，拉伸
+  一下才出来"），按 `app.rs` 既有做法在 0 / 50 / 200ms 各请求一次重绘。**Three per-window copies are
+  now kept in sync** (Theme, Palette, plus the macOS first-frame redraw workaround).
+- **顺带修掉三处连带问题。** ① 「壁纸遮罩透明度」原先只写盘、没应用到主窗口，所以只有设置窗口自己会
+  变；现在拖动即实时预览主界面（新增一条**只预览不写盘**的 `preview-wallpaper-overlay` 回调 ——
+  因为 `Slider.released` 在拖动时不触发、点按才触发，而写盘又不能每帧做），松手才落盘。② 主窗口关闭
+  时设置窗口不会跟着关：未拦截（无活动会话）那条路径直接落到 `EventResult::Propagate`，**根本没有
+  `quit_event_loop`**，而独立窗口自己就足以让事件循环继续活着；现在两条关闭路径都会显式收掉设置窗口。
+  ③ 删掉了 macOS 的 `macos_terminal_wheel_can_target_terminal` 守卫及其单测 —— 它存在的前提是
+  "设置页叠在同一个窗口里"，独立之后反而会让设置开着时主窗口滚不动。**Three knock-on fixes**: the
+  overlay slider now previews live, closing the main window also closes the settings window, and the
+  obsolete macOS wheel guard is gone.
+- 依赖：为 macOS 的按钮隐藏加了 `objc2` + `raw-window-handle`（都已在依赖树里 —— `Cargo.lock` 只多
+  一行，所以不增加编译量、二进制也不变大）。
+
+### 门禁 / Gates
+
+- `cargo test` 473 passed；`cargo clippy --all-targets -- -D warnings` 0 告警；debug / release 构建
+  启动无异常。性能前后对比见后续提交。
+
+
 ## [0.7.9-beta4] - 2026-09-23
 
 ### 新增 / Added

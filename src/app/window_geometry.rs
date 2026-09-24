@@ -93,11 +93,9 @@ pub(crate) fn handle_macos_terminal_wheel(
     true
 }
 
-// The raw macOS wheel fallback runs before the usual Slint hit testing. Keep
-// modal-state routing explicit so it cannot target a terminal behind a dialog.
-pub(crate) fn macos_terminal_wheel_can_target_terminal(interface_open: bool) -> bool {
-    !interface_open
-}
+// 原先这里有个 `macos_terminal_wheel_can_target_terminal(interface_open)`：设置页还叠在
+// 主窗口里时，要用它挡住"设置打开期间滚轮喂给终端"。设置页改成**独立窗口**后，滚轮由系统
+// 按指针位置派发到对应窗口，这个守卫反而会让设置开着时主窗口滚不动 —— 已删除。
 
 pub(crate) fn terminal_wheel_hit(
     win: &AppWindow,
@@ -430,13 +428,6 @@ mod tests {
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> LogicalRect {
         LogicalRect { x, y, w, h }
-    }
-
-    /// 有模态面板时不允许把滚轮事件投给后面的终端。
-    #[test]
-    fn wheel_targets_terminal_only_without_interface_open() {
-        assert!(macos_terminal_wheel_can_target_terminal(false));
-        assert!(!macos_terminal_wheel_can_target_terminal(true));
     }
 
     /// 四种停靠边各自让出空间的方向（left/top 还要把起点挪开）。

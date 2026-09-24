@@ -134,6 +134,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-update-channel(string);
     callback set-update-freq(int);
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
+    callback preview-wallpaper-overlay(float);   // live preview while dragging (不写盘)
     callback set-wallpaper(string);    // none / builtin selection
     callback set-accent(string) -> bool;   // preset id / "#RRGGBB" / ""; false = 非法值
     callback set-accent-rgb(int, int, int) -> bool;          // 调色盘提交
@@ -291,6 +292,7 @@ export component InterfacePanel inherits Rectangle {
                             ui-scale: root.ui-scale;
                             wallpaper-overlay <=> root.wallpaper-overlay;
                             persist-wallpaper-overlay(a0) => { root.persist-wallpaper-overlay(a0); }
+                            preview-wallpaper-overlay(a0) => { root.preview-wallpaper-overlay(a0); }
                             pick-wallpaper-file() => { root.pick-wallpaper-file(); }
                             reset-page(a0) => { root.reset-page(a0); }
                             set-accent(a0) => { return root.set-accent(a0); }

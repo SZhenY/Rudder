@@ -43,10 +43,29 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
 
     {
         let store = store.clone();
+        // ⚠ 除了写盘，**必须立刻应用到主窗口的 `Theme.panel-alpha`** —— 面板底色的 `frost()`
+        // 就是拿它算 alpha 的。少了这一步，只有设置窗口自己会变（它的 `Theme` 是独立副本），
+        // 主界面纹丝不动 —— 上一版就是这个毛病（用户报"只能改设置界面的透明度"）。
+        let weak = window.as_weak();
         window.on_persist_wallpaper_overlay(move |v| {
             persist(&store, |s| {
                 s.set_wallpaper_overlay(v);
             });
+            if let Some(w) = weak.upgrade() {
+                w.global::<Theme>().set_panel_alpha(v);
+            }
+        });
+    }
+
+    {
+        // 拖动中的实时预览：只改主窗口的 `Theme.panel-alpha`，**不写盘**（写盘走 persist）。
+        // 拆成两条回调是因为 Slider 的 `released` 在拖动时不一定触发（点按才触发），
+        // 而写盘又不能每帧做。
+        let weak = window.as_weak();
+        window.on_preview_wallpaper_overlay(move |v| {
+            if let Some(w) = weak.upgrade() {
+                w.global::<Theme>().set_panel_alpha(v);
+            }
         });
     }
 
@@ -144,6 +163,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             publish_wallpaper_choices(&w, &store);
             if let Some(p) = proc_weak.upgrade() {
                 sync_proc_theme(&w, &p);
+                // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
+                crate::app::settings_window::resync_if_open(&w);
             }
         });
     }
@@ -178,6 +199,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 publish_wallpaper_choices(&w, &store);
                 if let Some(p) = proc_weak.upgrade() {
                     sync_proc_theme(&w, &p);
+                    // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
+                    crate::app::settings_window::resync_if_open(&w);
                 }
             } else {
                 persist(&store, |s| {
@@ -234,6 +257,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             w.set_accent_mode(normalized.into());
             if let Some(p) = proc_weak.upgrade() {
                 sync_proc_theme(&w, &p);
+                // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
+                crate::app::settings_window::resync_if_open(&w);
             }
         });
     }
@@ -691,6 +716,8 @@ pub(crate) fn reset(
     // 已打开的进程监视窗要跟着换肤（窗口可能没开，upgrade 失败就跳过）。
     if let Some(p) = proc_win.upgrade() {
         sync_proc_theme(w, &p);
+        // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
+        crate::app::settings_window::resync_if_open(w);
     }
     // 动画开关没有后端持久化（Slint 全局，重启即回），还原即重新开启。
     w.global::<AnimationSettings>().set_enabled(true);

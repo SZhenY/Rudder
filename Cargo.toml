@@ -156,6 +156,14 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 # .ico embedded by winresource at link time; on macOS from the app bundle.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
 
+# ── macOS：把设置窗口的「最小化(黄) / 缩放(绿)」两个原生按钮隐藏掉，只留关闭(红) ──
+# Slint 与 winit 0.30 都没暴露这个开关（`maximizable` 在 winit 里只是 X11 内部按
+# `resizable` 派生出来的），只能拿到底层 `NSWindow` 调 AppKit。
+# 这两个依赖本来就在依赖树里（winit 带进来的），所以不增加编译量，二进制也不会变大。
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+raw-window-handle = "0.6"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # Native Wayland clipboard (wlr-data-control protocol) so copy/paste works on
 # Wayland sessions (KDE/wlroots) without relying on XWayland (issue #47).

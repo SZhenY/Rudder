@@ -127,6 +127,9 @@ fn start_system_theme_watcher(window: &AppWindow, store: &Store, bufs: &TermBuff
                     settings::appearance::publish_wallpaper_choices(&w, &store);
                 }
             }
+            // 系统外观变了 → 设置窗口（独立窗口，`Theme` / `Palette` 各一份副本）也要刷，
+            // 否则"跟随系统"自动切换时它还是旧样子。
+            crate::app::settings_window::resync_if_open(&w);
         },
     );
     // Timer 被 drop 就停 —— 这里 `leak` 保活（与侧栏采样器同一套做法）。

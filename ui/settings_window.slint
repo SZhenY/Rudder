@@ -1,7 +1,21 @@
-//! **设置覆盖层**：嵌在主窗口内的模态设置面板（不是独立窗口），可拖动但被夹在窗口内。
+//! **设置窗口**：真正的独立窗口（此前是嵌在主窗口里的模态面板）。
 //!
-//! 从 `app.slint` 拆出（P4 B 类）—— **纯接线**：状态透传 + 动作转发，本身不含业务逻辑。
-//! 关闭 / 打开等窗口状态改动一律上抛为回调。
+//! 为什么必须是"独立 root 窗口"—— 另两种写法都试过，都被 Slint 1.18 否掉 ✗：
+//! * 嵌套 `Window`：编译器警告「Window elements as children do not create separate
+//!   windows」→ 只是同一张表面上的另一个根，主窗口照样被带着重绘 ✗；
+//! * `PopupWindow`：确实是独立 surface，但**无边框** ✗ → 没有原生标题栏，也就没有
+//!   原生关闭 / 拖动 / 缩放。
+//! 只有独立 root 窗口能拿到各平台原生边框。项目里 `ProcWindow` / `SystemInfoWindow`
+//! 就走这条路（`set_custom_titlebar(cfg!(not(target_os = "macos")))`，macOS 用原生）。
+//!
+//! 收益（实测驱动，理由见 CHANGELOG）：
+//! * 主窗口在设置打开期间**不再参与重绘** —— 滚设置不再拖着终端 / 侧栏 / 标签页一起光栅；
+//! * 那圈 24px `drop-shadow` 整块删掉（B1 的极限形态）—— 原生窗口的边框与阴影由系统
+//!   合成器画，而这圈高斯模糊原本是滚动时 GPU 占用最粗的一根；
+//! * 拖动 / 缩放 / 关闭全交给系统，自写的 44px 标题栏与 `ifd-*` 状态全部退休。
+//!
+//! 两个必须自己接的坑（细节见根元素处的注释）：`Theme` global **按窗口各自实例化** →
+//! 要逐项同步；macOS 上第二个窗口**不会自动产生首帧** → `show()` 后要 `request_first_frame()`。
 
 import { AnimationSettings } from "theme.slint";
 import "fonts/MeatshellMono-Regular.ttf";
@@ -46,11 +60,53 @@ import { DockSnapOverlay } from "dock_snap_overlay.slint";
 import { ConfirmOverlays } from "confirm_overlays.slint";
 import { ShortcutsDialog } from "shortcuts_dialog.slint";
 
-export component InterfaceSettingsOverlay inherits Rectangle {
-    // 显隐由调用点控制：**常驻**，不用 `if` 包着 —— 在事件派发栈上销毁
-    // 正在处理事件的子树会闪退（#323/#343）。关闭时不绘制也不参与命中。
-    in property <bool> open: false;
-    visible: open;
+export component SettingsWindow inherits Window {
+    // 真·独立窗口：`no-frame` 留默认（false）→ 各平台的原生标题栏 —— macOS 的
+    // 红黄绿按钮、原生拖动、原生缩放全都由系统提供，一行代码都不用写。
+    // （项目里 `ProcWindow` / `SystemInfoWindow` 也是这么做的：
+    //  `set_custom_titlebar(cfg!(not(target_os = "macos")))`，macOS 走原生。）
+    title: lang-en ? "Settings" : "设置";
+    // ⚠ **独立 root 窗口**：不在主窗口的组件树里 → 有两件事必须自己接（都有现成先例）：
+    //
+    // 1. `Theme` global **是按窗口各自实例化的，不是共享的** ✗ → 必须像 `ProcWindow`
+    //    那样逐项同步过去（见下面那组 `<=> Theme.*` + Rust 的 `sync_settings_theme`）。
+    //    仓库里还留着一条血泪注释（`proc_window.slint:169`）：子窗口里 `Theme.is-mac`
+    //    恒为 false —— 所以 `is-mac` 也要一起同步（设置页的更新频道文案与圆角尺寸都
+    //    依赖它）。主题色同理（`accent-overridden` / `accent-seed`），否则这个窗口里
+    //    按钮与选中态会退回默认蓝 ✗。
+    // 2. macOS 上新映射的第二个窗口**不会自动产生首帧**（表现：只有标题栏、没有内容，
+    //    拉伸一下才出来）→ Rust 侧 `show()` 之后要 `request_first_frame()`，照
+    //    `app.rs:597` 那套"连续三个 tick 各补一次"的补救来。
+    width: max(720px, 760px * Theme.panel-font);
+    height: max(480px, 560px * Theme.panel-font);
+    // 不透明底（壁纸层与磨砂面板都盖在它上面）—— 与主窗口 / `ProcWindow` 同一套合成。
+    background: Theme.window-base;
+    default-font-family: Theme.ui-font-family;
+
+    // ── 与主窗口的 `Theme` 同步（Rust 侧 `sync_settings_theme` 写入）───────────
+    // 双向绑到本窗口自己的 `Theme` 实例：值一变，整套调色板 / 字体 / 圆角跟着变。
+    in-out property <bool>   dark-mode <=> Theme.dark;
+    in-out property <float>  ui-scale <=> Theme.ui-scale;
+    in-out property <string> ui-font-family <=> Theme.ui-font-family;
+    in-out property <bool>   is-mac <=> Theme.is-mac;
+    in-out property <image>  wallpaper-img <=> Theme.wallpaper;
+    in-out property <bool>   wallpaper-active <=> Theme.wallpaper-active;
+    in-out property <color>  wp-accent <=> Theme.wp-accent;
+    in-out property <color>  wp-tint <=> Theme.wp-tint;
+    in-out property <bool>   accent-overridden <=> Theme.accent-overridden;
+    in-out property <color>  accent-seed <=> Theme.accent-seed;
+    // 「壁纸遮罩透明度」滑杆改的就是它 —— 不同步的话，这个窗口的面板透明度不会跟着变。
+    in-out property <float>  panel-alpha <=> Theme.panel-alpha;
+
+    // ── std-widgets 的派生气板 ──────────────────────────────────────────────
+    // `Palette` 和 `Theme` 一样是**按窗口各自实例**的 ✗ —— 不同步的话，这个窗口里的
+    // 官方控件（下拉框展开后的列表、LineEdit、滚动条）会退回平台浅色 ✗，
+    // 就是"下拉框不如原来好看"的那一半原因。
+    // 写法照抄 `app.slint:371-373`：`changed` 只认**本地**属性名，所以用一条单向派生的
+    // 本地属性当触发器（随 `Theme.dark` 变化，Rust 不去写它），再在 `changed` 里同步。
+    property <bool> dark-mode-watch: Theme.dark;
+    init => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-mode-watch => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }
     // ── 状态（窗口透传）──────────────────────────────────────────────
     // 配色：主题（深浅）+ 主题色（由 Rust 播种；预设色已按当前深浅档解析好颜色）。
     in property <string> accent-mode:"system";
@@ -67,18 +123,8 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     in-out property <int> wallpaper-index;
     in-out property <bool> download-always-ask:false;
     in-out property <bool> hide-special-partitions:true;
-    in-out property <length> ifd-base-h;
-    in-out property <length> ifd-base-w;
-    in-out property <length> ifd-base-x;
-    in-out property <length> ifd-base-y;
-    in-out property <bool> ifd-dragging;
-    in-out property <length> ifd-grab-x;
-    in-out property <length> ifd-grab-y;
-    in-out property <length> ifd-h:min(root.height - 56px, max(420px, 480px * Theme.panel-font));
-    in-out property <bool> ifd-resizing;
-    in-out property <length> ifd-w:min(root.width - 56px, max(640px, 720px * Theme.panel-font));
-    in-out property <length> ifd-x:round((root.width - root.ifd-w) / 2 / 1px) * 1px;
-    in-out property <length> ifd-y:round((root.height - root.ifd-h) / 2 / 1px) * 1px;
+    // `ifd-*`（自写拖动 / 缩放状态）已随独立窗口退休：拖动归系统标题栏，
+    // 缩放归窗口边缘，位置也不再需要夹在父窗口内。
     in property <bool> is-windows:false;
     in-out property <bool> json-format-output:true;
     in property <bool> lang-en:false;
@@ -129,6 +175,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     callback add-wsl-profile(string, string, string);
     callback check-update-now();
     callback persist-wallpaper-overlay(float);
+    callback preview-wallpaper-overlay(float);
     callback pick-wallpaper-file();
     callback pick-wsl-directory();
     callback remove-output-highlight-rule(int);
@@ -174,11 +221,7 @@ export component InterfaceSettingsOverlay inherits Rectangle {
     callback webdav-download();
     callback webdav-upload();
 
-    width: 100%;
-    height: 100%;
-    background: #00000080;            // dim backdrop
-    // Grab focus and swallow keys so nothing leaks to the terminal beneath;
-    // Esc closes the panel (#140-3).
+    // Esc 关闭：焦点仍由这里抓（窗口是独立的，不抓就拿不到键）。
     FocusScope {
         init => { self.focus(); }
         key-pressed(e) => {
@@ -187,82 +230,40 @@ export component InterfaceSettingsOverlay inherits Rectangle {
         }
         key-released(e) => { accept }
     }
-    // Modal: clicking the backdrop does nothing (only the ✕ closes it).
-    TouchArea { scroll-event(e) => { accept } }
 
+    // ── 背景合成：与主窗口 / `ProcWindow` 同一套（这是"氛围感"的来源）─────────
+    //
+    // 关键在 `theme.slint` 的 `frost()`：面板底色会**朝壁纸平均色 `wp-tint` 靠拢**
+    // （`base.mix(wp-tint, 1 - tint-amt)`）再叠成半透明 —— 所以底下必须真有一层壁纸图，
+    // 否则就是"生搬硬套的灰" ✗（内置的深灰带蓝 / 浅灰白带蓝，以及用户自定义的图片，
+    // 走的都是这一条路，所以设置窗口的观感会自然跟着主界面变）。
+    if Theme.wallpaper-active : Image {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: Theme.wallpaper;
+        image-fit: cover;
+    }
+
+    // 磨砂面板：用 `bg-panel`（alpha ≈ panel-alpha）而不是 `bg-panel-strong`
+    // —— 后者的 alpha 是 `min(1.0, panel-alpha + 0.20)` = **1.0 全不透明** ✗，
+    // 会把壁纸染色整个挡掉（之前"设置页是生灰的"就是这么来的）。
+    // 原生窗口的边框与阴影仍由系统画（那圈 24px 高斯模糊已整根删掉）。
     Rectangle {
-        x: ifd-x;
-        y: ifd-y;
-        // Bigger base, and scales with the settings font size (#v0.5).
-        width: ifd-w;
-        height: ifd-h;
-        // 20% less transparent than the welcome/resource panels so the dense
-        // grey settings labels stay readable at a low overlay (user request).
-        background: Theme.bg-panel-strong;
-        border-radius: Theme.radius-md;
-        border-width: 1px;
-        border-color: Theme.border-strong;
-        drop-shadow-blur: Theme.shadow-dialog-blur;
-        drop-shadow-color: Theme.shadow-dialog-color;
-        clip: true;
-        TouchArea {}   // swallow inside clicks so they don't hit the backdrop
-
+        width: 100%;
+        height: 100%;
+        background: Theme.bg-panel;
         VerticalLayout {
-            // Title bar — drag to move (clamped inside the window).
-            Rectangle {
-                height: 44px;
-                // Transparent so the card's single frosted layer shows through
-                // — no extra stacked opacity, matching the welcome/resource
-                // panels and following the wallpaper slider (#new-user-defaults
-                // items 6/7). The 1px divider below still separates it.
-                background: transparent;
-                title-drag := TouchArea {
-                    mouse-cursor: move;
-                    pointer-event(e) => {
-                        if (e.kind == PointerEventKind.down) {
-                            ifd-dragging = true;
-                            ifd-base-x = ifd-x;
-                            ifd-base-y = ifd-y;
-                            ifd-grab-x = self.absolute-position.x + self.mouse-x;
-                            ifd-grab-y = self.absolute-position.y + self.mouse-y;
-                        } else if (e.kind == PointerEventKind.up) {
-                            ifd-dragging = false;
-                        }
-                    }
-                    moved => {
-                        if (ifd-dragging) {
-                            ifd-x = clamp(
-                                round((ifd-base-x + (self.absolute-position.x + self.mouse-x - ifd-grab-x)) / 1px) * 1px,
-                                0px, max(0px, root.width - ifd-w));
-                            ifd-y = clamp(
-                                round((ifd-base-y + (self.absolute-position.y + self.mouse-y - ifd-grab-y)) / 1px) * 1px,
-                                0px, max(0px, root.height - ifd-h));
-                        }
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 16px;
-                    padding-right: 10px;
-                    Text {
-                        text: lang-en ? "Settings" : "设置";
-                        color: Theme.text-primary;
-                        font-size: 14px;
-                        font-weight: 700;
-                        horizontal-stretch: 1;
-                        vertical-alignment: center;
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        CloseButton {
-                            size: 24px;
-                            glyph-size: 15px;
-                            clicked => { root.close-requested(); }
-                        }
-                    }
-                }
-            }
-            Divider {}
-
+        width: 100%;
+        height: 100%;
+            // macOS 的窗口是「全尺寸内容视图 + 透明标题栏」→ 原生交通灯会**浮在内容之上**，
+            // 顶部必须留出 25px（与主窗口 `titlebar-inset`、`ProcWindow` 同一取值）。
+            // 其它平台的标题栏在内容之外，不用让位（`is-mac` 已从主窗口同步过来）。
+            padding-top: root.is-mac ? 25px : 0px;
+            // 自写的 44px 标题栏（标题 + 拖动 + ✕）与它下面的 Divider 都退休了：
+            // 标题、拖动、关闭按钮现在由 macOS 窗口标题栏提供，少两层图元，
+            // 也少一块 44px 高的重绘面积。
             InterfacePanel {
                 vertical-stretch: 1;
                 lang-en: lang-en;
@@ -391,44 +392,10 @@ export component InterfaceSettingsOverlay inherits Rectangle {
                 remove-wsl-profile(id) => { root.remove-wsl-profile(id); }
                 pick-wsl-directory => { root.pick-wsl-directory(); }
                 persist-wallpaper-overlay(v) => { root.persist-wallpaper-overlay(v); }
+                preview-wallpaper-overlay(v) => { root.preview-wallpaper-overlay(v); }
             }
         }
-        Rectangle {
-            x: parent.width - 18px;
-            y: parent.height - 18px;
-            width: 18px;
-            height: 18px;
-            background: resize-ta.has-hover || ifd-resizing ? Theme.bg-hover : transparent;
-            IconText {
-                centered: true;
-                text: "\u{E3C2}";
-                color: Theme.text-muted;
-                font-size: 14px;
-            }
-            resize-ta := TouchArea {
-                mouse-cursor: nwse-resize;
-                pointer-event(e) => {
-                    if (e.kind == PointerEventKind.down) {
-                        ifd-resizing = true;
-                        ifd-base-w = ifd-w;
-                        ifd-base-h = ifd-h;
-                        ifd-grab-x = self.absolute-position.x + self.mouse-x;
-                        ifd-grab-y = self.absolute-position.y + self.mouse-y;
-                    } else if (e.kind == PointerEventKind.up) {
-                        ifd-resizing = false;
-                    }
-                }
-                moved => {
-                    if (ifd-resizing) {
-                        ifd-w = clamp(
-                            round((ifd-base-w + (self.absolute-position.x + self.mouse-x - ifd-grab-x)) / 1px) * 1px,
-                            640px, max(640px, root.width - ifd-x));
-                        ifd-h = clamp(
-                            round((ifd-base-h + (self.absolute-position.y + self.mouse-y - ifd-grab-y)) / 1px) * 1px,
-                            420px, max(420px, root.height - ifd-y));
-                    }
-                }
-            }
-        }
+        // 关闭按钮由原生标题栏提供（macOS 的红点 / Windows-Linux 的 ✕），
+        // 这里不再自绘 —— 系统的关闭请求会触发本组件的 `close-requested`。
     }
 }

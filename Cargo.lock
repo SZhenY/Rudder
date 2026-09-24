@@ -5384,6 +5384,7 @@ dependencies = [
  "md5",
  "memchr",
  "memmap2",
+ "objc2 0.6.4",
  "pollster",
  "portable-pty",
  "rand 0.8.7",

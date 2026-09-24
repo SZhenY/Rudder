@@ -37,8 +37,13 @@ import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset } from "settings/types.slint";
+// 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
+// `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
+// `slint::include_modules!` 才会生成对应的 Rust 窗口类型（只 import 不实例化的话，
+// 实测生成不出来 —— 上面的 export 行就是为这个存在的）。
+import { SettingsWindow } from "settings_window.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
-export { ProcWindow, SystemInfoWindow }
+export { ProcWindow, SystemInfoWindow, SettingsWindow }
 import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
@@ -46,7 +51,8 @@ import { ModalCard } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
-// 「自动更新」对话框：**必须**挂在文件末尾、设置遮罩（InterfaceSettingsOverlay）之后 ——
+// 「自动更新」对话框：挂在文件末尾只是为了减少改动；设置页改成独立窗口后，"谁压谁"
+// 的层级顾虑已不成立（原文说的是"必须挂在设置遮罩之后"）。
 // 否则会重演横幅那个 bug（设置面板是全窗遮罩，挂在最后，压住一切在它之前的东西）。
 import { UpdateDialog } from "update_dialog.slint";
 import { EditorFindResult, FileEditor } from "file_editor.slint";
@@ -62,7 +68,6 @@ import { AboutDialog } from "about_dialog.slint";
 import { DockSnapOverlay } from "dock_snap_overlay.slint";
 import { ConfirmOverlays } from "confirm_overlays.slint";
 import { ShortcutsDialog } from "shortcuts_dialog.slint";
-import { InterfaceSettingsOverlay } from "interface_settings_overlay.slint";
 import { FramelessTitleBar } from "custom_titlebar.slint";
 import { TitlebarInsetStrip } from "titlebar_inset_strip.slint";
 import { SidebarBody } from "sidebar_body.slint";
@@ -402,42 +407,19 @@ export component AppWindow inherits Window {
     // Wallpaper / immersive theming — Rust drives these from the wallpaper module.
     // User-adjustable wallpaper overlay opacity (0.30–1.00), persisted.
     callback persist-wallpaper-overlay(float);
+    callback preview-wallpaper-overlay(float);   // 拖动中的实时预览（不写盘）
     in property <[string]> term-fonts;             // installed monospace families
     in property <[string]> ui-fonts;              // all families for UI font picker
     in-out property <int> ui-font-index: 0;           // picker selection into ui-fonts
     callback set-ui-font(string);
     callback upload-ui-font();                      // 上传字体（复制进 config/fonts）                  // persist UI font choice
-    in-out property <bool> interface-open: false;  // Interface settings overlay
-    // Interface card position (draggable by its title bar, clamped inside the
-    // window so it can't leave the parent); init centered.
-    // Centred, snapped to whole logical pixels: a half-pixel origin makes the
-    // card's text render on subpixel offsets and look blurry (#v0.5).
-    property <length> ifd-w: min(root.width - 56px, max(640px, 720px * Theme.panel-font));
-    property <length> ifd-h: min(root.height - 56px, max(420px, 480px * Theme.panel-font));
-    property <length> ifd-x: round((root.width - root.ifd-w) / 2 / 1px) * 1px;
-    property <length> ifd-y: round((root.height - root.ifd-h) / 2 / 1px) * 1px;
-    property <bool> ifd-dragging;
-    property <bool> ifd-resizing;
-    property <length> ifd-base-x;
-    property <length> ifd-base-y;
-    property <length> ifd-base-w;
-    property <length> ifd-base-h;
-    property <length> ifd-grab-x;
-    property <length> ifd-grab-y;
-
-    // A drag/resize assignment breaks the initial centering bindings. Recenter
-    // every time the modal opens so coordinates from a larger/DPI-different
-    // monitor can never leave the settings card outside the current window.
-    changed interface-open => {
-        if (root.interface-open) {
-            root.ifd-dragging = false;
-            root.ifd-resizing = false;
-            root.ifd-w = clamp(root.ifd-w, 640px, max(640px, root.width - 56px));
-            root.ifd-h = clamp(root.ifd-h, 420px, max(420px, root.height - 56px));
-            root.ifd-x = round((root.width - root.ifd-w) / 2 / 1px) * 1px;
-            root.ifd-y = round((root.height - root.ifd-h) / 2 / 1px) * 1px;
-        }
-    }
+    // 设置窗口是否打开。窗口本身由下面用 `if` 创建 / 销毁（不再是常驻覆盖层），
+    // 所以这里只剩一个布尔量：旧的 `ifd-*`（自写拖动 / 缩放 / 居中）全部退休
+    // —— 拖动、缩放、边框、阴影都交给系统窗口管理器。
+    in-out property <bool> interface-open: false;  // Interface settings window
+    // 设置窗口是 Rust 侧的独立 root 窗口 → Slint 这里只说"要开/要关"，窗口由 Rust
+    // `show()` / `hide()` 操作（只隐藏不销毁，所以没有 `#323/#343` 那类风险）。
+    callback toggle-interface-settings(bool);
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
     callback set-term-font-bold(bool);             // apply + persist bold terminal text
@@ -2057,7 +2039,7 @@ export component AppWindow inherits Window {
         import-ssh-config() => { root.import-ssh-config(); }
         export-sessions() => { root.export-sessions(); }
         import-sessions() => { root.import-sessions(); }
-        open-interface-settings => { root.interface-open = true; }
+        open-interface-settings => { root.toggle-interface-settings(true); }
         open-batch-import => { root.batch-import-text = ""; root.batch-import-open = true; }
         open-shortcuts => { root.shortcuts-open = true; }
         open-about => { root.about-open = true; }
@@ -2262,133 +2244,11 @@ export component AppWindow inherits Window {
         sftp-delete(tab-id, path) => { root.sftp-delete(tab-id, path); }
         sftp-delete-selected(tab-id) => { root.sftp-delete-selected(tab-id); }
     }
-    // --- Interface settings (modal overlay) -------------------------------
-    // 已抽成 `ui/interface_settings_overlay.slint`：**纯接线**，状态透传 + 动作转发。
-    InterfaceSettingsOverlay {
-        open: root.interface-open;
-        accent-mode : root.accent-mode;
-        accent-choice : root.accent-choice;
-        accent-presets : root.accent-presets;
-        accent-hex <=> root.accent-hex;
-        accent-name : root.accent-name;
-        collapse-sftp-default <=> root.collapse-sftp-default;
-        collapse-sidebar-default <=> root.collapse-sidebar-default;
-        convert-eol <=> root.convert-eol;
-        current-wallpaper : root.current-wallpaper;
-        custom-wallpaper-name : root.custom-wallpaper-name;
-        wallpaper-labels : root.wallpaper-labels;
-        wallpaper-index <=> root.wallpaper-index;
-        download-always-ask <=> root.download-always-ask;
-        hide-special-partitions <=> root.hide-special-partitions;
-        ifd-base-h <=> root.ifd-base-h;
-        ifd-base-w <=> root.ifd-base-w;
-        ifd-base-x <=> root.ifd-base-x;
-        ifd-base-y <=> root.ifd-base-y;
-        ifd-dragging <=> root.ifd-dragging;
-        ifd-grab-x <=> root.ifd-grab-x;
-        ifd-grab-y <=> root.ifd-grab-y;
-        ifd-h <=> root.ifd-h;
-        ifd-resizing <=> root.ifd-resizing;
-        ifd-w <=> root.ifd-w;
-        ifd-x <=> root.ifd-x;
-        ifd-y <=> root.ifd-y;
-        is-windows : root.is-windows;
-        json-format-output <=> root.json-format-output;
-        lang-en : root.lang-en;
-        large-scrollback <=> root.large-scrollback;
-        mount-filter <=> root.mount-filter;
-        osc52-clipboard <=> root.osc52-clipboard;
-        output-highlight-enabled <=> root.output-highlight-enabled;
-        output-highlight-preset <=> root.output-highlight-preset;
-        output-highlight-rule-status <=> root.output-highlight-rule-status;
-        output-highlight-rules : root.output-highlight-rules;
-        quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
-        quick-panel-collapsed <=> root.quick-panel-collapsed;
-        quick-panel-open <=> root.quick-panel-open;
-        renderer-mode <=> root.renderer-mode;
-        scrollback-lines <=> root.scrollback-lines;
-        sftp-follow-cd <=> root.sftp-follow-cd;
-        show-cmd-bar <=> root.show-cmd-bar;
-        sync-upload-enabled <=> root.sync-upload-enabled;
-        term-cursor-color : root.term-cursor-color;
-        term-cursor-choice : root.term-cursor-choice;
-        term-cursor-color-hex <=> root.term-cursor-color-hex;
-        term-cursor-style <=> root.term-cursor-style;
-        term-font-index <=> root.term-font-index;
-        term-fonts : root.term-fonts;
-        ui-font-index <=> root.ui-font-index;
-        ui-fonts : root.ui-fonts;
-        update-check-enabled <=> root.update-check-enabled;
-        update-check-status : root.update-check-status;
-        update-checking : root.update-checking;
-        update-channel : root.update-channel;
-        update-freq-labels : root.update-freq-labels;
-        update-freq-index <=> root.update-freq-index;
-        update-last-check : root.update-last-check;
-        webdav-accept-invalid-certs <=> root.webdav-accept-invalid-certs;
-        webdav-enabled <=> root.webdav-enabled;
-        webdav-password <=> root.webdav-password;
-        webdav-remote-path <=> root.webdav-remote-path;
-        webdav-status <=> root.webdav-status;
-        webdav-url <=> root.webdav-url;
-        webdav-username <=> root.webdav-username;
-        welcome-as-sidebar <=> root.welcome-as-sidebar;
-        wsl-new-directory <=> root.wsl-new-directory;
-        wsl-profiles : root.wsl-profiles;
-        close-requested => { root.interface-open = false; }
-        add-output-highlight-rule(p0, p1, p2, p3, p4) => { return root.add-output-highlight-rule(p0, p1, p2, p3, p4); }
-        add-wsl-profile(p0, p1, p2) => { root.add-wsl-profile(p0, p1, p2); }
-        check-update-now() => { root.check-update-now(); }
-        persist-wallpaper-overlay(p0) => { root.persist-wallpaper-overlay(p0); }
-        pick-wallpaper-file() => { root.pick-wallpaper-file(); }
-        pick-wsl-directory() => { root.pick-wsl-directory(); }
-        remove-output-highlight-rule(p0) => { root.remove-output-highlight-rule(p0); }
-        remove-wsl-profile(p0) => { root.remove-wsl-profile(p0); }
-        reset-page(p0) => { root.reset-page(p0); }
-        save-webdav-settings(p0, p1, p2, p3, p4, p5) => { root.save-webdav-settings(p0, p1, p2, p3, p4, p5); }
-        set-accent(p0) => { return root.set-accent(p0); }
-        set-accent-rgb(p0, p1, p2) => { return root.set-accent-rgb(p0, p1, p2); }
-        set-appearance-mode(p0) => { root.set-appearance-mode(p0); }
-        set-animations-enabled(p0) => { root.set-animations-enabled(p0); }
-        set-collapse-sftp-default(p0) => { root.set-collapse-sftp-default(p0); }
-        set-collapse-sidebar-default(p0) => { root.set-collapse-sidebar-default(p0); }
-        set-convert-eol(p0) => { root.set-convert-eol(p0); }
-        set-download-always-ask(p0) => { root.set-download-always-ask(p0); }
-        set-hide-special-partitions(p0) => { root.set-hide-special-partitions(p0); }
-        set-json-format-output(p0) => { root.set-json-format-output(p0); }
-        set-large-scrollback(p0) => { root.set-large-scrollback(p0); }
-        set-mount-filter(p0) => { root.set-mount-filter(p0); }
-        set-osc52-clipboard(p0) => { root.set-osc52-clipboard(p0); }
-        set-output-highlight(p0, p1) => { root.set-output-highlight(p0, p1); }
-        set-output-highlight-rule-enabled(p0, p1) => { root.set-output-highlight-rule-enabled(p0, p1); }
-        set-panel-font(p0) => { root.set-panel-font(p0); }
-        set-quick-commands-as-sidebar(p0) => { root.set-quick-commands-as-sidebar(p0); }
-        set-renderer-mode(p0) => { root.set-renderer-mode(p0); }
-        set-scrollback-lines(p0) => { return root.set-scrollback-lines(p0); }
-        set-sftp-follow-cd(p0) => { root.set-sftp-follow-cd(p0); }
-        set-show-cmd-bar(p0) => { root.set-show-cmd-bar(p0); }
-        set-sync-upload-enabled(p0) => { root.set-sync-upload-enabled(p0); }
-        set-term-cursor-color(p0) => { return root.set-term-cursor-color(p0); }
-        set-term-cursor-color-rgb(p0, p1, p2) => { return root.set-term-cursor-color-rgb(p0, p1, p2); }
-        set-term-cursor-style(p0) => { root.set-term-cursor-style(p0); }
-        set-term-font(p0) => { root.set-term-font(p0); }
-        set-term-font-bold(p0) => { root.set-term-font-bold(p0); }
-        set-term-font-size(p0) => { root.set-term-font-size(p0); }
-        set-ui-font(p0) => { root.set-ui-font(p0); }
-        upload-ui-font() => { root.upload-ui-font(); }
-        set-ui-scale(p0) => { root.set-ui-scale(p0); }
-        set-update-check-enabled(p0) => { root.set-update-check-enabled(p0); }
-        set-update-channel(q0) => { root.set-update-channel(q0); }
-        set-update-freq(q1) => { root.set-update-freq(q1); }
-        set-wallpaper(p0) => { root.set-wallpaper(p0); }
-        set-welcome-as-sidebar(p0) => { root.set-welcome-as-sidebar(p0); }
-        webdav-download() => { root.webdav-download(); }
-        webdav-upload() => { root.webdav-upload(); }
-    }
+
 
     // --- 「自动更新」对话框（AppWindow 的最后一个子元素）-----------------
-    // ⚠️ 位置是**功能性的**，不是排版偏好：设置面板 `InterfaceSettingsOverlay` 是全窗模态，
-    // 且挂在它之前，谁在后面谁就压得住它。放在这里，才是"设置面板开着也能点更新"。
+    // 注：设置页改成独立窗口（`PopupWindow`）之后，"谁压在谁上面"的顾虑已经不成立 ——
+    // 那个窗口有自己的 surface，不再和这里的对话框抢层级。位置保持原样只为减少改动。
     // 组件内部常驻（`opacity`/`visible` 切换），所以这里的 `open` 只做显隐，不用 `if`。
     UpdateDialog {
         open: root.update-dialog-open;

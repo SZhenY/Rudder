@@ -52,6 +52,9 @@ export component AppearancePage inherits VerticalLayout {
     in-out property <string> accent-hex;
 
     callback persist-wallpaper-overlay(float);
+    // 拖动过程中的**只预览不写盘**回调：`released` 在拖动时不一定触发（点按才会），
+    // 所以主界面的实时跟手靠它 —— 否则拖动时只有设置窗口自己变（用户报的现象）。
+    callback preview-wallpaper-overlay(float);
     callback pick-wallpaper-file();
     callback reset-page(string);
     callback set-accent(string) -> bool;
@@ -250,7 +253,11 @@ export component AppearancePage inherits VerticalLayout {
                     // Up to 70% transparency (overlay floor 0.30).
                     maximum: 70;
                     value: (1.0 - root.wallpaper-overlay) * 100;
-                    changed(v) => { root.wallpaper-overlay = 1.0 - v / 100; }
+                    changed(v) => {
+                        root.wallpaper-overlay = 1.0 - v / 100;
+                        // 实时应用到主窗口（不写盘；写盘交给 released）。
+                        root.preview-wallpaper-overlay(1.0 - v / 100);
+                    }
                     released(v) => { root.persist-wallpaper-overlay(1.0 - v / 100); }
                 }
                 Text {

@@ -209,6 +209,7 @@ mod updater;
 mod sampler;
 mod settings;
 mod settings_ui;
+mod settings_window;
 mod window_chrome;
 use window_chrome::wire_window_chrome;
 use sampler::spawn_system_sampler;
@@ -219,7 +220,6 @@ pub(crate) use pane_layout::{
 };
 pub(crate) use window_geometry::{
     center_window, handle_file_drop, handle_macos_terminal_wheel,
-    macos_terminal_wheel_can_target_terminal,
 };
 
 mod render_tickets;
@@ -588,6 +588,8 @@ pub fn run() -> Result<()> {
             };
             pw.set_host(main.get_connection_state());
             sync_proc_theme(&main, &pw);
+            // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
+            crate::app::settings_window::resync_if_open(&main);
             let _ = pw.show();
             place_process_window(&main, &pw);
             // 首帧：macOS 上新映射的第二个窗口**不会自动产生首次渲染事件**，而 Slint 的布局
@@ -686,6 +688,46 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // ── 设置窗口（独立 root 窗口，原生标题栏）───────────────────────────────
+    //
+    // 为什么是独立 root 而不是覆盖层：只有真窗口才拿得到各平台的原生边框（原生关闭按钮 /
+    // 拖动 / 缩放），而且设置打开期间主窗口**不再参与重绘**。它的两条代价都在
+    // `settings_window` 模块里处理了：`Theme` 逐项同步 + macOS 首帧补救。
+    let settings_win = SettingsWindow::new().context("failed to build settings window")?;
+    settings_window::wire_settings_window(&window.as_weak(), &settings_win);
+    {
+        // 关闭：原生 ✕ 与窗口内的 Esc 都走这里（Esc 由 Slint 侧 `close-requested` 上抛）。
+        let sw = settings_win.as_weak();
+        let main = window.as_weak();
+        settings_win.on_close_requested(move || {
+            if let Some(sw) = sw.upgrade() {
+                settings_window::close_settings_window(&sw);
+            }
+            if let Some(m) = main.upgrade() {
+                m.set_interface_open(false);
+            }
+        });
+    }
+    {
+        // 打开 / 关闭：窗口在 Rust 手里，Slint 侧只发一个信号。打开时**无条件**重新播种 +
+        // `show()` —— 即使上一次是被系统 ✕ 关掉的（那种情况下 `interface-open` 可能还留着
+        // true，因为 Slint 默认只把窗口藏起来），下次照样能打开。
+        let sw = settings_win.as_weak();
+        let main = window.as_weak();
+        window.on_toggle_interface_settings(move |open: bool| {
+            let (Some(sw), Some(m)) = (sw.upgrade(), main.upgrade()) else {
+                return;
+            };
+            if open {
+                settings_window::open_settings_window(&m, &sw);
+                m.set_interface_open(true);
+            } else {
+                settings_window::close_settings_window(&sw);
+                m.set_interface_open(false);
+            }
+        });
+    }
+
     settings_ui::seed_settings(&window, &proc_win, &ctx);
 
 
@@ -761,6 +803,8 @@ pub fn run() -> Result<()> {
             // is a separate instance) so an open process window follows.
             if let Some(p) = proc_weak.upgrade() {
                 sync_proc_theme(&w, &p);
+                // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
+                crate::app::settings_window::resync_if_open(&w);
             }
             let pref = if next_dark { "dark" } else { "light" };
             // 下拉框要跟着走：手动切档后 preference 不再是 system。
@@ -1031,12 +1075,10 @@ pub fn run() -> Result<()> {
                         let Some(win) = weak.upgrade() else {
                             return EventResult::Propagate;
                         };
-                        if !macos_terminal_wheel_can_target_terminal(win.get_interface_open()) {
-                            // Do not carry a partially accumulated settings gesture
-                            // into the terminal after the modal closes.
-                            macos_wheel_accum = 0.0;
-                            return EventResult::Propagate;
-                        }
+                        // 设置页现在是**独立窗口**（不叠在这个窗口里）→ 不再需要"设置打开时
+                        // 别把滚轮喂给终端"的补丁：滚轮按指针位置由系统派发给对应窗口。
+                        // 原先的 `macos_terminal_wheel_can_target_terminal(get_interface_open())`
+                        // 守卫连同它的单测一起删掉了（否则设置开着时主窗口反而滚不动）。
                         let wheel_lines = match delta {
                             MouseScrollDelta::LineDelta(_, dy) => dy * 3.0,
                             MouseScrollDelta::PixelDelta(p) => {
@@ -1222,6 +1264,11 @@ pub fn run() -> Result<()> {
                         if let Some(win) = weak.upgrade() {
                             save_layout(&win, &ev_store);
                         }
+                        // ⚠ 这里**没有** `quit_event_loop`：走 Slint 的默认行为（隐藏主窗口，
+                        // 最后一个窗口消失后事件循环自然退出）。而设置窗口是独立 root 窗口 ——
+                        // 它自己就足以让循环继续活着，所以必须在这里显式收掉；否则就是
+                        // "程序关了、设置还挂在桌面上"（用户报的现象）。
+                        settings_window::close_if_open();
                     }
                     _ => {}
                 }
@@ -1254,6 +1301,9 @@ pub fn run() -> Result<()> {
             if let Some(w) = sys_weak.upgrade() {
                 let _ = w.hide();
             }
+            // 设置窗口是独立 root 窗口 —— 它自己就足以让事件循环继续活着。主窗口关了而它
+            // 还开着的话，用户看到的就是"程序关了、设置还挂在桌面上"，所以这里一并收掉。
+            settings_window::close_if_open();
             // Ask every worker to stop before the runtime/event loop is torn
             // down. Clearing the maps also makes any repeated close request see
             // no live sessions and pass through immediately.
