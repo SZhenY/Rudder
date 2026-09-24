@@ -19,6 +19,8 @@ export component SyncPage inherits VerticalLayout {
     in-out property <string> webdav-remote-path;
     in-out property <string> webdav-status;
     in-out property <string> webdav-url;
+    // 地址长到输入框放不下时，点它旁边的「编辑…」在宽对话框里改（本页只能看到前面一截）。
+    callback edit-webdav-url();
     in-out property <string> webdav-username;
     callback save-webdav-settings(bool, string, string, string, string, bool);
     callback set-sync-upload-enabled(bool);
@@ -76,10 +78,34 @@ export component SyncPage inherits VerticalLayout {
             toggled(v) => {}
 
         }
-        LabeledInput {
-            label: root.lang-en ? "Endpoint URL" : "WebDAV 地址";
-            placeholder: "https://nas:5006/all/ or https://nas:5006/all/rudder-connections.json";
-            value <=> root.webdav-url;
+        HorizontalLayout {
+            spacing: 8px;
+            LabeledInput {
+                horizontal-stretch: 1;
+                label: root.lang-en ? "Endpoint URL" : "WebDAV 地址";
+                placeholder: "https://nas:5006/all/ or https://nas:5006/all/rudder-connections.json";
+                value <=> root.webdav-url;
+            }
+            // 按钮贴到底部（与输入框同高对齐）——`LabeledInput` 是"标签在上"的纵向布局。
+            VerticalLayout {
+                alignment: end;
+                GhostButton {
+                    text: root.lang-en ? "Edit…" : "编辑…";
+                    clicked => { root.edit-webdav-url(); }
+                }
+            }
+        }
+        // 长地址在输入框里只能看到前面一截（`TextInput` 失焦后从头部显示、尾部裁掉），
+        // 所以这里再摊开一行**自动换行**的小字：只要填了地址就显示。
+        // ⚠ 本来想用 `url.len() > 60` 兜掉短地址，但 Slint 1.18 的字符串**没有**长度访问
+        // （`length` / `len()` 都报 `Cannot access the field`），而 Rust 侧也没法监听这个
+        // 输入框（它是 `<=>` 直接绑的，不经过回调）→ 就用"非空"这个最简判据。
+        if root.webdav-url != "" : Text {
+            text: root.webdav-url;
+            color: Theme.text-muted;
+            font-size: 11px * Theme.panel-font;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
         }
         LabeledInput {
             label: root.lang-en ? "Username" : "用户名";

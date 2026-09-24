@@ -134,6 +134,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-update-channel(string);
     callback set-update-freq(int);
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
+    callback edit-webdav-url();                    // 打开"放大编辑"对话框（同步页）
     callback preview-wallpaper-overlay(float);   // live preview while dragging (不写盘)
     callback set-wallpaper(string);    // none / builtin selection
     callback set-accent(string) -> bool;   // preset id / "#RRGGBB" / ""; false = 非法值
@@ -353,6 +354,7 @@ export component InterfacePanel inherits Rectangle {
                             webdav-remote-path <=> root.webdav-remote-path;
                             webdav-status <=> root.webdav-status;
                             webdav-url <=> root.webdav-url;
+                            edit-webdav-url() => { root.edit-webdav-url(); }
                             webdav-username <=> root.webdav-username;
                             save-webdav-settings(a0, a1, a2, a3, a4, a5) => { root.save-webdav-settings(a0, a1, a2, a3, a4, a5); }
                             set-sync-upload-enabled(a0) => { root.set-sync-upload-enabled(a0); }

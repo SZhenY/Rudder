@@ -83,6 +83,23 @@ export component SettingsWindow inherits Window {
     background: Theme.window-base;
     default-font-family: Theme.ui-font-family;
 
+    // ── WebDAV 地址的"放大编辑"对话框 ─────────────────────────────────────
+    // 为什么挂在**窗口这一层**而不是同步页里：页面在 ScrollView 内部，绝对定位的浮层会被
+    // 滚动容器裁掉、盖不住整窗。`ModalCard` 是 `100%×100%` 的，只能当窗口级的兄弟元素。
+    in-out property <bool> webdav-url-editor-open: false;
+    in-out property <string> webdav-url-draft: "";
+    /// 打开：把当前地址抄进草稿（这样"取消"才真的是取消）。
+    public function open-webdav-url-editor() {
+        root.webdav-url-draft = root.webdav-url;
+        root.webdav-url-editor-open = true;
+    }
+    /// 完成：草稿写回 —— `webdav-url` 与同步页的输入框是 `<=>` 绑定的，会立刻同步过去；
+    /// 真正落盘仍然由页面上那个「保存」按钮发起（保持原有语义，不偷偷保存）。
+    public function commit-webdav-url() {
+        root.webdav-url = root.webdav-url-draft;
+        root.webdav-url-editor-open = false;
+    }
+
     // ── 与主窗口的 `Theme` 同步（Rust 侧 `sync_settings_theme` 写入）───────────
     // 双向绑到本窗口自己的 `Theme` 实例：值一变，整套调色板 / 字体 / 圆角跟着变。
     in-out property <bool>   dark-mode <=> Theme.dark;
@@ -176,6 +193,7 @@ export component SettingsWindow inherits Window {
     callback check-update-now();
     callback persist-wallpaper-overlay(float);
     callback preview-wallpaper-overlay(float);
+    callback edit-webdav-url();
     callback pick-wallpaper-file();
     callback pick-wsl-directory();
     callback remove-output-highlight-rule(int);
@@ -393,9 +411,42 @@ export component SettingsWindow inherits Window {
                 pick-wsl-directory => { root.pick-wsl-directory(); }
                 persist-wallpaper-overlay(v) => { root.persist-wallpaper-overlay(v); }
                 preview-wallpaper-overlay(v) => { root.preview-wallpaper-overlay(v); }
+                edit-webdav-url() => { root.open-webdav-url-editor(); }
             }
         }
         // 关闭按钮由原生标题栏提供（macOS 的红点 / Windows-Linux 的 ✕），
         // 这里不再自绘 —— 系统的关闭请求会触发本组件的 `close-requested`。
+
+    // ── WebDAV 地址编辑卡片（窗口级浮层，见上面属性处的说明）──────────────────
+    ModalCard {
+        active: root.webdav-url-editor-open;
+        // 宽输入：这里能一眼看全上百字符的地址，同步页里那行放不下。
+        card-width: min(parent.width - 96px, 760px);
+        card-height: 150px;
+        dismissed => { root.webdav-url-editor-open = false; }
+        VerticalLayout {
+            spacing: 10px;
+            LabeledInput {
+                label: root.lang-en ? "Endpoint URL" : "WebDAV 地址";
+                placeholder: "https://nas:5006/all/rudder-connections.json";
+                auto-focus: true;
+                value <=> root.webdav-url-draft;
+                accepted => { root.commit-webdav-url(); }
+                canceled => { root.webdav-url-editor-open = false; }
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                GhostButton {
+                    text: root.lang-en ? "Cancel" : "取消";
+                    clicked => { root.webdav-url-editor-open = false; }
+                }
+                GhostButton {
+                    text: root.lang-en ? "Done" : "完成";
+                    clicked => { root.commit-webdav-url(); }
+                }
+            }
+        }
+    }
     }
 }
