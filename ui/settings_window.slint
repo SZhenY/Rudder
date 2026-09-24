@@ -418,8 +418,11 @@ export component SettingsWindow inherits Window {
         // 这里不再自绘 —— 系统的关闭请求会触发本组件的 `close-requested`。
 
     // ── WebDAV 地址编辑卡片（窗口级浮层，见上面属性处的说明）──────────────────
-    ModalCard {
-        active: root.webdav-url-editor-open;
+    // ⚠ 必须用 `if` 包住：`ModalCard` 的 `active` 只管"遮罩要不要吞输入"，组件自己**不会隐藏**
+    // （见 `components/surfaces.slint:75-78`）—— 上一版只写了 `active:`，结果一打开设置它就
+    // 一直摆在那儿（用户报的现象）。`if` 正是该注释推荐给"非常驻对话框"的写法，同时让里面
+    // `LabeledInput` 的 `auto-focus` 每次打开都重新走一遍。
+    if root.webdav-url-editor-open : ModalCard {
         // 宽输入：这里能一眼看全上百字符的地址，同步页里那行放不下。
         card-width: min(parent.width - 96px, 760px);
         card-height: 150px;
