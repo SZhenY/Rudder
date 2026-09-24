@@ -253,13 +253,14 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_wsl_profiles(m.get_wsl_profiles());
 }
 
-/// 49 个回调一行转发给主窗口（`invoke_*` 是 Slint 为回调生成的调用入口）。
+/// 50 个回调一行转发给主窗口（`invoke_*` 是 Slint 为回调生成的调用入口）。
 ///
 /// 转发之后一律做两件事：① 回灌 `Theme` / `Palette`（按窗口各自实例，见 `sync_settings_theme`）；
 /// ② 回灌**回显型**属性（`sync_settings_reflected`，例如光标色/主题色的选中态与当前方案名）——
-/// 否则设置窗口里那些 `selected` / 回显绑定会一直停在开窗时的旧值（用户报的"推荐色点不中"）。
+/// 否则设置窗口里那些 `selected` / 回显绑定会一直停在开窗时的旧值（用户报的「推荐色点不中」）。
 ///
-/// 有返回值的回调把结果透传；无返回值的直接调用（`let` 绑 unit 会被 clippy 拦）。
+/// 有返回值的回调把结果透传；无返回值的**直接调用** —— `let` 绑 unit 会被 clippy 的
+/// `let_unit_value` 拦下（仓库是 `-D warnings`）。
 pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWindow) {
     SETTINGS_WEAK.with(|s| *s.borrow_mut() = Some(sw.as_weak()));
     {
@@ -282,10 +283,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_add_wsl_profile(a0, a1, a2);
+            m.invoke_add_wsl_profile(a0, a1, a2);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -295,10 +295,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_check_update_now();
+            m.invoke_check_update_now();
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -308,10 +307,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_persist_wallpaper_overlay(a0);
+            m.invoke_persist_wallpaper_overlay(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -321,10 +319,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_preview_wallpaper_overlay(a0);
+            m.invoke_preview_wallpaper_overlay(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -334,10 +331,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_pick_wallpaper_file();
+            m.invoke_pick_wallpaper_file();
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -347,10 +343,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_pick_wsl_directory();
+            m.invoke_pick_wsl_directory();
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -360,10 +355,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_remove_output_highlight_rule(a0);
+            m.invoke_remove_output_highlight_rule(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -373,10 +367,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_remove_wsl_profile(a0);
+            m.invoke_remove_wsl_profile(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -386,10 +379,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_reset_page(a0);
+            m.invoke_reset_page(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -399,10 +391,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_save_webdav_settings(a0, a1, a2, a3, a4, a5);
+            m.invoke_save_webdav_settings(a0, a1, a2, a3, a4, a5);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -412,10 +403,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_animations_enabled(a0);
+            m.invoke_set_animations_enabled(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -425,10 +415,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_collapse_sftp_default(a0);
+            m.invoke_set_collapse_sftp_default(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -438,10 +427,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_collapse_sidebar_default(a0);
+            m.invoke_set_collapse_sidebar_default(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -451,10 +439,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_convert_eol(a0);
+            m.invoke_set_convert_eol(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -464,10 +451,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_download_always_ask(a0);
+            m.invoke_set_download_always_ask(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -477,10 +463,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_hide_special_partitions(a0);
+            m.invoke_set_hide_special_partitions(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -490,10 +475,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_json_format_output(a0);
+            m.invoke_set_json_format_output(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -503,10 +487,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_large_scrollback(a0);
+            m.invoke_set_large_scrollback(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -516,10 +499,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_mount_filter(a0);
+            m.invoke_set_mount_filter(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -529,10 +511,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_osc52_clipboard(a0);
+            m.invoke_set_osc52_clipboard(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -542,10 +523,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_output_highlight(a0, a1);
+            m.invoke_set_output_highlight(a0, a1);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -555,10 +535,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_output_highlight_rule_enabled(a0, a1);
+            m.invoke_set_output_highlight_rule_enabled(a0, a1);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -568,10 +547,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_panel_font(a0);
+            m.invoke_set_panel_font(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -581,10 +559,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_quick_commands_as_sidebar(a0);
+            m.invoke_set_quick_commands_as_sidebar(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -594,10 +571,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_renderer_mode(a0);
+            m.invoke_set_renderer_mode(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -620,10 +596,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_sftp_follow_cd(a0);
+            m.invoke_set_sftp_follow_cd(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -633,10 +608,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_show_cmd_bar(a0);
+            m.invoke_set_show_cmd_bar(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -646,10 +620,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_sync_upload_enabled(a0);
+            m.invoke_set_sync_upload_enabled(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -663,6 +636,18 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
             out
+        });
+    }
+    {
+        let m = m.clone();
+        let s = sw.as_weak();
+        sw.on_set_term_cursor_preset(move |a0| {
+            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
+                return Default::default();
+            };
+            m.invoke_set_term_cursor_preset(a0);
+            sync_settings_theme(&m, &sw);
+            sync_settings_reflected(&m, &sw);
         });
     }
     {
@@ -685,10 +670,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_term_cursor_style(a0);
+            m.invoke_set_term_cursor_style(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -698,10 +682,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_term_font(a0);
+            m.invoke_set_term_font(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -711,10 +694,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_term_font_bold(a0);
+            m.invoke_set_term_font_bold(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -724,10 +706,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_term_font_size(a0);
+            m.invoke_set_term_font_size(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -737,10 +718,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_ui_font(a0);
+            m.invoke_set_ui_font(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -750,10 +730,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_upload_ui_font();
+            m.invoke_upload_ui_font();
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -763,10 +742,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_ui_scale(a0);
+            m.invoke_set_ui_scale(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -802,10 +780,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_appearance_mode(a0);
+            m.invoke_set_appearance_mode(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -815,10 +792,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_update_check_enabled(a0);
+            m.invoke_set_update_check_enabled(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -828,10 +804,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_update_channel(a0);
+            m.invoke_set_update_channel(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -841,10 +816,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_update_freq(a0);
+            m.invoke_set_update_freq(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -854,10 +828,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_wallpaper(a0);
+            m.invoke_set_wallpaper(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -867,10 +840,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_set_welcome_as_sidebar(a0);
+            m.invoke_set_welcome_as_sidebar(a0);
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -880,10 +852,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_webdav_download();
+            m.invoke_webdav_download();
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
     {
@@ -893,10 +864,9 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
             let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
                 return Default::default();
             };
-            let out = m.invoke_webdav_upload();
+            m.invoke_webdav_upload();
             sync_settings_theme(&m, &sw);
             sync_settings_reflected(&m, &sw);
-            out
         });
     }
 }

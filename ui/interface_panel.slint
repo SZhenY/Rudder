@@ -101,6 +101,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-term-font-bold(bool);
     callback set-term-cursor-style(string);
     callback set-term-cursor-color(string) -> bool;
+    callback set-term-cursor-preset(string);        // 推荐色块：用户点击，不做回声判定
     callback set-term-cursor-color-rgb(int, int, int) -> bool;   // 调色盘提交
     in-out property <string> scrollback-lines: "5000";
     in-out property <bool> large-scrollback;
@@ -265,6 +266,7 @@ export component InterfacePanel inherits Rectangle {
                         set-scrollback-lines(a0) => { return root.set-scrollback-lines(a0); }
                         set-large-scrollback(a0) => { root.set-large-scrollback(a0); }
                         set-term-cursor-color(a0) => { return root.set-term-cursor-color(a0); }
+                set-term-cursor-preset(a0) => { root.set-term-cursor-preset(a0); }
                         set-term-cursor-color-rgb(a0, a1, a2) => { return root.set-term-cursor-color-rgb(a0, a1, a2); }
                         upload-ui-font() => { root.upload-ui-font(); }
                         set-term-cursor-style(a0) => { root.set-term-cursor-style(a0); }

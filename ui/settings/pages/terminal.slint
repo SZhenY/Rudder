@@ -30,6 +30,9 @@ export component TerminalPage inherits VerticalLayout {
     // 配置里**存**的光标色（"" = 跟随主题）。与上面那个"当前生效色"分开：
     // 输入框显示生效色，色块的选中态则看这个。
     in property <string> term-cursor-choice;
+    // 推荐色块的**专用**回调：用户点一下 = 明确选择，Rust 侧不做「回声」判定
+    // （那条判定会把"正好等于跟随主题解析值"的颜色当成程序化回填而忽略掉）。
+    callback set-term-cursor-preset(string);
     in-out property <string> term-cursor-style;
     in-out property <bool> term-font-bold;
     in-out property <int> term-font-index;
@@ -164,15 +167,16 @@ export component TerminalPage inherits VerticalLayout {
                         hex: "";
                         swatch-color: root.term-cursor-color;
                         selected: root.term-cursor-choice == "";
-                        chosen => { root.set-term-cursor-color(""); }
+                        chosen => { root.set-term-cursor-preset(""); }
                     }
-                    CursorPaletteSwatch { hex: "#FFFFFF"; swatch-color: #FFFFFF; selected: root.term-cursor-choice == "#FFFFFF"; chosen(v) => { root.set-term-cursor-color(v); } }
-                    CursorPaletteSwatch { hex: "#D4D4D4"; swatch-color: #D4D4D4; selected: root.term-cursor-choice == "#D4D4D4"; chosen(v) => { root.set-term-cursor-color(v); } }
-                    CursorPaletteSwatch { hex: "#FF5252"; swatch-color: #FF5252; selected: root.term-cursor-choice == "#FF5252"; chosen(v) => { root.set-term-cursor-color(v); } }
-                    CursorPaletteSwatch { hex: "#69F0AE"; swatch-color: #69F0AE; selected: root.term-cursor-choice == "#69F0AE"; chosen(v) => { root.set-term-cursor-color(v); } }
-                    CursorPaletteSwatch { hex: "#40C4FF"; swatch-color: #40C4FF; selected: root.term-cursor-choice == "#40C4FF"; chosen(v) => { root.set-term-cursor-color(v); } }
-                    CursorPaletteSwatch { hex: "#7C4DFF"; swatch-color: #7C4DFF; selected: root.term-cursor-choice == "#7C4DFF"; chosen(v) => { root.set-term-cursor-color(v); } }
-                    CursorPaletteSwatch { hex: "#2D2D2F"; swatch-color: #2D2D2F; selected: root.term-cursor-choice == "#2D2D2F"; chosen(v) => { root.set-term-cursor-color(v); } }
+                    // ⚠ 这里故意**不列 `#FFFFFF`**：它是历史默认值，存取器会把它归一化成
+                    // "跟随主题"，点它高亮的却是第一项（而且它在浅色档下就是"看不见的光标"）。
+                    CursorPaletteSwatch { hex: "#D4D4D4"; swatch-color: #D4D4D4; selected: root.term-cursor-choice == "#D4D4D4"; chosen(v) => { root.set-term-cursor-preset(v); } }
+                    CursorPaletteSwatch { hex: "#FF5252"; swatch-color: #FF5252; selected: root.term-cursor-choice == "#FF5252"; chosen(v) => { root.set-term-cursor-preset(v); } }
+                    CursorPaletteSwatch { hex: "#69F0AE"; swatch-color: #69F0AE; selected: root.term-cursor-choice == "#69F0AE"; chosen(v) => { root.set-term-cursor-preset(v); } }
+                    CursorPaletteSwatch { hex: "#40C4FF"; swatch-color: #40C4FF; selected: root.term-cursor-choice == "#40C4FF"; chosen(v) => { root.set-term-cursor-preset(v); } }
+                    CursorPaletteSwatch { hex: "#7C4DFF"; swatch-color: #7C4DFF; selected: root.term-cursor-choice == "#7C4DFF"; chosen(v) => { root.set-term-cursor-preset(v); } }
+                    CursorPaletteSwatch { hex: "#2D2D2F"; swatch-color: #2D2D2F; selected: root.term-cursor-choice == "#2D2D2F"; chosen(v) => { root.set-term-cursor-preset(v); } }
                 }
                 CursorColorInput {
                     value <=> root.term-cursor-color-hex;

@@ -62,6 +62,36 @@ pub(crate) fn apply_cursor_color(w: &AppWindow, stored: &str) {
 /// 播种 + 注册持久化回调。
 pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
     {
+        // 推荐色块的专用入口：**用户点一下就是明确选择** → 直接存，不走下面那条「回声」判定。
+        //
+        // 为什么必须分开：回声判定的目的是别让"程序化回填输入框"把"跟随主题"写死；但它的判据
+        // 是"这个值 == 当前解析出来的生效色"，于是**深色档下点 `#D4D4D4`**（正好等于跟随主题
+        // 的解析结果）会被当成回填而忽略掉 —— 用户看到的就是"点了没反应"（#FFFFFF 更早还有
+        // 一层历史归一化，点它会高亮到第一项）。
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_set_term_cursor_preset(move |value: SharedString| {
+            let v = value.as_str().trim();
+            if !v.is_empty() && parse_hex_color(v).is_none() {
+                return;
+            }
+            {
+                let mut s = store.borrow_mut();
+                if s.terminal_cursor_color() != v {
+                    if !s.set_terminal_cursor_color(v) {
+                        return;
+                    }
+                    s.save_logging();
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                let stored = store.borrow().terminal_cursor_color().to_string();
+                apply_cursor_color(&w, &stored);
+            }
+        });
+    }
+
+    {
         let weak = window.as_weak();
         let store = store.clone();
         window.on_set_term_cursor_color(move |value: SharedString| {

@@ -49,6 +49,30 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - 依赖：为 macOS 的按钮隐藏加了 `objc2` + `raw-window-handle`（都已在依赖树里 —— `Cargo.lock` 只多
   一行，所以不增加编译量、二进制也不变大）。
 
+### 修复 / Fixed
+
+- **设置窗口里的"选中态 / 回显"不再滞后。** 独立窗口的属性只是**开窗时从主窗口拷来的一份副本**
+  （不像旧的覆盖层那样与主窗口 `<=>` 双向直连），于是"点了推荐色 → 主窗口确实改了
+  `term-cursor-choice` → 设置窗口那份没变"→ 色块的 `selected` 永远不高亮，看起来就是"点不中"。
+  现在每个转发回调之后都会回灌一批**回显型**属性（光标色与主题色的选中态 / 当前方案名、字体
+  索引、壁纸、渲染器、上传与更新状态等 22 项）；刻意**不**包含 `webdav-url` / `username` /
+  `password` 这类输入框，免得冲掉用户正在输入、还没提交的内容。
+  **The settings window now mirrors reflected state back** from the main window after every
+  forwarded callback, so selection highlights and echoed values no longer go stale.
+- **调色盘"点一下就关"** —— Slint 的默认关闭策略 `CloseOnClick` 意思是"点任何地方都关"
+  （`CloseOnClickOutside` 才是"点外面才关"，见 `i-slint-core/window.rs:990-997`），于是调色盘里
+  点一下就被关掉、颜色根本选不中。给 `CursorColorInput` 的 `color-picker` 显式加了
+  `close-policy: close-on-click-outside` —— 它是共用控件，所以「光标颜色 / 主题色 / 自定义颜色」
+  三个调色盘一起修好。**Colour pickers now close only when clicking outside** (Slint's default
+  `CloseOnClick` closed them on any click, so no colour could be picked).
+- **光标颜色的推荐色块点不动** —— 三个色块各有各的原因：`#D4D4D4` 在深色档下**正好等于"跟随主题"
+  的解析结果**，被"回声"判定（防止程序化回填把跟随主题写死）当成回填而忽略；`#FFFFFF` 是历史
+  默认值，存取器会把它归一化成"跟随主题"，点它高亮的是第一项；「跟随主题」本身就是选中状态。
+  现在推荐色块走一条**专用回调**（用户点击 = 明确选择，不做回声判定），并把 `#FFFFFF` 从推荐
+  色里去掉（它在浅色档下就是"看不见的光标"，本就不该推荐）。
+  **The terminal cursor-colour presets now stick**: they go through a dedicated callback that
+  skips the "echo" guard, and the misleading `#FFFFFF` preset is gone.
+
 ### 门禁 / Gates
 
 - `cargo test` 473 passed；`cargo clippy --all-targets -- -D warnings` 0 告警；debug / release 构建

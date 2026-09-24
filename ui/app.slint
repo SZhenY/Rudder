@@ -425,6 +425,7 @@ export component AppWindow inherits Window {
     callback set-term-font-bold(bool);             // apply + persist bold terminal text
     callback set-term-cursor-style(string);        // apply + persist cursor shape (#275)
     callback set-term-cursor-color(string) -> bool;// validate + persist cursor colour (#275)
+    callback set-term-cursor-preset(string);       // 推荐色块点击（绕过「回声」判定）
     callback set-term-cursor-color-rgb(int, int, int) -> bool;   // 调色盘提交（Slint 无 hex 格式化）
     callback set-output-highlight(bool, string);   // enable + built-in preset
     callback set-json-format-output(bool);         // pretty-print + colour JSON lines (#338)

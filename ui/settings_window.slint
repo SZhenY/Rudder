@@ -202,6 +202,7 @@ export component SettingsWindow inherits Window {
     callback set-show-cmd-bar(bool);
     callback set-sync-upload-enabled(bool);
     callback set-term-cursor-color(string) -> bool;
+    callback set-term-cursor-preset(string);
     callback set-term-cursor-color-rgb(int, int, int) -> bool;
     callback set-term-cursor-style(string);
     callback set-term-font(string);
@@ -339,6 +340,7 @@ export component SettingsWindow inherits Window {
                 set-term-font-bold(v) => { root.set-term-font-bold(v); }
                 set-term-cursor-style(v) => { root.set-term-cursor-style(v); }
                 set-term-cursor-color(v) => { root.set-term-cursor-color(v) }
+                set-term-cursor-preset(v) => { root.set-term-cursor-preset(v); }
                 set-term-cursor-color-rgb(a0, a1, a2) => { return root.set-term-cursor-color-rgb(a0, a1, a2); }
                 set-output-highlight(enabled, preset) => {
                     root.set-output-highlight(enabled, preset);
