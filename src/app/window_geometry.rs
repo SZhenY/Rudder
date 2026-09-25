@@ -4,7 +4,6 @@
 //! (terminal panes, SFTP list). The Win32 FFI is confined to the two functions
 //! that need OS geometry (centering, cursor position).
 
-#[cfg(windows)]
 use std::collections::HashMap;
 
 use slint::{ComponentHandle as _, Model as _, VecModel};
@@ -16,7 +15,6 @@ use crate::layout::{LogicalRect, TerminalWheelHit};
 use crate::sftp::SftpHandles;
 use crate::terminal::TermBuffers;
 
-#[cfg(windows)]
 use crate::app::terminal_sftp_paths;
 use super::term_buf;
 use crate::ui::{AppWindow, TerminalState};
@@ -293,9 +291,10 @@ pub(crate) fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, Lo
     ))
 }
 
-// Only used by the Windows file-drop handler; keep it out of the
-// other platforms' builds so it is not flagged as dead code (#fix-warnings).
-#[cfg(windows)]
+/// 当前标签页 SFTP 文件列表在窗口内的逻辑矩形（拖放落点判定用）。
+///
+/// 纯 Slint 模型几何，与平台无关 —— 之前只被 Windows 的拖放处理器用到，才挂着
+/// `#[cfg(windows)]` 躲 dead-code 警告；现在非 Windows 的拖放也走这条路径。
 pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect> {
     let (_active, term, term_state) = active_terminal_panel_rects(win)?;
     if term_state.sftp_collapsed {
@@ -364,23 +363,52 @@ pub(crate) fn cursor_pos() -> Option<(i32, i32)> {
 
 /// Handle an OS file drop: if it landed over the SFTP file-list area of the
 /// active session tab, upload the file to that tab's current remote directory.
-#[cfg(windows)]
-pub(crate) fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path: std::path::PathBuf) {
+///
+/// `hovered_pos` 是最后一次已知的指针位置（**逻辑客户区坐标**）。Windows 忽略它 ——
+/// OLE 拖放会抑制 `WM_MOUSEMOVE`，传进来的位置是过期的 —— 改问系统拿；其它平台没有
+/// 别的办法知道落点，只能靠它（上游 0aeba62：此前非 Windows 是空实现，拖放完全无效）。
+pub(crate) fn handle_file_drop(
+    win: &AppWindow,
+    sftp_handles: &SftpHandles,
+    path: std::path::PathBuf,
+    hovered_pos: Option<(f32, f32)>,
+) {
+    #[cfg(windows)]
+    let point = {
+        let w = win.window();
+        let scale = w.scale_factor().max(0.01);
+        w.with_winit_window(|ww| ww.inner_position().ok())
+            .flatten()
+            .and_then(|inner| {
+                cursor_pos().map(|(cx, cy)| {
+                    (
+                        (cx - inner.x) as f32 / scale,
+                        (cy - inner.y) as f32 / scale,
+                    )
+                })
+            })
+    };
+    #[cfg(not(windows))]
+    let point = hovered_pos;
+
+    let Some((client_x, client_y)) = point else {
+        return;
+    };
+    handle_file_drop_at(win, sftp_handles, path, client_x, client_y);
+}
+
+/// 落点命中 SFTP 文件列表就上传（平台无关的公共部分）。
+fn handle_file_drop_at(
+    win: &AppWindow,
+    sftp_handles: &SftpHandles,
+    path: std::path::PathBuf,
+    client_x: f32,
+    client_y: f32,
+) {
     let active = win.get_active_tab_id().to_string();
     if active == "welcome" {
         return;
     }
-    let w = win.window();
-    let scale = w.scale_factor().max(0.01);
-    let Some(inner) = w.with_winit_window(|ww| ww.inner_position().ok()).flatten() else {
-        return;
-    };
-    let Some((cx, cy)) = cursor_pos() else {
-        return;
-    };
-    // Drop point in logical client coordinates.
-    let client_x = (cx - inner.x) as f32 / scale;
-    let client_y = (cy - inner.y) as f32 / scale;
     let Some(file_list) = active_sftp_file_list_rect(win) else {
         return;
     };
@@ -419,8 +447,6 @@ pub(crate) fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path
     }
 }
 
-#[cfg(not(windows))]
-pub(crate) fn handle_file_drop(_win: &AppWindow, _sftp_handles: &SftpHandles, _path: std::path::PathBuf) {}
 
 #[cfg(test)]
 mod tests {

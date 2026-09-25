@@ -1,3 +1,4 @@
+use crate::terminal::ScrollbackKey;
 use crate::terminal::TermBuffers;
 use crate::terminal::MouseReport;
 
@@ -119,6 +120,110 @@ pub(crate) fn paste_requires_large_review(text: &str) -> bool {
     text.chars().count() > COMPACT_CHAR_LIMIT || lines > COMPACT_LINE_LIMIT
 }
 
+/// Bounds for the paste-confirm preview string.
+///
+/// Slint 的软件渲染器用 i16 存字形几何（slint#12985）：把几千行的剪贴板内容绑到
+/// 确认对话框的 `Text` 上，排版坐标会越过 ±32767 并 panic（#434）。完整内容留在
+/// Rust（见 [`PendingPaste`]），只有这段有上限的预览进 UI 树。
+pub(crate) fn build_paste_preview(text: &str) -> String {
+    const MAX_LINES: usize = 48;
+    const MAX_LINE_CHARS: usize = 240;
+    const MAX_CHARS: usize = 6 * 1024;
+    const NOTICE_RESERVE: usize = 120;
+    const ELLIPSIS: &str = "…";
+
+    if text.is_empty() {
+        return String::new();
+    }
+
+    let total_lines = text.lines().count();
+    let total_chars = text.chars().count();
+
+    let mut out = String::new();
+    let mut taken = 0usize;
+    let mut truncated = false;
+
+    for line in text.lines() {
+        if taken >= MAX_LINES {
+            truncated = true;
+            break;
+        }
+
+        let mut display = String::new();
+        for (n, ch) in line.chars().enumerate() {
+            if n >= MAX_LINE_CHARS {
+                display.push_str(ELLIPSIS);
+                truncated = true;
+                break;
+            }
+            display.push(ch);
+        }
+
+        if out.chars().count() + display.chars().count() + 1 + NOTICE_RESERVE > MAX_CHARS {
+            truncated = true;
+            break;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&display);
+        taken += 1;
+    }
+
+    if truncated || taken < total_lines {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&format!(
+            "{}{taken}/{total_lines}{}{total_chars}{}",
+            crate::i18n::t("…（预览已截断：显示 ", "… (preview truncated: showing "),
+            crate::i18n::t(" 行，共 ", " lines, "),
+            crate::i18n::t(
+                " 字符；确认后粘贴完整内容）",
+                " chars; confirming pastes the full content)"
+            ),
+        ));
+    }
+
+    out
+}
+
+/// 已打开的多行粘贴确认框对应的**完整**内容。按 tab 存，确认时校验 tab ——
+/// 一个会话不能偷走另一个会话的剪贴板内容。
+pub(crate) type PendingPaste = std::sync::Mutex<Option<(String /* tab_id */, String /* full */)>>;
+
+/// 存下完整内容并返回有上限的 UI 预览（#434）。
+///
+/// 调用方**只能**把返回值放进 Slint；完整内容留在 Rust 里，直到确认时被
+/// [`take_pending_paste`] 取走。
+pub(crate) fn store_pending_paste(
+    pending: &PendingPaste,
+    tab_id: String,
+    full_text: String,
+) -> String {
+    let preview = build_paste_preview(&full_text);
+    if let Ok(mut slot) = pending.lock() {
+        *slot = Some((tab_id, full_text));
+    }
+    preview
+}
+
+/// 取走 `tab_id` 对应的完整内容（确认路径）。为空或 tab 不匹配时返回 `None`。
+pub(crate) fn take_pending_paste(pending: &PendingPaste, tab_id: &str) -> Option<String> {
+    let mut slot = pending.lock().ok()?;
+    match slot.as_ref() {
+        Some((pending_tab, _)) if pending_tab == tab_id => slot.take().map(|(_, text)| text),
+        _ => None,
+    }
+}
+
+/// 丢弃待确认的完整内容（取消 / 被新的粘贴替换）。
+pub(crate) fn clear_pending_paste(pending: &PendingPaste) {
+    if let Ok(mut slot) = pending.lock() {
+        *slot = None;
+    }
+}
+
 #[cfg(any(target_os = "windows", test))]
 pub(crate) fn windows_process_ctrl_release(
     state: i_slint_backend_winit::winit::event::ElementState,
@@ -178,6 +283,33 @@ pub(crate) fn bare_ctrl_marker_workaround_enabled() -> bool {
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub(crate) fn bare_ctrl_marker_workaround_enabled() -> bool {
     false
+}
+
+/// Shift+Tab 必须以 CBT / back-tab（`ESC [ Z`）送到 PTY —— 这是 xterm 的做法，
+/// 也是 TUI（vim / fzf / readline 菜单…）绑定的东西。
+///
+/// Slint 把它报成 `Key.Backtab`（U+0019）或带 shift 的普通 `"\t"`：前者会被下面的
+/// IME C0 标记过滤丢掉，后者会当成普通 Tab 送出去（Shift 丢失）。Ctrl+Shift+Tab 在
+/// Slint 层已经用于切换标签页，而 Ctrl+Y（U+0019 且 ctrl=true）必须继续产出 0x19，
+/// 所以这里用 `!ctrl` 排除掉那条路径（上游 0e7ed3b）。
+pub(crate) fn is_back_tab(key: &str, ctrl: bool, alt: bool, shift: bool) -> bool {
+    !ctrl && !alt && shift && (key == "\u{0019}" || key == "\t")
+}
+
+/// Shift+Tab 的 wire 字节：CBT（`ESC [ Z`）。
+pub(crate) const BACK_TAB_BYTES: &[u8] = b"\x1b[Z";
+
+/// Slint 的 Home / End / PageUp / PageDown 键文本 → 本地历史导航键。
+///
+/// 映射不上就返回 `None`，调用方应把原键照旧透传给 PTY。
+pub(crate) fn scrollback_key_from_text(key: &str) -> Option<ScrollbackKey> {
+    match key {
+        "\u{F729}" => Some(ScrollbackKey::Home),
+        "\u{F72B}" => Some(ScrollbackKey::End),
+        "\u{F72C}" => Some(ScrollbackKey::PageUp),
+        "\u{F72D}" => Some(ScrollbackKey::PageDown),
+        _ => None,
+    }
 }
 
 pub(crate) fn key_to_pty_bytes(key: &str, ctrl: bool, alt: bool, app_cursor: bool) -> Vec<u8> {
@@ -442,5 +574,106 @@ mod key_bytes_tests {
         );
         let bracketed = encode_pasted_text("a\x1bb\x03c", true, false);
         assert_eq!(bracketed, b"\x1b[200~abc\x1b[201~".to_vec());
+    }
+}
+
+#[cfg(test)]
+mod paste_preview_tests {
+    use super::*;
+
+    #[test]
+    fn paste_preview_passes_short_text_through() {
+        assert_eq!(build_paste_preview(""), "");
+        assert_eq!(build_paste_preview("hello"), "hello");
+        assert_eq!(build_paste_preview("a\nb\nc"), "a\nb\nc");
+    }
+
+    /// Slint 的软件渲染器用 i16 坐标（≈±32767）。几千行的 `Text` 会溢出并 panic
+    /// （slint#12985 / #434）：预览必须远在安全范围内，且带上截断提示。
+    #[test]
+    fn paste_preview_stays_within_i16_safe_layout_bounds() {
+        let text = (0..3000)
+            .map(|i| format!("fn handler_{i}() {{ let x = {i}; }}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let preview = build_paste_preview(&text);
+
+        let lines = preview.lines().count();
+        let chars = preview.chars().count();
+        assert!(lines <= 50, "预览行数 {lines}");
+        assert!(chars <= 6 * 1024 + 160, "预览字符数 {chars}");
+        assert!(preview.contains("3000"), "截断提示要带上总数: {preview}");
+    }
+
+    #[test]
+    fn paste_preview_truncates_one_huge_line() {
+        let preview = build_paste_preview(&"x".repeat(5000));
+        assert!(
+            preview.chars().count() < 400,
+            "单行也要截断: {}",
+            preview.chars().count()
+        );
+        assert!(preview.starts_with("xxx"));
+    }
+
+    #[test]
+    fn pending_paste_is_scoped_to_the_tab() {
+        let pending = PendingPaste::default();
+        let preview = store_pending_paste(&pending, "tab-a".into(), "line\nline".into());
+        assert_eq!(preview, "line\nline");
+
+        // 另一个 tab 确认时取不到（防串台）。
+        assert!(take_pending_paste(&pending, "tab-b").is_none());
+        // 本 tab 取到完整内容，且只能取一次。
+        assert_eq!(
+            take_pending_paste(&pending, "tab-a").as_deref(),
+            Some("line\nline")
+        );
+        assert!(take_pending_paste(&pending, "tab-a").is_none());
+
+        store_pending_paste(&pending, "tab-c".into(), "x".into());
+        clear_pending_paste(&pending);
+        assert!(take_pending_paste(&pending, "tab-c").is_none());
+    }
+}
+
+#[cfg(test)]
+mod back_tab_tests {
+    use super::*;
+
+    #[test]
+    fn slint_backtab_and_shift_tab_are_back_tabs() {
+        assert!(is_back_tab("\u{0019}", false, false, true));
+        assert!(is_back_tab("\t", false, false, true));
+    }
+
+    /// 普通 Tab 仍是 0x09；带 Ctrl 的 U+0019（Ctrl+Y）必须继续产出 0x19。
+    #[test]
+    fn plain_tab_and_ctrl_keys_are_untouched() {
+        assert!(!is_back_tab("\t", false, false, false));
+        assert_eq!(key_to_pty_bytes("\t", false, false, false), vec![0x09]);
+        assert!(!is_back_tab("\u{0019}", true, false, true));
+        assert_eq!(key_to_pty_bytes("\u{0019}", true, false, false), vec![0x19]);
+        assert_eq!(BACK_TAB_BYTES, b"\x1b[Z");
+    }
+
+    #[test]
+    fn scrollback_keys_map_only_the_navigation_four() {
+        assert_eq!(
+            scrollback_key_from_text("\u{F729}"),
+            Some(ScrollbackKey::Home)
+        );
+        assert_eq!(scrollback_key_from_text("\u{F72B}"), Some(ScrollbackKey::End));
+        assert_eq!(
+            scrollback_key_from_text("\u{F72C}"),
+            Some(ScrollbackKey::PageUp)
+        );
+        assert_eq!(
+            scrollback_key_from_text("\u{F72D}"),
+            Some(ScrollbackKey::PageDown)
+        );
+        assert_eq!(scrollback_key_from_text("a"), None);
+        // ↑ 是方向键：不本地消费，照旧透传。
+        assert_eq!(scrollback_key_from_text("\u{F700}"), None);
     }
 }

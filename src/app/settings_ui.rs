@@ -482,7 +482,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             if let Some(win) = weak.upgrade() {
                 refresh_panes(
                     &win,
-                    &layout.borrow(),
+                    &layout,
                     content_size.get(),
                     &tabs_model,
                     &panes_model,

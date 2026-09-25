@@ -719,13 +719,19 @@ export component AppWindow inherits Window {
     in-out property <string> batch-import-text;       // the textarea content
     callback batch-import-confirm(string /* pasted text */);
     // Multi-line terminal paste safety prompt (#262).
+    // 注意：对话框**只**拿得到截断后的预览（`paste-confirm-preview`）；完整内容在
+    // Rust 侧（`pending_paste`），确认时才取走 —— 大段文本绑到 Slint 的 `Text` 上
+    // 会让软件渲染器 i16 坐标溢出闪退（#434 / slint#12985）。
     in-out property <bool> paste-confirm-open: false;
     in-out property <string> paste-confirm-tab;
-    in-out property <string> paste-confirm-text;
     in-out property <string> paste-confirm-preview;
     in-out property <bool> paste-confirm-large: false;
     callback paste-confirmed(string /* tab-id */);
     callback paste-confirm-cancelled();
+    // 粘贴确认框（确认或取消）关闭后，把键盘焦点还给终端。单调自增；TerminalView
+    // 监听它并走自己的 `focus-pending` 延迟取焦。对话框里的 FocusScope 会抢走焦点，
+    // 而关闭路径没有别的机会还回去（上游 f435e15）。
+    property <int> terminal-focus-sequence: 0;
     callback connect-session(string /* session-id */);
     callback edit-session(string /* session-id */);
     callback duplicate-session(string /* session-id */);
@@ -858,6 +864,8 @@ export component AppWindow inherits Window {
     // returns true when the bytes were written (caller skips local handling).
     callback terminal-mouse(string, int, int, int, int) -> bool;
     callback terminal-scroll-to(string /* tab-id */, int /* offset */); // scrollbar drag (#103)
+    // 滚回历史时的本地导航键（正常屏且已滚开才消费；上游 35158dd）。
+    callback terminal-scrollback-key(string /* tab-id */, string /* key */) -> bool;
     // Drag-selection lifecycle (grid row/col coordinates).
     callback term-select-start(string /* tab-id */, int /* row */, int /* col */, bool /* left-half */, bool /* ctrl */, bool /* shift */);
     callback term-select-update(string /* tab-id */, int /* row */, int /* col */, bool /* left-half */);
@@ -1507,6 +1515,7 @@ export component AppWindow inherits Window {
                 for term[i] in root.terminals : TerminalView {
                     visible: term.id == pane.active-id;
                     active: term.id == root.active-tab-id;
+                    focus-sequence: root.terminal-focus-sequence;
                     width: term.id == pane.active-id ? parent.width : 0px;
                     height: term.id == pane.active-id ? parent.height : 0px;
                     tab-id: term.id;
@@ -1672,6 +1681,7 @@ export component AppWindow inherits Window {
                     terminal-scroll(d) => { root.terminal-scroll(term.id, d); }
                     terminal-wheel(d, c, r) => { root.terminal-wheel(term.id, d, c, r); }
                     terminal-scroll-to(o) => { root.terminal-scroll-to(term.id, o); }
+                    terminal-scrollback-key(key) => { root.terminal-scrollback-key(term.id, key) }
                     select-start(r, c, lh, ctrl, shift) => { root.term-select-start(term.id, r, c, lh, ctrl, shift); }
                     select-word(r, c) => { root.term-select-word(term.id, r, c); }
                     select-line(r, c) => { root.term-select-line(term.id, r, c); }
@@ -2240,8 +2250,8 @@ export component AppWindow inherits Window {
         mfa-submit() => { root.mfa-submit(); }
         mfa-cancel() => { root.mfa-cancel(); }
         batch-import-confirm(text) => { root.batch-import-confirm(text); }
-        paste-confirmed(tab-id) => { root.paste-confirmed(tab-id); }
-        paste-confirm-cancelled() => { root.paste-confirm-cancelled(); }
+        paste-confirmed(tab-id) => { root.terminal-focus-sequence += 1; root.paste-confirmed(tab-id); }
+        paste-confirm-cancelled() => { root.terminal-focus-sequence += 1; root.paste-confirm-cancelled(); }
         sftp-delete(tab-id, path) => { root.sftp-delete(tab-id, path); }
         sftp-delete-selected(tab-id) => { root.sftp-delete-selected(tab-id); }
     }

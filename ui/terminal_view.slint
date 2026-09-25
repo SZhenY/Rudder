@@ -87,6 +87,9 @@ export component TerminalView inherits Rectangle {
     in property <int> scroll-offset;    // current offset (0 = live bottom) (#103)
     in property <bool>   is-alt-screen;
     in property <bool>   mouse-tracked;    // remote app wants mouse events (btop/htop/mc)
+    // 单调自增的"请把焦点还给终端"信号：粘贴确认框关闭（确认/取消）后主窗口加一。
+    // 对话框里的 FocusScope 会抢走焦点，而关闭路径没有别的机会还回去（上游 f435e15）。
+    in property <int> focus-sequence;
     in property <[TermMatch]> find-matches; // search-highlight rectangles
     in property <[TermMatch]> selection;    // drag-selection highlight rectangles
 
@@ -226,6 +229,10 @@ export component TerminalView inherits Rectangle {
     // when the event was sent to the remote (caller skips local handling).
     callback terminal-mouse(int /* kind */, int /* button */, int /* col */, int /* row */) -> bool;
     callback terminal-scroll-to(int);       // jump to an absolute scrollback offset (#103)
+    // Home / End / PageUp / PageDown while scrolled back in a normal screen.
+    // Returns false unless Rust consumed the key, so live terminals and TUI apps
+    // still receive them (upstream 35158dd).
+    callback terminal-scrollback-key(string /* key */) -> bool;
     callback select-start(int, int, bool, bool, bool); // row, col, left-half, ctrl, shift
     callback select-word(int, int);             // double-click → select whole word
     callback select-line(int, int);             // triple-click → select whole line
@@ -252,10 +259,22 @@ export component TerminalView inherits Rectangle {
     private property <int> streak-row: -1;
     private property <int> streak-col: -1;
     property <length> vis-y: 0px;   // scratch: cursor Y within the visible viewport
+    // 「已按下但还没定性」的指针状态（上游 2e5f125）：开启鼠标跟踪的 TUI（vim / btop /
+    // mc…）需要收到点击，而用户想拖选时又不能把按键吞给远端 —— 于是按下先挂着：抬起时若
+    // 没拖动就当成点击发给远端，中途拖出 4px 就转成本地选择。
+    property <bool> mouse-press-pending: false;
+    property <length> mouse-press-x: 0px;
+    property <length> mouse-press-y: 0px;
     // Defer ime-input.focus() to the next event-loop tick so AccessKit tree
     // construction (on new TerminalView instantiation) finishes before focus
     // changes — avoids RefCell re-entry panic in WinitWindowAdapter (#AccessKit).
     property <bool> focus-pending: false;
+
+    changed focus-sequence => {
+        if (root.active) {
+            root.focus-pending = true;
+        }
+    }
 
     changed quick-external-sequence => {
         if (root.active) {
@@ -330,7 +349,9 @@ export component TerminalView inherits Rectangle {
             ? (root.sftp-collapsed ? 36px : max(300px, root.sftp-panel-width) + 6px)
             : 0px;
     property <length> term-available-w: root.width - root.term-sftp-overhead;
-    property <float> term-cols: max(10, floor((root.term-available-w - 20px) / cell-w));
+    // `- 1` 列是安全边距：cell-w 来自 50 字符探针的平均值，逐字符的推进误差会随列数
+    // 累积 —— 算出的列数偏大时远端会在最后一列换行，表现为换行错位 / TUI 花屏。
+    property <float> term-cols: max(10, floor((root.term-available-w - 20px) / cell-w) - 1);
     property <float> term-rows: max(5,  floor((key-capture.height - 8px) / cell-h));
     // Only resize the PTY while this tab is visible.  Inactive tabs are laid
     // out at width 0 (→ term-cols collapses to 10); resizing the remote to 10
@@ -543,11 +564,12 @@ export component TerminalView inherits Rectangle {
                                         ctx-menu.show();
                                     } else if (ev.button == PointerEventButton.left
                                             && root.mouse-tracked && !ev.modifiers.shift) {
-                                        // Mouse-tracking TUI: click goes to the remote app
-                                        // instead of starting a local drag-selection.
-                                        root.terminal-mouse(0, 0,
-                                            floor(self.mouse-x / root.cell-w),
-                                            floor(self.mouse-y / root.cell-h));
+                                        // 鼠标跟踪的 TUI：按下先**挂着** —— 抬起时没拖动才
+                                        // 当成点击发给远端；中途拖出去就转成本地选择。这样
+                                        // 既能点 vim / btop，又保住了本地拖选（上游 2e5f125）。
+                                        root.mouse-press-pending = true;
+                                        root.mouse-press-x = self.mouse-x;
+                                        root.mouse-press-y = self.mouse-y;
                                     } else if (ev.button == PointerEventButton.left) {
                                         root.selecting = true;
                                         let sr = floor(self.mouse-y / root.cell-h);
@@ -579,7 +601,13 @@ export component TerminalView inherits Rectangle {
                                         root.paste-from-clipboard();
                                         ime-input.focus();
                                     } else if (ev.button == PointerEventButton.left
-                                            && root.mouse-tracked && !ev.modifiers.shift) {
+                                            && root.mouse-press-pending) {
+                                        // 挂着到抬起都没拖 → 这是一次点击：远端要看到
+                                        // press + release（vim 的鼠标点击）。
+                                        root.mouse-press-pending = false;
+                                        root.terminal-mouse(0, 0,
+                                            floor(self.mouse-x / root.cell-w),
+                                            floor(self.mouse-y / root.cell-h));
                                         root.terminal-mouse(1, 0,
                                             floor(self.mouse-x / root.cell-w),
                                             floor(self.mouse-y / root.cell-h));
@@ -592,7 +620,20 @@ export component TerminalView inherits Rectangle {
                                 }
                             }
                             moved => {
-                                if (root.mouse-tracked && self.pressed) {
+                                if (root.mouse-press-pending) {
+                                    // 拖出 4px 才算拖选；在那之前仍按"可能是点击"处理，
+                                    // 免得手抖把一次点击变成选区（上游 2e5f125）。
+                                    if (max(self.mouse-x - root.mouse-press-x, root.mouse-press-x - self.mouse-x) > 4px
+                                            || max(self.mouse-y - root.mouse-press-y, root.mouse-press-y - self.mouse-y) > 4px) {
+                                        root.mouse-press-pending = false;
+                                        root.selecting = true;
+                                        root.select-start(
+                                            floor(self.mouse-y / root.cell-h),
+                                            floor(self.mouse-x / root.cell-w),
+                                            self.mouse-x - root.cell-w * floor(self.mouse-x / root.cell-w) < root.cell-w / 2,
+                                            false, false);
+                                    }
+                                } else if (root.mouse-tracked && self.pressed) {
                                     // Drag with button held → button code 35 (motion).
                                     root.terminal-mouse(2, 0,
                                         floor(self.mouse-x / root.cell-w),
@@ -804,6 +845,14 @@ export component TerminalView inherits Rectangle {
                                         root.ctx-x = self.mouse-x;
                                         root.ctx-y = self.mouse-y;
                                         ctx-menu.show();
+                                    } else if (ev.button == PointerEventButton.left
+                                            && root.mouse-tracked && !ev.modifiers.shift) {
+                                        // 这一层是**最上层**的触摸层（命中测试在 body-touch
+                                        // 之前），TUI 的鼠标点击必须在这里也转发一次，否则
+                                        // vim / btop 根本收不到点击（上游 2e5f125）。
+                                        root.mouse-press-pending = true;
+                                        root.mouse-press-x = self.mouse-x;
+                                        root.mouse-press-y = self.mouse-y;
                                     } else if (ev.button == PointerEventButton.left) {
                                         root.selecting = true;
                                         root.select-start(
@@ -818,6 +867,16 @@ export component TerminalView inherits Rectangle {
                                         root.paste-from-clipboard();
                                         ime-input.focus();
                                     } else if (ev.button == PointerEventButton.left
+                                            && root.mouse-press-pending) {
+                                        // 挂着到抬起都没拖 → 点击：press + release 发给远端。
+                                        root.mouse-press-pending = false;
+                                        root.terminal-mouse(0, 0,
+                                            floor(self.mouse-x / root.cell-w),
+                                            floor(self.mouse-y / root.cell-h));
+                                        root.terminal-mouse(1, 0,
+                                            floor(self.mouse-x / root.cell-w),
+                                            floor(self.mouse-y / root.cell-h));
+                                    } else if (ev.button == PointerEventButton.left
                                             && root.selecting) {
                                         root.selecting = false;
                                         root.autoscroll-dir = 0;
@@ -826,7 +885,19 @@ export component TerminalView inherits Rectangle {
                                 }
                             }
                             moved => {
-                                if (root.selecting) {
+                                if (root.mouse-press-pending) {
+                                    // 拖出 4px 才算拖选（阈值同上游 2e5f125）。
+                                    if (max(self.mouse-x - root.mouse-press-x, root.mouse-press-x - self.mouse-x) > 4px
+                                            || max(self.mouse-y - root.mouse-press-y, root.mouse-press-y - self.mouse-y) > 4px) {
+                                        root.mouse-press-pending = false;
+                                        root.selecting = true;
+                                        root.select-start(
+                                            floor(self.mouse-y / root.cell-h),
+                                            floor(self.mouse-x / root.cell-w),
+                                            self.mouse-x - root.cell-w * floor(self.mouse-x / root.cell-w) < root.cell-w / 2,
+                                            false, false);
+                                    }
+                                } else if (root.selecting) {
                                     root.select-update(
                                         floor(self.mouse-y / root.cell-h),
                                         floor(self.mouse-x / root.cell-w),
@@ -966,10 +1037,13 @@ export component TerminalView inherits Rectangle {
                                 || event.text == "\u{0003}")) {
                         root.copy-terminal-text();
                         accept
-                    // ── Paste: ⌘V / Ctrl+V (Ctrl+Shift+V also accepted) ──
+                    // ── Paste: ⌘V (macOS) / Ctrl+Shift+V 永远是本地粘贴；
+                    //    裸 Ctrl+V 在备用屏里放行给远端 —— vim/tmux 有自己的 ^V，
+                    //    本地粘贴会把按键吞掉（上游 d7f7a04）──
                     } else if (event.modifiers.control
                             && (event.text == "v" || event.text == "V"
-                                || event.text == "\u{0016}")) {
+                                || event.text == "\u{0016}")
+                            && (event.modifiers.shift || Theme.is-mac || !root.is-alt-screen)) {
                         root.paste-from-clipboard();
                         // Clipboard access on Windows can deliver WM_KILLFOCUS.
                         // Restore focus explicitly so the cursor keeps blinking.
@@ -979,6 +1053,14 @@ export component TerminalView inherits Rectangle {
                     } else if (event.modifiers.shift && event.text == Key.Insert) {
                         root.paste-from-clipboard();
                         ime-input.focus();
+                        accept
+                    // ── Local history navigation: Home / End / PageUp / PageDown ──
+                    // 只有"已滚回的正常屏"才由 Rust 本地消费；返回 false 时原键
+                    // 照旧走下面的 send-key 透传 —— vim / less / tmux 仍拥有它们。
+                    // 放在 macOS 吞键分支**之前**，这样 ⌘Home / ⌘End 也能翻历史。
+                    } else if ((event.text == Key.Home || event.text == Key.End
+                            || event.text == Key.PageUp || event.text == Key.PageDown)
+                            && root.terminal-scrollback-key(event.text)) {
                         accept
                     // ── macOS: swallow any other ⌘ combo (control == Cmd here) so it
                     // isn't typed into the shell as a literal character. ──
@@ -1025,6 +1107,10 @@ export component TerminalView inherits Rectangle {
                     }
                     pointer-event(e) => {
                         if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                            // 滚动条本身不可聚焦，点它会让 Slint 清掉离屏 ime-input 的
+                            // 键盘焦点 —— 于是拖完滚动条键盘就"失联"了。按下一并请求
+                            // 归还焦点（上游 7102d70）。
+                            root.focus-pending = true;
                             root.terminal-scroll-to(clamp(round(root.scroll-max * (1 - self.mouse-y / self.height)), 0, root.scroll-max));
                         }
                     }

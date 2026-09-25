@@ -13,9 +13,10 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use crate::session::ConnectCtx;
 use crate::ssh::SessionCommand;
 use crate::terminal::{
-    bare_ctrl_marker_workaround_enabled, encode_command_bar_input,
-    encode_pasted_text, key_to_pty_bytes, paste_requires_large_review,
-    should_drop_bare_ctrl_marker, terminal_uses_bracketed_paste,
+    bare_ctrl_marker_workaround_enabled, clear_pending_paste, encode_command_bar_input,
+    encode_pasted_text, is_back_tab, key_to_pty_bytes, paste_requires_large_review,
+    scrollback_key_from_text, should_drop_bare_ctrl_marker, store_pending_paste,
+    take_pending_paste, terminal_uses_bracketed_paste, PendingPaste, BACK_TAB_BYTES,
 };
 #[cfg(windows)]
 use crate::terminal::c0_letter_key_down;
@@ -624,7 +625,10 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             //
             // 检测到 IME Shift 标记后，记录时间戳，让 Layer 2 在 1500ms 内
             // 拦截随后可能到来的 Backspace（右Shift场景，日志显示间隔约 914ms）。
-            if !ctrl && !alt
+            // Shift+Tab → back-tab（ESC [ Z）。Slint 的 `Key.Backtab` 是 U+0019，
+            // 不排除掉就会被下面的 IME C0 标记过滤丢掉；报成 `"\t"` 时又会丢掉 Shift。
+            let back_tab = is_back_tab(key.as_str(), ctrl, alt, shift);
+            if !ctrl && !alt && !back_tab
                 && let Some(c) = key.as_str().chars().next() {
                     let cp = c as u32;
                     let is_standalone = matches!(cp, 0x08 | 0x09 | 0x0A | 0x0D | 0x1B);
@@ -760,7 +764,11 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 return;
             }
 
-            let bytes = key_to_pty_bytes(key.as_str(), ctrl, alt, app_cursor);
+            let bytes = if back_tab {
+                BACK_TAB_BYTES.to_vec()
+            } else {
+                key_to_pty_bytes(key.as_str(), ctrl, alt, app_cursor)
+            };
             // Log only the length — never the keystroke bytes, which can be
             // password characters (#15).
             tracing::debug!(
@@ -896,10 +904,15 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
     }
 
     // Middle-click / Ctrl+Shift+V: paste clipboard text into PTY.
+    //
+    // 打开确认框时，**完整内容只留在 `pending_paste`**，不写进 Slint 字符串属性：
+    // 软件渲染器给大段 `Text` 排版时会因 i16 坐标溢出而 panic（#434 / slint#12985）。
+    let pending_paste: Arc<PendingPaste> = Arc::new(Mutex::new(None));
     {
         let handles = handles.clone();
         let bufs = bufs.clone();
         let weak = window.as_weak();
+        let pending_paste = pending_paste.clone();
         window.on_paste_from_clipboard(move |tab_id: SharedString| {
             // Clone the (Send) command sender for this tab so the clipboard read
             // can run off the UI thread.  Reading arboard on the event-loop
@@ -912,6 +925,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             let Some(sender) = sender else { return };
             let bracketed = terminal_uses_bracketed_paste(&bufs, tab_id.as_str());
             let weak = weak.clone();
+            let pending_paste = pending_paste.clone();
             let tab_id = tab_id.to_string();
             std::thread::spawn(move || {
                 match arboard::Clipboard::new().and_then(|mut cb| cb.get_text()) {
@@ -923,11 +937,13 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                         if text.contains(['\r', '\n']) || paste_requires_large_review(&text) {
                             let large = text.contains(['\r', '\n'])
                                 && paste_requires_large_review(&text);
-                            let preview = text.clone();
+                            // 只有这段有上限的预览进 UI 树；完整内容留在 Rust 里，
+                            // 确认时由 take_pending_paste 取走（#434）。
+                            let preview =
+                                store_pending_paste(&pending_paste, tab_id.clone(), text);
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(w) = weak.upgrade() {
                                     w.set_paste_confirm_tab(tab_id.into());
-                                    w.set_paste_confirm_text(text.into());
                                     w.set_paste_confirm_preview(preview.into());
                                     w.set_paste_confirm_large(large);
                                     w.set_paste_confirm_open(true);
@@ -948,6 +964,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
     {
         let handles_paste = handles.clone();
         let bufs_paste = bufs.clone();
+        let pending_paste = pending_paste.clone();
         let weak = window.as_weak();
         window.on_paste_confirmed(move |tab_id: SharedString| {
             let Some(sender) = handles_paste
@@ -957,19 +974,30 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             else {
                 return;
             };
-            let Some(w) = weak.upgrade() else { return };
-            let text = w.get_paste_confirm_text().to_string();
+            // 完整内容在 Rust 侧；对话框关掉之后才谈拿不拿得到。
+            let text = take_pending_paste(&pending_paste, tab_id.as_str());
+            if let Some(w) = weak.upgrade() {
+                w.set_paste_confirm_open(false);
+            }
+            let Some(text) = text else {
+                tracing::warn!("paste_confirmed: no pending paste payload for tab {tab_id}");
+                return;
+            };
             let bracketed = terminal_uses_bracketed_paste(&bufs_paste, tab_id.as_str());
             let _ = sender.send(SessionCommand::RawInput(encode_pasted_text(
                 &text,
                 bracketed,
                 convert_eol(),
             )));
-            w.set_paste_confirm_open(false);
         });
     }
 
-    window.on_paste_confirm_cancelled(|| {});
+    {
+        let pending_paste = pending_paste.clone();
+        window.on_paste_confirm_cancelled(move || {
+            clear_pending_paste(&pending_paste);
+        });
+    }
 
     // Context menu → 清空缓存: reset the local vt100 buffer (drops scrollback),
     // wipe the displayed screen, then nudge the remote to redraw a fresh prompt.
@@ -1090,6 +1118,27 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             // 走渲染闸门：以前每来一个滚轮 / 滚动条事件就**整屏重建**（惯性滚动每秒几十次，
             // 既没有节流也没有合并）。闸门会把它们并成一帧，延迟仍在一帧以内。
             request_tab_render_from_ui(weak.clone(), &tid, &bufs_scroll, &gates_scroll);
+        });
+    }
+
+    // Home / End / PageUp / PageDown while viewing normal-screen history.
+    // 返回 false 表示没消费 —— Slint 会把原键照旧透传给 PTY，实时终端与 TUI
+    // 程序（less / vim / tmux…）仍然拥有它们（上游 35158dd）。
+    {
+        let bufs_key = bufs.clone();
+        let gates_key = app.render_gates.clone();
+        let weak = window.as_weak();
+        window.on_terminal_scrollback_key(move |tab_id: SharedString, key: SharedString| {
+            let Some(scroll_key) = scrollback_key_from_text(key.as_str()) else {
+                return false;
+            };
+            let tid = tab_id.to_string();
+            let handled = with_term_buf(&bufs_key, &tid, |buf| buf.scrollback_navigate(scroll_key))
+                .unwrap_or(false);
+            if handled {
+                request_tab_render_from_ui(weak.clone(), &tid, &bufs_key, &gates_key);
+            }
+            handled
         });
     }
 

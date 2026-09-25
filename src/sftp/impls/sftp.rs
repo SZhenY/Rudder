@@ -1386,7 +1386,10 @@ async fn run_sftp(
 }
 
 const MAX_BUILTIN_EDITOR_BYTES: usize = 512 * 1024;
-const MAX_BUILTIN_EDITOR_LINES: usize = 20_000;
+/// 内置编辑器的行数上限。从 20 000 收到 10 000（上游 96cb659）：我们的行号栏是**一整个
+/// O(N) 字符串 + 一次全量排版**（`src/app.rs` 的 editor gutter），比上游的原生行号更怕
+/// 大文件，先卡在更保守的线上。
+const MAX_BUILTIN_EDITOR_LINES: usize = 10_000;
 const MAX_BUILTIN_EDITOR_LINE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1435,8 +1438,8 @@ fn editor_rejection_message(rejection: EditorTextRejection) -> String {
             "Too large for the built-in editor (512 KB limit); open/edit externally or download it instead",
         ),
         EditorTextRejection::TooManyLines => t(
-            "文件行数过多,无法在内置编辑器中安全打开,请使用外部打开/编辑或下载",
-            "Too many lines for the built-in editor; open/edit externally or download it instead",
+            "文件行数过多(上限 10,000 行),无法在内置编辑器中安全打开,请使用外部打开/编辑或下载",
+            "Too many lines for the built-in editor (10,000 line limit); open/edit externally or download it instead",
         ),
         EditorTextRejection::LineTooLong => t(
             "文件包含过长的单行,无法在内置编辑器中安全打开,请使用外部打开/编辑或下载",
@@ -1456,11 +1459,18 @@ fn editor_rejection_message(rejection: EditorTextRejection) -> String {
 /// Read a remote file as UTF-8 text for the built-in editor, rejecting content
 /// that would make Slint eagerly lay out an unsafe amount of text (#70, #331).
 /// Returns the text on success or a human-readable error message on failure.
+///
+/// **边读边判**（8 KB 一块）：控制字符、行数、单行长度一旦越界立刻返回 —— 以前是先把
+/// 512 KB 整个读进内存、再回头判定，远端丢来一个大日志就白白读满并分配一次
+/// （上游 96cb659 里可借鉴的那一半）。最终仍由 [`validate_editor_text`] 做权威校验，
+/// 顺带完成 UTF-8 检查。
 async fn read_text_guarded(
     sftp: &SftpSession,
     remote: &str,
 ) -> std::result::Result<String, String> {
     use tokio::io::AsyncReadExt;
+    const CHUNK_BYTES: usize = 8 * 1024;
+
     let size = sftp
         .metadata(remote)
         .await
@@ -1470,17 +1480,46 @@ async fn read_text_guarded(
     if size > MAX_BUILTIN_EDITOR_BYTES as u64 {
         return Err(editor_rejection_message(EditorTextRejection::TooLarge));
     }
-    let f = sftp
+    let mut f = sftp
         .open(remote)
         .await
         .map_err(|e| format!("{}: {e}", t("打开失败", "Open failed")))?;
-    // Metadata may be missing or stale. Read at most one byte past the limit so
-    // an untrusted remote file can never make this path allocate without bound.
+    // Metadata may be missing or stale. Stop one byte past the limit so an
+    // untrusted remote file can never make this path allocate without bound.
     let mut bytes = Vec::with_capacity((size as usize).min(MAX_BUILTIN_EDITOR_BYTES));
-    f.take(MAX_BUILTIN_EDITOR_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .await
-        .map_err(|e| format!("{}: {e}", t("读取失败", "Read failed")))?;
+    let mut buf = [0u8; CHUNK_BYTES];
+    let mut line_count = 1usize;
+    let mut line_bytes = 0usize;
+    loop {
+        let read = f
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("{}: {e}", t("读取失败", "Read failed")))?;
+        if read == 0 {
+            break;
+        }
+        for &byte in &buf[..read] {
+            if (byte < 0x20 && byte != b'\t' && byte != b'\n' && byte != b'\r') || byte == 0x7f {
+                return Err(editor_rejection_message(EditorTextRejection::Binary));
+            }
+            if byte == b'\n' {
+                line_count += 1;
+                line_bytes = 0;
+                if line_count > MAX_BUILTIN_EDITOR_LINES {
+                    return Err(editor_rejection_message(EditorTextRejection::TooManyLines));
+                }
+            } else {
+                line_bytes += 1;
+                if line_bytes > MAX_BUILTIN_EDITOR_LINE_BYTES {
+                    return Err(editor_rejection_message(EditorTextRejection::LineTooLong));
+                }
+            }
+        }
+        if bytes.len() + read > MAX_BUILTIN_EDITOR_BYTES {
+            return Err(editor_rejection_message(EditorTextRejection::TooLarge));
+        }
+        bytes.extend_from_slice(&buf[..read]);
+    }
     validate_editor_text(bytes).map_err(editor_rejection_message)
 }
 

@@ -5,6 +5,66 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 修复 / Fixed
+
+- **超长文本粘贴会让软件渲染器闪退（#434 上游同源）。** Slint 的软件渲染器用 i16 存字形几何，
+  以前把整段剪贴板内容写进 `paste-confirm-text` 再交给确认框的 `Text` 排版：几千行的粘贴会让坐标
+  越过 ±32767 直接 panic。现在**只有一段有上限的预览进 UI 树**（48 行 / 每行 240 字符 / 共 6 KB，
+  超出部分附"已截断"提示），完整内容留在 Rust 侧按 tab 暂存，确认时校验 tab 后取走 —— 顺带避免了
+  "一个会话确认到另一个会话的剪贴板"。同一处还放宽了判定：单行超长文本以前走的是**不可滚动**的排版
+  路径。**Huge pastes no longer crash the software renderer**: only a bounded preview enters the UI
+  tree, the full payload stays in Rust until the user confirms.
+- **粘贴确认框关掉之后键盘"失联"，要再点一下终端才恢复。** 确认框里的 FocusScope 会抢走焦点，而
+  确认 / 取消两条路径都没有把焦点还回去。现在主窗口加了一个自增的 `terminal-focus-sequence`，
+  终端监听它走自己那套延迟取焦（0ms Timer）。**The terminal regains keyboard focus after the paste
+  review dialog closes** (both confirming and cancelling).
+- **`Ctrl+V` 在 vim / tmux 这类全屏程序里被本地粘贴吞掉。** 现在 `Ctrl+Shift+V`（以及 macOS 的 `⌘V`）
+  永远本地粘贴，裸 `Ctrl+V` 在备用屏里放行给远端 —— 那里 `^V` 是程序自己的键。**A bare `Ctrl+V` in
+  the alternate screen now reaches the remote app** (vim/tmux own `^V`); `⌘V` / `Ctrl+Shift+V` still
+  paste locally.
+- **`Shift+Tab` 完全失效。** Slint 报的是 `Key.Backtab`（U+0019），正好落进百度拼音那套 IME C0 标记
+  过滤里被丢掉；如果报成带 shift 的 `"\t"`，又会丢掉 Shift 变成普通 Tab。现在两者都按 xterm 惯例送出
+  CBT（`ESC [ Z`），而 `Ctrl+Y`（同样是 U+0019）不受影响。**`Shift+Tab` now sends CBT (`ESC [ Z`)
+  instead of being dropped**, which is what vim / fzf / readline menus expect.
+- **滚回历史后键盘翻不动，还会被"拽"回底部。** 以前 `PageUp` / `PageDown` / `Home` / `End` 一律走
+  按键转发路径，而那条路径会把 `view_offset` 归零。现在**已经滚离底部的普通屏**由本地消费这四个键
+  （一屏 = 当前屏幕行数），备用屏程序与实时终端照旧透传 —— 后者仍然拥有它们。**`PageUp`/`PageDown`/
+  `Home`/`End` now navigate the local scrollback** when the view is already scrolled back on a normal
+  screen; live terminals and TUI apps keep receiving them.
+- **拖完滚动条之后键盘也"失联"。** 滚动条不可聚焦，按它会让 Slint 清掉离屏 IME 锚点的焦点；现在按下
+  时一并请求归还焦点。**Dragging the scrollbar no longer steals the keyboard focus.**
+- **开启鼠标跟踪的 TUI（vim / btop / mc）收不到点击，而本地拖选又被抢走。** 按下不再立刻把点击发给
+  远端：先挂着，抬起时若没拖动才当成一次点击发送（press + release）；中途拖出 4px 就转成本地拖选。
+  另外我们有两个重叠的触摸层，**最上层那个此前完全没有远端转发**，TUI 点击在它命中的区域里根本到不了
+  远端 —— 现在两层走同一套判定。**Mouse presses in mouse-tracking TUIs are held until release**, so a
+  click reaches vim/btop while a drag still starts a local selection; the topmost touch layer forwards
+  to the remote app as well.
+- **macOS / Linux 下把文件拖进 SFTP 列表完全没反应。** 非 Windows 分支一直是个空实现；现在 Windows 之外
+  的平台用最近一次指针位置判定落点（Windows 仍问系统拿，因为 OLE 拖放会抑制 `WM_MOUSEMOVE`）。
+  **File drag-and-drop onto the SFTP list now works on macOS and Linux** (previously a no-op).
+- **`refresh_panes` 期间持着 `RefCell` 守卫重入会 `panic=abort` 直接退出。** 15 个调用点都是
+  `&layout.borrow()` 直接把守卫传进去，而 `refresh_panes` 内部会写 Slint 模型，从而同步触发绑定 /
+  回调（例如 pane 尺寸变化 → `content-resized`）再回头 `layout.borrow()`。改成先克隆一份布局快照
+  再动模型（具名局部变量 —— 写成 `&(*x.borrow()).clone()` 是没用的，临时守卫活到整条语句结束）。
+  **`refresh_panes` now works on a cloned layout snapshot**, so re-entrant `layout.borrow()` from model
+  callbacks can no longer abort the process.
+- **终端列数算得偏大 → 换行错位 / TUI 花屏。** `cell-w` 是 50 字符探针的平均值，逐字符推进误差会随列数
+  累积，所以 `term-cols` 留一列安全边距（每行少一列）。**The terminal now reserves one column** to
+  absorb per-character advance error in the measured cell width.
+- **窗口最后一次调整尺寸可能没被记住。** 以前只在缓存尺寸无效时才落盘，最后一次 resize 还没来得及
+  写进 store 就退出的话，下次启动会回到旧的（更小的）尺寸；现在关闭时总是用最终几何落盘（最大化尺寸
+  仍排除）。**The final window geometry is always persisted on close.**
+- **内置编辑器：大文件拒绝得晚、行数上限偏松。** 改为 8 KB 分块边读边判，行数 / 单行长度 / 控制字符
+  一旦越界立刻返回，不再先把 512 KB 整个读进内存；行数上限从 20 000 收到 10 000（我们的行号栏是
+  一整个 O(N) 字符串 + 一次全量排版，比原生行号更怕大文件）。**The built-in editor rejects oversized
+  remote files earlier** (8 KB chunked scan, 10 000-line limit).
+
+### 变更 / Changed
+
+- **编辑器右下角的缩放把手不再用 `"◢"` 字形。** 那个字符在部分系统 / 字体下会画成豆腐块，改成三条
+  阶梯矩形，任何字体下都成立。**The editor's resize grip is drawn as rectangles instead of a glyph**
+  that rendered as tofu on some systems.
+
 ## [0.7.9-beta5] - 2026-09-24
 
 ### 变更 / Changed

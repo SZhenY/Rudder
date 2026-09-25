@@ -37,9 +37,11 @@ pub(crate) use input::normalize_pasted_newlines;
 #[cfg(any(target_os = "windows", test))]
 pub(crate) use input::windows_process_ctrl_release;
 pub(crate) use input::{
-    bare_ctrl_marker_workaround_enabled, encode_command_bar_input, encode_mouse_event,
-    encode_pasted_text, key_to_pty_bytes, paste_requires_large_review,
-    should_drop_bare_ctrl_marker, terminal_uses_bracketed_paste,
+    bare_ctrl_marker_workaround_enabled, clear_pending_paste,
+    encode_command_bar_input, encode_mouse_event, encode_pasted_text, is_back_tab,
+    key_to_pty_bytes, paste_requires_large_review, scrollback_key_from_text,
+    should_drop_bare_ctrl_marker, store_pending_paste, take_pending_paste,
+    terminal_uses_bracketed_paste, BACK_TAB_BYTES, PendingPaste,
 };
 pub(crate) use encoding::TerminalEncoding;
 pub(crate) use json_output::format_json_output;
@@ -51,9 +53,9 @@ pub(crate) use render::{RAW_CAP, build_line, build_row, cell_prefix, refresh_ove
 #[cfg(any(target_os = "windows", test))]
 pub(crate) use state::CtrlKeySide;
 pub(crate) use state::{
-    ATerm, BuiltScreen, CompiledOutputRule, CsiState, HistSpan, Line, OutputHighlightPreset,
-    OverlineRange, RenderGates, FrameStats, RenderedLine, ScrollLine, TabRenderGate, TermBuffer,
-    TermBufferHandle, TermBuffers, TermColor, UnderlineStyle,
+ATerm, BuiltScreen, CompiledOutputRule, CsiState, HistSpan, Line, OutputHighlightPreset,
+OverlineRange, RenderGates, FrameStats, RenderedLine, ScrollLine, ScrollbackKey, TabRenderGate,
+TermBuffer, TermBufferHandle, TermBuffers, TermColor, UnderlineStyle,
 };
 pub(crate) use tailspin_rules::builtin_rules;
 pub(crate) use vt_adapter::{

@@ -149,6 +149,18 @@ pub(crate) struct CompiledOutputRule {
     pub(crate) ansi_index: u8,
 }
 
+/// 滚回历史时**本地**消费的导航键（上游 35158dd）。
+///
+/// 只对"已经滚离实时底部"的普通屏生效；备用屏程序（less / vim / tmux…）与实时
+/// 终端必须让这些键照旧走 PTY。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScrollbackKey {
+    Home,
+    End,
+    PageUp,
+    PageDown,
+}
+
 pub(crate) type TermBufferHandle = Arc<Mutex<TermBuffer>>;
 pub(crate) type TermBuffers = Arc<Mutex<HashMap<String, TermBufferHandle>>>;
 

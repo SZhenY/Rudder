@@ -42,11 +42,10 @@ pub(crate) fn save_layout(win: &AppWindow, store: &Rc<RefCell<ConfigStore>>) {
         .window()
         .with_winit_window(|ww| ww.is_maximized())
         .unwrap_or_else(|| win.get_window_maximized());
-    let (saved_w, saved_h) = s.window_size();
-    if !native_maximized && (saved_w <= 0.0 || saved_h <= 0.0) && w > 200.0 && h > 200.0 {
-        // Normal resize events keep this cache current. Only fall back to the
-        // close-time geometry for a first run where no valid resize was seen;
-        // do not issue a new native resize while the window is shutting down.
+    if !native_maximized && w > 200.0 && h > 200.0 {
+        // 关闭时**总是**用最终几何落盘：resize 事件通常让缓存保持最新，但最后一次
+        // 调整可能还没走到 store 就退出了 —— 下次启动会回到旧的（更小的）尺寸。
+        // 最大化尺寸不是好的"首选尺寸"，所以上面把它排除（上游 0be0b43）。
         s.set_window_size(w, h);
     }
     s.save_logging();
@@ -88,12 +87,23 @@ pub(crate) fn update_terminal_row(
 }
 pub(crate) fn refresh_panes(
     window: &AppWindow,
-    layout: &crate::layout::Layout,
+    layout: &std::cell::RefCell<crate::layout::Layout>,
     content: (f32, f32),
     tabs_model: &VecModel<TabInfo>,
     panes_model: &VecModel<PaneInfo>,
     splitters_model: &VecModel<SplitterInfo>,
 ) {
+    // ⚠️ 先把布局**快照**克隆出来，再动模型：下面会写 `panes` / `splitters` 模型，而写
+    // 模型会同步跑 Slint 绑定/回调 —— 其中就有会回头 `layout.borrow()` 的路径
+    // （例如 pane 尺寸变化 → `content-resized`）。如果调用方把 `&layout.borrow()` 直接
+    // 传进来，那个守卫在整个调用期间都活着，重入就是 RefCell 双重借用 → release 下
+    // `panic=abort` 直接退出（上游 baf72f8）。
+    //
+    // 注意必须用**具名局部变量**：`f(&(*x.borrow()).clone())` 里的临时守卫活到整条
+    // 语句结束，等于没修。
+    let snapshot = (*layout.borrow()).clone();
+    let layout = &snapshot;
+
     let (cw, ch) = (content.0.max(1.0), content.1.max(1.0));
     let (panes, splits) = layout.flatten(0.0, 0.0, cw, ch);
 

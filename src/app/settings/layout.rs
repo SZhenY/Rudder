@@ -257,7 +257,7 @@ pub(crate) fn bind(
                     }
                     refresh_panes(
                         &w,
-                        &layout.borrow(),
+                        &layout,
                         content_size.get(),
                         &tabs_model,
                         &panes_model,
@@ -310,7 +310,7 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, panes: &PaneHandles) {
         }
         refresh_panes(
             &w,
-            &r.layout.borrow(),
+            &r.layout,
             r.content_size.get(),
             &r.tabs_model,
             &r.panes_model,

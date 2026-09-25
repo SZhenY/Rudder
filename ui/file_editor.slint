@@ -360,12 +360,28 @@ export component FileEditor inherits Rectangle {
                         }
                     }
                 }
-                Text {
-                    text: "◢";
-                    color: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
-                    font-size: 10px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                // 原来是一个 "◢" 字形 —— 部分系统 / 字体下会画成豆腐块（上游 0be0b43）。
+                // 换成三条阶梯矩形，任何字体下都成立，右下角观感不变。
+                Rectangle {
+                    x: parent.width - 6px;
+                    y: parent.height - 3px;
+                    width: 3px;
+                    height: 3px;
+                    background: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
+                }
+                Rectangle {
+                    x: parent.width - 11px;
+                    y: parent.height - 7px;
+                    width: 3px;
+                    height: 7px;
+                    background: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
+                }
+                Rectangle {
+                    x: parent.width - 16px;
+                    y: parent.height - 11px;
+                    width: 3px;
+                    height: 11px;
+                    background: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
                 }
             }
         }

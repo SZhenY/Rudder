@@ -1,7 +1,8 @@
 use crate::terminal::{
     BuiltScreen, CsiState, FrameStats, HistSpan, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
-    ScrollLine, TermBuffer, build_line, build_row, cursor_pos, highlight_plain_output, is_alt,
-    merge_runs, process_bytes, refresh_overlines, render_term_span, resize_term, term_size,
+    ScrollLine, ScrollbackKey, TermBuffer, build_line, build_row, cursor_pos,
+    highlight_plain_output, is_alt, merge_runs, process_bytes, refresh_overlines, render_term_span,
+    resize_term, term_size,
 };
 use crate::ui::TermMatch;
 use crate::ui::TermSpan;
@@ -86,6 +87,30 @@ impl TermBuffer {
         self.view_offset = 0;
         self.term.selection = None;
         self.raw.clear();
+    }
+
+    /// Handle a local scrollback-navigation key (Home / End / PageUp / PageDown).
+    ///
+    /// 只有**已经从实时底部滚开**的普通屏才拥有这些键：返回 `true` 表示已本地消费，
+    /// `false` 表示调用方应把原键照旧透传给 PTY —— 备用屏程序（less / vim / tmux…）
+    /// 与实时终端仍然拥有它们（上游 35158dd）。一屏 = 当前屏幕行数。
+    pub(crate) fn scrollback_navigate(&mut self, key: ScrollbackKey) -> bool {
+        if self.view_offset == 0 || is_alt(&self.term) {
+            return false;
+        }
+
+        let max_offset = self
+            .term
+            .total_lines()
+            .saturating_sub(self.term.screen_lines());
+        let page_rows = self.term.screen_lines().max(1);
+        self.view_offset = match key {
+            ScrollbackKey::Home => max_offset,
+            ScrollbackKey::End => 0,
+            ScrollbackKey::PageUp => self.view_offset.saturating_add(page_rows).min(max_offset),
+            ScrollbackKey::PageDown => self.view_offset.saturating_sub(page_rows),
+        };
+        true
     }
 
     /// Selection highlight rectangles for the current visible window.

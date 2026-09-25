@@ -372,7 +372,7 @@ impl AppContext {
         window.set_splitters(ModelRc::from(splitters_model.clone()));
         crate::app::pane_layout::refresh_panes(
             &window,
-            &layout.borrow(),
+            &layout,
             content_size.get(),
             &tabs_model,
             &panes_model,
@@ -1057,8 +1057,10 @@ pub fn run() -> Result<()> {
                         _slint_window.with_winit_window(|window| window.set_ime_allowed(true));
                     }
                     WEvent::DroppedFile(path) => {
+                        // 非 Windows 平台只有这里能告诉我们落点（上游 0aeba62）；
+                        // Windows 会忽略它、改问系统，因为 OLE 拖放期间指针事件被抑制。
                         if let Some(win) = weak.upgrade() {
-                            handle_file_drop(&win, &sh, path.clone());
+                            handle_file_drop(&win, &sh, path.clone(), last_cursor_logical);
                         }
                     }
                     WEvent::CursorMoved { position, .. } => {

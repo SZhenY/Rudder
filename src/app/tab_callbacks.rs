@@ -37,7 +37,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,
-                    &layout.borrow(),
+                    &layout,
                     content_size.get(),
                     &tabs_model,
                     &panes_model,
@@ -72,7 +72,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,
-                    &layout.borrow(),
+                    &layout,
                     content_size.get(),
                     &tabs_model,
                     &panes_model,
@@ -108,7 +108,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,
-                    &layout.borrow(),
+                    &layout,
                     content_size.get(),
                     &tabs_model,
                     &panes_model,
@@ -207,7 +207,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,
-                    &layout.borrow(),
+                    &layout,
                     content_size.get(),
                     &tabs_model,
                     &panes_model,
@@ -251,7 +251,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,
-                    &layout.borrow(),
+                    &layout,
                     content_size.get(),
                     &tabs_model,
                     &panes_model,
@@ -281,7 +281,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,
-                    &layout.borrow(),
+                    &layout,
                     content_size.get(),
                     &tabs_model,
                     &panes_model,
@@ -319,7 +319,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,
-                    &layout.borrow(),
+                    &layout,
                     content_size.get(),
                     &tabs_model,
                     &panes_model,
@@ -362,7 +362,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
                 if let Some(w) = weak.upgrade() {
                     refresh_panes(
                         &w,
-                        &layout.borrow(),
+                        &layout,
                         content_size.get(),
                         &tabs_model,
                         &panes_model,
@@ -390,7 +390,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,
-                    &layout.borrow(),
+                    &layout,
                     content_size.get(),
                     &tabs_model,
                     &panes_model,

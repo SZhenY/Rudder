@@ -29,7 +29,10 @@ pub struct Leaf {
 }
 
 /// The whole layout plus an id allocator and which leaf currently has focus.
-#[derive(Debug)]
+///
+/// `Clone` 是为了 `refresh_panes` 能先取快照再动模型（见那里的说明，上游 baf72f8）：
+/// 持着 `RefCell` 守卫重入会在 release 下 panic=abort。
+#[derive(Clone, Debug)]
 pub struct Layout {
     pub root: Node,
     pub focused: u64,
