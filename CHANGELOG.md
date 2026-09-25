@@ -7,12 +7,13 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
-- **断开连接后立刻释放回滚历史。** 断开的会话不再产生输出，回滚历史（默认 5 000 行 ≈ 14 MB，
-  开了大回滚可达 GB 级）留着没有任何用处。现在**所有会话类型**（SSH / 串口 / Telnet / 本地）
-  在断开事件里释放：`Grid::clear_history()` 丢掉历史行、**保留可见屏幕**（断线提示与断线前的
-  内容仍在），同时清掉我们自己的行级缓存并把视图偏移归零。**默认行为，没有开关** —— 代价是
-  断开后滚不回历史了。**Scrollback history is released immediately on disconnect** (default,
-  no setting) while the visible screen and the disconnect hint stay on screen.
+- **关标签页时释放回滚历史；意外断线则保留。** 回滚历史是每个标签页的内存大头（默认 5 000 行
+  ≈ 14 MB，开了大回滚可达 GB 级）。用户**主动关闭标签页**时显式释放一次 —— 只把句柄从表里摘掉
+  并不保证内存立刻回来，卡住的会话线程还握着它。**网络 / 远端导致的断线保留**历史，因为那时
+  用户正要看断线前发生了什么。释放走 alacritty 的 `Grid::clear_history()`（丢历史、保留屏幕）
+  + 清我们自己的行级缓存 + 视图偏移归零，**没有开关，就是默认行为**。**The scrollback history
+  is released when you close a tab, but kept after an unexpected disconnect** so the output
+  leading up to it stays readable.
 - **编辑器保存 / 关闭会写到错误的会话。** 开着文件编辑器切到别的标签再按 `Ctrl+S`，以前用的是
   "当前活动标签页" → 内容被写到另一个会话的远端目录。现在编辑器**打开时**记下自己所属的标签页，
   保存与关闭都写到它（旧状态为空时退回活动标签页）。**The editor now remembers which tab opened

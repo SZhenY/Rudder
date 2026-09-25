@@ -163,8 +163,15 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
             {
                 gate.close();
             }
-            if let Ok(mut b) = bufs.lock() {
-                b.remove(&id);
+            if let Ok(mut b) = bufs.lock()
+                && let Some(handle) = b.remove(&id)
+            {
+                // 用户**主动**关标签页 → 不保留回滚历史（网络断线是另一回事：那时要保留，
+                // 方便回看断线前发生了什么）。这里显式释放一次：只把 Arc 从表里摘掉并不保证
+                // 内存立刻回来 —— 会话线程还握着句柄，卡住的连接会让几十 MB 一直挂着。
+                if let Ok(mut buf) = handle.lock() {
+                    buf.release_history_keep_screen();
+                }
             }
             // The status entry carries the tab's process list, network history
             // and disk rows. Nothing else in the app removes one, so leaving it

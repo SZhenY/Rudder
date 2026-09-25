@@ -140,16 +140,9 @@ pub(super) fn apply_session_event_to_window<'a>(
             {
                 st.state = 2;
             }
-            // 断开后**立刻**释放回滚历史（内存大头：默认 5 000 行 ≈ 14 MB，开了大回滚
-            // 可达 GB 级）。断开的会话不再产生输出，留着没有任何用处；可见屏幕保留 ——
-            // 上面的断线提示与断线前的内容仍在，代价是滚不回历史了。所有会话类型
-            // （ssh / serial / telnet / local）都走这一个入口。
-            if let Ok(bufs) = bufs.lock()
-                && let Some(handle) = bufs.get(tab_id)
-            {
-                let mut b = handle.lock().unwrap_or_else(|e| e.into_inner());
-                b.release_history_keep_screen();
-            }
+            // 注意：意外断线（网络 / 远端挂掉）**保留**回滚历史 —— 用户正要看断线前发生了什么，
+            // 此时清掉是最不该做的事。释放只发生在用户**主动关标签页**时
+            // （`tab_callbacks.rs` 的 pane-tab-closed）。
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses, local, local_net_hist);
             }
