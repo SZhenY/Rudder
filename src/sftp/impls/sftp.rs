@@ -1900,6 +1900,8 @@ async fn list_dir_impl(sftp: &SftpSession, path: &str) -> Result<Vec<RemoteEntry
                 size,
                 modified,
                 mode: permissions & 0o7777,
+                // 类型位也带上：SFTP 列表的「类型 / 权限」两列要用（上游 ed7f231）。
+                mode_full: permissions & 0o177_777,
             }
         })
         .collect();

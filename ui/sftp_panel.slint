@@ -19,6 +19,9 @@ export struct SftpEntry {
     modified: string,
     modified-ts: float,
     mode: int,        // POSIX permission bits, for the chmod dialog (#84)
+    // 「类型 / 权限」两列（上游 ed7f231）：都由完整 mode 位在 Rust 侧算出，不需要额外往返。
+    entry-type: string,      // dir / file / link / socket / fifo / char / block / ?
+    permissions: string,     // ls -l 风格的 9 位（rwxr-xr-x）
     selected: bool,   // multi-select checkbox state (#100)
 }
 
@@ -69,6 +72,12 @@ export component SftpPanel inherits Rectangle {
     property <length> name-min: 180px;     // narrower than this → start dropping columns
     property <bool> show-size-col: root.show-tree || (root.list-w - 36px - 76px - 120px > root.name-min);
     property <bool> show-modified-col: root.show-tree || (root.list-w - 36px - 120px > root.name-min);
+    // 「类型 / 权限」两列（上游 ed7f231）：只在真的有余量时出现 —— 左/右停靠时本来就窄，
+    // 宁可不显示也不要挤掉文件名（这两列是参考信息，不是操作必需）。预留：Type 56px +
+    // Permissions 92px（含 spacing）。
+    property <bool> show-fileinfo-cols: root.show-tree
+        || (root.show-size-col && root.show-modified-col
+            && root.list-w - 36px - 76px - 120px - 56px - 92px > root.name-min);
     property <int> selected-row: -1;       // clicked/highlighted file-list row (#70)
     in property <int> selected-count;      // number of checked entries (#100)
     // Panel-level right-click context menu (#84). One menu for the whole list:
@@ -675,6 +684,30 @@ export component SftpPanel inherits Rectangle {
                                 vertical-alignment: center;
                             }
                         }
+                        // 类型 / 权限（上游 ed7f231）：**纯展示**，不做排序（我们的排序键仍是
+                        // 名称 / 大小 / 时间）。
+                        if root.show-fileinfo-cols : Rectangle {
+                            width: 52px;
+                            Text {
+                                text: @tr("Type");
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-xs;
+                                width: parent.width;
+                                horizontal-alignment: left;
+                                vertical-alignment: center;
+                            }
+                        }
+                        if root.show-fileinfo-cols : Rectangle {
+                            width: 84px;
+                            Text {
+                                text: @tr("Permissions");
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-xs;
+                                width: parent.width;
+                                horizontal-alignment: left;
+                                vertical-alignment: center;
+                            }
+                        }
                     }
                 }
                 Divider {}
@@ -794,6 +827,18 @@ export component SftpPanel inherits Rectangle {
                                         text: entry.modified;
                                         color: Theme.text-muted; font-size: Theme.fs-xs;
                                         width: 116px; horizontal-alignment: right; vertical-alignment: center;
+                                    }
+                                    // 类型 / 权限（上游 ed7f231）：等宽字体让 9 位权限对齐。
+                                    if root.show-fileinfo-cols : Text {
+                                        text: entry.entry-type;
+                                        color: Theme.text-muted; font-size: Theme.fs-xs;
+                                        width: 52px; horizontal-alignment: left; vertical-alignment: center;
+                                    }
+                                    if root.show-fileinfo-cols : Text {
+                                        text: entry.permissions;
+                                        color: Theme.text-muted; font-size: Theme.fs-xs;
+                                        font-family: Theme.font-mono;
+                                        width: 84px; horizontal-alignment: left; vertical-alignment: center;
                                     }
                                 }
                             }

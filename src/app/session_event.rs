@@ -1,5 +1,6 @@
 use super::render_tickets::request_tab_render_from_ui;
 use super::*;
+use crate::ssh::{file_type_label, format_permissions};
 
 pub(crate) struct SessionResources<'a> {
     pub(crate) bufs: &'a TermBuffers,
@@ -247,6 +248,10 @@ pub(super) fn apply_session_event_to_window<'a>(
                     modified: format_mtime(e.modified).into(),
                     modified_ts: e.modified as f32,
                     mode: (e.mode & 0o7777) as i32,
+                    // 「类型 / 权限」两列（上游 ed7f231）：都由完整 mode 位算出，不需要
+                    // 额外往返。
+                    permissions: format_permissions(e.mode_full).into(),
+                    entry_type: file_type_label(e.mode_full).into(),
                     selected: false,
                 })
                 .collect();

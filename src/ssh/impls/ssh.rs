@@ -99,6 +99,11 @@ pub struct RemoteEntry {
     /// 0 when the server didn't report permissions. Used to prefill the chmod
     /// dialog (#84).
     pub mode: u32,
+    /// **完整**的 POSIX mode，含文件类型位（`S_IFMT`，例如目录是 `0o040_000`）。
+    ///
+    /// 「类型 / 权限」两列读这个（上游 `ed7f231`）；chmod 对话框仍用 `mode`
+    /// （只有低 12 位，见上）。服务器没报权限时是 0。
+    pub mode_full: u32,
 }
 
 /// One node in the remote directory tree panel.
@@ -250,6 +255,84 @@ pub fn format_mtime(ts: u32) -> String {
         .single()
         .unwrap_or_else(Local::now);
     dt.format("%Y-%m-%d %H:%M").to_string()
+}
+
+/// 文件类型位的可读标签（`S_IFMT` → 单词），供 SFTP 列表的「类型」列使用
+/// （上游 `ed7f231`）。
+pub fn file_type_label(mode: u32) -> &'static str {
+    match mode & 0o170_000 {
+        0o040_000 => "dir",
+        0o120_000 => "link",
+        0o140_000 => "socket",
+        0o010_000 => "fifo",
+        0o020_000 => "char",
+        0o060_000 => "block",
+        0o100_000 => "file",
+        _ => "?",
+    }
+}
+
+/// 权限位 → `ls -l` 风格的 9 字符串（`rwxr-xr-x`），第 3/6/9 位按 setuid/setgid/sticky
+/// 显示成 `s`/`S`/`t`/`T`（上游 `ed7f231` 的「权限」列）。
+///
+/// 不含类型首字母 —— 那是「类型」列的事（[`file_type_label`]）。
+pub fn format_permissions(mode: u32) -> String {
+    let mut out = String::with_capacity(9);
+    // (读, 写, 执行, 特殊位) —— 三组依次是 user / group / other。
+    let groups = [
+        (0o400, 0o200, 0o100, 0o4000),
+        (0o040, 0o020, 0o010, 0o2000),
+        (0o004, 0o002, 0o001, 0o1000),
+    ];
+    for (i, (read, write, exec, special)) in groups.into_iter().enumerate() {
+        out.push(if mode & read != 0 { 'r' } else { '-' });
+        out.push(if mode & write != 0 { 'w' } else { '-' });
+        let has_exec = mode & exec != 0;
+        let has_special = mode & special != 0;
+        out.push(match (has_special, has_exec) {
+            (false, true) => 'x',
+            (false, false) => '-',
+            (true, true) => if i == 2 { 't' } else { 's' },
+            (true, false) => if i == 2 { 'T' } else { 'S' },
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod permission_format_tests {
+    use super::*;
+
+    #[test]
+    fn permissions_read_like_ls() {
+        assert_eq!(format_permissions(0o755), "rwxr-xr-x");
+        assert_eq!(format_permissions(0o644), "rw-r--r--");
+        assert_eq!(format_permissions(0o600), "rw-------");
+        assert_eq!(format_permissions(0), "---------");
+    }
+
+    #[test]
+    fn setuid_setgid_sticky_override_the_execute_letter() {
+        assert_eq!(format_permissions(0o4755), "rwsr-xr-x");
+        assert_eq!(format_permissions(0o2755), "rwxr-sr-x");
+        assert_eq!(format_permissions(0o1777), "rwxrwxrwt");
+        // 特殊位在、但没有执行位 → 大写（与 ls 一致）。
+        assert_eq!(format_permissions(0o4644), "rwSr--r--");
+        assert_eq!(format_permissions(0o1666), "rw-rw-rwT");
+    }
+
+    #[test]
+    fn file_type_comes_from_the_high_bits() {
+        assert_eq!(file_type_label(0o040_755), "dir");
+        assert_eq!(file_type_label(0o100_644), "file");
+        assert_eq!(file_type_label(0o120_777), "link");
+        assert_eq!(file_type_label(0o140_777), "socket");
+        assert_eq!(file_type_label(0o010_644), "fifo");
+        assert_eq!(file_type_label(0o020_644), "char");
+        assert_eq!(file_type_label(0o060_644), "block");
+        // 服务器没报权限 → 什么都不猜。
+        assert_eq!(file_type_label(0), "?");
+    }
 }
 
 /// The canonical ZMODEM abort sequence: eight CAN (0x18) then eight BS (0x08).

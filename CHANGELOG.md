@@ -5,6 +5,17 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- **SFTP 文件列表新增「类型 / 权限」两列**（上游 `ed7f231` 的第一步）。两列都由列表项**已有的**
+  mode 位在本地算出（`file_type_label` / `format_permissions`），**不需要任何额外的服务器往返**：
+  类型列给出 `dir` / `file` / `link` / `socket` / `fifo` / `char` / `block`，权限列给出 `ls -l` 风格的
+  9 位（含 setuid/setgid/sticky 的 `s`/`S`/`t`/`T`），服务器没报权限时显示 `?` 而不是瞎猜。两列只在
+  **真的有余量**时出现 —— 左右停靠本来就窄，宁可不显示也不挤掉文件名。**没有**按类型/权限排序、
+  也没有列显隐菜单与列配置持久化（上游那条提交里我们不需要的部分）。**The SFTP list gained Type
+  and Permissions columns**, both computed locally from the mode bits the listing already carries
+  (no extra round-trips); they only appear when there is room.
+
 ### 修复 / Fixed
 
 - **关标签页时释放回滚历史；意外断线则保留。** 回滚历史是每个标签页的内存大头（默认 5 000 行

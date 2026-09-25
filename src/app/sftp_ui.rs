@@ -202,6 +202,8 @@ mod tests {
             modified: String::new().into(),
             modified_ts: 0.0,
             mode: 0o644,
+            entry_type: if is_dir { "dir".into() } else { "file".into() },
+            permissions: "rw-r--r--".into(),
             selected: false,
         }
     }
