@@ -18,6 +18,56 @@ pub(crate) fn all_quick_group_names(store: &ConfigStore) -> std::collections::Ha
     set
 }
 
+/// 把一条命令压成**单行预览**：折叠行内空白、行间插 `⏎`、超长截断 —— 用于列表里显示
+/// （上游 9725617）。**只用于显示**：运行 / 复制 / 回填一律仍用原始多行字符串，heredoc
+/// 之类的换行不能被显示逻辑改坏。
+pub(crate) fn command_preview(command: &str) -> String {
+    const MAX_CHARS: usize = 240;
+    const SEP: &str = " ⏎ ";
+
+    let mut out = String::new();
+    for (i, line) in command.lines().enumerate() {
+        if i > 0 {
+            out.push_str(SEP);
+        }
+        // 行内空白折叠成单个空格，首尾去掉（缩进的 heredoc 不会带出一串空格）。
+        out.push_str(&line.split_whitespace().collect::<Vec<_>>().join(" "));
+        if out.chars().count() > MAX_CHARS {
+            let head: String = out.chars().take(MAX_CHARS).collect();
+            return format!("{}…", head.trim_end());
+        }
+    }
+    out.trim_end().to_string()
+}
+
+#[cfg(test)]
+mod command_preview_tests {
+    use super::*;
+
+    #[test]
+    fn single_line_is_unchanged() {
+        assert_eq!(command_preview("ls -la"), "ls -la");
+    }
+
+    #[test]
+    fn newlines_collapse_to_one_line_with_a_marker() {
+        assert_eq!(command_preview("a\nb"), "a ⏎ b");
+        assert_eq!(command_preview("  a   b  \n  c  "), "a b ⏎ c");
+    }
+
+    /// 240 字符截断（多一个省略号）—— 列表行是固定高度的，不能让它撑成多行。
+    #[test]
+    fn long_commands_are_truncated_to_one_visible_line() {
+        let preview = command_preview(&"x".repeat(1000));
+        assert!(preview.chars().count() <= 241, "{}", preview.chars().count());
+        assert!(preview.ends_with('…'));
+
+        let many_lines = (0..200).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let preview = command_preview(&many_lines);
+        assert!(preview.chars().count() <= 241, "{}", preview.chars().count());
+    }
+}
+
 pub(super) fn quick_cmd_model(
     store: &ConfigStore,
     collapsed_groups: &std::collections::HashSet<String>,
@@ -65,6 +115,7 @@ pub(super) fn quick_cmd_model(
             rows.push(QuickCmd {
                 name: "".into(),
                 command: "".into(),
+                command_preview: "".into(),
                 group: group.clone().into(),
                 group_header: group.clone().into(),
                 collapsed: is_collapsed,
@@ -76,6 +127,7 @@ pub(super) fn quick_cmd_model(
                 rows.push(QuickCmd {
                     name: c.name.clone().into(),
                     command: c.command.clone().into(),
+                    command_preview: command_preview(c.command.as_str()).into(),
                     group: group.clone().into(),
                     group_header: if i == 0 {
                         group.clone().into()

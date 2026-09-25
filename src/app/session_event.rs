@@ -136,9 +136,19 @@ pub(super) fn apply_session_event_to_window<'a>(
                 t.status = format!("{} — {reason}", crate::i18n::t("已断开", "Disconnected")).into()
             });
             if let Ok(mut s) = statuses.lock()
-                && let Some(st) = s.get_mut(tab_id)
+            && let Some(st) = s.get_mut(tab_id)
             {
                 st.state = 2;
+            }
+            // 断开后**立刻**释放回滚历史（内存大头：默认 5 000 行 ≈ 14 MB，开了大回滚
+            // 可达 GB 级）。断开的会话不再产生输出，留着没有任何用处；可见屏幕保留 ——
+            // 上面的断线提示与断线前的内容仍在，代价是滚不回历史了。所有会话类型
+            // （ssh / serial / telnet / local）都走这一个入口。
+            if let Ok(bufs) = bufs.lock()
+                && let Some(handle) = bufs.get(tab_id)
+            {
+                let mut b = handle.lock().unwrap_or_else(|e| e.into_inner());
+                b.release_history_keep_screen();
             }
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses, local, local_net_hist);
@@ -285,6 +295,9 @@ pub(super) fn apply_session_event_to_window<'a>(
                 win.set_editor_line_numbers(line_numbers_for(&content).into());
                 win.set_editor_path(path.into());
                 win.set_editor_name(name.into());
+                // 记下归属标签页：之后保存 / 关闭都写到这个会话，而不是"当前活动标签页"
+                // （开着编辑器切标签再 Ctrl+S 不能写错会话，上游 eafd513）。
+                win.set_editor_tab_id(tab_id.into());
                 win.set_editor_content(content.into());
                 win.set_editor_readonly(!edit);
                 win.set_editor_dirty(false);

@@ -326,6 +326,9 @@ export component AppWindow inherits Window {
     property <int> quick-external-sequence;
     in property <[string]> command-history;          // oldest first (newest last, #113)
     in property <[string]> history-view;             // filtered dropdown, oldest first (newest last, #101)
+    // 与 `history-view` 逐项对齐的**显示用**单行预览：历史条目可能是多行（heredoc…），
+    // 而列表行是固定 28px 高，直接渲染会溢出。回填 / ▶ / 复制仍用 history-view（上游 9725617）。
+    in property <[string]> history-preview;
     callback run-command(string /* tab-id */, string /* cmd */, bool /* to-all */);
     callback copy-text(string);                 // copy a history command (#96)
     callback delete-history(int /* index */);   // remove a history entry (#96)
@@ -620,6 +623,9 @@ export component AppWindow inherits Window {
     // --- Built-in file viewer/editor (#70) --------------------------------
     in-out property <bool> editor-open: false;
     in-out property <string> editor-name;     // file name shown in the title
+    // 编辑器归属的标签页：保存 / 关闭上传用它，而不是"当前活动标签页"（上游 eafd513）——
+    // 否则开着编辑器切标签后按 Ctrl+S 会把内容写到另一个会话。
+    in-out property <string> editor-tab-id;
     in-out property <string> editor-path;     // remote path (used on save)
     in-out property <string> editor-content;  // text, two-way with the input
     in-out property <bool> editor-readonly;   // view = true, edit = false
@@ -1567,6 +1573,7 @@ export component AppWindow inherits Window {
                     quick-external-sequence: root.quick-external-sequence;
                     command-history: root.command-history;
                     history-view: root.history-view;
+                    history-preview: root.history-preview;
                     run-command(cmd, all) => { root.run-command(term.id, cmd, all); }
                     copy-text(t) => { root.copy-text(t); }
                     delete-history(i) => { root.delete-history(i); }
@@ -1966,6 +1973,7 @@ export component AppWindow inherits Window {
     FileEditor {
         open: root.editor-open;
         editor-name: root.editor-name;
+        editor-tab-id: root.editor-tab-id;
         editor-readonly: root.editor-readonly;
         editor-line-numbers: root.editor-line-numbers;
         editor-content <=> root.editor-content;

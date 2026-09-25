@@ -292,6 +292,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     ));
     window.set_command_history(history_model(&store.borrow()));
     window.set_history_view(history_view_model(&store.borrow(), "")); // #101
+    window.set_history_preview(history_preview_model(&store.borrow(), ""));
 
     settings::transfer::bind(window, store, sftp_follow_cd);
     settings::sync::bind(window, store, sessions_model);

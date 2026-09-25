@@ -100,6 +100,18 @@ pub(crate) fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<Sh
     ModelRc::from(Rc::new(VecModel::from(rows)))
 }
 
+/// 与 [`history_view_model`] 逐项对齐的**显示用**单行预览（上游 9725617）。
+///
+/// 历史上一条命令可能是多行（heredoc / 连续的命令），而历史行是固定 28px 高 —— 多行文本
+/// 会溢出到相邻行。列表只显示压缩后的单行版本；回填 / ▶ 运行 / 复制仍用原始字符串。
+pub(crate) fn history_preview_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
+    let rows: Vec<SharedString> = history_view_rows(store.command_history(), query)
+        .into_iter()
+        .map(|row| crate::app::quick_commands::command_preview(row.as_str()).into())
+        .collect();
+    ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
 pub(crate) fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
     let mut out: Vec<TermMatch> = Vec::new();
     if query.is_empty() {

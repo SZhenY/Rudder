@@ -25,6 +25,8 @@ import { Label } from "components/text.slint";
 export struct QuickCmd {
     name: string,
     command: string,
+    // 显示用的单行预览（换行折叠成 ` ⏎ `、超长截断）；`command` 才是真正发送的内容。
+    command-preview: string,
     group: string,
     group-header: string,
     collapsed: bool,
@@ -101,6 +103,9 @@ export component QuickDockPanel inherits Rectangle {
                 }
                 pointer-event(ev) => {
                     if (ev.kind == PointerEventKind.up) { root.dock-drag-end(); }
+                    // 拖拽被系统取消（指针抓取被收回，例如中途弹出窗口）时也要收尾，
+                    // 否则面板会一直停在"拖拽中"状态（上游 a02d536）。
+                    else if (ev.kind == PointerEventKind.cancel) { root.dock-drag-end(); }
                 }
             }
             HorizontalLayout {
@@ -189,7 +194,7 @@ export component QuickDockPanel inherits Rectangle {
                                 vertical-alignment: center;
                             }
                             Label {
-                                text: q.command; color: Theme.text-muted;
+                                text: q.command-preview; color: Theme.text-muted;
                                 font-size: Theme.fs-xs; overflow: elide;
                                 vertical-alignment: center;
                             }

@@ -7,6 +7,24 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
+- **断开连接后立刻释放回滚历史。** 断开的会话不再产生输出，回滚历史（默认 5 000 行 ≈ 14 MB，
+  开了大回滚可达 GB 级）留着没有任何用处。现在**所有会话类型**（SSH / 串口 / Telnet / 本地）
+  在断开事件里释放：`Grid::clear_history()` 丢掉历史行、**保留可见屏幕**（断线提示与断线前的
+  内容仍在），同时清掉我们自己的行级缓存并把视图偏移归零。**默认行为，没有开关** —— 代价是
+  断开后滚不回历史了。**Scrollback history is released immediately on disconnect** (default,
+  no setting) while the visible screen and the disconnect hint stay on screen.
+- **编辑器保存 / 关闭会写到错误的会话。** 开着文件编辑器切到别的标签再按 `Ctrl+S`，以前用的是
+  "当前活动标签页" → 内容被写到另一个会话的远端目录。现在编辑器**打开时**记下自己所属的标签页，
+  保存与关闭都写到它（旧状态为空时退回活动标签页）。**The editor now remembers which tab opened
+  the file**, so saving after switching tabs no longer writes into the wrong session.
+- **文件编辑器卡片能被拖出窗口、之后再也点不到。** 标题栏拖动以前不做夹取，卡片拖出去就只能重启
+  应用才能回来；现在无论怎么拖，40px 标题栏始终留在窗口内。**The editor card can no longer be
+  dragged out of the window.**
+- **停靠面板在指针只是经过时就会跟着鼠标跑。** 各面板的拖拽上报以前没有按下判定，Slint 在指针
+  经过时也会派发 `moved`；现在只在真正按住手柄时上报。另外补上 `PointerEventKind.cancel` 分支 ——
+  拖拽被系统取消（例如中途弹出窗口）时面板不会卡在"拖拽中"状态。**Dock panels only follow the
+  pointer while the handle is actually pressed**, and a cancelled drag now ends cleanly.
+
 - **超长文本粘贴会让软件渲染器闪退（#434 上游同源）。** Slint 的软件渲染器用 i16 存字形几何，
   以前把整段剪贴板内容写进 `paste-confirm-text` 再交给确认框的 `Text` 排版：几千行的粘贴会让坐标
   越过 ±32767 直接 panic。现在**只有一段有上限的预览进 UI 树**（48 行 / 每行 240 字符 / 共 6 KB，
@@ -61,6 +79,12 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 变更 / Changed
 
+- **历史 / 快捷命令列表改成单行预览。** 一条历史可能是多行（heredoc、连续命令），而列表行是固定
+  28px 高 —— 多行文本以前会溢出到相邻行。现在显示的是压缩后的单行版本（行内空白折叠、行间插
+  ` ⏎ `、240 字符截断加省略号）；**回填 / ▶ 运行 / 复制仍然用原始字符串**，换行不会被显示逻辑改坏。
+  快捷命令的停靠面板、弹出面板与管理列表同样改用预览。**History and quick-command rows are now
+  shown as a single-line preview** (` ⏎ ` between lines, truncated at 240 chars); recall / run / copy
+  still use the original multi-line command.
 - **编辑器右下角的缩放把手不再用 `"◢"` 字形。** 那个字符在部分系统 / 字体下会画成豆腐块，改成三条
   阶梯矩形，任何字体下都成立。**The editor's resize grip is drawn as rectangles instead of a glyph**
   that rendered as tofu on some systems.

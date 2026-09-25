@@ -53,6 +53,9 @@ export component FileEditor inherits Rectangle {
     visible: open;
     // ── 状态：Rust 侧读写，由窗口透传。带 `<=>` 的是**双向**（组件内也会改）──
     in property <string> editor-name: "";
+    // 打开这个文件时所属的标签页。保存 / 关闭上传**必须**用它，而不是"当前活动标签页" ——
+    // 开着编辑器切到别的标签再按 Ctrl+S 就会把内容写到另一个会话（上游 eafd513）。
+    in property <string> editor-tab-id: "";
     in property <bool> editor-readonly: false;
     in property <string> editor-line-numbers: "";
     in-out property <string> editor-content: "";       // 与输入框双向绑定
@@ -143,8 +146,16 @@ export component FileEditor inherits Rectangle {
                         }
                         moved => {
                             if (ed-dragging) {
-                                ed-x = ed-base-x + (self.absolute-position.x + self.mouse-x - ed-grab-x);
-                                ed-y = ed-base-y + (self.absolute-position.y + self.mouse-y - ed-grab-y);
+                                // 夹取：无论怎么拖，40px 标题栏都必须留在窗口里 —— 否则卡片
+                                // 一旦被拖出窗口就再也点不到，本次会话内无法拖回（上游 eafd513）。
+                                ed-x = clamp(
+                                    ed-base-x + (self.absolute-position.x + self.mouse-x - ed-grab-x),
+                                    -(ed-w - 120px),
+                                    root.width - 120px);
+                                ed-y = clamp(
+                                    ed-base-y + (self.absolute-position.y + self.mouse-y - ed-grab-y),
+                                    0px,
+                                    root.height - 40px);
                             }
                         }
                     }

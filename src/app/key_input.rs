@@ -25,7 +25,7 @@ use crate::app::quick_commands::{all_quick_group_names, quick_cmd_model, reorder
 use crate::app::pane_layout::zoom_term_font;
 use crate::app::session_runtime::start_session_in_tab;
 use crate::app::{AppContext, INTERACTIVE_ECHO_WINDOW, clipboard_set_text, convert_eol, set_terminal_row, term_buf, with_term_buf};
-use crate::app::terminal_ui::{apply_terminal_resize, compute_find_matches, history_model, history_view_model, rebuild_tab_display, refresh_terminal_selection};
+use crate::app::terminal_ui::{apply_terminal_resize, compute_find_matches, history_model, history_preview_model, history_view_model, rebuild_tab_display, refresh_terminal_selection};
 use super::render_tickets::request_tab_render_from_ui;
 
 /// Parse a runtime tunnel forward from the SSH dialog fields (#206).
@@ -195,6 +195,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             *hist_query.borrow_mut() = query.to_string();
             if let Some(w) = weak.upgrade() {
                 w.set_history_view(history_view_model(&store_rc.borrow(), &query));
+                w.set_history_preview(history_preview_model(&store_rc.borrow(), &query));
             }
         });
     }
@@ -216,6 +217,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 let s = store_rc.borrow();
                 w.set_command_history(history_model(&s));
                 w.set_history_view(history_view_model(&s, &hist_query.borrow()));
+                w.set_history_preview(history_preview_model(&s, &hist_query.borrow()));
             }
         });
     }

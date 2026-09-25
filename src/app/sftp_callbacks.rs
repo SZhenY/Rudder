@@ -760,6 +760,17 @@ pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
 
     // Built-in editor: save (Ctrl+S / button) writes the text back to the
     // remote file (#70). Read-only (view) sessions never save.
+    //
+    // 写到哪个会话由 `editor_tab_id` 决定（编辑器**打开时**记下的那个），不是"当前活动
+    // 标签页" —— 否则开着编辑器切标签再 Ctrl+S 会把内容写到别的会话（上游 eafd513）。
+    fn editor_tab_id(w: &AppWindow) -> String {
+        let id = w.get_editor_tab_id().to_string();
+        if id.is_empty() {
+            w.get_active_tab_id().to_string()
+        } else {
+            id
+        }
+    }
     {
         let sftp_handles = sftp_handles.clone();
         let weak = window.as_weak();
@@ -770,7 +781,7 @@ pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
             }
             let path = w.get_editor_path().to_string();
             let content = w.get_editor_content().to_string();
-            let tab_id = w.get_active_tab_id().to_string();
+            let tab_id = editor_tab_id(&w);
             if let Ok(handles) = sftp_handles.lock()
                 && let Some(h) = handles.get(&tab_id)
             {
@@ -788,7 +799,7 @@ pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
             if !w.get_editor_readonly() && w.get_editor_dirty() {
                 let path = w.get_editor_path().to_string();
                 let content = w.get_editor_content().to_string();
-                let tab_id = w.get_active_tab_id().to_string();
+                let tab_id = editor_tab_id(&w);
                 if let Ok(handles) = sftp_handles.lock()
                     && let Some(h) = handles.get(&tab_id)
                 {

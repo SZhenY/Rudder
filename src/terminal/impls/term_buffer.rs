@@ -113,6 +113,28 @@ impl TermBuffer {
         true
     }
 
+    /// 会话断开后**立刻**释放这块缓冲的内存大头，但保留可见屏幕。
+    ///
+    /// 断开后不会再有新输出，回滚历史（默认 5 000 行 ≈ 14 MB；开了大回滚可达 GB 级）留着
+    /// 毫无用处，而用户仍想看得到断线前的内容与那条断线提示 —— `Grid::clear_history()`
+    /// 恰好就是"丢历史、留屏幕"：alacritty 自己把历史行从存储里摘掉并把 `display_offset`
+    /// 归零。我们再清掉自己的行级缓存并把 `view_offset` 同步归零，否则渲染还会按旧的滚回
+    /// 偏移去读已经不存在的历史。
+    ///
+    /// ⚠️ `scroll_cache` 存的是历史行快照：不失效会把旧着色贴到新内容上 —— `reset()` 的
+    /// 注释里记过同样的坑。
+    pub(crate) fn release_history_keep_screen(&mut self) {
+        self.term.grid_mut().clear_history();
+        self.bump_render_gen();
+        self.drop_scroll_cache();
+        self.displayed_text.clear();
+        self.overline_ranges.clear();
+        self.sgr_buf.clear();
+        self.csi_pending.clear();
+        self.view_offset = 0;
+        self.term.selection = None;
+    }
+
     /// Selection highlight rectangles for the current visible window.
     pub(crate) fn selection_rects_visible(&self, cols: u16) -> Vec<TermMatch> {
         let sel = match self.term.selection {

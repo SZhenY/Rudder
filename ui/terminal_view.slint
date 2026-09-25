@@ -135,6 +135,8 @@ export component TerminalView inherits Rectangle {
     in property <[QuickCmd]> quick-commands;
     in property <[string]> command-history;   // oldest first (newest last, #113)
     in property <[string]> history-view;       // filtered dropdown, oldest first (newest last, #101)
+    // 显示用单行预览（与 history-view 逐项对齐）；运行 / 回填仍用 history-view（上游 9725617）。
+    in property <[string]> history-preview;
     property <bool> send-to-all: false;
     // Effective terminal font size in px: per-session zoom override when > 0,
     // else the window/global size (Theme.term-font-size).
@@ -1592,7 +1594,7 @@ export component TerminalView inherits Rectangle {
                                     Text { text: q.name; color: Theme.text-primary; font-size: Theme.fs-sm;
                                            vertical-alignment: center; overflow: elide;
                                            horizontal-stretch: 1; }
-                                    Label { text: q.command; color: Theme.text-muted; font-size: Theme.fs-xs;
+                                    Label { text: q.command-preview; color: Theme.text-muted; font-size: Theme.fs-xs;
                                            vertical-alignment: center; overflow: elide;
                                            horizontal-alignment: right; horizontal-stretch: 1;
 }
@@ -1748,7 +1750,10 @@ export component TerminalView inherits Rectangle {
                             HorizontalLayout {
                                 padding-left: 8px; padding-right: 4px; spacing: 1px;
                                 Label {
-                                    text: h;
+                                    // 多行历史条目只显示压缩后的单行预览（固定 28px 行高，
+                                    // 直接渲染多行会溢出到相邻行）；`h` 仍是原始字符串，
+                                    // 回填 / ▶ / 复制都继续用它（上游 9725617）。
+                                    text: idx < root.history-preview.length ? root.history-preview[idx] : h;
                                     color: Theme.text-secondary;
                                     font-size: Theme.fs-sm;
                                     vertical-alignment: center;

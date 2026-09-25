@@ -234,11 +234,18 @@ export component StatusBlock inherits Rectangle {
     TouchArea {
         mouse-cursor: move;
         moved => {
-            root.dock-drag-move(self.absolute-position.x + self.mouse-x,
-                                self.absolute-position.y + self.mouse-y);
+            // 只有真的按着这个手柄拖动时才报位置：Slint 在指针只是经过时也会派发 moved，
+            // 那会让面板不按键就跟着鼠标跑（上游 a02d536）。
+            if (self.pressed) {
+                root.dock-drag-move(self.absolute-position.x + self.mouse-x,
+                    self.absolute-position.y + self.mouse-y);
+            }
         }
         pointer-event(ev) => {
             if (ev.kind == PointerEventKind.up) { root.dock-drag-end(); }
+            // 拖拽被系统取消（指针抓取被收回，例如中途弹出窗口）时也要收尾，
+            // 否则面板会一直停在"拖拽中"状态（上游 a02d536）。
+            else if (ev.kind == PointerEventKind.cancel) { root.dock-drag-end(); }
         }
     }
     VerticalLayout {
