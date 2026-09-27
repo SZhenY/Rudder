@@ -1,38 +1,46 @@
-// 左侧图标栏（新外壳第一步）。固定宽度、可收起：
-//   展开 76px（图标位 + 文字）· 收起 44px（只留图标位）
-// 图标字体在下一步接入，这里先用占位块占住图标位置。
+// 左侧栏（新界面）。固定宽度、可收起：
+//   展开 180px（图标 + 文字）· 收起 64px（只留图标，且顶部只留展开按钮）
+//
+// 收起态刻意只放一个按钮：早先收起时"搜索 + 折叠"两个按钮挤在一起，44px 的宽度
+// 直接把折叠按钮裁掉了，收起之后就再也展不开 —— 现在收起态只剩展开按钮。
 
 import { Theme } from "../theme.slint";
 
 component RailButton inherits Rectangle {
+    in property <string> glyph;
     in property <string> label;
     in property <bool> active: false;
     in property <bool> collapsed: false;
     callback clicked();
 
-    height: 40px;
-    border-radius: 6px;
+    height: 44px;
+    border-radius: 8px;
     background: root.active
         ? Theme.rail-item-active
         : (ta.has-hover ? Theme.rail-item-hover : transparent);
 
     HorizontalLayout {
-        alignment: center;
-        spacing: 6px;
+        padding-left: root.collapsed ? 0px : 16px;
+        padding-right: root.collapsed ? 0px : 12px;
+        spacing: 14px;
+        alignment: root.collapsed ? center : start;
 
-        // 图标位（下一步换成图标字体）
-        Rectangle {
-            width: 18px;
-            height: 18px;
-            border-radius: 4px;
-            background: root.active ? Theme.rail-fg-active : Theme.rail-fg;
+        Text {
+            width: 24px;
+            text: root.glyph;
+            font-family: "Material Icons";
+            font-size: 22px;
+            color: root.active ? Theme.rail-fg-active : Theme.rail-fg;
+            horizontal-alignment: center;
+            vertical-alignment: center;
         }
 
         if !root.collapsed : Text {
             text: root.label;
-            font-size: 12px;
+            font-size: 13px;
             color: root.active ? Theme.rail-fg-active : Theme.rail-fg;
             vertical-alignment: center;
+            overflow: elide;
         }
     }
 
@@ -50,58 +58,74 @@ export component Rail inherits Rectangle {
     callback page-changed(int);
     callback search-requested();
 
-    width: root.collapsed ? 44px : 76px;
+    width: root.collapsed ? 64px : 180px;
     background: Theme.rail-bg;
 
     VerticalLayout {
         padding: 8px;
-        spacing: 4px;
+        spacing: 6px;
         alignment: start;
 
-        HorizontalLayout {
-            spacing: 4px;
-            alignment: center;
+        // 顶部：收起态只留展开按钮；展开态是「搜索 + 折叠」
+        if !root.collapsed : Rectangle {
+            height: 40px;
+            border-radius: 8px;
+            background: search-ta.has-hover ? Theme.rail-item-hover : transparent;
 
-            Rectangle {
-                width: root.collapsed ? 28px : 40px;
-                height: 28px;
-                border-radius: 6px;
-                background: search-ta.has-hover ? Theme.rail-item-hover : transparent;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 8px;
+                spacing: 8px;
+                alignment: space-between;
+
                 Text {
-                    text: "⌕";
-                    font-size: 14px;
+                    horizontal-stretch: 1;
+                    text: "⌕  搜索";
+                    font-size: 12px;
+                    color: Theme.rail-fg;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    width: 24px;
+                    text: "‹";
+                    font-size: 18px;
                     color: Theme.rail-fg;
                     horizontal-alignment: center;
                     vertical-alignment: center;
-                }
-                search-ta := TouchArea {
-                    clicked => {
-                        root.search-requested();
-                    }
                 }
             }
 
-            Rectangle {
-                width: 24px;
-                height: 28px;
-                border-radius: 6px;
-                background: collapse-ta.has-hover ? Theme.rail-item-hover : transparent;
-                Text {
-                    text: root.collapsed ? "›" : "‹";
-                    font-size: 14px;
-                    color: Theme.rail-fg;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+            search-ta := TouchArea {
+                clicked => {
+                    root.search-requested();
                 }
-                collapse-ta := TouchArea {
-                    clicked => {
-                        root.collapsed = !root.collapsed;
-                    }
+            }
+        }
+
+        if root.collapsed : Rectangle {
+            height: 40px;
+            border-radius: 8px;
+            background: expand-ta.has-hover ? Theme.rail-item-hover : transparent;
+
+            Text {
+                text: "\u{E5D8}";
+                font-family: "Material Icons";
+                font-size: 22px;
+                color: Theme.rail-fg;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            expand-ta := TouchArea {
+                clicked => {
+                    root.collapsed = false;
                 }
             }
         }
 
         RailButton {
+            glyph: "\u{E875}"; // dns
             label: "主机";
             active: root.current-page == 0;
             collapsed: root.collapsed;
@@ -110,6 +134,7 @@ export component Rail inherits Rectangle {
             }
         }
         RailButton {
+            glyph: "\u{EB8E}"; // terminal
             label: "终端";
             active: root.current-page == 1;
             collapsed: root.collapsed;
@@ -118,6 +143,7 @@ export component Rail inherits Rectangle {
             }
         }
         RailButton {
+            glyph: "\u{E86F}"; // code
             label: "指令集";
             active: root.current-page == 2;
             collapsed: root.collapsed;
@@ -126,6 +152,7 @@ export component Rail inherits Rectangle {
             }
         }
         RailButton {
+            glyph: "\u{E30C}"; // computer
             label: "Docker";
             active: root.current-page == 3;
             collapsed: root.collapsed;
@@ -140,6 +167,7 @@ export component Rail inherits Rectangle {
         }
 
         RailButton {
+            glyph: "\u{E8B8}"; // settings
             label: "设置";
             active: root.current-page == 4;
             collapsed: root.collapsed;
