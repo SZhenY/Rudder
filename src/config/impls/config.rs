@@ -48,6 +48,15 @@ use zeroize::Zeroize;
 
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// `chmod 0600`，best-effort：复制 `secret.key` 时收紧权限，权限设置失败不该让
+/// 复制本身失败。三处搬运 `secret.key` 的路径共用（原先各自内联一遍
+/// `#[cfg(unix)]` + `use PermissionsExt`）。
+#[cfg(unix)]
+fn set_private_mode(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+}
+
 /// The single directory holding all user data (sessions, encryption key,
 /// known_hosts, error.log). Resolved once and cached; any one-time migration
 /// from the legacy per-user dir runs exactly once.
@@ -299,8 +308,7 @@ fn migrate_legacy(legacy: &Path, portable: &Path) {
                     // necessarily the mode).
                     #[cfg(unix)]
                     if name == "secret.key" {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ = fs::set_permissions(&dst, fs::Permissions::from_mode(0o600));
+                        set_private_mode(&dst);
                     }
                     tracing::info!(
                         "migrated {name} to portable config dir {}",
@@ -346,8 +354,7 @@ fn restore_user_backup_if_needed(primary_dir: &Path, backup_dir: &Path) {
                 Ok(_) => {
                     #[cfg(unix)]
                     if name == "secret.key" {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ = fs::set_permissions(&dst, fs::Permissions::from_mode(0o600));
+                        set_private_mode(&dst);
                     }
                     tracing::info!(
                         "restored {name} from user config backup {}",
@@ -1113,28 +1120,25 @@ impl ConfigStore {
 
     // ── Encryption helpers ────────────────────────────────────────────────
 
-    /// Encrypt `plaintext` with ChaCha20-Poly1305 and return
-    /// `"enc:v1:<base64url(nonce_12_bytes || ciphertext)>"`.
-    fn encrypt(key: &[u8; 32], plaintext: &str) -> Result<String> {
+    /// ChaCha20-Poly1305 加密 → `"<prefix><base64url(nonce_12_bytes || ciphertext)>"`。
+    ///
+    /// 会话密钥（[`Self::encrypt`]）与便携导出密钥（[`Self::encrypt_export`]）的
+    /// 实现逐字相同，只差 key / 前缀 / 错误文案三个参数。
+    fn encrypt_with(key: &[u8; 32], prefix: &str, label: &str, plaintext: &str) -> Result<String> {
         let cipher = ChaCha20Poly1305::new(key.into());
         let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng); // 12 random bytes
         let ciphertext = cipher
             .encrypt(&nonce, plaintext.as_bytes())
-            .map_err(|e| anyhow::anyhow!("password encrypt error: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("{label} encrypt error: {e}"))?;
         let mut blob = nonce.to_vec();
         blob.extend_from_slice(&ciphertext);
-        Ok(format!(
-            "{}{}",
-            Self::ENC_PREFIX,
-            URL_SAFE_NO_PAD.encode(&blob)
-        ))
+        Ok(format!("{prefix}{}", URL_SAFE_NO_PAD.encode(&blob)))
     }
 
-    /// Try to decrypt a value produced by [`Self::encrypt`].
-    /// Returns `None` if the string is not an encrypted blob (e.g. a legacy
-    /// plaintext value, an empty string, or a tampered/corrupt blob).
-    fn try_decrypt(key: &[u8; 32], s: &str) -> Option<String> {
-        let b64 = s.strip_prefix(Self::ENC_PREFIX)?;
+    /// [`Self::encrypt_with`] 的逆操作。返回 `None` 表示这段字符串不是加密载荷
+    /// （老版本的明文值、空串、或者被篡改/损坏的 blob）。
+    fn decrypt_with(key: &[u8; 32], prefix: &str, s: &str) -> Option<String> {
+        let b64 = s.strip_prefix(prefix)?;
         let blob = URL_SAFE_NO_PAD.decode(b64).ok()?;
         if blob.len() < 12 {
             return None;
@@ -1144,6 +1148,19 @@ impl ConfigStore {
         let nonce = chacha20poly1305::Nonce::from_slice(nonce_bytes);
         let plain = cipher.decrypt(nonce, ciphertext).ok()?;
         String::from_utf8(plain).ok()
+    }
+
+    /// Encrypt `plaintext` with ChaCha20-Poly1305 and return
+    /// `"enc:v1:<base64url(nonce_12_bytes || ciphertext)>"`.
+    fn encrypt(key: &[u8; 32], plaintext: &str) -> Result<String> {
+        Self::encrypt_with(key, Self::ENC_PREFIX, "password", plaintext)
+    }
+
+    /// Try to decrypt a value produced by [`Self::encrypt`].
+    /// Returns `None` if the string is not an encrypted blob (e.g. a legacy
+    /// plaintext value, an empty string, or a tampered/corrupt blob).
+    fn try_decrypt(key: &[u8; 32], s: &str) -> Option<String> {
+        Self::decrypt_with(key, Self::ENC_PREFIX, s)
     }
 
     // ── Key file management ───────────────────────────────────────────────
@@ -2713,8 +2730,7 @@ impl ConfigStore {
                     }
                     #[cfg(unix)]
                     if name == "secret.key" {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ = fs::set_permissions(&dst, fs::Permissions::from_mode(0o600));
+                        set_private_mode(&dst);
                     }
                 }
             }
@@ -2725,32 +2741,12 @@ impl ConfigStore {
 
     /// Encrypt a password with the portable export key → `"enc:exp:v1:<b64>"`.
     fn encrypt_export(plaintext: &str) -> Result<String> {
-        let cipher = ChaCha20Poly1305::new((&Self::EXPORT_KEY).into());
-        let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-        let ciphertext = cipher
-            .encrypt(&nonce, plaintext.as_bytes())
-            .map_err(|e| anyhow::anyhow!("export encrypt error: {e}"))?;
-        let mut blob = nonce.to_vec();
-        blob.extend_from_slice(&ciphertext);
-        Ok(format!(
-            "{}{}",
-            Self::EXPORT_PREFIX,
-            URL_SAFE_NO_PAD.encode(&blob)
-        ))
+        Self::encrypt_with(&Self::EXPORT_KEY, Self::EXPORT_PREFIX, "export", plaintext)
     }
 
     /// Decrypt a value produced by [`Self::encrypt_export`]; `None` if it isn't one.
     fn decrypt_export(s: &str) -> Option<String> {
-        let b64 = s.strip_prefix(Self::EXPORT_PREFIX)?;
-        let blob = URL_SAFE_NO_PAD.decode(b64).ok()?;
-        if blob.len() < 12 {
-            return None;
-        }
-        let (nonce_bytes, ciphertext) = blob.split_at(12);
-        let cipher = ChaCha20Poly1305::new((&Self::EXPORT_KEY).into());
-        let nonce = chacha20poly1305::Nonce::from_slice(nonce_bytes);
-        let plain = cipher.decrypt(nonce, ciphertext).ok()?;
-        String::from_utf8(plain).ok()
+        Self::decrypt_with(&Self::EXPORT_KEY, Self::EXPORT_PREFIX, s)
     }
 
     /// Export all sessions to a portable JSON file. Passwords are re-encrypted
