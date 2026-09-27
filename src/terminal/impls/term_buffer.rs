@@ -1026,104 +1026,50 @@ struct SgrProbe {
 /// 这里不分配、不构造参数表，只用 memchr 跳到下一个 ESC。
 fn sgr_probe(bytes: &[u8]) -> SgrProbe {
     let mut out = SgrProbe::default();
-    let mut i = 0;
-    while i < bytes.len() {
-        let Some(offset) = memchr::memchr(b'\x1b', &bytes[i..]) else {
-            break;
-        };
-        i += offset;
-        if bytes.get(i + 1) != Some(&b'[') {
-            // ESC 后面**没有下一个字节** = 序列刚开始 ⇒ 块尾留到下一块再判
-            // （否则 1 字节分块时 `ESC` / `[` / `5` / `3` / `m` 会被当成互不相干的块，
-            //   而 `53` 恰恰是我们要拦的那个 —— 分块等价测试就是这么抓到的）。
-            if i + 1 >= bytes.len() {
-                out.tail = Some(i);
-                return out;
+    // 骨架（memchr 跳 ESC → 扫到 final byte → 块尾半截）与 `scan_csi_sequences`
+    // 共用 `csi::scan_csi_visit`：两份规则漂移过一次，收敛后结构上不再可能。
+    // 分类只对 `m` 做，且不用参数表（零分配 —— 彩色刷屏时每块都会跑这里）。
+    out.tail = crate::terminal::scan_csi_visit(bytes, |i, j| {
+        if bytes[j] != b'm' {
+            return;
+        }
+        let params = &bytes[i + 2..j];
+        let mut skip = 0usize;
+        let mut parts = params.split(|&b| b == b';');
+        while let Some(part) = parts.next() {
+            if skip > 0 {
+                skip -= 1;
+                continue;
             }
-            i += 2; // ESC + 非 '['（OSC 引子 / ESC 7 …）
-            continue;
-        }
-        let mut j = i + 2;
-        while j < bytes.len() && !(0x40..=0x7e).contains(&bytes[j]) {
-            j += 1;
-        }
-        if j >= bytes.len() {
-            out.tail = Some(i);
-            return out;
-        }
-        if bytes[j] == b'm' {
-            let params = &bytes[i + 2..j];
-            let mut skip = 0usize;
-            let mut parts = params.split(|&b| b == b';');
-            while let Some(part) = parts.next() {
+            if matches!(part, b"38" | b"48" | b"58") {
+                match (parts.clone().next(), parts.clone().nth(1)) {
+                    (Some(b"5"), _) => skip = 2, // 38;5;N
+                    (Some(b"2"), _) => skip = 4, // 38;2;R;G;B
+                    _ => {}
+                }
                 if skip > 0 {
-                    skip -= 1;
                     continue;
                 }
-                if matches!(part, b"38" | b"48" | b"58") {
-                    match (parts.clone().next(), parts.clone().nth(1)) {
-                        (Some(b"5"), _) => skip = 2, // 38;5;N
-                        (Some(b"2"), _) => skip = 4, // 38;2;R;G;B
-                        _ => {}
-                    }
-                    if skip > 0 {
-                        continue;
-                    }
-                }
-                if part == b"53" {
-                    out.has_53 = true;
-                } else if part == b"21" {
-                    out.has_21 = true;
-                }
+            }
+            if part == b"53" {
+                out.has_53 = true;
+            } else if part == b"21" {
+                out.has_21 = true;
             }
         }
-        i = j + 1;
-    }
+    });
     out
 }
 
 fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
-    // 普通输出没有 ESC：一次 memchr 就够，省掉逐字节循环（`Vec::new()` 不分配）。
-    if memchr::memchr(b'\x1b', bytes).is_none() {
-        return (Vec::new(), None);
-    }
     let mut seqs = Vec::new();
-    let mut i = 0;
-    // 用 memchr 直接跳到下一个 ESC。原来是一条条 `i += 1` 走完全块 —— 彩色输出里
-    // 非 ESC 字节仍是绝大多数，那等于每个块都白扫一遍 64 KiB。语义与逐字节版一致。
-    // ⚠️ 循环条件**必须**带 `i < bytes.len()`：下面 `i += 2`（ESC + 非 '['，比如 OSC 引子
-    // `ESC ]` 或 `ESC 7`）可能一步跨过块尾，此时 `&bytes[i..]` 会直接 panic
-    // （`range start index N out of range for slice of length M`）。
-    // 0.7.9-beta2 在彩色刷屏下崩过一次，就是这里丢了上界 —— 原来的逐字节版本有它。
-    while i < bytes.len() {
-        let Some(offset) = memchr::memchr(b'\x1b', &bytes[i..]) else {
-            break;
-        };
-        i += offset;
-        if bytes.get(i + 1) != Some(&b'[') {
-            // ESC 后面没有下一个字节 = 序列刚开头 ⇒ 块尾留到下一块再判（与 `sgr_probe`
-            // 同一条规则；两边不一致的话，1 字节分块会把半截 SGR 裸喂进解析器）。
-            if i + 1 >= bytes.len() {
-                return (seqs, Some(i));
-            }
-            // ESC + non-'[': two-byte escape (ESC 7 / ESC c …) or an OSC
-            // introducer (ESC ] …) — skip past the next byte and continue.
-            i += 2;
-            continue;
-        }
-        let mut j = i + 2;
-        while j < bytes.len() && !(0x40..=0x7e).contains(&bytes[j]) {
-            j += 1;
-        }
-        if j >= bytes.len() {
-            return (seqs, Some(i)); // unterminated CSI at the tail
-        }
+    // 与 `sgr_probe` 共用骨架（含"没有 ESC 就一次 memchr 返回"的快路径与块尾规则）。
+    let tail = crate::terminal::scan_csi_visit(bytes, |i, j| {
         if bytes[j] == b'm' {
             seqs.push((i, j + 1));
         }
-        i = j + 1; // skip the completed (SGR or not) sequence
-    }
-    (seqs, None)
+    });
+    (seqs, tail)
 }
 
 #[cfg(test)]
