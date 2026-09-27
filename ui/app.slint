@@ -2220,6 +2220,10 @@ export component AppWindow inherits Window {
           lang-en: root.lang-en;
           transfers: root.transfers;
           transfers-active: root.has-active-transfers;
+          sftp-follow-cd: root.sftp-follow-cd;
+          always-ask: root.download-always-ask;
+          set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
+          set-flag-always-ask(v) => { root.set-download-always-ask(v); }
           close-panel() => { root.right-panel-open = false; }
       }
 
