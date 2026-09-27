@@ -2205,39 +2205,44 @@ export component AppWindow inherits Window {
         // 「终端」时露出原有界面（所以终端功能一步都没动）。指令集 / Docker / 设置
         // 的页面后续逐个替换。
         property <length> rail-w: root.rail-collapsed ? 64px : 180px;
+        // macOS 上窗口左上角是系统红绿灯按钮，内容必须往下让开这么多（值由 Rust 给）。
+        // 早先这里从 0 开始，红绿灯就直接压在侧栏的搜索框上了。
+        property <length> shell-top: root.titlebar-inset;
 
         Rail {
-        x: 0;
-        y: 0;
-        width: root.rail-w;
-        height: root.height;
-        current-page: root.shell-page;
-        // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
-        // 那个赋值传不回来，收起/展开看起来就是"点了没反应"。
-        collapsed <=> root.rail-collapsed;
-        page-changed(p) => {
-            root.shell-page = p;
-        }
+            x: 0;
+            y: root.shell-top;
+            width: root.rail-w;
+            height: root.height - root.shell-top;
+            current-page: root.shell-page;
+            // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
+            // 那个赋值传不回来，收起/展开看起来就是"点了没反应"。
+            collapsed <=> root.rail-collapsed;
+            page-changed(p) => {
+                root.shell-page = p;
+            }
         }
 
         if root.shell-page == 0 : Rectangle {
-        x: root.rail-w;
-        y: 0;
-        width: root.width - root.rail-w;
-        height: root.height;
-        background: Theme.bg-root;
+            x: root.rail-w;
+            y: root.shell-top;
+            width: root.width - root.rail-w;
+            height: root.height - root.shell-top;
+            background: Theme.bg-root;
 
-        PageHosts {
-            width: 100%;
-            height: 100%;
-            sessions: root.sessions;
-            connect-session(id) => {
-                root.connect-session(id);
+            PageHosts {
+                width: 100%;
+                height: 100%;
+                sessions: root.sessions;
+                connect-session(id) => {
+                    // 点会话要先切到终端页，才能看到连接过程；再交给原有链路去发起连接。
+                    root.shell-page = 1;
+                    root.connect-session(id);
+                }
+                new-session() => {
+                    root.new-session-clicked();
+                }
             }
-            new-session() => {
-                root.new-session-clicked();
-            }
-        }
         }
         }
 
