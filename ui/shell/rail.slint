@@ -14,7 +14,7 @@ component RailButton inherits Rectangle {
     callback clicked();
 
     height: 38px;
-    border-radius: Theme.r-md;
+    border-radius: Theme.radius-md;
     background: root.active
         ? Theme.accent-soft
         : (ta.has-hover ? Theme.sur-3 : transparent);
@@ -74,7 +74,7 @@ export component Rail inherits Rectangle {
 
             Rectangle {
                 horizontal-stretch: 1;
-                border-radius: Theme.r-md;
+                border-radius: Theme.radius-md;
                 background: Theme.sur-3;
 
                 HorizontalLayout {
@@ -129,7 +129,7 @@ export component Rail inherits Rectangle {
 
             Rectangle {
                 width: 26px;
-                border-radius: Theme.r-md;
+                border-radius: Theme.radius-md;
                 background: collapse-ta.has-hover ? Theme.sur-3 : transparent;
 
                 Text {
@@ -151,7 +151,7 @@ export component Rail inherits Rectangle {
 
         if root.collapsed : Rectangle {
             height: 34px;
-            border-radius: Theme.r-md;
+            border-radius: Theme.radius-md;
             background: expand-ta.has-hover ? Theme.sur-3 : transparent;
 
             Text {
