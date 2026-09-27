@@ -93,6 +93,9 @@ fn parse(url: &str) -> Option<ProxyConfig> {
     };
     let hostport = hostport.trim_end_matches('/');
     let (host, port) = hostport.rsplit_once(':')?;
+    // IPv6 字面量写作 `[::1]:1080` —— 方括号必须剥掉：留着的话 `"[::1]"` 会被当成
+    // **主机名**交给 DNS 解析，永远连不上（同一套配置的端口转发侧早就剥过，见 forward.rs）。
+    let host = host.trim_start_matches('[').trim_end_matches(']');
     let port: u16 = port.parse().ok()?;
     if host.is_empty() {
         return None;

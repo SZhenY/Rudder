@@ -42,17 +42,11 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
         content_size,
         panes_model,
         splitters_model,
-        handles,
         bufs,
         render_gates,
         runtime,
-        last_term_size,
-        sftp_handles,
         sftp_last_cwd,
         tab_statuses,
-        local_snap,
-        local_net_hist,
-        sftp_follow_cd,
         tab_titles,
         ..
     } = ctx;
@@ -1063,17 +1057,13 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
         // one would require the context to outlive the closure.
         let panes_model = panes_model.clone();
         let splitters_model = splitters_model.clone();
-        let handles = handles.clone();
         let bufs = bufs.clone();
         let render_gates = render_gates.clone();
-        let runtime = runtime.clone();
-        let last_term_size = last_term_size.clone();
-        let sftp_handles = sftp_handles.clone();
         let sftp_last_cwd = sftp_last_cwd.clone();
         let tab_statuses = tab_statuses.clone();
-        let local_snap = local_snap.clone();
-        let local_net_hist = local_net_hist.clone();
-        let sftp_follow_cd = sftp_follow_cd.clone();
+        // 会话启动上下文：一次装配、闭包内 clone（闭包不能捕获 `&AppContext`，
+        // 上面那几个 clone 是给闭包别处用的）。
+        let connect_ctx = ConnectCtx::from_app(window.as_weak(), ctx);
         window.on_connect_session(move |id: SharedString| {
             let id = id.to_string();
             let session = if id.starts_with("system:") {
@@ -1219,21 +1209,7 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
 
             // Spawn the shell (+ SFTP) workers and their event-pump threads.
             // Shared with in-place reconnect (#79) via start_session_in_tab.
-            let ctx = ConnectCtx {
-                weak: weak.clone(),
-                runtime: runtime.clone(),
-                handles: handles.clone(),
-                sftp_handles: sftp_handles.clone(),
-                sftp_last_cwd: sftp_last_cwd.clone(),
-                bufs: bufs.clone(),
-                render_gates: render_gates.clone(),
-                tab_statuses: tab_statuses.clone(),
-                local_snap: local_snap.clone(),
-                local_net_hist: local_net_hist.clone(),
-                last_term_size: last_term_size.clone(),
-                sftp_follow_cd: sftp_follow_cd.clone(),
-                store: store.clone(),
-            };
+            let ctx = connect_ctx.clone();
             start_session_in_tab(&tab_id, session, &ctx);
         });
     }
@@ -1279,10 +1255,10 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
         window.on_tab_rename_request(move |tab_id: SharedString| {
             let tab_id = tab_id.to_string();
             if tab_id.is_empty() || tab_id == "welcome" {
-                tracing::info!(target: "rudder_rename", "rename-request: rejected tab_id={:?}", tab_id);
+                tracing::debug!(target: "rudder_rename", "rename-request: rejected tab_id={:?}", tab_id);
                 return;
             }
-            tracing::info!(target: "rudder_rename", "rename-request: tab_id={:?}, current_title={:?}", tab_id, "...");
+            tracing::debug!(target: "rudder_rename", "rename-request: tab_id={:?}, current_title={:?}", tab_id, "...");
             let title = (0..tabs_model.row_count())
                 .find_map(|i| {
                     let row = tabs_model.row_data(i)?;
@@ -1311,7 +1287,7 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
         let tab_titles = tab_titles.clone();
         let store = store.clone();
         window.on_rename_tab(move |tab_id: SharedString, name: SharedString| {
-            tracing::info!(target: "rudder_rename", "rename-tab invoked: tab_id={:?}, name={:?}", tab_id.as_str(), name.as_str());
+            tracing::debug!(target: "rudder_rename", "rename-tab invoked: tab_id={:?}, name={:?}", tab_id.as_str(), name.as_str());
             if let Some(w) = weak.upgrade() {
                 w.set_tab_rename_open(false);
             }
@@ -1349,7 +1325,7 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                     row.title = title.clone().into();
                     tabs_model.set_row_data(i, row);
                     matched = true;
-                    tracing::info!(target: "rudder_rename", "rename-tab: matched row {} for tab_id={:?}, new_title={:?}", i, tab_id, title);
+                    tracing::debug!(target: "rudder_rename", "rename-tab: matched row {} for tab_id={:?}, new_title={:?}", i, tab_id, title);
                     break;
                 }
             }

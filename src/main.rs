@@ -5,6 +5,7 @@
 
 mod app;
 mod config;
+mod files;
 mod fonts;
 mod i18n;
 mod layout;

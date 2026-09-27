@@ -27,42 +27,13 @@ const WALLPAPER_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp"];
 
 /// 扫描用户壁纸目录（按文件名排序；目录不存在给空表）。
 pub(crate) fn scan_wallpaper_files(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = entries
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension().and_then(|x| x.to_str()).is_some_and(|x| {
-                WALLPAPER_EXTS
-                    .iter()
-                    .any(|ext| x.eq_ignore_ascii_case(ext))
-            })
-        })
-        .collect();
-    files.sort();
-    files
+    crate::files::scan_files(dir, WALLPAPER_EXTS)
 }
 
 /// 把用户挑的图片**复制**进壁纸目录，返回落点；重名时**不覆盖**，
 /// 改成 `<名字> 2.png`、`<名字> 3.png`……
 pub(crate) fn import_wallpaper_file(src: &Path) -> Option<PathBuf> {
-    let dir = external_wallpapers_dir();
-    std::fs::create_dir_all(&dir).ok()?;
-    let file_name = src.file_name()?.to_string_lossy().into_owned();
-    let (stem, ext) = match file_name.rsplit_once('.') {
-        Some((stem, ext)) => (stem.to_string(), format!(".{ext}")),
-        None => (file_name.clone(), String::new()),
-    };
-    let mut dst = dir.join(&file_name);
-    let mut n = 2;
-    while dst.exists() {
-        dst = dir.join(format!("{stem} {n}{ext}"));
-        n += 1;
-    }
-    std::fs::copy(src, &dst).ok()?;
-    Some(dst)
+    crate::files::import_file(src, &external_wallpapers_dir())
 }
 
 /// Render size for the built-in wallpapers. `image-fit: cover` in the UI scales

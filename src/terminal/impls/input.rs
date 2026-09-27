@@ -18,10 +18,9 @@ use super::state::CtrlKeySide;
 /// X10 encodes it as `btn + 3`, SGR keeps the same code but ends the report
 /// with a lowercase `m`.
 ///
-/// Coordinates are 1-based grid cells clamped into [1, 223] — the range the
-/// classic X10 byte encoding can express — matching how the remote draws its
-/// UI. `cols`/`rows` are the *screen* dimensions so the report always points
-/// at the same cell the program rendered.
+/// Coordinates are 1-based grid cells. X10 是单字节编码，只能表达 1..=223（超出会截断）；
+/// SGR 用十进制、没有这个上限，因此只在 X10 分支夹取。`cols`/`rows` 是 *屏幕* 尺寸，
+/// 保证报出去的格子和远端画出来的那个一致。
 pub(crate) fn encode_mouse_event(
     btn: u8,
     release: bool,
@@ -31,14 +30,21 @@ pub(crate) fn encode_mouse_event(
     rows: u16,
     encoding: MouseReport,
 ) -> Vec<u8> {
-    let c = (col.clamp(0, cols.saturating_sub(1) as i32) as u16 + 1).clamp(1, 223);
-    let r = (row.clamp(0, rows.saturating_sub(1) as i32) as u16 + 1).clamp(1, 223);
+    // 坐标一律先夹进屏幕范围（1 基）。
+    let c = col.clamp(0, cols.saturating_sub(1) as i32) as u16 + 1;
+    let r = row.clamp(0, rows.saturating_sub(1) as i32) as u16 + 1;
     match encoding {
         MouseReport::Sgr => {
+            // SGR（`\x1b[<b;x;yM`）坐标是**十进制**、没有 223 上限 —— 以前沿用了 X10 的
+            // `clamp(1, 223)`，窗口宽于 223 列时第 223 列之后的所有点击都被报成同一格
+            // （btop/htop 点哪都命中错格）。
             let final_byte = if release { b'm' } else { b'M' };
             format!("\x1b[<{btn};{c};{r}{}", final_byte as char).into_bytes()
         }
         _ => {
+            // X10 是**单字节**坐标（+32 后要落进 0x20..=0xFF），只能表达 1..=223。
+            let c = c.clamp(1, 223);
+            let r = r.clamp(1, 223);
             let cb = btn as u16 + if release { 3 } else { 0 } + 32;
             vec![0x1b, b'[', b'M', cb as u8, (c + 32) as u8, (r + 32) as u8]
         }
@@ -312,6 +318,16 @@ pub(crate) fn scrollback_key_from_text(key: &str) -> Option<ScrollbackKey> {
     }
 }
 
+/// Convert a Slint `KeyEvent.text` + modifier flags into the byte sequence
+/// that the remote PTY expects.
+///
+/// Slint uses Unicode Private Use Area (`\u{F700}`…) for special keys.
+/// Regular printable characters and C0 control characters are passed as-is.
+///
+/// `app_cursor` mirrors the remote terminal's DECCKM mode (`\x1b[?1h/l`):
+/// when true the four arrow keys must use SS3 sequences (`\x1bOA`…) instead
+/// of the default CSI sequences (`\x1b[A`…).  Full-screen apps like nano and
+/// vim set this mode on startup.
 pub(crate) fn key_to_pty_bytes(key: &str, ctrl: bool, alt: bool, app_cursor: bool) -> Vec<u8> {
     let special: Option<&[u8]> = match key {
         "\u{F700}" => Some(if app_cursor { b"\x1bOA" } else { b"\x1b[A" }),

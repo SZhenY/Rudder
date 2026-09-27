@@ -62,21 +62,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
     // Runtime context for starting / reconnecting a session. Assembled here
     // from the app-wide context rather than passed in twice: the caller used to
     // hand over `store` both as its own argument and inside this struct.
-    let ctx = ConnectCtx {
-        weak: window.as_weak(),
-        runtime: app.runtime.clone(),
-        handles: app.handles.clone(),
-        sftp_handles: app.sftp_handles.clone(),
-        sftp_last_cwd: app.sftp_last_cwd.clone(),
-        bufs: app.bufs.clone(),
-        render_gates: app.render_gates.clone(),
-        tab_statuses: app.tab_statuses.clone(),
-        local_snap: app.local_snap.clone(),
-        local_net_hist: app.local_net_hist.clone(),
-        last_term_size: app.last_term_size.clone(),
-        sftp_follow_cd: app.sftp_follow_cd.clone(),
-        store: app.store.clone(),
-    };
+    let ctx = ConnectCtx::from_app(window.as_weak(), app);
     let handles = app.handles.clone();
     let bufs = app.bufs.clone();
     // 滚动回调要走渲染闸门（节流 + 合并）；两个回调各持一份。
@@ -593,7 +579,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     .unwrap_or_else(|e| e.into_inner())
                     .map(|t| format!("{}ms ago", t.elapsed().as_millis()))
                     .unwrap_or_else(|| "never".to_string());
-                tracing::debug!(
+                tracing::trace!(
                     "[KEY_DIAG] key={} shift={} ctrl={} alt={} | last_shift={}",
                     codepoints, shift, ctrl, alt, elapsed_ms
                 );
@@ -606,7 +592,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             // events even if they arrive with shift=false.
             if key.as_str().is_empty() && shift && !ctrl && !alt {
                 *last_shift_time.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
-                tracing::debug!("[KEY_DIAG] lone-Shift recorded → timestamp saved");
+                tracing::trace!("[KEY_DIAG] lone-Shift recorded → timestamp saved");
             }
 
             // ── 拦截百度拼音注入的 Shift 标记字符（核心修复）────────────────────
@@ -639,7 +625,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                         && !is_standalone
                     {
                         *last_shift_time.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
-                        tracing::debug!(
+                        tracing::trace!(
                             "[KEY_DIAG] DROPPED IME C0 marker U+{:04X} (shift={}) → timestamp saved",
                             cp, shift
                         );
@@ -724,7 +710,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
             if key.as_str() == "\u{0008}" && !ctrl && !alt {
                 // Layer 1
                 if shift {
-                    tracing::debug!("[KEY_DIAG] Backspace DROPPED by layer-1 (shift=true)");
+                    tracing::trace!("[KEY_DIAG] Backspace DROPPED by layer-1 (shift=true)");
                     return;
                 }
                 // Layer 2 — 时间窗口 1500ms
@@ -741,7 +727,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     }
                 };
                 if shift_just_pressed {
-                    tracing::debug!(
+                    tracing::trace!(
                         "[KEY_DIAG] Backspace DROPPED by layer-2 ({}ms after IME Shift marker)",
                         elapsed_ms
                     );
@@ -751,7 +737,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 // Do not consult the live VK_BACK state here. Under UI/SSH
                 // backlog the key-up can be processed before this callback, so
                 // that test drops a genuine queued Backspace (#319).
-                tracing::debug!("[KEY_DIAG] Backspace PASSED all filters → sent to PTY");
+                tracing::trace!("[KEY_DIAG] Backspace PASSED all filters → sent to PTY");
             }
 
             if should_drop_bare_ctrl_marker(
@@ -1024,6 +1010,10 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     row.rows_used = 0;
                     row.scroll_max = 0;
                     row.scroll_offset = 0;
+                    // 缓冲已经 `reset()`，这两个也必须跟着归位：否则在下次远端输出之前，
+                    // UI 仍以为处于备用屏 / 鼠标跟踪态，滚轮与命中判定会走错分支。
+                    row.is_alt_screen = false;
+                    row.mouse_tracked = false;
                 });
             }
             if let Some(h) = handles_clear.borrow().get(&tid) {
@@ -1440,6 +1430,13 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
     }
 }
 
+/// Render a key string for diagnostic logs WITHOUT leaking its content (#15).
+///
+/// Any printable character could be a password character, so we never emit it.
+/// Only C0/C1 control code points (Backspace, Esc, the IME-injected 0x10/0x15
+/// markers, …) are revealed — those are exactly what the Shift/Backspace IME
+/// diagnostics need and are never password material. Printable characters are
+/// collapsed to a count, so the logs stay useful without exposing keystrokes.
 pub(crate) fn redact_key(key: &str) -> String {
     if key.is_empty() {
         return "(empty)".to_string();

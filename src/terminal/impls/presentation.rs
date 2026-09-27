@@ -45,8 +45,11 @@ pub(crate) fn highlight_plain_output(
         let before = run.text[..start].to_string();
         let marker = run.text[start..end].to_string();
         let after = run.text[end..].to_string();
-        let before_cells = before.chars().count() as i32;
-        let marker_cells = marker.chars().count() as i32;
+        // ⚠ 必须按**单元格宽度**算，不能按字符数：CJK / 全角字符占 2 格，
+        // `"服务启动 ERROR"` 里的 4 个汉字按 4 计会让后面的标记整体左移 4 列
+        // （同一文件里的 style_custom_matches 用的就是 text_cell_width）。
+        let before_cells = text_cell_width(&before);
+        let marker_cells = text_cell_width(&marker);
 
         if !before.is_empty() {
             let mut part = run.clone();

@@ -5,6 +5,16 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 修复 / Fixed
+
+- **半截转义序列的缓存加上限（行为收紧）。** 分块读取（SSH / 管道）时，块尾未结束的
+  CSI 参数会缓存到下一块再判 —— 但缓存原先**没有上限**：损坏或恶意输出只要在 `ESC[`
+  之后一直不发 final byte，缓存就会无界增长，并且每块都被重新拼到下一次解析前面。
+  现在与终端查询状态机一样按 **64 字节**封顶（合法的真彩色 `38;2;R;G;B` 最长也才
+  ~20 字节），超限整段丢弃。**A malicious or corrupt stream that opens `CSI` and never
+  terminates it can no longer grow the carry buffer without bound**; it is now capped at
+  64 bytes, matching the terminal-query state machine.
+
 ## [0.7.9-beta6] - 2026-09-26
 
 ### 新增 / Added

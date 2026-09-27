@@ -509,13 +509,31 @@ impl TermBuffer {
             if t > 0 {
                 process_bytes(&mut self.processor, &mut self.term, &bytes[..t]);
             }
-            self.sgr_buf = bytes[t..].to_vec();
+            self.buffer_sgr_tail(&bytes[t..]);
         } else {
             process_bytes(&mut self.processor, &mut self.term, bytes);
         }
     }
 
-    fn ingest_segments_inner(&mut self, bytes: &[u8]) {
+    /// 块尾半截 CSI 的缓存上限，与 `csi_pending` 的 64 字节同量级。
+///
+/// 为什么必须有上限：合法参数段远短于此（最长的真彩色 `38;2;R;G;B` 也才 ~20 字节），
+/// 而损坏或恶意输入若在 `ESC[` 之后一直不发 final byte，`sgr_buf` 会**无界增长**，
+/// 并且每一块都被重新拼到下一次 ingest 前面（重复搬运）。超限就整段丢弃 —— 与
+/// `csi_pending` 超 64 字节时清空的行为一致。
+const SGR_TAIL_CAP: usize = 64;
+
+/// 缓存块尾半截 CSI（`route_chunk` 与 `ingest_segments_inner` 两个出口共用）。
+fn buffer_sgr_tail(&mut self, tail: &[u8]) {
+    if tail.len() <= Self::SGR_TAIL_CAP {
+        self.sgr_buf = tail.to_vec();
+    } else {
+        // 病态输入：不是合法 CSI 参数段，整段丢弃（与 `csi_pending` 超限时一致）。
+        self.sgr_buf.clear();
+    }
+}
+
+fn ingest_segments_inner(&mut self, bytes: &[u8]) {
         let (seqs, tail) = scan_csi_sequences(bytes);
         let mut feed_from = 0usize;
         for (start, end) in seqs {
@@ -537,7 +555,7 @@ impl TermBuffer {
                 if t > feed_from {
                     process_bytes(&mut self.processor, &mut self.term, &bytes[feed_from..t]);
                 }
-                self.sgr_buf = bytes[t..].to_vec();
+                self.buffer_sgr_tail(&bytes[t..]);
             }
             None => {
                 if feed_from < bytes.len() {
@@ -603,12 +621,9 @@ impl TermBuffer {
                 parts.push(part);
                 continue;
             }
-            if matches!(&**part, b"38" | b"48" | b"58") {
-                match (split.get(i + 1).map(|v| &**v), split.get(i + 2).map(|v| &**v)) {
-                    (Some(b"5"), _) => skip = 2, // 38;5;N
-                    (Some(b"2"), _) => skip = 4, // 38;2;R;G;B
-                    _ => {}
-                }
+            if crate::terminal::is_extended_color_prefix(part) {
+                // 与 `sgr_probe` 共用同一条规则（见 csi.rs）
+                skip = crate::terminal::extended_color_skip(split.get(i + 1).map(|v| &**v));
             }
             let is_color_index = skip > 0;
             let is_21 = !is_color_index && *part == b"21";
@@ -1026,104 +1041,47 @@ struct SgrProbe {
 /// 这里不分配、不构造参数表，只用 memchr 跳到下一个 ESC。
 fn sgr_probe(bytes: &[u8]) -> SgrProbe {
     let mut out = SgrProbe::default();
-    let mut i = 0;
-    while i < bytes.len() {
-        let Some(offset) = memchr::memchr(b'\x1b', &bytes[i..]) else {
-            break;
-        };
-        i += offset;
-        if bytes.get(i + 1) != Some(&b'[') {
-            // ESC 后面**没有下一个字节** = 序列刚开始 ⇒ 块尾留到下一块再判
-            // （否则 1 字节分块时 `ESC` / `[` / `5` / `3` / `m` 会被当成互不相干的块，
-            //   而 `53` 恰恰是我们要拦的那个 —— 分块等价测试就是这么抓到的）。
-            if i + 1 >= bytes.len() {
-                out.tail = Some(i);
-                return out;
+    // 骨架（memchr 跳 ESC → 扫到 final byte → 块尾半截）与 `scan_csi_sequences`
+    // 共用 `csi::scan_csi_visit`：两份规则漂移过一次，收敛后结构上不再可能。
+    // 分类只对 `m` 做，且不用参数表（零分配 —— 彩色刷屏时每块都会跑这里）。
+    out.tail = crate::terminal::scan_csi_visit(bytes, |i, j| {
+        if bytes[j] != b'm' {
+            return;
+        }
+        let params = &bytes[i + 2..j];
+        let mut skip = 0usize;
+        let mut parts = params.split(|&b| b == b';');
+        while let Some(part) = parts.next() {
+            if skip > 0 {
+                skip -= 1;
+                continue;
             }
-            i += 2; // ESC + 非 '['（OSC 引子 / ESC 7 …）
-            continue;
-        }
-        let mut j = i + 2;
-        while j < bytes.len() && !(0x40..=0x7e).contains(&bytes[j]) {
-            j += 1;
-        }
-        if j >= bytes.len() {
-            out.tail = Some(i);
-            return out;
-        }
-        if bytes[j] == b'm' {
-            let params = &bytes[i + 2..j];
-            let mut skip = 0usize;
-            let mut parts = params.split(|&b| b == b';');
-            while let Some(part) = parts.next() {
+            if crate::terminal::is_extended_color_prefix(part) {
+                // 与 `apply_sgr` 共用同一条规则（见 csi.rs）
+                skip = crate::terminal::extended_color_skip(parts.clone().next());
                 if skip > 0 {
-                    skip -= 1;
                     continue;
                 }
-                if matches!(part, b"38" | b"48" | b"58") {
-                    match (parts.clone().next(), parts.clone().nth(1)) {
-                        (Some(b"5"), _) => skip = 2, // 38;5;N
-                        (Some(b"2"), _) => skip = 4, // 38;2;R;G;B
-                        _ => {}
-                    }
-                    if skip > 0 {
-                        continue;
-                    }
-                }
-                if part == b"53" {
-                    out.has_53 = true;
-                } else if part == b"21" {
-                    out.has_21 = true;
-                }
+            }
+            if part == b"53" {
+                out.has_53 = true;
+            } else if part == b"21" {
+                out.has_21 = true;
             }
         }
-        i = j + 1;
-    }
+    });
     out
 }
 
 fn scan_csi_sequences(bytes: &[u8]) -> (Vec<(usize, usize)>, Option<usize>) {
-    // 普通输出没有 ESC：一次 memchr 就够，省掉逐字节循环（`Vec::new()` 不分配）。
-    if memchr::memchr(b'\x1b', bytes).is_none() {
-        return (Vec::new(), None);
-    }
     let mut seqs = Vec::new();
-    let mut i = 0;
-    // 用 memchr 直接跳到下一个 ESC。原来是一条条 `i += 1` 走完全块 —— 彩色输出里
-    // 非 ESC 字节仍是绝大多数，那等于每个块都白扫一遍 64 KiB。语义与逐字节版一致。
-    // ⚠️ 循环条件**必须**带 `i < bytes.len()`：下面 `i += 2`（ESC + 非 '['，比如 OSC 引子
-    // `ESC ]` 或 `ESC 7`）可能一步跨过块尾，此时 `&bytes[i..]` 会直接 panic
-    // （`range start index N out of range for slice of length M`）。
-    // 0.7.9-beta2 在彩色刷屏下崩过一次，就是这里丢了上界 —— 原来的逐字节版本有它。
-    while i < bytes.len() {
-        let Some(offset) = memchr::memchr(b'\x1b', &bytes[i..]) else {
-            break;
-        };
-        i += offset;
-        if bytes.get(i + 1) != Some(&b'[') {
-            // ESC 后面没有下一个字节 = 序列刚开头 ⇒ 块尾留到下一块再判（与 `sgr_probe`
-            // 同一条规则；两边不一致的话，1 字节分块会把半截 SGR 裸喂进解析器）。
-            if i + 1 >= bytes.len() {
-                return (seqs, Some(i));
-            }
-            // ESC + non-'[': two-byte escape (ESC 7 / ESC c …) or an OSC
-            // introducer (ESC ] …) — skip past the next byte and continue.
-            i += 2;
-            continue;
-        }
-        let mut j = i + 2;
-        while j < bytes.len() && !(0x40..=0x7e).contains(&bytes[j]) {
-            j += 1;
-        }
-        if j >= bytes.len() {
-            return (seqs, Some(i)); // unterminated CSI at the tail
-        }
+    // 与 `sgr_probe` 共用骨架（含"没有 ESC 就一次 memchr 返回"的快路径与块尾规则）。
+    let tail = crate::terminal::scan_csi_visit(bytes, |i, j| {
         if bytes[j] == b'm' {
             seqs.push((i, j + 1));
         }
-        i = j + 1; // skip the completed (SGR or not) sequence
-    }
-    (seqs, None)
+    });
+    (seqs, tail)
 }
 
 #[cfg(test)]
@@ -1943,5 +1901,48 @@ mod render_path_cube_tests {
             runs[0].overline,
             "standalone 53m must still produce overline"
         );
+    }
+
+    /// 终端查询（DSR/CPR/DA1）的回复内容 —— 这段逻辑原先**没有任何测试**，
+    /// 而它有两条调用路径（`session_event` 丢弃回复、`session_runtime` 回写 PTY），
+    /// 所以先把"回复长什么样"钉死。
+    #[test]
+    fn terminal_queries_answer_status_cursor_and_device_attributes() {
+        let mut buf = make_buffer();
+        assert_eq!(buf.detect_terminal_queries(b"\x1b[5n"), b"\x1b[0n".to_vec());
+        assert_eq!(
+            buf.detect_terminal_queries(b"\x1b[c"),
+            b"\x1b[?1;2c".to_vec()
+        );
+        assert_eq!(
+            buf.detect_terminal_queries(b"\x1b[0c"),
+            b"\x1b[?1;2c".to_vec()
+        );
+        // 光标在 (1,1)：普通 CPR 与私有 CPR 各一份
+        assert_eq!(
+            buf.detect_terminal_queries(b"\x1b[6n"),
+            b"\x1b[1;1R".to_vec()
+        );
+        assert_eq!(
+            buf.detect_terminal_queries(b"\x1b[?6n"),
+            b"\x1b[?1;1R".to_vec()
+        );
+    }
+
+    #[test]
+    fn terminal_queries_survive_split_chunks_and_ignore_other_csi() {
+        let mut buf = make_buffer();
+        // 半截 CSI 跨块续扫（csi_pending）
+        assert!(buf.detect_terminal_queries(b"\x1b[").is_empty());
+        assert_eq!(
+            buf.detect_terminal_queries(b"6n"),
+            b"\x1b[1;1R".to_vec()
+        );
+        // 普通 SGR / 纯文本不产生回复
+        assert!(buf.detect_terminal_queries(b"\x1b[31m").is_empty());
+        assert!(buf.detect_terminal_queries(b"plain").is_empty());
+        // 异常超长 CSI（>64 字节）被丢弃：不回复、也不越界
+        let junk = format!("\x1b[{}n", "9".repeat(80));
+        assert!(buf.detect_terminal_queries(junk.as_bytes()).is_empty());
     }
 }

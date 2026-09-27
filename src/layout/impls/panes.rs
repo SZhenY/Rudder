@@ -1,6 +1,3 @@
-// Wired into the UI incrementally (M2+); allow unused items until then.
-#![allow(dead_code)]
-
 //! Split-pane layout tree (v0.5, IDEA-style nested splits).
 //!
 //! Slint can't render recursive components, so the nestable split layout lives
@@ -143,6 +140,11 @@ impl Layout {
 
     /// Move `tab_id` into existing leaf `to` (e.g. dropped onto another pane's tab
     /// strip). No-op if it's already there. Collapses an emptied source pane.
+    ///
+    /// 已经有测试覆盖，但 UI 侧还没接线（标签拖到别的分屏）—— 与 `vt_adapter` /
+    /// `ssh` 里那两个 helper 同一处理方式：只在测试构建里需要，显式标出来而不是
+    /// 让整个模块 `#![allow(dead_code)]` 把所有死代码一起遮住。
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn move_tab(&mut self, tab_id: &str, to: u64) {
         let from = match self.leaf_of_tab(tab_id) {
             Some(f) => f,
@@ -228,7 +230,11 @@ impl Layout {
         if len <= 0.0 {
             return;
         }
-        let min = MIN_PANE / len;
+        // ⚠ `f32::clamp` 在 `min > max` 时 **panic**（std 文档明确写了），而 release 是
+        // `panic = "abort"` —— 内容区被挤到 < 2×MIN_PANE（例如窗口很窄 + 侧栏展开）时，
+        // `MIN_PANE / len > 0.5` 就会让 `min > 1.0 - min`，用户一拖分隔条整个程序就没了。
+        // 先夹住比例上限，保证 min ≤ max。
+        let min = (MIN_PANE / len).min(0.5);
         let r = ((pos - start) / len).clamp(min, 1.0 - min);
         set_split_ratio(&mut self.root, split_id, r);
     }

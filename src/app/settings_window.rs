@@ -56,6 +56,13 @@ pub(super) fn sync_settings_theme(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_accent_overridden(t.get_accent_overridden());
     sw.set_accent_seed(t.get_accent_seed());
     sw.set_panel_alpha(t.get_panel_alpha());
+    // 设置页里的「终端字体预览」直接读**这个窗口自己的** `Theme` 实例（Slint 的 global
+    // 每个窗口一份）—— 不把这三项抄过来，预览永远显示默认的 JetBrains Mono / 13px，
+    // 用户在设置页里换字体时预览纹丝不动。
+    let swt = sw.global::<Theme>();
+    swt.set_term_font_family(t.get_term_font_family());
+    swt.set_term_font_size(t.get_term_font_size());
+    swt.set_term_font_bold(t.get_term_font_bold());
 }
 
 /// 只留一个原生关闭按钮：隐藏 macOS 的「最小化(黄)」与「缩放(绿)」，保留「关闭(红)」。
@@ -253,6 +260,42 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_wsl_profiles(m.get_wsl_profiles());
 }
 
+/// 设置窗口那 50 个"一行转发"回调的展开体。
+///
+/// 形状只有两种：`=>`（无返回值，44 个）与 `->`（把 `bool` 结果透传，6 个）。
+/// 展开与原先手写的块逐块一致：闭包**外**克隆 weak（闭包不能捕获 `&SettingsWindow`）
+/// → 升级失败早退 → `invoke_*` → 回灌 `Theme` / `Palette` 与回显型属性。
+///
+/// 两种形状不能互换，且都会在编译期暴露：`=>` 臂用在 `-> bool` 回调上是类型不匹配，
+/// `->` 臂用在无返回值回调上会触发 `clippy::let_unit_value`（仓库是 `-D warnings`）。
+macro_rules! forward {
+    ($sw:ident, $m:ident, $s:ident, $on:ident => $invoke:ident, ($($a:ident),*)) => {{
+        let $m = $m.clone();
+        let $s = $sw.as_weak();
+        $sw.$on(move |$($a),*| {
+            let (Some($m), Some(sw)) = ($m.upgrade(), $s.upgrade()) else {
+                return Default::default();
+            };
+            $m.$invoke($($a),*);
+            sync_settings_theme(&$m, &sw);
+            sync_settings_reflected(&$m, &sw);
+        });
+    }};
+    ($sw:ident, $m:ident, $s:ident, $on:ident -> $invoke:ident, ($($a:ident),*)) => {{
+        let $m = $m.clone();
+        let $s = $sw.as_weak();
+        $sw.$on(move |$($a),*| {
+            let (Some($m), Some(sw)) = ($m.upgrade(), $s.upgrade()) else {
+                return Default::default();
+            };
+            let out = $m.$invoke($($a),*);
+            sync_settings_theme(&$m, &sw);
+            sync_settings_reflected(&$m, &sw);
+            out
+        });
+    }};
+}
+
 /// 50 个回调一行转发给主窗口（`invoke_*` 是 Slint 为回调生成的调用入口）。
 ///
 /// 转发之后一律做两件事：① 回灌 `Theme` / `Palette`（按窗口各自实例，见 `sync_settings_theme`）；
@@ -263,610 +306,54 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
 /// `let_unit_value` 拦下（仓库是 `-D warnings`）。
 pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWindow) {
     SETTINGS_WEAK.with(|s| *s.borrow_mut() = Some(sw.as_weak()));
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_add_output_highlight_rule(move |a0, a1, a2, a3, a4| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            let out = m.invoke_add_output_highlight_rule(a0, a1, a2, a3, a4);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-            out
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_add_wsl_profile(move |a0, a1, a2| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_add_wsl_profile(a0, a1, a2);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_check_update_now(move || {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_check_update_now();
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_persist_wallpaper_overlay(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_persist_wallpaper_overlay(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_preview_wallpaper_overlay(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_preview_wallpaper_overlay(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_pick_wallpaper_file(move || {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_pick_wallpaper_file();
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_pick_wsl_directory(move || {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_pick_wsl_directory();
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_remove_output_highlight_rule(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_remove_output_highlight_rule(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_remove_wsl_profile(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_remove_wsl_profile(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_reset_page(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_reset_page(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_save_webdav_settings(move |a0, a1, a2, a3, a4, a5| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_save_webdav_settings(a0, a1, a2, a3, a4, a5);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_animations_enabled(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_animations_enabled(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_collapse_sftp_default(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_collapse_sftp_default(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_collapse_sidebar_default(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_collapse_sidebar_default(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_convert_eol(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_convert_eol(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_download_always_ask(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_download_always_ask(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_hide_special_partitions(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_hide_special_partitions(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_json_format_output(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_json_format_output(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_large_scrollback(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_large_scrollback(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_mount_filter(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_mount_filter(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_osc52_clipboard(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_osc52_clipboard(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_output_highlight(move |a0, a1| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_output_highlight(a0, a1);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_output_highlight_rule_enabled(move |a0, a1| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_output_highlight_rule_enabled(a0, a1);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_panel_font(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_panel_font(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_quick_commands_as_sidebar(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_quick_commands_as_sidebar(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_renderer_mode(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_renderer_mode(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_scrollback_lines(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            let out = m.invoke_set_scrollback_lines(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-            out
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_sftp_follow_cd(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_sftp_follow_cd(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_show_cmd_bar(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_show_cmd_bar(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_sync_upload_enabled(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_sync_upload_enabled(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_term_cursor_color(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            let out = m.invoke_set_term_cursor_color(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-            out
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_term_cursor_preset(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_term_cursor_preset(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_term_cursor_color_rgb(move |a0, a1, a2| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            let out = m.invoke_set_term_cursor_color_rgb(a0, a1, a2);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-            out
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_term_cursor_style(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_term_cursor_style(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_term_font(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_term_font(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_term_font_bold(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_term_font_bold(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_term_font_size(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_term_font_size(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_ui_font(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_ui_font(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_upload_ui_font(move || {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_upload_ui_font();
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_ui_scale(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_ui_scale(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_accent(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            let out = m.invoke_set_accent(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-            out
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_accent_rgb(move |a0, a1, a2| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            let out = m.invoke_set_accent_rgb(a0, a1, a2);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-            out
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_appearance_mode(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_appearance_mode(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_update_check_enabled(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_update_check_enabled(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_update_channel(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_update_channel(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_update_freq(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_update_freq(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_wallpaper(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_wallpaper(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_set_welcome_as_sidebar(move |a0| {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_set_welcome_as_sidebar(a0);
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_webdav_download(move || {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_webdav_download();
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
-    {
-        let m = m.clone();
-        let s = sw.as_weak();
-        sw.on_webdav_upload(move || {
-            let (Some(m), Some(sw)) = (m.upgrade(), s.upgrade()) else {
-                return Default::default();
-            };
-            m.invoke_webdav_upload();
-            sync_settings_theme(&m, &sw);
-            sync_settings_reflected(&m, &sw);
-        });
-    }
+    forward!(sw, m, s, on_add_output_highlight_rule -> invoke_add_output_highlight_rule, (a0, a1, a2, a3, a4));
+    forward!(sw, m, s, on_add_wsl_profile => invoke_add_wsl_profile, (a0, a1, a2));
+    forward!(sw, m, s, on_check_update_now => invoke_check_update_now, ());
+    forward!(sw, m, s, on_persist_wallpaper_overlay => invoke_persist_wallpaper_overlay, (a0));
+    forward!(sw, m, s, on_preview_wallpaper_overlay => invoke_preview_wallpaper_overlay, (a0));
+    forward!(sw, m, s, on_pick_wallpaper_file => invoke_pick_wallpaper_file, ());
+    forward!(sw, m, s, on_pick_wsl_directory => invoke_pick_wsl_directory, ());
+    forward!(sw, m, s, on_remove_output_highlight_rule => invoke_remove_output_highlight_rule, (a0));
+    forward!(sw, m, s, on_remove_wsl_profile => invoke_remove_wsl_profile, (a0));
+    forward!(sw, m, s, on_reset_page => invoke_reset_page, (a0));
+    forward!(sw, m, s, on_save_webdav_settings => invoke_save_webdav_settings, (a0, a1, a2, a3, a4, a5));
+    forward!(sw, m, s, on_set_animations_enabled => invoke_set_animations_enabled, (a0));
+    forward!(sw, m, s, on_set_collapse_sftp_default => invoke_set_collapse_sftp_default, (a0));
+    forward!(sw, m, s, on_set_collapse_sidebar_default => invoke_set_collapse_sidebar_default, (a0));
+    forward!(sw, m, s, on_set_convert_eol => invoke_set_convert_eol, (a0));
+    forward!(sw, m, s, on_set_download_always_ask => invoke_set_download_always_ask, (a0));
+    forward!(sw, m, s, on_set_hide_special_partitions => invoke_set_hide_special_partitions, (a0));
+    forward!(sw, m, s, on_set_json_format_output => invoke_set_json_format_output, (a0));
+    forward!(sw, m, s, on_set_large_scrollback => invoke_set_large_scrollback, (a0));
+    forward!(sw, m, s, on_set_mount_filter => invoke_set_mount_filter, (a0));
+    forward!(sw, m, s, on_set_osc52_clipboard => invoke_set_osc52_clipboard, (a0));
+    forward!(sw, m, s, on_set_output_highlight => invoke_set_output_highlight, (a0, a1));
+    forward!(sw, m, s, on_set_output_highlight_rule_enabled => invoke_set_output_highlight_rule_enabled, (a0, a1));
+    forward!(sw, m, s, on_set_panel_font => invoke_set_panel_font, (a0));
+    forward!(sw, m, s, on_set_quick_commands_as_sidebar => invoke_set_quick_commands_as_sidebar, (a0));
+    forward!(sw, m, s, on_set_renderer_mode => invoke_set_renderer_mode, (a0));
+    forward!(sw, m, s, on_set_scrollback_lines -> invoke_set_scrollback_lines, (a0));
+    forward!(sw, m, s, on_set_sftp_follow_cd => invoke_set_sftp_follow_cd, (a0));
+    forward!(sw, m, s, on_set_show_cmd_bar => invoke_set_show_cmd_bar, (a0));
+    forward!(sw, m, s, on_set_sync_upload_enabled => invoke_set_sync_upload_enabled, (a0));
+    forward!(sw, m, s, on_set_term_cursor_color -> invoke_set_term_cursor_color, (a0));
+    forward!(sw, m, s, on_set_term_cursor_preset => invoke_set_term_cursor_preset, (a0));
+    forward!(sw, m, s, on_set_term_cursor_color_rgb -> invoke_set_term_cursor_color_rgb, (a0, a1, a2));
+    forward!(sw, m, s, on_set_term_cursor_style => invoke_set_term_cursor_style, (a0));
+    forward!(sw, m, s, on_set_term_font => invoke_set_term_font, (a0));
+    forward!(sw, m, s, on_set_term_font_bold => invoke_set_term_font_bold, (a0));
+    forward!(sw, m, s, on_set_term_font_size => invoke_set_term_font_size, (a0));
+    forward!(sw, m, s, on_set_ui_font => invoke_set_ui_font, (a0));
+    forward!(sw, m, s, on_upload_ui_font => invoke_upload_ui_font, ());
+    forward!(sw, m, s, on_set_ui_scale => invoke_set_ui_scale, (a0));
+    forward!(sw, m, s, on_set_accent -> invoke_set_accent, (a0));
+    forward!(sw, m, s, on_set_accent_rgb -> invoke_set_accent_rgb, (a0, a1, a2));
+    forward!(sw, m, s, on_set_appearance_mode => invoke_set_appearance_mode, (a0));
+    forward!(sw, m, s, on_set_update_check_enabled => invoke_set_update_check_enabled, (a0));
+    forward!(sw, m, s, on_set_update_channel => invoke_set_update_channel, (a0));
+    forward!(sw, m, s, on_set_update_freq => invoke_set_update_freq, (a0));
+    forward!(sw, m, s, on_set_wallpaper => invoke_set_wallpaper, (a0));
+    forward!(sw, m, s, on_set_welcome_as_sidebar => invoke_set_welcome_as_sidebar, (a0));
+    forward!(sw, m, s, on_webdav_download => invoke_webdav_download, ());
+    forward!(sw, m, s, on_webdav_upload => invoke_webdav_upload, ());
 }

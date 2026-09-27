@@ -672,6 +672,10 @@ pub(crate) fn reset(
             s.set_wallpaper_overlay(d.appearance.wallpaper_overlay);
             s.set_accent(d.appearance.accent.clone());
             s.set_hide_special_partitions(d.appearance.hide_special_partitions);
+            // ⚠ 动画开关也属于外观域（config 里存的是反向的 `animations_disabled`）——
+            // 之前这里漏了它，于是「还原本页默认」后界面显示"动画已开"、**重启又变回关闭**
+            // （启动播种读的是 config，见 settings/layout.rs）。
+            s.set_animations_enabled(!d.appearance.animations_disabled);
         });
     }
     // UI 刷新走 getter（0 → 默认 / 平台默认）。

@@ -7,6 +7,8 @@ mod input;
 pub(crate) mod local;
 #[path = "impls/output_highlight.rs"]
 mod output_highlight;
+#[path = "impls/csi.rs"]
+mod csi;
 #[path = "impls/encoding.rs"]
 mod encoding;
 #[path = "impls/json_output.rs"]
@@ -29,6 +31,11 @@ mod term_buffer;
 pub(crate) mod vt_adapter;
 #[path = "impls/zmodem.rs"]
 pub(crate) mod zmodem;
+
+/// CSI 骨架扫描（`sgr_probe` / `scan_csi_sequences` 共用，见 `impls/csi.rs`）。
+pub(crate) use csi::scan_csi_visit;
+/// 扩展色（38/48/58）前缀规则（`apply_sgr` 的改写与 `sgr_probe` 的分类共用）。
+pub(crate) use csi::{extended_color_skip, is_extended_color_prefix};
 
 #[cfg(windows)]
 pub(crate) use input::c0_letter_key_down;

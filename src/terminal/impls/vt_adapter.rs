@@ -401,6 +401,27 @@ mod tests {
         assert_eq!(narrow_lines.join(""), wide_lines.join(""));
     }
 
+    /// OSC 52 剪贴板写入：BEL / ST 两种终止符，且必须能在**同块内前面还有别的
+    /// 转义序列**时找到（`#osc52-first-esc` 的回归钉子）。
+    #[test]
+    fn osc52_accepts_bel_and_st_with_any_leading_escape() {
+        assert_eq!(osc52_extract(b"\x1b]52;c;aGk=\x07"), Some("hi".into()));
+        assert_eq!(osc52_extract(b"\x1b]52;c;aGk=\x1b\\"), Some("hi".into()));
+        assert_eq!(
+            osc52_extract(b"\x1b[32mgreen\x1b[0m\x1b]52;c;aGk=\x07"),
+            Some("hi".into())
+        );
+    }
+
+    #[test]
+    fn osc52_rejects_empty_malformed_and_unterminated() {
+        assert_eq!(osc52_extract(b"\x1b]52;c;\x07"), None); // 空 payload
+        assert_eq!(osc52_extract(b"\x1b]52;c;!!!not base64!!!\x07"), None);
+        assert_eq!(osc52_extract(b"\x1b]52;c;aGk="), None); // 无终止符 → 留给下一块
+        assert_eq!(osc52_extract(b"\x1b]0;title\x07"), None); // 别的 OSC
+        assert_eq!(osc52_extract(b"plain text"), None);
+    }
+
     #[test]
     fn combining_marks_are_kept() {
         let (mut term, mut proc) = new_term(3, 30, 100);
