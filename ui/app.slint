@@ -76,7 +76,7 @@ import { SettingsMenuPopup } from "settings_menu.slint";
 import { AboutDialog } from "about_dialog.slint";
 import { ConfirmOverlays } from "confirm_overlays.slint";
 import { ShortcutsDialog } from "shortcuts_dialog.slint";
-import { FramelessTitleBar } from "custom_titlebar.slint";
+import { AppTitleBar } from "shell/titlebar.slint";
 import { SidebarBody } from "sidebar_body.slint";
 import { RenameDialog } from "rename_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
@@ -903,32 +903,11 @@ export component AppWindow inherits Window {
 
     VerticalLayout {
         spacing: 0;
-        // 新外壳：旧内容（标签栏 / 终端 / 面板）整体给左侧栏让位，
-        // 不再与左侧栏重叠。
+        // 新外壳：旧内容（终端 / 面板）整体给左侧栏让位，不再与左侧栏叠放。
         padding-left: root.rail-w;
-
-        // macOS immersive bar: a strip under the native traffic-light buttons.
-        // Frosted like the other panels (bg-panel) so it matches in both themes —
-        // a plain transparent strip would show the raw wallpaper here and look dark
-        // in light mode. Left as a plain reserve (no TouchArea) so macOS's own title
-        // bar keeps handling the window drag in this region.
-    // 已抽成 `ui/titlebar_inset_strip.slint`：纯搬家，状态透传 + 动作转发。
-    // 不转发 `win-maximize-toggle`：这块留白区的双击由 AppKit 直接处理（见
-    // `ui/titlebar_inset_strip.slint` 里的说明 —— 我们再 toggle 一次就是跟系统抢）。
-
-        // Immersive custom title bar (#119) — only on frameless platforms
-        // (Windows/Linux). App icon + name on the left, a draggable middle
-        // (move window / double-click to maximize), then the toolbar icons and
-        // window controls on the right. macOS keeps its native title bar and
-        // shows the toolbar icons via the overlay further below.
-    // 已抽成 `ui/custom_titlebar.slint`：纯搬家，状态透传 + 动作转发。
-    if root.custom-titlebar : FramelessTitleBar {
-        window-maximized : root.window-maximized;
-        win-close() => { root.win-close(); }
-        win-drag() => { root.win-drag(); }
-        win-maximize-toggle() => { root.win-maximize-toggle(); }
-        win-minimize() => { root.win-minimize(); }
-    }
+        // Windows/Linux 的自绘标题栏（AppTitleBar，见本组件末尾）占据顶部一条，
+        // 旧内容从它下面开始；macOS 的红绿灯/拖拽区不占布局（各页面自己让位）。
+        padding-top: root.custom-titlebar ? root.bar-h : 0px;
 
         // Dock area — fills below the title bar. The resource sidebar and the
         // central content are positioned by absolute geometry computed from
@@ -2213,17 +2192,19 @@ export component AppWindow inherits Window {
         // 「终端」时露出原有界面（所以终端功能一步都没动）。指令集 / Docker / 设置
         // 的页面后续逐个替换。
         property <length> rail-w: root.rail-collapsed ? 64px : 180px;
-        // macOS 上窗口左上角是系统红绿灯按钮，内容必须往下让开这么多（值由 Rust 给）。
-        // 早先这里从 0 开始，红绿灯就直接压在侧栏的搜索框上了。
-        property <length> shell-top: root.titlebar-inset;
+        // 新标题栏：Windows/Linux 自绘一条 38px 的沉浸式栏（AppTitleBar，见组件末尾）；
+        // macOS 不画 —— 红绿灯与顶部拖拽都由系统负责（titlebar-inset 由 Rust 给）。
+        property <length> bar-h: 38px;
+        // 侧栏与页面内容的整体下移量：自绘栏平台是栏高，macOS 是红绿灯让位高度。
+        property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
 
         Rail {
             x: 0;
-            y: 0;
+            // Windows/Linux：在新标题栏下方；macOS：通到顶，搜索框自己给红绿灯让位
+            y: root.custom-titlebar ? root.bar-h : 0px;
             width: root.rail-w;
-            height: root.height;
-            // 通到顶：搜索框自己给红绿灯让位（与参考图一致，旧界面的标签栏被盖住）
-            top-inset: root.shell-top;
+            height: root.height - (root.custom-titlebar ? root.bar-h : 0px);
+            top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
             current-page: root.shell-page;
             // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
             // 那个赋值传不回来，收起/展开看起来就是"点了没反应"。
@@ -2235,28 +2216,22 @@ export component AppWindow inherits Window {
 
         if root.shell-page == 0 : Rectangle {
             x: root.rail-w;
-            y: 0;
+            y: root.shell-top;
             width: root.width - root.rail-w;
-            height: root.height;
+            height: root.height - root.shell-top;
             background: Theme.bg-root;
 
-            // 给红绿灯让位后再放页面内容（盖住旧界面的标签栏）
-            VerticalLayout {
-                Rectangle {
-                    height: root.shell-top;
+            PageHosts {
+                width: 100%;
+                height: 100%;
+                sessions: root.sessions;
+                connect-session(id) => {
+                    // 点会话要先切到终端页，才能看到连接过程；再交给原有链路去发起连接。
+                    root.shell-page = 1;
+                    root.connect-session(id);
                 }
-
-                PageHosts {
-                    vertical-stretch: 1;
-                    sessions: root.sessions;
-                    connect-session(id) => {
-                        // 点会话要先切到终端页，才能看到连接过程；再交给原有链路去发起连接。
-                        root.shell-page = 1;
-                        root.connect-session(id);
-                    }
-                    new-session() => {
-                        root.new-session-clicked();
-                    }
+                new-session() => {
+                    root.new-session-clicked();
                 }
             }
         }
@@ -2304,9 +2279,22 @@ export component AppWindow inherits Window {
                     color: Theme.fg-3;
                     horizontal-alignment: center;
                 }
-            }
-        }
-        }
+                }
+                }
+
+                // 新标题栏（Windows/Linux）：通栏拖拽 + 双击最大化 + 右上角窗口按钮，
+                // 沉浸式无图标/标题。放在最后声明 = 盖在页面内容之上、按钮可点；
+                // macOS 不实例化（系统红绿灯 + 原生拖拽）。
+                if root.custom-titlebar : AppTitleBar {
+                width: root.width;
+                y: 0;
+                window-maximized: root.window-maximized;
+                win-close() => { root.win-close(); }
+                win-drag() => { root.win-drag(); }
+                win-maximize-toggle() => { root.win-maximize-toggle(); }
+                win-minimize() => { root.win-minimize(); }
+                }
+                }
 
 /// 渲染探测用的小窗口（见 `src/app/window.rs::run_renderer_probe`）。
 ///

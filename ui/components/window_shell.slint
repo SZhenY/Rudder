@@ -57,6 +57,8 @@ export component WindowTitleBar inherits Rectangle {
     in property <bool> maximized: false;   // 决定最大化按钮的图标（还原 / 最大化）
     /// true = 按住后位移超过 6px 才把移动交给系统（保住双击最大化）；子窗口设 false（按下即拖）。
     in property <bool> armed-drag: false;
+    /// false = 沉浸式（不画应用图标与标题文字，整条都是可拖拽留白）；主窗口新外壳用。
+    in property <bool> show-title: true;
 
     callback drag();
     callback minimize();
@@ -110,8 +112,8 @@ export component WindowTitleBar inherits Rectangle {
     HorizontalLayout {
         padding-left: 12px;
         spacing: 8px;
-        // 垂直居中包装，让图标与窗口名对齐（#119）。
-        VerticalLayout {
+        // 垂直居中包装，让图标与窗口名对齐（#119）。沉浸式（show-title=false）不画。
+        if root.show-title : VerticalLayout {
             alignment: center;
             Image {
                 source: @image-url("../../assets/icon.png");
@@ -119,7 +121,7 @@ export component WindowTitleBar inherits Rectangle {
                 height: root.icon-size;
             }
         }
-        VerticalLayout {
+        if root.show-title : VerticalLayout {
             alignment: center;
             FieldLabel { text: root.title; }
         }

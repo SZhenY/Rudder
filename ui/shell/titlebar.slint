@@ -1,0 +1,36 @@
+// 新标题栏（UI 重构，按 ex/ 参考稿）。
+//
+// 只在无边框平台（Windows/Linux）实例化：整条 38px 都是可拖拽区（拖动移动窗口、
+// 双击最大化），右上角是最小化 / 最大化 / 关闭。沉浸式 —— 不画应用图标与标题
+// 文字（`show-title: false`），背景与左侧栏同色（sur-1），让标题栏读作侧栏的
+// 向上延伸而不是独立的一条。
+//
+// macOS 不实例化：红绿灯与顶部拖拽都由系统负责（内容用 titlebar-inset 让位）。
+//
+// 窗口动作（win-drag / win-minimize / win-maximize-toggle / win-close）仍由
+// `src/app/window_chrome.rs` 接线，与旧标题栏完全同一套 —— 这里只是换皮。
+
+import { Theme } from "../theme.slint";
+import { WindowTitleBar } from "../components/window_shell.slint";
+
+export component AppTitleBar inherits WindowTitleBar {
+    in property <bool> window-maximized: false;
+
+    callback win-close();
+    callback win-drag();
+    callback win-maximize-toggle();
+    callback win-minimize();
+
+    title: "";
+    icon-size: 0px;
+    show-title: false;
+    show-min-max: true;
+    bar-height: 38px;
+    bg: Theme.sur-1;
+    maximized: window-maximized;
+    armed-drag: true;      // 拖过阈值才交给系统，双击最大化才派发得到
+    drag() => { root.win-drag(); }
+    minimize() => { root.win-minimize(); }
+    maximize-toggle() => { root.win-maximize-toggle(); }
+    close() => { root.win-close(); }
+}
