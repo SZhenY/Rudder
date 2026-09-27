@@ -1,19 +1,154 @@
-// 设置页（新外壳 page 4，按 ex/设置-基础.png / 设置-终端.png 的版式）。
-//
-// 左侧分类列 + 右侧内容区。第一轮迁移只放**有真实接线**的条目：
-// 基础 —— 语言（set-language）· 主题（toggle-theme）；
-// 其余分组列出但标注迁移中（完整控件在旧设置窗口里，随旧外壳一并退役后
-// 逐组搬进来 —— 不放假开关）。
+// 设置页（按 ex/设置-*.png 版式：左分类带副标题；右侧开关行 = 左标签/右滑块、
+// 行间无分隔线；大输入项控件在下方；语言是双 pill。全部真回调，无假控件。）
 
 import { Theme } from "../theme.slint";
+
+component Switch inherits Rectangle {
+    in property <bool> on: false;
+    callback toggled();
+
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    background: root.on ? Theme.accent : Theme.sur-3;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : Theme.line;
+
+    knob := Rectangle {
+        x: root.on ? parent.width - self.width - 2px : 2px;
+        y: (parent.height - self.height) / 2;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: white;
+
+        animate x {
+            duration: 120ms;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.toggled();
+        }
+    }
+}
+
+component ToggleRow inherits Rectangle {
+    in property <string> label;
+    in property <string> desc: "";
+    in property <bool> on: false;
+    callback toggled();
+
+    height: root.desc == "" ? 44px : 56px;
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.label;
+                font-size: 13px;
+                font-weight: 600;
+                color: Theme.fg-1;
+            }
+            if root.desc != "" : Text {
+                text: root.desc;
+                font-size: 11px;
+                color: Theme.fg-3;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+
+            Switch {
+                on: root.on;
+                toggled => {
+                    root.toggled();
+                }
+            }
+        }
+    }
+}
+
+component SelectBox inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    height: 30px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: Theme.sur-2;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 8px;
+        spacing: 6px;
+
+        Text {
+            horizontal-stretch: 1;
+            text: root.text;
+            font-size: 12px;
+            color: Theme.fg-1;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "\u{E5CF}";
+            font-family: "Material Icons";
+            font-size: 15px;
+            color: Theme.fg-3;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// 大输入项区块：标题 + 说明 + 控件在下方（参考图 字体/滚回 的样式）
+component FieldBlock inherits Rectangle {
+    in property <string> title;
+    in property <string> desc: "";
+    height: block.preferred-height;
+
+    block := VerticalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 8px;
+        alignment: start;
+
+        Text {
+            text: root.title;
+            font-size: 13px;
+            font-weight: 600;
+            color: Theme.fg-1;
+        }
+        if root.desc != "" : Text {
+            text: root.desc;
+            font-size: 11px;
+            color: Theme.fg-3;
+            wrap: word-wrap;
+        }
+        @children
+    }
+}
 
 component CategoryItem inherits Rectangle {
     in property <string> glyph;
     in property <string> label;
+    in property <string> sub;
     in property <bool> active: false;
     callback clicked();
 
-    height: 34px;
+    height: 46px;
     border-radius: Theme.radius-md;
     background: root.active ? Theme.rail-item-active
         : (ta.has-hover ? Theme.rail-item-hover : transparent);
@@ -31,74 +166,22 @@ component CategoryItem inherits Rectangle {
             color: root.active ? Theme.accent : Theme.fg-2;
             vertical-alignment: center;
         }
-        Text {
-            text: root.label;
-            font-size: 13px;
-            color: root.active ? Theme.accent : Theme.fg-1;
-            font-weight: root.active ? 600 : 400;
-            vertical-alignment: center;
-        }
-    }
-
-    ta := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-}
-
-component Row inherits Rectangle {
-    in property <string> label;
-    in property <string> desc: "";
-    height: root.desc == "" ? 40px : 52px;
-
-    HorizontalLayout {
-        spacing: Theme.sp-2;
-        alignment: start;
-
         VerticalLayout {
-            horizontal-stretch: 1;
             alignment: center;
-            spacing: 2px;
+            spacing: 1px;
 
             Text {
                 text: root.label;
                 font-size: 13px;
-                color: Theme.fg-1;
+                color: root.active ? Theme.accent : Theme.fg-1;
+                font-weight: root.active ? 600 : 400;
             }
-            if root.desc != "" : Text {
-                text: root.desc;
-                font-size: 11px;
+            Text {
+                text: root.sub;
+                font-size: 10px;
                 color: Theme.fg-3;
+                overflow: elide;
             }
-        }
-        // 控件由实例处放（@children 在 HorizontalLayout 第二槽位）
-        @children
-    }
-}
-
-component ChoicePill inherits Rectangle {
-    in property <string> text;
-    in property <bool> active: false;
-    callback clicked();
-
-    height: 26px;
-    border-radius: 6px;
-    border-width: 1px;
-    border-color: root.active ? Theme.accent : Theme.line;
-    background: root.active ? Theme.rail-item-active
-        : (ta.has-hover ? Theme.sur-3 : Theme.sur-2);
-
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        alignment: center;
-
-        Text {
-            text: root.text;
-            font-size: 11px;
-            color: root.active ? Theme.accent : Theme.fg-2;
-            vertical-alignment: center;
         }
     }
 
@@ -146,62 +229,10 @@ component KeyRow inherits Rectangle {
     }
 }
 
-component TogglePill inherits Rectangle {
-    in property <bool> on: false;
-    callback toggled();
-
-    height: 26px;
-    border-radius: 6px;
-    border-width: 1px;
-    border-color: root.on ? Theme.accent : Theme.line;
-    background: root.on ? Theme.rail-item-active : Theme.sur-2;
-
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        alignment: center;
-
-        Text {
-            text: root.on ? "开" : "关";
-            font-size: 11px;
-            color: root.on ? Theme.accent : Theme.fg-2;
-            vertical-alignment: center;
-        }
-    }
-
-    ta := TouchArea {
-        clicked => {
-            root.toggled();
-        }
-    }
-}
-
 export component PageSettings inherits Rectangle {
     in-out property <bool> lang-en: false;
-    property <bool> dark: Theme.dark; // 绑定跟随 Theme，切换即时刷新
-    // 终端当前值（Theme 全局随改随刷）
+    property <bool> dark: Theme.dark;
     in property <string> scrollback: "5000";
-    callback set-language(string /* "zh" / "en" */);
-    callback toggle-theme();
-    callback term-font(string);
-    callback term-font-size(int);
-    callback term-font-bold(bool);
-    callback term-scrollback(string);
-    // ── 布尔开关（每个都是真属性 + 真回调）──
-    callback set-flag-update-check(bool);
-    callback set-flag-large-scrollback(bool);
-    callback set-flag-osc52(bool);
-    callback set-flag-convert-eol(bool);
-    callback set-flag-json-output(bool);
-    callback set-flag-hide-partitions(bool);
-    callback set-flag-always-ask(bool);
-    callback set-flag-follow-cd(bool);
-    callback set-flag-collapse-sftp(bool);
-    callback set-flag-show-cmd-bar(bool);
-    callback set-flag-quick-as-sidebar(bool);
-    callback set-flag-collapse-sidebar(bool);
-    callback set-flag-sync-upload(bool);
-    callback set-flag-welcome-sidebar(bool);
     in property <bool> flag-osc;
     in property <bool> update-check;
     in property <bool> large-scrollback;
@@ -216,31 +247,79 @@ export component PageSettings inherits Rectangle {
     in property <bool> collapse-sidebar;
     in property <bool> welcome-sidebar;
     in property <bool> sync-upload;
+    callback set-language(string);
+    callback toggle-theme();
+    callback term-font(string);
+    callback term-font-size(int);
+    callback term-font-bold(bool);
+    callback term-scrollback(string);
+    callback set-flag-update-check(bool);
+    callback set-flag-large-scrollback(bool);
+    callback set-flag-osc52(bool);
+    callback set-flag-convert-eol(bool);
+    callback set-flag-json-output(bool);
+    callback set-flag-hide-partitions(bool);
+    callback set-flag-always-ask(bool);
+    callback set-flag-follow-cd(bool);
+    callback set-flag-collapse-sftp(bool);
+    callback set-flag-show-cmd-bar(bool);
+    callback set-flag-quick-as-sidebar(bool);
+    callback set-flag-collapse-sidebar(bool);
+    callback set-flag-sync-upload(bool);
+    callback set-flag-welcome-sidebar(bool);
 
-    property <int> current-cat: 0; // 0 基础 · 1 终端 · 2 外观 · 3 布局 · 4 快捷键 · 5 关于
+    // 0 基础 · 1 终端 · 2 文件 · 3 布局 · 4 快捷键
+    property <int> current-cat: 0;
 
     background: Theme.bg-root;
 
     HorizontalLayout {
-        padding: 20px;
-        spacing: 16px;
-
-        // ── 左：分类列 ──────────────────────────────
+        // ── 左列：标题 + 分类（带副标题，参考图）────────────
         Rectangle {
-            width: 176px;
-            border-radius: 10px;
-            border-width: 1px;
-            border-color: Theme.line;
+            width: 200px;
             background: Theme.sur-1;
 
             VerticalLayout {
-                padding: 10px;
+                padding-top: 16px;
+                padding-bottom: 16px;
+                padding-left: 12px;
+                padding-right: 12px;
                 spacing: 2px;
                 alignment: start;
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+
+                    Text {
+                        text: "\u{E8B8}";
+                        font-family: "Material Icons";
+                        font-size: 17px;
+                        color: Theme.fg-1;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "设置";
+                        font-size: 15px;
+                        font-weight: 700;
+                        color: Theme.fg-1;
+                        vertical-alignment: center;
+                    }
+                }
+                Text {
+                    text: "搜索并快速定位你的配置项";
+                    font-size: 10px;
+                    color: Theme.fg-3;
+                }
+
+                Rectangle {
+                    height: 10px;
+                }
 
                 CategoryItem {
                     glyph: "\u{E8B8}";
                     label: "基础";
+                    sub: "语言、主题、更新与功能入口";
                     active: root.current-cat == 0;
                     clicked => {
                         root.current-cat = 0;
@@ -249,30 +328,25 @@ export component PageSettings inherits Rectangle {
                 CategoryItem {
                     glyph: "\u{EB8E}";
                     label: "终端";
+                    sub: "终端、字体与渲染";
                     active: root.current-cat == 1;
                     clicked => {
                         root.current-cat = 1;
                     }
                 }
                 CategoryItem {
-                    glyph: "\u{E53F}";
-                    label: "外观";
+                    glyph: "\u{E2C7}";
+                    label: "文件";
+                    sub: "SFTP、分区与传输行为";
                     active: root.current-cat == 2;
                     clicked => {
                         root.current-cat = 2;
                     }
                 }
                 CategoryItem {
-                    glyph: "\u{E2C7}"; // folder
-                    label: "文件";
-                    active: root.current-cat == 5;
-                    clicked => {
-                        root.current-cat = 5;
-                    }
-                }
-                CategoryItem {
                     glyph: "\u{E8AC}";
                     label: "布局";
+                    sub: "面板、命令栏与侧栏";
                     active: root.current-cat == 3;
                     clicked => {
                         root.current-cat = 3;
@@ -281,6 +355,7 @@ export component PageSettings inherits Rectangle {
                 CategoryItem {
                     glyph: "\u{E312}";
                     label: "快捷键";
+                    sub: "全局快捷键与终端快捷键";
                     active: root.current-cat == 4;
                     clicked => {
                         root.current-cat = 4;
@@ -289,300 +364,422 @@ export component PageSettings inherits Rectangle {
             }
         }
 
-        // ── 右：内容区 ──────────────────────────────
+        // ── 右侧：页头 + 设置区 ─────────────────────────
         Rectangle {
             horizontal-stretch: 1;
-            border-radius: 10px;
-            border-width: 1px;
-            border-color: Theme.line;
-            background: Theme.sur-1;
 
-            Flickable {
-                VerticalLayout {
-                    padding: 20px;
-                    spacing: 12px;
-                    alignment: start;
+            VerticalLayout {
+                padding-top: 20px;
+                padding-bottom: 20px;
+                padding-left: 24px;
+                padding-right: 24px;
+                spacing: 0;
+                alignment: start;
 
-                    // ── 基础 ──
-                    if root.current-cat == 0 : VerticalLayout {
-                        spacing: 12px;
+                Text {
+                    height: 34px;
+                    text: root.current-cat == 0 ? "基础设置"
+                        : root.current-cat == 1 ? "终端设置"
+                        : root.current-cat == 2 ? "文件设置"
+                        : root.current-cat == 3 ? "布局设置"
+                        : "快捷键";
+                    font-size: 17px;
+                    font-weight: 700;
+                    color: Theme.fg-1;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Theme.line;
+                }
+
+                Flickable {
+                    VerticalLayout {
+                        padding-top: 8px;
+                        spacing: 0;
                         alignment: start;
 
-                        Text {
-                            text: "基础";
-                            font-size: 16px;
-                            font-weight: 700;
-                            color: Theme.fg-1;
-                        }
-                        Row {
-                            label: "界面语言 / Language";
-                            desc: "切换后立即生效，整窗文案跟随";
+                        // ═══ 基础 ═══
+                        if root.current-cat == 0 : VerticalLayout {
+                            spacing: 4px;
+                            alignment: start;
 
-                            HorizontalLayout {
-                                spacing: 6px;
-                                alignment: start;
+                            FieldBlock {
+                                title: "界面语言 / Language";
+                                desc: "选择应用的显示语言";
 
-                                ChoicePill {
-                                    text: "中文";
-                                    active: !root.lang-en;
-                                    clicked => {
-                                        root.set-language("zh");
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        width: 52px;
+                                        height: 26px;
+                                        border-radius: 6px;
+                                        background: !root.lang-en ? Theme.accent : Theme.sur-2;
+
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "中文";
+                                                font-size: 11px;
+                                                color: !root.lang-en ? white : Theme.fg-2;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-language("zh");
+                                            }
+                                        }
                                     }
-                                }
-                                ChoicePill {
-                                    text: "English";
-                                    active: root.lang-en;
-                                    clicked => {
-                                        root.set-language("en");
+                                    Rectangle {
+                                        width: 64px;
+                                        height: 26px;
+                                        border-radius: 6px;
+                                        background: root.lang-en ? Theme.accent : Theme.sur-2;
+
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "English";
+                                                font-size: 11px;
+                                                color: root.lang-en ? white : Theme.fg-2;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-language("en");
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                        Row {
-                            label: "自动检查更新";
-                            TogglePill { on: root.update-check; toggled => { root.set-flag-update-check(!root.update-check); } }
-                        }
-                        Row {
-                            label: "深色主题";
-                            desc: "在深色与浅色之间切换（跟随终端配色独立保存）";
-
-                            ChoicePill {
-                                text: root.dark ? "当前：深色" : "当前：浅色";
-                                clicked => {
+                            ToggleRow {
+                                label: "深色主题";
+                                desc: "在深色与浅色之间切换，整窗配色同步";
+                                on: root.dark;
+                                toggled => {
                                     root.toggle-theme();
                                 }
                             }
-                        }
-                    }
-
-                    // ── 外观 ──
-                    if root.current-cat == 2 : VerticalLayout {
-                        spacing: 12px;
-                        alignment: start;
-
-                        Text {
-                            text: "外观";
-                            font-size: 16px;
-                            font-weight: 700;
-                            color: Theme.fg-1;
-                        }
-                        Row {
-                            label: "主题模式";
-                            desc: "整窗配色（侧栏 / 内容区 / 弹窗同步）";
-
-                            ChoicePill {
-                                text: root.dark ? "深色" : "浅色";
-                                clicked => {
-                                    root.toggle-theme();
+                            ToggleRow {
+                                label: "自动检查更新";
+                                desc: "启动时检查新版本（可随时手动检查）";
+                                on: root.update-check;
+                                toggled => {
+                                    root.set-flag-update-check(!root.update-check);
                                 }
                             }
                         }
-                    }
 
-                    // ── 终端：真控件（字体 / 字号 / 粗体 / 滚回）──
-                    if root.current-cat == 1 : VerticalLayout {
-                        spacing: 12px;
-                        alignment: start;
+                        // ═══ 终端 ═══
+                        if root.current-cat == 1 : VerticalLayout {
+                            spacing: 4px;
+                            alignment: start;
 
-                        Text {
-                            text: "终端";
-                            font-size: 16px;
-                            font-weight: 700;
-                            color: Theme.fg-1;
-                        }
-                        Row {
-                            label: "终端字体";
-                            desc: "等宽字体，随改随生效并持久化";
+                            FieldBlock {
+                                title: "终端字体";
+                                desc: "等宽字体，随改随生效并持久化";
 
-                            HorizontalLayout {
-                                spacing: 6px;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
 
-                                ChoicePill {
-                                    text: "JetBrains Mono";
-                                    active: Theme.term-font-family == "JetBrains Mono";
-                                    clicked => {
-                                        root.term-font("JetBrains Mono");
+                                    SelectBox {
+                                        width: 170px;
+                                        text: Theme.term-font-family;
+                                        clicked => {
+                                            root.term-font(Theme.term-font-family == "JetBrains Mono"
+                                                ? "Meatshell Mono" : "JetBrains Mono");
+                                        }
                                     }
-                                }
-                                ChoicePill {
-                                    text: "Meatshell Mono";
-                                    active: Theme.term-font-family == "Meatshell Mono";
-                                    clicked => {
-                                        root.term-font("Meatshell Mono");
+                                    Switch {
+                                        on: Theme.term-font-bold;
+                                        toggled => {
+                                            root.term-font-bold(!Theme.term-font-bold);
+                                        }
+                                    }
+                                    Text {
+                                        text: "粗体";
+                                        font-size: 11px;
+                                        color: Theme.fg-3;
+                                        vertical-alignment: center;
                                     }
                                 }
                             }
-                        }
-                        Row {
-                            label: "字号";
-                            desc: "8–32px，默认 13";
+                            FieldBlock {
+                                title: "字号";
+                                desc: "8–32px，默认 13";
 
-                            HorizontalLayout {
-                                spacing: 6px;
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
 
-                                for sz in [12, 13, 14, 16, 18] : ChoicePill {
-                                    text: "\{sz} ";
-                                    active: Theme.term-font-size == sz * 1px;
-                                    clicked => {
-                                        root.term-font-size(sz);
+                                    for sz in [12, 13, 14, 16, 18] : Rectangle {
+                                        width: 44px;
+                                        height: 26px;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: Theme.term-font-size == sz * 1px ? Theme.accent : Theme.line;
+                                        background: Theme.term-font-size == sz * 1px ? Theme.rail-item-active : Theme.sur-2;
+
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: sz;
+                                                font-size: 11px;
+                                                color: Theme.term-font-size == sz * 1px ? Theme.accent : Theme.fg-2;
+                                                vertical-alignment: center;
+                                                horizontal-alignment: center;
+                                            }
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.term-font-size(sz);
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                        Row {
-                            label: "粗体显示";
-                            desc: "终端文字整体加粗";
+                            FieldBlock {
+                                title: "滚回行数";
+                                desc: "终端可回看的历史行数（大容量模式内存占用更高）";
 
-                            ChoicePill {
-                                text: Theme.term-font-bold ? "开" : "关";
-                                active: Theme.term-font-bold;
-                                clicked => {
-                                    root.term-font-bold(!Theme.term-font-bold);
-                                }
-                            }
-                        }
-                        Row {
-                            label: "大容量滚回模式";
-                            TogglePill { on: root.large-scrollback; toggled => { root.set-flag-large-scrollback(!root.large-scrollback); } }
-                        }
-                        Row {
-                            label: "OSC52 剪贴板同步";
-                            desc: "允许远端程序经转义序列读写本机剪贴板";
-                            TogglePill { on: root.flag-osc; toggled => { root.set-flag-osc52(!root.flag-osc); } }
-                        }
-                        Row {
-                            label: "滚回行数";
-                            desc: "终端可回看的历史行数";
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
 
-                            HorizontalLayout {
-                                spacing: 6px;
+                                    for n in ["1000", "5000", "10000", "50000"] : Rectangle {
+                                        width: 64px;
+                                        height: 26px;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: root.scrollback == n ? Theme.accent : Theme.line;
+                                        background: root.scrollback == n ? Theme.rail-item-active : Theme.sur-2;
 
-                                for n in ["1000", "5000", "10000", "50000"] : ChoicePill {
-                                    text: n;
-                                    active: root.scrollback == n;
-                                    clicked => {
-                                        root.term-scrollback(n);
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: n;
+                                                font-size: 11px;
+                                                color: root.scrollback == n ? Theme.accent : Theme.fg-2;
+                                                vertical-alignment: center;
+                                                horizontal-alignment: center;
+                                            }
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.term-scrollback(n);
+                                            }
+                                        }
                                     }
                                 }
                             }
+                            ToggleRow {
+                                label: "大容量滚回模式";
+                                desc: "历史缓存翻倍，适合长跑日志会话";
+                                on: root.large-scrollback;
+                                toggled => {
+                                    root.set-flag-large-scrollback(!root.large-scrollback);
+                                }
+                            }
+                            ToggleRow {
+                                label: "OSC52 剪贴板同步";
+                                desc: "允许远端程序经转义序列读写本机剪贴板";
+                                on: root.flag-osc;
+                                toggled => {
+                                    root.set-flag-osc52(!root.flag-osc);
+                                }
+                            }
                         }
-                    }
 
-                    // ── 文件 / SFTP：真开关 ──
-                    if root.current-cat == 5 : VerticalLayout {
-                        spacing: 12px;
-                        alignment: start;
+                        // ═══ 文件 ═══
+                        if root.current-cat == 2 : VerticalLayout {
+                            spacing: 4px;
+                            alignment: start;
 
-                        Text {
-                            text: "文件与 SFTP";
-                            font-size: 16px;
-                            font-weight: 700;
-                            color: Theme.fg-1;
+                            ToggleRow {
+                                label: "换行转换 (LF ↔ CRLF)";
+                                desc: "上传/编辑文本时按目标系统转换换行符";
+                                on: root.convert-eol;
+                                toggled => {
+                                    root.set-flag-convert-eol(!root.convert-eol);
+                                }
+                            }
+                            ToggleRow {
+                                label: "命令输出 JSON 格式化";
+                                on: root.json-format-output;
+                                toggled => {
+                                    root.set-flag-json-output(!root.json-format-output);
+                                }
+                            }
+                            ToggleRow {
+                                label: "隐藏特殊分区";
+                                desc: "文件面板不显示 tmpfs / overlay 等虚拟分区";
+                                on: root.hide-partitions;
+                                toggled => {
+                                    root.set-flag-hide-partitions(!root.hide-partitions);
+                                }
+                            }
+                            ToggleRow {
+                                label: "下载前始终询问位置";
+                                on: root.always-ask;
+                                toggled => {
+                                    root.set-flag-always-ask(!root.always-ask);
+                                }
+                            }
+                            ToggleRow {
+                                label: "面板跟随远端 cwd";
+                                desc: "终端 cd 时 SFTP 面板自动切到同目录";
+                                on: root.follow-cd;
+                                toggled => {
+                                    root.set-flag-follow-cd(!root.follow-cd);
+                                }
+                            }
+                            ToggleRow {
+                                label: "默认折叠 SFTP 面板";
+                                on: root.collapse-sftp;
+                                toggled => {
+                                    root.set-flag-collapse-sftp(!root.collapse-sftp);
+                                }
+                            }
                         }
-                        Row {
-                            label: "换行转换 (LF ↔ CRLF)";
-                            TogglePill { on: root.convert-eol; toggled => { root.set-flag-convert-eol(!root.convert-eol); } }
-                        }
-                        Row {
-                            label: "命令输出 JSON 格式化";
-                            TogglePill { on: root.json-format-output; toggled => { root.set-flag-json-output(!root.json-format-output); } }
-                        }
-                        Row {
-                            label: "隐藏特殊分区";
-                            TogglePill { on: root.hide-partitions; toggled => { root.set-flag-hide-partitions(!root.hide-partitions); } }
-                        }
-                        Row {
-                            label: "下载前始终询问位置";
-                            TogglePill { on: root.always-ask; toggled => { root.set-flag-always-ask(!root.always-ask); } }
-                        }
-                        Row {
-                            label: "面板跟随远端 cwd";
-                            TogglePill { on: root.follow-cd; toggled => { root.set-flag-follow-cd(!root.follow-cd); } }
-                        }
-                        Row {
-                            label: "默认折叠 SFTP 面板";
-                            TogglePill { on: root.collapse-sftp; toggled => { root.set-flag-collapse-sftp(!root.collapse-sftp); } }
-                        }
-                    }
 
-                    // ── 布局：真开关 + 迁移中说明 ──
-                    if root.current-cat == 3 : VerticalLayout {
-                        spacing: 8px;
-                        alignment: start;
+                        // ═══ 布局 ═══
+                        if root.current-cat == 3 : VerticalLayout {
+                            spacing: 4px;
+                            alignment: start;
 
-                        Text {
-                            text: "布局";
-                            font-size: 16px;
-                            font-weight: 700;
-                            color: Theme.fg-1;
+                            ToggleRow {
+                                label: "显示底部命令栏";
+                                on: root.show-cmd-bar;
+                                toggled => {
+                                    root.set-flag-show-cmd-bar(!root.show-cmd-bar);
+                                }
+                            }
+                            ToggleRow {
+                                label: "指令集作侧栏展示";
+                                on: root.quick-as-sidebar;
+                                toggled => {
+                                    root.set-flag-quick-as-sidebar(!root.quick-as-sidebar);
+                                }
+                            }
+                            ToggleRow {
+                                label: "默认折叠会话侧栏";
+                                on: root.collapse-sidebar;
+                                toggled => {
+                                    root.set-flag-collapse-sidebar(!root.collapse-sidebar);
+                                }
+                            }
+                            ToggleRow {
+                                label: "会话列表作为侧栏";
+                                desc: "旧布局机制（旧外壳删除前可用）";
+                                on: root.welcome-sidebar;
+                                toggled => {
+                                    root.set-flag-welcome-sidebar(!root.welcome-sidebar);
+                                }
+                            }
+                            ToggleRow {
+                                label: "同步上传";
+                                desc: "输入会话同步到远端（WebDAV 表单下一轮迁入）";
+                                on: root.sync-upload;
+                                toggled => {
+                                    root.set-flag-sync-upload(!root.sync-upload);
+                                }
+                            }
                         }
-                        Row {
-                            label: "显示底部命令栏";
-                            TogglePill { on: root.show-cmd-bar; toggled => { root.set-flag-show-cmd-bar(!root.show-cmd-bar); } }
-                        }
-                        Row {
-                            label: "指令集作侧栏展示";
-                            TogglePill { on: root.quick-as-sidebar; toggled => { root.set-flag-quick-as-sidebar(!root.quick-as-sidebar); } }
-                        }
-                        Row {
-                            label: "默认折叠会话侧栏";
-                            TogglePill { on: root.collapse-sidebar; toggled => { root.set-flag-collapse-sidebar(!root.collapse-sidebar); } }
-                        }
-                        Row {
-                            label: "会话列表作为侧栏";
-                            desc: "旧布局机制（删除前可用）";
-                            TogglePill { on: root.welcome-sidebar; toggled => { root.set-flag-welcome-sidebar(!root.welcome-sidebar); } }
-                        }
-                        Text {
-                            text: "停靠边 / 面板宽度等在旧外壳删除后定稿搬入。";
-                            font-size: 12px;
-                            color: Theme.fg-3;
-                            wrap: word-wrap;
-                        }
-                    }
 
-                    // ── 快捷键：与 ShortcutsDialog 同一份数据 ──
-                    if root.current-cat == 4 : VerticalLayout {
-                        spacing: 5px;
-                        alignment: start;
+                        // ═══ 快捷键 ═══
+                        if root.current-cat == 4 : VerticalLayout {
+                            spacing: 5px;
+                            padding-top: 12px;
+                            alignment: start;
 
-                        Text {
-                            text: "快捷键";
-                            font-size: 16px;
-                            font-weight: 700;
-                            color: Theme.fg-1;
+                            Text {
+                                text: "标签页";
+                                font-size: 10px;
+                                color: Theme.fg-3;
+                            }
+                            KeyRow {
+                                keys: "Ctrl+Tab";
+                                desc: "下一个标签页";
+                            }
+                            KeyRow {
+                                keys: "Ctrl+Shift+Tab";
+                                desc: "上一个标签页";
+                            }
+                            Text {
+                                text: "终端";
+                                font-size: 10px;
+                                color: Theme.fg-3;
+                            }
+                            KeyRow {
+                                keys: "Ctrl+Shift+C";
+                                desc: "复制选中内容";
+                            }
+                            KeyRow {
+                                keys: "Ctrl+V";
+                                desc: "粘贴";
+                            }
+                            KeyRow {
+                                keys: "Ctrl+F";
+                                desc: "查找";
+                            }
+                            KeyRow {
+                                keys: "Ctrl+Shift+R";
+                                desc: "跳到命令历史搜索";
+                            }
+                            KeyRow {
+                                keys: "鼠标拖动";
+                                desc: "选择文本";
+                            }
+                            KeyRow {
+                                keys: "滚轮 / 滚动条";
+                                desc: "滚动历史";
+                            }
+                            Text {
+                                text: "命令输入框";
+                                font-size: 10px;
+                                color: Theme.fg-3;
+                            }
+                            KeyRow {
+                                keys: "Enter";
+                                desc: "发送命令";
+                            }
+                            KeyRow {
+                                keys: "↑ / ↓";
+                                desc: "上一条 / 下一条历史";
+                            }
+                            KeyRow {
+                                keys: "Ctrl+R";
+                                desc: "搜索命令历史（↑↓ 选择，回车执行，Esc 关闭）";
+                            }
+                            KeyRow {
+                                keys: "Esc";
+                                desc: "关闭历史 / 聚焦终端";
+                            }
+                            KeyRow {
+                                keys: "Ctrl+A";
+                                desc: "移到行首";
+                            }
+                            KeyRow {
+                                keys: "Ctrl+E";
+                                desc: "移到行尾";
+                            }
+                            KeyRow {
+                                keys: "Ctrl+K";
+                                desc: "删除到行尾";
+                            }
+                            KeyRow {
+                                keys: "Ctrl+U";
+                                desc: "删除到行首";
+                            }
                         }
-                        Text {
-                            text: "标签页";
-                            font-size: 10px;
-                            color: Theme.fg-3;
-                        }
-                        KeyRow { keys: "Ctrl+Tab"; desc: "下一个标签页"; }
-                        KeyRow { keys: "Ctrl+Shift+Tab"; desc: "上一个标签页"; }
-                        Text {
-                            text: "终端";
-                            font-size: 10px;
-                            color: Theme.fg-3;
-                        }
-                        KeyRow { keys: "Ctrl+Shift+C"; desc: "复制选中内容"; }
-                        KeyRow { keys: "Ctrl+V"; desc: "粘贴"; }
-                        KeyRow { keys: "Ctrl+F"; desc: "查找"; }
-                        KeyRow { keys: "Ctrl+Shift+R"; desc: "跳到命令历史搜索"; }
-                        KeyRow { keys: "鼠标拖动"; desc: "选择文本"; }
-                        KeyRow { keys: "滚轮 / 滚动条"; desc: "滚动历史"; }
-                        Text {
-                            text: "命令输入框";
-                            font-size: 10px;
-                            color: Theme.fg-3;
-                        }
-                        KeyRow { keys: "Enter"; desc: "发送命令"; }
-                        KeyRow { keys: "↑ / ↓"; desc: "上一条 / 下一条历史"; }
-                        KeyRow { keys: "Ctrl+R"; desc: "搜索命令历史（↑↓ 选择，回车执行，Esc 关闭）"; }
-                        KeyRow { keys: "Esc"; desc: "关闭历史 / 聚焦终端"; }
-                        KeyRow { keys: "Ctrl+A"; desc: "移到行首"; }
-                        KeyRow { keys: "Ctrl+E"; desc: "移到行尾"; }
-                        KeyRow { keys: "Ctrl+K"; desc: "删除到行尾"; }
-                        KeyRow { keys: "Ctrl+U"; desc: "删除到行首"; }
                     }
                 }
             }
