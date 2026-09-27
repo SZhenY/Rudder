@@ -440,7 +440,7 @@ export component PageSettings inherits Rectangle {
 
                             FieldBlock {
                                 title: root.lang-en ? "Language" : "界面语言";
-                                desc: "选择应用的显示语言";
+                                desc: root.lang-en ? "Applies immediately across the window" : "选择应用的显示语言";
 
                                 HorizontalLayout {
                                     spacing: 6px;
@@ -492,7 +492,7 @@ export component PageSettings inherits Rectangle {
                             }
                             ToggleRow {
                                 label: "深色主题";
-                                desc: "在深色与浅色之间切换，整窗配色同步";
+                                desc: root.lang-en ? "Toggle between dark and light, whole window" : "在深色与浅色之间切换，整窗配色同步";
                                 on: root.dark;
                                 toggled => {
                                     root.toggle-theme();
@@ -500,7 +500,7 @@ export component PageSettings inherits Rectangle {
                             }
                             FieldBlock {
                                 title: root.lang-en ? "UI Font" : "界面字体";
-                                desc: "整窗 UI 字体；外部字体经「导入」加入清单（终端字体在终端分组）";
+                                desc: root.lang-en ? "Window-wide UI font; import external fonts into the list" : "整窗 UI 字体；外部字体经「导入」加入清单（终端字体在终端分组）";
 
                                 VerticalLayout {
                                     spacing: 4px;
@@ -691,7 +691,7 @@ Rectangle {
                             }
                             FieldBlock {
                                 title: root.lang-en ? "Wallpaper" : "壁纸";
-                                desc: "面板磨砂取自当前壁纸；导入的自定义壁纸也会进入清单";
+                                desc: root.lang-en ? "Panels frost over the current wallpaper" : "面板磨砂取自当前壁纸；导入的自定义壁纸也会进入清单";
 
                                 HorizontalLayout {
                                     alignment: start;
@@ -778,7 +778,7 @@ Rectangle {
                             }
                             ToggleRow {
                                 label: "自动检查更新";
-                                desc: "启动时检查新版本（可随时手动检查）";
+                                desc: root.lang-en ? "Check on startup (manual check anytime)" : "启动时检查新版本（可随时手动检查）";
                                 on: root.update-check;
                                 toggled => {
                                     root.set-flag-update-check(!root.update-check);
@@ -828,7 +828,7 @@ Rectangle {
 
                             FieldBlock {
                                 title: root.lang-en ? "Terminal Font" : "终端字体";
-                                desc: "已安装的等宽字体，随改随生效并持久化";
+                                desc: root.lang-en ? "Installed monospace families, applies instantly" : "已安装的等宽字体，随改随生效并持久化";
 
                                 VerticalLayout {
                                     spacing: 4px;
@@ -905,7 +905,7 @@ Rectangle {
                             }
                             FieldBlock {
                                 title: root.lang-en ? "Font Size" : "字号";
-                                desc: "8–32px，默认 13";
+                                desc: root.lang-en ? "8–32px, default 13" : "8–32px，默认 13";
 
                                 HorizontalLayout {
                                     spacing: 6px;
@@ -940,7 +940,7 @@ Rectangle {
                             }
                             FieldBlock {
                                 title: root.lang-en ? "Scrollback Lines" : "滚回行数";
-                                desc: "终端可回看的历史行数（大容量模式内存占用更高）";
+                                desc: root.lang-en ? "History lines kept in the terminal" : "终端可回看的历史行数（大容量模式内存占用更高）";
 
                                 HorizontalLayout {
                                     spacing: 6px;
@@ -997,7 +997,7 @@ Rectangle {
                             }
                             ToggleRow {
                                 label: "大容量滚回模式";
-                                desc: "历史缓存翻倍，适合长跑日志会话";
+                                desc: root.lang-en ? "Double the history buffer for long sessions" : "历史缓存翻倍，适合长跑日志会话";
                                 on: root.large-scrollback;
                                 toggled => {
                                     root.set-flag-large-scrollback(!root.large-scrollback);
@@ -1005,7 +1005,7 @@ Rectangle {
                             }
                             ToggleRow {
                                 label: "OSC52 剪贴板同步";
-                                desc: "允许远端程序经转义序列读写本机剪贴板";
+                                desc: root.lang-en ? "Let remote programs read/write the local clipboard" : "允许远端程序经转义序列读写本机剪贴板";
                                 on: root.flag-osc;
                                 toggled => {
                                     root.set-flag-osc52(!root.flag-osc);
@@ -1020,7 +1020,7 @@ Rectangle {
 
                             ToggleRow {
                                 label: "换行转换 (LF ↔ CRLF)";
-                                desc: "上传/编辑文本时按目标系统转换换行符";
+                                desc: root.lang-en ? "Convert EOL when uploading/editing text" : "上传/编辑文本时按目标系统转换换行符";
                                 on: root.convert-eol;
                                 toggled => {
                                     root.set-flag-convert-eol(!root.convert-eol);
@@ -1035,7 +1035,7 @@ Rectangle {
                             }
                             ToggleRow {
                                 label: "隐藏特殊分区";
-                                desc: "文件面板不显示 tmpfs / overlay 等虚拟分区";
+                                desc: root.lang-en ? "Hide tmpfs / overlay virtual partitions" : "文件面板不显示 tmpfs / overlay 等虚拟分区";
                                 on: root.hide-partitions;
                                 toggled => {
                                     root.set-flag-hide-partitions(!root.hide-partitions);
@@ -1050,7 +1050,7 @@ Rectangle {
                             }
                             ToggleRow {
                                 label: "面板跟随远端 cwd";
-                                desc: "终端 cd 时 SFTP 面板自动切到同目录";
+                                desc: root.lang-en ? "SFTP panel follows terminal cd" : "终端 cd 时 SFTP 面板自动切到同目录";
                                 on: root.follow-cd;
                                 toggled => {
                                     root.set-flag-follow-cd(!root.follow-cd);
@@ -1105,11 +1105,11 @@ Rectangle {
                             }
                             KeyRow {
                                 keys: "Ctrl+Tab";
-                                desc: "下一个标签页";
+                                desc: root.lang-en ? "Next tab" : "下一个标签页";
                             }
                             KeyRow {
                                 keys: "Ctrl+Shift+Tab";
-                                desc: "上一个标签页";
+                                desc: root.lang-en ? "Previous tab" : "上一个标签页";
                             }
                             Text {
                                 text: "终端";
@@ -1118,27 +1118,27 @@ Rectangle {
                             }
                             KeyRow {
                                 keys: "Ctrl+Shift+C";
-                                desc: "复制选中内容";
+                                desc: root.lang-en ? "Copy selection" : "复制选中内容";
                             }
                             KeyRow {
                                 keys: "Ctrl+V";
-                                desc: "粘贴";
+                                desc: root.lang-en ? "Paste" : "粘贴";
                             }
                             KeyRow {
                                 keys: "Ctrl+F";
-                                desc: "查找";
+                                desc: root.lang-en ? "Find in terminal" : "查找";
                             }
                             KeyRow {
                                 keys: "Ctrl+Shift+R";
-                                desc: "跳到命令历史搜索";
+                                desc: root.lang-en ? "Jump to history search" : "跳到命令历史搜索";
                             }
                             KeyRow {
                                 keys: "鼠标拖动";
-                                desc: "选择文本";
+                                desc: root.lang-en ? "Select text" : "选择文本";
                             }
                             KeyRow {
                                 keys: "滚轮 / 滚动条";
-                                desc: "滚动历史";
+                                desc: root.lang-en ? "Scroll history" : "滚动历史";
                             }
                             Text {
                                 text: root.lang-en ? "Command Box" : "命令输入框";
@@ -1147,35 +1147,35 @@ Rectangle {
                             }
                             KeyRow {
                                 keys: "Enter";
-                                desc: "发送命令";
+                                desc: root.lang-en ? "Send command" : "发送命令";
                             }
                             KeyRow {
                                 keys: "↑ / ↓";
-                                desc: "上一条 / 下一条历史";
+                                desc: root.lang-en ? "Previous / next in history" : "上一条 / 下一条历史";
                             }
                             KeyRow {
                                 keys: "Ctrl+R";
-                                desc: "搜索命令历史（↑↓ 选择，回车执行，Esc 关闭）";
+                                desc: root.lang-en ? "Search history (↑↓ select, Enter run, Esc close)" : "搜索命令历史（↑↓ 选择，回车执行，Esc 关闭）";
                             }
                             KeyRow {
                                 keys: "Esc";
-                                desc: "关闭历史 / 聚焦终端";
+                                desc: root.lang-en ? "Close history / focus terminal" : "关闭历史 / 聚焦终端";
                             }
                             KeyRow {
                                 keys: "Ctrl+A";
-                                desc: "移到行首";
+                                desc: root.lang-en ? "Move to start of line" : "移到行首";
                             }
                             KeyRow {
                                 keys: "Ctrl+E";
-                                desc: "移到行尾";
+                                desc: root.lang-en ? "Move to end of line" : "移到行尾";
                             }
                             KeyRow {
                                 keys: "Ctrl+K";
-                                desc: "删除到行尾";
+                                desc: root.lang-en ? "Delete to end of line" : "删除到行尾";
                             }
                             KeyRow {
                                 keys: "Ctrl+U";
-                                desc: "删除到行首";
+                                desc: root.lang-en ? "Delete to start of line" : "删除到行首";
                             }
                         }
 
@@ -1520,7 +1520,7 @@ Rectangle {
                                         color: Theme.fg-1;
                                     }
                                     Text {
-                                        text: "本应用依赖以下开源库（运行时由 Rust 注入清单）";
+                                        text: root.lang-en ? "Open-source libraries (injected by Rust at runtime)" : "本应用依赖以下开源库（运行时由 Rust 注入清单）";
                                         font-size: 11px;
                                         color: Theme.fg-3;
                                     }
