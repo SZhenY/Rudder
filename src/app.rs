@@ -773,6 +773,32 @@ pub fn run() -> Result<()> {
                 }
             }
             if let Some(w) = weak.upgrade() {
+                // 各分屏的标签条渲染的是 `tabs_model` 的**快照**（`app.slint` 的
+                // `pane.tabs`）—— 只改顶层模型不会让它们跟着换语言，所以按 pane 再传播
+                // 一遍（与 `session_event.rs` 更新连接状态时用的是同一套做法）。
+                let panes = w.get_panes();
+                if let Some(pm) = panes
+                    .as_any()
+                    .downcast_ref::<VecModel<crate::ui::PaneInfo>>()
+                {
+                    for pi in 0..pm.row_count() {
+                        let Some(pane) = pm.row_data(pi) else { continue };
+                        let Some(tm) =
+                            pane.tabs.as_any().downcast_ref::<VecModel<crate::ui::TabInfo>>()
+                        else {
+                            continue;
+                        };
+                        for ti in 0..tm.row_count() {
+                            if let Some(mut row) = tm.row_data(ti)
+                                && row.id.as_str() == "welcome"
+                            {
+                                row.title_len = tab_title_len(t("新标签页", "New tab"));
+                                row.title = t("新标签页", "New tab").into();
+                                tm.set_row_data(ti, row);
+                            }
+                        }
+                    }
+                }
                 w.set_lang_en(crate::i18n::is_en());
                 w.invoke_refresh_sidebar();
             }

@@ -56,6 +56,13 @@ pub(super) fn sync_settings_theme(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_accent_overridden(t.get_accent_overridden());
     sw.set_accent_seed(t.get_accent_seed());
     sw.set_panel_alpha(t.get_panel_alpha());
+    // 设置页里的「终端字体预览」直接读**这个窗口自己的** `Theme` 实例（Slint 的 global
+    // 每个窗口一份）—— 不把这三项抄过来，预览永远显示默认的 JetBrains Mono / 13px，
+    // 用户在设置页里换字体时预览纹丝不动。
+    let swt = sw.global::<Theme>();
+    swt.set_term_font_family(t.get_term_font_family());
+    swt.set_term_font_size(t.get_term_font_size());
+    swt.set_term_font_bold(t.get_term_font_bold());
 }
 
 /// 只留一个原生关闭按钮：隐藏 macOS 的「最小化(黄)」与「缩放(绿)」，保留「关闭(红)」。

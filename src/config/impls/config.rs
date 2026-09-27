@@ -1661,11 +1661,14 @@ impl ConfigStore {
 
     /// Terminal font size in px (falls back to 13 when unset).
     pub fn font_size(&self) -> u32 {
-        if self.cache.terminal.font_size == 0 {
+        // 读路径同样夹取：配置是用户可手改的，`"fontSize": 9999` 会直接进
+        // `Theme.term-font-size` 并按它排版（写路径一直夹在 8..=32，只有 setter 被测试覆盖）。
+        let size = if self.cache.terminal.font_size == 0 {
             13
         } else {
             self.cache.terminal.font_size
-        }
+        };
+        size.clamp(8, 32)
     }
 
     pub fn set_font_size(&mut self, size: u32) {
@@ -2114,11 +2117,14 @@ impl ConfigStore {
         self.cache.layout.sidebar_height = v;
     }
     pub fn sidebar_dock(&self) -> String {
-        let d = self.cache.layout.sidebar_dock.trim();
-        if d.is_empty() {
-            "left".into()
-        } else {
-            d.to_string()
+        // 白名单，与 `quick_panel_dock` 口径一致：配置是用户可手改的，
+        // `"sidebarDock": "garbage"` 以前会一路传进 Slint 的停靠判定 ——
+        // `left/right/top/bottom` 的分支表全不命中，面板会被算到窗口外（布局静默退化）。
+        match self.cache.layout.sidebar_dock.trim() {
+            "right" => "right".into(),
+            "top" => "top".into(),
+            "bottom" => "bottom".into(),
+            _ => "left".into(),
         }
     }
     pub fn set_sidebar_dock(&mut self, v: String) {
@@ -2144,11 +2150,12 @@ impl ConfigStore {
         self.cache.layout.welcome_sidebar_width = v;
     }
     pub fn welcome_sidebar_dock(&self) -> String {
-        let d = self.cache.layout.welcome_sidebar_dock.trim();
-        if d.is_empty() {
-            "left".into()
-        } else {
-            d.to_string()
+        // 白名单，口径与 `sidebar_dock` 一致（见那里的说明）。
+        match self.cache.layout.welcome_sidebar_dock.trim() {
+            "right" => "right".into(),
+            "top" => "top".into(),
+            "bottom" => "bottom".into(),
+            _ => "left".into(),
         }
     }
     pub fn set_welcome_sidebar_dock(&mut self, v: String) {
