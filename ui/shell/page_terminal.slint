@@ -30,6 +30,8 @@ component MiniBtn inherits Rectangle {
             font-size: 11px;
             color: root.primary ? #ffffff : Theme.fg-1;
             vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 0;
         }
     }
 
@@ -61,6 +63,7 @@ component SubCard inherits Rectangle {
             font-size: 13px;
             font-weight: 600;
             color: Theme.fg-1;
+            overflow: elide;
         }
         Text {
             text: root.desc;
@@ -166,7 +169,7 @@ export component PageTerminal inherits Rectangle {
                                 spacing: 6px;
 
                                 MiniBtn {
-                                    text: root.lang-en ? "Pick Host & Create" : "选择主机并创建会话";
+                                    text: root.lang-en ? "Pick a Host" : "选择主机并创建会话";
                                     primary: true;
                                     clicked => {
                                         root.connect-session("");
