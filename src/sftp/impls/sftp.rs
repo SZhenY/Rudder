@@ -531,44 +531,12 @@ async fn run_sftp(
             SftpCommand::Close => break,
 
             SftpCommand::ListDir(path) => {
-                let _ = events.send(SessionEvent::SftpStatus(format!(
-                    "{} {}...",
-                    t("加载", "Loading"),
-                    path
-                )));
-                match list_dir_impl(&sftp, &path).await {
-                    Ok(entries) => {
-                        let _ = events.send(SessionEvent::SftpEntries {
-                            path: path.clone(),
-                            entries,
-                        });
-                        let _ = events.send(SessionEvent::SftpStatus(path));
-                    }
-                    Err(e) => {
-                        let _ = events.send(SessionEvent::SftpError(list_error_msg(&path, &e)));
-                    }
-                }
+                emit_panel_dir(&sftp, &events, &path).await;
             }
 
             SftpCommand::RefreshDir(path) => {
-                // File panel — same as ListDir.
-                let _ = events.send(SessionEvent::SftpStatus(format!(
-                    "{} {}...",
-                    t("加载", "Loading"),
-                    path
-                )));
-                match list_dir_impl(&sftp, &path).await {
-                    Ok(entries) => {
-                        let _ = events.send(SessionEvent::SftpEntries {
-                            path: path.clone(),
-                            entries,
-                        });
-                        let _ = events.send(SessionEvent::SftpStatus(path.clone()));
-                    }
-                    Err(e) => {
-                        let _ = events.send(SessionEvent::SftpError(list_error_msg(&path, &e)));
-                    }
-                }
+                // File panel — same as ListDir（共用 emit_panel_dir）。
+                emit_panel_dir(&sftp, &events, &path).await;
                 // Tree — re-fetch every currently-expanded directory so deleted /
                 // created folders sync without a reconnect (#189). Stale entries
                 // whose parent no longer lists them are simply never walked by
@@ -1862,6 +1830,32 @@ fn list_error_msg(path: &str, e: &impl std::fmt::Display) -> String {
         format!("{}: {}", t("权限不足,无法访问", "Permission denied"), path)
     } else {
         format!("{} {}: {}", t("无法访问", "Cannot open"), path, raw)
+    }
+}
+
+/// List `path` for the file panel: emit the "Loading…" status, then either the
+/// entries + the final status, or a friendly error message.
+///
+/// `SftpCommand::ListDir`（点开目录）与 `SftpCommand::RefreshDir`（手动刷新）在面板
+/// 这一段逐字相同 —— 收在一处，免得两边平行维护。唯一的差别是 `path` 的所有权：
+/// 刷新那条之后还要拿 `path` 去重建目录树，所以调用处各自 clone 即可。
+async fn emit_panel_dir(sftp: &SftpSession, events: &UnboundedSender<SessionEvent>, path: &str) {
+    let _ = events.send(SessionEvent::SftpStatus(format!(
+        "{} {}...",
+        t("加载", "Loading"),
+        path
+    )));
+    match list_dir_impl(sftp, path).await {
+        Ok(entries) => {
+            let _ = events.send(SessionEvent::SftpEntries {
+                path: path.to_string(),
+                entries,
+            });
+            let _ = events.send(SessionEvent::SftpStatus(path.to_string()));
+        }
+        Err(e) => {
+            let _ = events.send(SessionEvent::SftpError(list_error_msg(path, &e)));
+        }
     }
 }
 
