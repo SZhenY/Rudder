@@ -2067,7 +2067,8 @@ export component AppWindow inherits Window {
             PageHosts {
                 width: 100%;
                 height: 100%;
-                sessions: root.sessions;
+                lang-en: root.lang-en;
+              sessions: root.sessions;
                 connect-session(id) => {
                     // 点会话要先切到终端页，才能看到连接过程；再交给原有链路去发起连接。
                     root.shell-page = 1;
