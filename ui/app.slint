@@ -903,6 +903,9 @@ export component AppWindow inherits Window {
 
     VerticalLayout {
         spacing: 0;
+        // 新外壳：旧内容（标签栏 / 终端 / 面板）整体给左侧栏让位，
+        // 不再与左侧栏重叠。
+        padding-left: root.rail-w;
 
         // macOS immersive bar: a strip under the native traffic-light buttons.
         // Frosted like the other panels (bg-panel) so it matches in both themes —
@@ -1386,8 +1389,12 @@ export component AppWindow inherits Window {
                 spacing: 0;
                 // (Collapsed resource panel now reserves its own ToolStrip slot in
                 // `rest`, so the tab strip no longer needs a spacer for it.)
+                // 旧标签栏：参考设计里终端页的标签栏是新样式（右侧带 + / 快捷指令 /
+                // 分屏 / 全屏），由 A-2.4 重做。这里先整条隐藏，避免新旧两套标签栏并存。
+                // 切换标签仍可用 Ctrl+Tab / Ctrl+Shift+Tab 快捷键。
                 TabBar {
-                    visible: !root.zen-mode;
+                    // 隐藏（A-2.4 会换成新样式的标签栏）；原绑定是 `!root.zen-mode`
+                    visible: false;
                     horizontal-stretch: 1;
                     // Reserve room for the top-right toolbar icons that sit over
                     // this row so tabs don't slide underneath them (#122).
