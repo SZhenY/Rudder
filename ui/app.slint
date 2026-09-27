@@ -2042,6 +2042,7 @@ export component AppWindow inherits Window {
             top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
           user-name: root.user-name;
           user-initial: root.user-initial;
+          lang-en: root.lang-en;
             current-page: root.shell-page;
             // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
             // 那个赋值传不回来，收起/展开看起来就是"点了没反应"。

@@ -71,6 +71,7 @@ export component Rail inherits Rectangle {
     in property <string> user-name: "";
     // 头像圆点里的首字母（Slint 字符串没有 substring，由 Rust 算好传入）
     in property <string> user-initial: "";
+    in property <bool> lang-en: false;
     callback page-changed(int);
     callback search-requested();
 
@@ -119,7 +120,7 @@ export component Rail inherits Rectangle {
                             visible: search-input.text == "";
                             width: 100%;
                             height: 100%;
-                            text: "搜索主机、设置…";
+                            text: root.lang-en ? "Search hosts, settings…" : "搜索主机、设置…";
                             font-size: 12px;
                             color: Theme.fg-3;
                             vertical-alignment: center;
@@ -190,7 +191,7 @@ export component Rail inherits Rectangle {
 
         RailButton {
             glyph: "\u{E875}"; // dns
-            label: "主机";
+            label: root.lang-en ? "Hosts" : "主机";
             active: root.current-page == 0;
             collapsed: root.collapsed;
             clicked => {
@@ -199,7 +200,7 @@ export component Rail inherits Rectangle {
         }
         RailButton {
             glyph: "\u{EB8E}"; // terminal
-            label: "终端";
+            label: root.lang-en ? "Terminal" : "终端";
             active: root.current-page == 1;
             collapsed: root.collapsed;
             clicked => {
@@ -208,7 +209,7 @@ export component Rail inherits Rectangle {
         }
         RailButton {
             glyph: "\u{E86F}"; // code
-            label: "指令集";
+            label: root.lang-en ? "Snippets" : "指令集";
             active: root.current-page == 2;
             collapsed: root.collapsed;
             clicked => {
@@ -226,7 +227,7 @@ export component Rail inherits Rectangle {
         }
         RailButton {
             glyph: "\u{E873}"; // description
-            label: "笔记随笔";
+            label: root.lang-en ? "Notes" : "笔记随笔";
             active: root.current-page == 5;
             collapsed: root.collapsed;
             clicked => {
@@ -235,7 +236,7 @@ export component Rail inherits Rectangle {
         }
         RailButton {
             glyph: "\u{E65F}"; // auto_awesome
-            label: "AI 助手";
+            label: root.lang-en ? "AI Assistant" : "AI 助手";
             active: root.current-page == 6;
             collapsed: root.collapsed;
             clicked => {
@@ -255,7 +256,7 @@ export component Rail inherits Rectangle {
 
         RailButton {
             glyph: "\u{E8B8}"; // settings
-            label: "设置";
+            label: root.lang-en ? "Settings" : "设置";
             active: root.current-page == 4;
             collapsed: root.collapsed;
             clicked => {
@@ -294,13 +295,13 @@ export component Rail inherits Rectangle {
                 spacing: 1px;
 
                 Text {
-                    text: root.user-name == "" ? "本地用户" : root.user-name;
+                    text: root.user-name == "" ? (root.lang-en ? "Local user" : "本地用户") : root.user-name;
                     font-size: 12px;
                     color: Theme.fg-1;
                     overflow: elide;
                 }
                 Text {
-                    text: "本地账户";
+                    text: root.lang-en ? "Local account" : "本地账户";
                     font-size: 10px;
                     color: Theme.fg-3;
                 }
