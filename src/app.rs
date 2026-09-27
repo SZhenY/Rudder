@@ -1146,14 +1146,14 @@ pub fn run() -> Result<()> {
                                 if is_wayland_window(win.window()) {
                                     ev_pending_window_size_restore.set(None);
                                     ev_window_size_tracking_ready.set(true);
-                                    tracing::info!(
+                                    tracing::debug!(
                                         "[WINDOW_SIZE] skipped persisted-size restore on Wayland"
                                     );
                                 } else if let Some(preferred) = ev_pending_window_size_restore.get()
                                     && let Some(target) =
                                         clamp_window_size_to_monitor(win.window(), Some(preferred))
                                 {
-                                    tracing::info!(
+                                    tracing::debug!(
                                         "[WINDOW_SIZE] focus retry saved={:.0}x{:.0} \
                                              target={:.0}x{:.0}",
                                         preferred.0,
@@ -1200,7 +1200,7 @@ pub fn run() -> Result<()> {
                                 // never chase the advisory saved size (#286).
                                 ev_pending_window_size_restore.set(None);
                                 ev_window_size_tracking_ready.set(true);
-                                tracing::info!(
+                                tracing::debug!(
                                     "[WINDOW_SIZE] accepted compositor size {}x{} on Wayland",
                                     size.width,
                                     size.height
@@ -1214,7 +1214,7 @@ pub fn run() -> Result<()> {
                                     if let Some(target) =
                                         clamp_window_size_to_monitor(win.window(), Some(preferred))
                                     {
-                                        tracing::info!(
+                                        tracing::debug!(
                                             "[WINDOW_SIZE] restore requested saved={:.0}x{:.0} \
                                          target={:.0}x{:.0} actual={:.0}x{:.0} scale={:.2}",
                                             preferred.0,
@@ -1230,7 +1230,7 @@ pub fn run() -> Result<()> {
                                         {
                                             ev_pending_window_size_restore.set(None);
                                             ev_window_size_tracking_ready.set(true);
-                                            tracing::info!(
+                                            tracing::debug!(
                                                 "[WINDOW_SIZE] restore settled at {:.0}x{:.0}",
                                                 actual.0,
                                                 actual.1

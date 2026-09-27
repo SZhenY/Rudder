@@ -1279,10 +1279,10 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
         window.on_tab_rename_request(move |tab_id: SharedString| {
             let tab_id = tab_id.to_string();
             if tab_id.is_empty() || tab_id == "welcome" {
-                tracing::info!(target: "rudder_rename", "rename-request: rejected tab_id={:?}", tab_id);
+                tracing::debug!(target: "rudder_rename", "rename-request: rejected tab_id={:?}", tab_id);
                 return;
             }
-            tracing::info!(target: "rudder_rename", "rename-request: tab_id={:?}, current_title={:?}", tab_id, "...");
+            tracing::debug!(target: "rudder_rename", "rename-request: tab_id={:?}, current_title={:?}", tab_id, "...");
             let title = (0..tabs_model.row_count())
                 .find_map(|i| {
                     let row = tabs_model.row_data(i)?;
@@ -1311,7 +1311,7 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
         let tab_titles = tab_titles.clone();
         let store = store.clone();
         window.on_rename_tab(move |tab_id: SharedString, name: SharedString| {
-            tracing::info!(target: "rudder_rename", "rename-tab invoked: tab_id={:?}, name={:?}", tab_id.as_str(), name.as_str());
+            tracing::debug!(target: "rudder_rename", "rename-tab invoked: tab_id={:?}, name={:?}", tab_id.as_str(), name.as_str());
             if let Some(w) = weak.upgrade() {
                 w.set_tab_rename_open(false);
             }
@@ -1349,7 +1349,7 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                     row.title = title.clone().into();
                     tabs_model.set_row_data(i, row);
                     matched = true;
-                    tracing::info!(target: "rudder_rename", "rename-tab: matched row {} for tab_id={:?}, new_title={:?}", i, tab_id, title);
+                    tracing::debug!(target: "rudder_rename", "rename-tab: matched row {} for tab_id={:?}, new_title={:?}", i, tab_id, title);
                     break;
                 }
             }

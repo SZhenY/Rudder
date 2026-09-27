@@ -1,6 +1,3 @@
-// Wired into the UI incrementally (M2+); allow unused items until then.
-#![allow(dead_code)]
-
 //! Split-pane layout tree (v0.5, IDEA-style nested splits).
 //!
 //! Slint can't render recursive components, so the nestable split layout lives
@@ -143,6 +140,11 @@ impl Layout {
 
     /// Move `tab_id` into existing leaf `to` (e.g. dropped onto another pane's tab
     /// strip). No-op if it's already there. Collapses an emptied source pane.
+    ///
+    /// 已经有测试覆盖，但 UI 侧还没接线（标签拖到别的分屏）—— 与 `vt_adapter` /
+    /// `ssh` 里那两个 helper 同一处理方式：只在测试构建里需要，显式标出来而不是
+    /// 让整个模块 `#![allow(dead_code)]` 把所有死代码一起遮住。
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn move_tab(&mut self, tab_id: &str, to: u64) {
         let from = match self.leaf_of_tab(tab_id) {
             Some(f) => f,

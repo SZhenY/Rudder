@@ -32,7 +32,7 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use super::transfer::{DownloadConflict, SftpCommand, SftpHandle};
 use crate::config::{AuthMethod, Session};
 use crate::i18n::t;
-use crate::ssh::{RemoteEntry, RemoteTreeNode, SessionEvent, format_mtime, format_size};
+use crate::ssh::{RemoteEntry, RemoteTreeNode, SessionEvent};
 
 impl SftpHandle {
     pub fn list_dir(&self, path: String) {
@@ -2538,13 +2538,6 @@ impl Handler for SftpClientHandler {
         Ok(())
     }
 }
-
-// Keep format helpers and RemoteTreeNode imports live.
-const _: fn() = || {
-    let _ = format_size(0);
-    let _ = format_mtime(0);
-    let _: RemoteTreeNode;
-};
 
 #[cfg(test)]
 mod sanitize_tests {
