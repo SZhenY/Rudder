@@ -439,7 +439,7 @@ export component PageSettings inherits Rectangle {
                             alignment: start;
 
                             FieldBlock {
-                                title: "界面语言 / Language";
+                                title: root.lang-en ? "Language" : "界面语言";
                                 desc: "选择应用的显示语言";
 
                                 HorizontalLayout {
@@ -499,7 +499,7 @@ export component PageSettings inherits Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "界面字体";
+                                title: root.lang-en ? "UI Font" : "界面字体";
                                 desc: "整窗 UI 字体；外部字体经「导入」加入清单（终端字体在终端分组）";
 
                                 VerticalLayout {
@@ -575,7 +575,7 @@ Rectangle {
                                                         vertical-alignment: center;
                                                     }
                                                     Text {
-                                                        text: "导入外部字体…";
+                                                        text: root.lang-en ? "Import External Font…" : "导入外部字体…";
                                                         font-size: 12px;
                                                         color: Theme.fg-1;
                                                         vertical-alignment: center;
@@ -596,7 +596,7 @@ Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "主题色";
+                                title: root.lang-en ? "Accent Color" : "主题色";
                                 desc: "当前：\{root.accent-hex}";
 
                                 HorizontalLayout {
@@ -690,7 +690,7 @@ Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "壁纸";
+                                title: root.lang-en ? "Wallpaper" : "壁纸";
                                 desc: "面板磨砂取自当前壁纸；导入的自定义壁纸也会进入清单";
 
                                 HorizontalLayout {
@@ -785,7 +785,7 @@ Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "检查频率";
+                                title: root.lang-en ? "Check Interval" : "检查频率";
                                 desc: "自动检查更新的间隔";
 
                                 HorizontalLayout {
@@ -827,7 +827,7 @@ Rectangle {
                             alignment: start;
 
                             FieldBlock {
-                                title: "终端字体";
+                                title: root.lang-en ? "Terminal Font" : "终端字体";
                                 desc: "已安装的等宽字体，随改随生效并持久化";
 
                                 VerticalLayout {
@@ -852,7 +852,7 @@ Rectangle {
                                             }
                                         }
                                         Text {
-                                            text: "粗体";
+                                            text: root.lang-en ? "Bold" : "粗体";
                                             font-size: 11px;
                                             color: Theme.fg-3;
                                             vertical-alignment: center;
@@ -904,7 +904,7 @@ Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "字号";
+                                title: root.lang-en ? "Font Size" : "字号";
                                 desc: "8–32px，默认 13";
 
                                 HorizontalLayout {
@@ -939,7 +939,7 @@ Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "滚回行数";
+                                title: root.lang-en ? "Scrollback Lines" : "滚回行数";
                                 desc: "终端可回看的历史行数（大容量模式内存占用更高）";
 
                                 HorizontalLayout {
@@ -1064,7 +1064,7 @@ Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "挂载过滤";
+                                title: root.lang-en ? "Mount Filter" : "挂载过滤";
                                 desc: "只显示路径含该关键字的分区（留空显示全部），回车生效";
 
                                 Rectangle {
@@ -1099,7 +1099,7 @@ Rectangle {
                             alignment: start;
 
                             Text {
-                                text: "标签页";
+                                text: root.lang-en ? "Tabs" : "标签页";
                                 font-size: 10px;
                                 color: Theme.fg-3;
                             }
@@ -1141,7 +1141,7 @@ Rectangle {
                                 desc: "滚动历史";
                             }
                             Text {
-                                text: "命令输入框";
+                                text: root.lang-en ? "Command Box" : "命令输入框";
                                 font-size: 10px;
                                 color: Theme.fg-3;
                             }
@@ -1185,7 +1185,7 @@ Rectangle {
                             alignment: start;
 
                             FieldBlock {
-                                title: "WebDAV 同步";
+                                title: root.lang-en ? "WebDAV Sync" : "WebDAV 同步";
                                 desc: root.webdav-status == "" ? "把配置、会话、笔记等备份到自己的 NAS 或企业 WebDAV 服务" : root.webdav-status;
 
                                 Switch {
@@ -1196,7 +1196,7 @@ Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "WebDAV 地址";
+                                title: root.lang-en ? "WebDAV URL" : "WebDAV 地址";
 
                                 Rectangle {
                                     width: 420px;
@@ -1223,7 +1223,7 @@ Rectangle {
                                 alignment: start;
 
                                 FieldBlock {
-                                    title: "用户名";
+                                    title: root.lang-en ? "Username" : "用户名";
                                     width: 200px;
 
                                     Rectangle {
@@ -1247,7 +1247,7 @@ Rectangle {
                                     }
                                 }
                                 FieldBlock {
-                                    title: "密码 / 应用密码";
+                                    title: root.lang-en ? "Password / App Password" : "密码 / 应用密码";
                                     width: 200px;
 
                                     Rectangle {
@@ -1273,7 +1273,7 @@ Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "远程目录";
+                                title: root.lang-en ? "Remote Directory" : "远程目录";
 
                                 Rectangle {
                                     width: 420px;
@@ -1304,7 +1304,7 @@ Rectangle {
                                 }
                             }
                             FieldBlock {
-                                title: "操作";
+                                title: root.lang-en ? "Actions" : "操作";
                                 desc: "保存配置后可上传 / 下载备份";
 
                                 HorizontalLayout {
@@ -1320,7 +1320,7 @@ Rectangle {
                                         HorizontalLayout {
                                             alignment: center;
                                             Text {
-                                                text: "保存配置";
+                                                text: root.lang-en ? "Save" : "保存配置";
                                                 font-size: 12px;
                                                 color: white;
                                                 vertical-alignment: center;
@@ -1345,7 +1345,7 @@ Rectangle {
                                         HorizontalLayout {
                                             alignment: center;
                                             Text {
-                                                text: "上传备份";
+                                                text: root.lang-en ? "Upload" : "上传备份";
                                                 font-size: 12px;
                                                 color: Theme.fg-1;
                                                 vertical-alignment: center;
@@ -1368,7 +1368,7 @@ Rectangle {
                                         HorizontalLayout {
                                             alignment: center;
                                             Text {
-                                                text: "下载恢复";
+                                                text: root.lang-en ? "Restore" : "下载恢复";
                                                 font-size: 12px;
                                                 color: Theme.fg-1;
                                                 vertical-alignment: center;
@@ -1487,7 +1487,7 @@ Rectangle {
                                         HorizontalLayout {
                                             alignment: center;
                                             Text {
-                                                text: "打开日志目录";
+                                                text: root.lang-en ? "Open Log Folder" : "打开日志目录";
                                                 font-size: 12px;
                                                 color: Theme.fg-1;
                                                 vertical-alignment: center;
