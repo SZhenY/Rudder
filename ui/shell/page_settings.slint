@@ -247,6 +247,8 @@ export component PageSettings inherits Rectangle {
     in property <bool> collapse-sidebar;
     in property <bool> welcome-sidebar;
     in property <bool> sync-upload;
+    in property <string> app-version;
+    in property <[string]> about-libs;
     callback set-language(string);
     callback toggle-theme();
     callback term-font(string);
@@ -361,6 +363,15 @@ export component PageSettings inherits Rectangle {
                         root.current-cat = 4;
                     }
                 }
+                CategoryItem {
+                    glyph: "\u{E88E}";
+                    label: "关于";
+                    sub: "版本、日志与反馈";
+                    active: root.current-cat == 5;
+                    clicked => {
+                        root.current-cat = 5;
+                    }
+                }
             }
         }
 
@@ -382,6 +393,7 @@ export component PageSettings inherits Rectangle {
                         : root.current-cat == 1 ? "终端设置"
                         : root.current-cat == 2 ? "文件设置"
                         : root.current-cat == 3 ? "布局设置"
+                        : root.current-cat == 5 ? "关于"
                         : "快捷键";
                     font-size: 17px;
                     font-weight: 700;
@@ -778,6 +790,107 @@ export component PageSettings inherits Rectangle {
                             KeyRow {
                                 keys: "Ctrl+U";
                                 desc: "删除到行首";
+                            }
+                        }
+
+                        // ═══ 关于 ═══
+                        if root.current-cat == 5 : VerticalLayout {
+                            spacing: 12px;
+                            padding-top: 8px;
+                            alignment: start;
+
+                            Rectangle {
+                                border-radius: 10px;
+                                border-width: 1px;
+                                border-color: Theme.line;
+                                background: Theme.sur-1;
+
+                                HorizontalLayout {
+                                    padding: 16px;
+                                    spacing: 12px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        width: 44px;
+                                        height: 44px;
+                                        border-radius: 10px;
+                                        background: Theme.accent-soft;
+
+                                        Text {
+                                            width: 100%;
+                                            height: 100%;
+                                            text: "R";
+                                            font-size: 20px;
+                                            font-weight: 800;
+                                            color: Theme.accent;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 2px;
+
+                                        Text {
+                                            text: "Rudder";
+                                            font-size: 15px;
+                                            font-weight: 700;
+                                            color: Theme.fg-1;
+                                        }
+                                        Text {
+                                            text: "当前版本 v\{root.app-version}";
+                                            font-size: 11px;
+                                            color: Theme.fg-3;
+                                        }
+                                        Text {
+                                            text: "轻量的 Rust + Slint SSH 客户端 · Forked from yituorou/meatshell";
+                                            font-size: 11px;
+                                            color: Theme.fg-3;
+                                        }
+                                        Text {
+                                            text: "开源 · MIT / Apache-2.0 · github.com/SZhenY/Rudder";
+                                            font-size: 11px;
+                                            color: Theme.fg-3;
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                border-radius: 10px;
+                                border-width: 1px;
+                                border-color: Theme.line;
+                                background: Theme.sur-1;
+
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Text {
+                                        text: "开源组件";
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        color: Theme.fg-1;
+                                    }
+                                    Text {
+                                        text: "本应用依赖以下开源库（运行时由 Rust 注入清单）";
+                                        font-size: 11px;
+                                        color: Theme.fg-3;
+                                    }
+                                    for lib in root.about-libs : Text {
+                                        text: lib;
+                                        font-size: 11px;
+                                        color: Theme.fg-2;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: "Rudder — a lightweight Rust + Slint SSH client";
+                                font-size: 11px;
+                                color: Theme.fg-3;
+                                horizontal-alignment: center;
                             }
                         }
                     }
