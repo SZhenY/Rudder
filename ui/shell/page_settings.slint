@@ -254,6 +254,8 @@ export component PageSettings inherits Rectangle {
     in property <int> wallpaper-index;
     callback set-accent-color(string);
     callback set-wallpaper-label(string);
+    callback pick-wallpaper();
+    callback open-log-dir();
     in property <[string]> about-libs;
     in-out property <bool> webdav-enabled;
     in-out property <string> webdav-url;
@@ -722,6 +724,31 @@ export component PageSettings inherits Rectangle {
                                         TouchArea {
                                             clicked => {
                                                 root.set-wallpaper-label(wlab);
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: itext.preferred-width + 20px;
+                                        height: 26px;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: Theme.accent;
+                                        background: imp2-ta.has-hover ? Theme.rail-item-active : transparent;
+
+                                        HorizontalLayout {
+                                            padding-left: 10px;
+                                            padding-right: 10px;
+                                            alignment: center;
+                                            itext := Text {
+                                                text: "\u{E2C6} 导入自定义壁纸…";
+                                                font-size: 11px;
+                                                color: Theme.accent;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        imp2-ta := TouchArea {
+                                            clicked => {
+                                                root.pick-wallpaper();
                                             }
                                         }
                                     }
@@ -1284,6 +1311,61 @@ export component PageSettings inherits Rectangle {
                                             text: "开源 · MIT / Apache-2.0 · github.com/SZhenY/Rudder";
                                             font-size: 11px;
                                             color: Theme.fg-3;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 日志与诊断卡（参考图有此卡；打开日志目录回调已接）
+                            Rectangle {
+                                border-radius: 10px;
+                                border-width: 1px;
+                                border-color: Theme.line;
+                                background: Theme.sur-1;
+
+                                HorizontalLayout {
+                                    padding: 16px;
+                                    spacing: 12px;
+                                    alignment: start;
+
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        alignment: center;
+                                        spacing: 2px;
+
+                                        Text {
+                                            text: "日志与诊断";
+                                            font-size: 13px;
+                                            font-weight: 600;
+                                            color: Theme.fg-1;
+                                        }
+                                        Text {
+                                            text: "排查问题时把日志目录整个发给我们（运行日志与错误都写在这里）";
+                                            font-size: 11px;
+                                            color: Theme.fg-3;
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: 110px;
+                                        height: 28px;
+                                        border-radius: 7px;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+                                        background: log-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "打开日志目录";
+                                                font-size: 12px;
+                                                color: Theme.fg-1;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        log-ta := TouchArea {
+                                            clicked => {
+                                                root.open-log-dir();
+                                            }
                                         }
                                     }
                                 }
