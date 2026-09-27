@@ -26,7 +26,7 @@ import "fonts/MaterialIcons-Regular.ttf";
 import { Theme } from "theme.slint";
 import { GroupGap } from "components/surfaces.slint";
 import { Sidebar, DiskInfo } from "sidebar.slint";
-import { TabBar, TabInfo } from "tabs.slint";
+import { TabInfo } from "tabs.slint";
 // 新外壳（UI 重构过渡期）：构建脚本只编译 `ui/app.slint` 这一条入口，所以新外壳
 // 先在这里 import 一次，让它进入编译图。收尾那一步会把构建入口换成
 // `ui/shell/app_shell.slint`、删掉旧外壳与这一行。
@@ -77,6 +77,8 @@ import { AboutDialog } from "about_dialog.slint";
 import { ConfirmOverlays } from "confirm_overlays.slint";
 import { ShortcutsDialog } from "shortcuts_dialog.slint";
 import { AppTitleBar } from "shell/titlebar.slint";
+import { PageTerminal } from "shell/page_terminal.slint";
+import { PaneTabs } from "shell/pane_tabs.slint";
 import { SidebarBody } from "sidebar_body.slint";
 import { RenameDialog } from "rename_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
@@ -1362,32 +1364,22 @@ export component AppWindow inherits Window {
                 spacing: 0;
                 // (Collapsed resource panel now reserves its own ToolStrip slot in
                 // `rest`, so the tab strip no longer needs a spacer for it.)
-                // 旧标签栏：参考设计里终端页的标签栏是新样式（右侧带 + / 快捷指令 /
-                // 分屏 / 全屏），由 A-2.4 重做。这里先整条隐藏，避免新旧两套标签栏并存。
-                // 切换标签仍可用 Ctrl+Tab / Ctrl+Shift+Tab 快捷键。
-                TabBar {
-                    // 隐藏（A-2.4 会换成新样式的标签栏）；原绑定是 `!root.zen-mode`
-                    visible: false;
-                    horizontal-stretch: 1;
-                    // Reserve room for the top-right toolbar icons that sit over
-                    // this row so tabs don't slide underneath them (#122).
-                    reserve-right: pane.reserve-right;
-                    show-new-tab: !root.welcome-as-sidebar;
-                    can-merge-pane: root.panes.length > 1;
-                    tabs: pane.tabs;
-                    active-id: pane.active-id;
-                    tab-selected(id) => { root.pane-tab-selected(pane.id, id); }
-                    tab-closed(id) => { root.pane-tab-closed(pane.id, id); }
-                    new-tab() => { root.pane-new-tab(pane.id); }
-                    tab-reorder(from-index, direction) => {
-                        root.pane-tab-reorder(pane.id, from-index, direction);
-                    }
-                    tab-split(id, dir) => { root.pane-split(pane.id, id, dir); }
-                    merge-pane() => { root.pane-merge(pane.id); }
-                    tab-duplicate(id) => { root.tab-duplicate(id); }
-                    tab-rename-request(id) => { root.tab-rename-request(id); }
+                  // 新标签条（A-2.4，按参考图）：药丸标签 + ➕ + 快捷指令/分屏/全屏。
+                  // 旧 TabBar 的拖拽排序 / 跨分屏合并 / 重复标签暂未迁移。
+                  PaneTabs {
+                      pane-id: pane.id;
+                      tabs: pane.tabs;
+                      active-id: pane.active-id;
+                      reserve-right: pane.reserve-right;
+                      tab-selected(id) => { root.pane-tab-selected(pane.id, id); }
+                      tab-closed(id) => { root.pane-tab-closed(pane.id, id); }
+                      tab-rename-requested(id) => { root.tab-rename-request(id); }
+                      new-tab() => { root.pane-new-tab(pane.id); }
+                      split-active() => { root.pane-split(pane.id, pane.active-id, 0); }
+                      toggle-quick() => { root.quick-panel-open = !root.quick-panel-open; }
+                      toggle-full() => { root.toggle-zen-key(); }
+                  }
                 }
-            }
 
             // Content area swaps based on active tab kind.
             Rectangle {
@@ -2282,7 +2274,35 @@ export component AppWindow inherits Window {
                 }
                 }
 
-                // 笔记随笔 / AI 助手：参考图里有入口，页面规划中（与 Docker 占位同款）。
+                // 终端页空状态（一个标签都没有时）：参考图的「创建你的第一个终端会话」。
+      // 有标签后旧内容（真正的终端画面）从下面透出。
+      if root.shell-page == 1 && root.panes.length == 0 : Rectangle {
+          x: root.rail-w;
+          y: root.shell-top;
+          width: root.width - root.rail-w;
+          height: root.height - root.shell-top;
+          background: Theme.bg-root;
+
+          PageTerminal {
+              width: 100%;
+              height: 100%;
+              sessions: root.sessions;
+              new-local-session() => {
+                  // 会话对话框（本地/远程/串口都在里面选）
+                  root.new-session-clicked();
+              }
+              connect-session(id) => {
+                  if (id == "") {
+                      // 「远程 / 串口会话」卡片：去主机管理页新建
+                      root.shell-page = 0;
+                  } else {
+                      root.connect-session(id);
+                  }
+              }
+          }
+      }
+
+      // 笔记随笔 / AI 助手：参考图里有入口，页面规划中（与 Docker 占位同款）。
       if root.shell-page == 5 || root.shell-page == 6 : Rectangle {
           x: root.rail-w;
           y: root.shell-top;
