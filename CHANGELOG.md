@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.7.9-beta6] - 2026-09-26
+
 ### 新增 / Added
 
 - **SFTP 文件列表新增「类型 / 权限」两列**（上游 `ed7f231` 的第一步）。两列都由列表项**已有的**
