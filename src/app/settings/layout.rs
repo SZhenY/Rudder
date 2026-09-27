@@ -16,14 +16,6 @@ use crate::app::pane_layout::refresh_panes;
 use crate::ssh::SessionHandle;
 use crate::ui::{ AnimationSettings, AppWindow, PaneInfo, SplitterInfo, TabInfo, Theme };
 
-/// Dispatch one `reset-page` request from the UI to the page that owns it.
-/// Re-apply the persisted layout preferences to the live window: panel docking
-/// sides and sizes, collapse states, and — critically — the conflict resolution
-/// between panels that would otherwise share the same dock edge. Two expanded
-/// panels docked on one side overlap, which is exactly the "broken layout"
-/// reported after resetting the layout page.
-///
-/// Shared by startup seeding and by the layout page's "restore defaults".
 /// 布局迁移需要的窗格与模型句柄（字段全是 `Rc`，克隆廉价）。
 #[derive(Clone)]
 pub(crate) struct PaneHandles {
@@ -34,6 +26,13 @@ pub(crate) struct PaneHandles {
     pub splitters_model: Rc<VecModel<SplitterInfo>>,
 }
 
+/// Re-apply the persisted layout preferences to the live window: panel docking
+/// sides and sizes, collapse states, and — critically — the conflict resolution
+/// between panels that would otherwise share the same dock edge. Two expanded
+/// panels docked on one side overlap, which is exactly the "broken layout"
+/// reported after resetting the layout page.
+///
+/// Shared by startup seeding and by the layout page's "restore defaults".
 pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     let s = store.borrow();
     let collapse_sidebar = s.collapse_sidebar_default();

@@ -16,7 +16,6 @@ use super::{visible_tab_ids, with_term_buf};
 /// A busy or closing UI must never block a session pump indefinitely.
 pub(crate) const UI_FLUSH_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
 
-/// Max UI renders per second for a tab under sustained output (#209).
 use i_slint_backend_winit::WinitWindowAccessor as _;
 use slint::ComponentHandle as _;
 

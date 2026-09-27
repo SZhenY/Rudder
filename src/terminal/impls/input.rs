@@ -318,6 +318,16 @@ pub(crate) fn scrollback_key_from_text(key: &str) -> Option<ScrollbackKey> {
     }
 }
 
+/// Convert a Slint `KeyEvent.text` + modifier flags into the byte sequence
+/// that the remote PTY expects.
+///
+/// Slint uses Unicode Private Use Area (`\u{F700}`…) for special keys.
+/// Regular printable characters and C0 control characters are passed as-is.
+///
+/// `app_cursor` mirrors the remote terminal's DECCKM mode (`\x1b[?1h/l`):
+/// when true the four arrow keys must use SS3 sequences (`\x1bOA`…) instead
+/// of the default CSI sequences (`\x1b[A`…).  Full-screen apps like nano and
+/// vim set this mode on startup.
 pub(crate) fn key_to_pty_bytes(key: &str, ctrl: bool, alt: bool, app_cursor: bool) -> Vec<u8> {
     let special: Option<&[u8]> = match key {
         "\u{F700}" => Some(if app_cursor { b"\x1bOA" } else { b"\x1b[A" }),

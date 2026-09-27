@@ -1430,6 +1430,13 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
     }
 }
 
+/// Render a key string for diagnostic logs WITHOUT leaking its content (#15).
+///
+/// Any printable character could be a password character, so we never emit it.
+/// Only C0/C1 control code points (Backspace, Esc, the IME-injected 0x10/0x15
+/// markers, …) are revealed — those are exactly what the Shift/Backspace IME
+/// diagnostics need and are never password material. Printable characters are
+/// collapsed to a count, so the logs stay useful without exposing keystrokes.
 pub(crate) fn redact_key(key: &str) -> String {
     if key.is_empty() {
         return "(empty)".to_string();

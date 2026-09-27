@@ -1630,23 +1630,6 @@ pub(crate) fn set_terminal_row(win: &AppWindow, tab_id: &str, mutator: impl Fn(&
     }
 }
 
-/// Convert a Slint `KeyEvent.text` + modifier flags into the byte sequence
-/// that the remote PTY expects.
-///
-/// Slint uses Unicode Private Use Area (`\u{F700}`…) for special keys.
-/// Regular printable characters and C0 control characters are passed as-is.
-///
-/// Render a key string for diagnostic logs WITHOUT leaking its content (#15).
-///
-/// Any printable character could be a password character, so we never emit it.
-/// Only C0/C1 control code points (Backspace, Esc, the IME-injected 0x10/0x15
-/// markers, …) are revealed — those are exactly what the Shift/Backspace IME
-/// diagnostics need and are never password material. Printable characters are
-/// collapsed to a count, so the logs stay useful without exposing keystrokes.
-/// `app_cursor` mirrors the remote terminal's DECCKM mode (`\x1b[?1h/l`):
-/// when true the four arrow keys must use SS3 sequences (`\x1bOA`…) instead
-/// of the default CSI sequences (`\x1b[A`…).  Full-screen apps like nano and
-/// vim set this mode on startup.
 /// Build the editor's line-number gutter text: "1\n2\n…\nN", one number per line
 /// of `content`, matching its (newline-separated) line count (#81).
 fn line_numbers_for(content: &str) -> String {
