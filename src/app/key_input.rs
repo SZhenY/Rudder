@@ -62,21 +62,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
     // Runtime context for starting / reconnecting a session. Assembled here
     // from the app-wide context rather than passed in twice: the caller used to
     // hand over `store` both as its own argument and inside this struct.
-    let ctx = ConnectCtx {
-        weak: window.as_weak(),
-        runtime: app.runtime.clone(),
-        handles: app.handles.clone(),
-        sftp_handles: app.sftp_handles.clone(),
-        sftp_last_cwd: app.sftp_last_cwd.clone(),
-        bufs: app.bufs.clone(),
-        render_gates: app.render_gates.clone(),
-        tab_statuses: app.tab_statuses.clone(),
-        local_snap: app.local_snap.clone(),
-        local_net_hist: app.local_net_hist.clone(),
-        last_term_size: app.last_term_size.clone(),
-        sftp_follow_cd: app.sftp_follow_cd.clone(),
-        store: app.store.clone(),
-    };
+    let ctx = ConnectCtx::from_app(window.as_weak(), app);
     let handles = app.handles.clone();
     let bufs = app.bufs.clone();
     // 滚动回调要走渲染闸门（节流 + 合并）；两个回调各持一份。

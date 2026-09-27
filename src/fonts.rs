@@ -67,44 +67,17 @@ pub(crate) fn external_fonts_dirs() -> Vec<PathBuf> {
 /// Font extensions accepted from the fonts dir: `.ttf` / `.otf` and the
 /// collection formats `.ttc` / `.otc` (a single file holding several faces).
 /// Case-insensitive; sorted for deterministic order.
+const FONT_EXTS: &[&str] = &["ttf", "otf", "ttc", "otc"];
+
 pub(crate) fn scan_font_files(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            p.extension().and_then(|x| x.to_str()).is_some_and(|x| {
-                ["ttf", "otf", "ttc", "otc"]
-                    .iter()
-                    .any(|ext| x.eq_ignore_ascii_case(ext))
-            })
-        })
-        .collect();
-    files.sort();
-    files
+    crate::files::scan_files(dir, FONT_EXTS)
 }
 
 /// 把用户挑的字体文件**复制**进字体目录（重名不覆盖，加 " 2"、" 3"…），返回落点。
 ///
 /// 与"直接引用原路径"的区别同壁纸：原文件挪走 / 删掉之后字体不会失效，重装也还在。
 pub(crate) fn import_font_file(src: &Path) -> Option<PathBuf> {
-    let dir = external_fonts_dir();
-    std::fs::create_dir_all(&dir).ok()?;
-    let file_name = src.file_name()?.to_string_lossy().into_owned();
-    let (stem, ext) = match file_name.rsplit_once('.') {
-        Some((stem, ext)) => (stem.to_string(), format!(".{ext}")),
-        None => (file_name.clone(), String::new()),
-    };
-    let mut dst = dir.join(&file_name);
-    let mut n = 2;
-    while dst.exists() {
-        dst = dir.join(format!("{stem} {n}{ext}"));
-        n += 1;
-    }
-    std::fs::copy(src, &dst).ok()?;
-    Some(dst)
+    crate::files::import_file(src, &external_fonts_dir())
 }
 
 /// 某个字体文件里的第一个家族名 —— 上传之后用它把选择器定位到新条目。
