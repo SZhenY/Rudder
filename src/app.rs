@@ -428,6 +428,24 @@ pub fn run_renderer_probe(mode: &str) -> Result<()> {
 /// 用 `--ui=shell` 启动；旧的 [`run`] 完全不受影响，方便两套界面对比、随时回退。
 pub fn run_shell() -> Result<()> {
     let shell = crate::ui::AppShell::new().context("create app shell")?;
+
+    // 主机列表：走与旧界面同一份数据源（`sync_sessions_to_model` 只看 store），
+    // 所以新外壳里的主机管理与旧侧栏看到的是同一批主机。
+    let config = ConfigStore::load().context("failed to load config")?;
+    let store = Rc::new(RefCell::new(config));
+    let sessions_model: Rc<VecModel<SessionInfo>> = Rc::new(VecModel::default());
+    session_models::sync_sessions_to_model(&store.borrow(), &sessions_model);
+    shell.set_sessions(ModelRc::from(sessions_model.clone()));
+
+    shell.on_connect_session(move |id: SharedString| {
+        // 终端页接入后这里接 `start_session_in_tab`（需要 tab_id + ConnectCtx）；
+        // 现在先落一条日志，保证点了有反馈、不静默。
+        tracing::info!("shell: connect-session {id}（终端页接入后真正发起连接）");
+    });
+    shell.on_new_session(|| {
+        tracing::info!("shell: new-session（新建主机对话框后续接入）");
+    });
+
     shell.run().context("run app shell")?;
     Ok(())
 }

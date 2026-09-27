@@ -1,10 +1,11 @@
-// 新外壳（UI 重构第一步）：左侧栏 + 内容区 + 底部状态栏。
+// 新外壳（UI 重构）：左侧栏 + 页面 + 底部状态栏。
 //
-// 现在只搭骨架 —— 内容区是页面占位、底部状态栏是占位文字，后续各步往里填。
-// 用 `--ui=shell` 启动；旧的 `AppWindow`（app.slint）完全不受影响，方便对比与回退。
+// 用 `--ui=shell` 启动；旧的 `AppWindow`（app.slint）在收尾时整体删除。
 
 import { Theme } from "../theme.slint";
 import { Rail } from "rail.slint";
+import { PageHosts } from "page_hosts.slint";
+import { SessionInfo } from "../welcome_rows.slint";
 
 export component AppShell inherits Window {
     title: "Rudder";
@@ -15,8 +16,11 @@ export component AppShell inherits Window {
     background: Theme.window-base;
 
     // 0 主机 · 1 终端 · 2 指令集 · 3 Docker · 4 设置
-    in-out property <int> page: 1;
+    in-out property <int> page: 0;
     in-out property <bool> rail-collapsed: false;
+    in property <[SessionInfo]> sessions;
+    callback connect-session(string /* id */);
+    callback new-session();
 
     VerticalLayout {
         HorizontalLayout {
@@ -33,15 +37,23 @@ export component AppShell inherits Window {
                 }
             }
 
-            // 内容区（各页面后续接入）
+            // 内容区
             Rectangle {
                 horizontal-stretch: 1;
                 background: Theme.bg-root;
 
-                Text {
-                    text: root.page == 0
-                        ? "主机管理"
-                        : root.page == 1
+                if root.page == 0 : PageHosts {
+                    sessions: root.sessions;
+                    connect-session(id) => {
+                        root.connect-session(id);
+                    }
+                    new-session() => {
+                        root.new-session();
+                    }
+                }
+
+                if root.page != 0 : Text {
+                    text: root.page == 1
                         ? "终端"
                         : root.page == 2
                         ? "指令集"
