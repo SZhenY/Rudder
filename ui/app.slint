@@ -2225,6 +2225,9 @@ export component AppWindow inherits Window {
               sync-upload: root.sync-upload-enabled;
               app-version: root.app-version;
               accent-hex: root.accent-hex;
+              ui-fonts: root.ui-fonts;
+              ui-font-index: root.ui-font-index;
+              upload-ui-font() => { root.upload-ui-font(); }
               wallpaper-labels: root.wallpaper-labels;
               wallpaper-index: root.wallpaper-index;
               set-accent-color(c) => { root.set-accent(c); }

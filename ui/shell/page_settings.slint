@@ -245,6 +245,10 @@ export component PageSettings inherits Rectangle {
     in property <bool> show-cmd-bar;
     in property <bool> sync-upload;
     in property <string> app-version;
+    in property <[string]> ui-fonts;
+    in property <int> ui-font-index;
+    callback upload-ui-font();
+    property <bool> font-menu-open: false;
     in property <string> accent-hex;
     in property <[string]> wallpaper-labels;
     in property <int> wallpaper-index;
@@ -480,32 +484,95 @@ export component PageSettings inherits Rectangle {
                             }
                             FieldBlock {
                                 title: "界面字体";
-                                desc: "整窗 UI 字体（终端字体在终端分组里）";
+                                desc: "整窗 UI 字体；外部字体经「导入」加入清单（终端字体在终端分组）";
 
-                                HorizontalLayout {
-                                    spacing: 6px;
+                                VerticalLayout {
+                                    spacing: 4px;
                                     alignment: start;
 
-                                    for f in ["Meatshell Mono", "JetBrains Mono"] : Rectangle {
-                                        width: 118px;
-                                        height: 26px;
-                                        border-radius: 6px;
-                                        border-width: 1px;
-                                        border-color: Theme.ui-font-family == f ? Theme.accent : Theme.line;
-                                        background: Theme.ui-font-family == f ? Theme.rail-item-active : Theme.sur-2;
-
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Text {
-                                                text: f;
-                                                font-size: 11px;
-                                                color: Theme.ui-font-family == f ? Theme.accent : Theme.fg-2;
-                                                vertical-alignment: center;
-                                            }
+                                    SelectBox {
+                                        width: 240px;
+                                        text: root.ui-fonts.length > 0 && root.ui-font-index < root.ui-fonts.length
+                                            ? root.ui-fonts[root.ui-font-index]
+                                            : "自动";
+                                        clicked => {
+                                            root.font-menu-open = !root.font-menu-open;
                                         }
-                                        TouchArea {
-                                            clicked => {
-                                                root.term-ui-font(f);
+                                    }
+
+                                    if root.font-menu-open : Rectangle {
+                                        width: 240px;
+                                        border-radius: 8px;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+                                        background: Theme.sur-1;
+
+                                        VerticalLayout {
+                                            spacing: 0;
+                                            alignment: start;
+
+                                            for lbl[i] in root.ui-fonts : Rectangle {
+                                                height: 30px;
+                                                background: root.ui-font-index == i
+                                                    ? Theme.rail-item-active
+                                                    : (f-ta.has-hover ? Theme.rail-item-hover : transparent);
+
+                                                HorizontalLayout {
+                                                    padding-left: 10px;
+                                                    padding-right: 10px;
+                                                    alignment: start;
+
+                                                    Text {
+                                                        Text {
+                                                            text: lbl;
+                                                            font-size: 12px;
+                                                            color: root.ui-font-index == i ? Theme.accent : Theme.fg-1;
+                                                            vertical-alignment: center;
+                                                        }
+                                                    }
+                                                }
+
+                                                f-ta := TouchArea {
+                                                    clicked => {
+                                                        root.term-ui-font(lbl);
+                                                        root.font-menu-open = false;
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                height: 1px;
+                                                background: Theme.line;
+                                            }
+                                            Rectangle {
+                                                height: 30px;
+                                                background: imp-ta.has-hover ? Theme.rail-item-hover : transparent;
+
+                                                HorizontalLayout {
+                                                    padding-left: 10px;
+                                                    alignment: start;
+
+                                                    Text {
+                                                        text: "\u{E2C6}"; // import
+                                                        font-family: "Material Icons";
+                                                        font-size: 13px;
+                                                        color: Theme.fg-2;
+                                                        vertical-alignment: center;
+                                                    }
+                                                    Text {
+                                                        text: "导入外部字体…";
+                                                        font-size: 12px;
+                                                        color: Theme.fg-1;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+
+                                                imp-ta := TouchArea {
+                                                    clicked => {
+                                                        root.upload-ui-font();
+                                                        root.font-menu-open = false;
+                                                    }
+                                                }
                                             }
                                         }
                                     }
