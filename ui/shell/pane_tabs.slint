@@ -22,6 +22,18 @@ component TabPill inherits Rectangle {
         ? Theme.rail-item-active
         : (ta.has-hover ? Theme.rail-item-hover : transparent);
 
+    // 先声明 = 在下层：关闭钮的 close-ta 声明在布局里、绘制在其上，才能点到。
+    // （此前 ta 在布局之后 = 整颗药丸被它盖住，关闭永远收不到点击。）
+    ta := TouchArea {
+        clicked => {
+            root.selected();
+        }
+        // 双击重命名（旧 TabBar 的行为）。
+        double-clicked => {
+            root.rename-requested();
+        }
+    }
+
     HorizontalLayout {
         padding-left: 10px;
         padding-right: 4px;
@@ -48,6 +60,7 @@ component TabPill inherits Rectangle {
         Rectangle {
             width: 18px;
             height: 18px;
+            y: (parent.height - self.height) / 2;
             border-radius: 5px;
             background: close-ta.has-hover ? Theme.sur-3 : transparent;
 
@@ -67,15 +80,6 @@ component TabPill inherits Rectangle {
         }
     }
 
-    ta := TouchArea {
-        clicked => {
-            root.selected();
-        }
-        // 双击重命名（旧 TabBar 的行为）。
-        double-clicked => {
-            root.rename-requested();
-        }
-    }
 }
 
 component IconBtn inherits Rectangle {

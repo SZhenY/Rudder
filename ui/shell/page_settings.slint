@@ -511,12 +511,11 @@ export component PageSettings inherits Rectangle {
                                         text: root.ui-fonts.length > 0 && root.ui-font-index < root.ui-fonts.length
                                             ? root.ui-fonts[root.ui-font-index]
                                             : "自动";
-                                        clicked => {
-                                            root.font-menu-open = !root.font-menu-open;
-                                        }
+                                        clicked => { font-popup.show(); }
                                     }
 
-                                    if root.font-menu-open : Rectangle {
+                                    font-popup := PopupWindow {
+Rectangle {
                                         width: 240px;
                                         border-radius: 8px;
                                         border-width: 1px;
@@ -551,7 +550,7 @@ export component PageSettings inherits Rectangle {
                                                 f-ta := TouchArea {
                                                     clicked => {
                                                         root.term-ui-font(lbl);
-                                                        root.font-menu-open = false;
+                                                        font-popup.close();
                                                     }
                                                 }
                                             }
@@ -586,12 +585,14 @@ export component PageSettings inherits Rectangle {
                                                 imp-ta := TouchArea {
                                                     clicked => {
                                                         root.upload-ui-font();
-                                                        root.font-menu-open = false;
+                                                        font-popup.close();
                                                     }
                                                 }
                                             }
                                         }
-                                    }
+                                    
+}
+}
                                 }
                             }
                             FieldBlock {
@@ -690,59 +691,86 @@ export component PageSettings inherits Rectangle {
                             }
                             FieldBlock {
                                 title: "壁纸";
-                                desc: "面板磨砂取自当前壁纸（自定义壁纸导入下一轮）";
+                                desc: "面板磨砂取自当前壁纸；导入的自定义壁纸也会进入清单";
 
                                 HorizontalLayout {
-                                    spacing: 6px;
                                     alignment: start;
 
-                                    for wlab[i] in root.wallpaper-labels : Rectangle {
-                                        width: wtext.preferred-width + 20px;
-                                        height: 26px;
-                                        border-radius: 6px;
-                                        border-width: 1px;
-                                        border-color: root.wallpaper-index == i ? Theme.accent : Theme.line;
-                                        background: root.wallpaper-index == i ? Theme.rail-item-active : Theme.sur-2;
-
-                                        HorizontalLayout {
-                                            padding-left: 10px;
-                                            padding-right: 10px;
-                                            alignment: center;
-                                            wtext := Text {
-                                                text: wlab;
-                                                font-size: 11px;
-                                                color: root.wallpaper-index == i ? Theme.accent : Theme.fg-2;
-                                                vertical-alignment: center;
-                                            }
-                                        }
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-wallpaper-label(wlab);
-                                            }
+                                    SelectBox {
+                                        width: 240px;
+                                        text: root.wallpaper-labels.length > 0 && root.wallpaper-index < root.wallpaper-labels.length
+                                            ? root.wallpaper-labels[root.wallpaper-index]
+                                            : "默认";
+                                        clicked => {
+                                            wp-popup.show();
                                         }
                                     }
-                                    Rectangle {
-                                        width: itext.preferred-width + 20px;
-                                        height: 26px;
-                                        border-radius: 6px;
-                                        border-width: 1px;
-                                        border-color: Theme.accent;
-                                        background: imp2-ta.has-hover ? Theme.rail-item-active : transparent;
+                                }
 
-                                        HorizontalLayout {
-                                            padding-left: 10px;
-                                            padding-right: 10px;
-                                            alignment: center;
-                                            itext := Text {
-                                                text: "\u{E2C6} 导入自定义壁纸…";
-                                                font-size: 11px;
-                                                color: Theme.accent;
-                                                vertical-alignment: center;
+                                wp-popup := PopupWindow {
+                                    Rectangle {
+                                        width: 260px;
+                                        border-radius: 8px;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+                                        background: Theme.sur-1;
+
+                                        VerticalLayout {
+                                            spacing: 0;
+                                            alignment: start;
+
+                                            for wlab[i] in root.wallpaper-labels : Rectangle {
+                                                height: 30px;
+                                                background: root.wallpaper-index == i
+                                                    ? Theme.rail-item-active
+                                                    : (wp-ta.has-hover ? Theme.rail-item-hover : transparent);
+
+                                                HorizontalLayout {
+                                                    padding-left: 10px;
+                                                    alignment: start;
+
+                                                    Text {
+                                                        text: wlab;
+                                                        font-size: 12px;
+                                                        color: root.wallpaper-index == i ? Theme.accent : Theme.fg-1;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+
+                                                wp-ta := TouchArea {
+                                                    clicked => {
+                                                        root.set-wallpaper-label(wlab);
+                                                        wp-popup.close();
+                                                    }
+                                                }
                                             }
-                                        }
-                                        imp2-ta := TouchArea {
-                                            clicked => {
-                                                root.pick-wallpaper();
+
+                                            Rectangle {
+                                                height: 1px;
+                                                background: Theme.line;
+                                            }
+                                            Rectangle {
+                                                height: 30px;
+                                                background: wimp-ta.has-hover ? Theme.rail-item-hover : transparent;
+
+                                                HorizontalLayout {
+                                                    padding-left: 10px;
+                                                    alignment: start;
+
+                                                    Text {
+                                                        text: "\u{E2C6} 导入自定义壁纸…";
+                                                        font-size: 12px;
+                                                        color: Theme.fg-1;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+
+                                                wimp-ta := TouchArea {
+                                                    clicked => {
+                                                        root.pick-wallpaper();
+                                                        wp-popup.close();
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -815,9 +843,7 @@ export component PageSettings inherits Rectangle {
                                             text: root.term-fonts.length > 0 && root.term-font-index < root.term-fonts.length
                                                 ? root.term-fonts[root.term-font-index]
                                                 : Theme.term-font-family;
-                                            clicked => {
-                                                root.tfont-menu-open = !root.tfont-menu-open;
-                                            }
+                                            clicked => { tfont-popup.show(); }
                                         }
                                         Switch {
                                             on: Theme.term-font-bold;
@@ -833,7 +859,8 @@ export component PageSettings inherits Rectangle {
                                         }
                                     }
 
-                                    if root.tfont-menu-open : Rectangle {
+                                    tfont-popup := PopupWindow {
+Rectangle {
                                         width: 240px;
                                         border-radius: 8px;
                                         border-width: 1px;
@@ -866,12 +893,14 @@ export component PageSettings inherits Rectangle {
                                                 tf-ta := TouchArea {
                                                     clicked => {
                                                         root.term-font(lbl);
-                                                        root.tfont-menu-open = false;
+                                                        tfont-popup.close();
                                                     }
                                                 }
                                             }
                                         }
-                                    }
+                                    
+}
+}
                                 }
                             }
                             FieldBlock {
@@ -939,6 +968,28 @@ export component PageSettings inherits Rectangle {
                                         TouchArea {
                                             clicked => {
                                                 root.term-scrollback(n);
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: 120px;
+                                        height: 26px;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+                                        background: Theme.sur-2;
+
+                                        TextInput {
+                                            x: 8px;
+                                            width: parent.width - 16px;
+                                            height: 100%;
+                                            text: root.scrollback;
+                                            font-size: 11px;
+                                            color: Theme.fg-1;
+                                            vertical-alignment: center;
+                                            single-line: true;
+                                            accepted => {
+                                                root.term-scrollback(self.text);
                                             }
                                         }
                                     }

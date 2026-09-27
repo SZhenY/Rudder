@@ -1440,6 +1440,7 @@ export component AppWindow inherits Window {
                     sftp-panel-width: term.sftp-panel-width;
                     set-sftp-panel-width(v) => { root.set-pane-sftp-width(term.id, v); }
                     sftp-dock <=> root.sftp-dock;
+                    sftp-available: false; // 旧 SFTP 侧栏移除（新设计：文件走右侧面板，待接）
                     sftp-collapsed: term.sftp-collapsed;
                     set-sftp-collapsed(v) => { root.set-pane-sftp-collapsed(term.id, v); }
                     sftp-path: term.sftp-path;
@@ -1451,7 +1452,6 @@ export component AppWindow inherits Window {
                     sftp-selected-count: term.sftp-selected-count;
                     sftp-sort-key: term.sftp-sort-key;
                     sftp-sort-dir: term.sftp-sort-dir;
-                    sftp-available: term.sftp-available;
                     tunnels: term.tunnels;
                     quick-commands: root.quick-commands;
                     // 快捷命令侧栏已按需求移除（2026-09）：配置里的旧值不再生效。
