@@ -32,6 +32,10 @@ import { TabBar, TabInfo } from "tabs.slint";
 // `ui/shell/app_shell.slint`、删掉旧外壳与这一行。
 export { AppShell } from "shell/app_shell.slint";
 import { SessionInfo } from "welcome_rows.slint";
+// 新外壳（A 路线）：组件名 `AppWindow` 与它全部的属性 / 回调接口都保持不变，
+// 所以 Rust 侧的接线一行都不用改 —— 只是把布局逐步换成「左侧栏 + 页面」。
+import { Rail } from "shell/rail.slint";
+import { PageHosts } from "shell/page_hosts.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
@@ -666,6 +670,10 @@ export component AppWindow inherits Window {
 
     // --- Session list ------------------------------------------------------
     in property <[SessionInfo]> sessions;
+    // 新外壳的页面（0 主机 · 1 终端 · 2 指令集 · 3 Docker · 4 设置）与左侧栏收起状态。
+    // 终端页（1）现在就是原有的界面内容，所以默认停在这一页、功能不受影响。
+    in-out property <int> shell-page: 1;
+    in-out property <bool> rail-collapsed: false;
     in-out property <string> host-search-query;
     callback host-search-changed(string);
 
@@ -2190,8 +2198,46 @@ export component AppWindow inherits Window {
         run-update => { root.run-self-update(); }
         restart-app => { root.restart-app(); }
         open-releases => { root.open-update-url(); }
-    }
-}
+        }
+
+        // ── 新外壳：左侧栏 + 主机页 ────────────────────────────────────────────
+        // 先只加这两块：左侧栏常驻，选中「主机」时用新的主机页盖住内容区，选中
+        // 「终端」时露出原有界面（所以终端功能一步都没动）。指令集 / Docker / 设置
+        // 的页面后续逐个替换。
+        property <length> rail-w: root.rail-collapsed ? 64px : 180px;
+
+        Rail {
+        x: 0;
+        y: 0;
+        width: root.rail-w;
+        height: root.height;
+        current-page: root.shell-page;
+        collapsed: root.rail-collapsed;
+        page-changed(p) => {
+            root.shell-page = p;
+        }
+        }
+
+        if root.shell-page == 0 : Rectangle {
+        x: root.rail-w;
+        y: 0;
+        width: root.width - root.rail-w;
+        height: root.height;
+        background: Theme.bg-root;
+
+        PageHosts {
+            width: 100%;
+            height: 100%;
+            sessions: root.sessions;
+            connect-session(id) => {
+                root.connect-session(id);
+            }
+            new-session() => {
+                root.new-session-clicked();
+            }
+        }
+        }
+        }
 
 /// 渲染探测用的小窗口（见 `src/app/window.rs::run_renderer_probe`）。
 ///
