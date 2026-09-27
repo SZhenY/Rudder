@@ -509,13 +509,31 @@ impl TermBuffer {
             if t > 0 {
                 process_bytes(&mut self.processor, &mut self.term, &bytes[..t]);
             }
-            self.sgr_buf = bytes[t..].to_vec();
+            self.buffer_sgr_tail(&bytes[t..]);
         } else {
             process_bytes(&mut self.processor, &mut self.term, bytes);
         }
     }
 
-    fn ingest_segments_inner(&mut self, bytes: &[u8]) {
+    /// 块尾半截 CSI 的缓存上限，与 `csi_pending` 的 64 字节同量级。
+///
+/// 为什么必须有上限：合法参数段远短于此（最长的真彩色 `38;2;R;G;B` 也才 ~20 字节），
+/// 而损坏或恶意输入若在 `ESC[` 之后一直不发 final byte，`sgr_buf` 会**无界增长**，
+/// 并且每一块都被重新拼到下一次 ingest 前面（重复搬运）。超限就整段丢弃 —— 与
+/// `csi_pending` 超 64 字节时清空的行为一致。
+const SGR_TAIL_CAP: usize = 64;
+
+/// 缓存块尾半截 CSI（`route_chunk` 与 `ingest_segments_inner` 两个出口共用）。
+fn buffer_sgr_tail(&mut self, tail: &[u8]) {
+    if tail.len() <= Self::SGR_TAIL_CAP {
+        self.sgr_buf = tail.to_vec();
+    } else {
+        // 病态输入：不是合法 CSI 参数段，整段丢弃（与 `csi_pending` 超限时一致）。
+        self.sgr_buf.clear();
+    }
+}
+
+fn ingest_segments_inner(&mut self, bytes: &[u8]) {
         let (seqs, tail) = scan_csi_sequences(bytes);
         let mut feed_from = 0usize;
         for (start, end) in seqs {
@@ -537,7 +555,7 @@ impl TermBuffer {
                 if t > feed_from {
                     process_bytes(&mut self.processor, &mut self.term, &bytes[feed_from..t]);
                 }
-                self.sgr_buf = bytes[t..].to_vec();
+                self.buffer_sgr_tail(&bytes[t..]);
             }
             None => {
                 if feed_from < bytes.len() {
