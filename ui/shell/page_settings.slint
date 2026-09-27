@@ -251,6 +251,11 @@ export component PageSettings inherits Rectangle {
     property <bool> font-menu-open: false;
     in property <string> accent-hex;
     in property <[string]> wallpaper-labels;
+    in property <[string]> update-freq-labels;
+    in property <int> update-freq-index;
+    in-out property <string> mount-filter-text;
+    callback set-update-freq(int);
+    callback set-mount-filter-text(string);
     in property <int> wallpaper-index;
     callback set-accent-color(string);
     callback set-wallpaper-label(string);
@@ -762,6 +767,41 @@ export component PageSettings inherits Rectangle {
                                     root.set-flag-update-check(!root.update-check);
                                 }
                             }
+                            FieldBlock {
+                                title: "检查频率";
+                                desc: "自动检查更新的间隔";
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+
+                                    for fl[i] in root.update-freq-labels : Rectangle {
+                                        width: ftext.preferred-width + 20px;
+                                        height: 26px;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: root.update-freq-index == i ? Theme.accent : Theme.line;
+                                        background: root.update-freq-index == i ? Theme.rail-item-active : Theme.sur-2;
+
+                                        HorizontalLayout {
+                                            padding-left: 10px;
+                                            padding-right: 10px;
+                                            alignment: center;
+                                            ftext := Text {
+                                                text: fl;
+                                                font-size: 11px;
+                                                color: root.update-freq-index == i ? Theme.accent : Theme.fg-2;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-update-freq(i);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // ═══ 终端 ═══
@@ -935,6 +975,33 @@ export component PageSettings inherits Rectangle {
                                 on: root.collapse-sftp;
                                 toggled => {
                                     root.set-flag-collapse-sftp(!root.collapse-sftp);
+                                }
+                            }
+                            FieldBlock {
+                                title: "挂载过滤";
+                                desc: "只显示路径含该关键字的分区（留空显示全部），回车生效";
+
+                                Rectangle {
+                                    width: 300px;
+                                    height: 30px;
+                                    border-radius: 7px;
+                                    border-width: 1px;
+                                    border-color: Theme.line;
+                                    background: Theme.sur-2;
+
+                                    TextInput {
+                                        x: 10px;
+                                        width: parent.width - 20px;
+                                        height: 100%;
+                                        text <=> root.mount-filter-text;
+                                        font-size: 12px;
+                                        color: Theme.fg-1;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                        accepted => {
+                                            root.set-mount-filter-text(root.mount-filter-text);
+                                        }
+                                    }
                                 }
                             }
                         }

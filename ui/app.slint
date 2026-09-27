@@ -2231,6 +2231,11 @@ export component AppWindow inherits Window {
               upload-ui-font() => { root.upload-ui-font(); }
               wallpaper-labels: root.wallpaper-labels;
               wallpaper-index: root.wallpaper-index;
+              update-freq-labels: root.update-freq-labels;
+              update-freq-index: root.update-freq-index;
+              mount-filter-text <=> root.mount-filter;
+              set-update-freq(i) => { root.set-update-freq(i); }
+              set-mount-filter-text(v) => { root.set-mount-filter(v); }
               set-accent-color(c) => { root.set-accent(c); }
               set-wallpaper-label(l) => { root.set-wallpaper(l); }
               pick-wallpaper() => { root.pick-wallpaper-file(); }
