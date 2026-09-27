@@ -491,7 +491,7 @@ export component PageSettings inherits Rectangle {
                                 }
                             }
                             ToggleRow {
-                                label: "深色主题";
+                                label: root.lang-en ? "Dark Theme" : "深色主题";
                                 desc: root.lang-en ? "Toggle between dark and light, whole window" : "在深色与浅色之间切换，整窗配色同步";
                                 on: root.dark;
                                 toggled => {
@@ -777,7 +777,7 @@ Rectangle {
                                 }
                             }
                             ToggleRow {
-                                label: "自动检查更新";
+                                label: root.lang-en ? "Check for Updates" : "自动检查更新";
                                 desc: root.lang-en ? "Check on startup (manual check anytime)" : "启动时检查新版本（可随时手动检查）";
                                 on: root.update-check;
                                 toggled => {
@@ -996,7 +996,7 @@ Rectangle {
                                 }
                             }
                             ToggleRow {
-                                label: "大容量滚回模式";
+                                label: root.lang-en ? "Large Scrollback" : "大容量滚回模式";
                                 desc: root.lang-en ? "Double the history buffer for long sessions" : "历史缓存翻倍，适合长跑日志会话";
                                 on: root.large-scrollback;
                                 toggled => {
@@ -1004,7 +1004,7 @@ Rectangle {
                                 }
                             }
                             ToggleRow {
-                                label: "OSC52 剪贴板同步";
+                                label: root.lang-en ? "OSC52 Clipboard" : "OSC52 剪贴板同步";
                                 desc: root.lang-en ? "Let remote programs read/write the local clipboard" : "允许远端程序经转义序列读写本机剪贴板";
                                 on: root.flag-osc;
                                 toggled => {
@@ -1019,7 +1019,7 @@ Rectangle {
                             alignment: start;
 
                             ToggleRow {
-                                label: "换行转换 (LF ↔ CRLF)";
+                                label: root.lang-en ? "EOL Conversion (LF ↔ CRLF)" : "换行转换 (LF ↔ CRLF)";
                                 desc: root.lang-en ? "Convert EOL when uploading/editing text" : "上传/编辑文本时按目标系统转换换行符";
                                 on: root.convert-eol;
                                 toggled => {
@@ -1027,14 +1027,14 @@ Rectangle {
                                 }
                             }
                             ToggleRow {
-                                label: "命令输出 JSON 格式化";
+                                label: root.lang-en ? "JSON Output" : "命令输出 JSON 格式化";
                                 on: root.json-format-output;
                                 toggled => {
                                     root.set-flag-json-output(!root.json-format-output);
                                 }
                             }
                             ToggleRow {
-                                label: "隐藏特殊分区";
+                                label: root.lang-en ? "Hide Special Partitions" : "隐藏特殊分区";
                                 desc: root.lang-en ? "Hide tmpfs / overlay virtual partitions" : "文件面板不显示 tmpfs / overlay 等虚拟分区";
                                 on: root.hide-partitions;
                                 toggled => {
@@ -1042,14 +1042,14 @@ Rectangle {
                                 }
                             }
                             ToggleRow {
-                                label: "下载前始终询问位置";
+                                label: root.lang-en ? "Always Ask Where to Save" : "下载前始终询问位置";
                                 on: root.always-ask;
                                 toggled => {
                                     root.set-flag-always-ask(!root.always-ask);
                                 }
                             }
                             ToggleRow {
-                                label: "面板跟随远端 cwd";
+                                label: root.lang-en ? "Follow Remote cwd" : "面板跟随远端 cwd";
                                 desc: root.lang-en ? "SFTP panel follows terminal cd" : "终端 cd 时 SFTP 面板自动切到同目录";
                                 on: root.follow-cd;
                                 toggled => {
@@ -1057,7 +1057,7 @@ Rectangle {
                                 }
                             }
                             ToggleRow {
-                                label: "默认折叠 SFTP 面板";
+                                label: root.lang-en ? "Collapse SFTP Panel" : "默认折叠 SFTP 面板";
                                 on: root.collapse-sftp;
                                 toggled => {
                                     root.set-flag-collapse-sftp(!root.collapse-sftp);
@@ -1065,7 +1065,7 @@ Rectangle {
                             }
                             FieldBlock {
                                 title: root.lang-en ? "Mount Filter" : "挂载过滤";
-                                desc: "只显示路径含该关键字的分区（留空显示全部），回车生效";
+                                desc: root.lang-en ? "Show only partitions whose path contains the keyword (empty = all), Enter to apply" : "只显示路径含该关键字的分区（留空显示全部），回车生效";
 
                                 Rectangle {
                                     width: 300px;
@@ -1296,7 +1296,7 @@ Rectangle {
                                 }
                             }
                             ToggleRow {
-                                label: "允许自签名无效证书";
+                                label: root.lang-en ? "Allow Self-signed Certs" : "允许自签名无效证书";
                                 desc: root.lang-en ? "Test the connection again after saving" : "与保存后请再测试连接";
                                 on: root.webdav-certs;
                                 toggled => {
@@ -1305,7 +1305,7 @@ Rectangle {
                             }
                             FieldBlock {
                                 title: root.lang-en ? "Actions" : "操作";
-                                desc: "保存配置后可上传 / 下载备份";
+                                desc: root.lang-en ? "Upload / restore after saving" : "保存配置后可上传 / 下载备份";
 
                                 HorizontalLayout {
                                     spacing: 8px;
@@ -1465,7 +1465,7 @@ Rectangle {
                                         spacing: 2px;
 
                                         Text {
-                                            text: "日志与诊断";
+                                            text: root.lang-en ? "Logs & Diagnostics" : "日志与诊断";
                                             font-size: 13px;
                                             font-weight: 600;
                                             color: Theme.fg-1;
