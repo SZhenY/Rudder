@@ -1,7 +1,7 @@
 // 分屏标签条（新设计，按 ex/终端，会话中.png 的顶栏）。
 //
 // 每个分屏顶部一条：标签药丸（终端图标 + 标题 + 关闭 ×，双击重命名）+ ➕；
-// 右侧 快捷指令 / 分屏 / 全屏。替代旧 `tabs.slint` 的 TabBar 组件
+// 右侧 分屏 / 全屏（快捷指令侧栏按需求移除）。替代旧 `tabs.slint` 的 TabBar 组件
 // （`TabInfo` 类型仍由 tabs.slint 导出，全仓在用，文件保留）。
 //
 // 拖拽排序 / 跨分屏合并 / 重复标签暂未迁移（旧 TabBar 的能力），后续按需补。
@@ -126,7 +126,6 @@ export component PaneTabs inherits Rectangle {
     callback tab-rename-requested(string);
     callback new-tab();
     callback split-active();
-    callback toggle-quick();
     callback toggle-full();
 
     height: 40px;
@@ -185,14 +184,7 @@ export component PaneTabs inherits Rectangle {
             horizontal-stretch: 1;
         }
 
-        // 右侧：快捷指令 / 分屏 / 全屏（参考图顶右一组）
-        IconBtn {
-            glyph: "\u{E3E7}"; // flash_on
-            label: "快捷指令";
-            clicked => {
-                root.toggle-quick();
-            }
-        }
+        // 右侧：分屏 / 全屏（快捷指令侧栏按需求移除）
         IconBtn {
             glyph: "\u{E8EC}"; // view_column
             clicked => {

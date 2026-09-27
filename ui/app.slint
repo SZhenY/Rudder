@@ -1379,8 +1379,7 @@ export component AppWindow inherits Window {
                       tab-rename-requested(id) => { root.tab-rename-request(id); }
                       new-tab() => { root.pane-new-tab(pane.id); }
                       split-active() => { root.pane-split(pane.id, pane.active-id, 0); }
-                      toggle-quick() => { root.quick-panel-open = !root.quick-panel-open; }
-                      toggle-full() => { root.toggle-zen-key(); }
+                              toggle-full() => { root.toggle-zen-key(); }
                   }
                 }
 
@@ -2222,11 +2221,11 @@ export component AppWindow inherits Window {
               always-ask: root.download-always-ask;
               follow-cd: root.sftp-follow-cd;
               collapse-sftp: root.collapse-sftp-default;
-              show-cmd-bar: root.show-cmd-bar;
-              sync-upload: root.sync-upload-enabled;
               app-version: root.app-version;
               accent-hex: root.accent-hex;
               ui-fonts: root.ui-fonts;
+              term-fonts: root.term-fonts;
+              term-font-index: root.term-font-index;
               ui-font-index: root.ui-font-index;
               upload-ui-font() => { root.upload-ui-font(); }
               wallpaper-labels: root.wallpaper-labels;
@@ -2263,8 +2262,6 @@ export component AppWindow inherits Window {
               set-flag-always-ask(v) => { root.set-download-always-ask(v); }
               set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
               set-flag-collapse-sftp(v) => { root.set-collapse-sftp-default(v); }
-              set-flag-show-cmd-bar(v) => { root.set-show-cmd-bar(v); }
-              set-flag-sync-upload(v) => { root.set-sync-upload-enabled(v); }
               term-font(f) => {
                   root.set-term-font(f);
               }

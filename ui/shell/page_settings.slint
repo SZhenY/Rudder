@@ -242,13 +242,14 @@ export component PageSettings inherits Rectangle {
     in property <bool> always-ask;
     in property <bool> follow-cd;
     in property <bool> collapse-sftp;
-    in property <bool> show-cmd-bar;
-    in property <bool> sync-upload;
     in property <string> app-version;
     in property <[string]> ui-fonts;
     in property <int> ui-font-index;
+    in property <[string]> term-fonts;
+    in property <int> term-font-index;
     callback upload-ui-font();
     property <bool> font-menu-open: false;
+    property <bool> tfont-menu-open: false;
     in property <string> accent-hex;
     in property <[string]> wallpaper-labels;
     in property <[string]> update-freq-labels;
@@ -289,8 +290,6 @@ export component PageSettings inherits Rectangle {
     callback set-flag-always-ask(bool);
     callback set-flag-follow-cd(bool);
     callback set-flag-collapse-sftp(bool);
-    callback set-flag-show-cmd-bar(bool);
-    callback set-flag-sync-upload(bool);
 
     // 0 基础 · 1 终端 · 2 文件 · 3 布局 · 4 快捷键
     property <int> current-cat: 0;
@@ -368,15 +367,6 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 CategoryItem {
-                    glyph: "\u{E8AC}";
-                    label: "布局";
-                    sub: "面板、命令栏与侧栏";
-                    active: root.current-cat == 3;
-                    clicked => {
-                        root.current-cat = 3;
-                    }
-                }
-                CategoryItem {
                     glyph: "\u{E312}";
                     label: "快捷键";
                     sub: "全局快捷键与终端快捷键";
@@ -423,7 +413,6 @@ export component PageSettings inherits Rectangle {
                     text: root.current-cat == 0 ? "基础设置"
                         : root.current-cat == 1 ? "终端设置"
                         : root.current-cat == 2 ? "文件设置"
-                        : root.current-cat == 3 ? "布局设置"
                         : root.current-cat == 5 ? "关于"
                         : root.current-cat == 6 ? "云同步"
                         : "快捷键";
@@ -811,31 +800,77 @@ export component PageSettings inherits Rectangle {
 
                             FieldBlock {
                                 title: "终端字体";
-                                desc: "等宽字体，随改随生效并持久化";
+                                desc: "已安装的等宽字体，随改随生效并持久化";
 
-                                HorizontalLayout {
-                                    spacing: 8px;
+                                VerticalLayout {
+                                    spacing: 4px;
                                     alignment: start;
 
-                                    SelectBox {
-                                        width: 170px;
-                                        text: Theme.term-font-family;
-                                        clicked => {
-                                            root.term-font(Theme.term-font-family == "JetBrains Mono"
-                                                ? "Meatshell Mono" : "JetBrains Mono");
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        alignment: start;
+
+                                        SelectBox {
+                                            width: 240px;
+                                            text: root.term-fonts.length > 0 && root.term-font-index < root.term-fonts.length
+                                                ? root.term-fonts[root.term-font-index]
+                                                : Theme.term-font-family;
+                                            clicked => {
+                                                root.tfont-menu-open = !root.tfont-menu-open;
+                                            }
+                                        }
+                                        Switch {
+                                            on: Theme.term-font-bold;
+                                            toggled => {
+                                                root.term-font-bold(!Theme.term-font-bold);
+                                            }
+                                        }
+                                        Text {
+                                            text: "粗体";
+                                            font-size: 11px;
+                                            color: Theme.fg-3;
+                                            vertical-alignment: center;
                                         }
                                     }
-                                    Switch {
-                                        on: Theme.term-font-bold;
-                                        toggled => {
-                                            root.term-font-bold(!Theme.term-font-bold);
+
+                                    if root.tfont-menu-open : Rectangle {
+                                        width: 240px;
+                                        border-radius: 8px;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+                                        background: Theme.sur-1;
+
+                                        VerticalLayout {
+                                            spacing: 0;
+                                            alignment: start;
+
+                                            for lbl[i] in root.term-fonts : Rectangle {
+                                                height: 30px;
+                                                background: root.term-font-index == i
+                                                    ? Theme.rail-item-active
+                                                    : (tf-ta.has-hover ? Theme.rail-item-hover : transparent);
+
+                                                HorizontalLayout {
+                                                    padding-left: 10px;
+                                                    padding-right: 10px;
+                                                    alignment: start;
+
+                                                    Text {
+                                                        text: lbl;
+                                                        font-size: 12px;
+                                                        color: root.term-font-index == i ? Theme.accent : Theme.fg-1;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+
+                                                tf-ta := TouchArea {
+                                                    clicked => {
+                                                        root.term-font(lbl);
+                                                        root.tfont-menu-open = false;
+                                                    }
+                                                }
+                                            }
                                         }
-                                    }
-                                    Text {
-                                        text: "粗体";
-                                        font-size: 11px;
-                                        color: Theme.fg-3;
-                                        vertical-alignment: center;
                                     }
                                 }
                             }
@@ -1002,28 +1037,6 @@ export component PageSettings inherits Rectangle {
                                             root.set-mount-filter-text(root.mount-filter-text);
                                         }
                                     }
-                                }
-                            }
-                        }
-
-                        // ═══ 布局 ═══
-                        if root.current-cat == 3 : VerticalLayout {
-                            spacing: 4px;
-                            alignment: start;
-
-                            ToggleRow {
-                                label: "显示底部命令栏";
-                                on: root.show-cmd-bar;
-                                toggled => {
-                                    root.set-flag-show-cmd-bar(!root.show-cmd-bar);
-                                }
-                            }
-                            ToggleRow {
-                                label: "同步上传";
-                                desc: "输入会话同步到远端（WebDAV 表单下一轮迁入）";
-                                on: root.sync-upload;
-                                toggled => {
-                                    root.set-flag-sync-upload(!root.sync-upload);
                                 }
                             }
                         }
