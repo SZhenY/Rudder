@@ -31,7 +31,7 @@ import { TabBar, TabInfo } from "tabs.slint";
 // 先在这里 import 一次，让它进入编译图。收尾那一步会把构建入口换成
 // `ui/shell/app_shell.slint`、删掉旧外壳与这一行。
 export { AppShell } from "shell/app_shell.slint";
-import { Welcome, SessionInfo } from "welcome.slint";
+import { SessionInfo } from "welcome_rows.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
@@ -1085,62 +1085,6 @@ export component AppWindow inherits Window {
                 animate opacity { duration: 120ms; easing: AnimationSettings.layout(); enabled: AnimationSettings.enabled; }
                 opacity: root.welcome-collapsed ? 0.0 : 1.0;
                 width: parent.width; height: parent.height;
-                Welcome {
-                width: parent.width;
-                height: parent.height;
-                compact: true;
-                dock-edge: root.welcome-sidebar-dock;
-                sessions: root.sessions;
-                import-hint: root.ssh-import-hint;
-                search-query <=> root.host-search-query;
-                search-changed(query) => { root.host-search-changed(query); }
-                collapse => {
-                    root.welcome-collapsed = true;
-                    root.set-welcome-collapsed(true);
-                }
-                dock-drag-move(ax, ay) => {
-                    root.panel-dragging = true;
-                    root.drag-nx = (ax - dock-area.absolute-position.x) / dock-area.width;
-                    root.drag-ny = (ay - dock-area.absolute-position.y) / dock-area.height;
-                }
-                dock-drag-end() => {
-                    if (root.dock-target != "") {
-                        root.welcome-sidebar-dock = root.dock-target;
-                        if (root.sidebar-dock == root.dock-target) {
-                            root.sidebar-collapsed = true;
-                            root.set-sidebar-collapsed(true);
-                        }
-                        if (root.quick-panel-open && root.quick-panel-dock == root.dock-target) {
-                            root.quick-panel-collapsed = true;
-                        }
-                        root.persist-welcome-sidebar-dock(root.welcome-sidebar-dock);
-                    }
-                    root.panel-dragging = false;
-                }
-                new-session => { root.new-session-clicked(); }
-                import-ssh-config => { root.import-ssh-config(); }
-                connect-session(id) => { root.connect-session(id); }
-                edit-session(id) => { root.edit-session(id); }
-                duplicate-session(id) => { root.duplicate-session(id); }
-                move-session(id, group) => { root.move-session(id, group); }
-                reorder-session(id, dir) => { root.reorder-session(id, dir); }
-                reorder-end => { root.reorder-session-end(); }
-                toggle-group(group) => { root.toggle-group(group); }
-                new-group => {
-                    root.group-dialog-orig = "";
-                    root.group-dialog-name = "";
-                    root.group-dialog-error = "";
-                    root.group-dialog-open = true;
-                }
-                edit-group(name) => {
-                    root.group-dialog-orig = name;
-                    root.group-dialog-name = name;
-                    root.group-dialog-error = "";
-                    root.group-dialog-open = true;
-                }
-                delete-group(name) => { root.delete-group(name); }
-                remove-session(id) => { root.remove-session(id); }
-            }
             }
             Rectangle {
                 x: root.welcome-sidebar-dock == "left" ? parent.width - 1px : 0px;
@@ -1480,38 +1424,6 @@ export component AppWindow inherits Window {
 
                 // Welcome tab — fill the content area explicitly (some renderers
                 // don't auto-fill, which spread the header/card apart) (#dock).
-                if pane.active-id == "welcome" : Welcome {
-                    width: parent.width;
-                    height: parent.height;
-                    sessions: root.sessions;
-                    import-hint: root.ssh-import-hint;
-                    search-query <=> root.host-search-query;
-                    search-changed(query) => { root.host-search-changed(query); }
-                    new-session => { root.new-session-clicked(); }
-                    import-ssh-config => { root.import-ssh-config(); }
-                    connect-session(id) => { root.connect-session(id); }
-                    edit-session(id) => { root.edit-session(id); }
-                    duplicate-session(id) => { root.duplicate-session(id); }
-                    move-session(id, group) => { root.move-session(id, group); }
-                    reorder-session(id, dir) => { root.reorder-session(id, dir); }
-                    reorder-end => { root.reorder-session-end(); }
-                    toggle-group(group) => { root.toggle-group(group); }
-                    new-group => {
-                        root.group-dialog-orig = "";
-                        root.group-dialog-name = "";
-                        root.group-dialog-error = "";
-                        root.group-dialog-open = true;
-                    }
-                    edit-group(name) => {
-                        root.group-dialog-orig = name;
-                        root.group-dialog-name = name;
-                        root.group-dialog-error = "";
-                        root.group-dialog-open = true;
-                    }
-                    delete-group(name) => { root.delete-group(name); }
-                    remove-session(id) => { root.remove-session(id); }
-                    cycle-tab(reverse) => { root.cycle-tab(reverse); }
-                }
 
                 // Terminal tabs — one TerminalView per terminal state. Only
                 // the one matching `active-tab-id` is visible. Slint doesn't
