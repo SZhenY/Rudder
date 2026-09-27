@@ -2212,9 +2212,11 @@ export component AppWindow inherits Window {
 
         Rail {
             x: 0;
-            y: root.shell-top;
+            y: 0;
             width: root.rail-w;
-            height: root.height - root.shell-top;
+            height: root.height;
+            // 通到顶：搜索框自己给红绿灯让位（与参考图一致，旧界面的标签栏被盖住）
+            top-inset: root.shell-top;
             current-page: root.shell-page;
             // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
             // 那个赋值传不回来，收起/展开看起来就是"点了没反应"。
@@ -2226,22 +2228,28 @@ export component AppWindow inherits Window {
 
         if root.shell-page == 0 : Rectangle {
             x: root.rail-w;
-            y: root.shell-top;
+            y: 0;
             width: root.width - root.rail-w;
-            height: root.height - root.shell-top;
+            height: root.height;
             background: Theme.bg-root;
 
-            PageHosts {
-                width: 100%;
-                height: 100%;
-                sessions: root.sessions;
-                connect-session(id) => {
-                    // 点会话要先切到终端页，才能看到连接过程；再交给原有链路去发起连接。
-                    root.shell-page = 1;
-                    root.connect-session(id);
+            // 给红绿灯让位后再放页面内容（盖住旧界面的标签栏）
+            VerticalLayout {
+                Rectangle {
+                    height: root.shell-top;
                 }
-                new-session() => {
-                    root.new-session-clicked();
+
+                PageHosts {
+                    vertical-stretch: 1;
+                    sessions: root.sessions;
+                    connect-session(id) => {
+                        // 点会话要先切到终端页，才能看到连接过程；再交给原有链路去发起连接。
+                        root.shell-page = 1;
+                        root.connect-session(id);
+                    }
+                    new-session() => {
+                        root.new-session-clicked();
+                    }
                 }
             }
         }
