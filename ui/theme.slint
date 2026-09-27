@@ -65,6 +65,8 @@ export global Theme {
     in-out property <brush> accent-soft: root.accent-tint; // 选中药丸底（accent 半透明）
     // 危险色（关闭按钮悬停等）—— 原主题里的声明，保持不动。
     out property <brush> danger: dark ? #e25c5c : #ff3b30;
+    // 与 danger 对应的"正常/在线"状态色（原主题没有，标签筛选、运行状态要用）。
+    out property <brush> ok: dark ? #4ecf7a : #1a9e4b;
 
     // 间距刻度（4 的倍数）—— 圆角直接用既有的 radius-sm / radius-md / radius-lg。
     in-out property <length> sp-1: 4px;

@@ -1,8 +1,7 @@
-// 主机管理页（新界面）。
+// 主机管理页（按 ex/主机.png 参考稿）。
 //
-// 列表行直接复用 `welcome_rows.slint` 里的 `SessionRow`（旧侧栏用的就是它，接口完整：
-// connect / edit / duplicate / move-to-group / remove）。这一版先做到"能列出主机、
-// 能点连接"，分组导航、标签筛选、凭证管理在后续迭代里补。
+// 三栏：左侧栏（外壳提供）→ 本页的「分组导航」列 → 主内容（顶栏 + 主机卡片）。
+// 数据仍走 AppWindow 既有的 sessions 模型与 connect-session 回调，Rust 零改动。
 
 import { Theme } from "../theme.slint";
 import { SessionInfo, SessionRow } from "../welcome_rows.slint";
@@ -14,74 +13,328 @@ export component PageHosts inherits Rectangle {
 
     background: Theme.bg-root;
 
-    VerticalLayout {
-        spacing: 0px;
-
-        // 顶部：标题 + 新建
+    HorizontalLayout {
+        // ── 第二列：分组导航 ────────────────────────────────────────────
         Rectangle {
-            height: 52px;
-            background: Theme.rail-bg;
+            width: 190px;
+            background: Theme.sur-1;
 
-            HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                spacing: 8px;
-                alignment: space-between;
+            VerticalLayout {
+                padding: Theme.sp-3;
+                spacing: Theme.sp-3;
+                alignment: start;
 
                 Text {
-                    text: "主机管理";
-                    font-size: 16px;
-                    color: Theme.rail-fg;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
+                    text: "分组导航";
+                    font-size: 12px;
+                    color: Theme.fg-3;
                 }
 
                 Rectangle {
-                    width: 96px;
-                    height: 32px;
-                    border-radius: 8px;
-                    background: new-ta.has-hover ? Theme.rail-item-active : Theme.rail-item-hover;
+                    height: 34px;
+                    border-radius: Theme.radius-md;
+                    background: all-ta.has-hover ? Theme.sur-3 : Theme.accent-soft;
 
-                    Text {
-                        text: "+ 新建主机";
-                        font-size: 12px;
-                        color: Theme.rail-fg;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: Theme.sp-2;
+                        spacing: Theme.sp-2;
+                        alignment: start;
+
+                        Text {
+                            width: 18px;
+                            text: "\u{E2C8}"; // list_alt
+                            font-family: "Material Icons";
+                            font-size: 15px;
+                            color: Theme.accent;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: "全部主机";
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: Theme.accent;
+                            vertical-alignment: center;
+                        }
                     }
 
-                    new-ta := TouchArea {
-                        clicked => {
-                            root.new-session();
+                    all-ta := TouchArea {}
+                }
+
+                Rectangle {
+                    height: 30px;
+                    border-radius: Theme.radius-md;
+                    background: grp-ta.has-hover ? Theme.sur-3 : transparent;
+
+                    HorizontalLayout {
+                        padding-left: Theme.sp-2;
+                        padding-right: Theme.sp-2;
+                        spacing: Theme.sp-2;
+                        alignment: space-between;
+
+                        Text {
+                            text: "默认分组";
+                            font-size: 12px;
+                            color: Theme.fg-2;
+                            vertical-alignment: center;
                         }
+                        Text {
+                            text: "0";
+                            font-size: 11px;
+                            color: Theme.fg-3;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    grp-ta := TouchArea {}
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                }
+
+                Text {
+                    text: "标签筛选";
+                    font-size: 12px;
+                    color: Theme.fg-3;
+                }
+                HorizontalLayout {
+                    spacing: Theme.sp-1;
+                    alignment: start;
+
+                    // 标签体系尚未进配置（现在只有"分组"），先放三枚示例 chip 占位
+                    for chip in [
+                        { label: "开发", c: Theme.accent },
+                        { label: "测试", c: Theme.ok },
+                        { label: "生产", c: Theme.danger },
+                    ] : Rectangle {
+                        width: 44px;
+                        height: 22px;
+                        border-radius: Theme.radius-sm;
+                        border-width: 1px;
+                        border-color: chip.c;
+
+                        Text {
+                            text: chip.label;
+                            font-size: 10px;
+                            color: chip.c;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 34px;
+                    border-radius: Theme.radius-md;
+                    background: Theme.sur-3;
+
+                    Text {
+                        text: "管理分组 & 标签";
+                        font-size: 12px;
+                        color: Theme.fg-2;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
                     }
                 }
             }
         }
 
-        // 列表
-        if root.sessions.length == 0 : Text {
-            text: "还没有主机 —— 点右上角「新建主机」，或稍后从导入 / 云同步带入";
-            font-size: 13px;
-            color: Theme.rail-fg;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            vertical-stretch: 1;
+        // 分隔线
+        Rectangle {
+            width: 1px;
+            background: Theme.line;
         }
 
-        if root.sessions.length > 0 : Flickable {
-            vertical-stretch: 1;
+        // ── 主内容：顶栏 + 卡片 ──────────────────────────────────────────
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 0px;
 
-            VerticalLayout {
-                padding: 8px;
-                spacing: 4px;
-                alignment: start;
+            Rectangle {
+                height: 52px;
+                background: Theme.sur-1;
 
-                for s in root.sessions : SessionRow {
-                    session: s;
-                    compact: false;
-                    connect => {
-                        root.connect-session(s.id);
+                HorizontalLayout {
+                    padding-left: Theme.sp-4;
+                    padding-right: Theme.sp-4;
+                    spacing: Theme.sp-2;
+                    alignment: space-between;
+
+                    Text {
+                        text: "主机管理";
+                        font-size: 15px;
+                        color: Theme.fg-1;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+
+                    Rectangle {
+                        width: 96px;
+                        height: 30px;
+                        border-radius: Theme.radius-md;
+                        border-width: 1px;
+                        border-color: Theme.line-strong;
+                        background: new-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+
+                        Text {
+                            text: "+ 新建主机";
+                            font-size: 12px;
+                            color: Theme.fg-1;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        new-ta := TouchArea {
+                            clicked => {
+                                root.new-session();
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.line;
+            }
+
+            if root.sessions.length == 0 : Text {
+                text: "还没有主机 —— 点右上角「新建主机」，或用导入 / 云同步带入";
+                font-size: 13px;
+                color: Theme.fg-3;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                vertical-stretch: 1;
+            }
+
+            if root.sessions.length > 0 : Flickable {
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding: Theme.sp-4;
+                    spacing: Theme.sp-3;
+                    alignment: start;
+
+                    for s in root.sessions : Rectangle {
+                        // 主机卡片：图标块 + 名称/SSH 徽标 + 连接信息 + 快速连接
+                        width: 340px;
+                        height: 168px;
+                        border-radius: Theme.radius-lg;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        background: card-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+                        clip: true;
+
+                        VerticalLayout {
+                            padding: Theme.sp-3;
+                            spacing: Theme.sp-2;
+                            alignment: start;
+
+                            HorizontalLayout {
+                                spacing: Theme.sp-3;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 40px;
+                                    height: 40px;
+                                    border-radius: Theme.radius-md;
+                                    background: Theme.sur-3;
+
+                                    Text {
+                                        text: "\u{EB8E}"; // terminal
+                                        font-family: "Material Icons";
+                                        font-size: 20px;
+                                        color: Theme.fg-2;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    alignment: center;
+
+                                    HorizontalLayout {
+                                        spacing: Theme.sp-2;
+                                        alignment: start;
+
+                                        Text {
+                                            text: s.name;
+                                            font-size: 14px;
+                                            font-weight: 600;
+                                            color: Theme.fg-1;
+                                            vertical-alignment: center;
+                                        }
+                                        Rectangle {
+                                            width: 38px;
+                                            height: 18px;
+                                            border-radius: Theme.radius-sm;
+                                            border-width: 1px;
+                                            border-color: Theme.line-strong;
+
+                                            Text {
+                                                text: "SSH";
+                                                font-size: 9px;
+                                                color: Theme.fg-3;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                    }
+                                    Text {
+                                        text: s.user != "" ? "\{s.user}@\{s.host}:\{s.port}" : "\{s.host}:\{s.port}";
+                                        font-size: 11px;
+                                        color: Theme.fg-3;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: Theme.sp-1;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 110px;
+                                    height: 20px;
+                                    border-radius: Theme.radius-sm;
+                                    background: Theme.sur-3;
+
+                                    Text {
+                                        text: s.group == "" ? "默认分组" : s.group;
+                                        font-size: 10px;
+                                        color: Theme.fg-2;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                height: 30px;
+                                border-radius: Theme.radius-md;
+                                background: quick-ta.has-hover ? Theme.accent-soft : Theme.sur-3;
+
+                                Text {
+                                    text: "快速连接";
+                                    font-size: 12px;
+                                    color: Theme.fg-1;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                quick-ta := TouchArea {
+                                    clicked => {
+                                        root.connect-session(s.id);
+                                    }
+                                }
+                            }
+                        }
+
+                        card-ta := TouchArea {
+                            clicked => {
+                                root.connect-session(s.id);
+                            }
+                        }
                     }
                 }
             }
