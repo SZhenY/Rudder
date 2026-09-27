@@ -1,10 +1,12 @@
 // 新外壳（UI 重构）：左侧栏 + 页面 + 底部状态栏。
 //
 // 用 `--ui=shell` 启动；旧的 `AppWindow`（app.slint）在收尾时整体删除。
+// page 0 主机管理（已接入真实数据）· page 1 终端（先有空状态）· 2/3/4 待接。
 
 import { Theme } from "../theme.slint";
 import { Rail } from "rail.slint";
 import { PageHosts } from "page_hosts.slint";
+import { PageTerminal } from "page_terminal.slint";
 import { SessionInfo } from "../welcome_rows.slint";
 
 export component AppShell inherits Window {
@@ -21,6 +23,7 @@ export component AppShell inherits Window {
     in property <[SessionInfo]> sessions;
     callback connect-session(string /* id */);
     callback new-session();
+    callback new-local-session();
 
     VerticalLayout {
         HorizontalLayout {
@@ -52,14 +55,22 @@ export component AppShell inherits Window {
                     }
                 }
 
-                if root.page != 0 : Text {
-                    text: root.page == 1
-                        ? "终端"
-                        : root.page == 2
-                        ? "指令集"
+                if root.page == 1 : PageTerminal {
+                    sessions: root.sessions;
+                    connect-session(id) => {
+                        root.connect-session(id);
+                    }
+                    new-local-session() => {
+                        root.new-local-session();
+                    }
+                }
+
+                if root.page >= 2 : Text {
+                    text: root.page == 2
+                        ? "指令集（下一步接）"
                         : root.page == 3
-                        ? "Docker"
-                        : "设置";
+                        ? "Docker（占位）"
+                        : "设置（下一步接）";
                     font-size: 20px;
                     color: Theme.rail-fg;
                     horizontal-alignment: center;

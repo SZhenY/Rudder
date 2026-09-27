@@ -1,0 +1,146 @@
+// 终端页（新界面）。
+//
+// 这一版先做**空状态**：没有会话时给出"创建你的第一个终端会话"（本地终端 / 本地
+// shell / 远程与串口 / 最近连接）。会话态（真正的终端画面）要嵌入现有终端核心，
+// 那一块带着上百个属性绑定，下一步单独接。
+
+import { Theme } from "../theme.slint";
+import { SessionInfo } from "../welcome_rows.slint";
+
+component ActionCard inherits Rectangle {
+    in property <string> title;
+    in property <string> desc;
+    callback clicked();
+
+    height: 84px;
+    border-radius: 10px;
+    background: card-ta.has-hover ? Theme.rail-item-active : Theme.rail-item-hover;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 4px;
+        alignment: start;
+
+        Text {
+            text: root.title;
+            font-size: 14px;
+            color: Theme.rail-fg;
+        }
+        Text {
+            text: root.desc;
+            font-size: 11px;
+            color: Theme.rail-fg;
+            wrap: word-wrap;
+        }
+    }
+
+    card-ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component PageTerminal inherits Rectangle {
+    in property <[SessionInfo]> sessions;
+    callback new-local-session();
+    callback connect-session(string /* id */);
+
+    background: Theme.bg-root;
+
+    Flickable {
+        viewport-width: root.width;
+
+        VerticalLayout {
+            padding: 24px;
+            spacing: 16px;
+            alignment: start;
+
+            Text {
+                text: "创建你的第一个终端会话";
+                font-size: 18px;
+                color: Theme.rail-fg;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+
+                ActionCard {
+                    horizontal-stretch: 1;
+                    title: "本地终端";
+                    desc: "直接用当前系统的默认 shell 开一个本地会话";
+                    clicked => {
+                        root.new-local-session();
+                    }
+                }
+                ActionCard {
+                    horizontal-stretch: 1;
+                    title: "选择本地 shell";
+                    desc: "指定 /bin/zsh、/bin/bash 等，再开本地会话";
+                    clicked => {
+                        root.new-local-session();
+                    }
+                }
+                ActionCard {
+                    horizontal-stretch: 1;
+                    title: "远程 / 串口会话";
+                    desc: "选一台主机建立 SSH 连接，或配置串口";
+                    clicked => {
+                        // 没有主机时回到主机管理页去新建
+                        root.connect-session("");
+                    }
+                }
+            }
+
+            Text {
+                text: "最近连接";
+                font-size: 14px;
+                color: Theme.rail-fg;
+            }
+
+            if root.sessions.length == 0 : Text {
+                text: "还没有连接记录 —— 上面挑一种方式开始";
+                font-size: 12px;
+                color: Theme.rail-fg;
+            }
+
+            if root.sessions.length > 0 : VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+
+                for s in root.sessions : Rectangle {
+                    height: 40px;
+                    border-radius: 8px;
+                    background: row-ta.has-hover ? Theme.rail-item-hover : transparent;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 8px;
+                        alignment: space-between;
+
+                        Text {
+                            text: s.name;
+                            font-size: 13px;
+                            color: Theme.rail-fg;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: s.user != "" ? "\{s.user}@\{s.host}" : s.host;
+                            font-size: 11px;
+                            color: Theme.rail-fg;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    row-ta := TouchArea {
+                        clicked => {
+                            root.connect-session(s.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

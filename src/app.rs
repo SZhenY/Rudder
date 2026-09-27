@@ -445,6 +445,9 @@ pub fn run_shell() -> Result<()> {
     shell.on_new_session(|| {
         tracing::info!("shell: new-session（新建主机对话框后续接入）");
     });
+    shell.on_new_local_session(|| {
+        tracing::info!("shell: new-local-session（终端页接入后开本地 shell 会话）");
+    });
 
     shell.run().context("run app shell")?;
     Ok(())
