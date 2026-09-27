@@ -36,6 +36,15 @@ impl Layout {
         }
     }
 
+    /// 没有任何标签（布局还是初始的空叶子）—— 终端页此时显示「创建你的第一个
+    /// 终端会话」空状态，`refresh_panes` 据此不产出任何 pane。
+    pub fn is_empty(&self) -> bool {
+        match &self.root {
+            Node::Leaf(l) => l.tabs.is_empty(),
+            _ => false,
+        }
+    }
+
     fn alloc(&mut self) -> u64 {
         let id = self.next_id;
         self.next_id += 1;

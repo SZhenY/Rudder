@@ -104,6 +104,16 @@ pub(crate) fn refresh_panes(
     let snapshot = (*layout.borrow()).clone();
     let layout = &snapshot;
 
+    // 空布局（还没有任何标签）：不产出 pane / splitter —— 终端页显示
+    // 「创建你的第一个终端会话」空状态（参考图）。旧版这里会强制画一个空
+    // pane（"从左侧选择一个会话开始"），新外壳里那就是一条孤零零的标签条
+    // + 一片空洞。
+    if layout.is_empty() {
+        panes_model.set_vec(Vec::new());
+        splitters_model.set_vec(Vec::new());
+        return;
+    }
+
     let (cw, ch) = (content.0.max(1.0), content.1.max(1.0));
     let (panes, splits) = layout.flatten(0.0, 0.0, cw, ch);
 

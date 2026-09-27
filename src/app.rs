@@ -342,28 +342,20 @@ impl AppContext {
 
         // --- UI models (window is created before the context) -------------
         let tabs_model: Rc<VecModel<TabInfo>> = Rc::new(VecModel::default());
-        tabs_model.push(TabInfo {
-            id: "welcome".into(),
-            title_len: tab_title_len(t("新标签页", "New tab")),
-            title: t("新标签页", "New tab").into(),
-            kind: "welcome".into(),
-            connected: false,
-        });
+        // 参考图的「无会话」状态：启动时**没有任何标签** —— 终端页直接显示
+        // 「创建你的第一个终端会话」空状态（PageTerminal）；点 ➕ 或在主机页点
+        // 会话才出现标签。（原先这里塞一个 kind="welcome" 的「新标签页」，
+        // 把空状态挡住了，看起来像一条孤零零的标签栏 + 一片空洞。）
         window.set_tabs(ModelRc::from(tabs_model.clone()));
-        window.set_active_tab_id("welcome".into());
+        window.set_active_tab_id(SharedString::from(String::new()));
 
         let terminals_model: Rc<VecModel<TerminalState>> = Rc::new(VecModel::default());
         window.set_terminals(ModelRc::from(terminals_model.clone()));
 
-        // Split-pane layout tree (v0.5). Starts as a single pane owning the
-        // welcome tab; in welcome-as-sidebar mode the session list lives in a
-        // left panel, so the layout starts empty.
-        let welcome_sidebar = store.borrow().welcome_as_sidebar();
-        let layout: Rc<RefCell<crate::layout::Layout>> = Rc::new(RefCell::new(if welcome_sidebar {
-            crate::layout::Layout::new(Vec::new(), String::new())
-        } else {
-            crate::layout::Layout::new(vec!["welcome".into()], "welcome".into())
-        }));
+        // Split-pane layout tree (v0.5). Starts empty —— 第一个标签由
+        // pane-new-tab / connect-session 创建；空布局 = 终端页空状态。
+        let layout: Rc<RefCell<crate::layout::Layout>> =
+            Rc::new(RefCell::new(crate::layout::Layout::new(Vec::new(), String::new())));
         let content_size: Rc<std::cell::Cell<(f32, f32)>> =
             Rc::new(std::cell::Cell::new((1200.0, 800.0)));
         let panes_model: Rc<VecModel<PaneInfo>> = Rc::new(VecModel::default());

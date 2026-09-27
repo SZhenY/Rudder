@@ -1,140 +1,268 @@
-// 终端页（新界面）。
+// 终端页「无会话」空状态（按 ex/终端-无会话.png 逐项对齐）。
 //
-// 这一版先做**空状态**：没有会话时给出"创建你的第一个终端会话"（本地终端 / 本地
-// shell / 远程与串口 / 最近连接）。会话态（真正的终端画面）要嵌入现有终端核心，
-// 那一块带着上百个属性绑定，下一步单独接。
+// 参考图结构：居中一张带边框的卡片 —— 标题 + 副标题；三张子卡（本地终端 /
+// 选择本地壳 / 远程·串口）各带**动作按钮**；下方「最近连接」行（图标 + 名称 +
+// user@host + →）。会话态（真正的终端画面）嵌现有终端核心，另行接线。
 
 import { Theme } from "../theme.slint";
 import { SessionInfo } from "../welcome_rows.slint";
 
-component ActionCard inherits Rectangle {
-    in property <string> title;
-    in property <string> desc;
+component MiniBtn inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
     callback clicked();
 
-    height: 84px;
-    border-radius: 10px;
-    background: card-ta.has-hover ? Theme.rail-item-active : Theme.rail-item-hover;
+    height: 26px;
+    border-radius: 6px;
+    border-width: root.primary ? 0px : 1px;
+    border-color: Theme.line;
+    background: root.primary
+        ? Theme.accent
+        : (ta.has-hover ? Theme.sur-3 : Theme.sur-2);
 
-    VerticalLayout {
-        padding: 12px;
-        spacing: 4px;
-        alignment: start;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        alignment: center;
 
         Text {
-            text: root.title;
-            font-size: 14px;
-            color: Theme.rail-fg;
-        }
-        Text {
-            text: root.desc;
+            text: root.text;
             font-size: 11px;
-            color: Theme.rail-fg;
-            wrap: word-wrap;
+            color: root.primary ? #ffffff : Theme.fg-1;
+            vertical-alignment: center;
         }
     }
 
-    card-ta := TouchArea {
+    ta := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             root.clicked();
         }
     }
 }
 
+component SubCard inherits Rectangle {
+    in property <string> title;
+    in property <string> desc;
+    horizontal-stretch: 1;
+
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: Theme.sur-1;
+
+    VerticalLayout {
+        padding: 14px;
+        spacing: 6px;
+        alignment: start;
+
+        Text {
+            text: root.title;
+            font-size: 13px;
+            font-weight: 600;
+            color: Theme.fg-1;
+        }
+        Text {
+            text: root.desc;
+            font-size: 11px;
+            color: Theme.fg-3;
+            wrap: word-wrap;
+            min-height: 30px;
+        }
+        // 按钮区由实例化的地方填充
+        @children
+    }
+}
+
 export component PageTerminal inherits Rectangle {
     in property <[SessionInfo]> sessions;
     callback new-local-session();
-    callback connect-session(string /* id */);
+    callback connect-session(string /* id；空串 = 去主机管理页新建 */);
 
     background: Theme.bg-root;
 
-    Flickable {
-        VerticalLayout {
-            padding: 24px;
-            spacing: 16px;
-            alignment: start;
+    // 居中的一张卡片（参考图：不铺满、四周留白）
+    VerticalLayout {
+        alignment: center;
 
-            Text {
-                text: "创建你的第一个终端会话";
-                font-size: 18px;
-                color: Theme.rail-fg;
-            }
+        HorizontalLayout {
+            alignment: center;
 
-            HorizontalLayout {
-                spacing: 12px;
+            Rectangle {
+                width: min(parent.width - 48px, 620px);
+                height: card.preferred-height; // 由内容决定
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.line;
+                background: Theme.sur-1;
 
-                ActionCard {
-                    horizontal-stretch: 1;
-                    title: "本地终端";
-                    desc: "直接用当前系统的默认 shell 开一个本地会话";
-                    clicked => {
-                        root.new-local-session();
-                    }
-                }
-                ActionCard {
-                    horizontal-stretch: 1;
-                    title: "选择本地 shell";
-                    desc: "指定 /bin/zsh、/bin/bash 等，再开本地会话";
-                    clicked => {
-                        root.new-local-session();
-                    }
-                }
-                ActionCard {
-                    horizontal-stretch: 1;
-                    title: "远程 / 串口会话";
-                    desc: "选一台主机建立 SSH 连接，或配置串口";
-                    clicked => {
-                        // 没有主机时回到主机管理页去新建
-                        root.connect-session("");
-                    }
-                }
-            }
+                card := VerticalLayout {
+                    padding: 20px;
+                    spacing: 14px;
+                    alignment: start;
 
-            Text {
-                text: "最近连接";
-                font-size: 14px;
-                color: Theme.rail-fg;
-            }
-
-            if root.sessions.length == 0 : Text {
-                text: "还没有连接记录 —— 上面挑一种方式开始";
-                font-size: 12px;
-                color: Theme.rail-fg;
-            }
-
-            if root.sessions.length > 0 : VerticalLayout {
-                spacing: 4px;
-                alignment: start;
-
-                for s in root.sessions : Rectangle {
-                    height: 40px;
-                    border-radius: 8px;
-                    background: row-ta.has-hover ? Theme.rail-item-hover : transparent;
-
-                    HorizontalLayout {
-                        padding-left: 12px;
-                        padding-right: 12px;
-                        spacing: 8px;
-                        alignment: space-between;
+                    // ── 标题 + 副标题 ─────────────────────────────
+                    VerticalLayout {
+                        spacing: 3px;
+                        alignment: start;
 
                         Text {
-                            text: s.name;
-                            font-size: 13px;
-                            color: Theme.rail-fg;
-                            vertical-alignment: center;
-                            horizontal-stretch: 1;
+                            text: "创建你的第一个终端会话";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: Theme.fg-1;
                         }
                         Text {
-                            text: s.user != "" ? "\{s.user}@\{s.host}" : s.host;
+                            text: "支持本地、SSH 与串口，会话可持久保存";
                             font-size: 11px;
-                            color: Theme.rail-fg;
+                            color: Theme.fg-3;
+                        }
+                    }
+
+                    // ── 三张子卡 ────────────────────────────────
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: stretch;
+
+                        SubCard {
+                            title: "本地终端（默认）";
+                            desc: "使用设置中的默认 shell（未设置则用系统自动选择）";
+
+                            MiniBtn {
+                                text: "新建本地终端";
+                                primary: true;
+                                clicked => {
+                                    root.new-local-session();
+                                }
+                            }
+                        }
+                        SubCard {
+                            title: "选择本地壳";
+                            desc: "从常用列表中选择并立即启动一个会话";
+
+                            HorizontalLayout {
+                                spacing: 6px;
+
+                                MiniBtn {
+                                    text: "/bin/zsh";
+                                    clicked => {
+                                        root.new-local-session();
+                                    }
+                                }
+                                MiniBtn {
+                                    text: "/bin/bash";
+                                    clicked => {
+                                        root.new-local-session();
+                                    }
+                                }
+                            }
+                        }
+                        SubCard {
+                            title: "远程/串口会话";
+                            desc: "从主机列表中选择目标机，快速创建 SSH 或串口";
+
+                            HorizontalLayout {
+                                spacing: 6px;
+
+                                MiniBtn {
+                                    text: "选择主机并创建会话";
+                                    primary: true;
+                                    clicked => {
+                                        root.connect-session("");
+                                    }
+                                }
+                                MiniBtn {
+                                    text: "串口";
+                                    clicked => {
+                                        root.new-local-session();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 最近连接 ────────────────────────────────
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+
+                        Text {
+                            text: "\u{E8B6}"; // schedule/search-ish clock
+                            font-family: "Material Icons";
+                            font-size: 13px;
+                            color: Theme.fg-3;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: "最近连接";
+                            font-size: 12px;
+                            color: Theme.fg-2;
                             vertical-alignment: center;
                         }
                     }
 
-                    row-ta := TouchArea {
-                        clicked => {
-                            root.connect-session(s.id);
+                    if root.sessions.length == 0 : Text {
+                        text: "还没有连接记录 —— 上面挑一种方式开始";
+                        font-size: 11px;
+                        color: Theme.fg-3;
+                    }
+
+                    if root.sessions.length > 0 : VerticalLayout {
+                        spacing: 2px;
+                        alignment: start;
+
+                        for s in root.sessions : Rectangle {
+                            height: 38px;
+                            border-radius: 6px;
+                            background: row-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 8px;
+
+                                Text {
+                                    width: 16px;
+                                    text: "\u{EB8E}"; // terminal
+                                    font-family: "Material Icons";
+                                    font-size: 13px;
+                                    color: Theme.fg-3;
+                                    vertical-alignment: center;
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    spacing: 1px;
+
+                                    Text {
+                                        text: s.name;
+                                        font-size: 12px;
+                                        color: Theme.fg-1;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: s.user != ""
+                                            ? "\{s.user}@\{s.host}"
+                                            : s.host;
+                                        font-size: 10px;
+                                        color: Theme.fg-3;
+                                        overflow: elide;
+                                    }
+                                }
+                                Text {
+                                    text: "\u{E5CC}"; // chevron_right
+                                    font-family: "Material Icons";
+                                    font-size: 15px;
+                                    color: Theme.fg-3;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            row-ta := TouchArea {
+                                clicked => {
+                                    root.connect-session(s.id);
+                                }
+                            }
                         }
                     }
                 }
