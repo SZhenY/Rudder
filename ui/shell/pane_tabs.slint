@@ -130,6 +130,7 @@ export component PaneTabs inherits Rectangle {
     callback tab-rename-requested(string);
     callback new-tab();
     callback split-active();
+    callback toggle-panel();
     callback toggle-full();
 
     height: 40px;
@@ -188,7 +189,14 @@ export component PaneTabs inherits Rectangle {
             horizontal-stretch: 1;
         }
 
-        // 右侧：分屏 / 全屏（快捷指令侧栏按需求移除）
+        // 右侧：工具面板 / 分屏 / 全屏（快捷指令侧栏按需求移除）
+        IconBtn {
+            glyph: "\u{E8B3}"; // view_sidebar
+            label: "工具";
+            clicked => {
+                root.toggle-panel();
+            }
+        }
         IconBtn {
             glyph: "\u{E8EC}"; // view_column
             clicked => {

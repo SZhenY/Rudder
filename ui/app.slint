@@ -1386,6 +1386,7 @@ export component AppWindow inherits Window {
                       tab-rename-requested(id) => { root.tab-rename-request(id); }
                       new-tab() => { root.pane-new-tab(pane.id); }
                       split-active() => { root.pane-split(pane.id, pane.active-id, 0); }
+                      toggle-panel() => { root.right-panel-open = !root.right-panel-open; }
                               toggle-full() => { root.toggle-zen-key(); }
                   }
                 }
