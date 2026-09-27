@@ -1147,18 +1147,12 @@ export component AppWindow inherits Window {
         height: parent.height
             - (!parent.welcome-horizontal ? parent.welcome-taken : 0px)
             - parent.quick-top - parent.quick-bottom;
-        // Sidebar extent along docked axis. When the welcome panel is expanded
-        // or both panels are collapsed and sharing a merged ToolStrip, the 36px
-        // strip is already reserved outside `rest` — do not reserve it twice.
-        property <length> sb-taken: dock-area.sidebar-strip-outside
-                || dock-area.combine-collapsed-tools ? 0px
-            : root.sidebar-collapsed ? 36px : root.sidebar-width;
-        animate sb-taken { duration: 200ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
-        property <length> sb-h-taken: dock-area.sidebar-strip-outside
-                || dock-area.combine-collapsed-tools ? 0px
-            : root.sidebar-collapsed ? 36px : root.sidebar-height;
-        animate sb-h-taken { duration: 200ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
-        property <length> sp: root.sidebar-collapsed ? 0px : 4px;
+        // 旧资源侧栏（SidebarBody）已由新外壳取代：主机页管会话、文件/隧道走右面板。
+        // 几何归零 —— sidebar-shell 收缩到 0x0 且被 clip，不再可见也不占位（中间内容
+        // 随之填满）。等新终端页（A-2.x）替换旧内容时，连 SidebarBody 一起整体删除。
+        property <length> sb-taken: 0px;
+        property <length> sb-h-taken: 0px;
+        property <length> sp: 0px;
 
         // Left sidebar — collapsible and drag-resizable, dockable to any edge.
         // Always rendered so width animates smoothly on collapse (Slint removes
@@ -2195,6 +2189,10 @@ export component AppWindow inherits Window {
         // 新标题栏：Windows/Linux 自绘一条 38px 的沉浸式栏（AppTitleBar，见组件末尾）；
         // macOS 不画 —— 红绿灯与顶部拖拽都由系统负责（titlebar-inset 由 Rust 给）。
         property <length> bar-h: 38px;
+      // 底部用户卡片（Rail）显示的登录名；Rust 启动时从环境取。
+      in-out property <string> user-name: "";
+      // 头像首字母（Slint 字符串没有 substring，Rust 算好传入）。
+      in-out property <string> user-initial: "";
         // 侧栏与页面内容的整体下移量：自绘栏平台是栏高，macOS 是红绿灯让位高度。
         property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
 
@@ -2205,6 +2203,8 @@ export component AppWindow inherits Window {
             width: root.rail-w;
             height: root.height - (root.custom-titlebar ? root.bar-h : 0px);
             top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
+          user-name: root.user-name;
+          user-initial: root.user-initial;
             current-page: root.shell-page;
             // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
             // 那个赋值传不回来，收起/展开看起来就是"点了没反应"。
@@ -2282,7 +2282,42 @@ export component AppWindow inherits Window {
                 }
                 }
 
-                // 新标题栏（Windows/Linux）：通栏拖拽 + 双击最大化 + 右上角窗口按钮，
+                // 笔记随笔 / AI 助手：参考图里有入口，页面规划中（与 Docker 占位同款）。
+      if root.shell-page == 5 || root.shell-page == 6 : Rectangle {
+          x: root.rail-w;
+          y: root.shell-top;
+          width: root.width - root.rail-w;
+          height: root.height - root.shell-top;
+          background: Theme.bg-root;
+
+          VerticalLayout {
+              alignment: center;
+              spacing: Theme.sp-2;
+
+              Text {
+                  text: root.shell-page == 5 ? "\u{E873}" : "\u{E65F}";
+                  font-family: "Material Icons";
+                  font-size: 44px;
+                  color: Theme.fg-3;
+                  horizontal-alignment: center;
+              }
+              Text {
+                  text: root.shell-page == 5 ? "笔记随笔" : "AI 助手";
+                  font-size: 17px;
+                  font-weight: 600;
+                  color: Theme.fg-1;
+                  horizontal-alignment: center;
+              }
+              Text {
+                  text: "规划中 —— 敬请期待";
+                  font-size: 12px;
+                  color: Theme.fg-3;
+                  horizontal-alignment: center;
+              }
+          }
+      }
+
+      // 新标题栏（Windows/Linux）：通栏拖拽 + 双击最大化 + 右上角窗口按钮，
                 // 沉浸式无图标/标题。放在最后声明 = 盖在页面内容之上、按钮可点；
                 // macOS 不实例化（系统红绿灯 + 原生拖拽）。
                 if root.custom-titlebar : AppTitleBar {
