@@ -779,6 +779,44 @@ fn accumulate_late_echo(buf: &mut String, chunk: &str) -> (String, bool) {
 
 /// Extract the remote path from an OSC 7 sequence embedded in `text`.
 ///
+/// Find the next complete OSC sequence (`ESC ] … BEL | ST`) at or after `from`.
+///
+/// Returns `(seq_start, content_range, end_after_terminator)`。An unterminated
+/// tail (no BEL / ST yet) yields `None` — the caller leaves it for the next
+/// chunk, which is what vt100 / the PTY pump expect.
+///
+/// OSC 7（cwd 跟踪）与 OSC 697（命令捕获）原先各自手写一遍这段扫描，
+/// 逐字相同 —— 收在这里，避免两份规则各自漂移。
+fn next_osc(bytes: &[u8], from: usize) -> Option<(usize, std::ops::Range<usize>, usize)> {
+    let mut i = from;
+    while i + 1 < bytes.len() {
+        if bytes[i] != 0x1b || bytes[i + 1] != b']' {
+            i += 1;
+            continue;
+        }
+        let seq_start = i;
+        let osc_start = i + 2;
+        // Scan for BEL (0x07) or ST (ESC \)
+        let mut end = osc_start;
+        let mut term_len = 0;
+        while end < bytes.len() {
+            if bytes[end] == 0x07 {
+                term_len = 1;
+                break;
+            } else if bytes[end] == 0x1b && end + 1 < bytes.len() && bytes[end + 1] == b'\\' {
+                term_len = 2;
+                break;
+            }
+            end += 1;
+        }
+        if end >= bytes.len() {
+            return None; // incomplete — leave it for the next chunk
+        }
+        return Some((seq_start, osc_start..end, end + term_len));
+    }
+    None
+}
+
 /// Format: `ESC ] 7 ; file://hostname/path BEL`
 /// Returns the decoded absolute path component (without hostname).
 pub fn extract_osc7_path(text: &str) -> Option<String> {
@@ -790,31 +828,9 @@ pub fn extract_osc7_path(text: &str) -> Option<String> {
 /// it — used to discard the echoed setup line (which may wrap) at connect (#98).
 fn extract_osc7_end(text: &str) -> Option<(String, usize)> {
     let bytes = text.as_bytes();
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] != 0x1b || bytes[i + 1] != b']' {
-            i += 1;
-            continue;
-        }
-        let osc_start = i + 2;
-        i += 2;
-        // Scan for BEL (0x07) or ST (ESC \)
-        let mut end = i;
-        let mut term_len = 0;
-        while end < bytes.len() {
-            if bytes[end] == 0x07 {
-                term_len = 1;
-                break;
-            } else if bytes[end] == 0x1b && end + 1 < bytes.len() && bytes[end + 1] == b'\\' {
-                term_len = 2;
-                break;
-            }
-            end += 1;
-        }
-        if end >= bytes.len() {
-            break;
-        }
-        if let Ok(content) = std::str::from_utf8(&bytes[osc_start..end])
+    let mut from = 0;
+    while let Some((_seq_start, content, after)) = next_osc(bytes, from) {
+        if let Ok(content) = std::str::from_utf8(&bytes[content])
             && let Some(rest) = content.strip_prefix("7;file://")
         {
             // rest = "hostname/path" or "/path" (empty hostname)
@@ -825,9 +841,9 @@ fn extract_osc7_end(text: &str) -> Option<(String, usize)> {
             } else {
                 "/".to_string()
             };
-            return Some((url_decode(&path), end + term_len));
+            return Some((url_decode(&path), after));
         }
-        i = end + term_len.max(1);
+        from = after;
     }
     None
 }
@@ -839,37 +855,14 @@ fn extract_osc7_end(text: &str) -> Option<(String, usize)> {
 /// yields `None` — vt100 buffers it and the next chunk completes it.
 pub fn extract_osc_command(text: &str) -> Option<(String, std::ops::Range<usize>)> {
     let bytes = text.as_bytes();
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] != 0x1b || bytes[i + 1] != b']' {
-            i += 1;
-            continue;
-        }
-        let seq_start = i;
-        let osc_start = i + 2;
-        i += 2;
-        // Scan for BEL (0x07) or ST (ESC \).
-        let mut end = i;
-        let mut term_len = 0;
-        while end < bytes.len() {
-            if bytes[end] == 0x07 {
-                term_len = 1;
-                break;
-            } else if bytes[end] == 0x1b && end + 1 < bytes.len() && bytes[end + 1] == b'\\' {
-                term_len = 2;
-                break;
-            }
-            end += 1;
-        }
-        if end >= bytes.len() {
-            break; // incomplete — leave it for the next chunk
-        }
-        if let Ok(content) = std::str::from_utf8(&bytes[osc_start..end])
+    let mut from = 0;
+    while let Some((seq_start, content, after)) = next_osc(bytes, from) {
+        if let Ok(content) = std::str::from_utf8(&bytes[content])
             && let Some(cmd) = content.strip_prefix("697;")
         {
-            return Some((cmd.to_string(), seq_start..end + term_len));
+            return Some((cmd.to_string(), seq_start..after));
         }
-        i = end + term_len;
+        from = after;
     }
     None
 }

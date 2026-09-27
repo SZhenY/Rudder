@@ -1944,4 +1944,47 @@ mod render_path_cube_tests {
             "standalone 53m must still produce overline"
         );
     }
+
+    /// 终端查询（DSR/CPR/DA1）的回复内容 —— 这段逻辑原先**没有任何测试**，
+    /// 而它有两条调用路径（`session_event` 丢弃回复、`session_runtime` 回写 PTY），
+    /// 所以先把"回复长什么样"钉死。
+    #[test]
+    fn terminal_queries_answer_status_cursor_and_device_attributes() {
+        let mut buf = make_buffer();
+        assert_eq!(buf.detect_terminal_queries(b"\x1b[5n"), b"\x1b[0n".to_vec());
+        assert_eq!(
+            buf.detect_terminal_queries(b"\x1b[c"),
+            b"\x1b[?1;2c".to_vec()
+        );
+        assert_eq!(
+            buf.detect_terminal_queries(b"\x1b[0c"),
+            b"\x1b[?1;2c".to_vec()
+        );
+        // 光标在 (1,1)：普通 CPR 与私有 CPR 各一份
+        assert_eq!(
+            buf.detect_terminal_queries(b"\x1b[6n"),
+            b"\x1b[1;1R".to_vec()
+        );
+        assert_eq!(
+            buf.detect_terminal_queries(b"\x1b[?6n"),
+            b"\x1b[?1;1R".to_vec()
+        );
+    }
+
+    #[test]
+    fn terminal_queries_survive_split_chunks_and_ignore_other_csi() {
+        let mut buf = make_buffer();
+        // 半截 CSI 跨块续扫（csi_pending）
+        assert!(buf.detect_terminal_queries(b"\x1b[").is_empty());
+        assert_eq!(
+            buf.detect_terminal_queries(b"6n"),
+            b"\x1b[1;1R".to_vec()
+        );
+        // 普通 SGR / 纯文本不产生回复
+        assert!(buf.detect_terminal_queries(b"\x1b[31m").is_empty());
+        assert!(buf.detect_terminal_queries(b"plain").is_empty());
+        // 异常超长 CSI（>64 字节）被丢弃：不回复、也不越界
+        let junk = format!("\x1b[{}n", "9".repeat(80));
+        assert!(buf.detect_terminal_queries(junk.as_bytes()).is_empty());
+    }
 }
