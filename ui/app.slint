@@ -2234,6 +2234,18 @@ export component AppWindow inherits Window {
               set-wallpaper-label(l) => { root.set-wallpaper(l); }
               term-ui-font(f) => { root.set-ui-font(f); }
               about-libs: root.about-libs;
+              webdav-enabled <=> root.webdav-enabled;
+              webdav-url <=> root.webdav-url;
+              webdav-username <=> root.webdav-username;
+              webdav-password <=> root.webdav-password;
+              webdav-remote-path <=> root.webdav-remote-path;
+              webdav-certs <=> root.webdav-accept-invalid-certs;
+              webdav-status: root.webdav-status;
+              save-webdav(en, u, usr, pw, rp, cert) => {
+                  root.save-webdav-settings(en, u, usr, pw, rp, cert);
+              }
+              webdav-upload() => { root.webdav-upload(); }
+              webdav-download() => { root.webdav-download(); }
               set-flag-update-check(v) => { root.set-update-check-enabled(v); }
               set-flag-large-scrollback(v) => { root.set-large-scrollback(v); }
               set-flag-osc52(v) => { root.set-osc52-clipboard(v); }

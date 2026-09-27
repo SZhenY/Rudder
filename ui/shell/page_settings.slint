@@ -255,6 +255,16 @@ export component PageSettings inherits Rectangle {
     callback set-accent-color(string);
     callback set-wallpaper-label(string);
     in property <[string]> about-libs;
+    in-out property <bool> webdav-enabled;
+    in-out property <string> webdav-url;
+    in-out property <string> webdav-username;
+    in-out property <string> webdav-password;
+    in-out property <string> webdav-remote-path;
+    in-out property <bool> webdav-certs;
+    in property <string> webdav-status;
+    callback save-webdav(bool, string, string, string, string, bool);
+    callback webdav-upload();
+    callback webdav-download();
     callback set-language(string);
     callback term-ui-font(string);
     in property <string> ui-font-now;
@@ -369,6 +379,15 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 CategoryItem {
+                    glyph: "\u{E2EB}"; // cloud
+                    label: "云同步";
+                    sub: "官方云 · WebDAV、加密与恢复";
+                    active: root.current-cat == 6;
+                    clicked => {
+                        root.current-cat = 6;
+                    }
+                }
+                CategoryItem {
                     glyph: "\u{E88E}";
                     label: "关于";
                     sub: "版本、日志与反馈";
@@ -399,6 +418,7 @@ export component PageSettings inherits Rectangle {
                         : root.current-cat == 2 ? "文件设置"
                         : root.current-cat == 3 ? "布局设置"
                         : root.current-cat == 5 ? "关于"
+                        : root.current-cat == 6 ? "云同步"
                         : "快捷键";
                     font-size: 17px;
                     font-weight: 700;
@@ -998,6 +1018,211 @@ export component PageSettings inherits Rectangle {
                             KeyRow {
                                 keys: "Ctrl+U";
                                 desc: "删除到行首";
+                            }
+                        }
+
+                        // ═══ 云同步（WebDAV，参考图：同步目标 + 表单 + 底部操作）═══
+                        if root.current-cat == 6 : VerticalLayout {
+                            spacing: 4px;
+                            alignment: start;
+
+                            FieldBlock {
+                                title: "WebDAV 同步";
+                                desc: root.webdav-status == "" ? "把配置、会话、笔记等备份到自己的 NAS 或企业 WebDAV 服务" : root.webdav-status;
+
+                                Switch {
+                                    on: root.webdav-enabled;
+                                    toggled => {
+                                        root.webdav-enabled = !root.webdav-enabled;
+                                    }
+                                }
+                            }
+                            FieldBlock {
+                                title: "WebDAV 地址";
+
+                                Rectangle {
+                                    width: 420px;
+                                    height: 30px;
+                                    border-radius: 7px;
+                                    border-width: 1px;
+                                    border-color: Theme.line;
+                                    background: Theme.sur-2;
+
+                                    TextInput {
+                                        x: 10px;
+                                        width: parent.width - 20px;
+                                        height: 100%;
+                                        text <=> root.webdav-url;
+                                        font-size: 12px;
+                                        color: Theme.fg-1;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 12px;
+                                alignment: start;
+
+                                FieldBlock {
+                                    title: "用户名";
+                                    width: 200px;
+
+                                    Rectangle {
+                                        width: 200px;
+                                        height: 30px;
+                                        border-radius: 7px;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+                                        background: Theme.sur-2;
+
+                                        TextInput {
+                                            x: 10px;
+                                            width: parent.width - 20px;
+                                            height: 100%;
+                                            text <=> root.webdav-username;
+                                            font-size: 12px;
+                                            color: Theme.fg-1;
+                                            vertical-alignment: center;
+                                            single-line: true;
+                                        }
+                                    }
+                                }
+                                FieldBlock {
+                                    title: "密码 / 应用密码";
+                                    width: 200px;
+
+                                    Rectangle {
+                                        width: 200px;
+                                        height: 30px;
+                                        border-radius: 7px;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+                                        background: Theme.sur-2;
+
+                                        TextInput {
+                                            x: 10px;
+                                            width: parent.width - 20px;
+                                            height: 100%;
+                                            text <=> root.webdav-password;
+                                            font-size: 12px;
+                                            color: Theme.fg-1;
+                                            vertical-alignment: center;
+                                            single-line: true;
+                                            input-type: password;
+                                        }
+                                    }
+                                }
+                            }
+                            FieldBlock {
+                                title: "远程目录";
+
+                                Rectangle {
+                                    width: 420px;
+                                    height: 30px;
+                                    border-radius: 7px;
+                                    border-width: 1px;
+                                    border-color: Theme.line;
+                                    background: Theme.sur-2;
+
+                                    TextInput {
+                                        x: 10px;
+                                        width: parent.width - 20px;
+                                        height: 100%;
+                                        text <=> root.webdav-remote-path;
+                                        font-size: 12px;
+                                        color: Theme.fg-1;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                    }
+                                }
+                            }
+                            ToggleRow {
+                                label: "允许自签名无效证书";
+                                desc: "与保存后请再测试连接";
+                                on: root.webdav-certs;
+                                toggled => {
+                                    root.webdav-certs = !root.webdav-certs;
+                                }
+                            }
+                            FieldBlock {
+                                title: "操作";
+                                desc: "保存配置后可上传 / 下载备份";
+
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        width: 88px;
+                                        height: 28px;
+                                        border-radius: 7px;
+                                        background: Theme.accent;
+
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "保存配置";
+                                                font-size: 12px;
+                                                color: white;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        TouchArea {
+                                            clicked => {
+                                                root.save-webdav(root.webdav-enabled, root.webdav-url,
+                                                    root.webdav-username, root.webdav-password,
+                                                    root.webdav-remote-path, root.webdav-certs);
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: 74px;
+                                        height: 28px;
+                                        border-radius: 7px;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+                                        background: up-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "上传备份";
+                                                font-size: 12px;
+                                                color: Theme.fg-1;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        up-ta := TouchArea {
+                                            clicked => {
+                                                root.webdav-upload();
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: 74px;
+                                        height: 28px;
+                                        border-radius: 7px;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+                                        background: dl-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "下载恢复";
+                                                font-size: 12px;
+                                                color: Theme.fg-1;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        dl-ta := TouchArea {
+                                            clicked => {
+                                                root.webdav-download();
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
