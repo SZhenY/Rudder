@@ -69,11 +69,9 @@ import { ChmodDialog } from "chmod_dialog.slint";
 import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
 import { SettingsMenuPopup } from "settings_menu.slint";
 import { AboutDialog } from "about_dialog.slint";
-import { DockSnapOverlay } from "dock_snap_overlay.slint";
 import { ConfirmOverlays } from "confirm_overlays.slint";
 import { ShortcutsDialog } from "shortcuts_dialog.slint";
 import { FramelessTitleBar } from "custom_titlebar.slint";
-import { TitlebarInsetStrip } from "titlebar_inset_strip.slint";
 import { SidebarBody } from "sidebar_body.slint";
 import { RenameDialog } from "rename_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
@@ -905,9 +903,6 @@ export component AppWindow inherits Window {
     // 已抽成 `ui/titlebar_inset_strip.slint`：纯搬家，状态透传 + 动作转发。
     // 不转发 `win-maximize-toggle`：这块留白区的双击由 AppKit 直接处理（见
     // `ui/titlebar_inset_strip.slint` 里的说明 —— 我们再 toggle 一次就是跟系统抢）。
-    if root.titlebar-inset > 0px : TitlebarInsetStrip {
-        titlebar-inset : root.titlebar-inset;
-    }
 
         // Immersive custom title bar (#119) — only on frameless platforms
         // (Windows/Linux). App icon + name on the left, a draggable middle
@@ -1837,10 +1832,6 @@ export component AppWindow inherits Window {
         // (root.dock-target) lights up. Purely visual (no TouchArea) so the
         // header's drag keeps receiving move events (#dock).
     // 已抽成 `ui/dock_snap_overlay.slint`：常驻（内部按 `panel-dragging` 显隐），状态透传。
-    DockSnapOverlay {
-        dock-target : root.dock-target;
-        panel-dragging : root.panel-dragging;
-    }
     }
     }
 
