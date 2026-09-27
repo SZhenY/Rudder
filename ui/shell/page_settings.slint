@@ -341,8 +341,8 @@ export component PageSettings inherits Rectangle {
 
                 CategoryItem {
                     glyph: "\u{E8B8}";
-                    label: "基础";
-                    sub: "语言、主题、更新与功能入口";
+                    label: root.lang-en ? "General" : "基础";
+                    sub: root.lang-en ? "Language, theme, updates" : "语言、主题、更新与功能入口";
                     active: root.current-cat == 0;
                     clicked => {
                         root.current-cat = 0;
@@ -350,8 +350,8 @@ export component PageSettings inherits Rectangle {
                 }
                 CategoryItem {
                     glyph: "\u{EB8E}";
-                    label: "终端";
-                    sub: "终端、字体与渲染";
+                    label: root.lang-en ? "Terminal" : "终端";
+                    sub: root.lang-en ? "Fonts, cursor and scrollback" : "终端、字体与渲染";
                     active: root.current-cat == 1;
                     clicked => {
                         root.current-cat = 1;
@@ -359,8 +359,8 @@ export component PageSettings inherits Rectangle {
                 }
                 CategoryItem {
                     glyph: "\u{E2C7}";
-                    label: "文件";
-                    sub: "SFTP、分区与传输行为";
+                    label: root.lang-en ? "Files" : "文件";
+                    sub: root.lang-en ? "SFTP, partitions and transfers" : "SFTP、分区与传输行为";
                     active: root.current-cat == 2;
                     clicked => {
                         root.current-cat = 2;
@@ -368,8 +368,8 @@ export component PageSettings inherits Rectangle {
                 }
                 CategoryItem {
                     glyph: "\u{E312}";
-                    label: "快捷键";
-                    sub: "全局快捷键与终端快捷键";
+                    label: root.lang-en ? "Shortcuts" : "快捷键";
+                    sub: root.lang-en ? "Global and terminal shortcuts" : "全局快捷键与终端快捷键";
                     active: root.current-cat == 4;
                     clicked => {
                         root.current-cat = 4;
@@ -377,8 +377,8 @@ export component PageSettings inherits Rectangle {
                 }
                 CategoryItem {
                     glyph: "\u{E2EB}"; // cloud
-                    label: "云同步";
-                    sub: "官方云 · WebDAV、加密与恢复";
+                    label: root.lang-en ? "Cloud Sync" : "云同步";
+                    sub: root.lang-en ? "WebDAV backup and restore" : "官方云 · WebDAV、加密与恢复";
                     active: root.current-cat == 6;
                     clicked => {
                         root.current-cat = 6;
@@ -386,8 +386,8 @@ export component PageSettings inherits Rectangle {
                 }
                 CategoryItem {
                     glyph: "\u{E88E}";
-                    label: "关于";
-                    sub: "版本、日志与反馈";
+                    label: root.lang-en ? "About" : "关于";
+                    sub: root.lang-en ? "Version, logs and feedback" : "版本、日志与反馈";
                     active: root.current-cat == 5;
                     clicked => {
                         root.current-cat = 5;
