@@ -1,0 +1,141 @@
+// 底部状态栏（按 ex/终端，会话中.png）。
+//
+// 只放**有真实数据**的条目（不放假按钮）：
+// 左 —— 连接状态圆点（conn-state 0 灰 / 1 绿 / 2 黄）+ 主机名（点按复制 #192 的
+//       数据源）；「高亮」开关（output-highlight-enabled，点击翻转）；「历史命令 N」。
+// 右 —— 传输统计卡：TOTAL N + 活动指示（has-active-transfers）。
+// 重连 / 隧道 / 执行 / UTF-8 选择器等参考图条目等接上各自回调后再补。
+
+import { Theme } from "../theme.slint";
+
+component Pill inherits Rectangle {
+    in property <string> glyph;
+    in property <string> text;
+    in property <bool> togglable: false;
+    in property <bool> on: false;
+    callback clicked();
+
+    height: 20px;
+    border-radius: 5px;
+    background: ta.has-hover ? Theme.sur-3
+        : (root.togglable && root.on ? Theme.rail-item-active : transparent);
+
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 7px;
+        spacing: 4px;
+        alignment: center;
+
+        if root.glyph != "" : Text {
+            text: root.glyph;
+            font-family: "Material Icons";
+            font-size: 12px;
+            color: Theme.fg-2;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.text;
+            font-size: 11px;
+            color: Theme.fg-2;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component StatusBar inherits Rectangle {
+    in property <int> conn-state;          // 0 灰 / 1 绿 / 2 黄
+    in property <string> conn-host;
+    in property <string> connection-text;
+    in-out property <bool> highlight-enabled: true;
+    in property <int> history-count;
+    in property <int> transfer-count;
+    in property <bool> transfers-active: false;
+    callback toggle-highlight();
+
+    height: 28px;
+    background: Theme.rail-bg;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 6px;
+        alignment: start;
+
+        // 连接状态：圆点 + 主机名（或未连接文案）
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            y: (parent.height - 8px) / 2;
+            border-radius: 4px;
+            background: root.conn-state == 1 ? Theme.accent
+                : root.conn-state == 2 ? #e5b567
+                : Theme.fg-3;
+        }
+        Text {
+            text: root.conn-host == "" ? root.connection-text : root.conn-host;
+            font-size: 11px;
+            color: Theme.fg-2;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+
+        Pill {
+            glyph: "\u{E8F5}"; // highlight
+            text: "高亮";
+            togglable: true;
+            on: root.highlight-enabled;
+            clicked => {
+                root.toggle-highlight();
+            }
+        }
+        Pill {
+            glyph: "\u{E88B}"; // history
+            text: "历史命令 \{root.history-count}";
+            clicked => { }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+
+        // 传输统计卡（参考图右侧 PATH/DIR/FILE/TOTAL 的 v1：只放有数据的 TOTAL）
+        Rectangle {
+            height: 20px;
+            y: (parent.height - 20px) / 2;
+            width: total-text.preferred-width + 22px;
+            border-radius: 5px;
+            border-width: 1px;
+            border-color: Theme.line;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 4px;
+                alignment: start;
+
+                Text {
+                    text: "\u{E2C6}"; // swap_vert
+                    font-family: "Material Icons";
+                    font-size: 12px;
+                    color: root.transfers-active ? Theme.accent : Theme.fg-3;
+                    vertical-alignment: center;
+                }
+                Text {
+                    total-text := Text {
+                        text: "TOTAL \{root.transfer-count}";
+                        font-size: 10px;
+                        color: Theme.fg-2;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

@@ -79,6 +79,7 @@ import { ShortcutsDialog } from "shortcuts_dialog.slint";
 import { AppTitleBar } from "shell/titlebar.slint";
 import { PageTerminal } from "shell/page_terminal.slint";
 import { PaneTabs } from "shell/pane_tabs.slint";
+import { StatusBar } from "shell/status_bar.slint";
 import { SidebarBody } from "sidebar_body.slint";
 import { RenameDialog } from "rename_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
@@ -2273,6 +2274,23 @@ export component AppWindow inherits Window {
                 }
                 }
                 }
+
+      // 底部状态栏（参考图：连接状态 / 高亮 / 历史命令 / 传输统计）。
+      if root.shell-page == 1 && root.panes.length > 0 : StatusBar {
+          x: root.rail-w;
+          y: root.height - 28px;
+          width: root.width - root.rail-w;
+          conn-state: root.conn-state;
+          conn-host: root.conn-host;
+          connection-text: root.connection-state;
+          highlight-enabled: root.output-highlight-enabled;
+          history-count: root.command-history.length;
+          transfer-count: root.transfers.length;
+          transfers-active: root.has-active-transfers;
+          toggle-highlight() => {
+              root.output-highlight-enabled = !root.output-highlight-enabled;
+          }
+      }
 
                 // 终端页空状态（一个标签都没有时）：参考图的「创建你的第一个终端会话」。
       // 有标签后旧内容（真正的终端画面）从下面透出。
