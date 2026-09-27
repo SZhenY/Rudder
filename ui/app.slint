@@ -36,6 +36,7 @@ import { SessionInfo } from "welcome_rows.slint";
 // 所以 Rust 侧的接线一行都不用改 —— 只是把布局逐步换成「左侧栏 + 页面」。
 import { Rail } from "shell/rail.slint";
 import { PageHosts } from "shell/page_hosts.slint";
+import { PageSnippets } from "shell/page_snippets.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
@@ -2241,6 +2242,52 @@ export component AppWindow inherits Window {
                 }
                 new-session() => {
                     root.new-session-clicked();
+                }
+            }
+        }
+
+        if root.shell-page == 2 : Rectangle {
+            x: root.rail-w;
+            y: root.shell-top;
+            width: root.width - root.rail-w;
+            height: root.height - root.shell-top;
+            background: Theme.bg-root;
+
+            PageSnippets {
+                width: 100%;
+                height: 100%;
+                quick-commands: root.quick-commands;
+                run(cmd) => {
+                    root.run-command(root.active-tab-id, cmd, false);
+                }
+                manage() => {
+                    root.quick-cmd-manage-open = true;
+                }
+            }
+        }
+
+        if root.shell-page == 3 : Rectangle {
+            x: root.rail-w;
+            y: root.shell-top;
+            width: root.width - root.rail-w;
+            height: root.height - root.shell-top;
+            background: Theme.bg-root;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: Theme.sp-2;
+
+                Text {
+                    text: "Docker 管理";
+                    font-size: 18px;
+                    color: Theme.fg-1;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "规划中 —— 将通过 SSH 直连远端 Docker Engine（容器 / 镜像 / 端口 / 操作）";
+                    font-size: 12px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
                 }
             }
         }
