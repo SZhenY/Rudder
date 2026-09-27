@@ -619,6 +619,10 @@ export component TerminalView inherits Rectangle {
                                         root.autoscroll-dir = 0;
                                         root.select-end();
                                     }
+                                } else if (ev.kind == PointerEventKind.cancel) {
+                                    // 指针抓取被系统收回（失焦 / 系统手势）→ 待定态必须清掉，
+                                    // 否则之后光标只是划过就会被当成"拖出阈值"、误开一次拖选。
+                                    root.mouse-press-pending = false;
                                 }
                             }
                             moved => {
@@ -884,6 +888,10 @@ export component TerminalView inherits Rectangle {
                                         root.autoscroll-dir = 0;
                                         root.select-end();
                                     }
+                                } else if (ev.kind == PointerEventKind.cancel) {
+                                    // 指针抓取被系统收回（失焦 / 系统手势）→ 待定态必须清掉，
+                                    // 否则之后光标只是划过就会被当成"拖出阈值"、误开一次拖选。
+                                    root.mouse-press-pending = false;
                                 }
                             }
                             moved => {
