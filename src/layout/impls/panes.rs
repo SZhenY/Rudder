@@ -228,7 +228,11 @@ impl Layout {
         if len <= 0.0 {
             return;
         }
-        let min = MIN_PANE / len;
+        // ⚠ `f32::clamp` 在 `min > max` 时 **panic**（std 文档明确写了），而 release 是
+        // `panic = "abort"` —— 内容区被挤到 < 2×MIN_PANE（例如窗口很窄 + 侧栏展开）时，
+        // `MIN_PANE / len > 0.5` 就会让 `min > 1.0 - min`，用户一拖分隔条整个程序就没了。
+        // 先夹住比例上限，保证 min ≤ max。
+        let min = (MIN_PANE / len).min(0.5);
         let r = ((pos - start) / len).clamp(min, 1.0 - min);
         set_split_ratio(&mut self.root, split_id, r);
     }

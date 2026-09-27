@@ -1024,6 +1024,10 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                     row.rows_used = 0;
                     row.scroll_max = 0;
                     row.scroll_offset = 0;
+                    // 缓冲已经 `reset()`，这两个也必须跟着归位：否则在下次远端输出之前，
+                    // UI 仍以为处于备用屏 / 鼠标跟踪态，滚轮与命中判定会走错分支。
+                    row.is_alt_screen = false;
+                    row.mouse_tracked = false;
                 });
             }
             if let Some(h) = handles_clear.borrow().get(&tid) {

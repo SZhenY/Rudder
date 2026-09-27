@@ -1682,7 +1682,15 @@ impl ConfigStore {
     }
 
     pub fn scrollback_lines(&self) -> usize {
-        self.cache.terminal.scrollback_lines
+        // 读路径同样夹取：配置文件是用户可手改的，`"scrollbackLines": 999999999` 会一路
+        // 传到 alacritty 的 `TermConfig.scrolling_history`，让回滚缓冲按那个上限去扩张
+        // （写路径一直有夹取，读路径此前没有 —— 只有 setter 测试，掩盖了这个不对称）。
+        let max = if self.cache.terminal.large_scrollback {
+            SCROLLBACK_MAX_LARGE
+        } else {
+            SCROLLBACK_MAX
+        };
+        self.cache.terminal.scrollback_lines.clamp(100, max)
     }
 
     pub fn set_scrollback_lines(&mut self, lines: usize) {
@@ -2767,7 +2775,10 @@ impl ConfigStore {
     /// file is human-readable and editable. Returns the number of sessions.
     pub fn export_to(&self, path: &Path) -> Result<usize> {
         let (raw, count) = self.export_json()?;
-        fs::write(path, raw).with_context(|| format!("failed to write {}", path.display()))?;
+        // 导出文件里含（用内置导出密钥再加密的）口令，而且用户常把它写到 U 盘 / 共享盘：
+        // 走**原子写 + 建文件时就是 0600**（`write_private` 内含 fsync，再 rename 发布），
+        // 而不是裸 `fs::write` —— 中断会留下半截文件，权限则完全跟着 umask 走。
+        Self::write_atomic(path, &raw)?;
         Ok(count)
     }
 
