@@ -112,8 +112,14 @@ component ChoicePill inherits Rectangle {
 export component PageSettings inherits Rectangle {
     in-out property <bool> lang-en: false;
     property <bool> dark: Theme.dark; // 绑定跟随 Theme，切换即时刷新
+    // 终端当前值（Theme 全局随改随刷）
+    in property <string> scrollback: "5000";
     callback set-language(string /* "zh" / "en" */);
     callback toggle-theme();
+    callback term-font(string);
+    callback term-font-size(int);
+    callback term-font-bold(bool);
+    callback term-scrollback(string);
 
     property <int> current-cat: 0; // 0 基础 · 1 终端 · 2 外观 · 3 布局 · 4 快捷键 · 5 关于
 
@@ -265,13 +271,93 @@ export component PageSettings inherits Rectangle {
                         }
                     }
 
-                    // ── 终端 / 布局 / 快捷键：迁移中 ──
-                    if root.current-cat == 1 || root.current-cat == 3 || root.current-cat == 4 : VerticalLayout {
+                    // ── 终端：真控件（字体 / 字号 / 粗体 / 滚回）──
+                    if root.current-cat == 1 : VerticalLayout {
+                        spacing: 12px;
+                        alignment: start;
+
+                        Text {
+                            text: "终端";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: Theme.fg-1;
+                        }
+                        Row {
+                            label: "终端字体";
+                            desc: "等宽字体，随改随生效并持久化";
+
+                            HorizontalLayout {
+                                spacing: 6px;
+
+                                ChoicePill {
+                                    text: "JetBrains Mono";
+                                    active: Theme.term-font-family == "JetBrains Mono";
+                                    clicked => {
+                                        root.term-font("JetBrains Mono");
+                                    }
+                                }
+                                ChoicePill {
+                                    text: "Meatshell Mono";
+                                    active: Theme.term-font-family == "Meatshell Mono";
+                                    clicked => {
+                                        root.term-font("Meatshell Mono");
+                                    }
+                                }
+                            }
+                        }
+                        Row {
+                            label: "字号";
+                            desc: "8–32px，默认 13";
+
+                            HorizontalLayout {
+                                spacing: 6px;
+
+                                for sz in [12, 13, 14, 16, 18] : ChoicePill {
+                                    text: "\{sz} ";
+                                    active: Theme.term-font-size == sz * 1px;
+                                    clicked => {
+                                        root.term-font-size(sz);
+                                    }
+                                }
+                            }
+                        }
+                        Row {
+                            label: "粗体显示";
+                            desc: "终端文字整体加粗";
+
+                            ChoicePill {
+                                text: Theme.term-font-bold ? "开" : "关";
+                                active: Theme.term-font-bold;
+                                clicked => {
+                                    root.term-font-bold(!Theme.term-font-bold);
+                                }
+                            }
+                        }
+                        Row {
+                            label: "滚回行数";
+                            desc: "终端可回看的历史行数";
+
+                            HorizontalLayout {
+                                spacing: 6px;
+
+                                for n in ["1000", "5000", "10000", "50000"] : ChoicePill {
+                                    text: n;
+                                    active: root.scrollback == n;
+                                    clicked => {
+                                        root.term-scrollback(n);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 布局 / 快捷键：迁移中 ──
+                    if root.current-cat == 3 || root.current-cat == 4 : VerticalLayout {
                         spacing: 8px;
                         alignment: start;
 
                         Text {
-                            text: root.current-cat == 1 ? "终端" : root.current-cat == 3 ? "布局" : "快捷键";
+                            text: root.current-cat == 3 ? "布局" : "快捷键";
                             font-size: 16px;
                             font-weight: 700;
                             color: Theme.fg-1;

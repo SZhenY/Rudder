@@ -2211,6 +2211,19 @@ export component AppWindow inherits Window {
               width: 100%;
               height: 100%;
               lang-en: root.lang-en;
+              scrollback: root.scrollback-lines;
+              term-font(f) => {
+                  root.set-term-font(f);
+              }
+              term-font-size(n) => {
+                  root.set-term-font-size(n);
+              }
+              term-font-bold(b) => {
+                  root.set-term-font-bold(b);
+              }
+              term-scrollback(v) => {
+                  root.set-scrollback-lines(v);
+              }
               set-language(lang) => {
                   root.set-language(lang);
               }
