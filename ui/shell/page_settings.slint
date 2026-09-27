@@ -1186,7 +1186,7 @@ Rectangle {
 
                             FieldBlock {
                                 title: root.lang-en ? "WebDAV Sync" : "WebDAV 同步";
-                                desc: root.webdav-status == "" ? "把配置、会话、笔记等备份到自己的 NAS 或企业 WebDAV 服务" : root.webdav-status;
+                                desc: root.webdav-status == "" ? (root.lang-en ? "Back up config, sessions and notes to your NAS or WebDAV" : "把配置、会话、笔记等备份到自己的 NAS 或企业 WebDAV 服务") : root.webdav-status;
 
                                 Switch {
                                     on: root.webdav-enabled;
