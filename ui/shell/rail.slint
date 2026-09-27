@@ -66,39 +66,63 @@ export component Rail inherits Rectangle {
         spacing: 6px;
         alignment: start;
 
-        // 顶部：收起态只留展开按钮；展开态是「搜索 + 折叠」
-        if !root.collapsed : Rectangle {
+        // 顶部：收起态只留展开按钮；展开态是「搜索 + 折叠」——两者**各有自己的热区**，
+        // 否则整行被搜索的 TouchArea 吃掉，折叠按钮点了只会触发搜索。
+        if !root.collapsed : HorizontalLayout {
             height: 40px;
-            border-radius: 8px;
-            background: search-ta.has-hover ? Theme.rail-item-hover : transparent;
+            spacing: 4px;
 
-            HorizontalLayout {
-                padding-left: 14px;
-                padding-right: 8px;
-                spacing: 8px;
-                alignment: space-between;
+            Rectangle {
+                horizontal-stretch: 1;
+                border-radius: 8px;
+                background: search-ta.has-hover ? Theme.rail-item-hover : transparent;
 
-                Text {
-                    horizontal-stretch: 1;
-                    text: "⌕  搜索";
-                    font-size: 12px;
-                    color: Theme.rail-fg;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 8px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "\u{E8B6}"; // search
+                        font-family: "Material Icons";
+                        font-size: 18px;
+                        color: Theme.rail-fg;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        horizontal-stretch: 1;
+                        text: "搜索";
+                        font-size: 12px;
+                        color: Theme.rail-fg;
+                        vertical-alignment: center;
+                    }
                 }
 
+                search-ta := TouchArea {
+                    clicked => {
+                        root.search-requested();
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 32px;
+                border-radius: 8px;
+                background: collapse-ta.has-hover ? Theme.rail-item-hover : transparent;
+
                 Text {
-                    width: 24px;
-                    text: "‹";
-                    font-size: 18px;
+                    text: "\u{E5CB}"; // chevron_left
+                    font-family: "Material Icons";
+                    font-size: 20px;
                     color: Theme.rail-fg;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
-            }
 
-            search-ta := TouchArea {
-                clicked => {
-                    root.search-requested();
+                collapse-ta := TouchArea {
+                    clicked => {
+                        root.collapsed = true;
+                    }
                 }
             }
         }
@@ -109,9 +133,9 @@ export component Rail inherits Rectangle {
             background: expand-ta.has-hover ? Theme.rail-item-hover : transparent;
 
             Text {
-                text: "\u{E5D8}";
+                text: "\u{E5CC}"; // chevron_right
                 font-family: "Material Icons";
-                font-size: 22px;
+                font-size: 20px;
                 color: Theme.rail-fg;
                 horizontal-alignment: center;
                 vertical-alignment: center;

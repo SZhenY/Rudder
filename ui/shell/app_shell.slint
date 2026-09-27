@@ -21,8 +21,16 @@ export component AppShell inherits Window {
     VerticalLayout {
         HorizontalLayout {
             Rail {
-                current-page <=> root.page;
-                collapsed <=> root.rail-collapsed;
+                current-page: root.page;
+                collapsed: root.rail-collapsed;
+                // 切换页面：早先漏了这条接线，点侧栏只有"当前页属性"变了、没人改 root.page，
+                // 于是除初始页以外都点不动。
+                page-changed(p) => {
+                    root.page = p;
+                }
+                search-requested() => {
+                    // 全局搜索（⌘K）后续接入
+                }
             }
 
             // 内容区（各页面后续接入）
