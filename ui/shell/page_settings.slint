@@ -1,0 +1,290 @@
+// 设置页（新外壳 page 4，按 ex/设置-基础.png / 设置-终端.png 的版式）。
+//
+// 左侧分类列 + 右侧内容区。第一轮迁移只放**有真实接线**的条目：
+// 基础 —— 语言（set-language）· 主题（toggle-theme）；
+// 其余分组列出但标注迁移中（完整控件在旧设置窗口里，随旧外壳一并退役后
+// 逐组搬进来 —— 不放假开关）。
+
+import { Theme } from "../theme.slint";
+
+component CategoryItem inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 34px;
+    border-radius: Theme.radius-md;
+    background: root.active ? Theme.rail-item-active
+        : (ta.has-hover ? Theme.rail-item-hover : transparent);
+
+    HorizontalLayout {
+        padding-left: Theme.sp-2;
+        spacing: Theme.sp-2;
+        alignment: start;
+
+        Text {
+            width: 18px;
+            text: root.glyph;
+            font-family: "Material Icons";
+            font-size: 16px;
+            color: root.active ? Theme.accent : Theme.fg-2;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.label;
+            font-size: 13px;
+            color: root.active ? Theme.accent : Theme.fg-1;
+            font-weight: root.active ? 600 : 400;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Row inherits Rectangle {
+    in property <string> label;
+    in property <string> desc: "";
+    height: root.desc == "" ? 40px : 52px;
+
+    HorizontalLayout {
+        spacing: Theme.sp-2;
+        alignment: start;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.label;
+                font-size: 13px;
+                color: Theme.fg-1;
+            }
+            if root.desc != "" : Text {
+                text: root.desc;
+                font-size: 11px;
+                color: Theme.fg-3;
+            }
+        }
+        // 控件由实例处放（@children 在 HorizontalLayout 第二槽位）
+        @children
+    }
+}
+
+component ChoicePill inherits Rectangle {
+    in property <string> text;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 26px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.active ? Theme.accent : Theme.line;
+    background: root.active ? Theme.rail-item-active
+        : (ta.has-hover ? Theme.sur-3 : Theme.sur-2);
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            font-size: 11px;
+            color: root.active ? Theme.accent : Theme.fg-2;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component PageSettings inherits Rectangle {
+    in-out property <bool> lang-en: false;
+    property <bool> dark: Theme.dark; // 绑定跟随 Theme，切换即时刷新
+    callback set-language(string /* "zh" / "en" */);
+    callback toggle-theme();
+
+    property <int> current-cat: 0; // 0 基础 · 1 终端 · 2 外观 · 3 布局 · 4 快捷键 · 5 关于
+
+    background: Theme.bg-root;
+
+    HorizontalLayout {
+        padding: 20px;
+        spacing: 16px;
+
+        // ── 左：分类列 ──────────────────────────────
+        Rectangle {
+            width: 176px;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.sur-1;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 2px;
+                alignment: start;
+
+                CategoryItem {
+                    glyph: "\u{E8B8}";
+                    label: "基础";
+                    active: root.current-cat == 0;
+                    clicked => {
+                        root.current-cat = 0;
+                    }
+                }
+                CategoryItem {
+                    glyph: "\u{EB8E}";
+                    label: "终端";
+                    active: root.current-cat == 1;
+                    clicked => {
+                        root.current-cat = 1;
+                    }
+                }
+                CategoryItem {
+                    glyph: "\u{E53F}";
+                    label: "外观";
+                    active: root.current-cat == 2;
+                    clicked => {
+                        root.current-cat = 2;
+                    }
+                }
+                CategoryItem {
+                    glyph: "\u{E8AC}";
+                    label: "布局";
+                    active: root.current-cat == 3;
+                    clicked => {
+                        root.current-cat = 3;
+                    }
+                }
+                CategoryItem {
+                    glyph: "\u{E312}";
+                    label: "快捷键";
+                    active: root.current-cat == 4;
+                    clicked => {
+                        root.current-cat = 4;
+                    }
+                }
+            }
+        }
+
+        // ── 右：内容区 ──────────────────────────────
+        Rectangle {
+            horizontal-stretch: 1;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.sur-1;
+
+            Flickable {
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+                    alignment: start;
+
+                    // ── 基础 ──
+                    if root.current-cat == 0 : VerticalLayout {
+                        spacing: 12px;
+                        alignment: start;
+
+                        Text {
+                            text: "基础";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: Theme.fg-1;
+                        }
+                        Row {
+                            label: "界面语言 / Language";
+                            desc: "切换后立即生效，整窗文案跟随";
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+
+                                ChoicePill {
+                                    text: "中文";
+                                    active: !root.lang-en;
+                                    clicked => {
+                                        root.set-language("zh");
+                                    }
+                                }
+                                ChoicePill {
+                                    text: "English";
+                                    active: root.lang-en;
+                                    clicked => {
+                                        root.set-language("en");
+                                    }
+                                }
+                            }
+                        }
+                        Row {
+                            label: "深色主题";
+                            desc: "在深色与浅色之间切换（跟随终端配色独立保存）";
+
+                            ChoicePill {
+                                text: root.dark ? "当前：深色" : "当前：浅色";
+                                clicked => {
+                                    root.toggle-theme();
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 外观 ──
+                    if root.current-cat == 2 : VerticalLayout {
+                        spacing: 12px;
+                        alignment: start;
+
+                        Text {
+                            text: "外观";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: Theme.fg-1;
+                        }
+                        Row {
+                            label: "主题模式";
+                            desc: "整窗配色（侧栏 / 内容区 / 弹窗同步）";
+
+                            ChoicePill {
+                                text: root.dark ? "深色" : "浅色";
+                                clicked => {
+                                    root.toggle-theme();
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 终端 / 布局 / 快捷键：迁移中 ──
+                    if root.current-cat == 1 || root.current-cat == 3 || root.current-cat == 4 : VerticalLayout {
+                        spacing: 8px;
+                        alignment: start;
+
+                        Text {
+                            text: root.current-cat == 1 ? "终端" : root.current-cat == 3 ? "布局" : "快捷键";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: Theme.fg-1;
+                        }
+                        Text {
+                            text: "该分组的完整控件仍在迁移中 —— 旧设置窗口退役后逐组搬入（不放假开关）。";
+                            font-size: 12px;
+                            color: Theme.fg-3;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
