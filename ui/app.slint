@@ -1454,11 +1454,12 @@ export component AppWindow inherits Window {
                     sftp-available: term.sftp-available;
                     tunnels: term.tunnels;
                     quick-commands: root.quick-commands;
-                    quick-sidebar-enabled: root.quick-commands-as-sidebar;
+                    // 快捷命令侧栏已按需求移除（2026-09）：配置里的旧值不再生效。
+                    quick-sidebar-enabled: false;
                     // Quick 入口按钮只在「快捷命令未停靠为侧栏」时显示。
                     // 此前误绑 quick-panel-open：布局还原把 as-sidebar 关掉之后，
                     // 侧栏消失而入口按钮仍被隐藏，快捷命令就彻底无法访问了。
-                    quick-panel-docked: root.quick-commands-as-sidebar && root.quick-panel-open;
+                    quick-panel-docked: false;
                     cmd-bar-hidden: !root.show-cmd-bar;
                     // Per-session zoom override wins over the global size.
                     term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : Theme.term-font-size / 1px;
