@@ -330,7 +330,7 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 Text {
-                    text: "搜索并快速定位你的配置项";
+                    text: root.lang-en ? "Search and locate your settings" : "搜索并快速定位你的配置项";
                     font-size: 10px;
                     color: Theme.fg-3;
                 }
@@ -510,7 +510,7 @@ export component PageSettings inherits Rectangle {
                                         width: 240px;
                                         text: root.ui-fonts.length > 0 && root.ui-font-index < root.ui-fonts.length
                                             ? root.ui-fonts[root.ui-font-index]
-                                            : "自动";
+                                            : (root.lang-en ? "Auto" : "自动");
                                         clicked => { font-popup.show(); }
                                     }
 
@@ -700,7 +700,7 @@ Rectangle {
                                         width: 240px;
                                         text: root.wallpaper-labels.length > 0 && root.wallpaper-index < root.wallpaper-labels.length
                                             ? root.wallpaper-labels[root.wallpaper-index]
-                                            : "默认";
+                                            : (root.lang-en ? "Default" : "默认");
                                         clicked => {
                                             wp-popup.show();
                                         }
@@ -1112,7 +1112,7 @@ Rectangle {
                                 desc: root.lang-en ? "Previous tab" : "上一个标签页";
                             }
                             Text {
-                                text: "终端";
+                                text: root.lang-en ? "Terminal" : "终端";
                                 font-size: 10px;
                                 color: Theme.fg-3;
                             }
@@ -1133,11 +1133,11 @@ Rectangle {
                                 desc: root.lang-en ? "Jump to history search" : "跳到命令历史搜索";
                             }
                             KeyRow {
-                                keys: "鼠标拖动";
+                                keys: root.lang-en ? "Drag" : "鼠标拖动";
                                 desc: root.lang-en ? "Select text" : "选择文本";
                             }
                             KeyRow {
-                                keys: "滚轮 / 滚动条";
+                                keys: root.lang-en ? "Wheel / Scrollbar" : "滚轮 / 滚动条";
                                 desc: root.lang-en ? "Scroll history" : "滚动历史";
                             }
                             Text {
@@ -1297,7 +1297,7 @@ Rectangle {
                             }
                             ToggleRow {
                                 label: "允许自签名无效证书";
-                                desc: "与保存后请再测试连接";
+                                desc: root.lang-en ? "Test the connection again after saving" : "与保存后请再测试连接";
                                 on: root.webdav-certs;
                                 toggled => {
                                     root.webdav-certs = !root.webdav-certs;
@@ -1429,17 +1429,17 @@ Rectangle {
                                             color: Theme.fg-1;
                                         }
                                         Text {
-                                            text: "当前版本 v\{root.app-version}";
+                                            text: root.lang-en ? "Version v\{root.app-version}" : "当前版本 v\{root.app-version}";
                                             font-size: 11px;
                                             color: Theme.fg-3;
                                         }
                                         Text {
-                                            text: "轻量的 Rust + Slint SSH 客户端 · Forked from yituorou/meatshell";
+                                            text: root.lang-en ? "A lightweight Rust + Slint SSH client · Forked from yituorou/meatshell" : "轻量的 Rust + Slint SSH 客户端 · Forked from yituorou/meatshell";
                                             font-size: 11px;
                                             color: Theme.fg-3;
                                         }
                                         Text {
-                                            text: "开源 · MIT / Apache-2.0 · github.com/SZhenY/Rudder";
+                                            text: "MIT / Apache-2.0 · github.com/SZhenY/Rudder";
                                             font-size: 11px;
                                             color: Theme.fg-3;
                                         }
