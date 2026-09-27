@@ -1,10 +1,21 @@
-import { Theme, AnimationSettings } from "theme.slint";
-import { Sparkline } from "widgets.slint";
-import { Divider, VDivider } from "components/surfaces.slint";
-import { IconText } from "components/text.slint";
+// 资源 / 状态侧栏。
+//
+// A 路线改造：外层接口（属性与回调）**一个都没动**，所以 sidebar_body.slint、
+// app.slint 与 Rust 侧都不用改。里面去掉了两块停靠包袱：
+//   * 面板空白处"拖动换停靠位置"的 TouchArea —— 新设计没有停靠了
+//   * 停靠 top/bottom 时的横向排版变体 —— 同上（lay-horizontal 属性保留，暂不使用）
+// 并加上新设计的标签条：综合 / 资源 / 网络 / 磁盘 / 进程。
 
-import { StatRow, NetGraph, StatusBlock, StatsBlock, NetBlock, DiskBlock, DiskInfo } from "sidebar_blocks.slint";
-// DiskInfo 从这里搬走了，但对外仍是 `sidebar.slint` 的导出（外部导入点不变）。
+import { Theme } from "theme.slint";
+import { Divider } from "components/surfaces.slint";
+import {
+    DiskBlock,
+    DiskInfo,
+    NetBlock,
+    StatsBlock,
+    StatusBlock,
+} from "sidebar_blocks.slint";
+
 export { DiskInfo }
 
 export component Sidebar inherits Rectangle {
@@ -28,59 +39,29 @@ export component Sidebar inherits Rectangle {
     in property <string> net-selected;
     in property <bool> net-show-selector;
     in property <[DiskInfo]> disks;
-    in property <bool> proc-available;   // a live remote session → show the process button (#23)
-    // App version string, injected from Rust (env!("CARGO_PKG_VERSION")) so it
-    // always matches Cargo.toml without hand-editing this file.
+    in property <bool> proc-available;   // a live remote session → show the process button
     in property <string> app-version;
+
     callback select-net-iface(string);
     callback show-system-info();         // open the system-information window
     callback show-processes();           // open the process monitor popup (#23)
     callback copy-host(string);          // copy the connection IP/host to clipboard (#192)
-    // Drag-to-dock: the header strip is a grab handle; coordinates are reported
-    // in window space so the AppWindow can compute the target edge (#dock).
+    callback toggle-collapse();
+    // 旧停靠遗留：新设计不再拖动换边，这些回调与下面两个属性在收尾时一起删。
     callback dock-drag-move(length /* abs-x */, length /* abs-y */);
     callback dock-drag-end();
-    callback toggle-collapse();
-    // When docked top/bottom the panel is short and wide, so the blocks lay out
-    // in a row; left/right keeps the classic vertical stack (#dock).
     in property <bool> lay-horizontal;
-    // Which edge the panel is docked to — drives the collapse chevron direction.
     in property <string> dock-edge;
-    property <string> collapse-icon:
-        root.dock-edge == "right"  ? "\u{E5CC}"   // chevron_right
-      : root.dock-edge == "top"    ? "\u{E5CE}"   // expand_less
-      : root.dock-edge == "bottom" ? "\u{E5CF}"   // expand_more
-      : "\u{E5CB}";                               // chevron_left (left, default)
+
+    // 0 综合 · 1 资源 · 2 网络 · 3 磁盘 · 4 进程
+    in-out property <int> tab: 0;
 
     // 尺寸由实例化处给出（app.slint 用 parent.width/height）—— 不要在这里写死，
     // 那会是一条永远被覆盖的死绑定。
     background: Theme.bg-panel;
     border-width: 0;
 
-    // Drag from any empty area of the panel to re-dock it (the status header is
-    // a small target). Sits behind the content; interactive widgets (stat bars,
-    // net selector, disk rows) are in front and capture their own events, so
-    // this only fires on the panel's empty space (#dock).
-    dock-bg := TouchArea {
-        mouse-cursor: move;
-        moved => {
-            // 只有真的按着这个手柄拖动时才报位置：Slint 在指针只是经过时也会派发 moved，
-            // 那会让面板不按键就跟着鼠标跑（上游 a02d536）。
-            if (self.pressed) {
-                root.dock-drag-move(self.absolute-position.x + self.mouse-x,
-                    self.absolute-position.y + self.mouse-y);
-            }
-        }
-        pointer-event(ev) => {
-            if (ev.kind == PointerEventKind.up) { root.dock-drag-end(); }
-            // 拖拽被系统取消（指针抓取被收回，例如中途弹出窗口）时也要收尾，
-            // 否则面板会一直停在"拖拽中"状态（上游 a02d536）。
-            else if (ev.kind == PointerEventKind.cancel) { root.dock-drag-end(); }
-        }
-    }
-
-    // --- Vertical stack (docked left/right) --------------------------------
-    if !root.lay-horizontal : Rectangle {
+    Rectangle {
         x: 10px;
         y: 10px;
         width: parent.width - 20px;
@@ -93,19 +74,53 @@ export component Sidebar inherits Rectangle {
 
         VerticalLayout {
             padding: 10px;
-            spacing: 10px;
-            StatusBlock {
+            spacing: 8px;
+
+            // ── 标签条 ──
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: center;
+
+                for t in [
+                    { id: 0, label: "综合" },
+                    { id: 1, label: "资源" },
+                    { id: 2, label: "网络" },
+                    { id: 3, label: "磁盘" },
+                    { id: 4, label: "进程" },
+                ] : Rectangle {
+                    height: 26px;
+                    width: 52px;
+                    border-radius: 6px;
+                    background: root.tab == t.id ? Theme.rail-item-active
+                        : (tab-ta.has-hover ? Theme.rail-item-hover : transparent);
+
+                    Text {
+                        text: t.label;
+                        font-size: 11px;
+                        color: root.tab == t.id ? Theme.rail-fg-active : Theme.rail-fg;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    tab-ta := TouchArea {
+                        clicked => {
+                            root.tab = t.id;
+                        }
+                    }
+                }
+            }
+
+            Divider {}
+
+            if root.tab == 0 : StatusBlock {
                 conn-state: root.conn-state;
                 connection-state: root.connection-state;
                 conn-host: root.conn-host;
-                collapse-icon: root.collapse-icon;
-                dock-drag-move(x, y) => { root.dock-drag-move(x, y); }
-                dock-drag-end() => { root.dock-drag-end(); }
                 collapse() => { root.toggle-collapse(); }
                 copy-host(h) => { root.copy-host(h); }
             }
-            Divider {}
-            StatsBlock {
+
+            if root.tab == 0 || root.tab == 1 : StatsBlock {
                 resource-title: root.resource-title;
                 system-info-available: root.system-info-available;
                 proc-available: root.proc-available;
@@ -114,74 +129,62 @@ export component Sidebar inherits Rectangle {
                 show-system-info() => { root.show-system-info(); }
                 show-processes() => { root.show-processes(); }
             }
-            Divider {}
-            NetBlock {
+
+            if root.tab == 0 : Divider {}
+
+            if root.tab == 0 || root.tab == 2 : NetBlock {
                 net-top-up: root.net-top-up; net-top-down: root.net-top-down; net-top-history: root.net-top-history;
                 net-show-selector: root.net-show-selector; net-ifaces: root.net-ifaces; net-selected: root.net-selected;
                 net-bot-up: root.net-bot-up; net-bot-down: root.net-bot-down; net-bot-history: root.net-bot-history;
                 select-net-iface(i) => { root.select-net-iface(i); }
             }
-            Divider {}
-            DiskBlock { vertical-stretch: 1; disks: root.disks; }
+
+            if root.tab == 0 : Divider {}
+
+            if root.tab == 0 || root.tab == 3 : DiskBlock {
+                vertical-stretch: 1;
+                disks: root.disks;
+            }
+
+            // 进程：进程表格现在还是独立弹窗（proc_window.slint），这里先给入口，
+            // 等把那张表抽成组件再直接嵌进来。
+            if root.tab == 4 : VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+
+                Rectangle {
+                    width: 120px;
+                    height: 32px;
+                    border-radius: 8px;
+                    background: proc-ta.has-hover ? Theme.rail-item-active : Theme.rail-item-hover;
+
+                    Text {
+                        text: "打开进程管理";
+                        font-size: 12px;
+                        color: Theme.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    proc-ta := TouchArea {
+                        clicked => {
+                            root.show-processes();
+                        }
+                    }
+                }
+
+                Text {
+                    text: "（进程表格还在独立窗口里，下一步抽成组件嵌到这里）";
+                    font-size: 11px;
+                    color: Theme.text-muted;
+                    horizontal-alignment: center;
+                }
+            }
+
             Text {
                 text: "Rudder v" + root.app-version;
                 color: Theme.text-muted; font-size: Theme.fs-xs; horizontal-alignment: center;
             }
         }
     }
-
-    // --- Horizontal row (docked top/bottom) --------------------------------
-    if root.lay-horizontal : Rectangle {
-        x: 10px;
-        y: 10px;
-        width: parent.width - 20px;
-        height: parent.height - 20px;
-        background: Theme.bg-panel;
-        border-radius: Theme.radius-md;
-        border-width: 1px;
-        border-color: Theme.border-subtle;
-        clip: true;
-
-        HorizontalLayout {
-            padding: 10px;
-            spacing: 10px;
-            // Status + server-resources share one container, stacked vertically:
-            // the status sits as a compact two-row header *above* the CPU/Mem/Swap,
-            // both left-aligned. `alignment: start` keeps them at the top instead of
-            // stretching to fill the panel height.
-            VerticalLayout {
-                alignment: start;
-                spacing: 8px;
-                min-width: 200px;
-                StatusBlock {
-                    conn-state: root.conn-state;
-                    connection-state: root.connection-state;
-                    collapse-icon: root.collapse-icon;
-                    dock-drag-move(x, y) => { root.dock-drag-move(x, y); }
-                    dock-drag-end() => { root.dock-drag-end(); }
-                    collapse() => { root.toggle-collapse(); }
-                }
-                StatsBlock {
-                    resource-title: root.resource-title;
-                    system-info-available: root.system-info-available;
-                    proc-available: root.proc-available;
-                    cpu-percent: root.cpu-percent; mem-percent: root.mem-percent; swap-percent: root.swap-percent;
-                    mem-detail: root.mem-detail; swap-detail: root.swap-detail;
-                    show-system-info() => { root.show-system-info(); }
-                    show-processes() => { root.show-processes(); }
-                }
-            }
-            VDivider {}
-            NetBlock {
-                min-width: 220px;
-                net-top-up: root.net-top-up; net-top-down: root.net-top-down; net-top-history: root.net-top-history;
-                net-show-selector: root.net-show-selector; net-ifaces: root.net-ifaces; net-selected: root.net-selected;
-                net-bot-up: root.net-bot-up; net-bot-down: root.net-bot-down; net-bot-history: root.net-bot-history;
-                select-net-iface(i) => { root.select-net-iface(i); }
-            }
-            VDivider {}
-            DiskBlock { horizontal-stretch: 1; disks: root.disks; }
-        }
-    }
-
 }
