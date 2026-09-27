@@ -9,42 +9,36 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 修复 / Fixed
 
-- **窄窗口拖动分隔条会 panic**（P0）：内容区被压到不足最小尺寸时，窗格几何算出负宽高并
-  触发断言。现在按最小值夹取，窗口再窄也只是挤，不会崩。
-- **中文输出里的高亮错位**（P0）：按字节下标切片导致 CJK/emoji 被从多字节字符中间切开，
-  高亮块整段错位。现在按字符边界切。
-- **`socks5://[::1]:1080` 这类 IPv6 代理连不上**（P0）：主机与端口拆分没处理方括号形态。
-- **宽窗口（>223 列）里鼠标点击命中错位**（P0）：SGR 223 参数越界未夹取。
-- **「还原本页默认」后动画设置重启又回退**；**`Ctrl+L` 清屏后的字段错乱**；
-  **WebDAV 指纹校验对 `AB:CD:…` 形态失效**；**导出会话文件非原子且权限过宽**
-  （现在先写临时文件再原子替换、权限 `600`）。
-- **切换界面语言后，各分屏标签条不刷新**（顶层标签模型改了，分屏里的是快照）。
-- **设置页里的终端字体预览不跟随**（设置窗口有自己的 `Theme` 实例，字体三项没同步）。
-- 半截转义序列的缓存加上限（行为收紧）：损坏或恶意输出在 `CSI` 后不发终止符不再让
-  缓存无界增长，按 64 字节封顶。**The carry buffer for a split escape sequence is now
-  capped at 64 bytes.**
+- 窗口很窄时拖动分隔条会崩溃（算出的窗格宽高变成负数）。
+- 中文 / emoji 输出之后的高亮块整体错位（按字节下标切多字节字符）。
+- `socks5://[::1]:1080` 这类带方括号的 IPv6 代理填了连不上。
+- 宽窗口（超过 223 列）里鼠标点击落在错误的单元格上。
+- 「还原本页默认」之后动画设置重启又变回关闭。
+- `Ctrl+L` 清屏后字段状态错乱。
+- WebDAV 证书指纹写成 `AB:CD:...` 形态时校验不过。
+- 导出会话文件不是原子写、权限过宽（现在先写临时文件再原子替换，权限 600）。
+- 切换界面语言后，各分屏标签条上的标题不跟着变。
+- 设置页里的终端字体预览不跟随（那个窗口有自己的主题实例）。
+- 半截转义序列的缓存不再无界增长，超过 64 字节直接丢弃。An unterminated CSI in a
+  corrupt stream can no longer grow the carry buffer without bound (capped at 64 bytes).
 
 ### 变更 / Changed
 
-- 终端转义处理收敛：OSC 7 与 OSC 697 的扫描、`sgr_probe` 与 `scan_csi_sequences` 的
-  CSI 骨架、扩展色（38/48/58）跳过规则各收成一份（原先各写 2~3 遍，历史上因规则漂移
-  出过 overline 区间闭合不了的 bug）。
-- 设置窗口 50 个回调改用 `forward!` 宏（879 → 359 行），两臂（有/无返回值）误用都在
-  编译期暴露。
-- 内部清理：日志级别收敛（`[WINDOW_SIZE]` / `KEY_DIAG` / `rudder_rename` 不再以 info
-  级别写盘）、去掉模块级 `allow(dead_code)`、加密与权限实现收口、字体与壁纸共用文件
-  工具、`ConnectCtx` 装配构造器、SFTP 列目录去重、错位与孤立注释修正。
-- 测试：新增 OSC 52、终端查询（DSR/CPR/DA1）、CSI 骨架、文件导入等用例 —— 495 passed。
+- 终端转义处理合并去重：OSC 7 与 OSC 697 的扫描、SGR 探测与 CSI 区间扫描、扩展色
+  （38/48/58）跳过规则，各自从 2~3 份合并成一份 —— 之前两边规则不一致，导致下划线
+  区间闭合不了。
+- 设置窗口的 50 个回调改用宏，文件从 879 行降到 359 行。
+- 日志降噪：窗口尺寸、按键诊断、重命名诊断不再以 info 级别写盘。
+- 删掉 `layout/panes.rs` 的模块级 `allow(dead_code)`，删掉两处「伪造引用保住 import」。
+- 加密、文件权限、字体与壁纸的扫描导入，各自合并成一份实现。
+- `version` 相关函数从 `app.rs` 移到 `app/version.rs`。
+- 补测试：OSC 52 剪贴板、终端查询回复（DSR / CPR / DA1）、CSI 扫描、文件导入。
 
-### 修复 / Fixed
-
-- **半截转义序列的缓存加上限（行为收紧）。** 分块读取（SSH / 管道）时，块尾未结束的
-  CSI 参数会缓存到下一块再判 —— 但缓存原先**没有上限**：损坏或恶意输出只要在 `ESC[`
-  之后一直不发 final byte，缓存就会无界增长，并且每块都被重新拼到下一次解析前面。
-  现在与终端查询状态机一样按 **64 字节**封顶（合法的真彩色 `38;2;R;G;B` 最长也才
-  ~20 字节），超限整段丢弃。**A malicious or corrupt stream that opens `CSI` and never
-  terminates it can no longer grow the carry buffer without bound**; it is now capped at
-  64 bytes, matching the terminal-query state machine.
+**Fixed**: narrow-window splitter crash, CJK highlight misalignment, IPv6 `socks5` proxies,
+wide-window mouse misalignment, "restore page defaults" not sticking, `Ctrl+L`, WebDAV
+certificate fingerprints, non-atomic session export. **Changed**: deduplicated the terminal
+escape scanners, macro-ized the settings-window callbacks (879 → 359 lines), quieter logging,
+new tests. 495 tests passing.
 
 ## [0.7.9-beta6] - 2026-09-26
 
