@@ -27,6 +27,10 @@ import { Theme } from "theme.slint";
 import { GroupGap } from "components/surfaces.slint";
 import { Sidebar, DiskInfo } from "sidebar.slint";
 import { TabBar, TabInfo } from "tabs.slint";
+// 新外壳（UI 重构过渡期）：构建脚本只编译 `ui/app.slint` 这一条入口，所以新外壳
+// 先在这里 import 一次，让它进入编译图。收尾那一步会把构建入口换成
+// `ui/shell/app_shell.slint`、删掉旧外壳与这一行。
+export { AppShell } from "shell/app_shell.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";

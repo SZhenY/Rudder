@@ -1,0 +1,65 @@
+// 新外壳（UI 重构第一步）：左侧栏 + 内容区 + 底部状态栏。
+//
+// 现在只搭骨架 —— 内容区是页面占位、底部状态栏是占位文字，后续各步往里填。
+// 用 `--ui=shell` 启动；旧的 `AppWindow`（app.slint）完全不受影响，方便对比与回退。
+
+import { Theme } from "../theme.slint";
+import { Rail } from "rail.slint";
+
+export component AppShell inherits Window {
+    title: "Rudder";
+    min-width: 960px;
+    min-height: 600px;
+    preferred-width: 1440px;
+    preferred-height: 900px;
+    background: Theme.window-base;
+
+    // 0 主机 · 1 终端 · 2 指令集 · 3 Docker · 4 设置
+    in-out property <int> page: 1;
+    in-out property <bool> rail-collapsed: false;
+
+    VerticalLayout {
+        HorizontalLayout {
+            Rail {
+                current-page <=> root.page;
+                collapsed <=> root.rail-collapsed;
+            }
+
+            // 内容区（各页面后续接入）
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.bg-root;
+
+                Text {
+                    text: root.page == 0
+                        ? "主机管理"
+                        : root.page == 1
+                        ? "终端"
+                        : root.page == 2
+                        ? "指令集"
+                        : root.page == 3
+                        ? "Docker"
+                        : "设置";
+                    font-size: 20px;
+                    color: Theme.rail-fg;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // 底部状态栏（下一步接入真实条目）
+        Rectangle {
+            height: 28px;
+            background: Theme.rail-bg;
+
+            Text {
+                text: "底部状态栏：隧道 / 高亮 / 重连 / 历史命令 / 传输统计";
+                font-size: 11px;
+                color: Theme.rail-fg;
+                vertical-alignment: center;
+                x: 12px;
+            }
+        }
+    }
+}

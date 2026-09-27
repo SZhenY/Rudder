@@ -99,6 +99,10 @@ fn main() -> anyhow::Result<()> {
     // are handled instead by the C0-marker + 3-layer Backspace filters in
     // `app::on_send_key`, so we no longer need (and must not use) ImmDisableIME.
 
+    if std::env::args().any(|arg| arg == "--ui=shell") {
+        return app::run_shell();
+    }
+
     app::run()
 }
 

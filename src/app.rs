@@ -423,6 +423,15 @@ pub fn run_renderer_probe(mode: &str) -> Result<()> {
     window::run_renderer_probe(mode)
 }
 
+/// 新外壳（UI 重构第一步）：只画骨架 —— 左侧栏 + 内容占位 + 底部状态栏。
+///
+/// 用 `--ui=shell` 启动；旧的 [`run`] 完全不受影响，方便两套界面对比、随时回退。
+pub fn run_shell() -> Result<()> {
+    let shell = crate::ui::AppShell::new().context("create app shell")?;
+    shell.run().context("run app shell")?;
+    Ok(())
+}
+
 pub fn run() -> Result<()> {
     // Load the renderer preference before creating any Slint window. Reuse the
     // same store for the rest of the app so startup does not read the config

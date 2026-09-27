@@ -1,0 +1,151 @@
+// 左侧图标栏（新外壳第一步）。固定宽度、可收起：
+//   展开 76px（图标位 + 文字）· 收起 44px（只留图标位）
+// 图标字体在下一步接入，这里先用占位块占住图标位置。
+
+import { Theme } from "../theme.slint";
+
+component RailButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    in property <bool> collapsed: false;
+    callback clicked();
+
+    height: 40px;
+    border-radius: 6px;
+    background: root.active
+        ? Theme.rail-item-active
+        : (ta.has-hover ? Theme.rail-item-hover : transparent);
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: 6px;
+
+        // 图标位（下一步换成图标字体）
+        Rectangle {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            background: root.active ? Theme.rail-fg-active : Theme.rail-fg;
+        }
+
+        if !root.collapsed : Text {
+            text: root.label;
+            font-size: 12px;
+            color: root.active ? Theme.rail-fg-active : Theme.rail-fg;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Rail inherits Rectangle {
+    // 0 主机 · 1 终端 · 2 指令集 · 3 Docker · 4 设置
+    in-out property <int> current-page: 1;
+    in-out property <bool> collapsed: false;
+    callback page-changed(int);
+    callback search-requested();
+
+    width: root.collapsed ? 44px : 76px;
+    background: Theme.rail-bg;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 4px;
+        alignment: start;
+
+        HorizontalLayout {
+            spacing: 4px;
+            alignment: center;
+
+            Rectangle {
+                width: root.collapsed ? 28px : 40px;
+                height: 28px;
+                border-radius: 6px;
+                background: search-ta.has-hover ? Theme.rail-item-hover : transparent;
+                Text {
+                    text: "⌕";
+                    font-size: 14px;
+                    color: Theme.rail-fg;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                search-ta := TouchArea {
+                    clicked => {
+                        root.search-requested();
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 24px;
+                height: 28px;
+                border-radius: 6px;
+                background: collapse-ta.has-hover ? Theme.rail-item-hover : transparent;
+                Text {
+                    text: root.collapsed ? "›" : "‹";
+                    font-size: 14px;
+                    color: Theme.rail-fg;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                collapse-ta := TouchArea {
+                    clicked => {
+                        root.collapsed = !root.collapsed;
+                    }
+                }
+            }
+        }
+
+        RailButton {
+            label: "主机";
+            active: root.current-page == 0;
+            collapsed: root.collapsed;
+            clicked => {
+                root.page-changed(0);
+            }
+        }
+        RailButton {
+            label: "终端";
+            active: root.current-page == 1;
+            collapsed: root.collapsed;
+            clicked => {
+                root.page-changed(1);
+            }
+        }
+        RailButton {
+            label: "指令集";
+            active: root.current-page == 2;
+            collapsed: root.collapsed;
+            clicked => {
+                root.page-changed(2);
+            }
+        }
+        RailButton {
+            label: "Docker";
+            active: root.current-page == 3;
+            collapsed: root.collapsed;
+            clicked => {
+                root.page-changed(3);
+            }
+        }
+
+        // 占位：把「设置」顶到底部
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        RailButton {
+            label: "设置";
+            active: root.current-page == 4;
+            collapsed: root.collapsed;
+            clicked => {
+                root.page-changed(4);
+            }
+        }
+    }
+}
