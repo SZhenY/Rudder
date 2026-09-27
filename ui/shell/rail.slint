@@ -73,46 +73,56 @@ export component Rail inherits Rectangle {
             spacing: 4px;
 
             // 搜索：展开态就是一条能直接输入的输入框（点一下就能打字，不用先切换形态）
+            //
+            // 布局一律交给 HorizontalLayout（alignment: center）—— 之前用"手算 y + 高度"
+            // 想让它垂直居中，字形基线和行高对不齐，看起来永远偏上；现在和左边的 search
+            // 图标用同一个居中机制，两者基线一致。
             Rectangle {
                 horizontal-stretch: 1;
                 height: 32px;
                 border-radius: 8px;
                 background: Theme.rail-item-hover;
 
-                Text {
-                    x: 8px;
-                    text: "\u{E8B6}"; // search
-                    font-family: "Material Icons";
-                    font-size: 16px;
-                    color: Theme.rail-fg;
-                    vertical-alignment: center;
-                }
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 6px;
+                    alignment: center;
 
-                // 这个 Slint 版本的 TextInput 没有 placeholder 属性 —— 沿用仓库既有写法
-                // （dialog_fields.slint）：值为空时叠一层占位 Text，声明在输入框**之前**
-                // 以免挡住点击。
-                if search-input.text == "" : Text {
-                    x: 30px;
-                    width: parent.width - 38px;
-                    height: parent.height;
-                    text: "搜索主机、设置…";
-                    font-size: 12px;
-                    color: Theme.rail-fg;
-                    vertical-alignment: center;
-                }
+                    Text {
+                        width: 20px;
+                        text: "\u{E8B6}"; // search
+                        font-family: "Material Icons";
+                        font-size: 16px;
+                        color: Theme.rail-fg;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
 
-                // TextInput 的文字默认贴着上边（给它整行高度也不会自动居中），
-                // 所以这里给它一个等于行高的高度、再用 y 把它摆在行中间。
-                search-input := TextInput {
-                    x: 30px;
-                    y: (parent.height - 20px) / 2;
-                    width: parent.width - 38px;
-                    height: 20px;
-                    font-size: 12px;
-                    color: Theme.rail-fg;
-                    single-line: true;
-                    accepted => {
-                        root.search-requested();
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 20px;
+
+                        // 这个 Slint 版本的 TextInput 没有 placeholder 属性 —— 沿用仓库既有
+                        // 写法（dialog_fields.slint）：值为空时叠一层占位 Text。
+                        Text {
+                            visible: search-input.text == "";
+                            text: "搜索主机、设置…";
+                            font-size: 12px;
+                            color: Theme.rail-fg;
+                            vertical-alignment: center;
+                        }
+
+                        search-input := TextInput {
+                            width: 100%;
+                            height: 100%;
+                            font-size: 12px;
+                            color: Theme.rail-fg;
+                            single-line: true;
+                            accepted => {
+                                root.search-requested();
+                            }
+                        }
                     }
                 }
             }
