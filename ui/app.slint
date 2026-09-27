@@ -2220,6 +2220,7 @@ export component AppWindow inherits Window {
           history-count: root.command-history.length;
           transfer-count: root.transfers.length;
           transfers-active: root.has-active-transfers;
+          lang-en: root.lang-en;
           toggle-highlight() => {
               root.output-highlight-enabled = !root.output-highlight-enabled;
           }
