@@ -2222,9 +2222,6 @@ export component AppWindow inherits Window {
               follow-cd: root.sftp-follow-cd;
               collapse-sftp: root.collapse-sftp-default;
               show-cmd-bar: root.show-cmd-bar;
-              quick-as-sidebar: root.quick-commands-as-sidebar;
-              collapse-sidebar: root.collapse-sidebar-default;
-              welcome-sidebar: root.welcome-as-sidebar;
               sync-upload: root.sync-upload-enabled;
               app-version: root.app-version;
               about-libs: root.about-libs;
@@ -2238,10 +2235,7 @@ export component AppWindow inherits Window {
               set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
               set-flag-collapse-sftp(v) => { root.set-collapse-sftp-default(v); }
               set-flag-show-cmd-bar(v) => { root.set-show-cmd-bar(v); }
-              set-flag-quick-as-sidebar(v) => { root.set-quick-commands-as-sidebar(v); }
-              set-flag-collapse-sidebar(v) => { root.set-collapse-sidebar-default(v); }
               set-flag-sync-upload(v) => { root.set-sync-upload-enabled(v); }
-              set-flag-welcome-sidebar(v) => { root.set-welcome-as-sidebar(v); }
               term-font(f) => {
                   root.set-term-font(f);
               }

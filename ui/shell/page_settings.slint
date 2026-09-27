@@ -243,9 +243,6 @@ export component PageSettings inherits Rectangle {
     in property <bool> follow-cd;
     in property <bool> collapse-sftp;
     in property <bool> show-cmd-bar;
-    in property <bool> quick-as-sidebar;
-    in property <bool> collapse-sidebar;
-    in property <bool> welcome-sidebar;
     in property <bool> sync-upload;
     in property <string> app-version;
     in property <[string]> about-libs;
@@ -265,10 +262,7 @@ export component PageSettings inherits Rectangle {
     callback set-flag-follow-cd(bool);
     callback set-flag-collapse-sftp(bool);
     callback set-flag-show-cmd-bar(bool);
-    callback set-flag-quick-as-sidebar(bool);
-    callback set-flag-collapse-sidebar(bool);
     callback set-flag-sync-upload(bool);
-    callback set-flag-welcome-sidebar(bool);
 
     // 0 基础 · 1 终端 · 2 文件 · 3 布局 · 4 快捷键
     property <int> current-cat: 0;
@@ -672,28 +666,6 @@ export component PageSettings inherits Rectangle {
                                 on: root.show-cmd-bar;
                                 toggled => {
                                     root.set-flag-show-cmd-bar(!root.show-cmd-bar);
-                                }
-                            }
-                            ToggleRow {
-                                label: "指令集作侧栏展示";
-                                on: root.quick-as-sidebar;
-                                toggled => {
-                                    root.set-flag-quick-as-sidebar(!root.quick-as-sidebar);
-                                }
-                            }
-                            ToggleRow {
-                                label: "默认折叠会话侧栏";
-                                on: root.collapse-sidebar;
-                                toggled => {
-                                    root.set-flag-collapse-sidebar(!root.collapse-sidebar);
-                                }
-                            }
-                            ToggleRow {
-                                label: "会话列表作为侧栏";
-                                desc: "旧布局机制（旧外壳删除前可用）";
-                                on: root.welcome-sidebar;
-                                toggled => {
-                                    root.set-flag-welcome-sidebar(!root.welcome-sidebar);
                                 }
                             }
                             ToggleRow {
