@@ -109,7 +109,7 @@ pub(crate) fn wire_window_chrome(
 
     {
         // 在系统文件管理器里显示日志目录（设置 → 关于）。
-        let _ = window.on_open_log_dir(move || {
+        window.on_open_log_dir(move || {
             let dir = crate::config::log_dir();
             let _ = std::fs::create_dir_all(&dir);
             #[cfg(target_os = "macos")]
