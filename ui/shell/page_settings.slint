@@ -146,6 +146,36 @@ component KeyRow inherits Rectangle {
     }
 }
 
+component TogglePill inherits Rectangle {
+    in property <bool> on: false;
+    callback toggled();
+
+    height: 26px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : Theme.line;
+    background: root.on ? Theme.rail-item-active : Theme.sur-2;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        alignment: center;
+
+        Text {
+            text: root.on ? "开" : "关";
+            font-size: 11px;
+            color: root.on ? Theme.accent : Theme.fg-2;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.toggled();
+        }
+    }
+}
+
 export component PageSettings inherits Rectangle {
     in-out property <bool> lang-en: false;
     property <bool> dark: Theme.dark; // 绑定跟随 Theme，切换即时刷新
@@ -157,6 +187,35 @@ export component PageSettings inherits Rectangle {
     callback term-font-size(int);
     callback term-font-bold(bool);
     callback term-scrollback(string);
+    // ── 布尔开关（每个都是真属性 + 真回调）──
+    callback set-flag-update-check(bool);
+    callback set-flag-large-scrollback(bool);
+    callback set-flag-osc52(bool);
+    callback set-flag-convert-eol(bool);
+    callback set-flag-json-output(bool);
+    callback set-flag-hide-partitions(bool);
+    callback set-flag-always-ask(bool);
+    callback set-flag-follow-cd(bool);
+    callback set-flag-collapse-sftp(bool);
+    callback set-flag-show-cmd-bar(bool);
+    callback set-flag-quick-as-sidebar(bool);
+    callback set-flag-collapse-sidebar(bool);
+    callback set-flag-sync-upload(bool);
+    callback set-flag-welcome-sidebar(bool);
+    in property <bool> flag-osc;
+    in property <bool> update-check;
+    in property <bool> large-scrollback;
+    in property <bool> convert-eol;
+    in property <bool> json-format-output;
+    in property <bool> hide-partitions;
+    in property <bool> always-ask;
+    in property <bool> follow-cd;
+    in property <bool> collapse-sftp;
+    in property <bool> show-cmd-bar;
+    in property <bool> quick-as-sidebar;
+    in property <bool> collapse-sidebar;
+    in property <bool> welcome-sidebar;
+    in property <bool> sync-upload;
 
     property <int> current-cat: 0; // 0 基础 · 1 终端 · 2 外观 · 3 布局 · 4 快捷键 · 5 关于
 
@@ -201,6 +260,14 @@ export component PageSettings inherits Rectangle {
                     active: root.current-cat == 2;
                     clicked => {
                         root.current-cat = 2;
+                    }
+                }
+                CategoryItem {
+                    glyph: "\u{E2C7}"; // folder
+                    label: "文件";
+                    active: root.current-cat == 5;
+                    clicked => {
+                        root.current-cat = 5;
                     }
                 }
                 CategoryItem {
@@ -270,6 +337,10 @@ export component PageSettings inherits Rectangle {
                                     }
                                 }
                             }
+                        }
+                        Row {
+                            label: "自动检查更新";
+                            TogglePill { on: root.update-check; toggled => { root.set-flag-update-check(!root.update-check); } }
                         }
                         Row {
                             label: "深色主题";
@@ -371,6 +442,15 @@ export component PageSettings inherits Rectangle {
                             }
                         }
                         Row {
+                            label: "大容量滚回模式";
+                            TogglePill { on: root.large-scrollback; toggled => { root.set-flag-large-scrollback(!root.large-scrollback); } }
+                        }
+                        Row {
+                            label: "OSC52 剪贴板同步";
+                            desc: "允许远端程序经转义序列读写本机剪贴板";
+                            TogglePill { on: root.flag-osc; toggled => { root.set-flag-osc52(!root.flag-osc); } }
+                        }
+                        Row {
                             label: "滚回行数";
                             desc: "终端可回看的历史行数";
 
@@ -388,7 +468,44 @@ export component PageSettings inherits Rectangle {
                         }
                     }
 
-                    // ── 布局：迁移中 ──
+                    // ── 文件 / SFTP：真开关 ──
+                    if root.current-cat == 5 : VerticalLayout {
+                        spacing: 12px;
+                        alignment: start;
+
+                        Text {
+                            text: "文件与 SFTP";
+                            font-size: 16px;
+                            font-weight: 700;
+                            color: Theme.fg-1;
+                        }
+                        Row {
+                            label: "换行转换 (LF ↔ CRLF)";
+                            TogglePill { on: root.convert-eol; toggled => { root.set-flag-convert-eol(!root.convert-eol); } }
+                        }
+                        Row {
+                            label: "命令输出 JSON 格式化";
+                            TogglePill { on: root.json-format-output; toggled => { root.set-flag-json-output(!root.json-format-output); } }
+                        }
+                        Row {
+                            label: "隐藏特殊分区";
+                            TogglePill { on: root.hide-partitions; toggled => { root.set-flag-hide-partitions(!root.hide-partitions); } }
+                        }
+                        Row {
+                            label: "下载前始终询问位置";
+                            TogglePill { on: root.always-ask; toggled => { root.set-flag-always-ask(!root.always-ask); } }
+                        }
+                        Row {
+                            label: "面板跟随远端 cwd";
+                            TogglePill { on: root.follow-cd; toggled => { root.set-flag-follow-cd(!root.follow-cd); } }
+                        }
+                        Row {
+                            label: "默认折叠 SFTP 面板";
+                            TogglePill { on: root.collapse-sftp; toggled => { root.set-flag-collapse-sftp(!root.collapse-sftp); } }
+                        }
+                    }
+
+                    // ── 布局：真开关 + 迁移中说明 ──
                     if root.current-cat == 3 : VerticalLayout {
                         spacing: 8px;
                         alignment: start;
@@ -399,8 +516,25 @@ export component PageSettings inherits Rectangle {
                             font-weight: 700;
                             color: Theme.fg-1;
                         }
+                        Row {
+                            label: "显示底部命令栏";
+                            TogglePill { on: root.show-cmd-bar; toggled => { root.set-flag-show-cmd-bar(!root.show-cmd-bar); } }
+                        }
+                        Row {
+                            label: "指令集作侧栏展示";
+                            TogglePill { on: root.quick-as-sidebar; toggled => { root.set-flag-quick-as-sidebar(!root.quick-as-sidebar); } }
+                        }
+                        Row {
+                            label: "默认折叠会话侧栏";
+                            TogglePill { on: root.collapse-sidebar; toggled => { root.set-flag-collapse-sidebar(!root.collapse-sidebar); } }
+                        }
+                        Row {
+                            label: "会话列表作为侧栏";
+                            desc: "旧布局机制（删除前可用）";
+                            TogglePill { on: root.welcome-sidebar; toggled => { root.set-flag-welcome-sidebar(!root.welcome-sidebar); } }
+                        }
                         Text {
-                            text: "该分组的完整控件仍在迁移中 —— 旧设置窗口退役后逐组搬入（不放假开关）。";
+                            text: "停靠边 / 面板宽度等在旧外壳删除后定稿搬入。";
                             font-size: 12px;
                             color: Theme.fg-3;
                             wrap: word-wrap;
