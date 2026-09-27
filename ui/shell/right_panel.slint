@@ -42,13 +42,48 @@ component PanelTab inherits Rectangle {
     }
 }
 
+component Switch inherits Rectangle {
+    in property <bool> on: false;
+    callback toggled();
+
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    background: root.on ? Theme.accent : Theme.sur-3;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : Theme.line;
+
+    Rectangle {
+        x: root.on ? parent.width - self.width - 2px : 2px;
+        y: (parent.height - self.height) / 2;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: white;
+
+        animate x {
+            duration: 120ms;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.toggled();
+        }
+    }
+}
+
 export component RightPanel inherits Rectangle {
     in property <bool> lang-en: false;
     in property <[TransferInfo]> transfers;
     in property <bool> transfers-active: false;
+    in property <bool> sftp-follow-cd;
+    in property <bool> always-ask;
+    callback set-flag-follow-cd(bool);
+    callback set-flag-always-ask(bool);
     callback close-panel();
 
-    property <int> current-tab: 0; // 0 传输 · 1 隧道 · 2 文件
+    property <int> current-tab: 0; // 0 传输 · 1 文件（隧道功能暂缓，见下）
 
     width: 240px;
     background: Theme.sur-1;
@@ -68,15 +103,8 @@ export component RightPanel inherits Rectangle {
                 }
             }
             PanelTab {
-                label: root.lang-en ? "Tunnels" : "隧道";
-                active: root.current-tab == 1;
-                clicked => {
-                    root.current-tab = 1;
-                }
-            }
-            PanelTab {
                 label: root.lang-en ? "Files" : "文件";
-                active: root.current-tab == 2;
+                active: root.current-tab == 1;
                 clicked => {
                     root.current-tab = 2;
                 }
@@ -198,24 +226,95 @@ export component RightPanel inherits Rectangle {
             }
         }
 
-        // ── 隧道 / 文件：迁移说明（per-tab 状态搬家后接入，不放假列表）──
-        if root.current-tab == 1 || root.current-tab == 2 : VerticalLayout {
+        // ── 文件（按 ex/设置-终端-SFTP 文件.png 的区块规划）──
+        // 注：隧道相关功能按需求暂缓（2026-09 记录），per-tab 状态搬家后另行评估。
+        if root.current-tab == 1 : VerticalLayout {
             padding: 12px;
-            spacing: 8px;
+            spacing: 4px;
             alignment: start;
 
             Text {
-                text: root.current-tab == 1
-                    ? (root.lang-en ? "Tunnels" : "隧道")
-                    : (root.lang-en ? "Files" : "文件");
+                text: root.lang-en ? "Files" : "文件";
                 font-size: 14px;
                 font-weight: 700;
                 color: Theme.fg-1;
             }
+
+            // 目录自动同步 = sftp-follow-cd（真回调 ✓）
+            HorizontalLayout {
+                spacing: 10px;
+                height: 44px;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+
+                    Text {
+                        text: root.lang-en ? "Auto-sync directory" : "SFTP 目录自动同步";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: Theme.fg-1;
+                    }
+                    Text {
+                        text: root.lang-en ? "Panel follows terminal cd" : "启用后，打开 SFTP 面板时将自动同步当前工作目录";
+                        font-size: 10px;
+                        color: Theme.fg-3;
+                        wrap: word-wrap;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+
+                    Switch {
+                        on: root.sftp-follow-cd;
+                        toggled => {
+                            root.set-flag-follow-cd(!root.sftp-follow-cd);
+                        }
+                    }
+                }
+            }
+
+            // 下载前始终询问 = download-always-ask（真回调 ✓）
+            HorizontalLayout {
+                spacing: 10px;
+                height: 44px;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+
+                    Text {
+                        text: root.lang-en ? "Always ask where to save" : "下载前始终询问位置";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: Theme.fg-1;
+                    }
+                    Text {
+                        text: root.lang-en ? "Ask for a destination on every download" : "每次下载都选择目标目录";
+                        font-size: 10px;
+                        color: Theme.fg-3;
+                        wrap: word-wrap;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+
+                    Switch {
+                        on: root.always-ask;
+                        toggled => {
+                            root.set-flag-always-ask(!root.always-ask);
+                        }
+                    }
+                }
+            }
+
+            // 其余区块（传输模式/批量限制/文件关联）：回调待核实，迁移中
             Text {
                 text: root.lang-en
-                    ? "This tab migrates with the per-tab state move (next round) — no placeholder data."
-                    : "该标签随 per-tab 状态搬家接入（下一轮）—— 不放假数据。";
+                    ? "Transfer mode / batch limits / file associations — migrate with the per-tab state move."
+                    : "传输模式 / 批量编辑限制 / 文件关联 —— 随 per-tab 状态搬家接入。";
                 font-size: 11px;
                 color: Theme.fg-3;
                 wrap: word-wrap;
