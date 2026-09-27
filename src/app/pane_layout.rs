@@ -134,7 +134,7 @@ pub(crate) fn refresh_panes(
                 .collect();
             // Only the pane touching the top-right corner keeps room for the
             // floating toolbar icons (#122).
-            let top_right = p.x + p.w >= cw - 0.5 && p.y <= 0.5;
+            let _top_right = p.x + p.w >= cw - 0.5 && p.y <= 0.5;
             PaneInfo {
                 id: p.id as i32,
                 x: p.x,
@@ -143,7 +143,8 @@ pub(crate) fn refresh_panes(
                 h: p.h,
                 active_id: p.active.clone().into(),
                 focused: p.focused,
-                reserve_right: if top_right { 160.0 } else { 0.0 },
+                // 旧右上工具栏已删（UI 重构）：标签条不再需要给它留位。
+                reserve_right: 0.0,
                 tabs: ModelRc::from(Rc::new(VecModel::from(tabs))),
             }
         })

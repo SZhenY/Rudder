@@ -1729,82 +1729,6 @@ export component AppWindow inherits Window {
     }
     }
 
-    // App toolbar icons: command bar / sync / theme / transfers / settings.
-    // They sit at the top-right of the tab row — below the custom title bar when
-    // frameless (y offset), or at the very top on macOS where the native title
-    // bar is separate (#119).
-    //
-    // 版式：右对齐交给布局（`alignment: end`），不再逐个手算
-    // `root.width - <34|64|94|124|154>px - root.toolbar-x-off`。
-    // 旧写法里这五个数字是"按钮宽 26px + 间隙 4px"推出来的（含右侧 8px 边距），
-    // 加/删一个按钮就要重算全部偏移。书写顺序 = 视觉顺序（左 → 右）。
-    HorizontalLayout {
-        // ⚠️ 关键是**右边界** = `root.width - root.toolbar-x-off`（右侧面板展开时整体左移）。
-        // 这里踩过坑：写成 `x: root.toolbar-x-off; width: root.width - root.toolbar-x-off`
-        // 会让右边界落到 `x + width == root.width`，于是图标**溢出到右侧状态栏里**。
-        // 左边界无关紧要（内容右对齐、盒子无背景、不拦截点击），取 0 即可。
-        x: 0px;
-        y: root.toolbar-y;
-        width: root.width - root.toolbar-x-off;
-        height: 26px;
-        alignment: end;                            // 靠右
-        spacing: 4px;
-        padding-right: 8px;
-
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: "\u{E86F}";   // Material "code" — command bar
-            fg: root.show-cmd-bar ? Theme.accent : Theme.text-secondary;
-            active: root.show-cmd-bar;
-            tooltip: root.lang-en
-                ? (root.show-cmd-bar ? "Hide command bar" : "Show command bar")
-                : (root.show-cmd-bar ? "隐藏命令栏" : "显示命令栏");
-            clicked => { root.show-cmd-bar = !root.show-cmd-bar; root.set-show-cmd-bar(root.show-cmd-bar); }
-        }
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: "\u{E627}";
-            fg: root.sync-input ? Theme.accent : Theme.text-secondary;
-            active: root.sync-input;
-            tooltip: root.lang-en
-                ? (root.sync-input ? "Sync input: ON" : "Sync input")
-                : (root.sync-input ? "会话同步：开" : "会话同步");
-            clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
-        }
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: Theme.dark ? "\u{E518}" : "\u{E51C}";
-            fg: Theme.dark ? #f5c542 : #5856d6;
-            tooltip: root.lang-en ? "Toggle theme" : "切换主题";
-            clicked => { root.toggle-theme(); }
-        }
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: "\u{E5D5}";   // swap_vert — transfer manager (up/down)
-            tooltip: root.lang-en ? "Transfers manager" : "传输管理";
-            active: root.download-open;
-            // Breathe while any transfer is running (driven from Rust).
-            breathe: root.has-active-transfers;
-            clicked => { root.download-open = !root.download-open; root.settings-open = false; }
-        }
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: "\u{E8B8}";
-            tooltip: root.lang-en ? "Settings" : "设置";
-            active: root.settings-open;
-            clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.ssh-import-hint = ""; }
-        }
-    }
 
     // Frameless resize edges (#119): thin hit-zones that start an OS-level
     // resize via winit. Hidden when maximized.
@@ -2202,9 +2126,14 @@ export component AppWindow inherits Window {
             // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
             // 那个赋值传不回来，收起/展开看起来就是"点了没反应"。
             collapsed <=> root.rail-collapsed;
-            page-changed(p) => {
-                root.shell-page = p;
-            }
+              page-changed(p) => {
+                  if (p == 4) {
+                      // 设置：迁移入口 —— 与旧工具栏 ⚙ 同一动作（设置菜单弹窗）。
+                      root.settings-open = true;
+                  } else {
+                      root.shell-page = p;
+                  }
+              }
         }
 
         if root.shell-page == 0 : Rectangle {
