@@ -603,12 +603,9 @@ impl TermBuffer {
                 parts.push(part);
                 continue;
             }
-            if matches!(&**part, b"38" | b"48" | b"58") {
-                match (split.get(i + 1).map(|v| &**v), split.get(i + 2).map(|v| &**v)) {
-                    (Some(b"5"), _) => skip = 2, // 38;5;N
-                    (Some(b"2"), _) => skip = 4, // 38;2;R;G;B
-                    _ => {}
-                }
+            if crate::terminal::is_extended_color_prefix(part) {
+                // 与 `sgr_probe` 共用同一条规则（见 csi.rs）
+                skip = crate::terminal::extended_color_skip(split.get(i + 1).map(|v| &**v));
             }
             let is_color_index = skip > 0;
             let is_21 = !is_color_index && *part == b"21";
@@ -1041,12 +1038,9 @@ fn sgr_probe(bytes: &[u8]) -> SgrProbe {
                 skip -= 1;
                 continue;
             }
-            if matches!(part, b"38" | b"48" | b"58") {
-                match (parts.clone().next(), parts.clone().nth(1)) {
-                    (Some(b"5"), _) => skip = 2, // 38;5;N
-                    (Some(b"2"), _) => skip = 4, // 38;2;R;G;B
-                    _ => {}
-                }
+            if crate::terminal::is_extended_color_prefix(part) {
+                // 与 `apply_sgr` 共用同一条规则（见 csi.rs）
+                skip = crate::terminal::extended_color_skip(parts.clone().next());
                 if skip > 0 {
                     continue;
                 }

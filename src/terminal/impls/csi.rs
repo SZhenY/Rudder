@@ -51,6 +51,24 @@ pub(crate) fn scan_csi_visit(bytes: &[u8], mut visit: impl FnMut(usize, usize)) 
     None
 }
 
+/// 这个参数是不是扩展色前缀（`38` 前景 / `48` 背景 / `58` 下划线色）。
+pub(crate) fn is_extended_color_prefix(part: &[u8]) -> bool {
+    matches!(part, b"38" | b"48" | b"58")
+}
+
+/// 扩展色前缀之后要跳过几个参数：`5` → 2（前缀 + 颜色下标），`2` → 4（前缀 + R/G/B）。
+///
+/// `apply_sgr` 的改写与 `sgr_probe` 的分类**必须用同一条规则**，否则 overline 区间
+/// 会错位（`38;2;53;100;200m` 里的 53 是颜色分量、不是 overline）—— 原先这规则各写了
+/// 一遍，现在收在这里。注意第二个前瞻参数两边都没用到，所以只收 `next1`。
+pub(crate) fn extended_color_skip(next1: Option<&[u8]>) -> usize {
+    match next1 {
+        Some(b"5") => 2,
+        Some(b"2") => 4,
+        _ => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
