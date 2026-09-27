@@ -80,6 +80,7 @@ import { AppTitleBar } from "shell/titlebar.slint";
 import { PageTerminal } from "shell/page_terminal.slint";
 import { PaneTabs } from "shell/pane_tabs.slint";
 import { StatusBar } from "shell/status_bar.slint";
+import { RightPanel } from "shell/right_panel.slint";
 import { PageSettings } from "shell/page_settings.slint";
 import { SidebarBody } from "sidebar_body.slint";
 import { RenameDialog } from "rename_dialog.slint";
@@ -463,7 +464,8 @@ export component AppWindow inherits Window {
     in-out property <int> wallpaper-index;
     callback set-wallpaper(string);                // apply + persist a wallpaper id
     callback pick-wallpaper-file();
-    callback open-log-dir();                    // reveal the log directory in Finder/explorer                // open the OS file dialog (Rust)
+    callback open-log-dir();
+    in-out property <bool> right-panel-open: false;                    // reveal the log directory in Finder/explorer                // open the OS file dialog (Rust)
 
     // 配色：主题（深浅）+ 主题色。
     // `accent-presets` 由 Rust 提供（含**当前深浅档已解析好的**颜色，Slint 不存第二份
@@ -2207,6 +2209,18 @@ export component AppWindow inherits Window {
                   root.toggle-theme();
               }
           }
+      }
+
+      // 右侧工具面板（会话中；AI 暂不做）
+      if root.shell-page == 1 && root.panes.length > 0 && root.right-panel-open : RightPanel {
+          x: root.width - 240px;
+          y: root.shell-top;
+          width: 240px;
+          height: root.height - root.shell-top - 28px;
+          lang-en: root.lang-en;
+          transfers: root.transfers;
+          transfers-active: root.has-active-transfers;
+          close-panel() => { root.right-panel-open = false; }
       }
 
       // 底部状态栏（参考图：连接状态 / 高亮 / 历史命令 / 传输统计）。

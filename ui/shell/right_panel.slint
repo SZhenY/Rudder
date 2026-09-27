@@ -1,0 +1,225 @@
+// 右侧工具面板（参考 ex/终端，会话中.png 的右侧栏；AI 按需求暂不做）。
+//
+// v1 接线范围：
+// * 传输 —— transfers 模型（AppWindow 级 ✓ 真数据）+ 活动指示
+// * 隧道 / 文件 —— 隧道与 SFTP 树目前挂在 TerminalView 的 per-tab 状态上，
+//   迁移需要把那批绑定搬到 AppWindow 级，下一轮做（不放假列表）。
+
+import { Theme } from "../theme.slint";
+import { TransferInfo } from "../download_manager.slint";
+
+component PanelTab inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 30px;
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+
+        Text {
+            text: root.label;
+            font-size: 12px;
+            color: root.active ? Theme.fg-1 : Theme.fg-3;
+            font-weight: root.active ? 600 : 400;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            height: 2px;
+            width: 20px;
+            x: (parent.width - self.width) / 2;
+            background: root.active ? Theme.accent : transparent;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component RightPanel inherits Rectangle {
+    in property <bool> lang-en: false;
+    in property <[TransferInfo]> transfers;
+    in property <bool> transfers-active: false;
+    callback close-panel();
+
+    property <int> current-tab: 0; // 0 传输 · 1 隧道 · 2 文件
+
+    width: 240px;
+    background: Theme.sur-1;
+
+    VerticalLayout {
+        // 顶部：标签 + 关闭
+        HorizontalLayout {
+            height: 34px;
+            padding-left: 8px;
+            padding-right: 4px;
+
+            PanelTab {
+                label: root.lang-en ? "Transfers" : "传输";
+                active: root.current-tab == 0;
+                clicked => {
+                    root.current-tab = 0;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Tunnels" : "隧道";
+                active: root.current-tab == 1;
+                clicked => {
+                    root.current-tab = 1;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Files" : "文件";
+                active: root.current-tab == 2;
+                clicked => {
+                    root.current-tab = 2;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                y: 6px;
+                border-radius: 5px;
+                background: ct-ta.has-hover ? Theme.sur-3 : transparent;
+
+                Text {
+                    text: "\u{E5CD}";
+                    font-family: "Material Icons";
+                    font-size: 13px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                ct-ta := TouchArea {
+                    clicked => {
+                        root.close-panel();
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+
+        // ── 传输（真数据）──
+        if root.current-tab == 0 : VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+            alignment: start;
+
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                Text {
+                    text: "\u{E2C6}";
+                    font-family: "Material Icons";
+                    font-size: 13px;
+                    color: root.transfers-active ? Theme.accent : Theme.fg-3;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.lang-en
+                        ? "Transfers · \{root.transfers.length}"
+                        : "传输记录 · \{root.transfers.length}";
+                    font-size: 12px;
+                    color: Theme.fg-2;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.transfers.length == 0 : Text {
+                text: root.lang-en ? "No transfers yet" : "暂无传输记录";
+                font-size: 11px;
+                color: Theme.fg-3;
+            }
+
+            for t in root.transfers : Rectangle {
+                height: 40px;
+                border-radius: 6px;
+                background: Theme.sur-2;
+
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 8px;
+
+                    Text {
+                        text: t.is-upload ? "\u{E5DB}" : "\u{E5D8}";
+                        font-family: "Material Icons";
+                        font-size: 13px;
+                        color: t.state == 0 ? Theme.accent : Theme.fg-3;
+                        vertical-alignment: center;
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 1px;
+
+                        Text {
+                            text: t.name;
+                            font-size: 11px;
+                            color: Theme.fg-1;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: t.detail;
+                            font-size: 10px;
+                            color: Theme.fg-3;
+                            overflow: elide;
+                        }
+                        Rectangle {
+                            height: 3px;
+                            border-radius: 1.5px;
+                            background: Theme.sur-3;
+
+                            Rectangle {
+                                x: 0;
+                                y: 0;
+                                width: parent.width * t.percent;
+                                height: parent.width > 0 ? 3px : 0px;
+                                border-radius: 1.5px;
+                                background: Theme.accent;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 隧道 / 文件：迁移说明（per-tab 状态搬家后接入，不放假列表）──
+        if root.current-tab == 1 || root.current-tab == 2 : VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+            alignment: start;
+
+            Text {
+                text: root.current-tab == 1
+                    ? (root.lang-en ? "Tunnels" : "隧道")
+                    : (root.lang-en ? "Files" : "文件");
+                font-size: 14px;
+                font-weight: 700;
+                color: Theme.fg-1;
+            }
+            Text {
+                text: root.lang-en
+                    ? "This tab migrates with the per-tab state move (next round) — no placeholder data."
+                    : "该标签随 per-tab 状态搬家接入（下一轮）—— 不放假数据。";
+                font-size: 11px;
+                color: Theme.fg-3;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
