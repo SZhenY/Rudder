@@ -2224,6 +2224,12 @@ export component AppWindow inherits Window {
               show-cmd-bar: root.show-cmd-bar;
               sync-upload: root.sync-upload-enabled;
               app-version: root.app-version;
+              accent-hex: root.accent-hex;
+              wallpaper-labels: root.wallpaper-labels;
+              wallpaper-index: root.wallpaper-index;
+              set-accent-color(c) => { root.set-accent(c); }
+              set-wallpaper-label(l) => { root.set-wallpaper(l); }
+              term-ui-font(f) => { root.set-ui-font(f); }
               about-libs: root.about-libs;
               set-flag-update-check(v) => { root.set-update-check-enabled(v); }
               set-flag-large-scrollback(v) => { root.set-large-scrollback(v); }

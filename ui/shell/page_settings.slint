@@ -245,8 +245,15 @@ export component PageSettings inherits Rectangle {
     in property <bool> show-cmd-bar;
     in property <bool> sync-upload;
     in property <string> app-version;
+    in property <string> accent-hex;
+    in property <[string]> wallpaper-labels;
+    in property <int> wallpaper-index;
+    callback set-accent-color(string);
+    callback set-wallpaper-label(string);
     in property <[string]> about-libs;
     callback set-language(string);
+    callback term-ui-font(string);
+    in property <string> ui-font-now;
     callback toggle-theme();
     callback term-font(string);
     callback term-font-size(int);
@@ -469,6 +476,168 @@ export component PageSettings inherits Rectangle {
                                 on: root.dark;
                                 toggled => {
                                     root.toggle-theme();
+                                }
+                            }
+                            FieldBlock {
+                                title: "界面字体";
+                                desc: "整窗 UI 字体（终端字体在终端分组里）";
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+
+                                    for f in ["Meatshell Mono", "JetBrains Mono"] : Rectangle {
+                                        width: 118px;
+                                        height: 26px;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: Theme.ui-font-family == f ? Theme.accent : Theme.line;
+                                        background: Theme.ui-font-family == f ? Theme.rail-item-active : Theme.sur-2;
+
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: f;
+                                                font-size: 11px;
+                                                color: Theme.ui-font-family == f ? Theme.accent : Theme.fg-2;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        TouchArea {
+                                            clicked => {
+                                                root.term-ui-font(f);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            FieldBlock {
+                                title: "主题色";
+                                desc: "当前：\{root.accent-hex}";
+
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: #4a90e2;
+                                        border-width: 2px;
+                                        border-color: root.accent-hex == "#4a90e2" ? Theme.fg-1 : transparent;
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-accent-color("#4a90e2");
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: #5856d6;
+                                        border-width: 2px;
+                                        border-color: root.accent-hex == "#5856d6" ? Theme.fg-1 : transparent;
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-accent-color("#5856d6");
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: #34c759;
+                                        border-width: 2px;
+                                        border-color: root.accent-hex == "#34c759" ? Theme.fg-1 : transparent;
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-accent-color("#34c759");
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: #ff9500;
+                                        border-width: 2px;
+                                        border-color: root.accent-hex == "#ff9500" ? Theme.fg-1 : transparent;
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-accent-color("#ff9500");
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: #ff3b30;
+                                        border-width: 2px;
+                                        border-color: root.accent-hex == "#ff3b30" ? Theme.fg-1 : transparent;
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-accent-color("#ff3b30");
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: #af52de;
+                                        border-width: 2px;
+                                        border-color: root.accent-hex == "#af52de" ? Theme.fg-1 : transparent;
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-accent-color("#af52de");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            FieldBlock {
+                                title: "壁纸";
+                                desc: "面板磨砂取自当前壁纸（自定义壁纸导入下一轮）";
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+
+                                    for wlab[i] in root.wallpaper-labels : Rectangle {
+                                        width: wtext.preferred-width + 20px;
+                                        height: 26px;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: root.wallpaper-index == i ? Theme.accent : Theme.line;
+                                        background: root.wallpaper-index == i ? Theme.rail-item-active : Theme.sur-2;
+
+                                        HorizontalLayout {
+                                            padding-left: 10px;
+                                            padding-right: 10px;
+                                            alignment: center;
+                                            wtext := Text {
+                                                text: wlab;
+                                                font-size: 11px;
+                                                color: root.wallpaper-index == i ? Theme.accent : Theme.fg-2;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        TouchArea {
+                                            clicked => {
+                                                root.set-wallpaper-label(wlab);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             ToggleRow {
