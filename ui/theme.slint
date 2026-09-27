@@ -25,7 +25,7 @@ export global Theme {
     // Frosted-panel opacity over a wallpaper (0.30–1.00). User-adjustable via the
     // Interface › Wallpaper opacity slider; bg-root / term-bg derive from it so one
     // control scales the whole wallpaper wash. Default 0.85 (15% transparency).
-    in-out property <float> panel-alpha: 0.85;
+    in-out property <float> panel-alpha: 1.0;   // 默认完全不透明；0.85 会让面板透出壁纸（值越小越透）
     property <float> tint-amt: 0.10;              // how far surfaces pull to wp-tint
 
     // Frost a base surface: pull it slightly toward the wallpaper tint and make

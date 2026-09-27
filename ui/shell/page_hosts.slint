@@ -15,9 +15,10 @@ export component PageHosts inherits Rectangle {
 
     HorizontalLayout {
         // ── 第二列：分组导航 ────────────────────────────────────────────
+        // 用窗口底色（比侧栏的 sur-1 更深一层），与左侧栏拉开层次
         Rectangle {
             width: 190px;
-            background: Theme.sur-1;
+            background: Theme.bg-root;
 
             VerticalLayout {
                 padding: Theme.sp-3;
