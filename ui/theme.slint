@@ -47,6 +47,41 @@ export global Theme {
     in-out property <color> rail-fg: root.dark ? #d8d8d8 : #3c3c43;
     in-out property <color> rail-fg-active: root.dark ? #9ecbff : #0071e3;
 
+    // 原有令牌：危险色（按钮 / 关闭悬停用）。
+    out property <brush> danger:  dark ? #e25c5c : #ff3b30;
+
+    // --- 设计令牌：新界面统一用这一套 --------------------------------------
+    // 三层表面由深到浅（窗口 → 侧栏 → 卡片），配合 1px 描边区分层次；
+    // 间距与圆角走刻度，别再在页面里散着写 px。
+
+    in-out property <color> sur-0: root.dark ? #0f1116 : #f2f3f5;   // 窗口底
+    in-out property <color> sur-1: root.dark ? #171a21 : #fafbfc;   // 侧栏 / 次级区域
+    in-out property <color> sur-2: root.dark ? #1b1f27 : #ffffff;   // 卡片
+    in-out property <color> sur-3: root.dark ? #21262f : #f4f5f7;   // 卡片内嵌 / 悬停底
+    in-out property <color> line: root.dark ? #262b36 : #e3e5e9;    // 卡片描边
+    in-out property <color> line-strong: root.dark ? #333a47 : #d0d3d9;
+
+    in-out property <color> fg-1: root.dark ? #e6e9ef : #1d1d1f;    // 主文字
+    in-out property <color> fg-2: root.dark ? #a8b0bd : #55585f;    // 次文字
+    in-out property <color> fg-3: root.dark ? #6f7785 : #8a8e96;    // 弱文字 / 占位
+
+    // 注意：`accent` 本身是主题里既有的令牌，这里不重复声明，直接复用。
+    in-out property <color> accent-2: root.dark ? #8b5cf6 : #5e5ce6; // 渐变另一端
+    in-out property <color> accent-soft: root.dark ? #1b2a44 : #e6f0ff; // 选中药丸底
+    in-out property <color> ok: root.dark ? #22c55e : #1a9e4b;
+
+    // 间距刻度（4 的倍数）
+    in-out property <length> sp-1: 4px;
+    in-out property <length> sp-2: 8px;
+    in-out property <length> sp-3: 12px;
+    in-out property <length> sp-4: 16px;
+    in-out property <length> sp-5: 24px;
+
+    // 圆角刻度
+    in-out property <length> r-sm: 6px;
+    in-out property <length> r-md: 8px;
+    in-out property <length> r-lg: 12px;
+
     // --- Palette -----------------------------------------------------------
     // Opaque window base — the wallpaper Image covers it when active, so panels
     // frost over the image rather than over this.
@@ -112,7 +147,6 @@ export global Theme {
 
     out property <brush> success: dark ? #4ec9b0 : #34c759;
     out property <brush> warning: dark ? #e2a84a : #ff9f0a;
-    out property <brush> danger:  dark ? #e25c5c : #ff3b30;
 
     // Terminal uses its own background so it stays readable regardless of
     // what the shell / remote app outputs via ANSI colour codes. With a

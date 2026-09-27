@@ -1,8 +1,8 @@
-// 左侧栏（新界面）。固定宽度、可收起：
-//   展开 180px（图标 + 文字）· 收起 64px（只留图标，且顶部只留展开按钮）
+// 左侧栏（按参考设计：iShell Pro 那套）。
 //
-// 收起态刻意只放一个按钮：早先收起时"搜索 + 折叠"两个按钮挤在一起，44px 的宽度
-// 直接把折叠按钮裁掉了，收起之后就再也展不开 —— 现在收起态只剩展开按钮。
+// 展开 180px（图标 + 文字）· 收起 56px（只留图标，顶部只留展开按钮）。
+// 选中项做成"加粗填充药丸"（accent 淡底 + 主色文字），与参考图一致；
+// 图标用项目里既有的 Material Icons 字体。
 
 import { Theme } from "../theme.slint";
 
@@ -13,24 +13,24 @@ component RailButton inherits Rectangle {
     in property <bool> collapsed: false;
     callback clicked();
 
-    height: 44px;
-    border-radius: 8px;
+    height: 38px;
+    border-radius: Theme.r-md;
     background: root.active
-        ? Theme.rail-item-active
-        : (ta.has-hover ? Theme.rail-item-hover : transparent);
+        ? Theme.accent-soft
+        : (ta.has-hover ? Theme.sur-3 : transparent);
 
     HorizontalLayout {
-        padding-left: root.collapsed ? 0px : 16px;
-        padding-right: root.collapsed ? 0px : 12px;
-        spacing: 14px;
+        padding-left: root.collapsed ? 0px : Theme.sp-3;
+        padding-right: root.collapsed ? 0px : Theme.sp-2;
+        spacing: Theme.sp-3;
         alignment: root.collapsed ? center : start;
 
         Text {
-            width: 24px;
+            width: 20px;
             text: root.glyph;
             font-family: "Material Icons";
-            font-size: 22px;
-            color: root.active ? Theme.rail-fg-active : Theme.rail-fg;
+            font-size: 18px;
+            color: root.active ? Theme.accent : Theme.fg-2;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
@@ -38,7 +38,8 @@ component RailButton inherits Rectangle {
         if !root.collapsed : Text {
             text: root.label;
             font-size: 13px;
-            color: root.active ? Theme.rail-fg-active : Theme.rail-fg;
+            color: root.active ? Theme.accent : Theme.fg-1;
+            font-weight: root.active ? 600 : 400;
             vertical-alignment: center;
             overflow: elide;
         }
@@ -58,62 +59,51 @@ export component Rail inherits Rectangle {
     callback page-changed(int);
     callback search-requested();
 
-    width: root.collapsed ? 64px : 180px;
-    background: Theme.rail-bg;
+    width: root.collapsed ? 56px : 180px;
+    background: Theme.sur-1;
 
     VerticalLayout {
-        padding: 8px;
-        spacing: 6px;
+        padding: Theme.sp-2;
+        spacing: Theme.sp-1;
         alignment: start;
 
-        // 顶部：收起态只留展开按钮；展开态是「搜索 + 折叠」——两者**各有自己的热区**，
-        // 否则整行被搜索的 TouchArea 吃掉，折叠按钮点了只会触发搜索。
+        // 顶部：展开态是「搜索框 + 折叠」；收起态只留展开按钮（否则窄宽度下会被裁掉）
         if !root.collapsed : HorizontalLayout {
-            height: 40px;
-            spacing: 4px;
+            height: 34px;
+            spacing: Theme.sp-1;
 
-            // 搜索：展开态就是一条能直接输入的输入框（点一下就能打字，不用先切换形态）
-            //
-            // 布局一律交给 HorizontalLayout（alignment: center）—— 之前用"手算 y + 高度"
-            // 想让它垂直居中，字形基线和行高对不齐，看起来永远偏上；现在和左边的 search
-            // 图标用同一个居中机制，两者基线一致。
             Rectangle {
                 horizontal-stretch: 1;
-                height: 32px;
-                border-radius: 8px;
-                background: Theme.rail-item-hover;
+                border-radius: Theme.r-md;
+                background: Theme.sur-3;
 
                 HorizontalLayout {
-                    padding-left: 8px;
-                    padding-right: 8px;
-                    spacing: 6px;
+                    padding-left: Theme.sp-2;
+                    padding-right: Theme.sp-2;
+                    spacing: Theme.sp-2;
                     alignment: center;
 
                     Text {
-                        width: 20px;
+                        width: 16px;
                         text: "\u{E8B6}"; // search
                         font-family: "Material Icons";
-                        font-size: 16px;
-                        color: Theme.rail-fg;
+                        font-size: 15px;
+                        color: Theme.fg-3;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
 
                     Rectangle {
                         horizontal-stretch: 1;
-                        height: 20px;
+                        height: 18px;
 
-                        // 这个 Slint 版本的 TextInput 没有 placeholder 属性 —— 沿用仓库既有
-                        // 写法（dialog_fields.slint）：值为空时叠一层占位 Text。
                         Text {
-                            // 必须有尺寸：Text 放在普通 Rectangle 里时是按内容大小摆的，
-                            // 不撑满格子的话 vertical-alignment 不起作用（会缩在左上角）。
                             visible: search-input.text == "";
                             width: 100%;
                             height: 100%;
                             text: "搜索主机、设置…";
                             font-size: 12px;
-                            color: Theme.rail-fg;
+                            color: Theme.fg-3;
                             vertical-alignment: center;
                         }
 
@@ -121,7 +111,7 @@ export component Rail inherits Rectangle {
                             width: 100%;
                             height: 100%;
                             font-size: 12px;
-                            color: Theme.rail-fg;
+                            color: Theme.fg-1;
                             single-line: true;
                             accepted => {
                                 root.search-requested();
@@ -129,18 +119,24 @@ export component Rail inherits Rectangle {
                         }
                     }
                 }
+
+                search-ta := TouchArea {
+                    clicked => {
+                        root.search-requested();
+                    }
+                }
             }
 
             Rectangle {
-                width: 32px;
-                border-radius: 8px;
-                background: collapse-ta.has-hover ? Theme.rail-item-hover : transparent;
+                width: 26px;
+                border-radius: Theme.r-md;
+                background: collapse-ta.has-hover ? Theme.sur-3 : transparent;
 
                 Text {
                     text: "\u{E5CB}"; // chevron_left
                     font-family: "Material Icons";
-                    font-size: 20px;
-                    color: Theme.rail-fg;
+                    font-size: 18px;
+                    color: Theme.fg-2;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
@@ -154,15 +150,15 @@ export component Rail inherits Rectangle {
         }
 
         if root.collapsed : Rectangle {
-            height: 40px;
-            border-radius: 8px;
-            background: expand-ta.has-hover ? Theme.rail-item-hover : transparent;
+            height: 34px;
+            border-radius: Theme.r-md;
+            background: expand-ta.has-hover ? Theme.sur-3 : transparent;
 
             Text {
                 text: "\u{E5CC}"; // chevron_right
                 font-family: "Material Icons";
-                font-size: 20px;
-                color: Theme.rail-fg;
+                font-size: 18px;
+                color: Theme.fg-2;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
@@ -214,6 +210,11 @@ export component Rail inherits Rectangle {
         // 占位：把「设置」顶到底部
         Rectangle {
             vertical-stretch: 1;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
         }
 
         RailButton {
