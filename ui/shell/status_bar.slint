@@ -56,6 +56,7 @@ export component StatusBar inherits Rectangle {
     in property <int> history-count;
     in property <int> transfer-count;
     in property <bool> transfers-active: false;
+    in property <bool> lang-en: false;
     callback toggle-highlight();
 
     height: 28px;
@@ -88,7 +89,7 @@ export component StatusBar inherits Rectangle {
 
         Pill {
             glyph: "\u{E8F5}"; // highlight
-            text: "高亮";
+            text: root.lang-en ? "Highlight" : "高亮";
             togglable: true;
             on: root.highlight-enabled;
             clicked => {
@@ -97,7 +98,7 @@ export component StatusBar inherits Rectangle {
         }
         Pill {
             glyph: "\u{E88B}"; // history
-            text: "历史命令 \{root.history-count}";
+            text: root.lang-en ? "History \{root.history-count}" : "历史命令 \{root.history-count}";
             clicked => { }
         }
 

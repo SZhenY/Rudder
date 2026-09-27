@@ -917,7 +917,12 @@ export component AppWindow inherits Window {
         // Dock area — fills below the title bar. The resource sidebar and the
         // central content are positioned by absolute geometry computed from
         // `sidebar-dock`, so the sidebar can sit on any window edge (#dock).
+        // 非终端页时整体隐藏旧壳内容：页面浮层是磨砂半透明（壁纸设计），
+        // 底下的终端文字/旧底部命令栏会透出来（用户截图）。用 opacity 而不是
+        // visible —— visible:false 会在布局里收走空间，触发 content-resized
+        // 连锁 resize 终端；opacity 只是不画，几何与终端状态原样保留。
         dock-area := Rectangle {
+        opacity: root.shell-page == 1 ? 1 : 0;
         vertical-stretch: 1;
         // Left-edge layout (welcome-as-sidebar mode): a thin always-on icon strip
         // (IDEA-style) + the welcome/session sidebar (0 when collapsed). The rest
