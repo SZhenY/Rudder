@@ -1,0 +1,13 @@
+//! 资源类**数据类型**：目前只有磁盘用量一行。
+//!
+//! 旧外壳删除③：`DiskInfo` 原先定义在 `sidebar_blocks.slint`（旧侧栏的区块组件文件，
+//! 与旧侧栏一起删除）。它本身是 Rust 侧 `refresh_sidebar` 填 `disks` 属性用的**数据**
+//! 类型，与新外壳的后续资源展示也还会用到，所以留在这份幸存文件里。
+//! `ui/app.slint` 仍 `export { DiskInfo }`，Rust 的 `crate::ui::DiskInfo` 名字不变。
+
+// One filesystem row for the disk-usage panel.
+export struct DiskInfo {
+    path: string,
+    detail: string,   // "available/total"
+    percent: float,   // used fraction 0.0..1.0
+}

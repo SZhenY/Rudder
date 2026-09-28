@@ -4059,15 +4059,18 @@ mod domain_split_compat_tests {
         }
     }
 
-    /// 布局的出厂默认必须与 `ui/app.slint` 声明的默认值一致。
+    /// 布局的出厂默认必须与主窗口文件声明的默认值一致。
     ///
     /// 二者长期分叉过：Rust 的 `LayoutSettings::default()` 是 `"right"`，而 Slint
     /// 里 `sidebar-dock` 声明的是 `"left"`。因为播种与「还原本页默认」都取 Rust
     /// 这一侧的值，用户点「还原」后运行状态侧栏就从左边跳到了右边 —— 而 UI 自己
     /// 声明的默认是左边。默认值只能有一处，这里从外部钉住。
+    ///
+    /// 旧外壳删除③：主窗口从 `ui/app.slint` 搬到了 `ui/shell/app_shell.slint`
+    /// （该文件现在是 build.rs 的编译入口），解析目标随之更新。
     #[test]
     fn layout_default_matches_slint_declaration() {
-        const UI: &str = include_str!("../../../ui/app.slint");
+        const UI: &str = include_str!("../../../ui/shell/app_shell.slint");
 
         let declared = UI
             .lines()
@@ -4077,7 +4080,9 @@ mod domain_split_compat_tests {
                 Some(rest.split('"').nth(1)?.to_string())
             })
             .unwrap_or_else(|| {
-                panic!("ui/app.slint 里解析不到 sidebar-dock 的声明值 —— 测试解析逻辑已失效")
+                panic!(
+                    "ui/shell/app_shell.slint 里解析不到 sidebar-dock 的声明值 —— 测试解析逻辑已失效"
+                )
             });
 
         assert!(

@@ -5,8 +5,10 @@ fn main() {
     // maps msgids to Chinese and `lang/en/...` keeps the identity mapping.  No
     // per-component context, so msgids are the raw English strings.
     println!("cargo:rerun-if-changed=lang");
+    // 入口 = `ui/shell/app_shell.slint`（旧外壳删除③）：它 re-export app.slint 的
+    // `AppWindow`，Rust 侧生成类型与接线不变；旧入口 app.slint 仍参与编译。
     slint_build::compile_with_config(
-        "ui/app.slint",
+        "ui/shell/app_shell.slint",
         slint_build::CompilerConfiguration::new()
             .with_style("fluent".into())
             .with_bundled_translations("lang")

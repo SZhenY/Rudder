@@ -1,13 +1,1680 @@
-// 新外壳（UI 重构）：左侧栏 + 页面 + 底部状态栏。
+// 新外壳 = 整个应用窗口（UI 重构·旧外壳删除③）。
 //
-// 用 `--ui=shell` 启动；旧的 `AppWindow`（app.slint）在收尾时整体删除。
-// page 0 主机管理（已接入真实数据）· page 1 终端（先有空状态）· 2/3/4 待接。
+// 本文件是 **build.rs 编译的唯一入口**，也是主窗口 `AppWindow` 的家 —— 原先它在
+// `ui/app.slint`，那一步连同旧外壳（旧侧栏 / 旧资源面板 / 旧欢迎侧栏 / 旧标签条）
+// 一起删除：`AppWindow` 的属性 / 回调接口**一个都没动**，所以 Rust 侧接线一行未改。
+//
+// 本文件声明两个窗口：
+//   * `AppWindow` —— 真正的主窗口：左侧栏（Rail）+ 页面 + 终端舞台 + 底部状态栏
+//     + 各对话框 / 弹窗（原 app.slint 的内容，逐字搬来，只改了 import 相对路径）；
+//   * `AppShell`  —— `--ui=shell` 启动的**独立原型窗口**（本文件末尾），收尾那步决定去留。
+//
+// 历史：ui/app.slint 曾是入口，用 `export { AppShell } from "shell/app_shell.slint";`
+// 把原型拉进编译图；现在反过来 —— 入口在这里，AppWindow 也从这里导出。
+// Embedded cross-platform fonts (compile-time): terminal monospace + UI icons.
+import { AnimationSettings } from "../theme.slint";
+// Embedding means Windows / Linux / macOS all render the same glyphs without
+// relying on Consolas / Segoe MDL2 Assets being installed.
+//
+// "Meatshell Mono" is Cascadia Mono re-named to a unique family (#114): full
+//   box-drawing + block-elements + braille (needed by htop/btop graphs). The
+//   original "Cascadia Mono" name collides with the system font family, so on a
+//   machine without Cascadia installed (e.g. Win11 Home) the OS font matcher
+//   substituted a glyph-poor fallback and box/braille rendered as tofu. A unique
+//   name (like Material Icons) can't be shadowed, so the embedded font is always
+//   used.
+// Material Icons: open-source icon font replacing Windows-only Segoe MDL2 Assets.
+import "../fonts/MeatshellMono-Regular.ttf";
+import "../fonts/MeatshellMono-Bold.ttf";
+import "../fonts/JetBrainsMono-Regular.ttf";
+import "../fonts/JetBrainsMono-Bold.ttf";
+import "../fonts/JetBrainsMono-Italic.ttf";
+import "../fonts/JetBrainsMono-ExtraLight.ttf";
+import "../fonts/MaterialIcons-Regular.ttf";
+// Large CJK fonts (e.g. Maple Mono, ~20 MB/weight) are intentionally NOT
+// embedded — users drop them into the fonts dir (Windows: <exe_dir>/config/fonts;
+// macOS/Linux: per-user config dir) and Rust registers them at startup
+// (src/fonts.rs), making them selectable in Settings after a restart.
 
 import { Theme } from "../theme.slint";
+import { DiskInfo } from "../resource_types.slint";
+import { TabInfo } from "../tabs.slint";
+// 旧外壳删除③：`ui/app.slint` 已删，本文件就是它的新家（见文件头）。下面这些
+// import 是从 app.slint 逐字搬来的，只把相对路径加了一层 `../`。
+import { SessionInfo } from "../session_types.slint";
+// 新外壳（A 路线）：组件名 `AppWindow` 与它全部的属性 / 回调接口都保持不变，
+// 所以 Rust 侧的接线一行都不用改 —— 只是把布局逐步换成「左侧栏 + 页面」。
 import { Rail } from "rail.slint";
 import { PageHosts } from "page_hosts.slint";
+import { PageSnippets } from "page_snippets.slint";
+// 终端舞台的类型（②-1 从本文件搬走）：import 之后再 export，Rust 生成类型不变。
+import { TerminalState, PaneInfo, SplitterInfo } from "stage_types.slint";
+export { TerminalState, PaneInfo, SplitterInfo }
+// 终端舞台本体（②-2）：分屏 / 标签条 / TerminalView 全在新外壳的终端页里。
+import { TerminalStage } from "terminal_stage.slint";
+import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "../session_dialog.slint";
+// ②-2 之后本文件不再直接实例化 TerminalView（终端舞台接管）；QuickCmd 仍要
+// import —— 它在本文件被用作属性类型，且在下面的 export 清单里（Rust 生成类型）。
+import { QuickCmd } from "../terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "../sftp_panel.slint";
+import { ProcWindow, ProcRow } from "../proc_window.slint";
+import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "../system_info_window.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset } from "../settings/types.slint";
+// 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
+// `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
+// `slint::include_modules!` 才会生成对应的 Rust 窗口类型（只 import 不实例化的话，
+// 实测生成不出来 —— 上面的 export 行就是为这个存在的）。
+import { SettingsWindow } from "../settings_window.slint";
+// Re-export so `slint::include_modules!` generates the detached Rust window types.
+export { ProcWindow, SystemInfoWindow, SettingsWindow }
+import { LineEdit, Button, Palette } from "std-widgets.slint";
+import { VDivider } from "../components/surfaces.slint";
+// 「自动更新」对话框：挂在文件末尾只是为了减少改动；设置页改成独立窗口后，"谁压谁"
+// 的层级顾虑已不成立（原文说的是"必须挂在设置遮罩之后"）。
+// 否则会重演横幅那个 bug（设置面板是全窗遮罩，挂在最后，压住一切在它之前的东西）。
+import { UpdateDialog } from "../update_dialog.slint";
+import { EditorFindResult, FileEditor } from "../file_editor.slint";
+import { QuickCmdManageDialog } from "../quick_cmd_manage.slint";
+import { GroupDialog } from "../group_dialog.slint";
+import { QuickGroupDialog } from "../quick_group_dialog.slint";
+import { SftpPromptDialog } from "../sftp_prompt_dialog.slint";
+import { ConfirmCloseDialog } from "../confirm_close_dialog.slint";
+import { ChmodDialog } from "../chmod_dialog.slint";
+import { DownloadManagerPopup, TransferInfo } from "../download_manager.slint";
+import { SettingsMenuPopup } from "../settings_menu.slint";
+import { AboutDialog } from "../about_dialog.slint";
+import { ConfirmOverlays } from "../confirm_overlays.slint";
+import { ShortcutsDialog } from "../shortcuts_dialog.slint";
+import { AppTitleBar } from "titlebar.slint";
 import { PageTerminal } from "page_terminal.slint";
-import { SessionInfo } from "../welcome_rows.slint";
+import { StatusBar } from "status_bar.slint";
+import { RightPanel } from "right_panel.slint";
+import { PageSettings } from "page_settings.slint";
+import { RenameDialog } from "../rename_dialog.slint";
+// EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
+export { EditorFindResult }
+
+export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
+// P5「公共面收敛」第 1 步：把两个全局导出，Rust 才能 `window.global::<Theme>()`
+// 直接读写主题 —— 这样 AppWindow 上那 14 条 `<=> Theme.x` 镜像就不必存在了。
+export { AnimationSettings, Theme }
+
+// --- TerminalState / PaneInfo / SplitterInfo --------------------------------
+// 旧外壳删除②-1：这三个 struct 已挪到 `shell/stage_types.slint`（终端舞台要抽成
+// shell 组件，Slint 组件不能反向 import 本窗口文件）。这里 import + 再 export ——
+// Rust 侧的 `crate::ui::TerminalState` / `PaneInfo` / `SplitterInfo` 名字与生成
+// 结果都保持不变（同 EditorFindResult 随编辑器搬走后的做法）。
+// 注：One file-transfer record shown in the download manager.
+// ProcRow now lives in proc_window.slint (the detachable process window).
+
+// Editor find step result (#287): the byte offsets to select and the total
+
+// A 26×26 top-bar icon button with a hover tooltip (right-aligned so it never
+// runs off the window edge). `active` keeps the hover background lit (e.g. while
+// its popup is open).
+// A Windows-style window-control button (minimize / maximize / close) for the
+// custom title bar (#119). `danger` gives the close button its red hover.
+// One row in the keyboard-shortcuts dialog: a key chip + a description (#103).
+
+export component AppWindow inherits Window {
+    title: "Rudder";
+    icon: @image-url("../../assets/icon.png");
+    // Frameless when we draw our own title bar (#119); Rust sets custom-titlebar
+    // true on Windows/Linux. Slint maps no-frame → winit set_decorations(false).
+    no-frame: root.custom-titlebar;
+    min-width: 960px;
+    min-height: 600px;
+    preferred-width: 1440px;
+    preferred-height: 900px;
+    // Always-opaque base; the wallpaper Image (when active) covers it and panels
+    // frost over the image. Using window-base (not bg-root) keeps the window
+    // itself opaque even though bg-root turns translucent in immersive mode.
+    background: Theme.window-base;
+    // Rust 从配置解析后写入（`fonts_ui::resolve_ui_font_family`）：空串 = 跟随系统
+    // （Slint 用平台默认字体，缺字由 parley 按脚本回退），否则是**单个**家族名。
+    // ⚠️ 不要在这里塞逗号分隔的字体栈 —— Slint 的 font-family 不做逗号拆分。
+    default-font-family: Theme.ui-font-family;
+
+    // --- Sidebar data ------------------------------------------------------
+    in property <string> connection-state: @tr("Not connected");
+    in property <string> conn-host;             // clean IP/host for click-to-copy (#192)
+    in property <int> conn-state;                       // 0 gray / 1 green / 2 yellow
+    in property <string> resource-title: @tr("Local resources");    // @tr("Local resources") | @tr("Server resources")
+    in property <float> cpu-percent;
+    in property <float> mem-percent;
+    in property <float> swap-percent;
+    in property <string> mem-detail;
+    in property <string> swap-detail;
+    // Dual network panel.  "top" follows the active tab (remote NIC on a
+    // session tab, local on the welcome tab); "bot" is always the local machine.
+    in property <string> net-top-up;        // ↑ tx rate text
+    in property <string> net-top-down;      // ↓ rx rate text
+    in property <[float]> net-top-history;
+    in property <string> net-bot-up;
+    in property <string> net-bot-down;
+    in property <[float]> net-bot-history;
+    in property <[string]> net-ifaces;      // remote NIC names for the selector
+    in property <string> net-selected;      // currently selected NIC
+    in property <bool> net-show-selector;   // only on a live session tab
+    in property <[DiskInfo]> disks;         // active tab's filesystem usage
+    in property <string> app-version;       // from Rust: env!("CARGO_PKG_VERSION")
+    callback select-net-iface(string);
+
+    // --- Top-right popups --------------------------------------------------
+    in-out property <bool> download-open: false;  // download manager popup
+    // True while any transfer is active or preparing; drives the breathing
+    // pulse on the Transfers toolbar button (#breathing-light).
+    in-out property <bool> has-active-transfers: false;
+    in-out property <bool> settings-open: false;  // settings menu popup
+
+    // Immersive custom title bar (#119). Rust sets `custom-titlebar` true on
+    // Windows/Linux (frameless); macOS keeps native decorations. The callbacks
+    // drive the winit window via Rust.
+    // Default true so the window is frameless from creation (no native-bar flash);
+    // Rust sets it false on macOS, which keeps native decorations.
+    in-out property <bool> custom-titlebar: true;
+    // macOS immersive title bar: Rust makes the native bar transparent and lets
+    // content render under it, so we reserve this much space at the top for the
+    // traffic-light buttons + a clean drag strip (0 elsewhere). See setup_macos_platform.
+    property <length> titlebar-inset: root.is-mac ? 28px : 0px;
+    in-out property <bool> window-maximized: false;
+    callback win-minimize();
+    callback win-maximize-toggle();
+    callback win-drag();          // start an OS window-move
+    callback win-close();
+    callback reset-page(string);   // settings: restore page defaults
+    callback win-resize(int);     // start an OS resize; arg = direction code
+    in-out property <bool> sidebar-collapsed: false; // left panel hidden
+    callback set-sidebar-collapsed(bool);       // apply + persist
+    // User-draggable size of the resource sidebar. width is used when docked
+    // left/right, height when docked top/bottom. Seeded / persisted via the
+    // persist-* callbacks (fired on drag end).
+    in-out property <length> sidebar-width: 220px;
+    in-out property <length> sidebar-height: 240px;
+    property <bool> sidebar-dragging;            // splitter being dragged
+    callback persist-sidebar-width(float /* logical px */);
+
+    // --- Panel docking (resource sidebar; SFTP follows in a later phase) ----
+    // Which window edge the resource panel is docked to: left|right|top|bottom.
+    in-out property <string> sidebar-dock: "left";
+    property <bool> sidebar-horizontal: root.sidebar-dock == "left" || root.sidebar-dock == "right";
+    // Drag-to-dock state: while a panel's header is dragged, a 4-edge snap
+    // overlay shows and `dock-target` tracks the edge under the cursor.
+    property <bool> panel-dragging;
+    property <float> drag-nx;   // cursor x within the dock area, 0..1
+    property <float> drag-ny;   // cursor y within the dock area, 0..1
+    property <string> dock-target:
+        !root.panel-dragging ? ""
+        : root.drag-nx < 0.22 ? "left"
+        : root.drag-nx > 0.78 ? "right"
+        : root.drag-ny < 0.22 ? "top"
+        : root.drag-ny > 0.78 ? "bottom"
+        : "";
+    callback persist-sidebar-dock(string);
+    // The top-right toolbar icons float over the tab row; when the sidebar docks
+    // top/right it covers that corner, so shift the icons to stay over the tabs.
+    //
+    // 两个偏移都是"同一侧三个面板各自占掉多少，再相加"：资源侧栏 + 欢迎侧栏 +
+    // 快捷面板。此前是两条 14 行、彼此只差一个边缘字符串的三目链；现在把"这个面板
+    // 在这条边上占多少"抽成 `side-taken`，两条偏移各自只剩三个调用，逐项与原式等价。
+    //
+    // 折叠条宽度：侧栏与快捷面板折叠后都只剩 36px 宽的折叠条（见 CollapseButton）。
+    pure function side-taken(open: bool, dock: string, edge: string, value: length) -> length {
+        return open && dock == edge ? value : 0px;
+    }
+
+    /// 同一侧的资源 / 欢迎侧栏是否**已经**折叠成折叠条。
+    /// 快捷面板折叠时靠它判断：折叠条已被别的面板占住时不再叠加第二个 36px。
+    pure function collapsed-bar-taken(edge: string) -> bool {
+        return (root.welcome-as-sidebar && root.welcome-collapsed
+                && root.welcome-sidebar-dock == edge)
+            || (root.sidebar-collapsed && root.sidebar-dock == edge);
+    }
+
+    property <length> toolbar-x-off:
+        side-taken(true, root.sidebar-dock, "right",
+            root.sidebar-collapsed ? 36px : root.sidebar-width + 4px)
+        + side-taken(root.welcome-as-sidebar, root.welcome-sidebar-dock, "right",
+            root.welcome-sidebar-taken)
+        + side-taken(root.quick-panel-open, root.quick-panel-dock, "right",
+            root.quick-panel-collapsed
+                ? (collapsed-bar-taken("right") ? 0px : 36px)
+                : root.quick-panel-width + 4px);
+    property <length> toolbar-y-off:
+        side-taken(true, root.sidebar-dock, "top",
+            root.sidebar-collapsed ? 36px : root.sidebar-height + 4px)
+        + side-taken(root.welcome-as-sidebar, root.welcome-sidebar-dock, "top",
+            root.welcome-sidebar-taken)
+        + side-taken(root.quick-panel-open, root.quick-panel-dock, "top",
+            root.quick-panel-collapsed
+                ? (collapsed-bar-taken("top") ? 0px : 36px)
+                : root.quick-panel-height + 4px);
+    property <length> toolbar-y:
+        (root.custom-titlebar ? 43px : 5px + root.titlebar-inset) + root.toolbar-y-off;
+    in-out property <bool> about-open: false;     // centered About dialog
+    callback open-repo();                          // open the project's GitHub page
+    in-out property <bool> shortcuts-open: false; // centered keyboard-shortcuts dialog (#103)
+    in property <string> download-dir;      // preset SFTP download folder ("" = ask)
+    // Process monitor is now a detachable top-level window (ProcWindow). Rust
+    // shows/hides it in response to open-processes(); proc-list/proc-available
+    // stay here as the live data source shared with that window (#23).
+    callback open-processes();
+    in property <bool> proc-available;       // a live remote session is active
+    in property <[ProcRow]> proc-list;       // top remote processes by CPU
+    callback open-system-info();
+    in property <bool> system-info-available; // connected Linux session only (#268)
+    in property <[SysMetricRow]> sys-metrics;
+    in property <[SysNetRow]> sys-net-rows;
+    in property <[SysInfoRow]> sys-overview-rows;
+    in property <[SysInfoRow]> sys-cpu-info-rows;
+    in property <[SysInfoRow]> sys-gpu-info-rows;
+    in property <[SysInfoRow]> sys-cpu-usage-rows;
+    in property <[SysInfoRow]> sys-memory-rows;
+    in property <[SysInfoRow]> sys-swap-rows;
+    in property <[SysInfoRow]> sys-network-rows;
+    in property <[SysInfoRow]> sys-filesystem-rows;
+    // Command bar (#55): quick commands + history, fed from Rust.
+    in property <[QuickCmd]> quick-commands;
+    in-out property <bool> quick-commands-as-sidebar: false;
+    callback set-quick-commands-as-sidebar(bool);
+    in-out property <bool> quick-panel-open: false;
+    in-out property <bool> quick-panel-collapsed: false;
+    in-out property <length> quick-panel-width: 260px;
+    in-out property <length> quick-panel-height: 220px;
+    in-out property <string> quick-panel-dock: "right";
+    property <string> quick-external-command;
+    property <bool> quick-external-send-enter;
+    property <int> quick-external-sequence;
+    in property <[string]> command-history;          // oldest first (newest last, #113)
+    in property <[string]> history-view;             // filtered dropdown, oldest first (newest last, #101)
+    // 与 `history-view` 逐项对齐的**显示用**单行预览：历史条目可能是多行（heredoc…），
+    // 而列表行是固定 28px 高，直接渲染会溢出。回填 / ▶ / 复制仍用 history-view（上游 9725617）。
+    in property <[string]> history-preview;
+    callback run-command(string /* tab-id */, string /* cmd */, bool /* to-all */);
+    callback copy-text(string);                 // copy a history command (#96)
+    callback delete-history(int /* index */);   // remove a history entry (#96)
+    callback delete-history-cmd(string /* cmd */);   // remove a history entry by command (#101)
+    callback search-history(string /* query */);     // filter the history dropdown (#101)
+    in-out property <bool> quick-cmd-manage-open: false;  // manage dialog
+    in-out property <length> qcm-dialog-width: 560px;
+    in-out property <length> qcm-dialog-height: 560px;
+    in-out property <string> qcm-name;                // manage form: name field
+    in-out property <string> qcm-command;             // manage form: command field
+    in-out property <string> qcm-group;               // manage form: group field (#55)
+    in-out property <bool> qcm-send-enter: true;      // click sends+executes (B站)
+    in-out property <int> qcm-edit-index: -1;         // -1 = add, >=0 = edit that entry (#55)
+    callback add-quick-command(string /* name */, string /* command */, string /* group */, bool /* send-enter */);
+    callback save-quick-command(int /* index */, string /* name */, string /* command */, string /* group */, bool /* send-enter */);
+    callback delete-quick-command(int /* index */);
+    callback edit-quick-command(int /* index */);
+    callback duplicate-quick-command(int /* index */);
+    callback move-quick-command(int /* index */, string /* group */);
+    callback reorder-quick-command(int /* index */, bool /* move up */);
+    callback toggle-quick-group(string /* group */);  // collapse/expand a group (#55)
+    // Quick-command group management (mirror session groups) (#55).
+    in-out property <bool> qcg-open: false;           // group name dialog open
+    // 分组对话框的两个字段是终端舞台（shell/terminal_stage.slint）里就会改的状态，
+    // 所以改成 in-out 好让它双向绑过去（②-2）。
+    in-out property <string> qcg-name;                // group dialog: name field
+    in-out property <string> qcg-orig;                // group dialog: "" = new, else rename target
+    callback submit-quick-group(string /* orig */, string /* name */);
+    callback delete-quick-group(string /* name */);
+    in property <[TransferInfo]> transfers; // download/upload records (newest first)
+    in property <[string]> about-libs;      // open-source libraries used
+    in-out property <bool> lang-en: false;  // current UI language (false = 中文)
+    // Two-way binding to Theme.dark — Rust reads/writes this property and
+    // Slint propagates it to every widget that references Theme colours.
+    // Keep Slint's std-widgets (LineEdit / Button / ComboBox in the dialogs) in
+    // step with our theme — otherwise in light mode they keep the platform/dark
+    // palette and their text/borders blend into the light dialog background.
+    // Palette 是官方控件的**派生气板**：方向只能是「应用状态 → Palette」，
+    // 反过来由它驱动本应用主题会把"配置 + 壁纸决定明暗"的真相源搞乱。
+    // 官方控件的 `Palette.color-scheme` 需要跟着主题走，而 Slint 里三条路都不通：
+    // ① `changed Theme.dark` —— `changed` 只认**本地**属性名；② 全局属性不能在组件体里
+    // 直接绑定；③ `private` 属性又不允许挂 `changed`。
+    // 解法：用一条**单向派生**的本地属性当触发器（`:` 绑定随 `Theme.dark` 变化，
+    // 不是 `<=>` 镜像、Rust 也不会去写它），再在 `changed` 里同步 Palette。
+    property <bool> dark-mode-watch: Theme.dark;
+    init => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-mode-watch => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }
+
+    // ⚠️ 官方控件的**强调色**没法用同一套写法带过来：fluent 风格里 `Palette.accent-background`
+    // 等颜色属性都是 `out`（`FluentPalette` 内部由 `accentify(#0078D4)` 派生，跟随系统强调色），
+    // 只有 `color-scheme` 可写。所以 std-widgets 的 Switch / ComboBox 无法跟着「配色」变 ——
+    // `SettingSwitch` 因此改成自绘（见 ui/settings/chrome.slint）。
+    in-out property <int> term-font-index: 0;   // picker selection into term-fonts
+    in-out property <string> term-cursor-style: "block";
+    in-out property <string> term-cursor-color-hex: Theme.dark ? "#D4D4D4" : "#2D2D2F";
+    in-out property <color> term-cursor-color: Theme.term-fg;
+    in-out property <string> term-cursor-choice: "";   // 配置里存的光标色（"" = 跟随主题）
+    in-out property <bool> output-highlight-enabled: true;
+    in-out property <bool> json-format-output: true;
+    in-out property <string> scrollback-lines: "5000";
+    // 大回滚缓冲区开关（A 方案）：关闭时上限 10 万行，打开后 100 万行。
+    in-out property <bool> large-scrollback;
+    in-out property <bool> convert-eol: false;
+    in-out property <bool> osc52-clipboard: true;
+    in-out property <bool> hide-special-partitions: true;
+    // 动画开关的双向镜像：Rust 通过它读写 AnimationSettings.enabled，避免把整个
+    // 全局暴露到公共 API（easing 类型的属性无法跨公共 API，会产生编译告警）。
+    in-out property <string> mount-filter: "";
+    in-out property <string> output-highlight-preset: "log";
+    in property <[OutputRuleItem]> output-highlight-rules;
+    in-out property <string> output-highlight-rule-status;
+    callback set-panel-font(int);                          // apply + persist (percent)
+    // Window focused & visible — Rust drives it from winit events; gates the
+    // cursor blink so an idle background window stops repainting (#127).
+    in-out property <bool> window-focused <=> Theme.window-focused;
+    // macOS flag — Rust sets it so shortcuts switch to Cmd (⌘) there (#158).
+    in-out property <bool> is-mac <=> Theme.is-mac;
+    in property <bool> is-windows: false;
+    in-out property <string> renderer-mode: "software";
+    callback set-renderer-mode(string);                    // applies next launch (#280)
+    // Wallpaper / immersive theming — Rust drives these from the wallpaper module.
+    // User-adjustable wallpaper overlay opacity (0.30–1.00), persisted.
+    callback persist-wallpaper-overlay(float);
+    callback preview-wallpaper-overlay(float);   // 拖动中的实时预览（不写盘）
+    in property <[string]> term-fonts;             // installed monospace families
+    in property <[string]> ui-fonts;              // all families for UI font picker
+    in-out property <int> ui-font-index: 0;           // picker selection into ui-fonts
+    callback set-ui-font(string);
+    callback upload-ui-font();                      // 上传字体（复制进 config/fonts）                  // persist UI font choice
+    // 设置窗口是否打开。窗口本身由下面用 `if` 创建 / 销毁（不再是常驻覆盖层），
+    // 所以这里只剩一个布尔量：旧的 `ifd-*`（自写拖动 / 缩放 / 居中）全部退休
+    // —— 拖动、缩放、边框、阴影都交给系统窗口管理器。
+    in-out property <bool> interface-open: false;  // Interface settings window
+    // 设置窗口是 Rust 侧的独立 root 窗口 → Slint 这里只说"要开/要关"，窗口由 Rust
+    // `show()` / `hide()` 操作（只隐藏不销毁，所以没有 `#323/#343` 那类风险）。
+    callback toggle-interface-settings(bool);
+    callback set-term-font(string);                // apply + persist font family
+    callback set-term-font-size(int);              // apply + persist font size (px)
+    callback set-term-font-bold(bool);             // apply + persist bold terminal text
+    callback set-term-cursor-style(string);        // apply + persist cursor shape (#275)
+    callback set-term-cursor-color(string) -> bool;// validate + persist cursor colour (#275)
+    callback set-term-cursor-preset(string);       // 推荐色块点击（绕过「回声」判定）
+    callback set-term-cursor-color-rgb(int, int, int) -> bool;   // 调色盘提交（Slint 无 hex 格式化）
+    callback set-output-highlight(bool, string);   // enable + built-in preset
+    callback set-json-format-output(bool);         // pretty-print + colour JSON lines (#338)
+    callback set-scrollback-lines(string) -> bool;  // persist terminal history lines
+    callback set-large-scrollback(bool);            // 大回滚缓冲区开关
+    callback set-convert-eol(bool);                 // persist LF→CRLF
+    callback set-osc52-clipboard(bool);             // persist OSC 52 toggle
+    callback set-hide-special-partitions(bool);      // persist partition hiding
+    callback set-animations-enabled(bool);           // persist Interface › Animations
+    callback set-mount-filter(string);               // persist mount point filter
+    callback add-output-highlight-rule(string, bool, bool, bool, string) -> bool;
+    callback remove-output-highlight-rule(int);
+    callback set-output-highlight-rule-enabled(int, bool);
+    callback set-ui-scale(int);                    // apply + persist UI scale (percent) (#100)
+    // Immersive wallpaper (set by Rust). The active id + custom file basename
+    // feed the Interface → Wallpaper picker.
+    in-out property <string> current-wallpaper: "";
+    in-out property <string> custom-wallpaper-name: "";
+    // 壁纸选择器：标签与下标（Rust 从内置 + `config/wallpapers` 里的文件算出）。
+    in property <[string]> wallpaper-labels;
+    in-out property <int> wallpaper-index;
+    callback set-wallpaper(string);                // apply + persist a wallpaper id
+    callback pick-wallpaper-file();
+    callback open-log-dir();
+    in-out property <bool> right-panel-open: false;                    // reveal the log directory in Finder/explorer                // open the OS file dialog (Rust)
+
+    // 配色：主题（深浅）+ 主题色。
+    // `accent-presets` 由 Rust 提供（含**当前深浅档已解析好的**颜色，Slint 不存第二份
+    // 色表）；`accent-choice` 是配置原值："" = 出厂默认 / 预设 id / "#RRGGBB"。
+    in property <string> accent-mode: "system";
+    in property <string> accent-choice: "";
+    in property <[AccentPreset]> accent-presets;
+    in-out property <string> accent-hex: "";
+    in property <string> accent-name: "";          // 当前配色的显示名（默认蓝 / 预设 / hex）
+    callback set-accent(string) -> bool;           // 预设 id / "#RRGGBB" / ""；非法返回 false
+    callback set-accent-rgb(int, int, int) -> bool;// 调色盘提交（Slint 无 hex 格式化）
+    callback set-appearance-mode(string);          // system / dark / light
+    // SFTP follows the terminal's cd; opt out in Interface settings.
+    in-out property <bool> sftp-follow-cd: true;
+    callback set-sftp-follow-cd(bool);             // apply + persist
+    // Hide the quick-command bar under the terminal; toolbar toggle persists it.
+    // 终端底部命令栏的可见性。**正向语义**（true = 显示），出厂默认 true。
+    // 配置里存的是反向的 hide_cmd_bar，翻转只在 Rust 侧（见 settings/layout.rs）。
+    in-out property <bool> show-cmd-bar: true;
+    callback set-show-cmd-bar(bool);               // apply + persist
+    // Zen (focus) mode: hide the sidebar and tab strip for a distraction-free
+    // terminal. Toggled by Ctrl+Alt+Z (⌘⌥Z on macOS) and persisted.
+    in-out property <bool> zen-mode: false;
+    callback set-zen-mode(bool);                   // apply + persist
+    callback toggle-zen-key();
+    // Always ask where to save on each download (#87); default off.
+    in-out property <bool> download-always-ask: false;
+    callback set-download-always-ask(bool);        // apply + persist
+    // Collapse-by-default settings + shared SFTP collapse state (#78).
+    in-out property <bool> collapse-sidebar-default: false;
+    callback set-collapse-sidebar-default(bool);   // apply + persist
+    // Render the welcome/session list as a left sidebar instead of a tab (v0.5).
+    in-out property <bool> welcome-as-sidebar: false;
+    callback set-welcome-as-sidebar(bool);         // apply + persist
+    in-out property <bool> update-check-enabled: true;   // startup new-version check (#184)
+    callback set-update-check-enabled(bool);       // apply + persist
+    callback set-update-channel(string);
+    callback set-update-freq(int);
+    // WSL profiles (upstream a64097e): managed in Interface → WSL.
+    in property <[WslProfileInfo]> wsl-profiles;
+    in-out property <string> wsl-new-directory: "~";
+    callback add-wsl-profile(string, string, string);
+    callback remove-wsl-profile(string);
+    callback pick-wsl-directory();
+    // Drag-resizable width of that welcome sidebar (logical px), persisted.
+    in-out property <length> welcome-sidebar-width: 240px;
+    callback persist-welcome-sidebar-width(float);
+    in-out property <string> welcome-sidebar-dock: "left";
+    property <bool> welcome-sidebar-horizontal:
+        root.welcome-sidebar-dock == "left" || root.welcome-sidebar-dock == "right";
+    property <length> welcome-sidebar-taken:
+        root.welcome-collapsed ? 36px : root.welcome-sidebar-width;
+    callback persist-welcome-sidebar-dock(string);
+    // Welcome sidebar collapsed to the edge icon strip (IDEA-style), persisted.
+    in-out property <bool> welcome-collapsed: false;
+    callback set-welcome-collapsed(bool);          // apply + persist
+    in-out property <bool> collapse-sftp-default: false;
+    callback set-collapse-sftp-default(bool);      // apply + persist
+    in-out property <bool> sftp-collapsed: false;       // (legacy global; per-tab now)
+    // Per-session SFTP state: persist the collapse + sizes into that tab's
+    // TerminalState so split panes / other tabs keep their own (#v0.5).
+    callback set-pane-sftp-collapsed(string /* tab-id */, bool);
+    callback set-pane-sftp-height(string /* tab-id */, length);
+    callback set-pane-sftp-width(string /* tab-id */, length);
+    // Confirm-before-close when there are live session tabs (#88): a stray
+    // double-click on the title-bar icon / X shouldn't drop active sessions.
+    in-out property <bool> confirm-close-open: false;
+    callback confirm-close-yes();                  // quit the app for real
+    in-out property <bool> terminal-restore-cover: false;
+    // Host-key confirmation (#109-5). Rust opens this when a server presents an
+    // unknown / changed host key; the user's answer flows back via the callbacks
+    // and Rust closes the dialog.
+    in-out property <bool> hostkey-prompt-open: false;
+    in-out property <bool> hostkey-changed: false; // true = key differs from stored
+    in-out property <string> hostkey-title;
+    in-out property <string> hostkey-message;
+    in-out property <string> hostkey-detail;       // host:port + type + fingerprint
+    in-out property <string> hostkey-confirm-label; // trust-button text (from Rust, bilingual)
+    callback hostkey-accept();                     // trust (and remember) the key
+    callback hostkey-reject();                      // abort the connection
+    // Connect-time credential prompt (#110). Rust opens this when a session is
+    // missing its username and/or password; the answer flows back via accept.
+    in-out property <bool> cred-prompt-open: false;
+    in-out property <string> cred-host;            // host shown in the dialog title
+    in-out property <bool> cred-need-user: false;
+    in-out property <bool> cred-need-password: false;
+    in-out property <string> cred-user;            // username field value
+    in-out property <string> cred-password;        // password field value
+    in-out property <bool> cred-remember: false;   // persist to the saved session
+    callback cred-accept();                        // use the entered credentials
+    callback cred-reject();                        // cancel the connection
+    // MFA / keyboard-interactive prompt (#86-MFA). Rust opens this when a bastion
+    // (e.g. JumpServer with MFA) sends a verification-code challenge mid-login.
+    in-out property <bool> mfa-prompt-open: false;
+    in-out property <string> mfa-host;             // host shown in the dialog title
+    in-out property <string> mfa-prompt;           // the server's prompt text
+    in-out property <bool> mfa-echo: false;        // false = hide typed input
+    in-out property <string> mfa-answer;           // the entered code
+    callback mfa-submit();                         // send the entered answer
+    callback mfa-cancel();                         // cancel the connection
+    // Group create / rename dialog (#41).
+    in-out property <bool> group-dialog-open: false;
+    in-out property <string> group-dialog-orig;    // "" = create, else rename
+    in-out property <string> group-dialog-name;
+    in-out property <string> group-dialog-error;
+    callback delete-group(string /* name */);
+    callback submit-group(string /* orig */, string /* name */) -> string;
+    callback toggle-theme();               // flip dark ↔ light
+    // Session sync / broadcast input (#78 pt.4): mirror keystrokes to every
+    // online session. Default off (it types into ALL sessions at once).
+    in-out property <bool> sync-input: false;
+    callback set-sync-input(bool);
+    // Mirror SFTP uploads to other sessions while sync-input is on (#sync).
+    in-out property <bool> sync-upload-enabled: false;
+    callback set-sync-upload-enabled(bool);
+    // WebDAV config sync (#185): manual upload/download of portable session JSON.
+    in-out property <bool> webdav-enabled: false;
+    in-out property <string> webdav-url;
+    in-out property <string> webdav-username;
+    in-out property <string> webdav-password;
+    in-out property <string> webdav-remote-path;
+    in-out property <bool> webdav-accept-invalid-certs: false;
+    in-out property <string> webdav-status;
+    callback save-webdav-settings(bool, string, string, string, string, bool);
+    callback webdav-upload();
+    callback webdav-download();
+    in-out property <length> sftp-panel-height: 220px; // shared; lets Rust locate the drop zone
+    in-out property <length> sftp-panel-width: 380px;  // SFTP extent when docked left/right
+    in-out property <string> sftp-dock: "bottom";      // SFTP dock edge, shared across tabs
+    callback pick-download-dir();            // open a folder picker
+    callback open-download-dir();            // reveal the folder in the OS
+    callback clear-transfers();              // wipe the transfer history
+    callback cancel-transfer(string);        // cancel an in-progress transfer by id (#100)
+    callback set-language(string);           // switch UI language ("zh" / "en")
+
+    // --- Update check (#48) ------------------------------------------------
+    // Set by Rust after a background GitHub-releases query; purely informational
+    // (the app keeps working on the current version).
+    in-out property <bool> update-available: false;
+    in property <string> update-version;     // e.g. "v0.3.3"
+    callback open-update-url();              // open the release page in a browser
+    // In-app self-update (#self-update): 0 idle / 1 downloading / 2 installing /
+    // 3 ready-to-restart / 4 failed. `update-progress` is 0.0..=1.0.
+    in-out property <int> update-state: 0;
+    in property <float> update-progress: 0;
+    in property <string> update-status: "";
+    callback run-self-update();              // download + install in place
+    callback restart-app();                  // re-launch with the new binary
+    // Settings → 手动检查更新 button (#self-update): independent of the
+    // startup check toggle, result is shown inline in the settings row.
+    in property <string> update-check-status: "";
+    in property <bool> update-checking: false;
+    // 更新通道（stable / beta / all）与检查频率、上次检查时间（见 settings/pages/update.slint）。
+    in property <string> update-channel: "stable";
+    in property <[string]> update-freq-labels;
+    in-out property <int> update-freq-index: 0;
+    in property <string> update-last-check: "";
+    // 「自动更新」对话框（取代原顶部横幅）：Rust 在"自动检查发现新版本"或"手动检查发现"
+    // 时打开它；用户关掉后可由下一次检查再打开。
+    in-out property <bool> update-dialog-open: false;
+    in property <string> update-notes: "";            // 发布说明（Rust 侧已清洗 + 截断）
+    in property <string> update-current-version: "";  // 形如 "v0.7.9"
+    in property <string> update-badge: "";            // 通道徽章：正式版 / 测试版
+    // 目标版本比本机低（降级 / 切换通道）：对话框据此换标题、换措辞、换主操作按钮。
+    // 例：本机 v0.7.9-beta1，切到「正式版」而正式版最新是 v0.7.9。
+    in property <bool> update-downgrade: false;
+    callback check-update-now();
+
+    // --- Built-in file viewer/editor (#70) --------------------------------
+    in-out property <bool> editor-open: false;
+    in-out property <string> editor-name;     // file name shown in the title
+    // 编辑器归属的标签页：保存 / 关闭上传用它，而不是"当前活动标签页"（上游 eafd513）——
+    // 否则开着编辑器切标签后按 Ctrl+S 会把内容写到另一个会话。
+    in-out property <string> editor-tab-id;
+    in-out property <string> editor-path;     // remote path (used on save)
+    in-out property <string> editor-content;  // text, two-way with the input
+    in-out property <bool> editor-readonly;   // view = true, edit = false
+    in-out property <bool> editor-dirty: false; // edited since load
+    // Set when the editor opens; the deferred timer focuses the text on the
+    // next tick instead of from `init` (see the timer below, #386).
+    property <bool> editor-focus-pending: false;
+    in-out property <string> editor-line-numbers; // newline-joined "1..N" from Rust (#81)
+    // Find/replace bar (#287). Matching is literal and case-sensitive, which is
+    // predictable for configuration/source files.
+    in-out property <string> editor-find-query;
+    in-out property <string> editor-replace-text;
+    in-out property <int> editor-match-count: 0;
+    in-out property <int> editor-find-position: -1;
+    callback save-file();                     // Ctrl+S / Save button (edit only)
+    callback close-editor();                  // X / Esc; uploads if dirty
+    callback editor-recount(string);          // rebuild line numbers after an edit
+    callback editor-count-matches(string /* content */, string /* query */) -> int;
+    callback editor-find-step(string /* content */, string /* query */, int /* current */, bool /* reverse */) -> EditorFindResult;
+    callback editor-replace-all(string /* query */, string /* replacement */);
+    // Editor card geometry: draggable by its title bar, resizable from the
+    // bottom-right grip (same absolute-position pattern as the Interface
+    // dialog). Defaults centre the card; user drags/resizes override them.
+    property <length> ed-w: 760px;
+    property <length> ed-h: 560px;
+    property <length> ed-x: (root.width - root.ed-w) / 2;
+    property <length> ed-y: (root.height - root.ed-h) / 2;
+    property <bool> ed-dragging;
+    property <bool> ed-resizing;
+    property <length> ed-base-x;
+    property <length> ed-base-y;
+    property <length> ed-base-w;
+    property <length> ed-base-h;
+    property <length> ed-grab-x;
+    property <length> ed-grab-y;
+
+    // --- Session list ------------------------------------------------------
+    in property <[SessionInfo]> sessions;
+    // 新外壳的页面（0 主机 · 1 终端 · 2 指令集 · 3 Docker · 4 设置）与左侧栏收起状态。
+    // 终端页（1）现在就是原有的界面内容，所以默认停在这一页、功能不受影响。
+    in-out property <int> shell-page: 1;
+    in-out property <bool> rail-collapsed: false;
+    in-out property <string> host-search-query;
+    callback host-search-changed(string);
+
+    // --- Tabs --------------------------------------------------------------
+    in property <[TabInfo]> tabs;
+    // --- Split panes (v0.5) — flattened from the Rust split tree -----------
+    in property <[PaneInfo]> panes;
+    in property <[SplitterInfo]> splitters;
+    in-out property <string> active-tab-id: "welcome";
+    in property <[TerminalState]> terminals;
+    // per-tab 状态搬家（旧外壳删除 ①）：活动标签的隧道 / SFTP 状态提升到窗口级。
+    // 源仍是 `terminals` 模型的行，由 Rust `refresh_active_term` 镜像过来 ——
+    // 窗口级的消费方（新外壳右面板）不必待在下面 `for term` 的循环里。
+    in property <[TunnelInfo]> active-tunnels;
+    in property <string> active-sftp-path;
+    in property <[SftpEntry]> active-sftp-entries;
+    in property <string> active-sftp-status;
+    in property <bool> active-sftp-loading: false;
+    in property <bool> active-sftp-available: false;
+
+    // --- Dialog state ------------------------------------------------------
+    in-out property <bool> dialog-open: false;
+    in-out property <bool> dialog-editing: false;
+    in-out property <string> dialog-id;
+    in-out property <string> dialog-name;
+    in-out property <string> dialog-host;
+    in-out property <string> dialog-port: "22";
+    in-out property <string> dialog-user;
+    in-out property <string> dialog-auth: "password";
+    in-out property <string> dialog-password;
+    in-out property <string> dialog-key-path;
+    in-out property <string> dialog-key-inline;
+    in-out property <bool> dialog-key-inline-mode: false;
+    in-out property <string> dialog-proxy-type: "none";  // "none" | "socks5" | "http"
+    in-out property <string> dialog-proxy-hostport;
+    in-out property <string> dialog-group;
+    // Existing group names (from Rust) for the dialog's group dropdown (#179).
+    in property <[string]> session-groups;
+    // SSH jump host picker (#211): parallel label/id lists + selected index.
+    in property <[string]> jump-choices;
+    in property <[string]> jump-ids;
+    in-out property <int> dialog-jump-index: 0;
+    in-out property <string> dialog-kind: "ssh";
+    in-out property <string> dialog-serial-port;
+    in-out property <string> dialog-baud: "115200";
+    in-out property <string> dialog-data-bits: "8";
+    in-out property <string> dialog-stop-bits: "1";
+    in-out property <string> dialog-parity: "none";
+    in-out property <string> dialog-flow: "none";
+    in-out property <string> dialog-encoding: "UTF-8";
+    in-out property <bool> dialog-disable-shell-integration: false;
+    in-out property <string> dialog-note;
+    in-out property <string> dialog-test-status;
+
+    // Delete-confirmation modal state (#28).
+    in-out property <bool> confirm-delete-open: false;
+    in-out property <bool> confirm-delete-batch: false;   // delete checked entries (#100)
+    in-out property <string> confirm-delete-tab;
+    in-out property <string> confirm-delete-path;
+
+    // --- Callbacks up to Rust ---------------------------------------------
+    callback new-session-clicked();
+    callback import-ssh-config();             // import hosts from ~/.ssh/config
+    in-out property <string> ssh-import-hint;  // result text shown after import
+    callback export-sessions();               // export all sessions to a file (#46)
+    callback import-sessions();               // import sessions from a file (#46)
+    in-out property <bool> batch-import-open: false;  // text batch-import dialog (#150)
+    in-out property <string> batch-import-text;       // the textarea content
+    callback batch-import-confirm(string /* pasted text */);
+    // Multi-line terminal paste safety prompt (#262).
+    // 注意：对话框**只**拿得到截断后的预览（`paste-confirm-preview`）；完整内容在
+    // Rust 侧（`pending_paste`），确认时才取走 —— 大段文本绑到 Slint 的 `Text` 上
+    // 会让软件渲染器 i16 坐标溢出闪退（#434 / slint#12985）。
+    in-out property <bool> paste-confirm-open: false;
+    in-out property <string> paste-confirm-tab;
+    in-out property <string> paste-confirm-preview;
+    in-out property <bool> paste-confirm-large: false;
+    callback paste-confirmed(string /* tab-id */);
+    callback paste-confirm-cancelled();
+    // 粘贴确认框（确认或取消）关闭后，把键盘焦点还给终端。单调自增；TerminalView
+    // 监听它并走自己的 `focus-pending` 延迟取焦。对话框里的 FocusScope 会抢走焦点，
+    // 而关闭路径没有别的机会还回去（上游 f435e15）。
+    property <int> terminal-focus-sequence: 0;
+    callback connect-session(string /* session-id */);
+    callback edit-session(string /* session-id */);
+    callback duplicate-session(string /* session-id */);
+    callback move-session(string /* session-id */, string /* group */);
+    // Drag-to-reorder a host card (dir: -1 up / +1 down), persisted on end.
+    callback reorder-session(string /* session-id */, int /* dir */);
+    callback reorder-session-end();
+    callback toggle-group(string /* group */);
+    callback remove-session(string /* session-id */);
+    callback session-dialog-submit(SessionDraft);
+    callback session-dialog-test(SessionDraft);
+    callback session-dialog-cancel();
+    callback session-dialog-pick-key();
+    // Port forwards for the session being edited (#56).
+    in-out property <[PortFwd]> dialog-forwards;
+    callback add-forward();
+    callback update-forward(int /* index */, PortFwd);
+    callback delete-forward(int /* index */);
+    // Expect/send login triggers for the session being edited (#212).
+    in-out property <[TriggerDraft]> dialog-triggers;
+    callback add-trigger();
+    callback update-trigger(int /* index */, TriggerDraft);
+    callback delete-trigger(int /* index */);
+
+    callback tab-selected(string);
+    callback tab-closed(string);
+    callback tab-reorder(int /* from-index */, int /* dir: -1 left / +1 right */);
+    // Per-pane tab actions (v0.5): the int is the pane (leaf) id.
+    callback pane-tab-selected(int /* pane-id */, string /* tab-id */);
+    callback pane-tab-closed(int /* pane-id */, string /* tab-id */);
+    callback pane-new-tab(int /* pane-id */);
+    callback pane-tab-reorder(int /* pane-id */, int /* from */, int /* dir */);
+    callback pane-focus(int /* pane-id */);
+    callback cycle-tab(bool /* reverse */);
+    // Split pane `pane-id`, peeling `tab-id` into a new pane on `dir`
+    // ("left"/"right"/"up"/"down").
+    callback pane-split(int /* pane-id */, string /* tab-id */, string /* dir */);
+    callback pane-merge(int /* pane-id */);
+    // Open another connection to the same session as `tab-id` (a new tab).
+    callback tab-duplicate(string /* tab-id */);
+    // Rename an open session's tab. Request pre-fills the dialog (Rust reads
+    // the current title); submit applies the new display name.
+    callback tab-rename-request(string /* tab-id */);
+    callback rename-tab(string /* tab-id */, string /* new-title */);
+    in-out property <bool> tab-rename-open: false;
+    in-out property <string> tab-rename-id: "";
+    in-out property <string> tab-rename-value: "";
+    // Drag-to-split (v0.5): cursor moved / dropped while dragging `tab-id`, in
+    // pane-area coordinates. Rust hit-tests the pane + edge zone.
+    // Drop-zone highlight (set by Rust during a drag): the region the dropped
+    // tab's new pane would occupy.
+    // Splitter drag: move split `split-id`'s boundary to `pos` (px along its axis).
+    callback splitter-drag(int /* split-id */, length /* pos */, bool /* vertical */);
+    // Reports the pane-area size to Rust so it can flatten the split tree into
+    // absolute pane / splitter rects. Fired whenever the content area resizes.
+    callback content-resized(length /* w */, length /* h */);
+    // Asks Rust to recompute the sidebar (status + resources) for whatever tab
+    // is now active.  Fired on every active-tab change, UI- or code-driven.
+    callback refresh-sidebar();
+    changed active-tab-id => { root.refresh-sidebar(); }
+
+    // Raw keystroke forwarding: Rust converts key+modifiers to PTY bytes.
+    callback send-key(string /* tab-id */, string /* key */, bool /* ctrl */, bool /* alt */, bool /* shift */);
+    // Notifies Rust of a PTY resize (pixel dimensions; Rust converts to cols/rows).
+    callback terminal-resize(string /* tab-id */, float /* width-px */, float /* height-px */);
+
+    // --- SFTP callbacks ---------------------------------------------------
+    // Navigate to a new remote directory (or ".." to go up).
+    callback sftp-navigate(string /* tab-id */, string /* path */);
+    // Trigger a download: Rust opens a save-folder dialog then transfers.
+    callback sftp-download(string /* tab-id */, string /* remote-path */);
+    // Trigger an upload: Rust opens a file-picker dialog then transfers.
+    callback sftp-upload-clicked(string /* tab-id */, string /* remote-dir */, bool /* folder */);
+    // Refresh the current directory listing.
+    callback sftp-refresh(string /* tab-id */, string /* path */);
+    // Toggle expand/collapse of a tree node (also navigates to that directory).
+    callback sftp-tree-expand(string /* tab-id */, string /* path */);
+    callback sftp-delete(string /* tab-id */, string /* path */);
+    callback sftp-toggle-select(string /* tab-id */, int /* row */);   // (#100)
+    callback sftp-download-selected(string /* tab-id */);              // (#100)
+    callback sftp-delete-selected(string /* tab-id */);               // (#100)
+    callback sftp-copy-to-target(string /* tab-id */, string /* remote-path */, string /* target-tab-id */);
+    callback sftp-copy-selected-to-target(string /* tab-id */, string /* target-tab-id */);
+    callback sftp-view(string /* tab-id */, string /* path */);
+    callback sftp-edit(string /* tab-id */, string /* path */);
+    callback sftp-open-external(string /* tab-id */, string /* path */);
+    callback sftp-edit-external(string /* tab-id */, string /* path */);
+    callback sftp-sort-request(string /* tab-id */, string /* key */);
+    callback sftp-clear-sort(string /* tab-id */);
+    callback tunnel-add(string /* tab-id */, string /* name */, string /* kind */, string /* bind */, string /* bind-port */, string /* host */, string /* host-port */);
+    callback tunnel-stop(string /* tab-id */, string /* tunnel-id */);
+    // SFTP context-menu extensions (#69): rename / chmod / mkdir / touch share
+    // one single-input prompt dialog; copy-path goes straight to the clipboard.
+    in-out property <bool> sftp-prompt-open: false;
+    in-out property <string> sftp-prompt-kind;   // "rename"|"chmod"|"mkdir"|"touch"
+    in-out property <string> sftp-prompt-tab;    // tab the action applies to
+    in-out property <string> sftp-prompt-target; // path acted on (or parent dir)
+    in-out property <string> sftp-prompt-value;  // user input
+    callback sftp-prompt-submit(string /* tab */, string /* kind */, string /* target */, string /* value */);
+    callback sftp-copy-path(string);             // put the path on the clipboard
+
+    // Visual chmod dialog (#84). Rust decomposes the current mode into nine
+    // bools when opening and recomposes on apply (Slint has no bitwise ops).
+    in-out property <bool> chmod-open: false;
+    in-out property <string> chmod-tab;
+    in-out property <string> chmod-path;
+    in-out property <string> chmod-name;
+    in-out property <bool> chmod-or; in-out property <bool> chmod-ow; in-out property <bool> chmod-ox;
+    in-out property <bool> chmod-gr; in-out property <bool> chmod-gw; in-out property <bool> chmod-gx;
+    in-out property <bool> chmod-tr; in-out property <bool> chmod-tw; in-out property <bool> chmod-tx;
+    callback sftp-chmod-open(string /* tab */, string /* path */, string /* name */, int /* mode */);
+    callback sftp-chmod-apply();                  // reads the bools, chmods, closes
+
+    // --- Clipboard callbacks ----------------------------------------------
+    // Paste clipboard text into the active terminal.
+    callback paste-from-clipboard(string /* tab-id */);
+    // Copy the current terminal screen buffer to the clipboard.
+    callback copy-terminal-text(string /* tab-id */);
+    // Clear a session's terminal buffer (its visible screen + scrollback).
+    callback clear-terminal(string /* tab-id */);
+    // Recompute search highlights for a session's visible screen.
+    callback find-query-changed(string /* tab-id */, string /* query */);
+    callback find-next(string /* tab-id */);
+    callback find-prev(string /* tab-id */);
+    // Scroll a session's scrollback history by N lines (+ = up/older).
+    callback terminal-scroll(string /* tab-id */, int /* delta-lines */);
+    // Wheel forwarded to an alt-screen program (#170): tab-id, dir (+1 up/-1 down), col, row.
+    callback terminal-wheel(string, int, int, int);
+    // Forward mouse press/release/drag to the PTY (tab-id, kind, button, col, row);
+    // returns true when the bytes were written (caller skips local handling).
+    callback terminal-mouse(string, int, int, int, int) -> bool;
+    callback terminal-scroll-to(string /* tab-id */, int /* offset */); // scrollbar drag (#103)
+    // 滚回历史时的本地导航键（正常屏且已滚开才消费；上游 35158dd）。
+    callback terminal-scrollback-key(string /* tab-id */, string /* key */) -> bool;
+    // Drag-selection lifecycle (grid row/col coordinates).
+    callback term-select-start(string /* tab-id */, int /* row */, int /* col */, bool /* left-half */, bool /* ctrl */, bool /* shift */);
+    callback term-select-update(string /* tab-id */, int /* row */, int /* col */, bool /* left-half */);
+    callback term-select-end(string /* tab-id */);
+    callback term-select-autoscroll(string /* tab-id */, int /* dir */);
+    callback term-select-word(string /* tab-id */, int /* row */, int /* col */);
+    callback term-select-line(string /* tab-id */, int /* row */, int /* col */);
+
+    // Immersive wallpaper layer — painted behind everything, filling the window.
+    // Panels/terminal frost over it (see Theme.frost). Only present when active.
+    if Theme.wallpaper-active : Image {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: Theme.wallpaper;
+        image-fit: cover;
+    }
+
+    // 旧外壳（旧侧栏 / 旧资源面板 / 旧欢迎侧栏 / 旧 dock 几何）已在第③步整体删除：
+    // 这一带原来是 `VerticalLayout { dock-area { … } }`；终端舞台、左侧栏（Rail）、
+    // 各页面与底部状态栏现在都是本窗口的直接子元素（绝对几何），不再需要这层。
+
+
+    // Frameless resize edges (#119): thin hit-zones that start an OS-level
+    // resize via winit. Hidden when maximized.
+    if root.custom-titlebar && !root.window-maximized : Rectangle {
+        width: 100%;
+        height: 100%;
+        TouchArea {  // top
+            x: 8px; y: 0; width: parent.width - 16px; height: 5px;
+            mouse-cursor: ns-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(0); } }
+        }
+        TouchArea {  // bottom
+            x: 8px; y: parent.height - 5px; width: parent.width - 16px; height: 5px;
+            mouse-cursor: ns-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(1); } }
+        }
+        TouchArea {  // left
+            x: 0; y: 8px; width: 5px; height: parent.height - 16px;
+            mouse-cursor: ew-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(3); } }
+        }
+        TouchArea {  // right
+            x: parent.width - 5px; y: 8px; width: 5px; height: parent.height - 16px;
+            mouse-cursor: ew-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(2); } }
+        }
+        TouchArea {  // top-left
+            x: 0; y: 0; width: 8px; height: 8px;
+            mouse-cursor: nwse-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(5); } }
+        }
+        TouchArea {  // top-right
+            x: parent.width - 8px; y: 0; width: 8px; height: 8px;
+            mouse-cursor: nesw-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(4); } }
+        }
+        TouchArea {  // bottom-left
+            x: 0; y: parent.height - 8px; width: 8px; height: 8px;
+            mouse-cursor: nesw-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(7); } }
+        }
+        TouchArea {  // bottom-right
+            x: parent.width - 8px; y: parent.height - 8px; width: 8px; height: 8px;
+            mouse-cursor: nwse-resize;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(6); } }
+        }
+    }
+
+    // --- Update-available prompt (#48) ------------------------------------
+    // 原顶部横幅已改成 `ui/update_dialog.slint` 的模态对话框，挂在**文件末尾**
+    // （设置遮罩之后）—— 横幅挂在内容层里，设置面板一开就被那块全窗遮罩压住、点不到。
+    // --- Built-in file viewer / editor (#70) ------------------------------
+    // View = read-only (selectable/copyable); Edit = writable, Ctrl+S or the
+    // Save button uploads, and closing uploads any unsaved changes.
+    FileEditor {
+        open: root.editor-open;
+        editor-name: root.editor-name;
+        editor-tab-id: root.editor-tab-id;
+        editor-readonly: root.editor-readonly;
+        editor-line-numbers: root.editor-line-numbers;
+        editor-content <=> root.editor-content;
+        editor-find-query <=> root.editor-find-query;
+        editor-replace-text <=> root.editor-replace-text;
+        editor-dirty <=> root.editor-dirty;
+        editor-match-count <=> root.editor-match-count;
+        editor-find-position <=> root.editor-find-position;
+        save-file => { root.save-file(); }
+        close-editor => { root.close-editor(); }
+        editor-recount(text) => { root.editor-recount(text); }
+        editor-count-matches(content, query) => { root.editor-count-matches(content, query); }
+        editor-find-step(content, query, current, reverse) => { root.editor-find-step(content, query, current, reverse); }
+        editor-replace-all(query, replacement) => { root.editor-replace-all(query, replacement); }
+    }
+    // --- Rename-session dialog ----------------------------------------------
+    // Tab context menu → Rename: a display-name override for one open session.
+    // Submitting an empty name restores the saved session name.
+    // --- Rename-session dialog ----------------------------------------------
+    // Tab context menu → Rename: a display-name override for one open session.
+    // Submitting an empty name restores the saved session name.
+    //
+    // PopupWindow rather than a Rectangle anchored to parent.width/height:
+    // the previous Rectangle placement depended on its parent container's
+    // dimensions, which on some layouts compressed the overlay into a narrow
+    // vertical strip inside the tab bar — the dialog became unusable and the
+    // rename callback silently never fired. A PopupWindow is a top-level layer
+    // that reliably covers the whole window regardless of where it sits in the
+    // widget tree.
+    // Dialog is sized in absolute terms (root.width/height from AppWindow)
+    // and uses an `if` so the inner Rectangle hierarchy (backdrop + dialog)
+    // only mounts when needed. Anchoring to `parent.width/height` previously
+    // let the dialog compress into a narrow vertical strip on some layouts, and
+    // the PopupWindow form silently routed clicks away from the menu items
+    // that open it.
+    // 已抽成 `ui/rename_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    RenameDialog {
+        open: root.tab-rename-open;
+        lang-en : root.lang-en;
+        tab-rename-id : root.tab-rename-id;
+        tab-rename-value <=> root.tab-rename-value;
+        close-requested => { root.tab-rename-open = false; }
+        rename-tab(tab-id, new-title) => { root.rename-tab(tab-id, new-title); }
+    }
+
+    // --- Download manager popup -------------------------------------------
+    // 已抽成 `ui/download_manager.slint`：**常驻**（面板内部用 `visible` 切换），状态透传 + 动作转发。
+    DownloadManagerPopup {
+        lang-en: root.lang-en;
+        avail-width: root.width;
+        avail-height: root.height;
+        download-open: root.download-open;
+        transfers : root.transfers;
+        download-dir : root.download-dir;
+        custom-titlebar : root.custom-titlebar;
+        titlebar-inset : root.titlebar-inset;
+        toolbar-x-off : root.toolbar-x-off;
+        toolbar-y-off : root.toolbar-y-off;
+        close-requested => { root.download-open = false; }
+        pick-download-dir() => { root.pick-download-dir(); }
+        open-download-dir() => { root.open-download-dir(); }
+        clear-transfers() => { root.clear-transfers(); }
+        cancel-transfer(id) => { root.cancel-transfer(id); }
+    }
+
+    // Process monitor is now ProcWindow (a detachable top-level window); the
+    // former in-app overlay was removed in favour of a real OS window (#23).
+    // --- Settings menu popup (top-right) ----------------------------------
+    // 已抽成 `ui/settings_menu.slint`：**常驻**（面板内部用 `visible` 切换），状态透传 + 动作转发。
+    SettingsMenuPopup {
+        lang-en: root.lang-en;
+        avail-width: root.width;
+        avail-height: root.height;
+        settings-open: root.settings-open;
+        custom-titlebar : root.custom-titlebar;
+        titlebar-inset : root.titlebar-inset;
+        toolbar-x-off : root.toolbar-x-off;
+        toolbar-y-off : root.toolbar-y-off;
+        ssh-import-hint : root.ssh-import-hint;
+        close-requested => { root.settings-open = false; }
+        set-language(lang) => { root.set-language(lang); }
+        import-ssh-config() => { root.import-ssh-config(); }
+        export-sessions() => { root.export-sessions(); }
+        import-sessions() => { root.import-sessions(); }
+        open-interface-settings => { root.toggle-interface-settings(true); }
+        open-batch-import => { root.batch-import-text = ""; root.batch-import-open = true; }
+        open-shortcuts => { root.shortcuts-open = true; }
+        open-about => { root.about-open = true; }
+    }
+    // --- Group create / rename dialog (#41) -------------------------------
+    // 已抽成 `ui/group_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    GroupDialog {
+        open: root.group-dialog-open;
+        lang-en: root.lang-en;
+        group-dialog-orig : root.group-dialog-orig;
+        group-dialog-name <=> root.group-dialog-name;
+        group-dialog-error <=> root.group-dialog-error;
+        close-requested => { root.group-dialog-open = false; }
+        submit-group(orig, name) => { return root.submit-group(orig, name); }
+    }
+    // --- Quick-command manage dialog (#55) --------------------------------
+    // 已抽成 `ui/quick_cmd_manage.slint`：这里只做显隐判断 + 状态透传 + 动作转发。
+    QuickCmdManageDialog {
+        open: root.quick-cmd-manage-open;
+        quick-commands: root.quick-commands;
+        lang-en: root.lang-en;
+        qcm-dialog-width: root.qcm-dialog-width;
+        qcm-dialog-height: root.qcm-dialog-height;
+        avail-width: root.width;
+        avail-height: root.height;
+        qcm-name <=> root.qcm-name;
+        qcm-command <=> root.qcm-command;
+        qcm-group <=> root.qcm-group;
+        qcm-send-enter <=> root.qcm-send-enter;
+        qcm-edit-index <=> root.qcm-edit-index;
+        close-requested => { root.quick-cmd-manage-open = false; }
+        new-quick-group => { root.qcg-orig = ""; root.qcg-name = ""; root.qcg-open = true; }
+        rename-quick-group(g) => { root.qcg-orig = g; root.qcg-name = g; root.qcg-open = true; }
+        add-quick-command(name, command, group, send-enter) => { root.add-quick-command(name, command, group, send-enter); }
+        save-quick-command(index, name, command, group, send-enter) => { root.save-quick-command(index, name, command, group, send-enter); }
+        delete-quick-command(index) => { root.delete-quick-command(index); }
+        edit-quick-command(index) => { root.edit-quick-command(index); }
+        duplicate-quick-command(index) => { root.duplicate-quick-command(index); }
+        move-quick-command(index, group) => { root.move-quick-command(index, group); }
+        reorder-quick-command(index, move-up) => { root.reorder-quick-command(index, move-up); }
+        delete-quick-group(name) => { root.delete-quick-group(name); }
+    }
+    // --- Quick-command group name dialog (#55): new / rename --------------
+    // 已抽成 `ui/quick_group_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    QuickGroupDialog {
+        open: root.qcg-open;
+        lang-en: root.lang-en;
+        qcg-name <=> root.qcg-name;
+        qcg-orig : root.qcg-orig;
+        close-requested => { root.qcg-open = false; }
+        submit-quick-group(orig, name) => { root.submit-quick-group(orig, name); }
+    }
+    // --- SFTP prompt dialog (#69): rename / chmod / mkdir / touch ----------
+    // 已抽成 `ui/sftp_prompt_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    SftpPromptDialog {
+        open: root.sftp-prompt-open;
+        lang-en: root.lang-en;
+        sftp-prompt-kind : root.sftp-prompt-kind;
+        sftp-prompt-tab : root.sftp-prompt-tab;
+        sftp-prompt-target : root.sftp-prompt-target;
+        sftp-prompt-value <=> root.sftp-prompt-value;
+        close-requested => { root.sftp-prompt-open = false; }
+        sftp-prompt-submit(tab, kind, target, value) => { root.sftp-prompt-submit(tab, kind, target, value); }
+    }
+    // --- Confirm-before-close dialog (#88) --------------------------------
+    // 已抽成 `ui/confirm_close_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    ConfirmCloseDialog {
+        open: root.confirm-close-open;
+        lang-en: root.lang-en;
+        avail-width: root.width;
+        avail-height: root.height;
+        close-requested => { root.confirm-close-open = false; }
+        confirm-close-yes() => { root.confirm-close-yes(); }
+    }
+    // --- Visual chmod dialog (#84): Owner/Group/Other × Read/Write/Execute --
+    // 已抽成 `ui/chmod_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
+    ChmodDialog {
+        open: root.chmod-open;
+        lang-en: root.lang-en;
+        chmod-name : root.chmod-name;
+        chmod-or <=> root.chmod-or;
+        chmod-ow <=> root.chmod-ow;
+        chmod-ox <=> root.chmod-ox;
+        chmod-gr <=> root.chmod-gr;
+        chmod-gw <=> root.chmod-gw;
+        chmod-gx <=> root.chmod-gx;
+        chmod-tr <=> root.chmod-tr;
+        chmod-tw <=> root.chmod-tw;
+        chmod-tx <=> root.chmod-tx;
+        close-requested => { root.chmod-open = false; }
+        sftp-chmod-apply() => { root.sftp-chmod-apply(); }
+    }
+    // --- Keyboard shortcuts dialog (#103) ---------------------------------
+    // 已抽成 `ui/shortcuts_dialog.slint`：**常驻**（内部靠 `visible` 切换），状态透传 + 关闭转发。
+    ShortcutsDialog {
+        shortcuts-open: root.shortcuts-open;
+        is-mac: root.is-mac;
+        lang-en: root.lang-en;
+        close-requested => { root.shortcuts-open = false; }
+    }
+
+    // --- About dialog (centered on the window, with dim backdrop) ---------
+    // 已抽成 `ui/about_dialog.slint`：**常驻**（内部靠 `opacity`/`visible` 切换），状态透传 + 动作转发。
+    AboutDialog {
+        avail-width: root.width;
+        avail-height: root.height;
+        about-open: root.about-open;
+        about-libs: root.about-libs;
+        app-version: root.app-version;
+        close-requested => { root.about-open = false; }
+        open-repo() => { root.open-repo(); }
+    }
+    // --- Modal dialog -----------------------------------------------------
+    SessionDialog {
+        width: parent.width;
+        height: parent.height;
+        is-open <=> root.dialog-open;
+        is-editing <=> root.dialog-editing;
+        draft-id <=> root.dialog-id;
+        draft-name <=> root.dialog-name;
+        draft-host <=> root.dialog-host;
+        draft-port <=> root.dialog-port;
+        draft-user <=> root.dialog-user;
+        draft-auth <=> root.dialog-auth;
+        draft-password <=> root.dialog-password;
+        draft-key-path <=> root.dialog-key-path;
+        draft-key-inline <=> root.dialog-key-inline;
+        draft-key-inline-mode <=> root.dialog-key-inline-mode;
+        draft-proxy-type <=> root.dialog-proxy-type;
+        draft-proxy-hostport <=> root.dialog-proxy-hostport;
+        draft-group <=> root.dialog-group;
+        session-groups: root.session-groups;
+        jump-choices: root.jump-choices;
+        jump-ids: root.jump-ids;
+        draft-jump-index <=> root.dialog-jump-index;
+        draft-kind <=> root.dialog-kind;
+        draft-serial-port <=> root.dialog-serial-port;
+        draft-baud <=> root.dialog-baud;
+        draft-data-bits <=> root.dialog-data-bits;
+        draft-stop-bits <=> root.dialog-stop-bits;
+        draft-parity <=> root.dialog-parity;
+        draft-flow <=> root.dialog-flow;
+        draft-encoding <=> root.dialog-encoding;
+        draft-disable-shell-integration <=> root.dialog-disable-shell-integration;
+        draft-note <=> root.dialog-note;
+        test-status <=> root.dialog-test-status;
+        forwards: root.dialog-forwards;
+        triggers: root.dialog-triggers;
+        submit(draft) => { root.session-dialog-submit(draft); }
+        test-connection(draft) => { root.session-dialog-test(draft); }
+        cancel => { root.session-dialog-cancel(); }
+        pick-key-file => { root.session-dialog-pick-key(); }
+        add-forward => { root.add-forward(); }
+        update-forward(i, f) => { root.update-forward(i, f); }
+        delete-forward(i) => { root.delete-forward(i); }
+        add-trigger => { root.add-trigger(); }
+        update-trigger(i, t) => { root.update-trigger(i, t); }
+        delete-trigger(i) => { root.delete-trigger(i); }
+    }
+
+    // --- Delete confirmation (#28) ----------------------------------------
+    // 已抽成 `ui/confirm_overlays.slint`：**常驻**（内部靠 states 切换确认种类），状态透传 + 动作转发。
+    ConfirmOverlays {
+        batch-import-open <=> root.batch-import-open;
+        batch-import-text <=> root.batch-import-text;
+        confirm-close-open : root.confirm-close-open;
+        confirm-delete-batch <=> root.confirm-delete-batch;
+        confirm-delete-open <=> root.confirm-delete-open;
+        confirm-delete-path : root.confirm-delete-path;
+        confirm-delete-tab : root.confirm-delete-tab;
+        cred-host : root.cred-host;
+        cred-need-password : root.cred-need-password;
+        cred-need-user : root.cred-need-user;
+        cred-password <=> root.cred-password;
+        cred-prompt-open : root.cred-prompt-open;
+        cred-remember <=> root.cred-remember;
+        cred-user <=> root.cred-user;
+        hostkey-confirm-label : root.hostkey-confirm-label;
+        hostkey-detail : root.hostkey-detail;
+        hostkey-message : root.hostkey-message;
+        hostkey-prompt-open <=> root.hostkey-prompt-open;
+        hostkey-title : root.hostkey-title;
+        lang-en : root.lang-en;
+        mfa-answer <=> root.mfa-answer;
+        mfa-echo : root.mfa-echo;
+        mfa-host : root.mfa-host;
+        mfa-prompt : root.mfa-prompt;
+        mfa-prompt-open : root.mfa-prompt-open;
+        paste-confirm-large : root.paste-confirm-large;
+        paste-confirm-open <=> root.paste-confirm-open;
+        paste-confirm-preview : root.paste-confirm-preview;
+        paste-confirm-tab : root.paste-confirm-tab;
+        hostkey-accept() => { root.hostkey-accept(); }
+        hostkey-reject() => { root.hostkey-reject(); }
+        cred-accept() => { root.cred-accept(); }
+        cred-reject() => { root.cred-reject(); }
+        mfa-submit() => { root.mfa-submit(); }
+        mfa-cancel() => { root.mfa-cancel(); }
+        batch-import-confirm(text) => { root.batch-import-confirm(text); }
+        paste-confirmed(tab-id) => { root.terminal-focus-sequence += 1; root.paste-confirmed(tab-id); }
+        paste-confirm-cancelled() => { root.terminal-focus-sequence += 1; root.paste-confirm-cancelled(); }
+        sftp-delete(tab-id, path) => { root.sftp-delete(tab-id, path); }
+        sftp-delete-selected(tab-id) => { root.sftp-delete-selected(tab-id); }
+    }
+
+
+    // --- 「自动更新」对话框（AppWindow 的最后一个子元素）-----------------
+    // 注：设置页改成独立窗口（`PopupWindow`）之后，"谁压在谁上面"的顾虑已经不成立 ——
+    // 那个窗口有自己的 surface，不再和这里的对话框抢层级。位置保持原样只为减少改动。
+    // 组件内部常驻（`opacity`/`visible` 切换），所以这里的 `open` 只做显隐，不用 `if`。
+    UpdateDialog {
+        open: root.update-dialog-open;
+        badge: root.update-badge;
+        current-version: root.update-current-version;
+        new-version: root.update-version;
+        notes: root.update-notes;
+        update-state: root.update-state;
+        update-progress: root.update-progress;
+        update-status: root.update-status;
+        downgrade: root.update-downgrade;
+        close-requested => { root.update-dialog-open = false; }
+        run-update => { root.run-self-update(); }
+        restart-app => { root.restart-app(); }
+        open-releases => { root.open-update-url(); }
+        }
+
+        // ── 新外壳：左侧栏 + 主机页 ────────────────────────────────────────────
+        // 先只加这两块：左侧栏常驻，选中「主机」时用新的主机页盖住内容区，选中
+        // 「终端」时露出原有界面（所以终端功能一步都没动）。指令集 / Docker / 设置
+        // 的页面后续逐个替换。
+        property <length> rail-w: root.rail-collapsed ? 64px : 180px;
+        // 新标题栏：Windows/Linux 自绘一条 38px 的沉浸式栏（AppTitleBar，见组件末尾）；
+        // macOS 不画 —— 红绿灯与顶部拖拽都由系统负责（titlebar-inset 由 Rust 给）。
+        property <length> bar-h: 38px;
+      // 底部用户卡片（Rail）显示的登录名；Rust 启动时从环境取。
+      in-out property <string> user-name: "";
+      // 头像首字母（Slint 字符串没有 substring，Rust 算好传入）。
+      in-out property <string> user-initial: "";
+        // 侧栏与页面内容的整体下移量：自绘栏平台是栏高，macOS 是红绿灯让位高度。
+        property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
+
+        Rail {
+            x: 0;
+            // Windows/Linux：在新标题栏下方；macOS：通到顶，搜索框自己给红绿灯让位
+            y: root.custom-titlebar ? root.bar-h : 0px;
+            width: root.rail-w;
+            height: root.height - (root.custom-titlebar ? root.bar-h : 0px);
+            top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
+          user-name: root.user-name;
+          user-initial: root.user-initial;
+          lang-en: root.lang-en;
+            current-page: root.shell-page;
+            // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
+            // 那个赋值传不回来，收起/展开看起来就是"点了没反应"。
+            collapsed <=> root.rail-collapsed;
+              page-changed(p) => {
+                  root.shell-page = p;
+              }
+        }
+
+      // 终端舞台（旧外壳删除②-2）：分屏 / 标签条 / TerminalView 全在这里，由
+      // `shell/terminal_stage.slint` 渲染；窗口级设置与回调在此 1:1 透传。
+      // 声明在页面之前 = 主机 / 指令集 / Docker / 设置页画在它上面；终端页
+      // 空布局时由 PageTerminal 空状态（声明在后）盖住。常驻、不随切页销毁 ——
+      // 与旧外壳一致：切页不重建 TerminalView（保住滚动/悬停/查找条状态与键盘焦点）。
+      TerminalStage {
+          x: root.rail-w;
+          y: root.shell-top;
+          width: root.width - root.rail-w;
+          // 让开底部状态栏，终端不再被它压住
+          height: root.height - root.shell-top - 28px;
+          panes: root.panes;
+          terminals: root.terminals;
+          splitters: root.splitters;
+          tabs: root.tabs;
+          active-tab-id: root.active-tab-id;
+          lang-en: root.lang-en;
+          terminal-focus-sequence: root.terminal-focus-sequence;
+          term-cursor-style: root.term-cursor-style;
+          term-cursor-color: root.term-cursor-color;
+          show-cmd-bar: root.show-cmd-bar;
+          terminal-restore-cover: root.terminal-restore-cover;
+          command-history: root.command-history;
+          history-view: root.history-view;
+          history-preview: root.history-preview;
+          quick-commands: root.quick-commands;
+          quick-external-command: root.quick-external-command;
+          quick-external-send-enter: root.quick-external-send-enter;
+          quick-external-sequence: root.quick-external-sequence;
+          // 会话内共享状态 / 对话框状态：双向，舞台上会就地改
+          sftp-dock <=> root.sftp-dock;
+          sftp-prompt-open <=> root.sftp-prompt-open;
+          sftp-prompt-kind <=> root.sftp-prompt-kind;
+          sftp-prompt-tab <=> root.sftp-prompt-tab;
+          sftp-prompt-target <=> root.sftp-prompt-target;
+          sftp-prompt-value <=> root.sftp-prompt-value;
+          confirm-delete-open <=> root.confirm-delete-open;
+          confirm-delete-batch <=> root.confirm-delete-batch;
+          confirm-delete-tab <=> root.confirm-delete-tab;
+          confirm-delete-path <=> root.confirm-delete-path;
+          quick-cmd-manage-open <=> root.quick-cmd-manage-open;
+          qcm-name <=> root.qcm-name;
+          qcm-command <=> root.qcm-command;
+          qcm-group <=> root.qcm-group;
+          qcm-edit-index <=> root.qcm-edit-index;
+          qcg-open <=> root.qcg-open;
+          qcg-name <=> root.qcg-name;
+          qcg-orig <=> root.qcg-orig;
+          // 回调：舞台已经把 per-tab 的 id 补进参数，这里直接透传给 Rust
+          content-resized(w, h) => { root.content-resized(w, h); }
+          pane-tab-selected(pane, id) => { root.pane-tab-selected(pane, id); }
+          pane-tab-closed(pane, id) => { root.pane-tab-closed(pane, id); }
+          tab-rename-request(id) => { root.tab-rename-request(id); }
+          pane-new-tab(pane) => { root.pane-new-tab(pane); }
+          pane-split(pane, id, dir) => { root.pane-split(pane, id, dir); }
+          toggle-zen-key() => { root.toggle-zen-key(); }
+          toggle-right-panel() => { root.right-panel-open = !root.right-panel-open; }
+          cycle-tab(reverse) => { root.cycle-tab(reverse); }
+          splitter-drag(id, pos, vertical) => { root.splitter-drag(id, pos, vertical); }
+          send-key(tab, key, ctrl, alt, shift) => { root.send-key(tab, key, ctrl, alt, shift); }
+          terminal-resize(tab, w, h) => { root.terminal-resize(tab, w, h); }
+          terminal-mouse(tab, kind, button, col, row) => { root.terminal-mouse(tab, kind, button, col, row); }
+          terminal-wheel(tab, d, c, r) => { root.terminal-wheel(tab, d, c, r); }
+          terminal-scroll(tab, d) => { root.terminal-scroll(tab, d); }
+          terminal-scroll-to(tab, o) => { root.terminal-scroll-to(tab, o); }
+          terminal-scrollback-key(tab, key) => { root.terminal-scrollback-key(tab, key); }
+          term-select-start(tab, r, c, lh, ctrl, shift) => { root.term-select-start(tab, r, c, lh, ctrl, shift); }
+          term-select-update(tab, r, c, lh) => { root.term-select-update(tab, r, c, lh); }
+          term-select-end(tab) => { root.term-select-end(tab); }
+          term-select-word(tab, r, c) => { root.term-select-word(tab, r, c); }
+          term-select-line(tab, r, c) => { root.term-select-line(tab, r, c); }
+          term-select-autoscroll(tab, dir) => { root.term-select-autoscroll(tab, dir); }
+          paste-from-clipboard(tab) => { root.paste-from-clipboard(tab); }
+          copy-terminal-text(tab) => { root.copy-terminal-text(tab); }
+          clear-terminal(tab) => { root.clear-terminal(tab); }
+          find-query-changed(tab, q) => { root.find-query-changed(tab, q); }
+          find-next(tab) => { root.find-next(tab); }
+          find-prev(tab) => { root.find-prev(tab); }
+          run-command(tab, cmd, all) => { root.run-command(tab, cmd, all); }
+          copy-text(t) => { root.copy-text(t); }
+          delete-history(i) => { root.delete-history(i); }
+          delete-history-cmd(c) => { root.delete-history-cmd(c); }
+          search-history(q) => { root.search-history(q); }
+          toggle-quick-group(g) => { root.toggle-quick-group(g); }
+          edit-quick-command(i) => { root.edit-quick-command(i); }
+          duplicate-quick-command(i) => { root.duplicate-quick-command(i); }
+          delete-quick-command(i) => { root.delete-quick-command(i); }
+          move-quick-command(i, g) => { root.move-quick-command(i, g); }
+          delete-quick-group(g) => { root.delete-quick-group(g); }
+          sftp-navigate(tab, p) => { root.sftp-navigate(tab, p); }
+          sftp-download(tab, p) => { root.sftp-download(tab, p); }
+          sftp-upload-clicked(tab, dir, folder) => { root.sftp-upload-clicked(tab, dir, folder); }
+          sftp-refresh(tab, p) => { root.sftp-refresh(tab, p); }
+          sftp-tree-expand(tab, p) => { root.sftp-tree-expand(tab, p); }
+          sftp-toggle-select(tab, i) => { root.sftp-toggle-select(tab, i); }
+          sftp-download-selected(tab) => { root.sftp-download-selected(tab); }
+          sftp-copy-to-target(tab, path, target) => { root.sftp-copy-to-target(tab, path, target); }
+          sftp-copy-selected-to-target(tab, target) => { root.sftp-copy-selected-to-target(tab, target); }
+          sftp-view(tab, p) => { root.sftp-view(tab, p); }
+          sftp-edit(tab, p) => { root.sftp-edit(tab, p); }
+          sftp-open-external(tab, p) => { root.sftp-open-external(tab, p); }
+          sftp-edit-external(tab, p) => { root.sftp-edit-external(tab, p); }
+          sftp-sort-request(tab, key) => { root.sftp-sort-request(tab, key); }
+          sftp-clear-sort(tab) => { root.sftp-clear-sort(tab); }
+          sftp-copy-path(p) => { root.sftp-copy-path(p); }
+          sftp-chmod-open(tab, path, name, mode) => { root.sftp-chmod-open(tab, path, name, mode); }
+          set-pane-sftp-height(tab, v) => { root.set-pane-sftp-height(tab, v); }
+          set-pane-sftp-width(tab, v) => { root.set-pane-sftp-width(tab, v); }
+          set-pane-sftp-collapsed(tab, v) => { root.set-pane-sftp-collapsed(tab, v); }
+          tunnel-add(tab, name, kind, bind, bind-port, host, host-port) => {
+              root.tunnel-add(tab, name, kind, bind, bind-port, host, host-port);
+          }
+          tunnel-stop(tab, id) => { root.tunnel-stop(tab, id); }
+      }
+        if root.shell-page == 0 : Rectangle {
+            x: root.rail-w;
+            y: root.shell-top;
+            width: root.width - root.rail-w;
+            height: root.height - root.shell-top;
+            background: Theme.bg-root;
+
+            PageHosts {
+                width: 100%;
+                height: 100%;
+                lang-en: root.lang-en;
+              sessions: root.sessions;
+                connect-session(id) => {
+                    // 点会话要先切到终端页，才能看到连接过程；再交给原有链路去发起连接。
+                    root.shell-page = 1;
+                    root.connect-session(id);
+                }
+                new-session() => {
+                    root.new-session-clicked();
+                }
+            }
+        }
+
+        if root.shell-page == 2 : Rectangle {
+            x: root.rail-w;
+            y: root.shell-top;
+            width: root.width - root.rail-w;
+            height: root.height - root.shell-top;
+            background: Theme.bg-root;
+
+            PageSnippets {
+                width: 100%;
+                height: 100%;
+                quick-commands: root.quick-commands;
+                run(cmd) => {
+                    root.run-command(root.active-tab-id, cmd, false);
+                }
+                manage() => {
+                    root.quick-cmd-manage-open = true;
+                }
+            }
+        }
+
+        if root.shell-page == 3 : Rectangle {
+            x: root.rail-w;
+            y: root.shell-top;
+            width: root.width - root.rail-w;
+            height: root.height - root.shell-top;
+            background: Theme.bg-root;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: Theme.sp-2;
+
+                Text {
+                    text: "Docker 管理";
+                    font-size: 18px;
+                    color: Theme.fg-1;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "规划中 —— 将通过 SSH 直连远端 Docker Engine（容器 / 镜像 / 端口 / 操作）";
+                    font-size: 12px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                }
+                }
+                }
+
+      // 设置页（迁移第一步：基础/外观真接线，其余分组标注迁移中）。
+      if root.shell-page == 4 : Rectangle {
+          x: root.rail-w;
+          y: root.shell-top;
+          width: root.width - root.rail-w;
+          height: root.height - root.shell-top;
+
+          PageSettings {
+              width: 100%;
+              height: 100%;
+              lang-en: root.lang-en;
+              scrollback: root.scrollback-lines;
+              flag-osc: root.osc52-clipboard;
+              update-check: root.update-check-enabled;
+              large-scrollback: root.large-scrollback;
+              convert-eol: root.convert-eol;
+              json-format-output: root.json-format-output;
+              hide-partitions: root.hide-special-partitions;
+              always-ask: root.download-always-ask;
+              follow-cd: root.sftp-follow-cd;
+              collapse-sftp: root.collapse-sftp-default;
+              app-version: root.app-version;
+              accent-hex: root.accent-hex;
+              ui-fonts: root.ui-fonts;
+              term-fonts: root.term-fonts;
+              term-font-index: root.term-font-index;
+              ui-font-index: root.ui-font-index;
+              upload-ui-font() => { root.upload-ui-font(); }
+              wallpaper-labels: root.wallpaper-labels;
+              wallpaper-index: root.wallpaper-index;
+              update-freq-labels: root.update-freq-labels;
+              update-freq-index: root.update-freq-index;
+              mount-filter-text <=> root.mount-filter;
+              set-update-freq(i) => { root.set-update-freq(i); }
+              set-mount-filter-text(v) => { root.set-mount-filter(v); }
+              set-accent-color(c) => { root.set-accent(c); }
+              set-wallpaper-label(l) => { root.set-wallpaper(l); }
+              pick-wallpaper() => { root.pick-wallpaper-file(); }
+              open-log-dir() => { root.open-log-dir(); }
+              term-ui-font(f) => { root.set-ui-font(f); }
+              about-libs: root.about-libs;
+              webdav-enabled <=> root.webdav-enabled;
+              webdav-url <=> root.webdav-url;
+              webdav-username <=> root.webdav-username;
+              webdav-password <=> root.webdav-password;
+              webdav-remote-path <=> root.webdav-remote-path;
+              webdav-certs <=> root.webdav-accept-invalid-certs;
+              webdav-status: root.webdav-status;
+              save-webdav(en, u, usr, pw, rp, cert) => {
+                  root.save-webdav-settings(en, u, usr, pw, rp, cert);
+              }
+              webdav-upload() => { root.webdav-upload(); }
+              webdav-download() => { root.webdav-download(); }
+              set-flag-update-check(v) => { root.set-update-check-enabled(v); }
+              set-flag-large-scrollback(v) => { root.set-large-scrollback(v); }
+              set-flag-osc52(v) => { root.set-osc52-clipboard(v); }
+              set-flag-convert-eol(v) => { root.set-convert-eol(v); }
+              set-flag-json-output(v) => { root.set-json-format-output(v); }
+              set-flag-hide-partitions(v) => { root.set-hide-special-partitions(v); }
+              set-flag-always-ask(v) => { root.set-download-always-ask(v); }
+              set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
+              set-flag-collapse-sftp(v) => { root.set-collapse-sftp-default(v); }
+              term-font(f) => {
+                  root.set-term-font(f);
+              }
+              term-font-size(n) => {
+                  root.set-term-font-size(n);
+              }
+              term-font-bold(b) => {
+                  root.set-term-font-bold(b);
+              }
+              term-scrollback(v) => {
+                  root.set-scrollback-lines(v);
+              }
+              set-language(lang) => {
+                  root.set-language(lang);
+              }
+              toggle-theme() => {
+                  root.toggle-theme();
+              }
+          }
+      }
+
+      // 右侧工具面板（会话中；AI 暂不做）
+      if root.shell-page == 1 && root.panes.length > 0 && root.right-panel-open : RightPanel {
+          x: root.width - 240px;
+          y: root.shell-top;
+          width: 240px;
+          height: root.height - root.shell-top - 28px;
+          lang-en: root.lang-en;
+          transfers: root.transfers;
+          transfers-active: root.has-active-transfers;
+          sftp-follow-cd: root.sftp-follow-cd;
+          always-ask: root.download-always-ask;
+          set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
+          set-flag-always-ask(v) => { root.set-download-always-ask(v); }
+          // 活动标签的隧道 / SFTP（窗口级镜像，见属性声明处）。
+          tunnels: root.active-tunnels;
+          sftp-path: root.active-sftp-path;
+          sftp-entries: root.active-sftp-entries;
+          sftp-status: root.active-sftp-status;
+          sftp-loading: root.active-sftp-loading;
+          sftp-available: root.active-sftp-available;
+          // 面板是窗口级的，回调统一带上活动标签 id，走既有的 per-tab 链路。
+          sftp-navigate(path) => { root.sftp-navigate(root.active-tab-id, path); }
+          sftp-refresh(path) => { root.sftp-refresh(root.active-tab-id, path); }
+          sftp-download(path) => { root.sftp-download(root.active-tab-id, path); }
+          close-panel() => { root.right-panel-open = false; }
+      }
+
+      // 底部状态栏（参考图：连接状态 / 高亮 / 历史命令 / 传输统计）。
+      if root.shell-page == 1 && root.panes.length > 0 : StatusBar {
+          x: root.rail-w;
+          y: root.height - 28px;
+          width: root.width - root.rail-w;
+          conn-state: root.conn-state;
+          conn-host: root.conn-host;
+          connection-text: root.connection-state;
+          highlight-enabled: root.output-highlight-enabled;
+          history-count: root.command-history.length;
+          transfer-count: root.transfers.length;
+          transfers-active: root.has-active-transfers;
+          lang-en: root.lang-en;
+          toggle-highlight() => {
+              root.output-highlight-enabled = !root.output-highlight-enabled;
+          }
+      }
+
+
+                // 终端页空状态（一个标签都没有时）：参考图的「创建你的第一个终端会话」。
+      // 声明在终端舞台之后 = 盖住它；有标签时这里不实例化，舞台的终端画面就露出来。
+      if root.shell-page == 1 && root.panes.length == 0 : Rectangle {
+          x: root.rail-w;
+          y: root.shell-top;
+          width: root.width - root.rail-w;
+          height: root.height - root.shell-top;
+          background: Theme.bg-root;
+
+          PageTerminal {
+              width: 100%;
+              height: 100%;
+              lang-en: root.lang-en;
+              sessions: root.sessions;
+              new-local-session() => {
+                  // 会话对话框（本地/远程/串口都在里面选）
+                  root.new-session-clicked();
+              }
+              connect-session(id) => {
+                  if (id == "") {
+                      // 「远程 / 串口会话」卡片：去主机管理页新建
+                      root.shell-page = 0;
+                  } else {
+                      root.connect-session(id);
+                  }
+              }
+          }
+      }
+
+      // 笔记随笔 / AI 助手：参考图里有入口，页面规划中（与 Docker 占位同款）。
+      if root.shell-page == 5 || root.shell-page == 6 : Rectangle {
+          x: root.rail-w;
+          y: root.shell-top;
+          width: root.width - root.rail-w;
+          height: root.height - root.shell-top;
+          background: Theme.bg-root;
+
+          VerticalLayout {
+              alignment: center;
+              spacing: Theme.sp-2;
+
+              Text {
+                  text: root.shell-page == 5 ? "\u{E873}" : "\u{E65F}";
+                  font-family: "Material Icons";
+                  font-size: 44px;
+                  color: Theme.fg-3;
+                  horizontal-alignment: center;
+              }
+              Text {
+                  text: root.shell-page == 5 ? "笔记随笔" : "AI 助手";
+                  font-size: 17px;
+                  font-weight: 600;
+                  color: Theme.fg-1;
+                  horizontal-alignment: center;
+              }
+              Text {
+                  text: "规划中 —— 敬请期待";
+                  font-size: 12px;
+                  color: Theme.fg-3;
+                  horizontal-alignment: center;
+              }
+          }
+      }
+
+      // 新标题栏（Windows/Linux）：通栏拖拽 + 双击最大化 + 右上角窗口按钮，
+                // 沉浸式无图标/标题。放在最后声明 = 盖在页面内容之上、按钮可点；
+                // macOS 不实例化（系统红绿灯 + 原生拖拽）。
+                if root.custom-titlebar : AppTitleBar {
+                width: root.width;
+                y: 0;
+                window-maximized: root.window-maximized;
+                win-close() => { root.win-close(); }
+                win-drag() => { root.win-drag(); }
+                win-maximize-toggle() => { root.win-maximize-toggle(); }
+                win-minimize() => { root.win-minimize(); }
+                }
+                }
+
+/// 渲染探测用的小窗口（见 `src/app/window.rs::run_renderer_probe`）。
+///
+/// 屏幕外起一个真窗口渲染一帧，用来判断某个渲染器在这台机器上到底能不能初始化 ——
+/// femtovg 的 GL 上下文是**延迟**创建的，只有真渲染才会暴露驱动问题（虚拟机里的典型情况）。
+export component RendererProbe inherits Window {
+    width: 16px;
+    height: 16px;
+    background: #000000;
+}
+
 
 export component AppShell inherits Window {
     title: "Rudder";
