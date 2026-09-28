@@ -41,6 +41,9 @@ All notable changes are documented here. 本文件记录所有重要变更。
   打开左下角浮层（`shell/history_panel.slint`）：搜索（走 Rust 过滤）、按最新在前列出、
   ▶ 运行到当前会话、🗑 删除该条、点击浮层以外关闭；数据全用既有的
   `history-view` / `history-preview` / `run-command` / `delete-history-cmd` 链路。
+- 终端页重做⑤：无会话空态按参考图补齐 —— 标题行右上角两枚能力徽标（本地与远程支持 /
+  多标签与分屏，窄窗自动收起）、「最近连接」标题用 schedule 图标 + 条数、列表行改成
+  图标方块 + 名称/主机 + 上次使用时间 + 箭头的 42px 行（悬停高亮）。
 
 ## [0.8.0] - 2026-09-26
 

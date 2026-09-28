@@ -43,6 +43,32 @@ component MiniBtn inherits Rectangle {
     }
 }
 
+// 参考图右上角的能力徽标（本地与远程支持 / 多标签与分屏）。
+component Chip inherits Rectangle {
+    in property <string> text;
+
+    height: 20px;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: Theme.sur-2;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            font-size: 10px;
+            color: Theme.fg-3;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 0;
+        }
+    }
+}
+
 component SubCard inherits Rectangle {
     in property <string> title;
     in property <string> desc;
@@ -105,21 +131,35 @@ export component PageTerminal inherits Rectangle {
                     spacing: 14px;
                     alignment: start;
 
-                    // ── 标题 + 副标题 ─────────────────────────────
-                    VerticalLayout {
-                        spacing: 3px;
-                        alignment: start;
+                    // ── 标题 + 副标题 + 能力徽标（参考图右上角两枚）──────
+                    HorizontalLayout {
+                        spacing: 10px;
 
-                        Text {
-                            text: root.lang-en ? "Create your first terminal session" : "创建你的第一个终端会话";
-                            font-size: 16px;
-                            font-weight: 700;
-                            color: Theme.fg-1;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 3px;
+                            alignment: start;
+
+                            Text {
+                                text: root.lang-en ? "Create your first terminal session" : "创建你的第一个终端会话";
+                                font-size: 16px;
+                                font-weight: 700;
+                                color: Theme.fg-1;
+                            }
+                            Text {
+                                text: root.lang-en ? "Local, SSH and serial — sessions persist" : "支持本地、SSH 与串口，会话可持久保存";
+                                font-size: 11px;
+                                color: Theme.fg-3;
+                            }
                         }
-                        Text {
-                            text: root.lang-en ? "Local, SSH and serial — sessions persist" : "支持本地、SSH 与串口，会话可持久保存";
-                            font-size: 11px;
-                            color: Theme.fg-3;
+
+                        // 窄窗时收起徽标，别把标题挤没了
+                        if card.width > 520px : HorizontalLayout {
+                            spacing: 6px;
+                            alignment: end;
+
+                            Chip { text: root.lang-en ? "Local & remote" : "本地与远程支持"; }
+                            Chip { text: root.lang-en ? "Tabs & splits" : "多标签与分屏"; }
                         }
                     }
 
@@ -191,7 +231,7 @@ export component PageTerminal inherits Rectangle {
                         alignment: start;
 
                         Text {
-                            text: "\u{E8B6}"; // schedule/search-ish clock
+                            text: "\u{E8B5}"; // schedule
                             font-family: "Material Icons";
                             font-size: 13px;
                             color: Theme.fg-3;
@@ -201,6 +241,13 @@ export component PageTerminal inherits Rectangle {
                             text: root.lang-en ? "Recent Connections" : "最近连接";
                             font-size: 12px;
                             color: Theme.fg-2;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        if root.sessions.length > 0 : Text {
+                            text: "\{root.sessions.length}";
+                            font-size: 10px;
+                            color: Theme.fg-3;
                             vertical-alignment: center;
                         }
                     }
@@ -216,22 +263,39 @@ export component PageTerminal inherits Rectangle {
                         alignment: start;
 
                         for s in root.sessions : Rectangle {
-                            height: 38px;
-                            border-radius: 6px;
+                            height: 42px;
+                            border-radius: 8px;
                             background: row-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
 
+                            // 行 TouchArea 先声明（画在下层），行内没有别的可点件，
+                            // 这里先声明纯粹是保持"整行可点"的既有语义。
+                            row-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.connect-session(s.id);
+                                }
+                            }
+
                             HorizontalLayout {
-                                padding-left: 10px;
+                                padding-left: 8px;
                                 padding-right: 10px;
                                 spacing: 8px;
 
-                                Text {
-                                    width: 16px;
-                                    text: "\u{EB8E}"; // terminal
-                                    font-family: "Material Icons";
-                                    font-size: 13px;
-                                    color: Theme.fg-3;
-                                    vertical-alignment: center;
+                                // 终端图标（方块底）
+                                Rectangle {
+                                    width: 26px;
+                                    height: 26px;
+                                    border-radius: 7px;
+                                    background: Theme.sur-3;
+
+                                    Text {
+                                        text: "\u{EB8E}"; // terminal
+                                        font-family: "Material Icons";
+                                        font-size: 14px;
+                                        color: Theme.fg-2;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
                                 }
                                 VerticalLayout {
                                     horizontal-stretch: 1;
@@ -253,18 +317,20 @@ export component PageTerminal inherits Rectangle {
                                         overflow: elide;
                                     }
                                 }
+                                // 上次使用时间（`last-used`：ISO 时间戳或 "never"）
+                                if s.last-used != "" && s.last-used != "never" : Text {
+                                    text: s.last-used;
+                                    font-size: 10px;
+                                    color: Theme.fg-3;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
                                 Text {
                                     text: "\u{E5CC}"; // chevron_right
                                     font-family: "Material Icons";
                                     font-size: 15px;
                                     color: Theme.fg-3;
                                     vertical-alignment: center;
-                                }
-                            }
-
-                            row-ta := TouchArea {
-                                clicked => {
-                                    root.connect-session(s.id);
                                 }
                             }
                         }
