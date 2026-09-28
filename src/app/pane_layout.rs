@@ -11,30 +11,17 @@ use crate::ui::{ AppWindow, PaneInfo, SplitterInfo, TabInfo, TerminalState, Them
 use i_slint_backend_winit::WinitWindowAccessor;
 use super::set_terminal_row;
 
-/// Persist the current panel docking layout (both panels' edge + size) and the
-/// window size, so the next launch restores the user's arrangement. Called on
-/// every exit path (#dock).
+/// Persist the window size so the next launch restores the user's arrangement.
+/// Called on every exit path (#dock).
+///
+/// 旧面板停靠几何（侧栏 / SFTP / 快捷面板的停靠边与尺寸）随旧外壳一并删除：
+/// 新外壳里终端区是一张网格（rail + 页面 + 右侧工具面板），没有可停靠面板。
 pub(crate) fn save_layout(win: &AppWindow, store: &Rc<RefCell<ConfigStore>>) {
     let scale = win.window().scale_factor().max(0.01);
     let size = win.window().size();
     let w = size.width as f32 / scale;
     let h = size.height as f32 / scale;
     let mut s = store.borrow_mut();
-    s.set_sidebar_width(win.get_sidebar_width());
-    s.set_sidebar_height(win.get_sidebar_height());
-    s.set_sidebar_dock(win.get_sidebar_dock().to_string());
-    s.set_sidebar_collapsed(win.get_sidebar_collapsed());
-    s.set_sftp_panel_width(win.get_sftp_panel_width());
-    s.set_sftp_panel_height(win.get_sftp_panel_height());
-    s.set_sftp_dock(win.get_sftp_dock().to_string());
-    s.set_quick_panel_open(win.get_quick_panel_open());
-    s.set_quick_panel_collapsed(win.get_quick_panel_collapsed());
-    s.set_quick_panel_width(win.get_quick_panel_width());
-    s.set_quick_panel_height(win.get_quick_panel_height());
-    s.set_quick_panel_dock(win.get_quick_panel_dock().to_string());
-    s.set_welcome_sidebar_width(win.get_welcome_sidebar_width());
-    s.set_welcome_sidebar_dock(win.get_welcome_sidebar_dock().to_string());
-    s.set_welcome_collapsed(win.get_welcome_collapsed());
     // A maximized size isn't a useful "preferred" size to restore to, so only
     // remember the windowed size. Ask the native window too, because the Slint
     // property can lag during startup/shutdown on frameless Windows (#234).

@@ -16,7 +16,6 @@ use crate::ui::{ Theme };
 /// Shared config-store handle (`Rc<RefCell<ConfigStore>>`).
 // 配置存储句柄：与 `super::settings` 共用同一个别名定义。
 use super::settings::{FontCatalog, Store};
-use super::settings::layout::apply_layout_prefs;
 
 /// Settings pages that expose a "restore this page's defaults" button.
 ///
@@ -28,7 +27,6 @@ use super::settings::layout::apply_layout_prefs;
 pub(crate) enum SettingsPage {
     Terminal,
     Appearance,
-    Layout,
     Transfer,
 }
 
@@ -37,7 +35,6 @@ impl SettingsPage {
         match id {
             "terminal" => Some(Self::Terminal),
             "appearance" => Some(Self::Appearance),
-            "layout" => Some(Self::Layout),
             "transfer" => Some(Self::Transfer),
             _ => None,
         }
@@ -52,8 +49,6 @@ impl SettingsPage {
 /// 注：不派生 `Clone` —— 它持有 `ProcWindow`（Slint 组件句柄不实现 Clone），
 /// 且全项目只构造一次、按引用传给 `reset_page`。
 struct ResetRefs {
-    /// 窗格与模型句柄（布局页还原时做窗格树迁移用）。
-    panes: settings::layout::PaneHandles,
     fonts: FontCatalog,
     /// 泵线程读取的「SFTP 跟随 cd」实时标志。还原必须同时更新它，否则配置与
     /// 界面都变了、**已打开会话的行为却没变** —— 表现为"还原不生效"。
@@ -73,7 +68,6 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
         SettingsPage::Appearance => {
             settings::appearance::reset(w, store, bufs, &refs.fonts, &refs.proc_win)
         }
-        SettingsPage::Layout => settings::layout::reset(w, store, &refs.panes),
         SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
     }
 }
@@ -298,18 +292,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     settings::sync::bind(window, store, sessions_model);
     settings::appearance::bind(window, store, bufs, proc_win);
     settings::terminal::bind(window, store, bufs);
-    settings::layout::bind(
-        window,
-        store,
-        handles,
-        &settings::layout::PaneHandles {
-            layout: layout.clone(),
-            content_size: content_size.clone(),
-            tabs_model: tabs_model.clone(),
-            panes_model: panes_model.clone(),
-            splitters_model: splitters_model.clone(),
-        },
-    );
+    settings::layout::bind(window, store);
 
 
 
@@ -333,9 +316,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_mount_filter(s.mount_filter().into());
     }
 
-    // Interface setting: collapse the sidebars by default (#78). Seed the
-    // checkboxes, apply the collapsed state once at startup, and persist toggles.
-    apply_layout_prefs(window, store);
     // Capture the user's preferred size. The first native Resized event
     // drives restoration below; this is deterministic and avoids guessing
     // how long Slint/window-manager initialization takes (#278).
@@ -389,13 +369,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         let r_store = store.clone();
         let r_bufs = bufs.clone();
         let r_refs = ResetRefs {
-            panes: settings::layout::PaneHandles {
-                layout: layout.clone(),
-                content_size: content_size.clone(),
-                tabs_model: tabs_model.clone(),
-                panes_model: panes_model.clone(),
-                splitters_model: splitters_model.clone(),
-            },
             fonts: fonts.clone(),
             sftp_follow_cd: sftp_follow_cd.clone(),
             // 外观页还原可能改变深浅色（默认壁纸是暗色的），已打开的进程监视窗
@@ -620,7 +593,6 @@ mod tests {
         const PAGES: &[&str] = &[
             include_str!("../../ui/settings/pages/terminal.slint"),
             include_str!("../../ui/settings/pages/appearance.slint"),
-            include_str!("../../ui/settings/pages/layout.slint"),
             include_str!("../../ui/settings/pages/transfer.slint"),
         ];
         let mut ids = std::collections::BTreeSet::new();
@@ -665,7 +637,7 @@ mod tests {
     /// "update" 因此必须**不可**解析（曾经存在，2026-09 按规格移除）。
     #[test]
     fn known_page_ids_round_trip() {
-        for id in ["terminal", "appearance", "layout", "transfer"] {
+        for id in ["terminal", "appearance", "transfer"] {
             assert!(SettingsPage::parse(id).is_some(), "{id} 应当可解析");
         }
         for id in ["", "wsl", "sync", "update", "Terminal", "terminals"] {
@@ -840,10 +812,6 @@ mod wiring_tests {
              include_str!("settings/appearance.rs"),
              include_str!("../../ui/settings/pages/appearance.slint"),
              "reset"),
-            ("layout",
-             include_str!("settings/layout.rs"),
-             include_str!("../../ui/settings/pages/layout.slint"),
-             "reset"),
             ("transfer",
              include_str!("settings/transfer.rs"),
              include_str!("../../ui/settings/pages/transfer.slint"),
@@ -878,7 +846,6 @@ mod wiring_tests {
         for (page, src) in [
             ("terminal", include_str!("../../ui/settings/pages/terminal.slint")),
             ("appearance", include_str!("../../ui/settings/pages/appearance.slint")),
-            ("layout", include_str!("../../ui/settings/pages/layout.slint")),
             ("transfer", include_str!("../../ui/settings/pages/transfer.slint")),
         ] {
             assert!(

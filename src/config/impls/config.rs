@@ -597,26 +597,6 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     cfg.defaults_rev = DEFAULTS_REV;
     true
 }
-fn default_sidebar_width() -> f32 {
-    220.0
-}
-fn default_sidebar_height() -> f32 {
-    240.0
-}
-fn default_sftp_width() -> f32 {
-    380.0
-}
-fn default_sftp_height() -> f32 {
-    220.0
-}
-
-fn default_quick_panel_width() -> f32 {
-    260.0
-}
-
-fn default_quick_panel_height() -> f32 {
-    220.0
-}
 fn default_flow() -> String {
     "none".to_string()
 }
@@ -1950,70 +1930,6 @@ impl ConfigStore {
         self.cache.wsl_profiles.retain(|profile| profile.id != id);
     }
 
-    pub fn quick_panel_open(&self) -> bool {
-        self.cache.layout.quick_panel_open
-    }
-
-    pub fn quick_commands_as_sidebar(&self) -> bool {
-        self.cache.layout.quick_commands_as_sidebar
-    }
-
-    pub fn set_quick_commands_as_sidebar(&mut self, enabled: bool) {
-        self.cache.layout.quick_commands_as_sidebar = enabled;
-        if !enabled {
-            self.cache.layout.quick_panel_open = false;
-        }
-    }
-
-    pub fn set_quick_panel_open(&mut self, open: bool) {
-        self.cache.layout.quick_panel_open = open;
-    }
-
-    pub fn quick_panel_collapsed(&self) -> bool {
-        self.cache.layout.quick_panel_collapsed
-    }
-
-    pub fn set_quick_panel_collapsed(&mut self, collapsed: bool) {
-        self.cache.layout.quick_panel_collapsed = collapsed;
-    }
-
-    pub fn quick_panel_width(&self) -> f32 {
-        let width = self.cache.layout.quick_panel_width;
-        if width <= 0.0 {
-            default_quick_panel_width()
-        } else {
-            width
-        }
-    }
-
-    pub fn set_quick_panel_width(&mut self, width: f32) {
-        self.cache.layout.quick_panel_width = width;
-    }
-
-    pub fn quick_panel_height(&self) -> f32 {
-        let height = self.cache.layout.quick_panel_height;
-        if height <= 0.0 {
-            default_quick_panel_height()
-        } else {
-            height
-        }
-    }
-
-    pub fn set_quick_panel_height(&mut self, height: f32) {
-        self.cache.layout.quick_panel_height = height;
-    }
-
-    pub fn quick_panel_dock(&self) -> String {
-        match self.cache.layout.quick_panel_dock.trim() {
-            "left" | "right" | "top" | "bottom" => self.cache.layout.quick_panel_dock.clone(),
-            _ => "right".into(),
-        }
-    }
-
-    pub fn set_quick_panel_dock(&mut self, dock: String) {
-        self.cache.layout.quick_panel_dock = dock;
-    }
-
     /// Explicit quick-command groups (#55) — parallels [`groups`](Self::groups).
     pub fn quick_groups(&self) -> &[String] {
         &self.cache.quick_groups
@@ -2100,90 +2016,11 @@ impl ConfigStore {
     }
 
     /// Collapse the resource sidebar on startup (default false) (#78).
-    pub fn collapse_sidebar_default(&self) -> bool {
-        self.cache.layout.collapse_sidebar_default
-    }
-
-    pub fn set_collapse_sidebar_default(&mut self, v: bool) {
-        self.cache.layout.collapse_sidebar_default = v;
-    }
-
     /// Persisted sidebar width in logical px. Falls back to the default when the
     /// stored value is unset/zero (e.g. a config created via `Default`).
-    pub fn sidebar_width(&self) -> f32 {
-        let w = self.cache.layout.sidebar_width;
-        if w <= 0.0 { default_sidebar_width() } else { w }
-    }
-
-    pub fn set_sidebar_width(&mut self, v: f32) {
-        self.cache.layout.sidebar_width = v;
-    }
-
     /// Resource / SFTP panel docking geometry, persisted across restarts (#dock).
     /// Sizes fall back to their defaults when unset/zero; docks fall back to a
     /// sensible edge when the stored string is empty.
-    pub fn sidebar_height(&self) -> f32 {
-        let h = self.cache.layout.sidebar_height;
-        if h <= 0.0 {
-            default_sidebar_height()
-        } else {
-            h
-        }
-    }
-    pub fn set_sidebar_height(&mut self, v: f32) {
-        self.cache.layout.sidebar_height = v;
-    }
-    pub fn sidebar_dock(&self) -> String {
-        // 白名单，与 `quick_panel_dock` 口径一致：配置是用户可手改的，
-        // `"sidebarDock": "garbage"` 以前会一路传进 Slint 的停靠判定 ——
-        // `left/right/top/bottom` 的分支表全不命中，面板会被算到窗口外（布局静默退化）。
-        match self.cache.layout.sidebar_dock.trim() {
-            "right" => "right".into(),
-            "top" => "top".into(),
-            "bottom" => "bottom".into(),
-            _ => "left".into(),
-        }
-    }
-    pub fn set_sidebar_dock(&mut self, v: String) {
-        self.cache.layout.sidebar_dock = v;
-    }
-    pub fn sidebar_collapsed(&self) -> Option<bool> {
-        self.cache.layout.sidebar_collapsed
-    }
-    pub fn set_sidebar_collapsed(&mut self, v: bool) {
-        self.cache.layout.sidebar_collapsed = Some(v);
-    }
-    pub fn welcome_as_sidebar(&self) -> bool {
-        self.cache.layout.welcome_as_sidebar
-    }
-    pub fn set_welcome_as_sidebar(&mut self, v: bool) {
-        self.cache.layout.welcome_as_sidebar = v;
-    }
-    pub fn welcome_sidebar_width(&self) -> f32 {
-        let w = self.cache.layout.welcome_sidebar_width;
-        if w <= 0.0 { 240.0 } else { w }
-    }
-    pub fn set_welcome_sidebar_width(&mut self, v: f32) {
-        self.cache.layout.welcome_sidebar_width = v;
-    }
-    pub fn welcome_sidebar_dock(&self) -> String {
-        // 白名单，口径与 `sidebar_dock` 一致（见那里的说明）。
-        match self.cache.layout.welcome_sidebar_dock.trim() {
-            "right" => "right".into(),
-            "top" => "top".into(),
-            "bottom" => "bottom".into(),
-            _ => "left".into(),
-        }
-    }
-    pub fn set_welcome_sidebar_dock(&mut self, v: String) {
-        self.cache.layout.welcome_sidebar_dock = v;
-    }
-    pub fn welcome_collapsed(&self) -> Option<bool> {
-        self.cache.layout.welcome_collapsed
-    }
-    pub fn set_welcome_collapsed(&mut self, v: bool) {
-        self.cache.layout.welcome_collapsed = Some(v);
-    }
     /// Whether the startup new-version check is enabled (#184).
     pub fn update_check_enabled(&self) -> bool {
         !self.cache.update.update_check_disabled
@@ -2258,31 +2095,6 @@ impl ConfigStore {
     pub fn set_panel_font(&mut self, percent: u32) {
         self.cache.appearance.panel_font = percent.clamp(80, 160);
     }
-    pub fn sftp_panel_width(&self) -> f32 {
-        let w = self.cache.layout.sftp_panel_width;
-        if w <= 0.0 { default_sftp_width() } else { w }
-    }
-    pub fn set_sftp_panel_width(&mut self, v: f32) {
-        self.cache.layout.sftp_panel_width = v;
-    }
-    pub fn sftp_panel_height(&self) -> f32 {
-        let h = self.cache.layout.sftp_panel_height;
-        if h <= 0.0 { default_sftp_height() } else { h }
-    }
-    pub fn set_sftp_panel_height(&mut self, v: f32) {
-        self.cache.layout.sftp_panel_height = v;
-    }
-    pub fn sftp_dock(&self) -> String {
-        let d = self.cache.layout.sftp_dock.trim();
-        if d.is_empty() {
-            "bottom".into()
-        } else {
-            d.to_string()
-        }
-    }
-    pub fn set_sftp_dock(&mut self, v: String) {
-        self.cache.layout.sftp_dock = v;
-    }
     /// Last window size in logical px; `(0,0)` means unset (use the default).
     pub fn window_size(&self) -> (f32, f32) {
         (self.cache.layout.window_width, self.cache.layout.window_height)
@@ -2293,14 +2105,6 @@ impl ConfigStore {
     }
 
     /// Collapse the SFTP panel on startup (default false) (#78).
-    pub fn collapse_sftp_default(&self) -> bool {
-        self.cache.layout.collapse_sftp_default
-    }
-
-    pub fn set_collapse_sftp_default(&mut self, v: bool) {
-        self.cache.layout.collapse_sftp_default = v;
-    }
-
     /// Mirror SFTP uploads to other sessions while session-sync is on (default
     /// false). Only has effect when the session-sync toggle is on.
     pub fn sync_upload(&self) -> bool {

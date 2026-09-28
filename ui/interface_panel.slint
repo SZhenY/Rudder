@@ -14,7 +14,6 @@ import { NavItem } from "settings/chrome.slint";
 import { ResetBar } from "settings/reset_bar.slint";
 import { TerminalPage } from "settings/pages/terminal.slint";
 import { AppearancePage } from "settings/pages/appearance.slint";
-import { LayoutPage } from "settings/pages/layout.slint";
 import { SyncPage } from "settings/pages/sync.slint";
 import { WslPage } from "settings/pages/wsl.slint";
 import { TransferPage } from "settings/pages/transfer.slint";
@@ -45,8 +44,6 @@ export component InterfacePanel inherits Rectangle {
     in-out property <string> output-highlight-rule-status;
     in property <float> ui-scale;
     in-out property <bool> sftp-follow-cd;
-    in-out property <bool> collapse-sidebar-default;
-    in-out property <bool> collapse-sftp-default;
     in-out property <bool> sync-upload-enabled;
     in-out property <bool> webdav-enabled;
     in-out property <string> webdav-url;
@@ -56,8 +53,6 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> webdav-accept-invalid-certs;
     in-out property <string> webdav-status;
     in-out property <bool> download-always-ask;
-    in-out property <bool> welcome-as-sidebar;
-    in-out property <bool> quick-commands-as-sidebar;
     in-out property <bool> update-check-enabled;
     // Manual "check now" button next to the startup toggle (#self-update).
     in property <string> update-check-status;
@@ -120,15 +115,11 @@ export component InterfacePanel inherits Rectangle {
     callback set-panel-font(int);   // settings-panel font scale, percent
     callback set-renderer-mode(string);
     callback set-sftp-follow-cd(bool);
-    callback set-collapse-sidebar-default(bool);
-    callback set-collapse-sftp-default(bool);
     callback set-sync-upload-enabled(bool);
     callback save-webdav-settings(bool, string, string, string, string, bool);
     callback webdav-upload();
     callback webdav-download();
     callback set-download-always-ask(bool);
-    callback set-welcome-as-sidebar(bool);
-    callback set-quick-commands-as-sidebar(bool);
     callback set-update-check-enabled(bool);   // startup new-version check (#184)
     callback set-update-channel(string);
     callback set-update-freq(int);
@@ -182,11 +173,6 @@ export component InterfacePanel inherits Rectangle {
                     icon: "\u{E2C7}"; label: root.lang-en ? "Transfer" : "传输";
                     active: root.ifd-page == "transfer";
                     clicked => { root.ifd-page = "transfer"; }
-                }
-                NavItem {
-                    icon: "\u{E5CB}"; label: root.lang-en ? "Layout" : "布局";
-                    active: root.ifd-page == "layout";
-                    clicked => { root.ifd-page = "layout"; }
                 }
                 if root.is-windows : NavItem {
                     icon: "\u{E30A}"; label: "WSL";
@@ -307,19 +293,6 @@ export component InterfacePanel inherits Rectangle {
                             upload-ui-font() => { root.upload-ui-font(); }
                             set-ui-scale(a0) => { root.set-ui-scale(a0); }
                             set-wallpaper(a0) => { root.set-wallpaper(a0); }
-                    }
-
-                    if root.ifd-page == "layout" : LayoutPage {
-                            collapse-sftp-default <=> root.collapse-sftp-default;
-                            collapse-sidebar-default <=> root.collapse-sidebar-default;
-                            lang-en: root.lang-en;
-                            quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
-                            welcome-as-sidebar <=> root.welcome-as-sidebar;
-                            reset-page(a0) => { root.reset-page(a0); }
-                            set-collapse-sftp-default(a0) => { root.set-collapse-sftp-default(a0); }
-                            set-collapse-sidebar-default(a0) => { root.set-collapse-sidebar-default(a0); }
-                            set-quick-commands-as-sidebar(a0) => { root.set-quick-commands-as-sidebar(a0); }
-                            set-welcome-as-sidebar(a0) => { root.set-welcome-as-sidebar(a0); }
                     }
 
                     if root.ifd-page == "transfer" : TransferPage {

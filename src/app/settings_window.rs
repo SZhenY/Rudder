@@ -206,8 +206,6 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_accent_presets(m.get_accent_presets());
     sw.set_accent_hex(m.get_accent_hex());
     sw.set_accent_name(m.get_accent_name());
-    sw.set_collapse_sftp_default(m.get_collapse_sftp_default());
-    sw.set_collapse_sidebar_default(m.get_collapse_sidebar_default());
     sw.set_convert_eol(m.get_convert_eol());
     sw.set_current_wallpaper(m.get_current_wallpaper());
     sw.set_custom_wallpaper_name(m.get_custom_wallpaper_name());
@@ -225,9 +223,6 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_output_highlight_preset(m.get_output_highlight_preset());
     sw.set_output_highlight_rule_status(m.get_output_highlight_rule_status());
     sw.set_output_highlight_rules(m.get_output_highlight_rules());
-    sw.set_quick_commands_as_sidebar(m.get_quick_commands_as_sidebar());
-    sw.set_quick_panel_collapsed(m.get_quick_panel_collapsed());
-    sw.set_quick_panel_open(m.get_quick_panel_open());
     sw.set_renderer_mode(m.get_renderer_mode());
     sw.set_scrollback_lines(m.get_scrollback_lines());
     sw.set_sftp_follow_cd(m.get_sftp_follow_cd());
@@ -254,7 +249,6 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_webdav_status(m.get_webdav_status());
     sw.set_webdav_url(m.get_webdav_url());
     sw.set_webdav_username(m.get_webdav_username());
-    sw.set_welcome_as_sidebar(m.get_welcome_as_sidebar());
     sw.set_wsl_new_directory(m.get_wsl_new_directory());
     sw.set_wsl_profiles(m.get_wsl_profiles());
 }
@@ -317,8 +311,6 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_reset_page => invoke_reset_page, (a0));
     forward!(sw, m, s, on_save_webdav_settings => invoke_save_webdav_settings, (a0, a1, a2, a3, a4, a5));
     forward!(sw, m, s, on_set_animations_enabled => invoke_set_animations_enabled, (a0));
-    forward!(sw, m, s, on_set_collapse_sftp_default => invoke_set_collapse_sftp_default, (a0));
-    forward!(sw, m, s, on_set_collapse_sidebar_default => invoke_set_collapse_sidebar_default, (a0));
     forward!(sw, m, s, on_set_convert_eol => invoke_set_convert_eol, (a0));
     forward!(sw, m, s, on_set_download_always_ask => invoke_set_download_always_ask, (a0));
     forward!(sw, m, s, on_set_hide_special_partitions => invoke_set_hide_special_partitions, (a0));
@@ -329,7 +321,6 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_output_highlight => invoke_set_output_highlight, (a0, a1));
     forward!(sw, m, s, on_set_output_highlight_rule_enabled => invoke_set_output_highlight_rule_enabled, (a0, a1));
     forward!(sw, m, s, on_set_panel_font => invoke_set_panel_font, (a0));
-    forward!(sw, m, s, on_set_quick_commands_as_sidebar => invoke_set_quick_commands_as_sidebar, (a0));
     forward!(sw, m, s, on_set_renderer_mode => invoke_set_renderer_mode, (a0));
     forward!(sw, m, s, on_set_scrollback_lines -> invoke_set_scrollback_lines, (a0));
     forward!(sw, m, s, on_set_sftp_follow_cd => invoke_set_sftp_follow_cd, (a0));
@@ -351,7 +342,6 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_update_channel => invoke_set_update_channel, (a0));
     forward!(sw, m, s, on_set_update_freq => invoke_set_update_freq, (a0));
     forward!(sw, m, s, on_set_wallpaper => invoke_set_wallpaper, (a0));
-    forward!(sw, m, s, on_set_welcome_as_sidebar => invoke_set_welcome_as_sidebar, (a0));
     forward!(sw, m, s, on_webdav_download => invoke_webdav_download, ());
     forward!(sw, m, s, on_webdav_upload => invoke_webdav_upload, ());
 }

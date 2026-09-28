@@ -691,6 +691,9 @@ pub(crate) fn reset(
     w.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0);
     w.set_renderer_mode(s.renderer_mode().into());
     w.global::<Theme>().set_panel_alpha(s.wallpaper_overlay());
+    // 动画开关此前是 Slint-only 全局、从不持久化；现在与其它偏好一样由 config 驱动。
+    // （原先播种在「布局」页的 apply_layout_prefs 里 —— 那页已随旧外壳删除，挪到外观域。）
+    w.global::<AnimationSettings>().set_enabled(s.animations_enabled());
     w.set_hide_special_partitions(s.hide_special_partitions());
     drop(s);
     // 壁纸切换有完整的换肤 / 调色板派生流程，必须走 apply_wallpaper。

@@ -111,8 +111,6 @@ export component SettingsWindow inherits Window {
     in property <[AccentPreset]> accent-presets;
     in-out property <string> accent-hex:"";
     in property <string> accent-name:"";
-    in-out property <bool> collapse-sftp-default:false;
-    in-out property <bool> collapse-sidebar-default:false;
     in-out property <bool> convert-eol:false;
     in property <string> current-wallpaper:"";
     in property <string> custom-wallpaper-name:"";
@@ -132,9 +130,6 @@ export component SettingsWindow inherits Window {
     in-out property <string> output-highlight-preset:"log";
     in-out property <string> output-highlight-rule-status;
     in property <[OutputRuleItem]> output-highlight-rules;
-    in-out property <bool> quick-commands-as-sidebar:false;
-    in-out property <bool> quick-panel-collapsed:false;
-    in-out property <bool> quick-panel-open:false;
     in-out property <string> renderer-mode:"software";
     in-out property <string> scrollback-lines:"5000";
     in-out property <bool> sftp-follow-cd:true;
@@ -161,7 +156,6 @@ export component SettingsWindow inherits Window {
     in-out property <string> webdav-status;
     in-out property <string> webdav-url;
     in-out property <string> webdav-username;
-    in-out property <bool> welcome-as-sidebar:false;
     in-out property <string> wsl-new-directory:"~";
     in property <[WslProfileInfo]> wsl-profiles;
 
@@ -179,8 +173,6 @@ export component SettingsWindow inherits Window {
     callback reset-page(string);
     callback save-webdav-settings(bool, string, string, string, string, bool);
     callback set-animations-enabled(bool);
-    callback set-collapse-sftp-default(bool);
-    callback set-collapse-sidebar-default(bool);
     callback set-convert-eol(bool);
     callback set-download-always-ask(bool);
     callback set-hide-special-partitions(bool);
@@ -191,7 +183,6 @@ export component SettingsWindow inherits Window {
     callback set-output-highlight(bool, string);
     callback set-output-highlight-rule-enabled(int, bool);
     callback set-panel-font(int);
-    callback set-quick-commands-as-sidebar(bool);
     callback set-renderer-mode(string);
     callback set-scrollback-lines(string) -> bool;
     callback set-sftp-follow-cd(bool);
@@ -213,7 +204,6 @@ export component SettingsWindow inherits Window {
     callback set-update-channel(string);
     callback set-update-freq(int);
     callback set-wallpaper(string);
-    callback set-welcome-as-sidebar(bool);
     callback webdav-download();
     callback webdav-upload();
 
@@ -289,8 +279,6 @@ export component SettingsWindow inherits Window {
                 output-highlight-rule-status <=> output-highlight-rule-status;
                 ui-scale: Theme.ui-scale;
                 sftp-follow-cd <=> sftp-follow-cd;
-                collapse-sidebar-default <=> collapse-sidebar-default;
-                collapse-sftp-default <=> collapse-sftp-default;
                 sync-upload-enabled <=> sync-upload-enabled;
                 webdav-enabled <=> webdav-enabled;
                 webdav-url <=> webdav-url;
@@ -301,8 +289,6 @@ export component SettingsWindow inherits Window {
                 webdav-status <=> webdav-status;
                 download-always-ask <=> download-always-ask;
                 reset-page(page) => { root.reset-page(page); }
-                welcome-as-sidebar <=> welcome-as-sidebar;
-                quick-commands-as-sidebar <=> quick-commands-as-sidebar;
                 update-check-enabled <=> update-check-enabled;
                 update-check-status: update-check-status;
                 update-checking: update-checking;
@@ -361,8 +347,6 @@ export component SettingsWindow inherits Window {
                 set-panel-font(v) => { root.set-panel-font(v); }
                 set-renderer-mode(v) => { root.set-renderer-mode(v); }
                 set-sftp-follow-cd(v) => { root.set-sftp-follow-cd(v); }
-                set-collapse-sidebar-default(v) => { root.set-collapse-sidebar-default(v); }
-                set-collapse-sftp-default(v) => { root.set-collapse-sftp-default(v); }
                 set-sync-upload-enabled(v) => { root.set-sync-upload-enabled(v); }
                 save-webdav-settings(enabled, url, username, password, remote-path, accept-invalid-certs) => {
                     root.save-webdav-settings(enabled, url, username, password, remote-path, accept-invalid-certs);
@@ -370,15 +354,6 @@ export component SettingsWindow inherits Window {
                 webdav-upload => { root.webdav-upload(); }
                 webdav-download => { root.webdav-download(); }
                 set-download-always-ask(v) => { root.set-download-always-ask(v); }
-                set-welcome-as-sidebar(v) => { root.set-welcome-as-sidebar(v); }
-                set-quick-commands-as-sidebar(v) => {
-                    quick-commands-as-sidebar = v;
-                    if (!v) {
-                        quick-panel-open = false;
-                        quick-panel-collapsed = false;
-                    }
-                    root.set-quick-commands-as-sidebar(v);
-                }
                 set-update-check-enabled(v) => { root.set-update-check-enabled(v); }
                 set-update-channel(w0) => { root.set-update-channel(w0); }
                 set-update-freq(w1) => { root.set-update-freq(w1); }

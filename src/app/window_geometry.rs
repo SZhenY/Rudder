@@ -141,23 +141,6 @@ pub(crate) fn terminal_wheel_hit(
     })
 }
 
-pub(crate) fn shrink_edge(x: &mut f32, y: &mut f32, w: &mut f32, h: &mut f32, dock: &str, amount: f32) {
-    let amount = amount.max(0.0);
-    match dock {
-        "left" => {
-            *x += amount;
-            *w = (*w - amount).max(0.0);
-        }
-        "right" => *w = (*w - amount).max(0.0),
-        "top" => {
-            *y += amount;
-            *h = (*h - amount).max(0.0);
-        }
-        "bottom" => *h = (*h - amount).max(0.0),
-        _ => {}
-    }
-}
-
 pub(crate) fn contains_logical(rect: LogicalRect, x: f32, y: f32) -> bool {
     x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
 }
@@ -180,68 +163,9 @@ pub(crate) fn app_content_area(win: &AppWindow) -> LogicalRect {
     };
     area.h = size.height as f32 / scale - area.y;
 
-    if win.get_welcome_as_sidebar() {
-        let dock = win.get_welcome_sidebar_dock().to_string();
-        let sidebar_strip_outside = !win.get_welcome_collapsed()
-            && win.get_sidebar_collapsed()
-            && win.get_sidebar_dock().as_str() == dock.as_str();
-        let welcome_taken = (if win.get_welcome_collapsed() {
-            36.0
-        } else {
-            win.get_welcome_sidebar_width()
-        }) + if sidebar_strip_outside { 36.0 } else { 0.0 };
-        shrink_edge(
-            &mut area.x,
-            &mut area.y,
-            &mut area.w,
-            &mut area.h,
-            &dock,
-            welcome_taken,
-        );
-    }
-
-    let side_dock = win.get_sidebar_dock().to_string();
-    let side_take = if win.get_sidebar_collapsed() {
-        36.0
-    } else if side_dock == "left" || side_dock == "right" {
-        win.get_sidebar_width() + 4.0
-    } else {
-        win.get_sidebar_height() + 4.0
-    };
-    shrink_edge(
-        &mut area.x,
-        &mut area.y,
-        &mut area.w,
-        &mut area.h,
-        &side_dock,
-        side_take,
-    );
-    if win.get_quick_panel_open() {
-        let quick_dock = win.get_quick_panel_dock().to_string();
-        let quick_merged = win.get_quick_panel_collapsed()
-            && ((win.get_welcome_as_sidebar()
-                && win.get_welcome_collapsed()
-                && win.get_welcome_sidebar_dock().as_str() == quick_dock.as_str())
-                || (win.get_sidebar_collapsed() && side_dock.as_str() == quick_dock.as_str()));
-        if quick_merged {
-            return area;
-        }
-        let quick_take = if win.get_quick_panel_collapsed() {
-            36.0
-        } else if quick_dock == "left" || quick_dock == "right" {
-            win.get_quick_panel_width() + 4.0
-        } else {
-            win.get_quick_panel_height() + 4.0
-        };
-        shrink_edge(
-            &mut area.x,
-            &mut area.y,
-            &mut area.w,
-            &mut area.h,
-            &quick_dock,
-            quick_take,
-        );
-    }
+    // 新外壳没有任何可停靠面板（rail + 页面 + 右侧工具面板都画在内容区之外，
+    // 内容尺寸由 UI 经 content-resized 上报）—— 旧的四向停靠收缩（欢迎侧栏 /
+    // 资源侧栏 / 快捷面板）随设置页「布局」一起删除。这里只剩"让开标题栏"。
     area
 }
 
@@ -439,47 +363,6 @@ mod tests {
         LogicalRect { x, y, w, h }
     }
 
-    /// 四种停靠边各自让出空间的方向（left/top 还要把起点挪开）。
-    #[test]
-    fn shrink_edge_shrinks_per_dock_side() {
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "left", 8.0);
-        assert_eq!((x, y, w, h), (18.0, 20.0, 92.0, 50.0), "left：起点右移 + 减宽");
-
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "right", 8.0);
-        assert_eq!((x, y, w, h), (10.0, 20.0, 92.0, 50.0), "right：只减宽");
-
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "top", 8.0);
-        assert_eq!((x, y, w, h), (10.0, 28.0, 100.0, 42.0), "top：起点下移 + 减高");
-
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "bottom", 8.0);
-        assert_eq!((x, y, w, h), (10.0, 20.0, 100.0, 42.0), "bottom：只减高");
-    }
-
-    /// 未知停靠值不动（停靠边是配置里的字符串，拼错不应被当成某个方向）。
-    #[test]
-    fn shrink_edge_ignores_unknown_dock() {
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "center", 8.0);
-        assert_eq!((x, y, w, h), (10.0, 20.0, 100.0, 50.0));
-    }
-
-    /// 负的 amount 视作 0；缩过头时宽高夹在 0（不能出现负数 —— 后面要拿它算
-    /// 单元格宽高，负值会传染成 NaN）。
-    #[test]
-    fn shrink_edge_clamps_amount_and_dimensions() {
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "left", -5.0);
-        assert_eq!((x, w), (10.0, 100.0), "负数 = 不缩");
-
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "left", 500.0);
-        assert_eq!(w, 0.0, "宽度缩到 0 为止");
-        assert_eq!(x, 510.0, "起点仍按 amount 移动（被夹的只是宽高）");
-    }
 
     /// 命中判定是**闭区间**：正好落在右/下边缘也算命中。
     #[test]
