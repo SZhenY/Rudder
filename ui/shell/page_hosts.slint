@@ -5,14 +5,57 @@
 
 import { Theme } from "../theme.slint";
 import { SessionInfo } from "../session_types.slint";
+import { ConfirmDialog } from "../confirm_dialog.slint";
 
-// 主机卡片（参考图 主机.png）：图标块 + 名称 / SSH 徽标 + 连接信息 + 分组 + 快速连接。
-// 网格里按 `session` 实例化；整卡点击 = 快速连接，右上角 ✎ = 编辑（常驻按钮）。
+// 卡片菜单里的一行（参考图 主机-卡片-菜单.png：图标 + 文案，删除是红色）。
+component MenuRow inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    in property <bool> danger: false;
+    callback clicked();
+
+    height: 30px;
+    border-radius: 6px;
+    background: ta.has-hover ? (root.danger ? Theme.danger.with-alpha(0.14) : Theme.sur-3) : transparent;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 8px;
+
+        Text {
+            text: root.glyph;
+            font-family: "Material Icons";
+            font-size: 14px;
+            color: root.danger ? Theme.danger : Theme.fg-3;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.label;
+            font-size: 12px;
+            color: root.danger ? Theme.danger : Theme.fg-1;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 component HostCard inherits Rectangle {
     in property <SessionInfo> session;
     in property <bool> lang-en: false;
+    // 「⋯」菜单是否展开（卡片内浮层，见卡片末尾）
+    property <bool> menu-open: false;
     callback connect();
     callback edit();
+    callback duplicate();
+    callback remove();
 
     // 主机卡片：图标块 + 名称/SSH 徽标 + 连接信息 + 快速连接
     width: 340px;
@@ -20,8 +63,8 @@ component HostCard inherits Rectangle {
     border-radius: Theme.radius-lg;
     border-width: 1px;
     border-color: Theme.line;
-    // 悬停在卡片或右上角 ✎ 上都算"卡片悬停"（否则鼠标移到按钮上时底色会闪）。
-    background: (card-ta.has-hover || edit-ta.has-hover) ? Theme.sur-3 : Theme.sur-2;
+    // 悬停在卡片或右上角「⋯」上都算"卡片悬停"（否则鼠标移到按钮上时底色会闪）。
+    background: (card-ta.has-hover || menu-ta.has-hover) ? Theme.sur-3 : Theme.sur-2;
     clip: true;
 
     // 整卡点击 = 快速连接。**先声明 = 画在下层**：右上角的 ✎
@@ -108,12 +151,31 @@ component HostCard inherits Rectangle {
                 background: Theme.sur-3;
 
                 Text {
-                    text: root.session.group == "" ? "默认分组" : root.session.group;
+                    text: root.session.group == ""
+                        ? (root.lang-en ? "Default" : "默认分组")
+                        : root.session.group;
                     font-size: 10px;
                     color: Theme.fg-2;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
+            }
+
+            // 备注 / 标签两行（参考图 主机.png 卡片下半部分）：备注是真数据，
+            // 空时显示「暂无备注」；标签体系还没进配置，先按参考图显示「无标签」
+            //（与左侧「标签筛选」里的占位 chip 同一约定）。
+            Text {
+                text: root.session.note == ""
+                    ? (root.lang-en ? "No note" : "暂无备注")
+                    : root.session.note;
+                font-size: 10px;
+                color: Theme.fg-3;
+                overflow: elide;
+            }
+            Text {
+                text: root.lang-en ? "No tags" : "无标签";
+                font-size: 10px;
+                color: Theme.fg-3;
             }
         }
 
@@ -138,9 +200,9 @@ component HostCard inherits Rectangle {
         }
     }
 
-    // 编辑：**常驻**右上角（声明在最后 = 画在最上层）。
-    // 曾经写成"悬停卡片才出现"：鼠标一移到按钮上，卡片的 TouchArea 就失去 hover，
-    // 按钮 opacity 归零且 `enabled` 变 false —— 既点不到，点击还穿透到卡片进终端。
+    // 卡片右上角「⋯」菜单按钮（参考图 主机-卡片-菜单.png）。
+    // 悬停时"亮起"，但**始终可点**：`enabled` 绝不挂在 hover 上 —— 鼠标从卡片移到
+    // 按钮上时若把它禁用，它自己的 hover 就永远来不了（之前 ✎ 踩过的死锁）。
     Rectangle {
         x: parent.width - self.width - 8px;
         y: 8px;
@@ -149,21 +211,74 @@ component HostCard inherits Rectangle {
         border-radius: Theme.radius-sm;
         border-width: 1px;
         border-color: Theme.line;
-        background: edit-ta.has-hover ? Theme.sur-3 : Theme.sur-1;
+        opacity: (card-ta.has-hover || menu-ta.has-hover || root.menu-open) ? 1 : 0.45;
+        background: root.menu-open ? Theme.sur-3 : Theme.sur-1;
 
         Text {
-            text: "\u{E3C9}"; // edit
+            text: "\u{E5D3}"; // more_horiz
             font-family: "Material Icons";
-            font-size: 14px;
+            font-size: 15px;
             color: Theme.fg-2;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
 
-        edit-ta := TouchArea {
+        menu-ta := TouchArea {
             mouse-cursor: pointer;
             clicked => {
-                root.edit();
+                root.menu-open = !root.menu-open;
+            }
+        }
+    }
+
+    // 点卡片其它地方收起菜单。声明在面板之前 = 在面板下层；`enabled` 只在菜单打开
+    // 时生效，平时点卡片照旧走"快速连接"。
+    TouchArea {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        enabled: root.menu-open;
+        clicked => {
+            root.menu-open = false;
+        }
+    }
+
+    // 展开的菜单：**卡片内浮层**，不是 PopupWindow —— 卡片在 Flickable 里，弹层在
+    // 这个上下文里没验证过（对话框的协议下拉就翻过车），内浮层 100% 可控。
+    Rectangle {
+        visible: root.menu-open;
+        x: parent.width - self.width - 8px;
+        y: 40px;
+        width: 156px;
+        height: 3 * 30px + 8px;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.line;
+        background: Theme.sur-1;
+        drop-shadow-blur: Theme.shadow-popup-blur;
+        drop-shadow-color: Theme.shadow-popup-color;
+
+        VerticalLayout {
+            padding: 4px;
+            spacing: 1px;
+            alignment: start;
+
+            MenuRow {
+                glyph: "\u{E3C9}"; // edit
+                label: root.lang-en ? "Edit" : "编辑";
+                clicked => { root.menu-open = false; root.edit(); }
+            }
+            MenuRow {
+                glyph: "\u{E14D}"; // content_copy —— 克隆
+                label: root.lang-en ? "Duplicate" : "克隆";
+                clicked => { root.menu-open = false; root.duplicate(); }
+            }
+            MenuRow {
+                glyph: "\u{E872}"; // delete
+                label: root.lang-en ? "Delete" : "删除";
+                danger: true;
+                clicked => { root.menu-open = false; root.remove(); }
             }
         }
     }
@@ -180,6 +295,12 @@ export component PageHosts inherits Rectangle {
     callback connect-session(string /* id */);
     // 编辑主机：卡片右上角的 ✎（Rust 侧 on_edit_session 会填好草稿并打开对话框）
     callback edit-session(string /* id */);
+    // 克隆 / 删除主机（删除在本页先弹确认框，确认后回调窗口 → Rust）
+    callback duplicate-session(string /* id */);
+    callback remove-session(string /* id */, string /* name；确认框里显示 */);
+    // 待删除的会话（非空 = 确认框打开）
+    property <string> pending-remove-id;
+    property <string> pending-remove-name;
 
     background: Theme.sur-0;
 
@@ -342,20 +463,19 @@ export component PageHosts inherits Rectangle {
                     }
 
                     // 宽度由文案决定（中英长度不同），避免固定 96px 时溢出/挤边。
+                    // 参考图里是实心强调色按钮 —— 与右侧工具面板的主按钮一致。
                     Rectangle {
                         width: new-label.preferred-width + 28px;
                         height: 30px;
                         border-radius: Theme.radius-md;
-                        border-width: 1px;
-                        border-color: Theme.line-strong;
-                        background: new-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+                        background: new-ta.has-hover ? Theme.accent.with-alpha(0.88) : Theme.accent;
 
                         new-label := Text {
                             x: 14px;
                             width: parent.width - 28px;
                             text: root.lang-en ? "+ New Host" : "+ 新建主机";
                             font-size: 12px;
-                            color: Theme.fg-1;
+                            color: #ffffff;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                             overflow: elide;
@@ -420,10 +540,37 @@ export component PageHosts inherits Rectangle {
                             edit() => {
                                 root.edit-session(root.sessions[r * grid.cols + c].id);
                             }
+                            duplicate() => {
+                                root.duplicate-session(root.sessions[r * grid.cols + c].id);
+                            }
+                            remove() => {
+                                // 先弹确认（删除是破坏性动作），确认后才落回调链。
+                                root.pending-remove-id = root.sessions[r * grid.cols + c].id;
+                                root.pending-remove-name = root.sessions[r * grid.cols + c].name;
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+    // 删除确认（参考图里删除是菜单里的一项；破坏性动作前先确认，确认后才走回调链）。
+    // 这个确认框是本页私有的：确认框组件通用，但"删除主机"要经过本页 → 窗口 → Rust。
+    ConfirmDialog {
+        is-open: root.pending-remove-id != "";
+        title: root.lang-en ? "Delete host" : "删除主机";
+        message: root.lang-en
+            ? "Delete \u{201c}\{root.pending-remove-name}\u{201d}? Its saved settings (host, key path, forwards) are removed; the session list is refreshed."
+            : "确定删除「\{root.pending-remove-name}」？该主机的保存配置（地址 / 密钥路径 / 端口转发等）会被移除，列表随后刷新。";
+        confirm-label: root.lang-en ? "Delete" : "删除";
+        confirm() => {
+            root.remove-session(root.pending-remove-id, root.pending-remove-name);
+            root.pending-remove-id = "";
+            root.pending-remove-name = "";
+        }
+        cancel() => {
+            root.pending-remove-id = "";
+            root.pending-remove-name = "";
         }
     }
 }

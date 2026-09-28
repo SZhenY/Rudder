@@ -28,6 +28,7 @@ export struct SessionInfo {
     group-header: string, // set on the first row of each group → render a header
     collapsed: bool,      // group is collapsed → this session row is hidden
     builtin: bool,        // built-in local shell, not a saved server session
+    note: string,         // 备注（主机卡片上显示；空 = 卡片显示「暂无备注」）
 }
 
 export struct PortFwd {

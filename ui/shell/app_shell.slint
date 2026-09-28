@@ -1113,6 +1113,13 @@ export component AppWindow inherits Window {
                 edit-session(id) => {
                     root.edit-session(id);
                 }
+                duplicate-session(id) => {
+                    root.duplicate-session(id);
+                }
+                // 删除前已在主机页弹过确认；这里只透传 id（name 只给确认框显示用）。
+                remove-session(id, name) => {
+                    root.remove-session(id);
+                }
             }
         }
 
