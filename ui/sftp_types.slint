@@ -1,0 +1,47 @@
+//! SFTP / 隧道的**数据类型**：文件列表一行、目录树节点、运行时隧道一行。
+//!
+//! 旧外壳删除④：这三个 struct 原先定义在 `sftp_panel.slint`（旧 SFTP 面板组件文件）。
+//! 新外壳的右面板（`shell/right_panel.slint`）与终端舞台类型（`shell/stage_types.slint`）
+//! 都要用它们，不该反向依赖一个等着被删的组件文件，所以先挪到这份幸存文件里 ——
+//! `sftp_panel.slint` 改为 import + 再导出，老导入点（含 Rust 侧 `crate::ui::SftpEntry` /
+//! `TunnelInfo` / `SftpTreeNode`）与生成的类型名都不变。
+//!
+//! 等右面板的 SFTP 功能对齐、`sftp_panel.slint` 真正删除时，其余导入点换到这里即可。
+
+// One remote file-list row. `mode` / `entry-type` / `permissions` are all derived
+// from the full POSIX mode bits on the Rust side (upstream ed7f231) — the UI never
+// re-computes them.
+export struct SftpEntry {
+    name: string,
+    full-path: string,
+    is-dir: bool,
+    size: string,
+    size-bytes: float,
+    modified: string,
+    modified-ts: float,
+    mode: int,        // POSIX permission bits, for the chmod dialog (#84)
+    // 「类型 / 权限」两列：都由完整 mode 位在 Rust 侧算出，不需要额外往返。
+    entry-type: string,      // dir / file / link / socket / fifo / char / block / ?
+    permissions: string,     // ls -l 风格的 9 位（rwxr-xr-x）
+    selected: bool,   // multi-select checkbox state (#100)
+}
+
+// One row of the directory tree the old SFTP panel shows on the left.
+export struct SftpTreeNode {
+    path: string,
+    name: string,
+    depth: int,
+    expanded: bool,
+    has-children: bool,
+}
+
+// One runtime SSH tunnel row (#206), mirrored from `SessionEvent::TunnelUpdate`.
+export struct TunnelInfo {
+    id: string,
+    name: string,
+    kind: string,
+    bind: string,
+    target: string,
+    status: string,
+    active: bool,
+}

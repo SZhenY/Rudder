@@ -99,10 +99,8 @@ fn main() -> anyhow::Result<()> {
     // are handled instead by the C0-marker + 3-layer Backspace filters in
     // `app::on_send_key`, so we no longer need (and must not use) ImmDisableIME.
 
-    if std::env::args().any(|arg| arg == "--ui=shell") {
-        return app::run_shell();
-    }
-
+    // 旧外壳删除④：`--ui=shell`（新外壳原型窗口）那条并行分支已删 —— 现在只有
+    // 一套界面，入口是 `ui/shell/app_shell.slint` 的 `AppWindow`。
     app::run()
 }
 

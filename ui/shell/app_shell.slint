@@ -1,16 +1,16 @@
-// 新外壳 = 整个应用窗口（UI 重构·旧外壳删除③）。
+// 新外壳 = 整个应用窗口（UI 重构·旧外壳删除③④）。
 //
 // 本文件是 **build.rs 编译的唯一入口**，也是主窗口 `AppWindow` 的家 —— 原先它在
-// `ui/app.slint`，那一步连同旧外壳（旧侧栏 / 旧资源面板 / 旧欢迎侧栏 / 旧标签条）
+// `ui/app.slint`，第③步连同旧外壳（旧侧栏 / 旧资源面板 / 旧欢迎侧栏 / 旧标签条）
 // 一起删除：`AppWindow` 的属性 / 回调接口**一个都没动**，所以 Rust 侧接线一行未改。
 //
-// 本文件声明两个窗口：
-//   * `AppWindow` —— 真正的主窗口：左侧栏（Rail）+ 页面 + 终端舞台 + 底部状态栏
-//     + 各对话框 / 弹窗（原 app.slint 的内容，逐字搬来，只改了 import 相对路径）；
-//   * `AppShell`  —— `--ui=shell` 启动的**独立原型窗口**（本文件末尾），收尾那步决定去留。
+// 窗口构成：左侧栏（Rail）+ 页面（主机 / 终端 / 指令集 / Docker / 设置）
+// + 终端舞台（`shell/terminal_stage.slint`）+ 右侧工具面板 + 底部状态栏
+// + 各对话框 / 弹窗（原 app.slint 的内容，逐字搬来，只改了 import 相对路径）。
 //
-// 历史：ui/app.slint 曾是入口，用 `export { AppShell } from "shell/app_shell.slint";`
-// 把原型拉进编译图；现在反过来 —— 入口在这里，AppWindow 也从这里导出。
+// 文件末尾的 `RendererProbe` 是渲染探测用的小窗口（`--probe-renderer`），与主窗口
+// 无关但必须在同一份编译单元里。第④步已删掉 `--ui=shell` 的独立原型窗口 `AppShell`：
+// 现在只有一套界面，不再需要并行的对照原型。
 // Embedded cross-platform fonts (compile-time): terminal monospace + UI icons.
 import { AnimationSettings } from "../theme.slint";
 // Embedding means Windows / Linux / macOS all render the same glyphs without
@@ -56,7 +56,7 @@ import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "../session_d
 // ②-2 之后本文件不再直接实例化 TerminalView（终端舞台接管）；QuickCmd 仍要
 // import —— 它在本文件被用作属性类型，且在下面的 export 清单里（Rust 生成类型）。
 import { QuickCmd } from "../terminal_view.slint";
-import { SftpEntry, SftpTreeNode, TunnelInfo } from "../sftp_panel.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "../sftp_types.slint";
 import { ProcWindow, ProcRow } from "../proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "../system_info_window.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset } from "../settings/types.slint";
@@ -1673,92 +1673,4 @@ export component RendererProbe inherits Window {
     width: 16px;
     height: 16px;
     background: #000000;
-}
-
-
-export component AppShell inherits Window {
-    title: "Rudder";
-    min-width: 960px;
-    min-height: 600px;
-    preferred-width: 1440px;
-    preferred-height: 900px;
-    background: Theme.window-base;
-
-    // 0 主机 · 1 终端 · 2 指令集 · 3 Docker · 4 设置
-    in-out property <int> page: 0;
-    in-out property <bool> rail-collapsed: false;
-    in property <[SessionInfo]> sessions;
-    callback connect-session(string /* id */);
-    callback new-session();
-    callback new-local-session();
-
-    VerticalLayout {
-        HorizontalLayout {
-            Rail {
-                current-page: root.page;
-                // 双向：Rail 内部折叠按钮改的是自己的 collapsed，单向绑定传不回来。
-                collapsed <=> root.rail-collapsed;
-                // 切换页面：早先漏了这条接线，点侧栏只有"当前页属性"变了、没人改 root.page，
-                // 于是除初始页以外都点不动。
-                page-changed(p) => {
-                    root.page = p;
-                }
-                search-requested() => {
-                    // 全局搜索（⌘K）后续接入
-                }
-            }
-
-            // 内容区
-            Rectangle {
-                horizontal-stretch: 1;
-                background: Theme.bg-root;
-
-                if root.page == 0 : PageHosts {
-                    sessions: root.sessions;
-                    connect-session(id) => {
-                        root.connect-session(id);
-                    }
-                    new-session() => {
-                        root.new-session();
-                    }
-                }
-
-                if root.page == 1 : PageTerminal {
-                    sessions: root.sessions;
-                    connect-session(id) => {
-                        root.connect-session(id);
-                    }
-                    new-local-session() => {
-                        root.new-local-session();
-                    }
-                }
-
-                if root.page >= 2 : Text {
-                    text: root.page == 2
-                        ? "指令集（下一步接）"
-                        : root.page == 3
-                        ? "Docker（占位）"
-                        : "设置（下一步接）";
-                    font-size: 20px;
-                    color: Theme.rail-fg;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-            }
-        }
-
-        // 底部状态栏（下一步接入真实条目）
-        Rectangle {
-            height: 28px;
-            background: Theme.rail-bg;
-
-            Text {
-                text: "底部状态栏：隧道 / 高亮 / 重连 / 历史命令 / 传输统计";
-                font-size: 11px;
-                color: Theme.rail-fg;
-                vertical-alignment: center;
-                x: 12px;
-            }
-        }
-    }
 }

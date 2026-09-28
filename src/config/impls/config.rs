@@ -4092,7 +4092,7 @@ mod domain_split_compat_tests {
         assert_eq!(
             LayoutSettings::default().sidebar_dock,
             declared,
-            "布局出厂默认与 ui/app.slint 声明的 sidebar-dock 不一致 —— 「还原本页默认」会把侧栏挪到另一边"
+            "布局出厂默认与 ui/shell/app_shell.slint 声明的 sidebar-dock 不一致 —— 「还原本页默认」会把侧栏挪到另一边"
         );
     }
 

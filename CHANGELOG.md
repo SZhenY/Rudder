@@ -5,6 +5,20 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 变更 / Changed
+
+- 界面重构收尾：旧的界面外壳（旧左侧资源侧栏 / 旧资源面板 / 旧欢迎侧栏 / 旧标签条）
+  整体删除，只剩一套界面 —— 左侧栏 + 页面（主机 / 终端 / 指令集 / Docker / 设置）
+  + 终端舞台 + 右侧工具面板 + 底部状态栏。主窗口从 `ui/app.slint` 搬到
+  `ui/shell/app_shell.slint`（现在也是构建入口），`--ui=shell` 的并行原型已移除；
+  终端显示区不再被底部状态栏压住。The old UI shell was removed; the app window now
+  lives in `ui/shell/app_shell.slint` (also the build entry point).
+- 会话的隧道 / SFTP 状态提升到窗口级，右侧工具面板「文件」标签接上真实数据：
+  当前路径 / 上级目录 / 刷新 / 点目录进入 / 点文件下载（隧道 UI 仍按需求暂缓）。
+- 类型搬家（为后续删除旧 SFTP 面板铺路）：`SessionInfo`、`DiskInfo`、
+  `SftpEntry` / `SftpTreeNode` / `TunnelInfo`、`TerminalState` / `PaneInfo` /
+  `SplitterInfo` 各自住进独立的 `*_types.slint`，不再依赖待删的组件文件。
+
 ## [0.8.0] - 2026-09-26
 
 ### 修复 / Fixed

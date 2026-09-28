@@ -1,8 +1,8 @@
 // 终端舞台 —— 终端页（page 1，会话中）的内容：分屏 / 标签条 / 每标签一份 TerminalView
 // / 分屏拖拽条。
 //
-// 旧外壳删除②-2：从 `ui/app.slint` 的 `pane-area` + `for pane` + `for sp` 原样搬来，
-// 新外壳终端页从此由这份组件唯一渲染（旧外壳的 `quick-area`/`central` 包裹层随之作废）。
+// 旧外壳删除②-2：从主窗口文件（当时叫 `ui/app.slint`，第③步搬成
+// `ui/shell/app_shell.slint`）的 `pane-area` + `for pane` + `for sp` 原样搬来。
 //
 // 数据流（与搬家前逐字一致）：
 //   * `panes` / `terminals` / `splitters` 都是 AppWindow 的窗口级模型；

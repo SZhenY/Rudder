@@ -242,30 +242,37 @@ rudder/
 ├── Cargo.toml
 ├── build.rs                     # Slint 编译 + 依赖版本生成
 ├── ui/                          # Slint 界面定义（重型块都在各自文件里）
-│   ├── app.slint                # 顶层窗口：装配标题栏 / 主体 / 覆盖层
-│   ├── terminal_view.slint      # 终端视图 + SFTP dock
+│   ├── shell/                   # 新外壳：构建入口与全部布局都在这
+│   │   ├── app_shell.slint      #   ★ 构建入口 + 主窗口 AppWindow（属性 / 回调 / 对话框装配）
+│   │   ├── rail.slint           #   左侧栏（图标条 / 搜索 / 用户卡）
+│   │   ├── page_hosts.slint     #   页面：主机管理
+│   │   ├── page_terminal.slint  #   页面：终端（无会话空状态）
+│   │   ├── terminal_stage.slint #   终端舞台：分屏 / 标签条 / 每标签一份 TerminalView
+│   │   ├── stage_types.slint    #   舞台数据类型（TerminalState / PaneInfo / SplitterInfo）
+│   │   ├── pane_tabs.slint      #   分屏内的标签条
+│   │   ├── page_snippets.slint  #   页面：指令集
+│   │   ├── page_settings.slint  #   页面：设置
+│   │   ├── right_panel.slint    #   右侧工具面板（传输 / 文件）
+│   │   ├── status_bar.slint     #   底部状态栏
+│   │   └── titlebar.slint       #   自绘标题栏（Windows/Linux）
+│   ├── terminal_view.slint      # 终端视图
 │   ├── terminal_parts.slint     # 终端相关的可复用部件
-│   ├── sftp_panel.slint         # SFTP 文件浏览面板
+│   ├── sftp_panel.slint         # SFTP 文件浏览面板（旧面板：等右面板功能对齐后删）
 │   ├── sftp_parts.slint         #   面板内的行 / 列表部件
-│   ├── sidebar.slint            # 左侧系统监控面板（外壳 + 折叠）
-│   ├── sidebar_body.slint       #   侧栏正文（资源 / 进程）
-│   ├── sidebar_blocks.slint     #   侧栏行块（网速 / 磁盘 / 进程行等）
-│   ├── tabs.slint               # 顶部标签栏
-│   ├── welcome.slint            # 欢迎页 / 快速连接
-│   ├── welcome_rows.slint       #   会话行 / 分组行
+│   ├── sftp_types.slint         #   SFTP / 隧道数据类型
+│   ├── tabs.slint               # 标签数据类型（TabInfo；旧 TabBar 待清理）
+│   ├── session_types.slint      # 会话数据类型（SessionInfo / SessionDraft / 端口转发 / 触发器）
+│   ├── resource_types.slint     # 资源数据类型（DiskInfo）
 │   ├── session_dialog.slint     # 新建 / 编辑会话弹框
-│   ├── session_types.slint      #   会话相关的共享 struct
 │   ├── dialog_fields.slint      #   弹框字段（各类输入行）
-│   ├── custom_titlebar.slint    # 自绘标题栏
-│   ├── titlebar_inset_strip.slint  # 标题栏内嵌条（无边框窗口）
 │   ├── interface_panel.slint    # 设置面板外壳（左侧导航 + 内容区）
-│   ├── interface_settings_overlay.slint  # 侧栏直接打开的设置覆盖层
 │   ├── settings/                # 设置面板实现（按页拆分）
 │   │   ├── chrome.slint         #   通用控件：行 / 段标题 / 步进器 / 色板
 │   │   ├── section.slint        #   分区容器（设置项分组的最小单位）
 │   │   ├── reset_bar.slint      #   「还原本页默认」两段式确认按钮
 │   │   ├── types.slint          #   跨组件共享的 struct
-│   │   └── pages/               #   8 个设置页，一页一文件
+│   │   └── pages/               #   设置页，一页一文件
+│   ├── settings_window.slint    # 独立设置窗口（PopupWindow）
 │   ├── widgets.slint            # 可复用组件
 │   ├── theme.slint              # 设计 tokens（深色/浅色）
 │   ├── proc_window.slint        # 进程管理窗口
@@ -282,10 +289,10 @@ rudder/
 │   ├── download_manager.slint   # 下载管理器
 │   ├── settings_menu.slint      # 右上角设置菜单
 │   ├── about_dialog.slint       # 关于
-│   ├── update_banner.slint      # 更新提示横幅
+│   ├── update_dialog.slint      # 自动更新对话框
 │   ├── file_editor.slint        # 内置文件查看 / 编辑器
 │   ├── confirm_close_dialog.slint  # 关闭活动会话前的确认
-│   ├── dock_snap_overlay.slint  # 拖拽停靠时的吸附指示层
+│   ├── components/              # 基础组件（surfaces / text / buttons / window shell）
 │   └── fonts/                   # 内嵌字体
 ├── lang/                        # 国际化
 │   ├── zh/                      # 简体中文

@@ -101,7 +101,7 @@ export component SettingsWindow inherits Window {
     // `Palette` 和 `Theme` 一样是**按窗口各自实例**的 ✗ —— 不同步的话，这个窗口里的
     // 官方控件（下拉框展开后的列表、LineEdit、滚动条）会退回平台浅色 ✗，
     // 就是"下拉框不如原来好看"的那一半原因。
-    // 写法照抄 `app.slint:371-373`：`changed` 只认**本地**属性名，所以用一条单向派生的
+    // 写法照抄主窗口里的同类注释（`ui/shell/app_shell.slint`）：`changed` 只认**本地**属性名，所以用一条单向派生的
     // 本地属性当触发器（随 `Theme.dark` 变化，Rust 不去写它），再在 `changed` 里同步。
     property <bool> dark-mode-watch: Theme.dark;
     init => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }

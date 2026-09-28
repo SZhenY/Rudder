@@ -6,7 +6,7 @@ import { ToolStrip } from "widgets.slint";
 
 // Embed the terminal fonts here too so the cell-probe Text below measures
 // with the CORRECT font (the built-in Meatshell Mono), not a system fallback.
-// Font imports in app.slint are globally available in theory, but some Slint
+// Font imports in the entry file (ui/shell/app_shell.slint) are globally available in theory, but some Slint
 // builds only register them in the entry-point file's component tree; importing
 // them here guarantees the probe uses Meatshell Mono for its width calc.
 import "fonts/MeatshellMono-Regular.ttf";

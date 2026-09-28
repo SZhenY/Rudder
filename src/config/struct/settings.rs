@@ -182,7 +182,7 @@ impl Default for LayoutSettings {
             sidebar_collapsed: None,
             sidebar_width: 220.0,
             sidebar_height: 240.0,
-            // 资源（运行状态）面板停靠边。**必须与 `ui/app.slint` 里
+            // 资源（运行状态）面板停靠边。**必须与 `ui/shell/app_shell.slint` 里
             // `sidebar-dock` 的声明值一致** —— 二者曾长期分叉（Rust 这里是
             // "right"、Slint 那里是 "left"），表现为：新装/还原后侧栏跑到右边，
             // 而 UI 声明的默认是左边。`layout_default_matches_slint_declaration`

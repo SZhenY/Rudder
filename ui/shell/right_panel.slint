@@ -11,9 +11,9 @@
 
 import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
-// 条目类型暂时还住在旧 SFTP 面板文件里；旧外壳删除时把结构体挪到幸存文件
-// （app.slint / 新的 types 文件）即可，这里只借类型、不借组件。
-import { SftpEntry, TunnelInfo } from "../sftp_panel.slint";
+// 条目类型住在 `ui/sftp_types.slint`（第④步从 `sftp_panel.slint` 搬出），新外壳不依赖
+// 那个等着删除的旧面板组件文件。
+import { SftpEntry, TunnelInfo } from "../sftp_types.slint";
 
 component PanelTab inherits Rectangle {
     in property <string> label;
@@ -117,7 +117,7 @@ export component RightPanel inherits Rectangle {
     callback set-flag-follow-cd(bool);
     callback set-flag-always-ask(bool);
     callback close-panel();
-    // 活动标签的隧道 / SFTP —— 窗口级镜像（见 app.slint 属性声明处）。
+    // 活动标签的隧道 / SFTP —— 窗口级镜像（见 shell/app_shell.slint 的属性声明处）。
     in property <[TunnelInfo]> tunnels;
     in property <string> sftp-path;
     in property <[SftpEntry]> sftp-entries;

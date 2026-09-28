@@ -2,13 +2,14 @@
 //
 // 旧外壳删除②-1：这三个 struct 原先是 `ui/app.slint` 里就地声明的。终端舞台要抽成
 // `shell/terminal_stage.slint`，而 Slint 的组件**不能反向 import 窗口文件**（会成环：
-// app.slint → shell/terminal_stage.slint → app.slint），所以类型先挪到这份幸存文件里，
-// 由 app.slint import 后再 `export` 出去 —— Rust 侧的 `crate::ui::TerminalState` /
+// app_shell.slint → shell/terminal_stage.slint → app_shell.slint），所以类型挪到这份
+// 幸存文件里，由 `shell/app_shell.slint` import 后再 `export` 出去 ——
+// Rust 侧的 `crate::ui::TerminalState` /
 // `PaneInfo` / `SplitterInfo` 与 `slint::include_modules!` 生成的类型一并保持不变
 // （同 `EditorFindResult` 搬去 file_editor.slint 后的做法）。
 
 import { TermSpan, TermMatch } from "../terminal_view.slint";
-import { SftpEntry, SftpTreeNode, TunnelInfo } from "../sftp_panel.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "../sftp_types.slint";
 import { TabInfo } from "../tabs.slint";
 
 // Per-terminal view-model exposed to Rust. A TabInfo has the metadata; the

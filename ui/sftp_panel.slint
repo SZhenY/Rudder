@@ -6,42 +6,10 @@ import { IconText } from "components/text.slint";
 import { SftpMenuItem } from "sftp_parts.slint";
 
 
-// ---------------------------------------------------------------------------
-// Data types
-// ---------------------------------------------------------------------------
-
-export struct SftpEntry {
-    name: string,
-    full-path: string,
-    is-dir: bool,
-    size: string,
-    size-bytes: float,
-    modified: string,
-    modified-ts: float,
-    mode: int,        // POSIX permission bits, for the chmod dialog (#84)
-    // 「类型 / 权限」两列（上游 ed7f231）：都由完整 mode 位在 Rust 侧算出，不需要额外往返。
-    entry-type: string,      // dir / file / link / socket / fifo / char / block / ?
-    permissions: string,     // ls -l 风格的 9 位（rwxr-xr-x）
-    selected: bool,   // multi-select checkbox state (#100)
-}
-
-export struct SftpTreeNode {
-    path: string,
-    name: string,
-    depth: int,
-    expanded: bool,
-    has-children: bool,
-}
-
-export struct TunnelInfo {
-    id: string,
-    name: string,
-    kind: string,
-    bind: string,
-    target: string,
-    status: string,
-    active: bool,
-}
+// 类型已搬到 `sftp_types.slint`（旧外壳删除④）：这里 import + 再导出，
+// 老导入点与 Rust 侧生成的类型名都不变。
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_types.slint";
+export { SftpEntry, SftpTreeNode, TunnelInfo }
 
 // ---------------------------------------------------------------------------
 // SftpPanel — left directory tree + right file listing
