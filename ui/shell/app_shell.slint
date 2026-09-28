@@ -948,10 +948,6 @@ export component AppWindow inherits Window {
         // 新标题栏：Windows/Linux 自绘一条 38px 的沉浸式栏（AppTitleBar，见组件末尾）；
         // macOS 不画 —— 红绿灯与顶部拖拽都由系统负责（titlebar-inset 由 Rust 给）。
         property <length> bar-h: 38px;
-      // 底部用户卡片（Rail）显示的登录名；Rust 启动时从环境取。
-      in-out property <string> user-name: "";
-      // 头像首字母（Slint 字符串没有 substring，Rust 算好传入）。
-      in-out property <string> user-initial: "";
         // 侧栏与页面内容的整体下移量：自绘栏平台是栏高，macOS 是红绿灯让位高度。
         property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
         // 右侧「工具」面板：展开 240px，折叠成窄条（参考图「收起 SFTP 侧边栏」）时 22px。
@@ -971,8 +967,6 @@ export component AppWindow inherits Window {
             width: root.rail-w;
             height: root.height - (root.custom-titlebar ? root.bar-h : 0px);
             top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
-          user-name: root.user-name;
-          user-initial: root.user-initial;
           lang-en: root.lang-en;
             current-page: root.shell-page;
             // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时

@@ -489,20 +489,7 @@ pub fn run() -> Result<()> {
     #[cfg(target_os = "macos")]
     window.set_custom_titlebar(false);
 
-    // 新侧栏底部的用户卡片：登录名（取不到就留空，Slint 侧显示「本地用户」）。
-    let login = std::env::var("USER")
-        .or_else(|_| std::env::var("LOGNAME"))
-        .unwrap_or_default();
-    window.set_user_name(login.clone().into());
-    // 头像首字母：Slint 字符串没有 substring，这里算好传入（首字形 + 大写）。
-    window.set_user_initial(
-        login
-            .chars()
-            .next()
-            .map(|c| c.to_uppercase().to_string())
-            .unwrap_or_default()
-            .into(),
-    );
+    // （侧栏底部的用户卡片按需求删除 —— 不再从环境取登录名，也不向 UI 传用户信息。）
 
     // --- Detachable process monitor window (#23) -----------------------------
     // The process table is its own top-level OS window so it can be dragged

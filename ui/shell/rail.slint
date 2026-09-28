@@ -67,10 +67,6 @@ export component Rail inherits Rectangle {
     in-out property <bool> collapsed: false;
     // 顶部给系统红绿灯让位的高度（macOS 无边框窗口下由外层传入 titlebar-inset）
     in property <length> top-inset: 0px;
-    // 底部用户卡片显示的登录名（Rust 从环境取）
-    in property <string> user-name: "";
-    // 头像圆点里的首字母（Slint 字符串没有 substring，由 Rust 算好传入）
-    in property <string> user-initial: "";
     in property <bool> lang-en: false;
     callback page-changed(int);
     callback search-requested();
@@ -265,48 +261,7 @@ export component Rail inherits Rectangle {
             }
         }
 
-        // 用户卡片（参考图底部）：头像圆点取登录名首字母 + 名称 + 「本地账户」。
-        if !root.collapsed : HorizontalLayout {
-            height: 40px;
-            spacing: Theme.sp-2;
-            padding-left: Theme.sp-2;
-            alignment: start;
-
-            Rectangle {
-                y: (parent.height - 28px) / 2;
-                width: 28px;
-                height: 28px;
-                border-radius: 14px;
-                background: Theme.accent-soft;
-
-                Text {
-                    width: 100%;
-                    height: 100%;
-                    text: root.user-initial == "" ? "?" : root.user-initial;
-                    font-size: 13px;
-                    font-weight: 700;
-                    color: Theme.accent;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-            }
-
-            VerticalLayout {
-                alignment: center;
-                spacing: 1px;
-
-                Text {
-                    text: root.user-name == "" ? (root.lang-en ? "Local user" : "本地用户") : root.user-name;
-                    font-size: 12px;
-                    color: Theme.fg-1;
-                    overflow: elide;
-                }
-                Text {
-                    text: root.lang-en ? "Local account" : "本地账户";
-                    font-size: 10px;
-                    color: Theme.fg-3;
-                }
-            }
-        }
+        // 底部原有一块「用户卡片」（头像首字母 + 登录名 + 本地账户）—— 按需求删除：
+        // 不显示任何用户相关的东西（Rust 侧也不再从环境取登录名）。
     }
 }

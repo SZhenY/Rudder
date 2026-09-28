@@ -408,7 +408,9 @@ export component SessionDialog inherits Rectangle {
 
                 HorizontalLayout {
                     padding-left: 16px;
-                    padding-right: 10px;
+                    // 右侧留 14px：关闭钮 30px，卡片圆角 radius-lg（13px），
+                    // 留 10px 时按钮压到圆角上，看起来"要溢出"。
+                    padding-right: 14px;
                     spacing: 8px;
 
                     Text {
@@ -424,7 +426,11 @@ export component SessionDialog inherits Rectangle {
                         border-radius: 9px;
                         background: Theme.accent-soft;
 
+                        // 文字居中：Text 在非布局父级里默认只占首选宽度，不写 x/width
+                        // 会贴着左边、右边多出 16px（用户看到的就是"没对齐"）。
                         kind-chip := Text {
+                            x: 8px;
+                            width: parent.width - 16px;
                             text: root.kind-label;
                             font-size: 10px;
                             font-weight: 600;

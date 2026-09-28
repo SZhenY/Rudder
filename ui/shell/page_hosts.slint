@@ -20,7 +20,8 @@ component HostCard inherits Rectangle {
     border-radius: Theme.radius-lg;
     border-width: 1px;
     border-color: Theme.line;
-    background: card-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+    // 悬停在卡片或右上角 ✎ 上都算"卡片悬停"（否则鼠标移到按钮上时底色会闪）。
+    background: (card-ta.has-hover || edit-ta.has-hover) ? Theme.sur-3 : Theme.sur-2;
     clip: true;
 
     // 整卡点击 = 快速连接。**先声明 = 画在下层**：右上角的 ✎
@@ -137,15 +138,18 @@ component HostCard inherits Rectangle {
         }
     }
 
-    // 编辑：悬停卡片时出现在右上角（声明在最后 = 画在最上层）
+    // 编辑：**常驻**右上角（声明在最后 = 画在最上层）。
+    // 曾经写成"悬停卡片才出现"：鼠标一移到按钮上，卡片的 TouchArea 就失去 hover，
+    // 按钮 opacity 归零且 `enabled` 变 false —— 既点不到，点击还穿透到卡片进终端。
     Rectangle {
         x: parent.width - self.width - 8px;
         y: 8px;
         width: 26px;
         height: 26px;
         border-radius: Theme.radius-sm;
-        background: edit-ta.has-hover ? Theme.sur-1 : Theme.sur-3;
-        opacity: card-ta.has-hover ? 1 : 0;
+        border-width: 1px;
+        border-color: Theme.line;
+        background: edit-ta.has-hover ? Theme.sur-3 : Theme.sur-1;
 
         Text {
             text: "\u{E3C9}"; // edit
@@ -157,7 +161,6 @@ component HostCard inherits Rectangle {
         }
 
         edit-ta := TouchArea {
-            enabled: card-ta.has-hover;
             mouse-cursor: pointer;
             clicked => {
                 root.edit();
@@ -336,20 +339,24 @@ export component PageHosts inherits Rectangle {
                         horizontal-stretch: 1;
                     }
 
+                    // 宽度由文案决定（中英长度不同），避免固定 96px 时溢出/挤边。
                     Rectangle {
-                        width: 96px;
+                        width: new-label.preferred-width + 28px;
                         height: 30px;
                         border-radius: Theme.radius-md;
                         border-width: 1px;
                         border-color: Theme.line-strong;
                         background: new-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
 
-                        Text {
+                        new-label := Text {
+                            x: 14px;
+                            width: parent.width - 28px;
                             text: root.lang-en ? "+ New Host" : "+ 新建主机";
                             font-size: 12px;
                             color: Theme.fg-1;
                             horizontal-alignment: center;
                             vertical-alignment: center;
+                            overflow: elide;
                         }
 
                         new-ta := TouchArea {
