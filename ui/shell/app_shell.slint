@@ -958,7 +958,7 @@ export component AppWindow inherits Window {
         // 舞台宽度变化会走 `content-resized`，Rust 据此重算分屏几何。
         property <length> panel-w:
             root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open
-                ? (root.panel-collapsed ? 22px : 240px) : 0px;
+                ? (root.panel-collapsed ? 22px : 340px) : 0px;
 
         Rail {
             x: 0;

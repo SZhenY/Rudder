@@ -17,43 +17,79 @@
 import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
 import { DiskInfo } from "../resource_types.slint";
-import { Sparkline } from "../widgets.slint";
+// Sparkline（旧组件）本文件已不再使用 —— 趋势改用同文件里的 TrendBars。
 import { SysNetRow } from "../system_info_window.slint";
 // 条目类型住在 `ui/sftp_types.slint`（第④步从 `sftp_panel.slint` 搬出），新外壳不依赖
 // 那个等着删除的旧面板组件文件。
 import { SftpCrumb, SftpEntry, TunnelInfo } from "../sftp_types.slint";
 
+// 内容标签（参考图样式）：小图标 + 文案；激活态是一枚圆角胶囊（sur-3 底 + 主题色
+// 图标 + 加粗白字），未激活透明、悬停淡底。等分宽度（horizontal-stretch）—— 7 个
+// 标签在窄面板里也排得开，不会挤成一串。
 component PanelTab inherits Rectangle {
     in property <string> label;
+    in property <string> icon: "";
     in property <bool> active: false;
     callback clicked();
 
-    height: 30px;
-    background: transparent;
+    height: 26px;
+    horizontal-stretch: 1;
+    border-radius: Theme.radius-sm;
+    background: root.active ? Theme.sur-3 : (ta.has-hover ? Theme.sur-2 : transparent);
 
-    VerticalLayout {
+    HorizontalLayout {
         alignment: center;
+        spacing: 3px;
 
-        Text {
-            text: root.label;
+        if root.icon != "" : Text {
+            text: root.icon;
+            font-family: "Material Icons";
             font-size: 12px;
-            color: root.active ? Theme.fg-1 : Theme.fg-3;
-            font-weight: root.active ? 600 : 400;
-            horizontal-alignment: center;
+            color: root.active ? Theme.accent : Theme.fg-3;
             vertical-alignment: center;
         }
-        Rectangle {
-            height: 2px;
-            width: 20px;
-            x: (parent.width - self.width) / 2;
-            background: root.active ? Theme.accent : transparent;
+        Text {
+            text: root.label;
+            font-size: 11px;
+            color: root.active ? Theme.fg-1 : Theme.fg-3;
+            font-weight: root.active ? 600 : 400;
+            vertical-alignment: center;
+            overflow: elide;
         }
     }
 
     ta := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             root.clicked();
         }
+    }
+}
+
+// 趋势柱（新设计版 Sparkline）：画在卡片里，自带 0 值基线 —— 数据全 0 时也不会
+// 看起来像"卡片坏了"（旧 Sparkline 用的是半透明磨砂底 + 无基线，全 0 就一片空）。
+component TrendBars inherits Rectangle {
+    in property <[float]> values;
+    in property <length> chart-h: 44px;
+
+    height: root.chart-h + 4px;
+    background: transparent;
+
+    // 0 值基线
+    Rectangle {
+        y: root.chart-h + 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.line;
+    }
+
+    for v[i] in root.values : Rectangle {
+        x: i * (parent.width / max(1, root.values.length));
+        y: root.chart-h - (root.chart-h * clamp(v, 0.0, 1.0));
+        width: max(1px, (parent.width / max(1, root.values.length)) - 1px);
+        height: root.chart-h * clamp(v, 0.0, 1.0);
+        background: Theme.accent.with-alpha(0.85);
+        border-radius: 1px;
     }
 }
 
@@ -123,11 +159,13 @@ component ResCard inherits Rectangle {
     in property <float> percent: 0;
     in property <string> hint;          // 9px 补充行（内存详情 / 网络上传速率…）
     in property <bool> show-bar: true;
+    // 左上角小图标（参考图每张卡都有：CPU / 内存 / 磁盘 / 网络各一枚）
+    in property <string> icon: "";
 
     horizontal-stretch: 1;
     // 固定高度：同一行的两张卡（一个有 hint 一个没有）才不会一高一矮。
     height: 46px;
-    border-radius: 6px;
+    border-radius: Theme.radius-md;
     background: Theme.sur-2;
 
     VerticalLayout {
@@ -141,6 +179,13 @@ component ResCard inherits Rectangle {
         HorizontalLayout {
             spacing: 4px;
 
+            if root.icon != "" : Text {
+                text: root.icon;
+                font-family: "Material Icons";
+                font-size: 11px;
+                color: Theme.fg-3;
+                vertical-alignment: center;
+            }
             Text {
                 text: root.label;
                 font-size: 10px;
@@ -389,8 +434,10 @@ export component RightPanel inherits Rectangle {
         : (root.sftp-loading && root.sftp-entries.length == 0 ? 1
         : (root.sftp-entries.length == 0 ? 2 : 3));
 
-    // 展开 240px / 收起 22px 窄条（参考图「收起 SFTP 侧边栏」）
-    width: root.collapsed ? 22px : 240px;
+    // 展开 340px / 收起 22px 窄条（参考图「收起 SFTP 侧边栏」）。
+    // 240px 那版 7 个标签挤在一起、指标卡里的详情文字也被压到换行（用户截图），
+    // 参考图的面板本身就很宽 —— 加宽到 340px（app_shell 的 panel-w 同步）。
+    width: root.collapsed ? 22px : 340px;
     background: Theme.sur-1;
     clip: true;
 
@@ -480,11 +527,13 @@ export component RightPanel inherits Rectangle {
 
             ResCard {
                 label: "CPU";
+                icon: "\u{E30C}";   // computer
                 value: "\{round(root.cpu-percent * 100)}%";
                 percent: root.cpu-percent;
             }
             ResCard {
                 label: root.lang-en ? "MEM" : "内存";
+                icon: "\u{E322}";   // memory
                 value: "\{round(root.mem-percent * 100)}%";
                 percent: root.mem-percent;
                 hint: root.mem-detail;
@@ -499,6 +548,7 @@ export component RightPanel inherits Rectangle {
 
             ResCard {
                 label: root.lang-en ? "DISK" : "磁盘";
+                icon: "\u{E1DB}";   // storage
                 value: root.disks.length > 0 ? "\{round(root.disks[0].percent * 100)}%" : "—";
                 percent: root.disks.length > 0 ? root.disks[0].percent : 0;
                 hint: root.disks.length > 0 ? root.disks[0].detail : "";
@@ -506,6 +556,7 @@ export component RightPanel inherits Rectangle {
             // 网络卡不画进度条：上下行速率就是它的数值与补充行（参考图 ↓ 在上、↑ 在下）。
             ResCard {
                 label: root.lang-en ? "NET" : "网络";
+                icon: "\u{E1AF}";   // network_check
                 value: root.net-down;
                 hint: "\{root.net-up}";
                 show-bar: false;
@@ -519,14 +570,18 @@ export component RightPanel inherits Rectangle {
 
         // ── 内容标签：5 个监控视图 + 传输 / 文件（全部真数据）────────────
         // 参考图的标签是 综合 / 处理器 / 显卡 / 内存 / 磁盘 / 网络；显卡项目没有采集，
-        // 不做（见文件头）。英文态用短标签，7 个才排得下 240px。
+        // 不做（见文件头）。每个标签 图标 + 文案、等分宽度（见 PanelTab）。
         HorizontalLayout {
-            height: 30px;
-            padding-left: 4px;
-            padding-right: 4px;
+            height: 32px;
+            padding-left: 6px;
+            padding-right: 6px;
+            padding-top: 3px;
+            padding-bottom: 3px;
+            spacing: 3px;
 
             PanelTab {
                 label: root.lang-en ? "Sum" : "综合";
+                icon: "\u{E1C3}";   // table/rows
                 active: root.current-tab == 0;
                 clicked => {
                     root.current-tab = 0;
@@ -534,6 +589,7 @@ export component RightPanel inherits Rectangle {
             }
             PanelTab {
                 label: "CPU";
+                icon: "\u{E30C}";   // computer
                 active: root.current-tab == 1;
                 clicked => {
                     root.current-tab = 1;
@@ -541,6 +597,7 @@ export component RightPanel inherits Rectangle {
             }
             PanelTab {
                 label: root.lang-en ? "Mem" : "内存";
+                icon: "\u{E322}";   // memory
                 active: root.current-tab == 2;
                 clicked => {
                     root.current-tab = 2;
@@ -548,6 +605,7 @@ export component RightPanel inherits Rectangle {
             }
             PanelTab {
                 label: root.lang-en ? "Disk" : "磁盘";
+                icon: "\u{E1DB}";   // storage
                 active: root.current-tab == 3;
                 clicked => {
                     root.current-tab = 3;
@@ -555,6 +613,7 @@ export component RightPanel inherits Rectangle {
             }
             PanelTab {
                 label: root.lang-en ? "Net" : "网络";
+                icon: "\u{E1AF}";   // network_check
                 active: root.current-tab == 4;
                 clicked => {
                     root.current-tab = 4;
@@ -562,6 +621,7 @@ export component RightPanel inherits Rectangle {
             }
             PanelTab {
                 label: root.lang-en ? "Xfers" : "传输";
+                icon: "\u{E5D8}";   // arrow_upward（上传/下载一对，这里取一个）
                 active: root.current-tab == 5;
                 clicked => {
                     root.current-tab = 5;
@@ -569,6 +629,7 @@ export component RightPanel inherits Rectangle {
             }
             PanelTab {
                 label: root.lang-en ? "Files" : "文件";
+                icon: "\u{E2C7}";   // folder
                 active: root.current-tab == 6;
                 clicked => {
                     root.current-tab = 6;
@@ -589,27 +650,79 @@ export component RightPanel inherits Rectangle {
                 padding: 10px;
                 spacing: 6px;
 
-                SectionTitle { text: root.lang-en ? "CPU load trend" : "CPU 负载趋势"; }
-                if root.cpu-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                if root.cpu-history.length > 0 : Sparkline {
-                    values: root.cpu-history;
-                    height: 44px;
+                // 参考图：综合页的每个区块都是一张卡（标题 + 内容），不再是裸标题。
+                Rectangle {
+                    border-radius: Theme.radius-md;
+                    background: Theme.sur-2;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        HorizontalLayout {
+                            spacing: 4px;
+
+                            Text {
+                                text: root.lang-en ? "CPU load trend" : "CPU 负载趋势";
+                                font-size: 10px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: "\{round(root.cpu-percent * 100)}%";
+                                font-size: 10px;
+                                font-weight: 600;
+                                color: Theme.fg-2;
+                                vertical-alignment: center;
+                            }
+                        }
+                        TrendBars { values: root.cpu-history; }
+                    }
                 }
 
-                SectionTitle { text: root.lang-en ? "Disk partitions" : "磁盘分区"; }
-                if root.disks.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                for d in root.disks : MetricRow {
-                    label: d.path;
-                    value: d.detail;
-                    percent: d.percent;
+                Rectangle {
+                    border-radius: Theme.radius-md;
+                    background: Theme.sur-2;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        Text {
+                            text: root.lang-en ? "Disk partitions" : "磁盘分区";
+                            font-size: 10px;
+                            color: Theme.fg-3;
+                        }
+                        if root.disks.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                        for d in root.disks : MetricRow {
+                            label: d.path;
+                            value: d.detail;
+                            percent: d.percent;
+                        }
+                    }
                 }
 
-                SectionTitle { text: root.lang-en ? "Network interfaces" : "网络端口"; }
-                if root.net-rows.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                for n in root.net-rows : NetIfaceRow {
-                    name: n.name;
-                    down: n.down;
-                    up: n.up;
+                Rectangle {
+                    border-radius: Theme.radius-md;
+                    background: Theme.sur-2;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        Text {
+                            text: root.lang-en ? "Network interfaces" : "网络端口";
+                            font-size: 10px;
+                            color: Theme.fg-3;
+                        }
+                        if root.net-rows.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                        for n in root.net-rows : NetIfaceRow {
+                            name: n.name;
+                            down: n.down;
+                            up: n.up;
+                        }
+                    }
                 }
             }
         }
@@ -629,9 +742,9 @@ export component RightPanel inherits Rectangle {
                 }
                 SectionTitle { text: root.lang-en ? "CPU load trend" : "CPU 负载趋势"; }
                 if root.cpu-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                if root.cpu-history.length > 0 : Sparkline {
+                if root.cpu-history.length > 0 : TrendBars {
                     values: root.cpu-history;
-                    height: 88px;
+                    chart-h: 88px;
                 }
             }
         }
@@ -695,16 +808,16 @@ export component RightPanel inherits Rectangle {
 
                 SectionTitle { text: root.lang-en ? "Session NIC" : "会话网卡"; }
                 if root.net-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                if root.net-history.length > 0 : Sparkline {
+                if root.net-history.length > 0 : TrendBars {
                     values: root.net-history;
-                    height: 40px;
+                    chart-h: 40px;
                 }
 
                 SectionTitle { text: root.lang-en ? "Local NIC" : "本机网卡"; }
                 if root.net-history-bot.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                if root.net-history-bot.length > 0 : Sparkline {
+                if root.net-history-bot.length > 0 : TrendBars {
                     values: root.net-history-bot;
-                    height: 40px;
+                    chart-h: 40px;
                 }
             }
         }
