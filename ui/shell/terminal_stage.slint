@@ -192,8 +192,8 @@ export component TerminalStage inherits Rectangle {
                         text: root.lang-en
                             ? "Pick a host on the left to begin"
                             : "从左侧「主机」里选一个会话开始";
-                        color: Theme.text-muted;
-                        font-size: Theme.fs-sm;
+                        color: Theme.fg-3;
+                        font-size: 11px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
@@ -346,7 +346,7 @@ export component TerminalStage inherits Rectangle {
     // TouchArea reaches ±5px beyond so it's easy to grab.
     for sp[si] in root.splitters : Rectangle {
         x: sp.x; y: sp.y; width: sp.w; height: sp.h;
-        background: sp-ta.has-hover || sp-ta.pressed ? Theme.accent : Theme.border-subtle;
+        background: sp-ta.has-hover || sp-ta.pressed ? Theme.accent : Theme.line;
         animate background {
             duration: 100ms;
             easing: AnimationSettings.color();
