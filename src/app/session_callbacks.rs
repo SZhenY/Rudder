@@ -1196,6 +1196,24 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
             // Add the new tab to the focused pane and re-flatten (this also sets
             // active-tab-id to the new tab via refresh_panes).
             layout.borrow_mut().add_tab(tab_id.clone());
+            // 真会话接进来之后把「欢迎标签页」收掉：它只是「创建会话」那张卡片，
+            // 留着会跟真会话并排（用户反馈：从主机页快速连接后，终端页里还能看到
+            // 上一轮的「新建会话」标签页）。
+            if layout.borrow().leaf_of_tab("welcome").is_some() {
+                layout.borrow_mut().remove_tab("welcome");
+                {
+                    use slint::Model as _;
+                    let wi = (0..tabs_model.row_count()).find(|&i| {
+                        tabs_model
+                            .row_data(i)
+                            .map(|r| r.id.as_str() == "welcome")
+                            .unwrap_or(false)
+                    });
+                    if let Some(i) = wi {
+                        tabs_model.remove(i);
+                    }
+                }
+            }
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,

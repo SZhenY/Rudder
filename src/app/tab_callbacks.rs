@@ -139,6 +139,32 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
         window.on_pane_tab_closed(move |_pane_id: i32, id: SharedString| {
             let id = id.to_string();
             if id == "welcome" {
+                // 欢迎标签页现在在标签栏里也有自己的一行（见 on_pane_new_tab），
+                // 所以它的 × 必须真的能关：删掉模型行 + 从分屏树里摘掉 + 重排。
+                // （老代码这里直接 return —— 那是欢迎页还没有标签栏行的年代。）
+                {
+                    use slint::Model as _;
+                    let wi = (0..tabs_model.row_count()).find(|&i| {
+                        tabs_model
+                            .row_data(i)
+                            .map(|r| r.id.as_str() == "welcome")
+                            .unwrap_or(false)
+                    });
+                    if let Some(i) = wi {
+                        tabs_model.remove(i);
+                    }
+                }
+                layout.borrow_mut().remove_tab("welcome");
+                if let Some(w) = weak.upgrade() {
+                    refresh_panes(
+                        &w,
+                        &layout,
+                        content_size.get(),
+                        &tabs_model,
+                        &panes_model,
+                        &splitters_model,
+                    );
+                }
                 return;
             }
             // Drop any display-name override so a fresh connect starts clean.
