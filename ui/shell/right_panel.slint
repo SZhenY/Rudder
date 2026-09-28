@@ -98,6 +98,7 @@ component LineChart inherits Rectangle {
 
     // 0 值基线
     Rectangle {
+        x: 0;
         y: root.chart-h;
         width: parent.width;
         height: 1px;
@@ -109,6 +110,8 @@ component LineChart inherits Rectangle {
     // 别手改）：第 k 个点取 `idx(k)` 处的数据 —— 数据长度可变，这里均匀取样，
     // 于是同一个组件能吃任意长度的历史序列。
     if root.values.length > 0 : Path {
+        x: 0;
+        y: 0;
         width: parent.width;
         height: root.chart-h;
         stroke: root.line-color;
@@ -274,9 +277,16 @@ component ResCard inherits Rectangle {
             border-radius: 2px;
             background: Theme.sur-3;
 
+            // ⚠ `x: 0; y: 0;` **必须写**：Slint 里带显式 width 的子 Rectangle 不写 x
+            // 时会水平居中（代码库里其它进度条 —— download_manager / proc_window ——
+            // 都显式写了）。少了这两个坐标，占比条就从中间往两边长：11% 的填充会
+            // 落在轨道正中（截图实测：轨道 x 20..206、紫色 x 104..123，左右各留
+            // 84 / 83 px）。
             Rectangle {
+                x: 0;
+                y: 0;
                 width: parent.width * clamp(root.percent, 0.0, 1.0);
-                height: 4px;
+                height: parent.height;
                 border-radius: 2px;
                 background: Theme.accent;
             }
@@ -331,9 +341,12 @@ component MetricRow inherits Rectangle {
             border-radius: 2px;
             background: Theme.sur-3;
 
+            // （同上：x/y 必须显式写，否则填充会居中）
             Rectangle {
+                x: 0;
+                y: 0;
                 width: parent.width * clamp(root.percent, 0.0, 1.0);
-                height: 4px;
+                height: parent.height;
                 border-radius: 2px;
                 background: Theme.accent;
             }
