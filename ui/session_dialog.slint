@@ -638,11 +638,29 @@ export component SessionDialog inherits Rectangle {
                                         alignment: start;
 
                                         Text { text: root.lang-en ? "Data bits" : "数据位"; font-size: 11px; color: Theme.fg-2; }
-                                        Select {
-                                            text: root.draft-data-bits;
-                                            options: ["5", "6", "7", "8"];
-                                            current: root.draft-data-bits == "5" ? 0 : (root.draft-data-bits == "6" ? 1 : (root.draft-data-bits == "7" ? 2 : 3));
-                                            picked(i) => { root.draft-data-bits = ["5", "6", "7", "8"][i]; }
+                                        HorizontalLayout {
+                                            spacing: 4px;
+                                            Seg {
+                                                label: "5";
+                                                active: root.draft-data-bits == "5";
+                                                clicked => { root.draft-data-bits = "5"; }
+                                            }
+                                            Seg {
+                                                label: "6";
+                                                active: root.draft-data-bits == "6";
+                                                clicked => { root.draft-data-bits = "6"; }
+                                            }
+                                            Seg {
+                                                label: "7";
+                                                active: root.draft-data-bits == "7";
+                                                clicked => { root.draft-data-bits = "7"; }
+                                            }
+                                            Seg {
+                                                label: "8";
+                                                active: root.draft-data-bits == "8";
+                                                clicked => { root.draft-data-bits = "8"; }
+                                            }
+                                            Rectangle { horizontal-stretch: 1; }
                                         }
                                     }
                                     VerticalLayout {
@@ -651,11 +669,19 @@ export component SessionDialog inherits Rectangle {
                                         alignment: start;
 
                                         Text { text: root.lang-en ? "Stop bits" : "停止位"; font-size: 11px; color: Theme.fg-2; }
-                                        Select {
-                                            text: root.draft-stop-bits;
-                                            options: ["1", "2"];
-                                            current: root.draft-stop-bits == "2" ? 1 : 0;
-                                            picked(i) => { root.draft-stop-bits = ["1", "2"][i]; }
+                                        HorizontalLayout {
+                                            spacing: 4px;
+                                            Seg {
+                                                label: "1";
+                                                active: root.draft-stop-bits == "1";
+                                                clicked => { root.draft-stop-bits = "1"; }
+                                            }
+                                            Seg {
+                                                label: "2";
+                                                active: root.draft-stop-bits == "2";
+                                                clicked => { root.draft-stop-bits = "2"; }
+                                            }
+                                            Rectangle { horizontal-stretch: 1; }
                                         }
                                     }
                                 }
@@ -667,11 +693,24 @@ export component SessionDialog inherits Rectangle {
                                         alignment: start;
 
                                         Text { text: root.lang-en ? "Parity" : "校验"; font-size: 11px; color: Theme.fg-2; }
-                                        Select {
-                                            text: root.draft-parity;
-                                            options: ["none", "odd", "even"];
-                                            current: root.draft-parity == "odd" ? 1 : (root.draft-parity == "even" ? 2 : 0);
-                                            picked(i) => { root.draft-parity = ["none", "odd", "even"][i]; }
+                                        HorizontalLayout {
+                                            spacing: 4px;
+                                            Seg {
+                                                label: "none";
+                                                active: root.draft-parity == "none";
+                                                clicked => { root.draft-parity = "none"; }
+                                            }
+                                            Seg {
+                                                label: "odd";
+                                                active: root.draft-parity == "odd";
+                                                clicked => { root.draft-parity = "odd"; }
+                                            }
+                                            Seg {
+                                                label: "even";
+                                                active: root.draft-parity == "even";
+                                                clicked => { root.draft-parity = "even"; }
+                                            }
+                                            Rectangle { horizontal-stretch: 1; }
                                         }
                                     }
                                     VerticalLayout {
@@ -680,11 +719,24 @@ export component SessionDialog inherits Rectangle {
                                         alignment: start;
 
                                         Text { text: root.lang-en ? "Flow control" : "流控"; font-size: 11px; color: Theme.fg-2; }
-                                        Select {
-                                            text: root.draft-flow;
-                                            options: ["none", "hardware", "software"];
-                                            current: root.draft-flow == "hardware" ? 1 : (root.draft-flow == "software" ? 2 : 0);
-                                            picked(i) => { root.draft-flow = ["none", "hardware", "software"][i]; }
+                                        HorizontalLayout {
+                                            spacing: 4px;
+                                            Seg {
+                                                label: "none";
+                                                active: root.draft-flow == "none";
+                                                clicked => { root.draft-flow = "none"; }
+                                            }
+                                            Seg {
+                                                label: "hw";
+                                                active: root.draft-flow == "hardware";
+                                                clicked => { root.draft-flow = "hardware"; }
+                                            }
+                                            Seg {
+                                                label: "sw";
+                                                active: root.draft-flow == "software";
+                                                clicked => { root.draft-flow = "software"; }
+                                            }
+                                            Rectangle { horizontal-stretch: 1; }
                                         }
                                     }
                                     VerticalLayout {
@@ -843,11 +895,19 @@ export component SessionDialog inherits Rectangle {
                                     alignment: start;
 
                                     Text { text: root.lang-en ? "Type" : "类型"; font-size: 11px; color: Theme.fg-2; }
-                                    Select {
-                                        text: root.draft-proxy-type == "http" ? "HTTP" : "SOCKS5";
-                                        options: ["SOCKS5", "HTTP"];
-                                        current: root.draft-proxy-type == "http" ? 1 : 0;
-                                        picked(i) => { root.draft-proxy-type = i == 1 ? "http" : "socks5"; }
+                                    HorizontalLayout {
+                                        spacing: 4px;
+                                        Seg {
+                                            label: "SOCKS5";
+                                            active: root.draft-proxy-type == "socks5";
+                                            clicked => { root.draft-proxy-type = "socks5"; }
+                                        }
+                                        Seg {
+                                            label: "HTTP";
+                                            active: root.draft-proxy-type == "http";
+                                            clicked => { root.draft-proxy-type = "http"; }
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
                                     }
                                 }
                                 VerticalLayout {
