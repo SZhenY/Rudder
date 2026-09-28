@@ -1641,6 +1641,7 @@ export component AppWindow inherits Window {
     SessionDialog {
         width: parent.width;
         height: parent.height;
+        lang-en: root.lang-en;
         is-open <=> root.dialog-open;
         is-editing <=> root.dialog-editing;
         draft-id <=> root.dialog-id;

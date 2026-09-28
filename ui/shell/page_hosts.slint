@@ -6,7 +6,171 @@
 import { Theme } from "../theme.slint";
 import { SessionInfo } from "../session_types.slint";
 
+// 主机卡片（参考图 主机.png）：图标块 + 名称 / SSH 徽标 + 连接信息 + 分组 + 快速连接。
+// 网格里按 `session` 实例化；整卡点击 = 快速连接，右上角 ✎ = 编辑（常驻按钮）。
+component HostCard inherits Rectangle {
+    in property <SessionInfo> session;
+    in property <bool> lang-en: false;
+    callback connect();
+    callback edit();
+
+    // 主机卡片：图标块 + 名称/SSH 徽标 + 连接信息 + 快速连接
+    width: 340px;
+    height: 168px;
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: card-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+    clip: true;
+
+    // 整卡点击 = 快速连接。**先声明 = 画在下层**：右上角的 ✎
+    // 声明在后面才点得到（同 pane_tabs 里关闭钮的教训）。
+    card-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.connect();
+        }
+    }
+
+    VerticalLayout {
+        padding: Theme.sp-3;
+        spacing: Theme.sp-2;
+        alignment: start;
+
+        HorizontalLayout {
+            spacing: Theme.sp-3;
+            alignment: start;
+
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: Theme.radius-md;
+                background: Theme.sur-3;
+
+                Text {
+                    text: "\u{EB8E}"; // terminal
+                    font-family: "Material Icons";
+                    font-size: 20px;
+                    color: Theme.fg-2;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            VerticalLayout {
+                spacing: 2px;
+                alignment: center;
+
+                HorizontalLayout {
+                    spacing: Theme.sp-2;
+                    alignment: start;
+
+                    Text {
+                        text: root.session.name;
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: Theme.fg-1;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        width: 38px;
+                        height: 18px;
+                        border-radius: Theme.radius-sm;
+                        border-width: 1px;
+                        border-color: Theme.line-strong;
+
+                        Text {
+                            text: "SSH";
+                            font-size: 9px;
+                            color: Theme.fg-3;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                Text {
+                    text: root.session.user != "" ? "\{root.session.user}@\{root.session.host}:\{root.session.port}" : "\{root.session.host}:\{root.session.port}";
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: Theme.sp-1;
+            alignment: start;
+
+            Rectangle {
+                width: 110px;
+                height: 20px;
+                border-radius: Theme.radius-sm;
+                background: Theme.sur-3;
+
+                Text {
+                    text: root.session.group == "" ? "默认分组" : root.session.group;
+                    font-size: 10px;
+                    color: Theme.fg-2;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Rectangle {
+            height: 30px;
+            border-radius: Theme.radius-md;
+            background: quick-ta.has-hover ? Theme.accent-soft : Theme.sur-3;
+
+            Text {
+                text: root.lang-en ? "Quick Connect" : "快速连接";
+                font-size: 12px;
+                color: Theme.fg-1;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            quick-ta := TouchArea {
+                clicked => {
+                    root.connect();
+                }
+            }
+        }
+    }
+
+    // 编辑：悬停卡片时出现在右上角（声明在最后 = 画在最上层）
+    Rectangle {
+        x: parent.width - self.width - 8px;
+        y: 8px;
+        width: 26px;
+        height: 26px;
+        border-radius: Theme.radius-sm;
+        background: edit-ta.has-hover ? Theme.sur-1 : Theme.sur-3;
+        opacity: card-ta.has-hover ? 1 : 0;
+
+        Text {
+            text: "\u{E3C9}"; // edit
+            font-family: "Material Icons";
+            font-size: 14px;
+            color: Theme.fg-2;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        edit-ta := TouchArea {
+            enabled: card-ta.has-hover;
+            mouse-cursor: pointer;
+            clicked => {
+                root.edit();
+            }
+        }
+    }
+}
+
 export component PageHosts inherits Rectangle {
+    // 卡片网格的间距 / 每张卡最小宽度（列数在网格容器里按可用宽度算，见下）。
+    property <length> card-min-w: 260px;
+    property <length> grid-gap: Theme.sp-3;
+
     in property <bool> lang-en: false;
     in property <[SessionInfo]> sessions;
     callback new-session();
@@ -211,163 +375,41 @@ export component PageHosts inherits Rectangle {
                 vertical-stretch: 1;
             }
 
-            if root.sessions.length > 0 : Flickable {
+            if root.sessions.length > 0 : host-flick := Flickable {
                 vertical-stretch: 1;
 
-                VerticalLayout {
+                // 卡片网格（参考图是网格，不是一行一张）：列数按可用宽度算，每行
+                // 由 HorizontalLayout 平均分格、卡片随之伸缩；最后一行的空位不补。
+                grid := VerticalLayout {
                     padding: Theme.sp-4;
-                    spacing: Theme.sp-3;
+                    spacing: root.grid-gap;
                     alignment: start;
 
-                    for s in root.sessions : Rectangle {
-                        // 主机卡片：图标块 + 名称/SSH 徽标 + 连接信息 + 快速连接
-                        width: 340px;
-                        height: 168px;
-                        border-radius: Theme.radius-lg;
-                        border-width: 1px;
-                        border-color: Theme.line;
-                        background: card-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
-                        clip: true;
+                    // 列数 = 可用宽度能放下几张卡（下限 1），行数 = 卡片数 / 列数向上取整。
+                    // 宽度取本页宽度减去固定的「分组导航」列（190px）与内边距 32px ——
+                    // 不能取 Flickable 自己的 width：那会跟内容的首选尺寸成绑定环。
+                    // 注意：Slint 里长度相除会得到带单位的结果（px⁻¹），所以先 ` / 1px`
+                    // 换成纯数字再算。
+                    property <float> gap-px: 12;
+                    property <float> min-px: 260;
+                    property <float> cols-f: max(1, floor((root.width / 1px - 190 - 32 + self.gap-px)
+                        / (self.min-px + self.gap-px)));
+                    property <int> cols: round(self.cols-f);
+                    property <int> rows: round(ceil(root.sessions.length * 1.0 / self.cols));
 
-                        // 整卡点击 = 快速连接。**先声明 = 画在下层**：右上角的 ✎
-                        // 声明在后面才点得到（同 pane_tabs 里关闭钮的教训）。
-                        card-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => {
-                                root.connect-session(s.id);
+                    for r in grid.rows : HorizontalLayout {
+                        spacing: root.grid-gap;
+                        alignment: start;
+
+                        for c in min(grid.cols, root.sessions.length - r * grid.cols) : HostCard {
+                            horizontal-stretch: 1;
+                            session: root.sessions[r * grid.cols + c];
+                            lang-en: root.lang-en;
+                            connect() => {
+                                root.connect-session(root.sessions[r * grid.cols + c].id);
                             }
-                        }
-
-                        VerticalLayout {
-                            padding: Theme.sp-3;
-                            spacing: Theme.sp-2;
-                            alignment: start;
-
-                            HorizontalLayout {
-                                spacing: Theme.sp-3;
-                                alignment: start;
-
-                                Rectangle {
-                                    width: 40px;
-                                    height: 40px;
-                                    border-radius: Theme.radius-md;
-                                    background: Theme.sur-3;
-
-                                    Text {
-                                        text: "\u{EB8E}"; // terminal
-                                        font-family: "Material Icons";
-                                        font-size: 20px;
-                                        color: Theme.fg-2;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                }
-
-                                VerticalLayout {
-                                    spacing: 2px;
-                                    alignment: center;
-
-                                    HorizontalLayout {
-                                        spacing: Theme.sp-2;
-                                        alignment: start;
-
-                                        Text {
-                                            text: s.name;
-                                            font-size: 14px;
-                                            font-weight: 600;
-                                            color: Theme.fg-1;
-                                            vertical-alignment: center;
-                                        }
-                                        Rectangle {
-                                            width: 38px;
-                                            height: 18px;
-                                            border-radius: Theme.radius-sm;
-                                            border-width: 1px;
-                                            border-color: Theme.line-strong;
-
-                                            Text {
-                                                text: "SSH";
-                                                font-size: 9px;
-                                                color: Theme.fg-3;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                            }
-                                        }
-                                    }
-                                    Text {
-                                        text: s.user != "" ? "\{s.user}@\{s.host}:\{s.port}" : "\{s.host}:\{s.port}";
-                                        font-size: 11px;
-                                        color: Theme.fg-3;
-                                    }
-                                }
-                            }
-
-                            HorizontalLayout {
-                                spacing: Theme.sp-1;
-                                alignment: start;
-
-                                Rectangle {
-                                    width: 110px;
-                                    height: 20px;
-                                    border-radius: Theme.radius-sm;
-                                    background: Theme.sur-3;
-
-                                    Text {
-                                        text: s.group == "" ? "默认分组" : s.group;
-                                        font-size: 10px;
-                                        color: Theme.fg-2;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                height: 30px;
-                                border-radius: Theme.radius-md;
-                                background: quick-ta.has-hover ? Theme.accent-soft : Theme.sur-3;
-
-                                Text {
-                                    text: root.lang-en ? "Quick Connect" : "快速连接";
-                                    font-size: 12px;
-                                    color: Theme.fg-1;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-
-                                quick-ta := TouchArea {
-                                    clicked => {
-                                        root.connect-session(s.id);
-                                    }
-                                }
-                            }
-                        }
-
-                        // 编辑：悬停卡片时出现在右上角（声明在最后 = 画在最上层）
-                        Rectangle {
-                            x: parent.width - self.width - 8px;
-                            y: 8px;
-                            width: 26px;
-                            height: 26px;
-                            border-radius: Theme.radius-sm;
-                            background: edit-ta.has-hover ? Theme.sur-1 : Theme.sur-3;
-                            opacity: card-ta.has-hover ? 1 : 0;
-
-                            Text {
-                                text: "\u{E3C9}"; // edit
-                                font-family: "Material Icons";
-                                font-size: 14px;
-                                color: Theme.fg-2;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-
-                            edit-ta := TouchArea {
-                                enabled: card-ta.has-hover;
-                                mouse-cursor: pointer;
-                                clicked => {
-                                    root.edit-session(s.id);
-                                }
+                            edit() => {
+                                root.edit-session(root.sessions[r * grid.cols + c].id);
                             }
                         }
                     }

@@ -20,6 +20,7 @@ export { PortFwd, TriggerDraft, SessionDraft }
 // 端口转发行（#56 / #277）：新设计的小卡片，字段与旧 `PortForwardRow` 逐项对应，
 // 每次改动都把整行回传（`update-forward(index, PortFwd)`）。
 component FwdRow inherits Rectangle {
+    in property <bool> lang-en: false;
     in property <PortFwd> forward;
     in property <int> index;
     callback updated(int, PortFwd);
@@ -67,7 +68,7 @@ component FwdRow inherits Rectangle {
             }
         }
         Input {
-            placeholder: @tr("Name (optional)");
+            placeholder: root.lang-en ? "Name (optional)" : "名称（可选）";
             text <=> root.name;
             edited(v) => { root.name = v; root.notify-updated(); }
         }
@@ -81,7 +82,7 @@ component FwdRow inherits Rectangle {
             }
             Input {
                 horizontal-stretch: 1;
-                placeholder: @tr("Listen port");
+                placeholder: root.lang-en ? "Listen port" : "监听端口";
                 text <=> root.bind-port;
                 edited(v) => { root.bind-port = v; root.notify-updated(); }
             }
@@ -89,7 +90,7 @@ component FwdRow inherits Rectangle {
         // 非回环绑定会把端口暴露到局域网（kind == dynamic 时还是个无认证的 SOCKS
         // 代理）—— 就地提示（#F-001）。
         if root.bind-addr != "" && root.bind-addr != "127.0.0.1" && root.bind-addr != "localhost" : Text {
-            text: @tr("⚠ Non-loopback address exposes this port on the local network. Only use on trusted networks.");
+            text: root.lang-en ? "⚠ Non-loopback address exposes this port on the local network. Only use on trusted networks." : "⚠ 非回环地址会把该端口暴露到局域网，只在可信网络里使用。";
             color: Theme.danger;
             font-size: 10px;
             wrap: word-wrap;
@@ -100,13 +101,13 @@ component FwdRow inherits Rectangle {
             spacing: 6px;
             Input {
                 horizontal-stretch: 2;
-                placeholder: @tr("Target host");
+                placeholder: root.lang-en ? "Target host" : "目标主机";
                 text <=> root.host;
                 edited(v) => { root.host = v; root.notify-updated(); }
             }
             Input {
                 horizontal-stretch: 1;
-                placeholder: @tr("Target port");
+                placeholder: root.lang-en ? "Target port" : "目标端口";
                 text <=> root.host-port;
                 edited(v) => { root.host-port = v; root.notify-updated(); }
             }
@@ -116,6 +117,7 @@ component FwdRow inherits Rectangle {
 
 // 登录触发器行（#212）：期望输出 → 自动回送。响应框保持"空 = 保留已存值"的语义。
 component TrigRow inherits Rectangle {
+    in property <bool> lang-en: false;
     in property <TriggerDraft> trigger;
     in property <int> index;
     callback updated(int, TriggerDraft);
@@ -150,7 +152,7 @@ component TrigRow inherits Rectangle {
             spacing: 6px;
             Input {
                 horizontal-stretch: 1;
-                placeholder: @tr("Expected output");
+                placeholder: root.lang-en ? "Expected output" : "期望输出";
                 text <=> root.expect;
                 edited(v) => { root.expect = v; root.notify-updated(); }
             }
@@ -161,19 +163,19 @@ component TrigRow inherits Rectangle {
             }
         }
         Input {
-            placeholder: @tr("Response (leave blank to keep saved value)");
+            placeholder: root.lang-en ? "Response (leave blank to keep saved value)" : "响应（留空 = 保留已存值）";
             text <=> root.response;
             edited(v) => { root.response = v; root.notify-updated(); }
         }
         HorizontalLayout {
             spacing: 10px;
             Seg {
-                label: @tr("Send Enter");
+                label: root.lang-en ? "Send Enter" : "追加回车";
                 active: root.append-enter;
                 clicked => { root.append-enter = !root.append-enter; root.notify-updated(); }
             }
             Seg {
-                label: @tr("Repeat");
+                label: root.lang-en ? "Repeat" : "重复";
                 active: root.repeat;
                 clicked => { root.repeat = !root.repeat; root.notify-updated(); }
             }
@@ -184,6 +186,7 @@ component TrigRow inherits Rectangle {
 
 // 主机分组：可输入（新建分组）+ ▾ 从已有分组里挑（#179，行为同旧 `GroupCombo`）。
 component GroupInput inherits Rectangle {
+    in property <bool> lang-en: false;
     in-out property <string> text;
     in property <[string]> options;
 
@@ -195,7 +198,7 @@ component GroupInput inherits Rectangle {
         Input {
             horizontal-stretch: 1;
             text <=> root.text;
-            placeholder: @tr("e.g. Production / Database");
+            placeholder: root.lang-en ? "e.g. Production / Database" : "如 生产 / 数据库";
         }
         Btn {
             glyph: "\u{E5CF}"; // arrow_drop_down
@@ -223,7 +226,7 @@ component GroupInput inherits Rectangle {
             if root.options.length == 0 : Text {
                 width: parent.width;
                 height: parent.height;
-                text: @tr("No groups yet — type one above");
+                text: root.lang-en ? "No groups yet — type one above" : "还没有分组 —— 在上面输入即可新建";
                 font-size: 11px;
                 color: Theme.fg-3;
                 horizontal-alignment: center;
@@ -272,6 +275,9 @@ component GroupInput inherits Rectangle {
 
 export component SessionDialog inherits Rectangle {
     in-out property <bool> is-open: false;
+    // 中英文切换：新外壳按 `lang-en ? EN : 中文` 的约定走（旧 `@tr()` 依赖 lang/
+    // 里的翻译表，本轮新增的字符串没有词条，会露出英文 —— 中英混排就是这么来的）。
+    in property <bool> lang-en: false;
     in-out property <bool> is-editing: false;
     in-out property <string> draft-id;
     in-out property <string> draft-name;
@@ -357,8 +363,7 @@ export component SessionDialog inherits Rectangle {
         };
     }
 
-    // 协议下拉的显示文案 / 下标（下拉用下标，draft-kind 用字符串）。
-    property <int> kind-index: root.draft-kind == "serial" ? 1 : (root.draft-kind == "telnet" ? 2 : 0);
+    // 头部类型徽标的文案（draft-kind 是字符串：ssh / serial / telnet）。
     property <string> kind-label: root.draft-kind == "serial" ? "SERIAL" : (root.draft-kind == "telnet" ? "TELNET" : "SSH");
     property <bool> proxy-on: root.draft-proxy-type != "none";
     property <bool> jump-on: root.draft-jump-index > 0;
@@ -407,7 +412,7 @@ export component SessionDialog inherits Rectangle {
                     spacing: 8px;
 
                     Text {
-                        text: root.is-editing ? @tr("Edit host") : @tr("New host");
+                        text: root.is-editing ? root.lang-en ? "Edit host" : "编辑主机" : root.lang-en ? "New host" : "新建主机";
                         font-size: 14px;
                         font-weight: 700;
                         color: Theme.fg-1;
@@ -456,20 +461,20 @@ export component SessionDialog inherits Rectangle {
 
                     // ── 基础信息 ───────────────────────────────────────────
                     Section {
-                        title: @tr("Basics");
+                        title: root.lang-en ? "Basics" : "基础信息";
 
                         VerticalLayout {
                             spacing: 8px;
                             alignment: start;
 
                             Text {
-                                text: @tr("Alias");
+                                text: root.lang-en ? "Alias" : "主机别名";
                                 font-size: 11px;
                                 color: Theme.fg-2;
                             }
                             Input {
                                 text <=> root.draft-name;
-                                placeholder: @tr("Optional — the IP is used when blank");
+                                placeholder: root.lang-en ? "Optional — the IP is used when blank" : "可选 —— 留空就用 IP 当名字";
                             }
                             HorizontalLayout {
                                 spacing: 10px;
@@ -479,13 +484,14 @@ export component SessionDialog inherits Rectangle {
                                     alignment: start;
 
                                     Text {
-                                        text: @tr("Group");
+                                        text: root.lang-en ? "Group" : "主机分组";
                                         font-size: 11px;
                                         color: Theme.fg-2;
                                     }
                                     GroupInput {
                                         text <=> root.draft-group;
                                         options: root.session-groups;
+                                        lang-en: root.lang-en;
                                     }
                                 }
                                 VerticalLayout {
@@ -494,13 +500,13 @@ export component SessionDialog inherits Rectangle {
                                     alignment: start;
 
                                     Text {
-                                        text: @tr("Note (Description)");
+                                        text: root.lang-en ? "Note (Description)" : "备注（Description）";
                                         font-size: 11px;
                                         color: Theme.fg-2;
                                     }
                                     Input {
                                         text <=> root.draft-note;
-                                        placeholder: @tr("What this host is for");
+                                        placeholder: root.lang-en ? "What this host is for" : "简要描述这台主机的用途";
                                     }
                                 }
                             }
@@ -509,7 +515,7 @@ export component SessionDialog inherits Rectangle {
 
                     // ── 连接设置 ───────────────────────────────────────────
                     Section {
-                        title: @tr("Connection");
+                        title: root.lang-en ? "Connection" : "连接设置";
 
                         VerticalLayout {
                             spacing: 8px;
@@ -524,30 +530,40 @@ export component SessionDialog inherits Rectangle {
                                     alignment: start;
 
                                     Text {
-                                        text: @tr("Protocol");
+                                        text: root.lang-en ? "Protocol" : "协议";
                                         font-size: 11px;
                                         color: Theme.fg-2;
                                     }
-                                    Select {
-                                        text: root.kind-label;
-                                        options: ["SSH", @tr("Serial"), "Telnet"];
-                                        current: root.kind-index;
-                                        picked(i) => {
-                                            // 切协议时给默认端口让位，但不动用户改过的端口（#303）。
-                                            if (i == 0) {
+                                    // 三分段（同旧对话框的做法）：点一下就切，不依赖弹层浮窗。
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Seg {
+                                            label: "SSH";
+                                            active: root.draft-kind == "ssh";
+                                            clicked => {
+                                                // 切协议时给默认端口让位，但不动用户改过的端口（#303）。
                                                 if (root.draft-kind != "ssh" && root.draft-port == "23") {
                                                     root.draft-port = "22";
                                                 }
                                                 root.draft-kind = "ssh";
-                                            } else if (i == 1) {
-                                                root.draft-kind = "serial";
-                                            } else {
+                                            }
+                                        }
+                                        Seg {
+                                            label: root.lang-en ? "Serial" : "串口";
+                                            active: root.draft-kind == "serial";
+                                            clicked => { root.draft-kind = "serial"; }
+                                        }
+                                        Seg {
+                                            label: "Telnet";
+                                            active: root.draft-kind == "telnet";
+                                            clicked => {
                                                 if (root.draft-kind != "telnet" && root.draft-port == "22") {
                                                     root.draft-port = "23";
                                                 }
                                                 root.draft-kind = "telnet";
                                             }
                                         }
+                                        Rectangle { horizontal-stretch: 1; }
                                     }
                                 }
 
@@ -557,7 +573,7 @@ export component SessionDialog inherits Rectangle {
                                     alignment: start;
 
                                     Text {
-                                        text: @tr("Host / IP");
+                                        text: root.lang-en ? "Host / IP" : "主机地址 / IP";
                                         font-size: 11px;
                                         color: Theme.fg-2;
                                     }
@@ -573,7 +589,7 @@ export component SessionDialog inherits Rectangle {
                                     alignment: start;
 
                                     Text {
-                                        text: @tr("Port");
+                                        text: root.lang-en ? "Port" : "端口";
                                         font-size: 11px;
                                         color: Theme.fg-2;
                                     }
@@ -586,7 +602,7 @@ export component SessionDialog inherits Rectangle {
 
                             // Inline error when a host-less SSH/Telnet session is submitted (#110).
                             if root.host-missing && root.draft-host == "" && root.draft-kind != "serial" : Text {
-                                text: @tr("Please enter a host / IP address.");
+                                text: root.lang-en ? "Please enter a host / IP address." : "请填写主机地址 / IP。";
                                 color: Theme.danger;
                                 font-size: 11px;
                             }
@@ -597,7 +613,7 @@ export component SessionDialog inherits Rectangle {
                                 alignment: start;
 
                                 Text {
-                                    text: @tr("Serial port");
+                                    text: root.lang-en ? "Serial port" : "串口设备";
                                     font-size: 11px;
                                     color: Theme.fg-2;
                                 }
@@ -613,7 +629,7 @@ export component SessionDialog inherits Rectangle {
                                         spacing: 8px;
                                         alignment: start;
 
-                                        Text { text: @tr("Baud rate"); font-size: 11px; color: Theme.fg-2; }
+                                        Text { text: root.lang-en ? "Baud rate" : "波特率"; font-size: 11px; color: Theme.fg-2; }
                                         Input { text <=> root.draft-baud; placeholder: "115200"; }
                                     }
                                     VerticalLayout {
@@ -621,7 +637,7 @@ export component SessionDialog inherits Rectangle {
                                         spacing: 8px;
                                         alignment: start;
 
-                                        Text { text: @tr("Data bits"); font-size: 11px; color: Theme.fg-2; }
+                                        Text { text: root.lang-en ? "Data bits" : "数据位"; font-size: 11px; color: Theme.fg-2; }
                                         Select {
                                             text: root.draft-data-bits;
                                             options: ["5", "6", "7", "8"];
@@ -634,7 +650,7 @@ export component SessionDialog inherits Rectangle {
                                         spacing: 8px;
                                         alignment: start;
 
-                                        Text { text: @tr("Stop bits"); font-size: 11px; color: Theme.fg-2; }
+                                        Text { text: root.lang-en ? "Stop bits" : "停止位"; font-size: 11px; color: Theme.fg-2; }
                                         Select {
                                             text: root.draft-stop-bits;
                                             options: ["1", "2"];
@@ -650,7 +666,7 @@ export component SessionDialog inherits Rectangle {
                                         spacing: 8px;
                                         alignment: start;
 
-                                        Text { text: @tr("Parity"); font-size: 11px; color: Theme.fg-2; }
+                                        Text { text: root.lang-en ? "Parity" : "校验"; font-size: 11px; color: Theme.fg-2; }
                                         Select {
                                             text: root.draft-parity;
                                             options: ["none", "odd", "even"];
@@ -663,7 +679,7 @@ export component SessionDialog inherits Rectangle {
                                         spacing: 8px;
                                         alignment: start;
 
-                                        Text { text: @tr("Flow control"); font-size: 11px; color: Theme.fg-2; }
+                                        Text { text: root.lang-en ? "Flow control" : "流控"; font-size: 11px; color: Theme.fg-2; }
                                         Select {
                                             text: root.draft-flow;
                                             options: ["none", "hardware", "software"];
@@ -676,7 +692,7 @@ export component SessionDialog inherits Rectangle {
                                         spacing: 8px;
                                         alignment: start;
 
-                                        Text { text: @tr("Encoding"); font-size: 11px; color: Theme.fg-2; }
+                                        Text { text: root.lang-en ? "Encoding" : "编码"; font-size: 11px; color: Theme.fg-2; }
                                         Input { text <=> root.draft-encoding; placeholder: "UTF-8"; }
                                     }
                                 }
@@ -686,7 +702,7 @@ export component SessionDialog inherits Rectangle {
 
                     // ── 认证方式（SSH）─────────────────────────────────────
                     if root.draft-kind == "ssh" : Section {
-                        title: @tr("Authentication");
+                        title: root.lang-en ? "Authentication" : "认证方式";
 
                         VerticalLayout {
                             spacing: 8px;
@@ -696,15 +712,15 @@ export component SessionDialog inherits Rectangle {
                                 spacing: 10px;
                                 OptionCard {
                                     glyph: "\u{E897}"; // lock
-                                    title: @tr("Password");
-                                    desc: @tr("Ask for the password on connect");
+                                    title: root.lang-en ? "Password" : "密码";
+                                    desc: root.lang-en ? "Ask for the password on connect" : "连接时输入密码";
                                     selected: root.draft-auth == "password";
                                     clicked => { root.draft-auth = "password"; }
                                 }
                                 OptionCard {
                                     glyph: "\u{E0DA}"; // vpn_key
-                                    title: @tr("Private key");
-                                    desc: @tr("Use a key file or paste the key");
+                                    title: root.lang-en ? "Private key" : "私钥";
+                                    desc: root.lang-en ? "Use a key file or paste the key" : "用密钥文件或直接粘贴";
                                     selected: root.draft-auth == "key";
                                     clicked => { root.draft-auth = "key"; }
                                 }
@@ -713,8 +729,8 @@ export component SessionDialog inherits Rectangle {
                                 spacing: 10px;
                                 OptionCard {
                                     glyph: "\u{E8D4}"; // verified_user
-                                    title: @tr("Keyboard-interactive");
-                                    desc: @tr("Server prompts during login (MFA / OTP asks again)");
+                                    title: root.lang-en ? "Keyboard-interactive" : "键盘交互";
+                                    desc: root.lang-en ? "Server prompts during login (MFA / OTP asks again)" : "登录时由服务器提问（MFA / OTP 会再问一次）";
                                     selected: root.draft-auth == "keyboard-interactive";
                                     clicked => { root.draft-auth = "keyboard-interactive"; }
                                 }
@@ -722,13 +738,13 @@ export component SessionDialog inherits Rectangle {
                             }
 
                             Text {
-                                text: @tr("Username");
+                                text: root.lang-en ? "Username" : "用户名";
                                 font-size: 11px;
                                 color: Theme.fg-2;
                             }
                             Input {
                                 text <=> root.draft-user;
-                                placeholder: @tr("Prompted on connect if blank");
+                                placeholder: root.lang-en ? "Prompted on connect if blank" : "留空则连接时询问";
                             }
 
                             if root.draft-auth == "password" || root.draft-auth == "keyboard-interactive" : VerticalLayout {
@@ -736,14 +752,14 @@ export component SessionDialog inherits Rectangle {
                                 alignment: start;
 
                                 Text {
-                                    text: root.draft-auth == "keyboard-interactive" ? @tr("Password / first answer") : @tr("Password");
+                                    text: root.draft-auth == "keyboard-interactive" ? root.lang-en ? "Password / first answer" : "密码 / 第一个应答" : root.lang-en ? "Password" : "密码";
                                     font-size: 11px;
                                     color: Theme.fg-2;
                                 }
                                 Input {
                                     password: true;
                                     text <=> root.draft-password;
-                                    placeholder: root.is-editing ? @tr("Leave blank to keep the current password") : "••••••••";
+                                    placeholder: root.is-editing ? root.lang-en ? "Leave blank to keep the current password" : "留空则保留原密码" : "••••••••";
                                 }
                             }
 
@@ -754,12 +770,12 @@ export component SessionDialog inherits Rectangle {
                                 HorizontalLayout {
                                     spacing: 6px;
                                     Seg {
-                                        label: @tr("Private key file");
+                                        label: root.lang-en ? "Private key file" : "私钥文件";
                                         active: !root.draft-key-inline-mode;
                                         clicked => { root.draft-key-inline-mode = false; }
                                     }
                                     Seg {
-                                        label: @tr("Paste private key");
+                                        label: root.lang-en ? "Paste private key" : "粘贴私钥内容";
                                         active: root.draft-key-inline-mode;
                                         clicked => { root.draft-key-inline-mode = true; }
                                     }
@@ -778,12 +794,12 @@ export component SessionDialog inherits Rectangle {
                                             placeholder: "/home/you/.ssh/id_ed25519";
                                         }
                                         Btn {
-                                            text: @tr("Browse…");
+                                            text: root.lang-en ? "Browse…" : "浏览…";
                                             clicked => { root.pick-key-file(); }
                                         }
                                     }
                                     Text {
-                                        text: @tr("Pick the private key itself (not the .pub public key)");
+                                        text: root.lang-en ? "Pick the private key itself (not the .pub public key)" : "请选私钥本身（不是 .pub 公钥）";
                                         font-size: 10px;
                                         color: Theme.fg-3;
                                     }
@@ -805,15 +821,15 @@ export component SessionDialog inherits Rectangle {
 
                     // ── 代理与跳板机（SSH）─────────────────────────────────
                     if root.draft-kind == "ssh" : Section {
-                        title: @tr("Proxy & jump host");
+                        title: root.lang-en ? "Proxy & jump host" : "代理与跳板机";
 
                         VerticalLayout {
                             spacing: 4px;
                             alignment: start;
 
                             ToggleRow {
-                                label: @tr("Proxy");
-                                desc: @tr("Connect through a SOCKS5 / HTTP proxy");
+                                label: root.lang-en ? "Proxy" : "启用代理";
+                                desc: root.lang-en ? "Connect through a SOCKS5 / HTTP proxy" : "通过 SOCKS5 / HTTP 代理连接";
                                 on: root.proxy-on;
                                 toggled => {
                                     root.draft-proxy-type = root.proxy-on ? "none" : "socks5";
@@ -826,7 +842,7 @@ export component SessionDialog inherits Rectangle {
                                     spacing: 8px;
                                     alignment: start;
 
-                                    Text { text: @tr("Type"); font-size: 11px; color: Theme.fg-2; }
+                                    Text { text: root.lang-en ? "Type" : "类型"; font-size: 11px; color: Theme.fg-2; }
                                     Select {
                                         text: root.draft-proxy-type == "http" ? "HTTP" : "SOCKS5";
                                         options: ["SOCKS5", "HTTP"];
@@ -839,7 +855,7 @@ export component SessionDialog inherits Rectangle {
                                     spacing: 8px;
                                     alignment: start;
 
-                                    Text { text: @tr("Address"); font-size: 11px; color: Theme.fg-2; }
+                                    Text { text: root.lang-en ? "Address" : "地址"; font-size: 11px; color: Theme.fg-2; }
                                     Input {
                                         text <=> root.draft-proxy-hostport;
                                         placeholder: "127.0.0.1:1080";
@@ -848,8 +864,8 @@ export component SessionDialog inherits Rectangle {
                             }
 
                             ToggleRow {
-                                label: @tr("Jump host");
-                                desc: @tr("Hop through another saved SSH session");
+                                label: root.lang-en ? "Jump host" : "启用跳板机";
+                                desc: root.lang-en ? "Hop through another saved SSH session" : "经由另一台已保存的 SSH 会话中转";
                                 on: root.jump-on;
                                 toggled => {
                                     root.draft-jump-index = root.jump-on ? 0 : (root.jump-choices.length > 1 ? 1 : 0);
@@ -859,7 +875,7 @@ export component SessionDialog inherits Rectangle {
                                 spacing: 8px;
                                 alignment: start;
 
-                                Text { text: @tr("Pick a host"); font-size: 11px; color: Theme.fg-2; }
+                                Text { text: root.lang-en ? "Pick a host" : "选择主机"; font-size: 11px; color: Theme.fg-2; }
                                 Select {
                                     text: root.draft-jump-index < root.jump-choices.length
                                         ? root.jump-choices[root.draft-jump-index]
@@ -874,15 +890,15 @@ export component SessionDialog inherits Rectangle {
 
                     // ── 高级：shell 集成开关 + 端口转发 / 登录触发器 ────────
                     Section {
-                        title: @tr("Advanced");
+                        title: root.lang-en ? "Advanced" : "高级";
 
                         VerticalLayout {
                             spacing: 4px;
                             alignment: start;
 
                             ToggleRow {
-                                label: @tr("Disable shell integration");
-                                desc: @tr("Windows / pwsh servers: skips the POSIX cwd-follow hook and monitor");
+                                label: root.lang-en ? "Disable shell integration" : "禁用 shell 集成";
+                                desc: root.lang-en ? "Windows / pwsh servers: skips the POSIX cwd-follow hook and monitor" : "Windows / pwsh 服务器：跳过依赖 POSIX 的目录跟随与监控";
                                 on: root.draft-disable-shell-integration;
                                 toggled => {
                                     root.draft-disable-shell-integration = !root.draft-disable-shell-integration;
@@ -914,8 +930,8 @@ export component SessionDialog inherits Rectangle {
                                     }
                                     Text {
                                         text: root.draft-kind == "ssh"
-                                            ? @tr("Port forwarding & login triggers")
-                                            : @tr("Port forwarding");
+                                            ? root.lang-en ? "Port forwarding & login triggers" : "端口转发与登录触发器"
+                                            : root.lang-en ? "Port forwarding" : "端口转发";
                                         font-size: 12px;
                                         color: Theme.fg-1;
                                         vertical-alignment: center;
@@ -937,7 +953,7 @@ export component SessionDialog inherits Rectangle {
                         alignment: start;
 
                         Text {
-                            text: @tr("Port forwarding");
+                            text: root.lang-en ? "Port forwarding" : "端口转发";
                             font-size: 11px;
                             font-weight: 600;
                             color: Theme.fg-2;
@@ -945,18 +961,19 @@ export component SessionDialog inherits Rectangle {
                         for f[i] in root.forwards : FwdRow {
                             forward: f;
                             index: i;
+                            lang-en: root.lang-en;
                             updated(index, value) => { root.update-forward(index, value); }
                             remove(index) => { root.delete-forward(index); }
                         }
                         HorizontalLayout {
                             alignment: end;
                             Btn {
-                                text: @tr("Add");
+                                text: root.lang-en ? "Add" : "添加";
                                 clicked => { root.add-forward(); }
                             }
                         }
                         Text {
-                            text: @tr("-L: local port → target reached from the server; -R: server port → target reached from here; -D: local SOCKS5 proxy");
+                            text: root.lang-en ? "-L: local port → target reached from the server; -R: server port → target reached from here; -D: local SOCKS5 proxy" : "-L：本地端口 → 由服务器侧连接目标；-R：服务器端口 → 由本机连接目标；-D：本地 SOCKS5 动态代理";
                             font-size: 10px;
                             color: Theme.fg-3;
                             wrap: word-wrap;
@@ -967,7 +984,7 @@ export component SessionDialog inherits Rectangle {
                             alignment: start;
 
                             Text {
-                                text: @tr("Login triggers");
+                                text: root.lang-en ? "Login triggers" : "登录触发器";
                                 font-size: 11px;
                                 font-weight: 600;
                                 color: Theme.fg-2;
@@ -975,18 +992,19 @@ export component SessionDialog inherits Rectangle {
                             for trigger[i] in root.triggers : TrigRow {
                                 trigger: trigger;
                                 index: i;
+                                lang-en: root.lang-en;
                                 updated(index, value) => { root.update-trigger(index, value); }
                                 remove(index) => { root.delete-trigger(index); }
                             }
                             HorizontalLayout {
                                 alignment: end;
                                 Btn {
-                                    text: @tr("Add trigger");
+                                    text: root.lang-en ? "Add trigger" : "添加触发器";
                                     clicked => { root.add-trigger(); }
                                 }
                             }
                             Text {
-                                text: @tr("When expected text appears, send the response automatically. Responses are stored encrypted.");
+                                text: root.lang-en ? "When expected text appears, send the response automatically. Responses are stored encrypted." : "出现期望文本时自动回送响应；响应内容加密保存。";
                                 font-size: 10px;
                                 color: Theme.fg-3;
                                 wrap: word-wrap;
@@ -1012,18 +1030,18 @@ export component SessionDialog inherits Rectangle {
 
                     Btn {
                         glyph: "\u{E1AF}"; // network_check
-                        text: @tr("Test connection");
+                        text: root.lang-en ? "Test connection" : "测试连接";
                         clicked => {
                             if (root.draft-kind != "serial" && root.draft-host == "") {
                                 root.host-missing = true;
                                 return;
                             }
                             if (root.draft-kind == "serial" && root.draft-serial-port == "") {
-                                root.test-status = @tr("Please enter a serial port.");
+                                root.test-status = root.lang-en ? "Please enter a serial port." : "请填写串口设备。";
                                 return;
                             }
                             root.host-missing = false;
-                            root.test-status = @tr("Testing...");
+                            root.test-status = root.lang-en ? "Testing..." : "测试中…";
                             root.test-connection(root.build-draft());
                         }
                     }
@@ -1036,11 +1054,11 @@ export component SessionDialog inherits Rectangle {
                         overflow: elide;
                     }
                     Btn {
-                        text: @tr("Cancel");
+                        text: root.lang-en ? "Cancel" : "取消";
                         clicked => { root.cancel(); }
                     }
                     Btn {
-                        text: root.is-editing ? @tr("Save host") : @tr("Create host");
+                        text: root.is-editing ? root.lang-en ? "Save host" : "保存主机" : root.lang-en ? "Create host" : "创建主机";
                         variant: "primary";
                         clicked => {
                             // SSH/Telnet need a host; block submit and flag it (#110).
