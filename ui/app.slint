@@ -40,10 +40,14 @@ import { PageSnippets } from "shell/page_snippets.slint";
 // 终端舞台的类型（②-1 从本文件搬走）：import 之后再 export，Rust 生成类型不变。
 import { TerminalState, PaneInfo, SplitterInfo } from "shell/stage_types.slint";
 export { TerminalState, PaneInfo, SplitterInfo }
+// 终端舞台本体（②-2）：分屏 / 标签条 / TerminalView 全在新外壳的终端页里。
+import { TerminalStage } from "shell/terminal_stage.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
-import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
+// ②-2 之后本文件不再直接实例化 TerminalView（终端舞台接管）；QuickCmd 仍要
+// import —— 它在本文件被用作属性类型，且在下面的 export 清单里（Rust 生成类型）。
+import { QuickCmd } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
@@ -81,7 +85,6 @@ import { ConfirmOverlays } from "confirm_overlays.slint";
 import { ShortcutsDialog } from "shortcuts_dialog.slint";
 import { AppTitleBar } from "shell/titlebar.slint";
 import { PageTerminal } from "shell/page_terminal.slint";
-import { PaneTabs } from "shell/pane_tabs.slint";
 import { StatusBar } from "shell/status_bar.slint";
 import { RightPanel } from "shell/right_panel.slint";
 import { PageSettings } from "shell/page_settings.slint";
@@ -309,8 +312,10 @@ export component AppWindow inherits Window {
     callback toggle-quick-group(string /* group */);  // collapse/expand a group (#55)
     // Quick-command group management (mirror session groups) (#55).
     in-out property <bool> qcg-open: false;           // group name dialog open
-    property <string> qcg-name;                       // group dialog: name field
-    property <string> qcg-orig;                       // group dialog: "" = new, else rename target
+    // 分组对话框的两个字段是终端舞台（shell/terminal_stage.slint）里就会改的状态，
+    // 所以改成 in-out 好让它双向绑过去（②-2）。
+    in-out property <string> qcg-name;                // group dialog: name field
+    in-out property <string> qcg-orig;                // group dialog: "" = new, else rename target
     callback submit-quick-group(string /* orig */, string /* name */);
     callback delete-quick-group(string /* name */);
     in property <[TransferInfo]> transfers; // download/upload records (newest first)
@@ -1281,325 +1286,11 @@ export component AppWindow inherits Window {
             }
         }
 
-        // Right side: tabs + content — positioned in the rect left after the
-        // sidebar is carved off its docked edge. Clipped so the terminal / SFTP
-        // panel can never bleed (visually or for clicks) onto a panel docked on
-        // the bottom or right (#dock).
-        quick-area := Rectangle {
-            x: root.sidebar-dock == "left" ? parent.sb-taken + parent.sp : 0px;
-            y: root.sidebar-dock == "top"  ? parent.sb-h-taken + parent.sp : 0px;
-            width:  root.sidebar-horizontal ? parent.width - parent.sb-taken - parent.sp : parent.width;
-            height: root.sidebar-horizontal ? parent.height : parent.height - parent.sb-h-taken - parent.sp;
-            clip: true;
-            property <bool> quick-horizontal:
-                root.quick-panel-dock == "left" || root.quick-panel-dock == "right";
-            property <length> quick-w:
-                root.quick-panel-open && !root.quick-panel-collapsed ? root.quick-panel-width : 0px;
-            property <length> quick-h:
-                root.quick-panel-open && !root.quick-panel-collapsed ? root.quick-panel-height : 0px;
-            property <length> quick-sp:
-                root.quick-panel-open && !root.quick-panel-collapsed ? 4px : 0px;
-
-            central := Rectangle {
-            x: root.quick-panel-open && !root.quick-panel-collapsed && root.quick-panel-dock == "left"
-                ? parent.quick-w + parent.quick-sp : 0px;
-            y: root.quick-panel-open && !root.quick-panel-collapsed && root.quick-panel-dock == "top"
-                ? parent.quick-h + parent.quick-sp : 0px;
-            width: root.quick-panel-open && !root.quick-panel-collapsed && parent.quick-horizontal
-                ? parent.width - parent.quick-w - parent.quick-sp : parent.width;
-            height: root.quick-panel-open && !root.quick-panel-collapsed && !parent.quick-horizontal
-                ? parent.height - parent.quick-h - parent.quick-sp : parent.height;
-            clip: true;
-            // Split-pane area (v0.5): panes tile this rect; each pane has its own
-            // tab strip + active terminal / welcome. Rust flattens the split tree
-            // into `panes` for the size we report here.
-            pane-area := Rectangle {
-                width: parent.width;
-                height: parent.height;
-                changed width => { root.content-resized(self.width, self.height); }
-                changed height => { root.content-resized(self.width, self.height); }
-            for pane[pi] in root.panes : Rectangle {
-                x: pane.x; y: pane.y; width: pane.w; height: pane.h;
-                clip: true;
-                VerticalLayout {
-                spacing: 0;
-
-                HorizontalLayout {
-                spacing: 0;
-                // (Collapsed resource panel now reserves its own ToolStrip slot in
-                // `rest`, so the tab strip no longer needs a spacer for it.)
-                  // 新标签条（A-2.4，按参考图）：药丸标签 + ➕ + 快捷指令/分屏/全屏。
-                  // 旧 TabBar 的拖拽排序 / 跨分屏合并 / 重复标签暂未迁移。
-                  PaneTabs {
-                      pane-id: pane.id;
-                      tabs: pane.tabs;
-                      active-id: pane.active-id;
-                      reserve-right: pane.reserve-right;
-                      tab-selected(id) => { root.pane-tab-selected(pane.id, id); }
-                      tab-closed(id) => { root.pane-tab-closed(pane.id, id); }
-                      tab-rename-requested(id) => { root.tab-rename-request(id); }
-                      new-tab() => { root.pane-new-tab(pane.id); }
-                      split-active() => { root.pane-split(pane.id, pane.active-id, 0); }
-                      toggle-panel() => { root.right-panel-open = !root.right-panel-open; }
-                              toggle-full() => { root.toggle-zen-key(); }
-                  }
-                }
-
-            // Content area swaps based on active tab kind.
-            Rectangle {
-                vertical-stretch: 1;
-                background: Theme.bg-root;
-
-                // Empty pane outside welcome-sidebar mode: keep a small hint for
-                // rare empty panes, but do not cover the wallpaper when the
-                // session list is already visible as a sidebar.
-                if pane.tabs.length == 0 && !root.welcome-as-sidebar : Rectangle {
-                    width: parent.width;
-                    height: parent.height;
-                    Text {
-                        text: root.lang-en
-                            ? "Pick a session on the left to begin"
-                            : "从左侧选择一个会话开始";
-                        color: Theme.text-muted;
-                        font-size: Theme.fs-sm;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-
-                // Welcome tab — fill the content area explicitly (some renderers
-                // don't auto-fill, which spread the header/card apart) (#dock).
-
-                // Terminal tabs — one TerminalView per terminal state. Only
-                // the one matching `active-tab-id` is visible. Slint doesn't
-                // allow nesting `if` directly inside a `for`, so we toggle
-                // visibility instead and rely on the layout to overlap them.
-                for term[i] in root.terminals : TerminalView {
-                    visible: term.id == pane.active-id;
-                    active: term.id == root.active-tab-id;
-                    focus-sequence: root.terminal-focus-sequence;
-                    width: term.id == pane.active-id ? parent.width : 0px;
-                    height: term.id == pane.active-id ? parent.height : 0px;
-                    tab-id: term.id;
-                    status-line: term.status;
-                    spans: term.spans;
-                    cursor-row: term.cursor-row;
-                    cursor-col: term.cursor-col;
-                    cursor-style: root.term-cursor-style;
-                    cursor-color: root.term-cursor-color;
-                    rows-used: term.rows-used;
-                    scroll-max: term.scroll-max;
-                    scroll-offset: term.scroll-offset;
-                    is-alt-screen: term.is-alt-screen;
-                    mouse-tracked: term.mouse-tracked;
-                    terminal-mouse(kind, button, col, row) => {
-                        root.terminal-mouse(term.id, kind, button, col, row);
-                    }
-                    find-matches: term.find-matches;
-                    selection: term.selection;
-                    sftp-panel-height: term.sftp-panel-height;
-                    set-sftp-panel-height(v) => { root.set-pane-sftp-height(term.id, v); }
-                    sftp-panel-width: term.sftp-panel-width;
-                    set-sftp-panel-width(v) => { root.set-pane-sftp-width(term.id, v); }
-                    sftp-dock <=> root.sftp-dock;
-                    sftp-available: false; // 旧 SFTP 侧栏移除（新设计：文件走右侧面板，待接）
-                    sftp-collapsed: term.sftp-collapsed;
-                    set-sftp-collapsed(v) => { root.set-pane-sftp-collapsed(term.id, v); }
-                    sftp-path: term.sftp-path;
-                    sftp-entries: term.sftp-entries;
-                    sftp-status: term.sftp-status;
-                    sftp-loading: term.sftp-loading;
-                    sftp-tree-nodes: term.sftp-tree-nodes;
-                    sftp-transfer-targets: root.tabs;
-                    sftp-selected-count: term.sftp-selected-count;
-                    sftp-sort-key: term.sftp-sort-key;
-                    sftp-sort-dir: term.sftp-sort-dir;
-                    tunnels: term.tunnels;
-                    quick-commands: root.quick-commands;
-                    // 快捷命令侧栏已按需求移除（2026-09）：配置里的旧值不再生效。
-                    quick-sidebar-enabled: false;
-                    // Quick 入口按钮只在「快捷命令未停靠为侧栏」时显示。
-                    // 此前误绑 quick-panel-open：布局还原把 as-sidebar 关掉之后，
-                    // 侧栏消失而入口按钮仍被隐藏，快捷命令就彻底无法访问了。
-                    quick-panel-docked: false;
-                    cmd-bar-hidden: !root.show-cmd-bar;
-                    // Per-session zoom override wins over the global size.
-                    term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : Theme.term-font-size / 1px;
-                    quick-external-command: root.quick-external-command;
-                    quick-external-send-enter: root.quick-external-send-enter;
-                    quick-external-sequence: root.quick-external-sequence;
-                    command-history: root.command-history;
-                    history-view: root.history-view;
-                    history-preview: root.history-preview;
-                    run-command(cmd, all) => { root.run-command(term.id, cmd, all); }
-                    copy-text(t) => { root.copy-text(t); }
-                    delete-history(i) => { root.delete-history(i); }
-                    delete-history-cmd(c) => { root.delete-history-cmd(c); }
-                    search-history(q) => { root.search-history(q); }
-                    manage-quick-commands() => {
-                        root.qcm-name = "";
-                        root.qcm-command = "";
-                        root.qcm-group = "";
-                        root.qcm-edit-index = -1;
-                        root.quick-cmd-manage-open = true;
-                    }
-                    quick-dock-drag-move(ax, ay) => {
-                        root.panel-dragging = true;
-                        root.drag-nx = (ax - dock-area.absolute-position.x) / dock-area.width;
-                        root.drag-ny = (ay - dock-area.absolute-position.y) / dock-area.height;
-                    }
-                    quick-dock-drag-end() => {
-                        if (root.dock-target != "") {
-                            root.quick-panel-dock = root.dock-target;
-                            root.quick-panel-open = true;
-                            root.quick-panel-collapsed = false;
-                            if (root.sidebar-dock == root.dock-target) {
-                                root.sidebar-collapsed = true;
-                                root.set-sidebar-collapsed(true);
-                            }
-                            if (root.welcome-as-sidebar
-                                    && root.welcome-sidebar-dock == root.dock-target) {
-                                root.welcome-collapsed = true;
-                                root.set-welcome-collapsed(true);
-                            }
-                        }
-                        root.panel-dragging = false;
-                    }
-                    toggle-quick-group(g) => { root.toggle-quick-group(g); }
-                    edit-quick-command(i) => { root.edit-quick-command(i); }
-                    duplicate-quick-command(i) => { root.duplicate-quick-command(i); }
-                    delete-quick-command(i) => { root.delete-quick-command(i); }
-                    move-quick-command(i, g) => { root.move-quick-command(i, g); }
-                    new-quick-group() => { root.qcg-orig = ""; root.qcg-name = ""; root.qcg-open = true; }
-                    rename-quick-group(g) => { root.qcg-orig = g; root.qcg-name = g; root.qcg-open = true; }
-                    delete-quick-group(g) => { root.delete-quick-group(g); }
-                    send-key(key, ctrl, alt, shift) => { root.send-key(term.id, key, ctrl, alt, shift) }
-                    cycle-tab(reverse) => { root.cycle-tab(reverse); }
-                    terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
-                    sftp-navigate(path) => { root.sftp-navigate(term.id, path); }
-                    sftp-download(path) => { root.sftp-download(term.id, path); }
-                    sftp-upload-clicked(dir, folder) => { root.sftp-upload-clicked(term.id, dir, folder); }
-                    sftp-refresh(path) => { root.sftp-refresh(term.id, path); }
-                    sftp-tree-expand(path) => { root.sftp-tree-expand(term.id, path); }
-                    sftp-toggle-select(i) => { root.sftp-toggle-select(term.id, i); }
-                    sftp-download-selected() => { root.sftp-download-selected(term.id); }
-                    sftp-copy-to-target(path, target) => { root.sftp-copy-to-target(term.id, path, target); }
-                    sftp-copy-selected-to-target(target) => { root.sftp-copy-selected-to-target(term.id, target); }
-                    // Confirm before deleting the checked entries (#100), reusing
-                    // the delete-confirm dialog in batch mode.
-                    sftp-delete-selected() => {
-                        root.confirm-delete-tab = term.id;
-                        root.confirm-delete-batch = true;
-                        root.confirm-delete-path = root.lang-en ? "the selected items" : "选中的项目";
-                        root.confirm-delete-open = true;
-                    }
-                    // Gate delete behind an in-app confirmation (#28): stash the
-                    // target and open the modal; the real delete fires on confirm.
-                    sftp-delete(path) => {
-                        root.confirm-delete-tab = term.id;
-                        root.confirm-delete-path = path;
-                        root.confirm-delete-open = true;
-                    }
-                    sftp-view(path) => { root.sftp-view(term.id, path); }
-                    sftp-edit(path) => { root.sftp-edit(term.id, path); }
-                    sftp-open-external(path) => { root.sftp-open-external(term.id, path); }
-                    sftp-edit-external(path) => { root.sftp-edit-external(term.id, path); }
-                    sftp-sort-request(key) => { root.sftp-sort-request(term.id, key); }
-                    sftp-clear-sort() => { root.sftp-clear-sort(term.id); }
-                    tunnel-add(name, kind, bind, bind-port, host, host-port) => {
-                        root.tunnel-add(term.id, name, kind, bind, bind-port, host, host-port);
-                    }
-                    tunnel-stop(id) => { root.tunnel-stop(term.id, id); }
-                    // #69 context-menu extensions → shared prompt dialog.
-                    sftp-rename-request(path, name) => {
-                        root.sftp-prompt-kind = "rename";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = path;
-                        root.sftp-prompt-value = name;
-                        root.sftp-prompt-open = true;
-                    }
-                    sftp-chmod-request(path, name, mode) => {
-                        root.sftp-chmod-open(term.id, path, name, mode);
-                    }
-                    sftp-copy-path(path) => { root.sftp-copy-path(path); }
-                    sftp-new-folder(dir) => {
-                        root.sftp-prompt-kind = "mkdir";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = dir;
-                        root.sftp-prompt-value = "";
-                        root.sftp-prompt-open = true;
-                    }
-                    sftp-new-file(dir) => {
-                        root.sftp-prompt-kind = "touch";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = dir;
-                        root.sftp-prompt-value = "";
-                        root.sftp-prompt-open = true;
-                    }
-                    paste-from-clipboard() => { root.paste-from-clipboard(term.id); }
-                    copy-terminal-text() => { root.copy-terminal-text(term.id); }
-                    clear-terminal() => { root.clear-terminal(term.id); }
-                    find-query-changed(q) => { root.find-query-changed(term.id, q); }
-                    find-next() => { root.find-next(term.id); }
-                    find-prev() => { root.find-prev(term.id); }
-                    terminal-scroll(d) => { root.terminal-scroll(term.id, d); }
-                    terminal-wheel(d, c, r) => { root.terminal-wheel(term.id, d, c, r); }
-                    terminal-scroll-to(o) => { root.terminal-scroll-to(term.id, o); }
-                    terminal-scrollback-key(key) => { root.terminal-scrollback-key(term.id, key) }
-                    select-start(r, c, lh, ctrl, shift) => { root.term-select-start(term.id, r, c, lh, ctrl, shift); }
-                    select-word(r, c) => { root.term-select-word(term.id, r, c); }
-                    select-line(r, c) => { root.term-select-line(term.id, r, c); }
-                    select-update(r, c, lh) => { root.term-select-update(term.id, r, c, lh); }
-                    select-end() => { root.term-select-end(term.id); }
-                    select-autoscroll(dir) => { root.term-select-autoscroll(term.id, dir); }
-                }
-
-                // Windows may show the terminal model being reconstructed when
-                // restoring from minimize (#183). Briefly cover the terminal area
-                // until the restore repaint settles; the underlying PTY/buffer is
-                // untouched.
-                if root.terminal-restore-cover && pane.active-id != "welcome" && pane.tabs.length > 0 : Rectangle {
-                    width: parent.width;
-                    height: parent.height;
-                    background: Theme.term-bg;
-                }
-            }
-            }
-            }
-
-            // Draggable splitters between panes. Single pane => the model is
-            // empty, so this renders nothing. The handle is a thin 6px bar but its
-            // TouchArea reaches ±5px beyond so it's easy to grab.
-            for sp[si] in root.splitters : Rectangle {
-                x: sp.x; y: sp.y; width: sp.w; height: sp.h;
-                background: sp-ta.has-hover || sp-ta.pressed ? Theme.accent : Theme.border-subtle;
-                animate background {
-                    duration: 100ms;
-                    easing: AnimationSettings.color();
-                    enabled: AnimationSettings.enabled;
-                }
-                sp-ta := TouchArea {
-                    x: sp.vertical ? -5px : 0px;
-                    y: sp.vertical ? 0px : -5px;
-                    width: sp.vertical ? parent.width + 10px : parent.width;
-                    height: sp.vertical ? parent.height : parent.height + 10px;
-                    mouse-cursor: sp.vertical ? ew-resize : ns-resize;
-                    moved => {
-                        if (self.pressed) {
-                            root.splitter-drag(sp.split-id,
-                                sp.vertical ? sp.x - 5px + self.mouse-x
-                                            : sp.y - 5px + self.mouse-y,
-                                sp.vertical);
-                        }
-                    }
-                }
-            }
-
-            }
-        }
-
-
-        }
+        // 终端舞台（分屏 / 标签条 / TerminalView / 分屏拖拽条）已搬到
+        // `shell/terminal_stage.slint`（旧外壳删除②-2）：新外壳在 Rail 之后实例化
+        // 它，并接管 `content-resized` 的尺寸上报 —— 原来这一带的
+        // quick-area / central（旧快捷面板停靠）包裹层随之作废。
+        // 剩下的 sidebar-shell（旧资源侧栏，宽度已归零）留到收尾那步一起删。
         }
 
         // (Resource collapse now uses a ToolStrip inside `rest`, above.)
@@ -2014,6 +1705,120 @@ export component AppWindow inherits Window {
               }
         }
 
+      // 终端舞台（旧外壳删除②-2）：分屏 / 标签条 / TerminalView 全在这里，由
+      // `shell/terminal_stage.slint` 渲染；窗口级设置与回调在此 1:1 透传。
+      // 声明在页面之前 = 主机 / 指令集 / Docker / 设置页画在它上面；终端页
+      // 空布局时由 PageTerminal 空状态（声明在后）盖住。常驻、不随切页销毁 ——
+      // 与旧外壳一致：切页不重建 TerminalView（保住滚动/悬停/查找条状态与键盘焦点）。
+      TerminalStage {
+          x: root.rail-w;
+          y: root.shell-top;
+          width: root.width - root.rail-w;
+          // 让开底部状态栏，终端不再被它压住
+          height: root.height - root.shell-top - 28px;
+          panes: root.panes;
+          terminals: root.terminals;
+          splitters: root.splitters;
+          tabs: root.tabs;
+          active-tab-id: root.active-tab-id;
+          lang-en: root.lang-en;
+          terminal-focus-sequence: root.terminal-focus-sequence;
+          term-cursor-style: root.term-cursor-style;
+          term-cursor-color: root.term-cursor-color;
+          show-cmd-bar: root.show-cmd-bar;
+          terminal-restore-cover: root.terminal-restore-cover;
+          command-history: root.command-history;
+          history-view: root.history-view;
+          history-preview: root.history-preview;
+          quick-commands: root.quick-commands;
+          quick-external-command: root.quick-external-command;
+          quick-external-send-enter: root.quick-external-send-enter;
+          quick-external-sequence: root.quick-external-sequence;
+          // 会话内共享状态 / 对话框状态：双向，舞台上会就地改
+          sftp-dock <=> root.sftp-dock;
+          sftp-prompt-open <=> root.sftp-prompt-open;
+          sftp-prompt-kind <=> root.sftp-prompt-kind;
+          sftp-prompt-tab <=> root.sftp-prompt-tab;
+          sftp-prompt-target <=> root.sftp-prompt-target;
+          sftp-prompt-value <=> root.sftp-prompt-value;
+          confirm-delete-open <=> root.confirm-delete-open;
+          confirm-delete-batch <=> root.confirm-delete-batch;
+          confirm-delete-tab <=> root.confirm-delete-tab;
+          confirm-delete-path <=> root.confirm-delete-path;
+          quick-cmd-manage-open <=> root.quick-cmd-manage-open;
+          qcm-name <=> root.qcm-name;
+          qcm-command <=> root.qcm-command;
+          qcm-group <=> root.qcm-group;
+          qcm-edit-index <=> root.qcm-edit-index;
+          qcg-open <=> root.qcg-open;
+          qcg-name <=> root.qcg-name;
+          qcg-orig <=> root.qcg-orig;
+          // 回调：舞台已经把 per-tab 的 id 补进参数，这里直接透传给 Rust
+          content-resized(w, h) => { root.content-resized(w, h); }
+          pane-tab-selected(pane, id) => { root.pane-tab-selected(pane, id); }
+          pane-tab-closed(pane, id) => { root.pane-tab-closed(pane, id); }
+          tab-rename-request(id) => { root.tab-rename-request(id); }
+          pane-new-tab(pane) => { root.pane-new-tab(pane); }
+          pane-split(pane, id, dir) => { root.pane-split(pane, id, dir); }
+          toggle-zen-key() => { root.toggle-zen-key(); }
+          toggle-right-panel() => { root.right-panel-open = !root.right-panel-open; }
+          cycle-tab(reverse) => { root.cycle-tab(reverse); }
+          splitter-drag(id, pos, vertical) => { root.splitter-drag(id, pos, vertical); }
+          send-key(tab, key, ctrl, alt, shift) => { root.send-key(tab, key, ctrl, alt, shift); }
+          terminal-resize(tab, w, h) => { root.terminal-resize(tab, w, h); }
+          terminal-mouse(tab, kind, button, col, row) => { root.terminal-mouse(tab, kind, button, col, row); }
+          terminal-wheel(tab, d, c, r) => { root.terminal-wheel(tab, d, c, r); }
+          terminal-scroll(tab, d) => { root.terminal-scroll(tab, d); }
+          terminal-scroll-to(tab, o) => { root.terminal-scroll-to(tab, o); }
+          terminal-scrollback-key(tab, key) => { root.terminal-scrollback-key(tab, key); }
+          term-select-start(tab, r, c, lh, ctrl, shift) => { root.term-select-start(tab, r, c, lh, ctrl, shift); }
+          term-select-update(tab, r, c, lh) => { root.term-select-update(tab, r, c, lh); }
+          term-select-end(tab) => { root.term-select-end(tab); }
+          term-select-word(tab, r, c) => { root.term-select-word(tab, r, c); }
+          term-select-line(tab, r, c) => { root.term-select-line(tab, r, c); }
+          term-select-autoscroll(tab, dir) => { root.term-select-autoscroll(tab, dir); }
+          paste-from-clipboard(tab) => { root.paste-from-clipboard(tab); }
+          copy-terminal-text(tab) => { root.copy-terminal-text(tab); }
+          clear-terminal(tab) => { root.clear-terminal(tab); }
+          find-query-changed(tab, q) => { root.find-query-changed(tab, q); }
+          find-next(tab) => { root.find-next(tab); }
+          find-prev(tab) => { root.find-prev(tab); }
+          run-command(tab, cmd, all) => { root.run-command(tab, cmd, all); }
+          copy-text(t) => { root.copy-text(t); }
+          delete-history(i) => { root.delete-history(i); }
+          delete-history-cmd(c) => { root.delete-history-cmd(c); }
+          search-history(q) => { root.search-history(q); }
+          toggle-quick-group(g) => { root.toggle-quick-group(g); }
+          edit-quick-command(i) => { root.edit-quick-command(i); }
+          duplicate-quick-command(i) => { root.duplicate-quick-command(i); }
+          delete-quick-command(i) => { root.delete-quick-command(i); }
+          move-quick-command(i, g) => { root.move-quick-command(i, g); }
+          delete-quick-group(g) => { root.delete-quick-group(g); }
+          sftp-navigate(tab, p) => { root.sftp-navigate(tab, p); }
+          sftp-download(tab, p) => { root.sftp-download(tab, p); }
+          sftp-upload-clicked(tab, dir, folder) => { root.sftp-upload-clicked(tab, dir, folder); }
+          sftp-refresh(tab, p) => { root.sftp-refresh(tab, p); }
+          sftp-tree-expand(tab, p) => { root.sftp-tree-expand(tab, p); }
+          sftp-toggle-select(tab, i) => { root.sftp-toggle-select(tab, i); }
+          sftp-download-selected(tab) => { root.sftp-download-selected(tab); }
+          sftp-copy-to-target(tab, path, target) => { root.sftp-copy-to-target(tab, path, target); }
+          sftp-copy-selected-to-target(tab, target) => { root.sftp-copy-selected-to-target(tab, target); }
+          sftp-view(tab, p) => { root.sftp-view(tab, p); }
+          sftp-edit(tab, p) => { root.sftp-edit(tab, p); }
+          sftp-open-external(tab, p) => { root.sftp-open-external(tab, p); }
+          sftp-edit-external(tab, p) => { root.sftp-edit-external(tab, p); }
+          sftp-sort-request(tab, key) => { root.sftp-sort-request(tab, key); }
+          sftp-clear-sort(tab) => { root.sftp-clear-sort(tab); }
+          sftp-copy-path(p) => { root.sftp-copy-path(p); }
+          sftp-chmod-open(tab, path, name, mode) => { root.sftp-chmod-open(tab, path, name, mode); }
+          set-pane-sftp-height(tab, v) => { root.set-pane-sftp-height(tab, v); }
+          set-pane-sftp-width(tab, v) => { root.set-pane-sftp-width(tab, v); }
+          set-pane-sftp-collapsed(tab, v) => { root.set-pane-sftp-collapsed(tab, v); }
+          tunnel-add(tab, name, kind, bind, bind-port, host, host-port) => {
+              root.tunnel-add(tab, name, kind, bind, bind-port, host, host-port);
+          }
+          tunnel-stop(tab, id) => { root.tunnel-stop(tab, id); }
+      }
         if root.shell-page == 0 : Rectangle {
             x: root.rail-w;
             y: root.shell-top;
@@ -2211,8 +2016,9 @@ export component AppWindow inherits Window {
           }
       }
 
+
                 // 终端页空状态（一个标签都没有时）：参考图的「创建你的第一个终端会话」。
-      // 有标签后旧内容（真正的终端画面）从下面透出。
+      // 声明在终端舞台之后 = 盖住它；有标签时这里不实例化，舞台的终端画面就露出来。
       if root.shell-page == 1 && root.panes.length == 0 : Rectangle {
           x: root.rail-w;
           y: root.shell-top;
