@@ -185,15 +185,17 @@ export component PageHosts inherits Rectangle {
 
     HorizontalLayout {
         // ── 第二列：分组导航 ────────────────────────────────────────────
-        // 用窗口底色（比侧栏的 sur-1 更深一层），与左侧栏拉开层次
+        // 面板底色（sur-1）：与内容区（sur-0）拉开层次，右侧另有一条分隔线。
         Rectangle {
             width: 190px;
-            background: Theme.sur-0;
+            background: Theme.sur-1;
 
+            // 注意：**不写** `alignment: start` —— Slint 里 alignment 不是 stretch 时
+            // 会忽略子项的拉伸因子，下面那个 `vertical-stretch: 1` 的占位就失效，
+            // 「标签筛选 / 管理分组 & 标签」会挤在顶部、下面留一大片空白。
             VerticalLayout {
                 padding: Theme.sp-3;
                 spacing: Theme.sp-3;
-                alignment: start;
 
                 Text {
                     text: root.lang-en ? "Groups" : "分组导航";
