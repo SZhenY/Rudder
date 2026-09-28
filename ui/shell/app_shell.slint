@@ -883,6 +883,16 @@ export component AppWindow inherits Window {
         image-fit: cover;
     }
 
+    // 顶部条（标题栏让位高度内、Rail 右侧那一横条）也铺一层与页面同款的磨砂底色，
+    // 否则那里会露出壁纸原色、和下面各页面形成色差（用户报的"顶部没有覆盖"）。
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: root.shell-top;
+        background: Theme.bg-root;
+    }
+
     // 旧外壳（旧侧栏 / 旧资源面板 / 旧欢迎侧栏 / 旧 dock 几何）已在第③步整体删除：
     // 这一带原来是 `VerticalLayout { dock-area { … } }`；终端舞台、左侧栏（Rail）、
     // 各页面与底部状态栏现在都是本窗口的直接子元素（绝对几何），不再需要这层。
@@ -974,6 +984,11 @@ export component AppWindow inherits Window {
             collapsed <=> root.rail-collapsed;
               page-changed(p) => {
                   root.shell-page = p;
+                  // 舞台在别的页面里是隐藏的，键盘焦点会掉 —— 切回终端页时补一次
+                  // "把焦点还给终端"的信号（与粘贴确认框关闭时同一机制）。
+                  if (p == 1) {
+                      root.terminal-focus-sequence += 1;
+                  }
               }
         }
 
@@ -983,6 +998,10 @@ export component AppWindow inherits Window {
       // 空布局时由 PageTerminal 空状态（声明在后）盖住。常驻、不随切页销毁 ——
       // 与旧外壳一致：切页不重建 TerminalView（保住滚动/悬停/查找条状态与键盘焦点）。
       TerminalStage {
+          // 只在终端页显示：各页面底色改成"壁纸磨砂"（半透明）之后，常驻的终端
+          // 画面会透到别的页面上（用户最初报的那个 bug）。隐藏只是 visible 切换，
+          // TerminalView 实例仍在（滚动 / 查找条 / 会话状态不丢）。
+          visible: root.shell-page == 1;
           x: root.rail-w;
           y: root.shell-top;
           // 让开右侧工具面板（panel-w）与底部状态栏
@@ -1095,7 +1114,7 @@ export component AppWindow inherits Window {
             y: root.shell-top;
             width: root.width - root.rail-w;
             height: root.height - root.shell-top;
-            background: Theme.sur-0;
+            background: Theme.bg-root;
 
             PageHosts {
                 width: 100%;
@@ -1128,7 +1147,7 @@ export component AppWindow inherits Window {
             y: root.shell-top;
             width: root.width - root.rail-w;
             height: root.height - root.shell-top;
-            background: Theme.sur-0;
+            background: Theme.bg-root;
 
             PageSnippets {
                 width: 100%;
@@ -1148,7 +1167,7 @@ export component AppWindow inherits Window {
             y: root.shell-top;
             width: root.width - root.rail-w;
             height: root.height - root.shell-top;
-            background: Theme.sur-0;
+            background: Theme.bg-root;
 
             VerticalLayout {
                 alignment: center;
@@ -1362,7 +1381,7 @@ export component AppWindow inherits Window {
           y: root.shell-top;
           width: root.width - root.rail-w;
           height: root.height - root.shell-top;
-          background: Theme.sur-0;
+          background: Theme.bg-root;
 
           PageTerminal {
               width: 100%;
@@ -1370,7 +1389,14 @@ export component AppWindow inherits Window {
               lang-en: root.lang-en;
               sessions: root.sessions;
               new-local-session() => {
-                  // 会话对话框（本地/远程/串口都在里面选）
+                  // 直接起本地默认 shell 的会话（`system:shell` 是 Rust 侧
+                  // `builtin_local_sessions` 里的平台默认本地 shell，连接链路与
+                  // 之前的「本地终端」卡片完全一致）。
+                  root.shell-page = 1;
+                  root.connect-session("system:shell");
+              }
+              custom-session() => {
+                  // 串口这类要挑参数的，仍然走「新建主机」对话框。
                   root.new-session-clicked();
               }
               connect-session(id) => {
@@ -1390,7 +1416,7 @@ export component AppWindow inherits Window {
           y: root.shell-top;
           width: root.width - root.rail-w;
           height: root.height - root.shell-top;
-          background: Theme.sur-0;
+          background: Theme.bg-root;
 
           VerticalLayout {
               alignment: center;

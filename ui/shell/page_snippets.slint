@@ -12,7 +12,9 @@ export component PageSnippets inherits Rectangle {
     callback run(string /* command */);
     callback manage();
 
-    background: Theme.sur-0;
+    // 底色由外层页面容器提供（`Theme.bg-root` 磨砂，见 app_shell）：这里透明，
+    // 否则两层磨砂叠加，本页会比别的页面更暗。
+    background: transparent;
 
     VerticalLayout {
         spacing: 0px;

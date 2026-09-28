@@ -106,10 +106,16 @@ component SubCard inherits Rectangle {
 export component PageTerminal inherits Rectangle {
     in property <bool> lang-en: false;
     in property <[SessionInfo]> sessions;
+    // 本地终端：直接起本地默认 shell 的会话（本地 shell 不再做成主机卡片，
+    // 入口只有这里 —— 参考图 终端-无会话.png）。
     callback new-local-session();
+    // 串口 / 自定义：这些要选参数，仍然走「新建主机」对话框。
+    callback custom-session();
     callback connect-session(string /* id；空串 = 去主机管理页新建 */);
 
-    background: Theme.sur-0;
+    // 底色由外层页面容器提供（`Theme.bg-root` 磨砂，见 app_shell）：这里透明，
+    // 否则两层磨砂叠加，本页会比别的页面更暗。
+    background: transparent;
 
     // 居中的一张卡片（参考图：不铺满、四周留白）
     VerticalLayout {
@@ -218,7 +224,7 @@ export component PageTerminal inherits Rectangle {
                                 MiniBtn {
                                     text: root.lang-en ? "Serial" : "串口";
                                     clicked => {
-                                        root.new-local-session();
+                                        root.custom-session();
                                     }
                                 }
                             }

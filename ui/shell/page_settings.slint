@@ -294,7 +294,9 @@ export component PageSettings inherits Rectangle {
     // 0 基础 · 1 终端 · 2 文件 · 3 布局 · 4 快捷键
     property <int> current-cat: 0;
 
-    background: Theme.sur-0;
+    // 底色由外层页面容器提供（`Theme.bg-root` 磨砂，见 app_shell）：这里透明，
+    // 否则两层磨砂叠加，本页会比别的页面更暗。
+    background: transparent;
 
     HorizontalLayout {
         // ── 左列：标题 + 分类（带副标题，参考图）────────────

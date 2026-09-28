@@ -179,15 +179,17 @@ component HostCard inherits Rectangle {
             }
         }
 
+        // 快速连接：平时低调（sur-3 + 次文字色），鼠标悬停在卡片上（或按钮上）才
+        // "亮起"（accent 底 + accent 文字）—— 参考图 主机-卡片-菜单.png 的注记。
         Rectangle {
             height: 30px;
             border-radius: Theme.radius-md;
-            background: quick-ta.has-hover ? Theme.accent-soft : Theme.sur-3;
+            background: (card-ta.has-hover || quick-ta.has-hover) ? Theme.accent-soft : Theme.sur-3;
 
             Text {
                 text: root.lang-en ? "Quick Connect" : "快速连接";
                 font-size: 12px;
-                color: Theme.fg-1;
+                color: (card-ta.has-hover || quick-ta.has-hover) ? Theme.accent : Theme.fg-2;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
@@ -211,7 +213,10 @@ component HostCard inherits Rectangle {
         border-radius: Theme.radius-sm;
         border-width: 1px;
         border-color: Theme.line;
-        opacity: (card-ta.has-hover || menu-ta.has-hover || root.menu-open) ? 1 : 0.45;
+        // 只在该卡片被悬停（或菜单已展开）时出现 —— 参考图注记："鼠标悬停在卡片上的
+        // 时候才显示菜单按钮"。`enabled` 仍然不挂 hover（鼠标移上来那一刻它自己
+        // 就有 hover 了，所以不会出现"点不到"的死锁）。
+        opacity: (card-ta.has-hover || menu-ta.has-hover || root.menu-open) ? 1 : 0;
         background: root.menu-open ? Theme.sur-3 : Theme.sur-1;
 
         Text {
@@ -302,7 +307,9 @@ export component PageHosts inherits Rectangle {
     property <string> pending-remove-id;
     property <string> pending-remove-name;
 
-    background: Theme.sur-0;
+    // 底色由外层页面容器提供（`Theme.bg-root` 磨砂，见 app_shell）：这里透明，
+    // 否则两层磨砂叠加，本页会比别的页面更暗。
+    background: transparent;
 
     HorizontalLayout {
         // ── 第二列：分组导航 ────────────────────────────────────────────
@@ -462,28 +469,36 @@ export component PageHosts inherits Rectangle {
                         horizontal-stretch: 1;
                     }
 
+                    // Slint 的布局在交叉轴上默认**不是**居中：固定 30px 高的按钮会贴着顶边，
+                    // 于是和左边「主机管理」那几个字对不齐（用户截图里的红框）。套一层
+                    // `VerticalLayout{alignment: center}` 显式居中。
                     // 宽度由文案决定（中英长度不同），避免固定 96px 时溢出/挤边。
                     // 参考图里是实心强调色按钮 —— 与右侧工具面板的主按钮一致。
-                    Rectangle {
-                        width: new-label.preferred-width + 28px;
-                        height: 30px;
-                        border-radius: Theme.radius-md;
-                        background: new-ta.has-hover ? Theme.accent.with-alpha(0.88) : Theme.accent;
+                    VerticalLayout {
+                        alignment: center;
 
-                        new-label := Text {
-                            x: 14px;
-                            width: parent.width - 28px;
-                            text: root.lang-en ? "+ New Host" : "+ 新建主机";
-                            font-size: 12px;
-                            color: #ffffff;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
 
-                        new-ta := TouchArea {
-                            clicked => {
-                                root.new-session();
+                        Rectangle {
+                            width: new-label.preferred-width + 28px;
+                            height: 30px;
+                            border-radius: Theme.radius-md;
+                            background: new-ta.has-hover ? Theme.accent.with-alpha(0.88) : Theme.accent;
+
+                            new-label := Text {
+                                x: 14px;
+                                width: parent.width - 28px;
+                                text: root.lang-en ? "+ New Host" : "+ 新建主机";
+                                font-size: 12px;
+                                color: #ffffff;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+
+                            new-ta := TouchArea {
+                                clicked => {
+                                    root.new-session();
+                                }
                             }
                         }
                     }

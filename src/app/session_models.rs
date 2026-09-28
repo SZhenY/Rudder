@@ -293,12 +293,12 @@ pub(crate) fn sync_sessions_to_model_with_filter(
     model: &VecModel<SessionInfo>,
     query: &str,
 ) {
-    let builtin_sessions = builtin_local_sessions(store.wsl_profiles());
+    // 内置本地 shell 不再进列表（改从终端页空态「新建本地终端」进入）。
     model.set_vec(build_session_rows(
         store.sessions(),
         store.groups(),
         store.collapsed_session_groups(),
-        &builtin_sessions,
+        &[],
         query,
     ));
 }
@@ -317,12 +317,11 @@ pub(crate) fn refresh_session_rows_in_place(
     query: &str,
 ) {
     use slint::Model as _;
-    let builtin_sessions = builtin_local_sessions(store.wsl_profiles());
     let rows = build_session_rows(
         store.sessions(),
         store.groups(),
         store.collapsed_session_groups(),
-        &builtin_sessions,
+        &[],
         query,
     );
     if model.row_count() == rows.len() {
