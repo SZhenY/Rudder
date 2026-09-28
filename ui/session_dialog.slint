@@ -1,22 +1,275 @@
+// 新建 / 编辑主机（SSH / 串口 / Telnet）对话框 —— 终端页重做同一轮，按
+// ex/新建:编辑会话 1.png、2.png 重新设计：头部（标题 + 类型徽标 + 关闭）、
+// 分区正文（基础信息 / 连接设置 / 认证方式 / 代理与跳板机 / 高级）、
+// 底部操作条（测试连接 + 状态 + 取消 + 保存）。
+//
+// 约束：**界面重做，接口与行为一字不改** —— `draft-*` 属性、`submit` /
+// `test-connection` / `cancel` / forwards / triggers 那批回调、纯函数 `build-draft()`
+// 的 28 字段载荷都保持原样，窗口侧（app_shell）与 Rust 侧零改动。
+//
+// 参考图里有、项目暂无对应后端字段的区块不放假控件：操作系统 / 版本型号 / 标签、
+// 无认证、密码 + MFA、密码 + 短信验证码、CA 证书、凭证库。真实可用的选项就是
+// 密码 / 密钥 / 键盘交互三种认证 + 代理 + 跳板机。
+
 import { Theme } from "theme.slint";
-import { ComboBox } from "std-widgets.slint";
-import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
-import { GroupGap } from "components/surfaces.slint";
-import { FieldLabel, HelpText } from "components/surfaces.slint";
-import { CloseButton } from "components/buttons.slint";
-import { IconText } from "components/text.slint";
-import { SessionDraft, PortFwd, TriggerDraft } from "session_types.slint";
-import { SegOption, MiniInput, PortForwardRow, TriggerRow, GroupCombo, JumpCombo } from "dialog_fields.slint";
+import { Btn, Seg, Input, Area, Select, OptionCard, Switch, ToggleRow, Section } from "form_widgets.slint";
+import { PortFwd, TriggerDraft, SessionDraft } from "session_types.slint";
 // PortFwd / TriggerDraft / SessionDraft 从这里搬走了，但对外仍是本文件的导出。
 export { PortFwd, TriggerDraft, SessionDraft }
 
+// 端口转发行（#56 / #277）：新设计的小卡片，字段与旧 `PortForwardRow` 逐项对应，
+// 每次改动都把整行回传（`update-forward(index, PortFwd)`）。
+component FwdRow inherits Rectangle {
+    in property <PortFwd> forward;
+    in property <int> index;
+    callback updated(int, PortFwd);
+    callback remove(int);
 
+    property <string> kind: forward.kind;
+    property <string> name: forward.name;
+    property <string> bind-addr: forward.bind-addr;
+    property <string> bind-port: forward.bind-port;
+    property <string> host: forward.host;
+    property <string> host-port: forward.host-port;
 
-// One SSH port-forward row shown in the session dialog (#56). `summary` is a
-// ready-to-display line like "-L 127.0.0.1:8080 → host:80".
-// Modal dialog for creating / editing a session (SSH / Serial / Telnet).
-// The dialog is purely presentational — it stores values in mutable
-// properties and emits `submit` / `cancel` callbacks up to the main window.
+    function notify-updated() {
+        root.updated(root.index, {
+            kind: root.kind,
+            name: root.name,
+            bind-addr: root.bind-addr,
+            bind-port: root.bind-port,
+            host: root.host,
+            host-port: root.host-port,
+        });
+    }
+
+    height: fwd-col.preferred-height;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: Theme.sur-2;
+
+    fwd-col := VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        alignment: start;
+
+        HorizontalLayout {
+            spacing: 6px;
+            Seg { label: "-L"; active: root.kind == "local"; clicked => { root.kind = "local"; root.notify-updated(); } }
+            Seg { label: "-R"; active: root.kind == "remote"; clicked => { root.kind = "remote"; root.notify-updated(); } }
+            Seg { label: "-D"; active: root.kind == "dynamic"; clicked => { root.kind = "dynamic"; root.notify-updated(); } }
+            Rectangle { horizontal-stretch: 1; }
+            Btn {
+                glyph: "\u{E872}"; // delete
+                variant: "danger";
+                clicked => { root.remove(root.index); }
+            }
+        }
+        Input {
+            placeholder: @tr("Name (optional)");
+            text <=> root.name;
+            edited(v) => { root.name = v; root.notify-updated(); }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            Input {
+                horizontal-stretch: 2;
+                placeholder: "127.0.0.1";
+                text <=> root.bind-addr;
+                edited(v) => { root.bind-addr = v; root.notify-updated(); }
+            }
+            Input {
+                horizontal-stretch: 1;
+                placeholder: @tr("Listen port");
+                text <=> root.bind-port;
+                edited(v) => { root.bind-port = v; root.notify-updated(); }
+            }
+        }
+        // 非回环绑定会把端口暴露到局域网（kind == dynamic 时还是个无认证的 SOCKS
+        // 代理）—— 就地提示（#F-001）。
+        if root.bind-addr != "" && root.bind-addr != "127.0.0.1" && root.bind-addr != "localhost" : Text {
+            text: @tr("⚠ Non-loopback address exposes this port on the local network. Only use on trusted networks.");
+            color: Theme.danger;
+            font-size: 10px;
+            wrap: word-wrap;
+            line-height-factor: 1.3;
+            max-lines: 3;
+        }
+        if root.kind != "dynamic" : HorizontalLayout {
+            spacing: 6px;
+            Input {
+                horizontal-stretch: 2;
+                placeholder: @tr("Target host");
+                text <=> root.host;
+                edited(v) => { root.host = v; root.notify-updated(); }
+            }
+            Input {
+                horizontal-stretch: 1;
+                placeholder: @tr("Target port");
+                text <=> root.host-port;
+                edited(v) => { root.host-port = v; root.notify-updated(); }
+            }
+        }
+    }
+}
+
+// 登录触发器行（#212）：期望输出 → 自动回送。响应框保持"空 = 保留已存值"的语义。
+component TrigRow inherits Rectangle {
+    in property <TriggerDraft> trigger;
+    in property <int> index;
+    callback updated(int, TriggerDraft);
+    callback remove(int);
+
+    property <string> expect: trigger.expect;
+    property <string> response: trigger.response;
+    property <bool> append-enter: trigger.append-enter;
+    property <bool> repeat: trigger.repeat;
+
+    function notify-updated() {
+        root.updated(root.index, {
+            expect: root.expect,
+            response: root.response,
+            append-enter: root.append-enter,
+            repeat: root.repeat,
+        });
+    }
+
+    height: trig-col.preferred-height;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: Theme.sur-2;
+
+    trig-col := VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        alignment: start;
+
+        HorizontalLayout {
+            spacing: 6px;
+            Input {
+                horizontal-stretch: 1;
+                placeholder: @tr("Expected output");
+                text <=> root.expect;
+                edited(v) => { root.expect = v; root.notify-updated(); }
+            }
+            Btn {
+                glyph: "\u{E872}"; // delete
+                variant: "danger";
+                clicked => { root.remove(root.index); }
+            }
+        }
+        Input {
+            placeholder: @tr("Response (leave blank to keep saved value)");
+            text <=> root.response;
+            edited(v) => { root.response = v; root.notify-updated(); }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            Seg {
+                label: @tr("Send Enter");
+                active: root.append-enter;
+                clicked => { root.append-enter = !root.append-enter; root.notify-updated(); }
+            }
+            Seg {
+                label: @tr("Repeat");
+                active: root.repeat;
+                clicked => { root.repeat = !root.repeat; root.notify-updated(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
+    }
+}
+
+// 主机分组：可输入（新建分组）+ ▾ 从已有分组里挑（#179，行为同旧 `GroupCombo`）。
+component GroupInput inherits Rectangle {
+    in-out property <string> text;
+    in property <[string]> options;
+
+    height: 30px;
+
+    HorizontalLayout {
+        spacing: 6px;
+
+        Input {
+            horizontal-stretch: 1;
+            text <=> root.text;
+            placeholder: @tr("e.g. Production / Database");
+        }
+        Btn {
+            glyph: "\u{E5CF}"; // arrow_drop_down
+            clicked => { grp-popup.show(); }
+        }
+    }
+
+    grp-popup := PopupWindow {
+        x: 0px;
+        y: root.height + 3px;
+        width: root.width;
+        height: root.options.length == 0 ? 38px : min(root.options.length * 30px + 8px, 240px);
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.sur-1;
+            drop-shadow-blur: Theme.shadow-popup-blur;
+            drop-shadow-color: Theme.shadow-popup-color;
+            clip: true;
+
+            if root.options.length == 0 : Text {
+                width: parent.width;
+                height: parent.height;
+                text: @tr("No groups yet — type one above");
+                font-size: 11px;
+                color: Theme.fg-3;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            Flickable {
+                width: parent.width;
+                height: parent.height;
+
+                VerticalLayout {
+                    padding: 4px;
+                    spacing: 1px;
+                    alignment: start;
+
+                    for g[i] in root.options : Rectangle {
+                        height: 30px;
+                        border-radius: 6px;
+                        background: g-ta.has-hover ? Theme.sur-3 : transparent;
+
+                        g-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                grp-popup.close();
+                                root.text = g;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            Text {
+                                text: g;
+                                font-size: 12px;
+                                color: Theme.fg-1;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component SessionDialog inherits Rectangle {
     in-out property <bool> is-open: false;
     in-out property <bool> is-editing: false;
@@ -104,8 +357,14 @@ export component SessionDialog inherits Rectangle {
         };
     }
 
+    // 协议下拉的显示文案 / 下标（下拉用下标，draft-kind 用字符串）。
+    property <int> kind-index: root.draft-kind == "serial" ? 1 : (root.draft-kind == "telnet" ? 2 : 0);
+    property <string> kind-label: root.draft-kind == "serial" ? "SERIAL" : (root.draft-kind == "telnet" ? "TELNET" : "SSH");
+    property <bool> proxy-on: root.draft-proxy-type != "none";
+    property <bool> jump-on: root.draft-jump-index > 0;
+
     visible: is-open;
-    background: #00000080;
+    background: #000000a0;
 
     // Clear the host-required flag each time the dialog opens (#110).
     changed is-open => {
@@ -114,609 +373,687 @@ export component SessionDialog inherits Rectangle {
         }
     }
 
-    // Swallow clicks on the backdrop
+    // Swallow clicks on the backdrop（原行为：点遮罩不关对话框）
     TouchArea {
-        width: 100%; height: 100%;
+        width: 100%;
+        height: 100%;
     }
 
-    Rectangle {
-        width: 440px;
+    card := Rectangle {
+        width: min(560px, parent.width - 48px);
         // Height follows the content, but never exceeds the window — past that
         // the body scrolls (the dialog grows with the advanced section / many
         // port forwards) (#56).
-        height: min(body.preferred-height + 53px, parent.height - 40px);
+        height: min(body.preferred-height + 56px, parent.height - 48px);
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        background: Theme.bg-panel;
         border-radius: Theme.radius-lg;
         border-width: 1px;
-        border-color: Theme.border-strong;
-        drop-shadow-blur: Theme.shadow-raised-blur;
-        drop-shadow-color: Theme.shadow-raised-color;
-
-        // Prevent backdrop click from propagating when user clicks inside the card
-        TouchArea {
-            width: 100%; height: 100%;
-        }
+        border-color: Theme.line;
+        background: Theme.sur-1;
+        drop-shadow-blur: Theme.shadow-dialog-blur;
+        drop-shadow-color: Theme.shadow-dialog-color;
 
         VerticalLayout {
             spacing: 0px;
 
-        Rectangle {
-            width: 100%;
-            height: 52px;
-            background: Theme.bg-panel-alt;
-            border-radius: Theme.radius-lg;
+            // ── 头部：标题 + 类型徽标 + 关闭 ───────────────────────────────
+            Rectangle {
+                height: 48px;
 
-            HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 10px;
-                spacing: 10px;
-
-                Text {
-                    text: is-editing ? @tr("Edit session") : @tr("New session");
-                    color: Theme.text-primary;
-                    font-size: Theme.fs-lg;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                    overflow: elide;
-                }
-
-                CloseButton {
-                    size: 32px;
-                    glyph-size: 18px;
-                    y: (parent.height - self.height) / 2;
-                    clicked => { root.cancel(); }
-                }
-            }
-        }
-
-        Rectangle {
-            width: 100%;
-            height: 1px;
-            background: Theme.border-subtle;
-        }
-
-        Flickable {
-            width: 100%;
-            vertical-stretch: 1;
-            content-width: self.width;
-            content-height: body.preferred-height;
-            body := VerticalLayout {
-                padding: 20px;
-                spacing: 12px;
-
-            // Connection type selector (always shown).
-            VerticalLayout {
-                spacing: 4px;
-                FieldLabel { text: @tr("Connection type"); }
                 HorizontalLayout {
-                    spacing: 6px;
-                    SegOption {
-                        label: "SSH";
-                        active: root.draft-kind == "ssh";
-                        clicked => {
-                            // Switch protocol defaults while leaving non-default ports untouched (#303).
-                            if (root.draft-kind != "ssh" && root.draft-port == "23") {
-                                root.draft-port = "22";
-                            }
-                            root.draft-kind = "ssh";
-                        }
-                    }
-                    SegOption {
-                        label: @tr("Serial");
-                        active: root.draft-kind == "serial";
-                        clicked => { root.draft-kind = "serial"; }
-                    }
-                    SegOption {
-                        label: "Telnet";
-                        active: root.draft-kind == "telnet";
-                        clicked => {
-                            if (root.draft-kind != "telnet" && root.draft-port == "22") {
-                                root.draft-port = "23";
-                            }
-                            root.draft-kind = "telnet";
-                        }
-                    }
-                }
-            }
-
-            LabeledInput {
-                input-background: Theme.bg-elevated;
-                idle-border: Theme.border-strong;
-                label: @tr("Name");
-                placeholder: @tr("e.g. production web-01");
-                value <=> root.draft-name;
-            }
-
-            // Optional group/folder to organize sessions by business (#41).
-            // Editable + dropdown of existing groups (#179).
-            GroupCombo {
-                label: @tr("Group (optional)");
-                placeholder: @tr("e.g. Production / Database");
-                value <=> root.draft-group;
-                groups: root.session-groups;
-            }
-
-            // Free-form note — extra info to keep with the session (B站 suggestion).
-            LabeledInput {
-                input-background: Theme.bg-elevated;
-                idle-border: Theme.border-strong;
-                label: @tr("Note (optional)");
-                placeholder: @tr("Anything to remember about this host");
-                value <=> root.draft-note;
-            }
-
-            // ── SSH / Telnet share host + port ──────────────────────────────
-            if root.draft-kind != "serial" : HorizontalLayout {
-                spacing: 10px;
-                LabeledInput {
-                    input-background: Theme.bg-elevated;
-                    idle-border: Theme.border-strong;
-                    label: @tr("Host / IP");
-                    placeholder: "192.168.1.10";
-                    value <=> root.draft-host;
-                    horizontal-stretch: 2;
-                }
-                LabeledInput {
-                    input-background: Theme.bg-elevated;
-                    idle-border: Theme.border-strong;
-                    label: @tr("Port");
-                    placeholder: root.draft-kind == "telnet" ? "23" : "22";
-                    value <=> root.draft-port;
-                    horizontal-stretch: 1;
-                }
-            }
-
-            // Inline error when a host-less SSH/Telnet session is submitted (#110).
-            if root.host-missing && root.draft-host == "" && root.draft-kind != "serial" : Text {
-                text: @tr("Please enter a host / IP address.");
-                color: Theme.danger;
-                font-size: Theme.fs-sm;
-            }
-
-            // ── SSH-only: user + auth ───────────────────────────────────────
-            if root.draft-kind == "ssh" : LabeledInput {
-                input-background: Theme.bg-elevated;
-                idle-border: Theme.border-strong;
-                label: @tr("Username");
-                placeholder: @tr("Prompted on connect if blank");
-                value <=> root.draft-user;
-            }
-
-            if root.draft-kind == "ssh" : VerticalLayout {
-                spacing: 4px;
-                FieldLabel { text: @tr("Authentication"); }
-                HorizontalLayout {
-                    spacing: 6px;
-                    SegOption {
-                        label: @tr("Password");
-                        active: root.draft-auth == "password";
-                        clicked => { root.draft-auth = "password"; }
-                    }
-                    SegOption {
-                        label: @tr("Keyboard-interactive");
-                        active: root.draft-auth == "keyboard-interactive";
-                        clicked => { root.draft-auth = "keyboard-interactive"; }
-                    }
-                    SegOption {
-                        label: @tr("Private key");
-                        active: root.draft-auth == "key";
-                        clicked => { root.draft-auth = "key"; }
-                    }
-                }
-            }
-
-            if root.draft-kind == "ssh" && (root.draft-auth == "password" || root.draft-auth == "keyboard-interactive") : LabeledInput {
-                input-background: Theme.bg-elevated;
-                idle-border: Theme.border-strong;
-                label: root.draft-auth == "keyboard-interactive" ? @tr("Password / first answer") : @tr("Password");
-                placeholder: root.is-editing ? @tr("Leave blank to keep the current password") : "••••••••";
-                password: true;
-                value <=> root.draft-password;
-            }
-
-            if root.draft-kind == "ssh" && root.draft-auth == "keyboard-interactive" : HelpText { text: @tr("Server prompts are shown during login; MFA / OTP prompts will ask again."); }
-
-            if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
-                spacing: 4px;
-                FieldLabel { text: @tr("Private key"); }
-                HorizontalLayout {
-                    spacing: 6px;
-                    SegOption {
-                        label: @tr("Private key file");
-                        active: !root.draft-key-inline-mode;
-                        clicked => { root.draft-key-inline-mode = false; }
-                    }
-                    SegOption {
-                        label: @tr("Paste private key");
-                        active: root.draft-key-inline-mode;
-                        clicked => { root.draft-key-inline-mode = true; }
-                    }
-                }
-                if !root.draft-key-inline-mode : VerticalLayout {
-                    spacing: 4px;
-                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 10px;
                     spacing: 8px;
-                    Rectangle {
-                        height: 32px;
-                        horizontal-stretch: 1;
-                        border-radius: Theme.radius-sm;
-                        border-width: 1px;
-                        border-color: keyin.has-focus ? Theme.accent : Theme.border-strong;
-                        background: Theme.bg-elevated;
-                        keyin := TextInput {
-                            input-method-hints: Theme.plain-input-hints;
-                            x: 10px; y: 0px;
-                            width: parent.width - 20px;
-                            height: parent.height;
-                            text <=> root.draft-key-path;
-                            color: Theme.text-primary;
-                            font-family: Theme.ui-font-family; // CJK-capable (#54)
-                            font-size: Theme.fs-md;
-                            vertical-alignment: center;
-                            single-line: true;
-                        }
-                        if root.draft-key-path == "" : Text {
-                            x: 10px; y: 0px;
-                            height: parent.height;
-                            text: "/home/you/.ssh/id_ed25519";
-                            color: Theme.text-muted;
-                            font-size: Theme.fs-md;
-                            vertical-alignment: center;
-                        }
+
+                    Text {
+                        text: root.is-editing ? @tr("Edit host") : @tr("New host");
+                        font-size: 14px;
+                        font-weight: 700;
+                        color: Theme.fg-1;
+                        vertical-alignment: center;
                     }
                     Rectangle {
-                        width: 64px; height: 32px;
-                        border-radius: Theme.radius-sm;
-                        border-width: 1px;
-                        border-color: Theme.border-subtle;
-                        background: browse-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
-                        Text {
-                            text: @tr("Browse…");
-                            color: Theme.text-primary;
-                            font-size: Theme.fs-sm;
+                        width: kind-chip.preferred-width + 16px;
+                        height: 18px;
+                        border-radius: 9px;
+                        background: Theme.accent-soft;
+
+                        kind-chip := Text {
+                            text: root.kind-label;
+                            font-size: 10px;
+                            font-weight: 600;
+                            color: Theme.accent;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
-                        browse-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.pick-key-file(); }
-                        }
                     }
-                }
-                Text {
-                    text: @tr("Pick the private key itself (not the .pub public key)");
-                    color: Theme.text-muted;
-                    font-size: Theme.fs-xs;
-                }
-                }
-                if root.draft-key-inline-mode : VerticalLayout {
-                    spacing: 4px;
                     Rectangle {
-                        height: 118px;
                         horizontal-stretch: 1;
-                        border-radius: Theme.radius-sm;
-                        border-width: 1px;
-                        border-color: keytext.has-focus ? Theme.accent : Theme.border-strong;
-                        background: Theme.bg-elevated;
-                        keytext := TextInput {
-                            input-method-hints: Theme.plain-input-hints;
-                            x: 10px;
-                            y: 8px;
-                            width: parent.width - 20px;
-                            height: parent.height - 16px;
-                            text <=> root.draft-key-inline;
-                            color: Theme.text-primary;
-                            font-family: Theme.font-mono;
-                            font-size: Theme.fs-sm;
-                            single-line: false;
+                    }
+                    Btn {
+                        glyph: "\u{E5CD}"; // close
+                        clicked => { root.cancel(); }
+                    }
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: Theme.line;
+            }
+
+            // ── 正文（可滚动）─────────────────────────────────────────────
+            body := Flickable {
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 14px;
+                    padding-bottom: 14px;
+                    spacing: 16px;
+                    alignment: start;
+
+                    // ── 基础信息 ───────────────────────────────────────────
+                    Section {
+                        title: @tr("Basics");
+
+                        VerticalLayout {
+                            spacing: 8px;
+                            alignment: start;
+
+                            Text {
+                                text: @tr("Alias");
+                                font-size: 11px;
+                                color: Theme.fg-2;
+                            }
+                            Input {
+                                text <=> root.draft-name;
+                                placeholder: @tr("Optional — the IP is used when blank");
+                            }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Text {
+                                        text: @tr("Group");
+                                        font-size: 11px;
+                                        color: Theme.fg-2;
+                                    }
+                                    GroupInput {
+                                        text <=> root.draft-group;
+                                        options: root.session-groups;
+                                    }
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Text {
+                                        text: @tr("Note (Description)");
+                                        font-size: 11px;
+                                        color: Theme.fg-2;
+                                    }
+                                    Input {
+                                        text <=> root.draft-note;
+                                        placeholder: @tr("What this host is for");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 连接设置 ───────────────────────────────────────────
+                    Section {
+                        title: @tr("Connection");
+
+                        VerticalLayout {
+                            spacing: 8px;
+                            alignment: start;
+
+                            HorizontalLayout {
+                                spacing: 10px;
+
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Text {
+                                        text: @tr("Protocol");
+                                        font-size: 11px;
+                                        color: Theme.fg-2;
+                                    }
+                                    Select {
+                                        text: root.kind-label;
+                                        options: ["SSH", @tr("Serial"), "Telnet"];
+                                        current: root.kind-index;
+                                        picked(i) => {
+                                            // 切协议时给默认端口让位，但不动用户改过的端口（#303）。
+                                            if (i == 0) {
+                                                if (root.draft-kind != "ssh" && root.draft-port == "23") {
+                                                    root.draft-port = "22";
+                                                }
+                                                root.draft-kind = "ssh";
+                                            } else if (i == 1) {
+                                                root.draft-kind = "serial";
+                                            } else {
+                                                if (root.draft-kind != "telnet" && root.draft-port == "22") {
+                                                    root.draft-port = "23";
+                                                }
+                                                root.draft-kind = "telnet";
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if root.draft-kind != "serial" : VerticalLayout {
+                                    horizontal-stretch: 2;
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Text {
+                                        text: @tr("Host / IP");
+                                        font-size: 11px;
+                                        color: Theme.fg-2;
+                                    }
+                                    Input {
+                                        text <=> root.draft-host;
+                                        placeholder: "192.168.1.10";
+                                        invalid: root.host-missing && root.draft-host == "";
+                                    }
+                                }
+                                if root.draft-kind != "serial" : VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Text {
+                                        text: @tr("Port");
+                                        font-size: 11px;
+                                        color: Theme.fg-2;
+                                    }
+                                    Input {
+                                        text <=> root.draft-port;
+                                        placeholder: root.draft-kind == "telnet" ? "23" : "22";
+                                    }
+                                }
+                            }
+
+                            // Inline error when a host-less SSH/Telnet session is submitted (#110).
+                            if root.host-missing && root.draft-host == "" && root.draft-kind != "serial" : Text {
+                                text: @tr("Please enter a host / IP address.");
+                                color: Theme.danger;
+                                font-size: 11px;
+                            }
+
+                            // 串口参数（kind == serial）
+                            if root.draft-kind == "serial" : VerticalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                Text {
+                                    text: @tr("Serial port");
+                                    font-size: 11px;
+                                    color: Theme.fg-2;
+                                }
+                                Input {
+                                    text <=> root.draft-serial-port;
+                                    placeholder: "/dev/tty.usbserial-XXXX";
+                                    invalid: root.host-missing && root.draft-serial-port == "";
+                                }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    VerticalLayout {
+                                        horizontal-stretch: 2;
+                                        spacing: 8px;
+                                        alignment: start;
+
+                                        Text { text: @tr("Baud rate"); font-size: 11px; color: Theme.fg-2; }
+                                        Input { text <=> root.draft-baud; placeholder: "115200"; }
+                                    }
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 8px;
+                                        alignment: start;
+
+                                        Text { text: @tr("Data bits"); font-size: 11px; color: Theme.fg-2; }
+                                        Select {
+                                            text: root.draft-data-bits;
+                                            options: ["5", "6", "7", "8"];
+                                            current: root.draft-data-bits == "5" ? 0 : (root.draft-data-bits == "6" ? 1 : (root.draft-data-bits == "7" ? 2 : 3));
+                                            picked(i) => { root.draft-data-bits = ["5", "6", "7", "8"][i]; }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 8px;
+                                        alignment: start;
+
+                                        Text { text: @tr("Stop bits"); font-size: 11px; color: Theme.fg-2; }
+                                        Select {
+                                            text: root.draft-stop-bits;
+                                            options: ["1", "2"];
+                                            current: root.draft-stop-bits == "2" ? 1 : 0;
+                                            picked(i) => { root.draft-stop-bits = ["1", "2"][i]; }
+                                        }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 8px;
+                                        alignment: start;
+
+                                        Text { text: @tr("Parity"); font-size: 11px; color: Theme.fg-2; }
+                                        Select {
+                                            text: root.draft-parity;
+                                            options: ["none", "odd", "even"];
+                                            current: root.draft-parity == "odd" ? 1 : (root.draft-parity == "even" ? 2 : 0);
+                                            picked(i) => { root.draft-parity = ["none", "odd", "even"][i]; }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 8px;
+                                        alignment: start;
+
+                                        Text { text: @tr("Flow control"); font-size: 11px; color: Theme.fg-2; }
+                                        Select {
+                                            text: root.draft-flow;
+                                            options: ["none", "hardware", "software"];
+                                            current: root.draft-flow == "hardware" ? 1 : (root.draft-flow == "software" ? 2 : 0);
+                                            picked(i) => { root.draft-flow = ["none", "hardware", "software"][i]; }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 8px;
+                                        alignment: start;
+
+                                        Text { text: @tr("Encoding"); font-size: 11px; color: Theme.fg-2; }
+                                        Input { text <=> root.draft-encoding; placeholder: "UTF-8"; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 认证方式（SSH）─────────────────────────────────────
+                    if root.draft-kind == "ssh" : Section {
+                        title: @tr("Authentication");
+
+                        VerticalLayout {
+                            spacing: 8px;
+                            alignment: start;
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                OptionCard {
+                                    glyph: "\u{E897}"; // lock
+                                    title: @tr("Password");
+                                    desc: @tr("Ask for the password on connect");
+                                    selected: root.draft-auth == "password";
+                                    clicked => { root.draft-auth = "password"; }
+                                }
+                                OptionCard {
+                                    glyph: "\u{E0DA}"; // vpn_key
+                                    title: @tr("Private key");
+                                    desc: @tr("Use a key file or paste the key");
+                                    selected: root.draft-auth == "key";
+                                    clicked => { root.draft-auth = "key"; }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                OptionCard {
+                                    glyph: "\u{E8D4}"; // verified_user
+                                    title: @tr("Keyboard-interactive");
+                                    desc: @tr("Server prompts during login (MFA / OTP asks again)");
+                                    selected: root.draft-auth == "keyboard-interactive";
+                                    clicked => { root.draft-auth = "keyboard-interactive"; }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+
+                            Text {
+                                text: @tr("Username");
+                                font-size: 11px;
+                                color: Theme.fg-2;
+                            }
+                            Input {
+                                text <=> root.draft-user;
+                                placeholder: @tr("Prompted on connect if blank");
+                            }
+
+                            if root.draft-auth == "password" || root.draft-auth == "keyboard-interactive" : VerticalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                Text {
+                                    text: root.draft-auth == "keyboard-interactive" ? @tr("Password / first answer") : @tr("Password");
+                                    font-size: 11px;
+                                    color: Theme.fg-2;
+                                }
+                                Input {
+                                    password: true;
+                                    text <=> root.draft-password;
+                                    placeholder: root.is-editing ? @tr("Leave blank to keep the current password") : "••••••••";
+                                }
+                            }
+
+                            if root.draft-auth == "key" : VerticalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Seg {
+                                        label: @tr("Private key file");
+                                        active: !root.draft-key-inline-mode;
+                                        clicked => { root.draft-key-inline-mode = false; }
+                                    }
+                                    Seg {
+                                        label: @tr("Paste private key");
+                                        active: root.draft-key-inline-mode;
+                                        clicked => { root.draft-key-inline-mode = true; }
+                                    }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+
+                                if !root.draft-key-inline-mode : VerticalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Input {
+                                            horizontal-stretch: 1;
+                                            text <=> root.draft-key-path;
+                                            placeholder: "/home/you/.ssh/id_ed25519";
+                                        }
+                                        Btn {
+                                            text: @tr("Browse…");
+                                            clicked => { root.pick-key-file(); }
+                                        }
+                                    }
+                                    Text {
+                                        text: @tr("Pick the private key itself (not the .pub public key)");
+                                        font-size: 10px;
+                                        color: Theme.fg-3;
+                                    }
+                                }
+
+                                if root.draft-key-inline-mode : VerticalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+
+                                    Area {
+                                        height: 118px;
+                                        text <=> root.draft-key-inline;
+                                        placeholder: "-----BEGIN OPENSSH PRIVATE KEY-----";
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 代理与跳板机（SSH）─────────────────────────────────
+                    if root.draft-kind == "ssh" : Section {
+                        title: @tr("Proxy & jump host");
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            alignment: start;
+
+                            ToggleRow {
+                                label: @tr("Proxy");
+                                desc: @tr("Connect through a SOCKS5 / HTTP proxy");
+                                on: root.proxy-on;
+                                toggled => {
+                                    root.draft-proxy-type = root.proxy-on ? "none" : "socks5";
+                                }
+                            }
+                            if root.proxy-on : HorizontalLayout {
+                                spacing: 10px;
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Text { text: @tr("Type"); font-size: 11px; color: Theme.fg-2; }
+                                    Select {
+                                        text: root.draft-proxy-type == "http" ? "HTTP" : "SOCKS5";
+                                        options: ["SOCKS5", "HTTP"];
+                                        current: root.draft-proxy-type == "http" ? 1 : 0;
+                                        picked(i) => { root.draft-proxy-type = i == 1 ? "http" : "socks5"; }
+                                    }
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 2;
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Text { text: @tr("Address"); font-size: 11px; color: Theme.fg-2; }
+                                    Input {
+                                        text <=> root.draft-proxy-hostport;
+                                        placeholder: "127.0.0.1:1080";
+                                    }
+                                }
+                            }
+
+                            ToggleRow {
+                                label: @tr("Jump host");
+                                desc: @tr("Hop through another saved SSH session");
+                                on: root.jump-on;
+                                toggled => {
+                                    root.draft-jump-index = root.jump-on ? 0 : (root.jump-choices.length > 1 ? 1 : 0);
+                                }
+                            }
+                            if root.jump-on : VerticalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                Text { text: @tr("Pick a host"); font-size: 11px; color: Theme.fg-2; }
+                                Select {
+                                    text: root.draft-jump-index < root.jump-choices.length
+                                        ? root.jump-choices[root.draft-jump-index]
+                                        : "";
+                                    options: root.jump-choices;
+                                    current: root.draft-jump-index;
+                                    picked(i) => { root.draft-jump-index = i; }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 高级：shell 集成开关 + 端口转发 / 登录触发器 ────────
+                    Section {
+                        title: @tr("Advanced");
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            alignment: start;
+
+                            ToggleRow {
+                                label: @tr("Disable shell integration");
+                                desc: @tr("Windows / pwsh servers: skips the POSIX cwd-follow hook and monitor");
+                                on: root.draft-disable-shell-integration;
+                                toggled => {
+                                    root.draft-disable-shell-integration = !root.draft-disable-shell-integration;
+                                }
+                            }
+
+                            // 折叠区（旧对话框的「Advanced」行为）：端口转发 + 登录触发器
+                            Rectangle {
+                                height: 32px;
+                                border-radius: 7px;
+                                background: adv-ta.has-hover ? Theme.sur-3 : transparent;
+
+                                adv-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.show-advanced = !root.show-advanced; }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    spacing: 6px;
+
+                                    Text {
+                                        text: root.show-advanced ? "\u{E5CF}" : "\u{E5CE}"; // 展开箭头
+                                        font-family: "Material Icons";
+                                        font-size: 16px;
+                                        color: Theme.fg-2;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: root.draft-kind == "ssh"
+                                            ? @tr("Port forwarding & login triggers")
+                                            : @tr("Port forwarding");
+                                        font-size: 12px;
+                                        color: Theme.fg-1;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                    }
+                                    if root.forwards.length + root.triggers.length > 0 : Text {
+                                        text: "\{root.forwards.length + root.triggers.length}";
+                                        font-size: 10px;
+                                        color: Theme.fg-3;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.show-advanced : VerticalLayout {
+                        spacing: 8px;
+                        alignment: start;
+
+                        Text {
+                            text: @tr("Port forwarding");
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: Theme.fg-2;
+                        }
+                        for f[i] in root.forwards : FwdRow {
+                            forward: f;
+                            index: i;
+                            updated(index, value) => { root.update-forward(index, value); }
+                            remove(index) => { root.delete-forward(index); }
+                        }
+                        HorizontalLayout {
+                            alignment: end;
+                            Btn {
+                                text: @tr("Add");
+                                clicked => { root.add-forward(); }
+                            }
+                        }
+                        Text {
+                            text: @tr("-L: local port → target reached from the server; -R: server port → target reached from here; -D: local SOCKS5 proxy");
+                            font-size: 10px;
+                            color: Theme.fg-3;
                             wrap: word-wrap;
-                            line-height-factor: 1.3;
                         }
-                        if root.draft-key-inline == "" : Text {
-                            x: 10px;
-                            y: 8px;
-                            width: parent.width - 20px;
-                            text: "-----BEGIN OPENSSH PRIVATE KEY-----";
-                            color: Theme.text-muted;
-                            font-family: Theme.font-mono;
-                            font-size: Theme.fs-sm;
+
+                        if root.draft-kind == "ssh" : VerticalLayout {
+                            spacing: 8px;
+                            alignment: start;
+
+                            Text {
+                                text: @tr("Login triggers");
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: Theme.fg-2;
+                            }
+                            for trigger[i] in root.triggers : TrigRow {
+                                trigger: trigger;
+                                index: i;
+                                updated(index, value) => { root.update-trigger(index, value); }
+                                remove(index) => { root.delete-trigger(index); }
+                            }
+                            HorizontalLayout {
+                                alignment: end;
+                                Btn {
+                                    text: @tr("Add trigger");
+                                    clicked => { root.add-trigger(); }
+                                }
+                            }
+                            Text {
+                                text: @tr("When expected text appears, send the response automatically. Responses are stored encrypted.");
+                                font-size: 10px;
+                                color: Theme.fg-3;
+                                wrap: word-wrap;
+                            }
                         }
                     }
-                    Text {
-                        text: @tr("Private key content is encrypted before saving.");
-                        color: Theme.text-muted;
-                        font-size: Theme.fs-xs;
-                    }
                 }
             }
 
-            // Passphrase for an *encrypted* private key (#90). Reuses the
-            // password field; blank means the key isn't encrypted (or, when
-            // editing, keep the saved passphrase).
-            if root.draft-kind == "ssh" && root.draft-auth == "key" : LabeledInput {
-                input-background: Theme.bg-elevated;
-                idle-border: Theme.border-strong;
-                label: @tr("Key passphrase");
-                placeholder: root.is-editing
-                    ? @tr("Leave blank to keep the current passphrase")
-                    : @tr("Leave blank if the key isn't encrypted");
-                password: true;
-                value <=> root.draft-password;
+            Rectangle {
+                height: 1px;
+                background: Theme.line;
             }
 
-            // ── Serial-only fields ──────────────────────────────────────────
-            if root.draft-kind == "serial" : LabeledInput {
-                input-background: Theme.bg-elevated;
-                idle-border: Theme.border-strong;
-                label: @tr("Serial port");
-                placeholder: "COM3  /  /dev/ttyUSB0";
-                value <=> root.draft-serial-port;
-            }
+            // ── 底部操作条 ────────────────────────────────────────────────
+            Rectangle {
+                height: 52px;
 
-            if root.draft-kind == "serial" : LabeledInput {
-                input-background: Theme.bg-elevated;
-                idle-border: Theme.border-strong;
-                label: @tr("Baud rate");
-                placeholder: "115200";
-                value <=> root.draft-baud;
-            }
-
-            if root.draft-kind == "serial" : VerticalLayout {
-                spacing: 4px;
-                FieldLabel { text: @tr("Data bits / Stop bits / Parity"); }
                 HorizontalLayout {
-                    spacing: 6px;
-                    SegOption { label: "7"; active: root.draft-data-bits == "7"; clicked => { root.draft-data-bits = "7"; } }
-                    SegOption { label: "8"; active: root.draft-data-bits == "8"; clicked => { root.draft-data-bits = "8"; } }
-                    // 分组留白（原为空 `Rectangle` 占位）：三组位宽的间隔 6+8+6=20px → 6+12=18px（−2px）
-                    HorizontalLayout {
-                        padding-left: Theme.gap-md;
-                        SegOption { label: "1"; active: root.draft-stop-bits == "1"; clicked => { root.draft-stop-bits = "1"; } }
-                    }
-                    SegOption { label: "2"; active: root.draft-stop-bits == "2"; clicked => { root.draft-stop-bits = "2"; } }
-                    // 分组留白（原为空 `Rectangle` 占位）：同上（−2px）
-                    HorizontalLayout {
-                        padding-left: Theme.gap-md;
-                        SegOption { label: "N"; active: root.draft-parity == "none"; clicked => { root.draft-parity = "none"; } }
-                    }
-                    SegOption { label: "O"; active: root.draft-parity == "odd"; clicked => { root.draft-parity = "odd"; } }
-                    SegOption { label: "E"; active: root.draft-parity == "even"; clicked => { root.draft-parity = "even"; } }
-                }
-            }
-
-            if root.draft-kind == "serial" : VerticalLayout {
-                spacing: 4px;
-                FieldLabel { text: @tr("Flow control"); }
-                HorizontalLayout {
-                    spacing: 6px;
-                    SegOption { label: @tr("None"); active: root.draft-flow == "none"; clicked => { root.draft-flow = "none"; } }
-                    SegOption { label: @tr("Hardware"); active: root.draft-flow == "hardware"; clicked => { root.draft-flow = "hardware"; } }
-                    SegOption { label: @tr("Software"); active: root.draft-flow == "software"; clicked => { root.draft-flow = "software"; } }
-                }
-            }
-
-            // ── Terminal character encoding (SSH only) (#338) ───────────────
-            if root.draft-kind == "ssh" : VerticalLayout {
-                spacing: 4px;
-                FieldLabel { text: @tr("Terminal character encoding"); }
-                ComboBox {
-                    height: 32px;
-                    model: [@tr("UTF-8"), @tr("GBK"), @tr("Big5"), @tr("Shift_JIS"), @tr("EUC-KR"), @tr("Windows-1252")];
-                    current-value: root.draft-encoding;
-                    selected(value) => { root.draft-encoding = value; }
-                }
-                Text {
-                    text: @tr("Use GBK for servers configured for GB2312 or GBK output.");
-                    color: Theme.text-muted;
-                    font-size: Theme.fs-xs;
-                }
-                // 分组留白（原为空 `Rectangle` 占位）：区段尾部 4+6=10px → 8px（−2px）
-                GroupGap {
-                    gap: Theme.gap-sm;
-                }
-                }
-
-            // ── Advanced (collapsed by default): proxy + port forwarding ────
-            if root.draft-kind != "serial" : Rectangle {
-                height: 26px;
-                adv-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.show-advanced = !root.show-advanced; }
-                }
-                HorizontalLayout {
-                    spacing: 4px;
-                    Text {
-                        text: @tr("Advanced (encoding, proxy, tunnels)");
-                        color: adv-ta.has-hover ? Theme.text-primary : Theme.text-secondary;
-                        font-size: Theme.fs-sm;
-                        vertical-alignment: center;
-                    }
-                    IconText {
-                        text: root.show-advanced ? "\u{E5CE}" : "\u{E5CF}";
-                        color: Theme.text-muted;
-                        font-size: Theme.fs-md;
-                        vertical-alignment: center;
-                    }
-                    Rectangle { horizontal-stretch: 1; }
-                }
-            }
-
-
-            // ── Optional outbound proxy (SSH / Telnet only) ─────────────────
-            if root.show-advanced && root.draft-kind != "serial" : VerticalLayout {
-                spacing: 4px;
-                FieldLabel { text: @tr("Proxy (optional)"); }
-                HorizontalLayout {
-                    spacing: 6px;
-                    SegOption { label: @tr("None"); active: root.draft-proxy-type == "none"; clicked => { root.draft-proxy-type = "none"; } }
-                    SegOption { label: "SOCKS5"; active: root.draft-proxy-type == "socks5"; clicked => { root.draft-proxy-type = "socks5"; } }
-                    SegOption { label: "HTTP"; active: root.draft-proxy-type == "http"; clicked => { root.draft-proxy-type = "http"; } }
-                }
-                if root.draft-proxy-type != "none" : LabeledInput {
-                    input-background: Theme.bg-elevated;
-                    idle-border: Theme.border-strong;
-                    label: @tr("Proxy address");
-                    placeholder: "127.0.0.1:1080";
-                    value <=> root.draft-proxy-hostport;
-                }
-                Text {
-                    text: root.draft-proxy-type == "none"
-                        ? @tr("No proxy — use $ALL_PROXY or connect directly")
-                        : @tr("Format: host:port  (with auth: user:pass@host:port)");
-                    color: Theme.text-muted;
-                    font-size: Theme.fs-xs;
-                }
-            }
-
-            // ── SSH jump host / bastion (SSH only) (#211) ───────────────────
-            if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
-                spacing: 4px;
-                JumpCombo {
-                    label: @tr("Jump host (optional)");
-                    choices: root.jump-choices;
-                    selected-index <=> root.draft-jump-index;
-                }
-                Text {
-                    text: @tr("Tunnel this connection through another saved SSH session.");
-                    color: Theme.text-muted;
-                    font-size: Theme.fs-xs;
-                }
-            }
-
-            // ── Port forwarding / tunnels (SSH only) (#56) ──────────────────
-            if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
-                spacing: 6px;
-
-                // Shell-integration toggle (#140): the cwd-follow hook + resource
-                // monitor assume a POSIX shell; on a Windows pwsh/cmd server the
-                // injected hook breaks the shell, so let the user turn it off.
-                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
                     spacing: 8px;
-                    Rectangle {
-                        width: 18px; height: 18px; y: 1px;
-                        border-radius: 4px;
-                        border-width: 1px;
-                        border-color: root.draft-disable-shell-integration ? Theme.accent : Theme.border-strong;
-                        background: root.draft-disable-shell-integration ? Theme.accent : transparent;
-                        IconText {
-                            centered: true;
-                            text: root.draft-disable-shell-integration ? "\u{E5CA}" : "";
-color: white; font-size: 14px;
-                            width: 100%; height: 100%;
 
-                        }
-                        TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.draft-disable-shell-integration = !root.draft-disable-shell-integration; }
+                    Btn {
+                        glyph: "\u{E1AF}"; // network_check
+                        text: @tr("Test connection");
+                        clicked => {
+                            if (root.draft-kind != "serial" && root.draft-host == "") {
+                                root.host-missing = true;
+                                return;
+                            }
+                            if (root.draft-kind == "serial" && root.draft-serial-port == "") {
+                                root.test-status = @tr("Please enter a serial port.");
+                                return;
+                            }
+                            root.host-missing = false;
+                            root.test-status = @tr("Testing...");
+                            root.test-connection(root.build-draft());
                         }
                     }
                     Text {
-                        text: @tr("Disable shell integration (Windows / pwsh server)");
-                        color: Theme.text-primary; font-size: Theme.fs-sm;
-                        vertical-alignment: center; horizontal-stretch: 1;
+                        text: root.test-status;
+                        color: root.test-status == @tr("Connection OK") ? Theme.ok : Theme.fg-3;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
                     }
-                }
-                Text {
-                    text: @tr("Turn on for Windows servers: skips the cwd-follow hook and monitor that assume a POSIX shell and otherwise break the shell.");
-                    color: Theme.text-muted; font-size: Theme.fs-xs; wrap: word-wrap;
-                    line-height-factor: 1.3; max-lines: 3;
-                }
-                // 分组留白（原为空 `Rectangle` 占位）：高级区 6+6+6=18px → 6+12=18px（0）
-                GroupGap {
-                    gap: Theme.gap-md;
-
-                    FieldLabel { text: @tr("Port forwarding"); }
-                }
-
-                for f[i] in root.forwards : PortForwardRow {
-                    forward: f;
-                    index: i;
-                    updated(index, value) => { root.update-forward(index, value); }
-                    remove(index) => { root.delete-forward(index); }
-                }
-                HorizontalLayout {
-                    alignment: end;
-                    PrimaryButton {
-                        text: @tr("Add");
-                        clicked => { root.add-forward(); }
+                    Btn {
+                        text: @tr("Cancel");
+                        clicked => { root.cancel(); }
                     }
-                }
-                Text {
-                    text: @tr("-L: local port → target reached from the server; -R: server port → target reached from here; -D: local SOCKS5 proxy");
-                    color: Theme.text-muted;
-                    font-size: Theme.fs-xs;
-                }
-            }
-
-            // ── Expect/send login triggers (SSH only) (#212) ───────────────
-            if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
-                spacing: 6px;
-                Text { text: @tr("Login triggers"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
-                for trigger[i] in root.triggers : TriggerRow {
-                    trigger: trigger;
-                    index: i;
-                    updated(index, value) => { root.update-trigger(index, value); }
-                    remove(index) => { root.delete-trigger(index); }
-                }
-                HorizontalLayout {
-                    alignment: end;
-                    PrimaryButton {
-                        text: @tr("Add trigger");
-                        clicked => { root.add-trigger(); }
-                    }
-                }
-                HelpText { text: @tr("When expected text appears, send the response automatically. Responses are stored encrypted."); }
-            }
-
-            HorizontalLayout {
-                spacing: 8px;
-                GhostButton {
-                    text: @tr("Test connection");
-                    clicked => {
-                        if (root.draft-kind != "serial" && root.draft-host == "") {
-                            root.host-missing = true;
-                            return;
+                    Btn {
+                        text: root.is-editing ? @tr("Save host") : @tr("Create host");
+                        variant: "primary";
+                        clicked => {
+                            // SSH/Telnet need a host; block submit and flag it (#110).
+                            if (root.draft-kind != "serial" && root.draft-host == "") {
+                                root.host-missing = true;
+                                return;
+                            }
+                            root.host-missing = false;
+                            root.submit(root.build-draft());
                         }
-                        if (root.draft-kind == "serial" && root.draft-serial-port == "") {
-                            root.test-status = @tr("Please enter a serial port.");
-                            return;
-                        }
-                        root.host-missing = false;
-                        root.test-status = @tr("Testing...");
-                        root.test-connection(root.build-draft());
-                    }
-                }
-                if root.test-status != "" : Text {
-                    text: root.test-status;
-                    color: root.test-status == @tr("Connection OK") ? Theme.success : Theme.text-muted;
-                    font-size: Theme.fs-xs;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                    overflow: elide;
-                }
-                if root.test-status == "" : Rectangle { horizontal-stretch: 1; }
-                GhostButton {
-                    text: @tr("Cancel");
-                    clicked => { root.cancel(); }
-                }
-                PrimaryButton {
-                    text: is-editing ? @tr("Save") : @tr("Create");
-                    clicked => {
-                        // SSH/Telnet need a host; block submit and flag it (#110).
-                        if (root.draft-kind != "serial" && root.draft-host == "") {
-                            root.host-missing = true;
-                            return;
-                        }
-                        root.host-missing = false;
-                        root.submit(root.build-draft());
                     }
                 }
             }
-        }
-        }
         }
     }
 }

@@ -1,0 +1,460 @@
+// 新设计的表单小件（对话框 / 表单页共用）。
+//
+// 背景：旧的一套（`widgets.slint` 的 LabeledInput / PrimaryButton / GhostButton、
+// `dialog_fields.slint` 的 SegOption / MiniInput）是旧外壳的设计语言。新建/编辑主机
+// 对话框按 ex/新建:编辑会话 1.png / 2.png 重做时，把需要的小件在这里按新令牌
+// （sur-* / line / fg-* / radius-* / sp-*）重写一份，供对话框与后续表单页复用。
+//
+// 与 `shell/page_settings.slint` 里的同名局部组件是"同款不同处"：那份是设置页私有的，
+// 之后可以合并到本文件（避免跨文件大改，先各留一份）。
+
+import { Theme } from "theme.slint";
+
+// ── 开关 ───────────────────────────────────────────────────────────────────
+export component Switch inherits Rectangle {
+    in property <bool> on: false;
+    callback toggled();
+
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    background: root.on ? Theme.accent : Theme.sur-3;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : Theme.line;
+
+    Rectangle {
+        x: root.on ? parent.width - self.width - 2px : 2px;
+        y: (parent.height - self.height) / 2;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: white;
+        animate x { duration: 120ms; }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.toggled();
+        }
+    }
+}
+
+// 一行开关：左标题 + 说明，右开关（参考图「SOCKS5 代理 / 跳板机」那两行）。
+export component ToggleRow inherits Rectangle {
+    in property <string> label;
+    in property <string> desc: "";
+    in property <bool> on: false;
+    callback toggled();
+
+    height: root.desc == "" ? 36px : 48px;
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.label;
+                font-size: 12px;
+                font-weight: 600;
+                color: Theme.fg-1;
+            }
+            if root.desc != "" : Text {
+                text: root.desc;
+                font-size: 10px;
+                color: Theme.fg-3;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+
+            Switch {
+                on: root.on;
+                toggled => {
+                    root.toggled();
+                }
+            }
+        }
+    }
+}
+
+// ── 按钮 ───────────────────────────────────────────────────────────────────
+export component Btn inherits Rectangle {
+    in property <string> text: "";
+    in property <string> glyph: "";
+    // "ghost"（描边浅底）| "primary"（实心强调）| "danger"（红字）
+    in property <string> variant: "ghost";
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 30px;
+    width: (root.text == "" ? 30px : btn-row.preferred-width + 22px);
+    border-radius: 7px;
+    border-width: root.variant == "primary" ? 0px : 1px;
+    border-color: root.variant == "danger" ? Theme.danger.with-alpha(0.5) : Theme.line;
+    background: !root.enabled ? Theme.sur-2
+        : root.variant == "primary" ? (ta.has-hover ? Theme.accent.with-alpha(0.88) : Theme.accent)
+        : root.variant == "danger" ? (ta.has-hover ? Theme.danger.with-alpha(0.14) : transparent)
+        : (ta.has-hover ? Theme.sur-3 : Theme.sur-2);
+
+    btn-row := HorizontalLayout {
+        padding-left: root.text == "" ? 0px : 11px;
+        padding-right: root.text == "" ? 0px : 11px;
+        spacing: 6px;
+        alignment: center;
+
+        if root.glyph != "" : Text {
+            text: root.glyph;
+            font-family: "Material Icons";
+            font-size: 14px;
+            color: !root.enabled ? Theme.fg-3.with-alpha(0.5)
+                : root.variant == "primary" ? #ffffff
+                : root.variant == "danger" ? Theme.danger
+                : Theme.fg-2;
+            vertical-alignment: center;
+        }
+        if root.text != "" : Text {
+            text: root.text;
+            font-size: 12px;
+            color: !root.enabled ? Theme.fg-3.with-alpha(0.5)
+                : root.variant == "primary" ? #ffffff
+                : root.variant == "danger" ? Theme.danger
+                : Theme.fg-1;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// ── 分段选项（协议 / 校验 / 流控等小选择）──────────────────────────────────
+export component Seg inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 26px;
+    width: seg-text.preferred-width + 20px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.active ? Theme.accent : Theme.line;
+    background: root.active ? Theme.accent-soft : (ta.has-hover ? Theme.sur-3 : Theme.sur-2);
+
+    seg-text := Text {
+        text: root.label;
+        font-size: 11px;
+        color: root.active ? Theme.accent : Theme.fg-2;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// ── 输入框 ─────────────────────────────────────────────────────────────────
+// 与旧 `LabeledInput` 对齐的能力：占位文本 / 密码模式 / 等宽字体 / 校验失败描红。
+export component Input inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> password: false;
+    in property <bool> mono: false;
+    in property <bool> invalid: false;
+    in property <bool> enabled: true;
+    callback edited(string);
+    callback accepted();
+
+    height: 30px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: !root.enabled ? Theme.line
+        : root.invalid ? Theme.danger
+        : input.has-focus ? Theme.accent
+        : Theme.line;
+    background: root.enabled ? Theme.sur-2 : Theme.sur-1;
+
+    // 占位文本：TextInput 为空时显示；声明在 TextInput 之前 = 画在文字层下面，
+    // 不影响点击（Text 本身不吃鼠标事件）。
+    if root.text == "" && root.placeholder != "" : Text {
+        x: 10px;
+        width: parent.width - 20px;
+        height: parent.height;
+        text: root.placeholder;
+        font-size: 12px;
+        color: Theme.fg-3;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    input := TextInput {
+        x: 10px;
+        width: parent.width - 20px;
+        height: parent.height;
+        enabled: root.enabled;
+        text <=> root.text;
+        input-method-hints: Theme.plain-input-hints;
+        input-type: root.password ? InputType.password : InputType.text;
+        color: Theme.fg-1;
+        font-family: root.mono ? Theme.term-font-family : Theme.ui-font-family;
+        font-size: 12px;
+        single-line: true;
+        vertical-alignment: center;
+        edited => {
+            root.edited(self.text);
+        }
+        accepted => {
+            root.accepted();
+        }
+    }
+}
+
+// 多行输入（私钥内容 / CA 证书这类）。
+export component Area inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <string> font: "mono";     // "mono" | "ui"
+    callback edited(string);
+
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: area.has-focus ? Theme.accent : Theme.line;
+    background: Theme.sur-2;
+
+    if root.text == "" && root.placeholder != "" : Text {
+        x: 10px;
+        y: 8px;
+        width: parent.width - 20px;
+        text: root.placeholder;
+        font-size: 11px;
+        color: Theme.fg-3;
+        wrap: word-wrap;
+    }
+
+    area := TextInput {
+        x: 10px;
+        y: 8px;
+        width: parent.width - 20px;
+        height: parent.height - 16px;
+        text <=> root.text;
+        input-method-hints: Theme.plain-input-hints;
+        input-type: InputType.text;
+        color: Theme.fg-1;
+        font-family: root.font == "mono" ? Theme.term-font-family : Theme.ui-font-family;
+        font-size: 11px;
+        single-line: false;
+        edited => {
+            root.edited(self.text);
+        }
+    }
+}
+
+// ── 下拉选择 ───────────────────────────────────────────────────────────────
+// 参考图的「主机分组 / 协议」那种：一个描边按钮 + 点开的浮层列表。
+export component Select inherits Rectangle {
+    in property <string> text;
+    in property <[string]> options;
+    in property <int> current: 0;
+    in property <bool> enabled: true;
+    callback picked(int);
+
+    height: 30px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: root.enabled ? Theme.line : Theme.line.with-alpha(0.5);
+    background: root.enabled ? (sel-ta.has-hover ? Theme.sur-3 : Theme.sur-2) : Theme.sur-1;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 8px;
+        spacing: 6px;
+
+        Text {
+            horizontal-stretch: 1;
+            text: root.text;
+            font-size: 12px;
+            color: root.enabled ? Theme.fg-1 : Theme.fg-3.with-alpha(0.6);
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            text: "\u{E5CF}"; // arrow_drop_down
+            font-family: "Material Icons";
+            font-size: 16px;
+            color: Theme.fg-3;
+            vertical-alignment: center;
+        }
+    }
+
+    sel-ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            popup.show();
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 3px;
+        width: max(root.width, 160px);
+        height: min(root.options.length * 30px + 8px, 260px);
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.sur-1;
+            drop-shadow-blur: Theme.shadow-popup-blur;
+            drop-shadow-color: Theme.shadow-popup-color;
+            clip: true;
+
+            Flickable {
+                width: parent.width;
+                height: parent.height;
+
+                VerticalLayout {
+                    padding: 4px;
+                    spacing: 1px;
+                    alignment: start;
+
+                    for o[i] in root.options : Rectangle {
+                        height: 30px;
+                        border-radius: 6px;
+                        background: opt-ta.has-hover ? Theme.sur-3 : transparent;
+
+                        // 行 TouchArea 先声明（画在下层），行内没有别的可点件。
+                        opt-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                popup.close();
+                                root.picked(i);
+                            }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 6px;
+
+                            Text {
+                                text: o;
+                                font-size: 12px;
+                                color: root.current == i ? Theme.accent : Theme.fg-1;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            if root.current == i : Text {
+                                text: "\u{E5CA}"; // check
+                                font-family: "Material Icons";
+                                font-size: 14px;
+                                color: Theme.accent;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── 认证方式那类大卡片 ─────────────────────────────────────────────────────
+export component OptionCard inherits Rectangle {
+    in property <string> glyph;
+    in property <string> title;
+    in property <string> desc: "";
+    in property <bool> selected: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 52px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent : Theme.line;
+    background: root.selected ? Theme.accent-soft : (card-ta.has-hover ? Theme.sur-3 : Theme.sur-2);
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+
+        Text {
+            text: root.glyph;
+            font-family: "Material Icons";
+            font-size: 17px;
+            color: root.selected ? Theme.accent : Theme.fg-2;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 1px;
+
+            Text {
+                text: root.title;
+                font-size: 12px;
+                font-weight: 600;
+                color: root.selected ? Theme.accent : Theme.fg-1;
+                overflow: elide;
+            }
+            if root.desc != "" : Text {
+                text: root.desc;
+                font-size: 10px;
+                color: Theme.fg-3;
+                overflow: elide;
+            }
+        }
+    }
+
+    card-ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// ── 区块标题 ───────────────────────────────────────────────────────────────
+// 参考图的「基础信息 / 连接设置 / 认证方式」：标题 + 下面一条分隔线 + 内容。
+export component Section inherits Rectangle {
+    in property <string> title;
+    height: sec-layout.preferred-height;
+
+    sec-layout := VerticalLayout {
+        spacing: 8px;
+        alignment: start;
+
+        Text {
+            text: root.title;
+            font-size: 12px;
+            font-weight: 700;
+            color: Theme.fg-2;
+        }
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+            opacity: 0.7;
+        }
+        @children
+    }
+}
