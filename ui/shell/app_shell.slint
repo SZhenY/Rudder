@@ -962,14 +962,12 @@ export component AppWindow inherits Window {
 
         Rail {
             x: 0;
-            // Windows/Linux：在新标题栏下方；macOS：通到顶，搜索框自己给红绿灯让位
-            y: root.custom-titlebar ? root.bar-h : 0px;
+            // 从标题栏下面开始画（两个平台一致）：标题栏是通栏的，Rail 再往上顶就会与
+            // 它重叠 —— 两层半透明磨砂叠在一起，左上角那块明显比别处深（用户截图）。
+            y: root.shell-top;
             width: root.rail-w;
-            height: root.height - (root.custom-titlebar ? root.bar-h : 0px);
-            // 系统标题栏平台（macOS）：顶部那条是 AppTitleBarSystem（图标 + 程序名 +
-            // 分隔线），Rail 的内容（搜索框 / 收起按钮）要往下让开它 —— 上一轮清理
-            // 页面 top-inset 绑定时把这一处也误删了，标题栏因此压住了搜索框。
-          top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
+            height: root.height - root.shell-top;
+            // 已经在标题栏下方了，不再需要给红绿灯让位的 top-inset（给 0）。
           lang-en: root.lang-en;
             current-page: root.shell-page;
             // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时

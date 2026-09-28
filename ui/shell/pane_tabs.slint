@@ -12,6 +12,7 @@ import { TabInfo } from "../tabs.slint";
 component TabPill inherits Rectangle {
     in property <TabInfo> tab;
     in property <bool> active: false;
+    in property <bool> lang-en: false;
     callback selected();
     callback closed();
     callback rename-requested();
@@ -42,14 +43,18 @@ component TabPill inherits Rectangle {
 
         Text {
             width: 16px;
-            text: "\u{EB8E}"; // terminal
+            // 欢迎标签页用「+」图标（它还没有会话）
+            text: root.tab.kind == "welcome" ? "\u{E145}" : "\u{EB8E}"; // add / terminal
             font-family: "Material Icons";
             font-size: 13px;
             color: root.active ? Theme.accent : Theme.fg-3;
             vertical-alignment: center;
         }
         Text {
-            text: root.tab.title;
+            // 欢迎标签页（点「+」新建的）没有会话名，给它一个本地化的标题。
+            text: root.tab.kind == "welcome"
+                ? (root.lang-en ? "New session" : "新建会话")
+                : root.tab.title;
             font-size: 12px;
             color: root.active ? Theme.rail-fg : Theme.fg-2;
             font-weight: root.active ? 600 : 400;
@@ -164,6 +169,7 @@ export component PaneTabs inherits Rectangle {
                 for t in root.tabs : TabPill {
                     tab: t;
                     active: t.id == root.active-id;
+                    lang-en: root.lang-en;
                     selected => {
                         root.tab-selected(t.id);
                     }

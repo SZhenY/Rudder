@@ -255,6 +255,27 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
                     lay.add_tab("welcome".into());
                 }
             }
+            // 欢迎标签页也要在标签栏里占一行：这行原先根本不存在（`tabs_model` 只由
+            // 真会话 push），所以点「+」之后标签栏与内容区都是空的。
+            {
+                use slint::Model as _;
+                let has_row = (0..tabs_model.row_count()).any(|i| {
+                    tabs_model
+                        .row_data(i)
+                        .map(|r| r.id.as_str() == "welcome")
+                        .unwrap_or(false)
+                });
+                if !has_row {
+                    tabs_model.push(TabInfo {
+                        id: "welcome".into(),
+                        // 标题由 UI 按语言决定（kind == "welcome" 时显示「新建会话」）
+                        title: "".into(),
+                        title_len: 0,
+                        kind: "welcome".into(),
+                        connected: false,
+                    });
+                }
+            }
             if let Some(w) = weak.upgrade() {
                 refresh_panes(
                     &w,
