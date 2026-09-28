@@ -113,8 +113,7 @@ component LineChart inherits Rectangle {
         height: root.chart-h;
         stroke: root.line-color;
         stroke-width: 1.5px;
-        // 参考图是"线 + 浅色面积"：末尾收口到基线后闭合成多边形。
-        fill: root.line-color.with-alpha(0.16);
+        fill: transparent;
 
         // 两个**看不见的锚点**把包围盒钉死在 0..100 × 0..100：Path 会把整条路径
         // 缩放着填进自己的宽高边界，没有锚点时"0 值附近"的曲线会被放大成山峰。
@@ -154,10 +153,6 @@ component LineChart inherits Rectangle {
         LineTo { x: 93.5484; y: root.vy(root.values[root.idx(29)]); }
         LineTo { x: 96.7742; y: root.vy(root.values[root.idx(30)]); }
         LineTo { x: 100; y: root.vy(root.values[root.idx(31)]); }
-        // 收口到基线（让 fill 成为面积图）
-        LineTo { x: 100.0; y: 100.0; }
-        LineTo { x: 0.0; y: 100.0; }
-        // 第二个隐形锚点：把包围盒的右下角钉住
         MoveTo { x: 99.99; y: 100.0; }
         LineTo { x: 100.0; y: 100.0; }
     }
@@ -233,18 +228,17 @@ component ResCard inherits Rectangle {
     in property <string> icon: "";
 
     horizontal-stretch: 1;
-    // ⚠ 高度交给内容（同一行的两张卡由 HorizontalLayout 拉齐，不用写死）。
-    // 之前写死 46px：卡片里是「标题行 + 进度条 + 补充行」三层，装不下时 Slint 会把
-    // 进度条挤到补充行上 —— 表现就是"条从文字中间穿过去"（用户截图圈的就是它）。
+    // 固定高度：同一行的两张卡（一个有 hint 一个没有）才不会一高一矮。
+    height: 46px;
     border-radius: Theme.radius-md;
     background: Theme.sur-2;
 
     VerticalLayout {
         padding-left: 8px;
         padding-right: 8px;
-        padding-top: 7px;
-        padding-bottom: 7px;
-        spacing: 5px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 3px;
         // ⚠ 这里**不要**写 alignment —— 它管的是交叉轴（水平）对齐，一写
         // `center` 子元素就只占首选宽度并居中：进度条会缩成中间一小段
         //（用户截图里 CPU / 内存 / 磁盘的条都变成了居中的小短条）。
@@ -308,9 +302,10 @@ component MetricRow inherits Rectangle {
     in property <string> value;
     in property <float> percent: 0;
 
-    // 高度自适应（同上：写死高度会把进度条挤到文字上）
+    height: 26px;
+
     VerticalLayout {
-        spacing: 4px;
+        spacing: 3px;
         // （同上：不写 alignment，进度条才铺满整行）
 
         HorizontalLayout {
