@@ -1117,7 +1117,11 @@ export component SessionDialog inherits Rectangle {
             Rectangle {
                 height: 52px;
 
+                // 显式垂直居中：Slint 的布局在交叉轴上默认不是居中，固定 30px 高的
+                // 按钮在 52px 的条里会贴顶（用户截图里"没有居中对齐"）。
                 HorizontalLayout {
+                    height: 30px;
+                    y: (parent.height - 30px) / 2;
                     padding-left: 16px;
                     padding-right: 16px;
                     spacing: 8px;

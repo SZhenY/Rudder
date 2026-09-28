@@ -8,6 +8,8 @@ import { Theme } from "../theme.slint";
 import { QuickCmd } from "../terminal_parts.slint";
 
 export component PageSnippets inherits Rectangle {
+    // 系统标题栏让位高度（macOS 红绿灯；自绘标题栏的平台传 0）。
+    in property <length> top-inset: 0px;
     in property <[QuickCmd]> quick-commands;
     callback run(string /* command */);
     callback manage();
@@ -21,10 +23,11 @@ export component PageSnippets inherits Rectangle {
 
         // 顶部：标题 + 管理
         Rectangle {
-            height: 52px;
+            height: 52px + root.top-inset;
             background: Theme.sur-1;
 
             HorizontalLayout {
+                padding-top: root.top-inset;
                 padding-left: Theme.sp-4;
                 padding-right: Theme.sp-4;
                 spacing: Theme.sp-2;

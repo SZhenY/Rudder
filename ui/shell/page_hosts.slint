@@ -296,6 +296,8 @@ export component PageHosts inherits Rectangle {
 
     in property <bool> lang-en: false;
     in property <[SessionInfo]> sessions;
+    // 系统标题栏让位高度（macOS 红绿灯；自绘标题栏的平台传 0）。
+    in property <length> top-inset: 0px;
     callback new-session();
     callback connect-session(string /* id */);
     // 编辑主机：卡片右上角的 ✎（Rust 侧 on_edit_session 会填好草稿并打开对话框）
@@ -322,7 +324,10 @@ export component PageHosts inherits Rectangle {
             // 会忽略子项的拉伸因子，下面那个 `vertical-stretch: 1` 的占位就失效，
             // 「标签筛选 / 管理分组 & 标签」会挤在顶部、下面留一大片空白。
             VerticalLayout {
-                padding: Theme.sp-3;
+                padding-top: Theme.sp-3 + root.top-inset;
+                padding-left: Theme.sp-3;
+                padding-right: Theme.sp-3;
+                padding-bottom: Theme.sp-3;
                 spacing: Theme.sp-3;
 
                 Text {
@@ -452,10 +457,12 @@ export component PageHosts inherits Rectangle {
             spacing: 0px;
 
             Rectangle {
-                height: 52px;
+                // 顶栏往上顶到窗口最顶（顶掉那一圈空背景），内容用 top-inset 让开红绿灯。
+                height: 52px + root.top-inset;
                 background: Theme.sur-1;
 
                 HorizontalLayout {
+                    padding-top: root.top-inset;
                     padding-left: Theme.sp-4;
                     padding-right: Theme.sp-4;
                     spacing: Theme.sp-2;
