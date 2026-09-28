@@ -144,7 +144,11 @@ export global Theme {
     // Terminal uses its own background so it stays readable regardless of
     // what the shell / remote app outputs via ANSI colour codes. With a
     // wallpaper it frosts (kept neutral, not tinted) so text stays legible.
-    property <color> base-term-bg: dark ? #0e0f13 : #fafafa;
+    //
+    // 底色与窗口底 / 工具面板同色（`#0e0f13` 那版是"纯黑"，和右侧工具面板、窗口
+    // 底色都接不上，看着像一块贴上去的黑板；改成同一个 `window-base`，终端区就
+    // 和面板连成一片）。前景 `term-fg` 是 #d4d4d4，对比度仍然充足。
+    property <color> base-term-bg: dark ? #1b1d23 : #f5f5f7;
     out property <brush> term-bg: root.wallpaper-active ? base-term-bg.with-alpha(max(0.0, root.panel-alpha - 0.14)) : base-term-bg;
     out property <brush> term-fg: dark ? #d4d4d4 : #2d2d2f;
 
