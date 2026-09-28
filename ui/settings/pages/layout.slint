@@ -9,14 +9,12 @@ import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
 
 export component LayoutPage inherits VerticalLayout {
-    in-out property <bool> show-cmd-bar;
     in-out property <bool> collapse-sftp-default;
     in-out property <bool> collapse-sidebar-default;
     in property <bool> lang-en;
     in-out property <bool> quick-commands-as-sidebar;
     in-out property <bool> welcome-as-sidebar;
     callback reset-page(string);
-    callback set-show-cmd-bar(bool);
     callback set-collapse-sftp-default(bool);
     callback set-collapse-sidebar-default(bool);
     callback set-quick-commands-as-sidebar(bool);

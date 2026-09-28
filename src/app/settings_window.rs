@@ -231,7 +231,6 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_renderer_mode(m.get_renderer_mode());
     sw.set_scrollback_lines(m.get_scrollback_lines());
     sw.set_sftp_follow_cd(m.get_sftp_follow_cd());
-    sw.set_show_cmd_bar(m.get_show_cmd_bar());
     sw.set_sync_upload_enabled(m.get_sync_upload_enabled());
     sw.set_term_cursor_color(m.get_term_cursor_color());
     sw.set_term_cursor_choice(m.get_term_cursor_choice());
@@ -334,7 +333,6 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_renderer_mode => invoke_set_renderer_mode, (a0));
     forward!(sw, m, s, on_set_scrollback_lines -> invoke_set_scrollback_lines, (a0));
     forward!(sw, m, s, on_set_sftp_follow_cd => invoke_set_sftp_follow_cd, (a0));
-    forward!(sw, m, s, on_set_show_cmd_bar => invoke_set_show_cmd_bar, (a0));
     forward!(sw, m, s, on_set_sync_upload_enabled => invoke_set_sync_upload_enabled, (a0));
     forward!(sw, m, s, on_set_term_cursor_color -> invoke_set_term_cursor_color, (a0));
     forward!(sw, m, s, on_set_term_cursor_preset => invoke_set_term_cursor_preset, (a0));

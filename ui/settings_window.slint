@@ -138,7 +138,6 @@ export component SettingsWindow inherits Window {
     in-out property <string> renderer-mode:"software";
     in-out property <string> scrollback-lines:"5000";
     in-out property <bool> sftp-follow-cd:true;
-    in-out property <bool> show-cmd-bar:true;
     in-out property <bool> sync-upload-enabled:false;
     in property <color> term-cursor-color:Theme.term-fg;
     in property <string> term-cursor-choice;
@@ -196,7 +195,6 @@ export component SettingsWindow inherits Window {
     callback set-renderer-mode(string);
     callback set-scrollback-lines(string) -> bool;
     callback set-sftp-follow-cd(bool);
-    callback set-show-cmd-bar(bool);
     callback set-sync-upload-enabled(bool);
     callback set-term-cursor-color(string) -> bool;
     callback set-term-cursor-preset(string);
@@ -292,7 +290,6 @@ export component SettingsWindow inherits Window {
                 ui-scale: Theme.ui-scale;
                 sftp-follow-cd <=> sftp-follow-cd;
                 collapse-sidebar-default <=> collapse-sidebar-default;
-                show-cmd-bar <=> show-cmd-bar;
                 collapse-sftp-default <=> collapse-sftp-default;
                 sync-upload-enabled <=> sync-upload-enabled;
                 webdav-enabled <=> webdav-enabled;
@@ -374,7 +371,6 @@ export component SettingsWindow inherits Window {
                 webdav-download => { root.webdav-download(); }
                 set-download-always-ask(v) => { root.set-download-always-ask(v); }
                 set-welcome-as-sidebar(v) => { root.set-welcome-as-sidebar(v); }
-                set-show-cmd-bar(v) => { root.set-show-cmd-bar(v); }
                 set-quick-commands-as-sidebar(v) => {
                     quick-commands-as-sidebar = v;
                     if (!v) {

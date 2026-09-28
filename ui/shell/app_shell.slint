@@ -435,11 +435,6 @@ export component AppWindow inherits Window {
     // SFTP follows the terminal's cd; opt out in Interface settings.
     in-out property <bool> sftp-follow-cd: true;
     callback set-sftp-follow-cd(bool);             // apply + persist
-    // Hide the quick-command bar under the terminal; toolbar toggle persists it.
-    // 终端底部命令栏的可见性。**正向语义**（true = 显示），出厂默认 true。
-    // 配置里存的是反向的 hide_cmd_bar，翻转只在 Rust 侧（见 settings/layout.rs）。
-    in-out property <bool> show-cmd-bar: true;
-    callback set-show-cmd-bar(bool);               // apply + persist
     // Zen (focus) mode: hide the sidebar and tab strip for a distraction-free
     // terminal. Toggled by Ctrl+Alt+Z (⌘⌥Z on macOS) and persisted.
     in-out property <bool> zen-mode: false;

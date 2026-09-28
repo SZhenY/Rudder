@@ -145,7 +145,6 @@ pub struct LayoutSettings {
     pub collapse_sftp_default: bool,
     pub quick_commands_as_sidebar: bool,
     pub welcome_as_sidebar: bool,
-    pub hide_cmd_bar: bool,
     pub zen_mode: bool,
     /// 上次的资源侧栏折叠态；None = 回退到 `collapse_sidebar_default`。
     pub sidebar_collapsed: Option<bool>,
@@ -177,7 +176,6 @@ impl Default for LayoutSettings {
             collapse_sftp_default: false,
             quick_commands_as_sidebar: false,
             welcome_as_sidebar: false,
-            hide_cmd_bar: false,
             zen_mode: false,
             sidebar_collapsed: None,
             sidebar_width: 220.0,

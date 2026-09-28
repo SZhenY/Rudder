@@ -2369,15 +2369,6 @@ impl ConfigStore {
         self.cache.transfer.download_always_ask = ask;
     }
 
-    /// Whether the quick-command bar under the terminal is hidden.
-    pub fn cmd_bar_hidden(&self) -> bool {
-        self.cache.layout.hide_cmd_bar
-    }
-
-    pub fn set_cmd_bar_hidden(&mut self, hidden: bool) {
-        self.cache.layout.hide_cmd_bar = hidden;
-    }
-
     /// Zen (focus) mode: sidebar and tab strip hidden.
     pub fn zen_mode(&self) -> bool {
         self.cache.layout.zen_mode
