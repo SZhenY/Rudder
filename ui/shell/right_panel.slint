@@ -759,9 +759,11 @@ export component RightPanel inherits Rectangle {
     // 240px 那版 7 个标签挤在一起、指标卡里的详情文字也被压到换行（用户截图），
     // 参考图的面板本身就很宽 —— 加宽到 340px（app_shell 的 panel-w 同步）。
     width: root.collapsed ? 22px : 340px;
-    // 与终端区同底色（参考图里工具面板和终端是同一张"纸"，没有生硬的分隔线；
-    // 卡片靠 sur-2 自己浮出来）
-    background: Theme.bg-root;
+    // 与终端同一块"磨砂玻璃"：都用 `term-bg` —— 它跟着「外观 ▸ 遮罩」的
+    // 壁纸遮罩透明度（0–70%）一起变，面板与终端因此始终同色同透，没有生硬的
+    // 分隔线；卡片靠 sur-2 自己浮出来。
+    // 注：透明磨砂需要**有壁纸**才看得出效果（没有壁纸时 `frost()` 返回纯色）。
+    background: Theme.term-bg;
     clip: true;
 
     // ── 收起态：一条窄条 + 一个展开按钮（图标与标签条的「工具」同一个）──────
