@@ -12,12 +12,16 @@
 //!   * `session_event` 里会改 SFTP / 隧道字段的事件分支 —— 覆盖实时数据；
 //!   * SFTP 排序回调 —— 面板自己发起、只改行内顺序，没有事件回流。
 //!
-//! 尚未提升的字段（树节点 / 勾选数 / 排序键 / 面板几何）仍留在 per-tab 模型里：
-//! 目前只有旧 SFTP 面板用，等旧外壳删除时一并处理。
+//! 尚未提升的字段（树节点 / 勾选数 / 面板几何）仍留在 per-tab 模型里：目前只有旧
+//! SFTP 面板用，等旧外壳删除时一并处理。
 //!
-//! 另外顺带算出 `active-sftp-dir-count` / `-file-count` / `-total`（当前目录的目录数、
-//! 文件数、文件总大小），给右侧工具面板 footer 的 PATH / DIR / FILE / TOTAL 徽标用 ——
-//! Slint 没有 reduce/filter，这类统计只能在 Rust 侧数。
+//! 另外顺带算出这些「Slint 算不了」的东西，给右侧工具面板用：
+//!   * `active-sftp-dir-count` / `-file-count` / `-total` —— footer 的 DIR / FILE /
+//!     TOTAL 徽标（Slint 没有 reduce/filter）；
+//!   * `active-sftp-crumbs` —— 面包屑，按 `/` 切好路径（Slint 没有 split）；
+//!   * `active-sftp-sort-key` / `-dir` —— 列头要显示排序方向；
+//!   * 搜索过滤：面板把查询串写进窗口属性 `sftp-search-query`，这里按它过滤后再镜像
+//!     （Slint 的字符串只有 starts-with / ends-with，没有 contains）。
 
 use super::*;
 
@@ -43,10 +47,18 @@ pub(crate) fn refresh_active_term(win: &AppWindow) {
         Some(row) => {
             win.set_active_tunnels(row.tunnels.clone());
             win.set_active_sftp_path(row.sftp_path.clone());
-            win.set_active_sftp_entries(row.sftp_entries.clone());
+            // 搜索过滤：面板把查询串写进窗口属性，这里按它过滤后再镜像。
+            let query = win.get_sftp_search_query().to_lowercase();
+            win.set_active_sftp_entries(filter_entries(&row, &query));
             win.set_active_sftp_status(row.sftp_status.clone());
             win.set_active_sftp_loading(row.sftp_loading);
             win.set_active_sftp_available(row.sftp_available);
+            // 列头要显示排序方向（key + dir 都在行里）。
+            win.set_active_sftp_sort_key(row.sftp_sort_key.clone());
+            win.set_active_sftp_sort_dir(row.sftp_sort_dir);
+            // 面包屑（按 `/` 切好；Slint 没有 split）。
+            let crumbs = sftp_crumbs(row.sftp_path.as_str());
+            win.set_active_sftp_crumbs(ModelRc::from(std::rc::Rc::new(VecModel::from(crumbs))));
             // 右面板 footer 的 PATH / DIR / FILE / TOTAL 统计（真数据，不靠 UI 数）。
             let (dirs, files, total) = sftp_stats(&row);
             win.set_active_sftp_dir_count(dirs);
@@ -68,12 +80,65 @@ pub(crate) fn refresh_active_term(win: &AppWindow) {
                 win.set_active_sftp_status("".into());
                 win.set_active_sftp_loading(false);
                 win.set_active_sftp_available(false);
+                win.set_active_sftp_sort_key("".into());
+                win.set_active_sftp_sort_dir(0);
+                win.set_active_sftp_crumbs(ModelRc::from(std::rc::Rc::new(
+                    VecModel::<SftpCrumb>::default(),
+                )));
                 win.set_active_sftp_dir_count(0);
                 win.set_active_sftp_file_count(0);
                 win.set_active_sftp_total("".into());
             }
         }
     }
+}
+
+/// 按查询串过滤条目：大小写不敏感的子串匹配（Slint 的字符串只有 starts-with /
+/// ends-with，没有 contains）。空串 = 原样返回那一行的模型（不换身份）。
+fn filter_entries(row: &TerminalState, query: &str) -> ModelRc<SftpEntry> {
+    if query.is_empty() {
+        return row.sftp_entries.clone();
+    }
+    let Some(entries) = row
+        .sftp_entries
+        .as_any()
+        .downcast_ref::<VecModel<SftpEntry>>()
+    else {
+        return ModelRc::from(std::rc::Rc::new(VecModel::<SftpEntry>::default()));
+    };
+    let kept: Vec<SftpEntry> = (0..entries.row_count())
+        .filter_map(|i| entries.row_data(i))
+        .filter(|e| e.name.to_lowercase().contains(query))
+        .collect();
+    ModelRc::from(std::rc::Rc::new(VecModel::from(kept)))
+}
+
+/// 面包屑：绝对路径先给一段根 `/`，然后逐段累积完整路径。空路径 = 空。
+fn sftp_crumbs(path: &str) -> Vec<SftpCrumb> {
+    let mut out: Vec<SftpCrumb> = Vec::new();
+    if path.is_empty() {
+        return out;
+    }
+    let absolute = path.starts_with('/');
+    if absolute {
+        out.push(SftpCrumb {
+            name: "/".into(),
+            path: "/".into(),
+        });
+    }
+    let mut acc = String::new();
+    for seg in path.split('/').filter(|s| !s.is_empty()) {
+        if acc.is_empty() && !absolute {
+            acc = seg.to_string();
+        } else {
+            acc = format!("{acc}/{seg}");
+        }
+        out.push(SftpCrumb {
+            name: seg.into(),
+            path: acc.clone().into(),
+        });
+    }
+    out
 }
 
 /// 当前目录的「目录数 / 文件数 / 文件总大小」——右面板 footer 那三个徽标的值。

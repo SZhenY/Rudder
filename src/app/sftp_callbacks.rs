@@ -852,6 +852,18 @@ pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
             w.set_editor_match_count(0);
         });
     }
+
+    // 工具面板「文件」视图的搜索框：查询串写进窗口属性，并**立刻**重算镜像
+    // （过滤在 Rust 侧做，见 `active_state::filter_entries`；不然要等下一个事件或
+    // 1 Hz tick 才生效）。
+    {
+        let weak = window.as_weak();
+        window.on_sftp_search_changed(move |query: SharedString| {
+            let Some(w) = weak.upgrade() else { return };
+            w.set_sftp_search_query(query);
+            refresh_active_term(&w);
+        });
+    }
 }
 
 #[cfg(test)]

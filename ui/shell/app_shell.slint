@@ -56,7 +56,7 @@ import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "../session_d
 // ②-2 之后本文件不再直接实例化 TerminalView（终端舞台接管）；QuickCmd 仍要
 // import —— 它在本文件被用作属性类型，且在下面的 export 清单里（Rust 生成类型）。
 import { QuickCmd } from "../terminal_view.slint";
-import { SftpEntry, SftpTreeNode, TunnelInfo } from "../sftp_types.slint";
+import { SftpCrumb, SftpEntry, SftpTreeNode, TunnelInfo } from "../sftp_types.slint";
 import { ProcWindow, ProcRow } from "../proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "../system_info_window.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset } from "../settings/types.slint";
@@ -659,6 +659,14 @@ export component AppWindow inherits Window {
     in property <int> active-sftp-dir-count;
     in property <int> active-sftp-file-count;
     in property <string> active-sftp-total;
+    // 文件视图：面包屑（Rust 按 `/` 切）+ 列头排序方向 + 搜索串（查询串由面板写、
+    // Rust 读它过滤列表，所以是双向）。
+    in property <[SftpCrumb]> active-sftp-crumbs;
+    in property <string> active-sftp-sort-key;
+    in property <int> active-sftp-sort-dir;
+    in-out property <string> sftp-search-query;
+    // 面板改搜索串 → 立刻重算镜像（不然要等下一个事件/tick 才过滤）
+    callback sftp-search-changed(string);
 
     // --- Dialog state ------------------------------------------------------
     in-out property <bool> dialog-open: false;
@@ -1597,10 +1605,26 @@ export component AppWindow inherits Window {
           sftp-dir-count: root.active-sftp-dir-count;
           sftp-file-count: root.active-sftp-file-count;
           sftp-total: root.active-sftp-total;
+          // 文件视图：面包屑 / 排序方向 / 搜索串
+          sftp-crumbs: root.active-sftp-crumbs;
+          sftp-sort-key: root.active-sftp-sort-key;
+          sftp-sort-dir: root.active-sftp-sort-dir;
+          search <=> root.sftp-search-query;
+          search-changed(q) => { root.sftp-search-changed(q); }
           // 面板是窗口级的，回调统一带上活动标签 id，走既有的 per-tab 链路。
           sftp-navigate(path) => { root.sftp-navigate(root.active-tab-id, path); }
           sftp-refresh(path) => { root.sftp-refresh(root.active-tab-id, path); }
           sftp-download(path) => { root.sftp-download(root.active-tab-id, path); }
+          sftp-upload(dir, folder) => { root.sftp-upload-clicked(root.active-tab-id, dir, folder); }
+          // 新建目录沿用提示框（kind=mkdir），与终端内嵌面板同一条链路。
+          sftp-new-folder(dir) => {
+              root.sftp-prompt-kind = "mkdir";
+              root.sftp-prompt-tab = root.active-tab-id;
+              root.sftp-prompt-target = dir;
+              root.sftp-prompt-value = "";
+              root.sftp-prompt-open = true;
+          }
+          sftp-sort-request(key) => { root.sftp-sort-request(root.active-tab-id, key); }
           close-panel() => { root.right-panel-open = false; }
       }
 

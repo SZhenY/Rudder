@@ -26,6 +26,13 @@ export struct SftpEntry {
     selected: bool,   // multi-select checkbox state (#100)
 }
 
+// 面包屑的一段（工具面板文件视图用）：显示名 + 可点的完整路径。
+// Rust 侧按 `/` 切好（Slint 没有 split），最后一段就是当前目录。
+export struct SftpCrumb {
+    name: string,
+    path: string,
+}
+
 // One row of the directory tree the old SFTP panel shows on the left.
 export struct SftpTreeNode {
     path: string,

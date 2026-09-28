@@ -21,7 +21,7 @@ import { Sparkline } from "../widgets.slint";
 import { SysNetRow } from "../system_info_window.slint";
 // 条目类型住在 `ui/sftp_types.slint`（第④步从 `sftp_panel.slint` 搬出），新外壳不依赖
 // 那个等着删除的旧面板组件文件。
-import { SftpEntry, TunnelInfo } from "../sftp_types.slint";
+import { SftpCrumb, SftpEntry, TunnelInfo } from "../sftp_types.slint";
 
 component PanelTab inherits Rectangle {
     in property <string> label;
@@ -348,6 +348,10 @@ export component RightPanel inherits Rectangle {
     in property <int> sftp-dir-count;
     in property <int> sftp-file-count;
     in property <string> sftp-total;
+    // 面包屑（Rust 按 `/` 切好）与列头排序方向
+    in property <[SftpCrumb]> sftp-crumbs;
+    in property <string> sftp-sort-key;
+    in property <int> sftp-sort-dir;
     // 活动标签的隧道 / SFTP —— 窗口级镜像（见 shell/app_shell.slint 的属性声明处）。
     in property <[TunnelInfo]> tunnels;
     in property <string> sftp-path;
@@ -359,12 +363,27 @@ export component RightPanel inherits Rectangle {
     callback sftp-navigate(string /* path；".." = 上级目录 */);
     callback sftp-refresh(string /* path */);
     callback sftp-download(string /* path */);
+    callback sftp-upload(string /* dir */, bool /* folder */);
+    callback sftp-new-folder(string /* dir */);
+    callback sftp-sort-request(string /* key */);
+    // 搜索框：查询串住在窗口级（Rust 侧按它过滤列表），改动即时通知。
+    in-out property <string> search;
+    callback search-changed(string);
 
-    property <int> current-tab: 0; // 0 传输 · 1 文件（隧道功能暂缓，见文件头）
-    property <bool> file-can-up: root.sftp-available && root.sftp-path != "" && root.sftp-path != "/";
+    property <int> current-tab: 0; // 0 综合 · 1 CPU · 2 内存 · 3 磁盘 · 4 网络 · 5 传输 · 6 文件
     property <string> file-path-label: !root.sftp-available
         ? (root.lang-en ? "SFTP unavailable for this session" : "此会话不支持 SFTP")
         : (root.sftp-path == "" ? "/" : root.sftp-path);
+    // 列头的排序方向后缀（key + dir 都是 Rust 从活动行镜像过来的真状态）。
+    property <string> sort-suffix-name:
+        root.sftp-sort-key == "name" && root.sftp-sort-dir > 0 ? " ↑"
+        : root.sftp-sort-key == "name" && root.sftp-sort-dir < 0 ? " ↓" : "";
+    property <string> sort-suffix-size:
+        root.sftp-sort-key == "size" && root.sftp-sort-dir > 0 ? " ↑"
+        : root.sftp-sort-key == "size" && root.sftp-sort-dir < 0 ? " ↓" : "";
+    property <string> sort-suffix-modified:
+        root.sftp-sort-key == "modified" && root.sftp-sort-dir > 0 ? " ↑"
+        : root.sftp-sort-key == "modified" && root.sftp-sort-dir < 0 ? " ↓" : "";
     // 0 不可用 · 1 加载中（还没有内容）· 2 空目录 · 3 列表
     property <int> file-view: !root.sftp-available ? 0
         : (root.sftp-loading && root.sftp-entries.length == 0 ? 1
@@ -788,43 +807,235 @@ export component RightPanel inherits Rectangle {
             padding: 12px;
             spacing: 6px;
 
-            // 标题 + 路径栏（上级 / 刷新）
+            // ── 工具条：面包屑（根 / … / 末两段可点）+ 刷新 / 上传 / 新建目录 ──
+            // 中间层用「…」省略（crumbs 由 Rust 切好；长度 >3 时只显示首段与末两段）。
             HorizontalLayout {
                 spacing: 2px;
+                height: 22px;
 
-                Text {
-                    text: root.lang-en ? "Files" : "文件";
-                    font-size: 14px;
-                    font-weight: 700;
-                    color: Theme.fg-1;
-                    vertical-alignment: center;
-                }
-                Rectangle {
+                HorizontalLayout {
                     horizontal-stretch: 1;
-                }
-                // arrow_upward：上级目录（根目录禁用）
-                IconBtn {
-                    glyph: "\u{E5D8}";
-                    enabled: root.file-can-up;
-                    clicked => {
-                        root.sftp-navigate("..");
+                    spacing: 1px;
+                    alignment: start;
+
+                    for c[i] in root.sftp-crumbs : HorizontalLayout {
+                        spacing: 1px;
+                        alignment: start;
+
+                        // 中间层省略号：点它 = 上一级（参考图里的「…」就是上级入口）。
+                        // 放在 i==1 这个槽位，省得在静态元素与 for 之间插队。
+                        HorizontalLayout {
+                            visible: root.sftp-crumbs.length > 3 && i == 1;
+                            spacing: 1px;
+                            alignment: start;
+
+                            Text {
+                                text: "…";
+                                font-size: 10px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
+                            up-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.sftp-navigate("..");
+                                }
+                            }
+                        }
+
+                        // 面包屑本身：根段用文件夹图标代替「/」（省宽度，也更像参考图）；
+                        // 长度 > 3 时只留首段与末两段。
+                        HorizontalLayout {
+                            visible: root.sftp-crumbs.length <= 3 || i == 0
+                                || i >= root.sftp-crumbs.length - 2;
+                            spacing: 1px;
+                            alignment: start;
+
+                            Text {
+                                text: i == 0 ? "\u{E2C7}" : "/" + c.name;
+                                font-family: i == 0 ? "Material Icons" : Theme.ui-font-family;
+                                font-size: 10px;
+                                color: i == root.sftp-crumbs.length - 1 ? Theme.fg-1 : Theme.fg-3;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            ct-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.sftp-navigate(c.path);
+                                }
+                            }
+                        }
                     }
                 }
-                // refresh：重新列目录
                 IconBtn {
-                    glyph: "\u{E5D5}";
+                    glyph: "\u{E5D5}";   // refresh
                     enabled: root.sftp-available;
                     clicked => {
                         root.sftp-refresh(root.sftp-path);
                     }
                 }
+                IconBtn {
+                    glyph: "\u{E5D8}";   // 上传：把本地文件放进当前目录
+                    enabled: root.sftp-available;
+                    clicked => {
+                        root.sftp-upload(root.sftp-path, false);
+                    }
+                }
+                IconBtn {
+                    glyph: "\u{E145}";   // 新建目录
+                    enabled: root.sftp-available;
+                    clicked => {
+                        root.sftp-new-folder(root.sftp-path);
+                    }
+                }
             }
 
-            Text {
-                text: root.file-path-label;
-                font-size: 10px;
-                color: Theme.fg-3;
-                overflow: elide;
+            // ── 搜索行（过滤在 Rust 侧做：Slint 的字符串没有 contains）────────
+            Rectangle {
+                height: 22px;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: Theme.line;
+                background: Theme.sur-2;
+
+                Text {
+                    x: 6px;
+                    y: 0;
+                    text: "\u{E8B6}";   // search
+                    font-family: "Material Icons";
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    height: parent.height;
+                    vertical-alignment: center;
+                }
+                // 占位提示用一层 Text（TextInput 没有 placeholder 属性，同 rail 的搜索框）
+                Text {
+                    x: 22px;
+                    width: parent.width - 28px;
+                    height: parent.height;
+                    visible: search-input.text == "";
+                    text: root.lang-en ? "Search" : "搜索";
+                    font-size: 10px;
+                    color: Theme.fg-3;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                search-input := TextInput {
+                    x: 22px;
+                    width: parent.width - 28px;
+                    height: parent.height;
+                    text <=> root.search;
+                    single-line: true;
+                    font-size: 10px;
+                    color: Theme.fg-1;
+                    vertical-alignment: center;
+                    edited => {
+                        root.search-changed(root.search);
+                    }
+                }
+            }
+
+            // ── 列头：名称 / 大小 / 时间（点名称或大小排序，方向来自 Rust 镜像）──
+            HorizontalLayout {
+                height: 18px;
+                padding-left: 4px;
+                padding-right: 4px;
+                spacing: 4px;
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 18px;
+                    background: transparent;
+
+                    Text {
+                        text: (root.lang-en ? "Name" : "名称") + root.sort-suffix-name;
+                        font-size: 9px;
+                        color: Theme.fg-3;
+                        vertical-alignment: center;
+                    }
+                    ht-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.sftp-sort-request("name");
+                        }
+                    }
+                }
+                Rectangle {
+                    width: 54px;
+                    height: 18px;
+                    background: transparent;
+
+                    Text {
+                        text: (root.lang-en ? "Size" : "大小") + root.sort-suffix-size;
+                        font-size: 9px;
+                        color: Theme.fg-3;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                        width: parent.width;
+                    }
+                    st-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.sftp-sort-request("size");
+                        }
+                    }
+                }
+                Rectangle {
+                    width: 50px;
+                    height: 18px;
+                    background: transparent;
+
+                    Text {
+                        text: (root.lang-en ? "Time" : "时间") + root.sort-suffix-modified;
+                        font-size: 9px;
+                        color: Theme.fg-3;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                        width: parent.width;
+                    }
+                    mt-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.sftp-sort-request("modified");
+                        }
+                    }
+                }
+            }
+
+            // ── 两个开关（真回调；设置页也有同样两项，这里留个就近入口）──────
+            HorizontalLayout {
+                height: 22px;
+                spacing: 6px;
+
+                Text {
+                    text: root.lang-en ? "Auto-sync" : "目录自动同步";
+                    font-size: 9px;
+                    color: Theme.fg-3;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Switch {
+                    on: root.sftp-follow-cd;
+                    toggled => {
+                        root.set-flag-follow-cd(!root.sftp-follow-cd);
+                    }
+                }
+                Text {
+                    text: root.lang-en ? "Ask to save" : "下载前询问";
+                    font-size: 9px;
+                    color: Theme.fg-3;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Switch {
+                    on: root.always-ask;
+                    toggled => {
+                        root.set-flag-always-ask(!root.always-ask);
+                    }
+                }
             }
 
             // 目录自动同步 = sftp-follow-cd（真回调 ✓）
@@ -937,14 +1148,14 @@ export component RightPanel inherits Rectangle {
                         alignment: start;
 
                         for e in root.sftp-entries : Rectangle {
-                            height: 26px;
+                            height: 24px;
                             border-radius: 5px;
                             background: e-ta.has-hover ? Theme.sur-3 : transparent;
 
                             HorizontalLayout {
-                                padding-left: 6px;
-                                padding-right: 6px;
-                                spacing: 6px;
+                                padding-left: 4px;
+                                padding-right: 4px;
+                                spacing: 4px;
 
                                 Text {
                                     text: e.is-dir ? "\u{E2C7}" : "\u{E24D}"; // folder / insert_drive_file
@@ -955,17 +1166,30 @@ export component RightPanel inherits Rectangle {
                                 }
                                 Text {
                                     text: e.name;
-                                    font-size: 11px;
+                                    font-size: 10px;
                                     color: Theme.fg-1;
                                     overflow: elide;
                                     horizontal-stretch: 1;
                                     vertical-alignment: center;
                                 }
+                                // 与列头对齐的两列（大小 / 时间）；目录两列都留空
                                 Text {
                                     text: e.is-dir ? "" : e.size;
-                                    font-size: 10px;
+                                    width: 54px;
+                                    font-size: 9px;
                                     color: Theme.fg-3;
                                     vertical-alignment: center;
+                                    horizontal-alignment: right;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: e.is-dir ? "" : e.modified;
+                                    width: 50px;
+                                    font-size: 9px;
+                                    color: Theme.fg-3;
+                                    vertical-alignment: center;
+                                    horizontal-alignment: right;
+                                    overflow: elide;
                                 }
                             }
 
