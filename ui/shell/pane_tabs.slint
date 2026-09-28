@@ -145,87 +145,93 @@ export component PaneTabs inherits Rectangle {
     height: 40px;
     background: transparent;
 
-    HorizontalLayout {
-        padding-left: Theme.sp-2;
-        padding-right: root.reserve-right + Theme.sp-2;
-        spacing: Theme.sp-1;
-        alignment: start;
+    // 整行显式垂直居中：Slint 布局在交叉轴上默认贴顶 —— 之前药丸被顶在标签栏
+    // 最上面、➕ 与右侧图标各自贴顶，看起来"没有居中在标签栏里"（用户截图）。
+    VerticalLayout {
+        alignment: center;
 
-        // 标签药丸
         HorizontalLayout {
-            spacing: 4px;
+            padding-left: Theme.sp-2;
+            padding-right: root.reserve-right + Theme.sp-2;
+            spacing: Theme.sp-1;
             alignment: start;
 
-            for t in root.tabs : TabPill {
-                tab: t;
-                active: t.id == root.active-id;
-                selected => {
-                    root.tab-selected(t.id);
-                }
-                closed => {
-                    root.tab-closed(t.id);
-                }
-                rename-requested => {
-                    root.tab-rename-requested(t.id);
+            // 标签药丸
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: start;
+
+                for t in root.tabs : TabPill {
+                    tab: t;
+                    active: t.id == root.active-id;
+                    selected => {
+                        root.tab-selected(t.id);
+                    }
+                    closed => {
+                        root.tab-closed(t.id);
+                    }
+                    rename-requested => {
+                        root.tab-rename-requested(t.id);
+                    }
                 }
             }
-        }
 
-        // ➕ 新标签
-        Rectangle {
-            width: 26px;
-            height: 26px;
-            y: (parent.height - 26px) / 2;
-            border-radius: 7px;
-            background: plus-ta.has-hover ? Theme.sur-3 : transparent;
+            // ➕ 新标签
+            Rectangle {
+                width: 26px;
+                height: 26px;
+                y: (parent.height - 26px) / 2;
+                border-radius: 7px;
+                background: plus-ta.has-hover ? Theme.sur-3 : transparent;
 
-            Text {
-                text: "\u{E145}"; // add
-                font-family: "Material Icons";
-                font-size: 16px;
-                color: Theme.fg-2;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+                Text {
+                    text: "\u{E145}"; // add
+                    font-family: "Material Icons";
+                    font-size: 16px;
+                    color: Theme.fg-2;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                plus-ta := TouchArea {
+                    clicked => {
+                        root.new-tab();
+                    }
+                }
             }
-            plus-ta := TouchArea {
+
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            // 右侧：快捷指令 / 工具面板 / 分屏 / 全屏（快捷指令侧栏按需求移除，
+            // 但下拉入口按参考图补了回来：点开就是当前快捷命令列表）。
+            IconBtn {
+                glyph: "\u{E5CE}"; // expand_more：这是个下拉入口
+                label: root.lang-en ? "Snippets" : "快捷指令";
+                active: root.quick-open;
                 clicked => {
-                    root.new-tab();
+                    root.toggle-quick();
                 }
             }
-        }
-
-        Rectangle {
-            horizontal-stretch: 1;
-        }
-
-        // 右侧：快捷指令 / 工具面板 / 分屏 / 全屏（快捷指令侧栏按需求移除，
-        // 但下拉入口按参考图补了回来：点开就是当前快捷命令列表）。
-        IconBtn {
-            glyph: "\u{E5CE}"; // expand_more：这是个下拉入口
-            label: root.lang-en ? "Snippets" : "快捷指令";
-            active: root.quick-open;
-            clicked => {
-                root.toggle-quick();
+            IconBtn {
+                glyph: "\u{E8B3}"; // view_sidebar
+                label: root.lang-en ? "Tools" : "工具";
+                active: root.panel-open;
+                clicked => {
+                    root.toggle-panel();
+                }
             }
-        }
-        IconBtn {
-            glyph: "\u{E8B3}"; // view_sidebar
-            label: root.lang-en ? "Tools" : "工具";
-            active: root.panel-open;
-            clicked => {
-                root.toggle-panel();
+            IconBtn {
+                glyph: "\u{E8EC}"; // view_column
+                clicked => {
+                    root.split-active();
+                }
             }
-        }
-        IconBtn {
-            glyph: "\u{E8EC}"; // view_column
-            clicked => {
-                root.split-active();
-            }
-        }
-        IconBtn {
-            glyph: "\u{E5D0}"; // fullscreen
-            clicked => {
-                root.toggle-full();
+            IconBtn {
+                glyph: "\u{E5D0}"; // fullscreen
+                clicked => {
+                    root.toggle-full();
+                }
             }
         }
     }

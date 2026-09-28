@@ -985,9 +985,10 @@ export component AppWindow inherits Window {
               }
         }
 
-      // Rail 与页面之间那条分隔线：两边都是 sur-1，没有线就看不出边界。
-      // 从标题栏下面开始画 —— 伸进标题栏会把它切断（用户反馈）。
-      Rectangle {
+      // Rail 与页面之间那条分隔线：只在"左列也是 sur-1"的页面画（主机页的分组导航、
+      // 设置页的分类列）—— 两边同色才需要线；终端页左边直接是终端画面，画线反而突兀
+      // （用户问"为什么标签栏左侧有一根细线"）。
+      if root.shell-page == 0 || root.shell-page == 4 : Rectangle {
           x: root.rail-w;
           y: root.shell-top;
           width: 1px;
@@ -1018,6 +1019,16 @@ export component AppWindow inherits Window {
           tabs: root.tabs;
           active-tab-id: root.active-tab-id;
           lang-en: root.lang-en;
+          sessions: root.sessions;
+          new-local-session() => {
+              root.shell-page = 1;
+              root.connect-session("system:shell");
+          }
+          custom-session() => { root.new-session-clicked(); }
+          connect-session(id) => {
+              root.shell-page = 1;
+              root.connect-session(id);
+          }
           // 顶栏「工具」按钮的常亮状态
           right-panel-open: root.right-panel-open;
           terminal-focus-sequence: root.terminal-focus-sequence;

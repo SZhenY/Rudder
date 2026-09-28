@@ -27,6 +27,8 @@ import { AnimationSettings } from "../theme.slint";
 import { PaneInfo, SplitterInfo, TerminalState } from "stage_types.slint";
 import { PaneTabs } from "pane_tabs.slint";
 import { HistoryPanel } from "history_panel.slint";
+import { PageTerminal } from "page_terminal.slint";
+import { SessionInfo } from "../session_types.slint";
 import { TerminalView, QuickCmd } from "../terminal_view.slint";
 import { TabInfo } from "../tabs.slint";
 
@@ -36,6 +38,8 @@ export component TerminalStage inherits Rectangle {
     in property <[TerminalState]> terminals;
     in property <[SplitterInfo]> splitters;
     in property <[TabInfo]> tabs;                 // SFTP 跨标签传输目标
+    // 欢迎标签页里那张"创建你的第一个终端会话"卡片要用（最近连接列表）。
+    in property <[SessionInfo]> sessions;
     in property <string> active-tab-id;
     in property <bool> lang-en: false;
     // 顶栏两个开关的当前状态（按钮常亮用）
@@ -88,6 +92,10 @@ export component TerminalStage inherits Rectangle {
     callback toggle-zen-key();
     callback toggle-right-panel();
     callback toggle-history();      // 画布里的 ⌘⇧R / Ctrl+Shift+R → 开/关历史浮层
+    // 欢迎标签页里的三个入口（与终端页空态同一套，窗口侧同样接法）
+    callback new-local-session();
+    callback custom-session();
+    callback connect-session(string /* id */);
     callback cycle-tab(bool);
     callback splitter-drag(int, length, bool);
     // 终端输入 / 尺寸 / 滚动
@@ -201,6 +209,24 @@ export component TerminalStage inherits Rectangle {
                         font-size: 11px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
+                    }
+                }
+
+                // 欢迎标签页（标签栏「+」新建的那种）：旧欢迎页随旧外壳删掉了，
+                // 这里直接复用终端页的空态卡片（ex/终端-无会话.png 那张）。
+                for wt[wti] in pane.tabs : Rectangle {
+                    visible: wt.kind == "welcome" && pane.active-id == wt.id;
+                    width: parent.width;
+                    height: parent.height;
+
+                    PageTerminal {
+                        width: 100%;
+                        height: 100%;
+                        lang-en: root.lang-en;
+                        sessions: root.sessions;
+                        new-local-session() => { root.new-local-session(); }
+                        custom-session() => { root.custom-session(); }
+                        connect-session(id) => { root.connect-session(id); }
                     }
                 }
 
