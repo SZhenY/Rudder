@@ -11,6 +11,8 @@ export component PageHosts inherits Rectangle {
     in property <[SessionInfo]> sessions;
     callback new-session();
     callback connect-session(string /* id */);
+    // 编辑主机：卡片右上角的 ✎（Rust 侧 on_edit_session 会填好草稿并打开对话框）
+    callback edit-session(string /* id */);
 
     background: Theme.sur-0;
 
@@ -227,6 +229,15 @@ export component PageHosts inherits Rectangle {
                         background: card-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
                         clip: true;
 
+                        // 整卡点击 = 快速连接。**先声明 = 画在下层**：右上角的 ✎
+                        // 声明在后面才点得到（同 pane_tabs 里关闭钮的教训）。
+                        card-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.connect-session(s.id);
+                            }
+                        }
+
                         VerticalLayout {
                             padding: Theme.sp-3;
                             spacing: Theme.sp-2;
@@ -332,9 +343,31 @@ export component PageHosts inherits Rectangle {
                             }
                         }
 
-                        card-ta := TouchArea {
-                            clicked => {
-                                root.connect-session(s.id);
+                        // 编辑：悬停卡片时出现在右上角（声明在最后 = 画在最上层）
+                        Rectangle {
+                            x: parent.width - self.width - 8px;
+                            y: 8px;
+                            width: 26px;
+                            height: 26px;
+                            border-radius: Theme.radius-sm;
+                            background: edit-ta.has-hover ? Theme.sur-1 : Theme.sur-3;
+                            opacity: card-ta.has-hover ? 1 : 0;
+
+                            Text {
+                                text: "\u{E3C9}"; // edit
+                                font-family: "Material Icons";
+                                font-size: 14px;
+                                color: Theme.fg-2;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            edit-ta := TouchArea {
+                                enabled: card-ta.has-hover;
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.edit-session(s.id);
+                                }
                             }
                         }
                     }
