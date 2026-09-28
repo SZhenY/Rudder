@@ -101,32 +101,15 @@ pub(crate) fn terminal_wheel_hit(
     x: f32,
     y: f32,
 ) -> Option<TerminalWheelHit> {
-    let (active, term, term_state) = active_terminal_panel_rects(win)?;
-    let mut term_x = term.x;
-    let mut term_y = term.y;
-    let mut term_w = term.w;
-    let mut term_h = term.h;
-
-    // TerminalView starts with a 24px status line, then the SFTP dock-region.
-    term_y += 24.0;
-    term_h = (term_h - 24.0).max(0.0);
-
-    let sftp_dock = win.get_sftp_dock().to_string();
-    let sftp_take = if term_state.sftp_collapsed {
-        36.0
-    } else if sftp_dock == "left" || sftp_dock == "right" {
-        term_state.sftp_panel_width + 4.0
-    } else {
-        term_state.sftp_panel_height + 4.0
-    };
-    shrink_edge(
-        &mut term_x,
-        &mut term_y,
-        &mut term_w,
-        &mut term_h,
-        &sftp_dock,
-        sftp_take,
-    );
+    let (active, term, _) = active_terminal_panel_rects(win)?;
+    // TerminalView 顶部 24px 状态行、底部 34px 命令栏，中间才是终端画面。
+    // 内嵌 SFTP 面板已停用（新外壳的文件走右侧工具面板），所以这里不再为它让出
+    // 停靠区宽度 —— 否则最右 36px 上的滚轮会被判成"落在终端外"，与 Slint 侧的
+    // 布局（`sf-taken` 已按面板可用性归零）对不上。
+    let term_x = term.x;
+    let term_w = term.w;
+    let term_y = term.y + 24.0;
+    let mut term_h = (term.h - 24.0).max(0.0);
 
     // Leave the command bar to TextInput/history handling; wheel fallback is for
     // terminal output only.

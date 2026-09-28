@@ -1255,6 +1255,11 @@ export component AppWindow inherits Window {
       in-out property <string> user-initial: "";
         // 侧栏与页面内容的整体下移量：自绘栏平台是栏高，macOS 是红绿灯让位高度。
         property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
+        // 右侧「工具」面板的占位宽度：面板打开时终端舞台整体让开它，而不是被它盖住
+        // —— 否则舞台里的底部命令栏（… 所有会话 / 发送）右端会被面板压住（用户截图
+        // 里红框那处）。舞台宽度变化会走 `content-resized`，Rust 据此重算分屏几何。
+        property <length> panel-w:
+            root.shell-page == 1 && root.panes.length > 0 && root.right-panel-open ? 240px : 0px;
 
         Rail {
             x: 0;
@@ -1283,8 +1288,8 @@ export component AppWindow inherits Window {
       TerminalStage {
           x: root.rail-w;
           y: root.shell-top;
-          width: root.width - root.rail-w;
-          // 让开底部状态栏，终端不再被它压住
+          // 让开右侧工具面板（panel-w）与底部状态栏
+          width: root.width - root.rail-w - root.panel-w;
           height: root.height - root.shell-top - 28px;
           panes: root.panes;
           terminals: root.terminals;
@@ -1543,9 +1548,10 @@ export component AppWindow inherits Window {
 
       // 右侧工具面板（会话中；AI 暂不做）
       if root.shell-page == 1 && root.panes.length > 0 && root.right-panel-open : RightPanel {
-          x: root.width - 240px;
+          // 与 `panel-w` 同一条件：舞台已让出这块宽度，面板只负责画。
+          x: root.width - root.panel-w;
           y: root.shell-top;
-          width: 240px;
+          width: root.panel-w;
           height: root.height - root.shell-top - 28px;
           lang-en: root.lang-en;
           transfers: root.transfers;

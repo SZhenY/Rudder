@@ -461,12 +461,17 @@ export component TerminalView inherits Rectangle {
         // sf-taken / sf-h-taken SNAP — used by terminal layout (no animation,
         // so the terminal doesn't jump while the panel slides).
         // sf-viz / sf-h-viz ANIMATE — used by the SFTP panel and splitter.
-        property <length> sf-taken: root.sftp-collapsed ? 36px
+        // 面板不可用 = 不占位。新外壳里内嵌 SFTP 面板已停用（文件改走右侧工具面板），
+        // 若只按 sftp-collapsed 算，终端右侧会白留 36px 并画出那条"窄条 + 图标"的
+        // 遗留把手（用户截图里红框那处）。
+        property <length> sf-taken: !root.sftp-available ? 0px
+            : root.sftp-collapsed ? 36px
             : root.sftp-horizontal ? max(300px, root.sftp-panel-width)
             : root.sftp-panel-width;
         property <length> sf-viz: sf-taken;
         animate sf-viz { duration: 250ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
-        property <length> sf-h-taken: root.sftp-collapsed ? 36px : root.sftp-panel-height;
+        property <length> sf-h-taken: !root.sftp-available ? 0px
+            : root.sftp-collapsed ? 36px : root.sftp-panel-height;
         property <length> sf-h-viz: sf-h-taken;
         animate sf-h-viz { duration: 250ms; easing: AnimationSettings.spring-settle(); enabled: AnimationSettings.enabled; }
         property <length> sp:   root.sftp-collapsed ? 0px : 6px;
@@ -2063,7 +2068,9 @@ export component TerminalView inherits Rectangle {
 
         // Collapsed → a ToolStrip icon bar at the docked edge (M5), filling the
         // 36px slot the panel shrank to; click the icon to re-expand.
-        if root.sftp-collapsed : ToolStrip {
+        // 面板不可用（新外壳）时这个把手也不该出现 —— 它点了只会去改一个不再渲染的
+        // 面板的 collapsed，纯粹是视觉残留。
+        if root.sftp-available && root.sftp-collapsed : ToolStrip {
             x: root.sftp-dock == "right"  ? parent.width - parent.sf-viz : 0px;
             y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h-viz : 0px;
             width:  root.sftp-horizontal ? parent.sf-viz : parent.width;
