@@ -186,6 +186,7 @@ use crate::ui::*;
 use crate::webdav::WebDavAcceptAnyCertVerifier;
 pub(crate) mod auth_dialogs;
 pub(crate) mod self_updater;
+mod active_state;
 mod port_forward;
 mod quick_commands;
 pub(crate) mod resource_ui;
@@ -214,6 +215,7 @@ mod window_chrome;
 use window_chrome::wire_window_chrome;
 use sampler::spawn_system_sampler;
 use updater::wire_update_check;
+pub(crate) use active_state::refresh_active_term;
 pub(crate) use fonts_ui::{FontEntry, font_choices, resolve_ui_font_family, term_font_covers_cjk};
 pub(crate) use pane_layout::{
     refresh_panes, save_layout, update_terminal_row,

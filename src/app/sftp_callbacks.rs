@@ -396,6 +396,8 @@ pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
                 row.sftp_sort_key = next_key.into();
                 row.sftp_sort_dir = next_dir;
             });
+            // 行内重排没有事件回流，镜像要自己刷新（右面板文件列表用过排序时）。
+            refresh_active_term(&w);
         });
     }
     {
@@ -411,6 +413,7 @@ pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
                 row.sftp_sort_key = "".into();
                 row.sftp_sort_dir = 0;
             });
+            refresh_active_term(&w);
         });
     }
 

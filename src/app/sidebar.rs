@@ -333,6 +333,10 @@ pub(super) fn refresh_sidebar(
             show_local_system_models(win);
         }
     }
+    // per-tab 状态搬家①：这一趟也把活动标签的隧道 / SFTP 状态镜像到窗口级，
+    // 新外壳右面板读的是窗口属性。放在末尾 —— 上面几个 helper 会写 Slint 属性，
+    // 可能重入 UI 代码，镜像要在状态都落定之后再做。
+    refresh_active_term(win);
     stats
 }
 /// 使用率：`total == 0` 时不能用 0 除（还没采到样本的本地快照就是这样）。

@@ -221,6 +221,7 @@ pub(super) fn apply_session_event_to_window<'a>(
             update_terminal(&|t| {
                 t.tunnels = ModelRc::from(std::rc::Rc::new(VecModel::from(items.clone())));
             });
+            refresh_active_term(win);
         }
 
         // --- SFTP events ---------------------------------------------------
@@ -231,6 +232,7 @@ pub(super) fn apply_session_event_to_window<'a>(
                 t.sftp_path = path.clone().into();
                 t.sftp_loading = true;
             });
+            refresh_active_term(win);
         }
         SessionEvent::SftpEntries { path, entries } => {
             let mut slint_entries: Vec<SftpEntry> = entries
@@ -269,9 +271,11 @@ pub(super) fn apply_session_event_to_window<'a>(
                 t.sftp_entries = model.clone();
                 t.sftp_loading = false;
             });
+            refresh_active_term(win);
         }
         SessionEvent::SftpStatus(msg) => {
             update_terminal(&|t| t.sftp_status = msg.clone().into());
+            refresh_active_term(win);
         }
         SessionEvent::SftpError(msg) => {
             // Show the reason and stop the spinner; leave the current listing in
@@ -280,6 +284,7 @@ pub(super) fn apply_session_event_to_window<'a>(
                 t.sftp_status = msg.clone().into();
                 t.sftp_loading = false;
             });
+            refresh_active_term(win);
         }
         SessionEvent::SftpFileText {
             path,

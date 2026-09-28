@@ -1,12 +1,19 @@
 // 右侧工具面板（参考 ex/终端，会话中.png 的右侧栏；AI 按需求暂不做）。
 //
-// v1 接线范围：
+// v2 接线范围（per-tab 状态搬家①之后）：
 // * 传输 —— transfers 模型（AppWindow 级 ✓ 真数据）+ 活动指示
-// * 隧道 / 文件 —— 隧道与 SFTP 树目前挂在 TerminalView 的 per-tab 状态上，
-//   迁移需要把那批绑定搬到 AppWindow 级，下一轮做（不放假列表）。
+// * 文件 —— 活动标签的 SFTP 列表（AppWindow 级 `active-sftp-*` 镜像 ✓ 真数据）：
+//   路径栏（上级 / 刷新）、条目列表（目录点进入、文件点下载）、加载 / 空态 / 状态行
+// * 隧道 —— 数据已随这次搬家提升到 `active-tunnels`，但隧道 UI 按需求暂缓
+//   （2026-09 记录），所以这里不建标签、不放假列表；另行评估后再接。
+// * 参考图里的「传输模式 / 批量编辑限制 / 文件关联」区块属于旧 SFTP 面板的设置，
+//   随旧外壳删除一并评估，不在这里放空控件。
 
 import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
+// 条目类型暂时还住在旧 SFTP 面板文件里；旧外壳删除时把结构体挪到幸存文件
+// （app.slint / 新的 types 文件）即可，这里只借类型、不借组件。
+import { SftpEntry, TunnelInfo } from "../sftp_panel.slint";
 
 component PanelTab inherits Rectangle {
     in property <string> label;
@@ -73,6 +80,34 @@ component Switch inherits Rectangle {
     }
 }
 
+component IconBtn inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: (root.enabled && ta.has-hover) ? Theme.sur-3 : transparent;
+
+    Text {
+        text: root.glyph;
+        font-family: "Material Icons";
+        font-size: 12px;
+        color: root.enabled ? Theme.fg-3 : Theme.fg-3.with-alpha(0.35);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 export component RightPanel inherits Rectangle {
     in property <bool> lang-en: false;
     in property <[TransferInfo]> transfers;
@@ -82,11 +117,31 @@ export component RightPanel inherits Rectangle {
     callback set-flag-follow-cd(bool);
     callback set-flag-always-ask(bool);
     callback close-panel();
+    // 活动标签的隧道 / SFTP —— 窗口级镜像（见 app.slint 属性声明处）。
+    in property <[TunnelInfo]> tunnels;
+    in property <string> sftp-path;
+    in property <[SftpEntry]> sftp-entries;
+    in property <string> sftp-status;
+    in property <bool> sftp-loading: false;
+    in property <bool> sftp-available: false;
+    // 面板挂在窗口级，回调不带 tab-id；实例化处补 `active-tab-id` 走既有链路。
+    callback sftp-navigate(string /* path；".." = 上级目录 */);
+    callback sftp-refresh(string /* path */);
+    callback sftp-download(string /* path */);
 
-    property <int> current-tab: 0; // 0 传输 · 1 文件（隧道功能暂缓，见下）
+    property <int> current-tab: 0; // 0 传输 · 1 文件（隧道功能暂缓，见文件头）
+    property <bool> file-can-up: root.sftp-available && root.sftp-path != "" && root.sftp-path != "/";
+    property <string> file-path-label: !root.sftp-available
+        ? (root.lang-en ? "SFTP unavailable for this session" : "此会话不支持 SFTP")
+        : (root.sftp-path == "" ? "/" : root.sftp-path);
+    // 0 不可用 · 1 加载中（还没有内容）· 2 空目录 · 3 列表
+    property <int> file-view: !root.sftp-available ? 0
+        : (root.sftp-loading && root.sftp-entries.length == 0 ? 1
+        : (root.sftp-entries.length == 0 ? 2 : 3));
 
     width: 240px;
     background: Theme.sur-1;
+    clip: true;
 
     VerticalLayout {
         // 顶部：标签 + 关闭
@@ -106,7 +161,9 @@ export component RightPanel inherits Rectangle {
                 label: root.lang-en ? "Files" : "文件";
                 active: root.current-tab == 1;
                 clicked => {
-                    root.current-tab = 2;
+                    // 删隧道标签时这里漏改成 1（仍写着三标签时代的 2），
+                    // 结果「文件」点了没反应 —— 随这次接真数据一并修掉。
+                    root.current-tab = 1;
                 }
             }
             Rectangle {
@@ -226,18 +283,53 @@ export component RightPanel inherits Rectangle {
             }
         }
 
-        // ── 文件（按 ex/设置-终端-SFTP 文件.png 的区块规划）──
-        // 注：隧道相关功能按需求暂缓（2026-09 记录），per-tab 状态搬家后另行评估。
+        // ── 文件（活动标签的 SFTP 列表 —— per-tab 状态搬家①后接真数据）──
+        // 隧道数据已提升到 `active-tunnels`，但隧道 UI 按需求暂缓（见文件头）。
+        // 注意：这个 VerticalLayout **不写** `alignment: start` —— Slint 里
+        // alignment != stretch 时 stretch 因子会被忽略（子项一律用 preferred 高度），
+        // 下面的列表区就撑不开了。默认 stretch + 单个 `vertical-stretch: 1` 的
+        // 列表容器 = 上面的行保持原高、剩余高度全给列表（同 page_hosts 的写法）。
         if root.current-tab == 1 : VerticalLayout {
             padding: 12px;
-            spacing: 4px;
-            alignment: start;
+            spacing: 6px;
+
+            // 标题 + 路径栏（上级 / 刷新）
+            HorizontalLayout {
+                spacing: 2px;
+
+                Text {
+                    text: root.lang-en ? "Files" : "文件";
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: Theme.fg-1;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                // arrow_upward：上级目录（根目录禁用）
+                IconBtn {
+                    glyph: "\u{E5D8}";
+                    enabled: root.file-can-up;
+                    clicked => {
+                        root.sftp-navigate("..");
+                    }
+                }
+                // refresh：重新列目录
+                IconBtn {
+                    glyph: "\u{E5D5}";
+                    enabled: root.sftp-available;
+                    clicked => {
+                        root.sftp-refresh(root.sftp-path);
+                    }
+                }
+            }
 
             Text {
-                text: root.lang-en ? "Files" : "文件";
-                font-size: 14px;
-                font-weight: 700;
-                color: Theme.fg-1;
+                text: root.file-path-label;
+                font-size: 10px;
+                color: Theme.fg-3;
+                overflow: elide;
             }
 
             // 目录自动同步 = sftp-follow-cd（真回调 ✓）
@@ -310,14 +402,99 @@ export component RightPanel inherits Rectangle {
                 }
             }
 
-            // 其余区块（传输模式/批量限制/文件关联）：回调待核实，迁移中
-            Text {
-                text: root.lang-en
-                    ? "Transfer mode / batch limits / file associations — migrate with the per-tab state move."
-                    : "传输模式 / 批量编辑限制 / 文件关联 —— 随 per-tab 状态搬家接入。";
-                font-size: 11px;
+            // 列表区：独吞剩余高度（加载 / 空态 / 列表三种内容共用同一个容器，
+            // 这样上面的行不会被拉伸，见本标签开头的 alignment 注记）。
+            Rectangle {
+                vertical-stretch: 1;
+                clip: true;
+
+                // 加载中（还没有内容可显示时）
+                if root.file-view == 1 : Text {
+                    text: root.lang-en ? "Loading directory…" : "正在加载目录…";
+                    width: parent.width;
+                    height: parent.height;
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                }
+
+                // 空目录 / 还没同步过（cd 跟随关闭时点右上刷新）
+                if root.file-view == 2 : Text {
+                    text: root.lang-en
+                        ? "Empty — or press refresh to load the current directory."
+                        : "目录为空 —— 也可能是还没同步，点右上角刷新。";
+                    width: parent.width;
+                    height: parent.height;
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                }
+
+                // 条目列表：目录点进入，文件点下载（走既有 SFTP 回调）
+                if root.file-view == 3 : Flickable {
+                    width: parent.width;
+                    height: parent.height;
+
+                    VerticalLayout {
+                        spacing: 1px;
+                        alignment: start;
+
+                        for e in root.sftp-entries : Rectangle {
+                            height: 26px;
+                            border-radius: 5px;
+                            background: e-ta.has-hover ? Theme.sur-3 : transparent;
+
+                            HorizontalLayout {
+                                padding-left: 6px;
+                                padding-right: 6px;
+                                spacing: 6px;
+
+                                Text {
+                                    text: e.is-dir ? "\u{E2C7}" : "\u{E24D}"; // folder / insert_drive_file
+                                    font-family: "Material Icons";
+                                    font-size: 12px;
+                                    color: e.is-dir ? Theme.accent : Theme.fg-3;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: e.name;
+                                    font-size: 11px;
+                                    color: Theme.fg-1;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: e.is-dir ? "" : e.size;
+                                    font-size: 10px;
+                                    color: Theme.fg-3;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            e-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    if (e.is-dir) {
+                                        root.sftp-navigate(e.full-path);
+                                    } else {
+                                        root.sftp-download(e.full-path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 状态行（"SFTP 连接中…" / 出错原因 / 传输提示）
+            if root.sftp-status != "" : Text {
+                text: root.sftp-status;
+                font-size: 10px;
                 color: Theme.fg-3;
-                wrap: word-wrap;
+                overflow: elide;
             }
         }
     }

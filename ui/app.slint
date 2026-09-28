@@ -692,6 +692,15 @@ export component AppWindow inherits Window {
     in property <[SplitterInfo]> splitters;
     in-out property <string> active-tab-id: "welcome";
     in property <[TerminalState]> terminals;
+    // per-tab 状态搬家（旧外壳删除 ①）：活动标签的隧道 / SFTP 状态提升到窗口级。
+    // 源仍是 `terminals` 模型的行，由 Rust `refresh_active_term` 镜像过来 ——
+    // 窗口级的消费方（新外壳右面板）不必待在下面 `for term` 的循环里。
+    in property <[TunnelInfo]> active-tunnels;
+    in property <string> active-sftp-path;
+    in property <[SftpEntry]> active-sftp-entries;
+    in property <string> active-sftp-status;
+    in property <bool> active-sftp-loading: false;
+    in property <bool> active-sftp-available: false;
 
     // --- Dialog state ------------------------------------------------------
     in-out property <bool> dialog-open: false;
@@ -2225,6 +2234,17 @@ export component AppWindow inherits Window {
           always-ask: root.download-always-ask;
           set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
           set-flag-always-ask(v) => { root.set-download-always-ask(v); }
+          // 活动标签的隧道 / SFTP（窗口级镜像，见属性声明处）。
+          tunnels: root.active-tunnels;
+          sftp-path: root.active-sftp-path;
+          sftp-entries: root.active-sftp-entries;
+          sftp-status: root.active-sftp-status;
+          sftp-loading: root.active-sftp-loading;
+          sftp-available: root.active-sftp-available;
+          // 面板是窗口级的，回调统一带上活动标签 id，走既有的 per-tab 链路。
+          sftp-navigate(path) => { root.sftp-navigate(root.active-tab-id, path); }
+          sftp-refresh(path) => { root.sftp-refresh(root.active-tab-id, path); }
+          sftp-download(path) => { root.sftp-download(root.active-tab-id, path); }
           close-panel() => { root.right-panel-open = false; }
       }
 
