@@ -63,18 +63,19 @@ component HostCard inherits Rectangle {
     width: 340px;
     height: 168px;
     border-radius: Theme.radius-lg;
-    border-width: 1px;
-    border-color: Theme.line;
+    // 选中态：一圈主题色高光（参考图「选中卡片」）—— 边框加粗到 2px + accent 色。
+    border-width: root.selected ? 2px : 1px;
+    border-color: root.selected ? Theme.accent : Theme.line;
     // 悬停在卡片或右上角「⋯」上都算"卡片悬停"（否则鼠标移到按钮上时底色会闪）。
     background: (card-ta.has-hover || menu-ta.has-hover) ? Theme.sur-3 : Theme.sur-2;
     clip: true;
 
-    // 整卡点击 = 快速连接。**先声明 = 画在下层**：右上角的 ✎
-    // 声明在后面才点得到（同 pane_tabs 里关闭钮的教训）。
+    // 整卡点击 = **选中**（要连终端请点「快速连接」）。**先声明 = 画在下层**：
+    // 行内按钮声明在后面才点得到（同 pane_tabs 里关闭钮的教训）。
     card-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => {
-            root.connect();
+            root.select();
         }
     }
 
