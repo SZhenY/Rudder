@@ -251,6 +251,40 @@ component IconBtn inherits Rectangle {
 //   ② 进度条（主色）
 //   ③ 补充行（小灰字，没有就不画）
 // 高度随内容（不同 DPI / 字号下都不会挤）；宽度由调用方平分。
+// 面板头部的页签（参考图「工具 | AI」）：激活态是一条主题色下划线。
+component PanelHeadTab inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 26px;
+    width: t.preferred-width + 16px;
+    background: ta.has-hover ? Theme.sur-3 : transparent;
+
+    t := Text {
+        text: root.label;
+        font-size: 13px;
+        font-weight: root.active ? 700 : 500;
+        color: root.active ? Theme.fg-1 : Theme.fg-3;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    // 下划线指示条
+    Rectangle {
+        y: parent.height - 2px;
+        x: (parent.width - self.width) / 2;
+        width: t.preferred-width;
+        height: 2px;
+        border-radius: 1px;
+        background: root.active ? Theme.accent : transparent;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 component ResCard inherits Rectangle {
     in property <string> label;
     in property <string> value;
@@ -492,6 +526,8 @@ export component RightPanel inherits Rectangle {
     in property <bool> lang-en: false;
     // 服务器概览（综合页头卡用；Rust 的 refresh_sidebar 每秒刷新）
     in property <[SysInfoRow]> sys-overview;
+    // 面板头部的页签：0 = 工具（真内容），1 = AI（占位）
+    property <int> head-tab: 0;
     in property <[TransferInfo]> transfers;
     in property <bool> transfers-active: false;
     in property <bool> sftp-follow-cd;
@@ -611,20 +647,20 @@ export component RightPanel inherits Rectangle {
             padding-bottom: 6px;
             spacing: 2px;
 
-            Text {
-                text: "\u{E8B3}";
-                font-family: "Material Icons";
-                font-size: 13px;
-                color: Theme.fg-2;
-                vertical-alignment: center;
+            PanelHeadTab {
+                label: root.lang-en ? "Tools" : "工具";
+                active: root.head-tab == 0;
+                clicked => { root.head-tab = 0; }
             }
-            Text {
-                text: root.lang-en ? "Tools" : "工具";
-                font-size: 12px;
-                font-weight: 600;
-                color: Theme.fg-1;
-                vertical-alignment: center;
+            // AI 只是占位（参考图有这一项，项目还没接模型）—— 点开只有一张说明卡。
+            PanelHeadTab {
+                label: "AI";
+                active: root.head-tab == 1;
+                clicked => { root.head-tab = 1; }
+            }
+            Rectangle {
                 horizontal-stretch: 1;
+                background: transparent;
             }
             IconBtn {
                 glyph: "\u{E5CC}";   // chevron_right：向窗口右缘收起
@@ -651,6 +687,7 @@ export component RightPanel inherits Rectangle {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
+            visible: root.head-tab == 0;
             padding-left: 8px;
             padding-right: 8px;
             padding-top: 8px;
@@ -685,6 +722,7 @@ export component RightPanel inherits Rectangle {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
+            visible: root.head-tab == 0;
             padding-left: 8px;
             padding-right: 8px;
             padding-top: 4px;
@@ -721,6 +759,7 @@ export component RightPanel inherits Rectangle {
         Rectangle {
             height: 1px;
             background: Theme.line;
+            visible: root.head-tab == 0;
         }
 
         // ── 内容标签：5 个监控视图 + 传输 / 文件（全部真数据）────────────
@@ -729,6 +768,7 @@ export component RightPanel inherits Rectangle {
         HorizontalLayout {
             // 标签条高度随内容、不参与拉伸（多出来的高度只给下面的内容区）
             vertical-stretch: 0;
+            visible: root.head-tab == 0;
             height: 32px;
             padding-left: 6px;
             padding-right: 6px;
@@ -800,7 +840,54 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 综合：CPU 趋势 + 磁盘分区 + 网络端口（卡片在上方常驻，不重复）──
-        if root.current-tab == 0 : Flickable {
+        // ── AI 占位卡（参考图头部有这一项；项目还没接模型，不放假功能）──
+        if root.head-tab == 1 : Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
+
+            VerticalLayout {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                padding: 16px;
+                spacing: 10px;
+                alignment: center;
+
+                Rectangle {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 22px;
+                    background: Theme.sur-3;
+
+                    Text {
+                        text: "AI";
+                        font-size: 14px;
+                        font-weight: 700;
+                        color: Theme.accent;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                Text {
+                    text: root.lang-en ? "AI assistant" : "AI 助手";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.fg-1;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.lang-en
+                        ? "Coming soon — no model is wired up in this build."
+                        : "即将上线 —— 本版本尚未接入模型。";
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        if root.head-tab == 0 && root.current-tab == 0 : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -860,11 +947,20 @@ export component RightPanel inherits Rectangle {
                                 }
                             }
                         }
-                        Text {
-                            text: "\{root.sys-overview[0].c1}：\{root.sys-overview[0].c2}";
-                            font-size: 10px;
-                            color: Theme.fg-3;
-                            overflow: elide;
+                        HorizontalLayout {
+                            Text {
+                                text: "\{root.sys-overview[0].c1}：\{root.sys-overview[0].c2}";
+                                font-size: 10px;
+                                color: Theme.fg-3;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            if root.sys-overview.length >= 9 : Text {
+                                text: "\{root.sys-overview[8].c1} \{root.sys-overview[8].c2}";
+                                font-size: 10px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
                         }
                     }
                 }
@@ -912,6 +1008,20 @@ export component RightPanel inherits Rectangle {
                             }
                         }
                         trend := LineChart { values: root.cpu-history; }
+                        // 时间轴：历史是 1 Hz 采样，序列长度就是窗口秒数（左端 = N 秒前）
+                        if root.cpu-history.length > 0 : HorizontalLayout {
+                            Text {
+                                text: "-\{root.cpu-history.length}s";
+                                font-size: 9px;
+                                color: Theme.fg-3;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: root.lang-en ? "now" : "现在";
+                                font-size: 9px;
+                                color: Theme.fg-3;
+                            }
+                        }
                     }
                 }
 
@@ -986,7 +1096,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 处理器：CPU 数值 + 趋势（放大版）────────────────────────────
-        if root.current-tab == 1 : Flickable {
+        if root.head-tab == 0 && root.current-tab == 1 : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -1014,7 +1124,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 内存：内存 + 交换（真数据；参考图里的「用户 / 系统」拆分项目没有）──
-        if root.current-tab == 2 : Flickable {
+        if root.head-tab == 0 && root.current-tab == 2 : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -1043,7 +1153,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 磁盘：全部分区 ─────────────────────────────────────────────
-        if root.current-tab == 3 : Flickable {
+        if root.head-tab == 0 && root.current-tab == 3 : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -1067,7 +1177,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 网络：端口表 + 上下行趋势 ───────────────────────────────────
-        if root.current-tab == 4 : Flickable {
+        if root.head-tab == 0 && root.current-tab == 4 : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {
