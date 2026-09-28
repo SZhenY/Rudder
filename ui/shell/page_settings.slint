@@ -433,6 +433,9 @@ export component PageSettings inherits Rectangle {
 
                 Flickable {
                     VerticalLayout {
+                        // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）默认按父级
+                        // 100% 高布局，内容会被"摊开"到整个视口（卡片被拉伸）。
+                        height: self.preferred-height;
                         padding-top: 8px + root.top-inset;
                         spacing: 0;
                         alignment: start;

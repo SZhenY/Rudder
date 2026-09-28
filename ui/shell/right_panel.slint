@@ -89,8 +89,24 @@ component LineChart inherits Rectangle {
     pure function vx(k: int) -> float {
         return k * 100.0 / (root.npts - 1);
     }
+    // 纵轴比例尺：随峰值自适应（下限 10% —— 否则 4% 的 CPU 在 0..100% 的比例尺下
+    // 会贴着底边，看起来就是一条直线）。Slint 没有数组归约，用 16 个等距采样点
+    // 嵌套 max 近似峰值（脚本展开的，别手改）。
+    pure function sample(j: int) -> float {
+        return root.values.length > 0
+            ? root.values[min(root.values.length - 1,
+                              max(0, round(j * max(1, root.values.length - 1) * 1.0 / 15)))]
+            : 0.0;
+    }
+    pure function peak() -> float {
+        return max(root.sample(15), max(root.sample(14), max(root.sample(13), max(root.sample(12), max(root.sample(11), max(root.sample(10), max(root.sample(9), max(root.sample(8), max(root.sample(7), max(root.sample(6), max(root.sample(5), max(root.sample(4), max(root.sample(3), max(root.sample(2), max(root.sample(1), root.sample(0))))))))))))))));
+    }
+    property <float> yscale: clamp(max(0.1, root.peak()), 0.1, 1.0);
+    // 当前比例尺（百分比整数），供卡片在标题行显示，避免"自动缩放"看起来像数据变了
+    out property <int> scale-percent: round(root.yscale * 100);
+
     pure function vy(v: float) -> float {
-        return 100.0 * (1.0 - clamp(v, 0.0, 1.0));
+        return 100.0 * (1.0 - clamp(v / root.yscale, 0.0, 1.0));
     }
 
     height: root.chart-h + 1px;
@@ -114,6 +130,11 @@ component LineChart inherits Rectangle {
         y: 0;
         width: parent.width;
         height: root.chart-h;
+        // ⚠ fit 默认是 `contain`：**等比**缩放到边界内并居中 —— 一张 430×44 的卡片里，
+        // 100×100 的路径会被缩成中间一小团（截图里"折线没对齐 X/Y"就是这个）。
+        // 图表要 `fill`：非等比拉伸，横向铺满 + 纵向按比例尺填满（纵轴范围由上面两个
+        // 隐形锚点钉住，所以拉伸不会失真）。
+        fit: fill;
         stroke: root.line-color;
         stroke-width: 1.5px;
         fill: transparent;
@@ -231,8 +252,9 @@ component ResCard inherits Rectangle {
     in property <string> icon: "";
 
     horizontal-stretch: 1;
-    // 固定高度：同一行的两张卡（一个有 hint 一个没有）才不会一高一矮。
-    height: 46px;
+    // 高度**随内容**（不写死）：不同字号 / DPI / 机型下写死高度都会挤（进度条被压到
+    // 补充行上）；同一行的两张卡由 HorizontalLayout 拉齐。宽度由实例化处显式平分
+    // （工具面板以后要能拖拽拉伸，卡片必须跟着等分）。
     border-radius: Theme.radius-md;
     background: Theme.sur-2;
 
@@ -312,10 +334,9 @@ component MetricRow inherits Rectangle {
     in property <string> value;
     in property <float> percent: 0;
 
-    height: 26px;
-
+    // 高度随内容（同上）
     VerticalLayout {
-        spacing: 3px;
+        spacing: 4px;
         // （同上：不写 alignment，进度条才铺满整行）
 
         HorizontalLayout {
@@ -607,12 +628,20 @@ export component RightPanel inherits Rectangle {
             spacing: 4px;
 
             ResCard {
+                // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
+                // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
+                width: (parent.width - 20px) / 2;
+
                 label: "CPU";
                 icon: "\u{E30C}";   // computer
                 value: "\{round(root.cpu-percent * 100)}%";
                 percent: root.cpu-percent;
             }
             ResCard {
+                // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
+                // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
+                width: (parent.width - 20px) / 2;
+
                 label: root.lang-en ? "MEM" : "内存";
                 icon: "\u{E322}";   // memory
                 value: "\{round(root.mem-percent * 100)}%";
@@ -628,6 +657,10 @@ export component RightPanel inherits Rectangle {
             spacing: 4px;
 
             ResCard {
+                // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
+                // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
+                width: (parent.width - 20px) / 2;
+
                 label: root.lang-en ? "DISK" : "磁盘";
                 icon: "\u{E1DB}";   // storage
                 value: root.disks.length > 0 ? "\{round(root.disks[0].percent * 100)}%" : "—";
@@ -636,6 +669,10 @@ export component RightPanel inherits Rectangle {
             }
             // 网络卡不画进度条：上下行速率就是它的数值与补充行（参考图 ↓ 在上、↑ 在下）。
             ResCard {
+                // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
+                // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
+                width: (parent.width - 20px) / 2;
+
                 label: root.lang-en ? "NET" : "网络";
                 icon: "\u{E1AF}";   // network_check
                 value: root.net-down;
@@ -728,6 +765,10 @@ export component RightPanel inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
+                // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）
+                // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
+                // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
+                height: self.preferred-height;
                 padding: 10px;
                 spacing: 6px;
 
@@ -757,8 +798,16 @@ export component RightPanel inherits Rectangle {
                                 color: Theme.fg-2;
                                 vertical-alignment: center;
                             }
+                            // 比例尺（纵轴自动跟随峰值，下限 10%）—— 标出来，免得自动缩放
+                            // 看起来像"数据变了"
+                            Text {
+                                text: "≤\{trend.scale-percent}%";
+                                font-size: 9px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
                         }
-                        LineChart { values: root.cpu-history; }
+                        trend := LineChart { values: root.cpu-history; }
                     }
                 }
 
@@ -813,6 +862,10 @@ export component RightPanel inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
+                // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）
+                // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
+                // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
+                height: self.preferred-height;
                 padding: 10px;
                 spacing: 6px;
 
@@ -835,6 +888,10 @@ export component RightPanel inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
+                // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）
+                // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
+                // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
+                height: self.preferred-height;
                 padding: 10px;
                 spacing: 6px;
 
@@ -858,6 +915,10 @@ export component RightPanel inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
+                // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）
+                // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
+                // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
+                height: self.preferred-height;
                 padding: 10px;
                 spacing: 6px;
 
@@ -876,6 +937,10 @@ export component RightPanel inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
+                // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）
+                // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
+                // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
+                height: self.preferred-height;
                 padding: 10px;
                 spacing: 6px;
 
@@ -1338,6 +1403,9 @@ export component RightPanel inherits Rectangle {
                     height: parent.height;
 
                     VerticalLayout {
+                        // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）默认按父级
+                        // 100% 高布局，内容会被"摊开"到整个视口（卡片被拉伸）。
+                        height: self.preferred-height;
                         spacing: 1px;
                         alignment: start;
 
