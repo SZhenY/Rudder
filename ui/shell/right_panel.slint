@@ -18,7 +18,7 @@ import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
 import { DiskInfo } from "../resource_types.slint";
 // Sparkline（旧组件，widgets.slint）本文件已不再使用 —— 趋势改用同文件里的 LineChart。
-import { SysInfoRow, SysNetRow } from "../system_info_window.slint";
+import { SysNetRow } from "../system_info_window.slint";
 // 条目类型住在 `ui/sftp_types.slint`（第④步从 `sftp_panel.slint` 搬出），新外壳不依赖
 // 那个等着删除的旧面板组件文件。
 import { SftpCrumb, SftpEntry, TunnelInfo } from "../sftp_types.slint";
@@ -146,38 +146,192 @@ component LineChart inherits Rectangle {
         MoveTo { x: 0.0; y: 0.0; }
         LineTo { x: 0.01; y: 0.0; }
         MoveTo { x: root.vx(0); y: root.vy(root.values[root.idx(0)]); }
-        LineTo { x: 0; y: root.vy(root.values[root.idx(0)]); }
-        LineTo { x: 3.2258; y: root.vy(root.values[root.idx(1)]); }
-        LineTo { x: 6.4516; y: root.vy(root.values[root.idx(2)]); }
-        LineTo { x: 9.6774; y: root.vy(root.values[root.idx(3)]); }
-        LineTo { x: 12.9032; y: root.vy(root.values[root.idx(4)]); }
-        LineTo { x: 16.129; y: root.vy(root.values[root.idx(5)]); }
-        LineTo { x: 19.3548; y: root.vy(root.values[root.idx(6)]); }
-        LineTo { x: 22.5806; y: root.vy(root.values[root.idx(7)]); }
-        LineTo { x: 25.8065; y: root.vy(root.values[root.idx(8)]); }
-        LineTo { x: 29.0323; y: root.vy(root.values[root.idx(9)]); }
-        LineTo { x: 32.2581; y: root.vy(root.values[root.idx(10)]); }
-        LineTo { x: 35.4839; y: root.vy(root.values[root.idx(11)]); }
-        LineTo { x: 38.7097; y: root.vy(root.values[root.idx(12)]); }
-        LineTo { x: 41.9355; y: root.vy(root.values[root.idx(13)]); }
-        LineTo { x: 45.1613; y: root.vy(root.values[root.idx(14)]); }
-        LineTo { x: 48.3871; y: root.vy(root.values[root.idx(15)]); }
-        LineTo { x: 51.6129; y: root.vy(root.values[root.idx(16)]); }
-        LineTo { x: 54.8387; y: root.vy(root.values[root.idx(17)]); }
-        LineTo { x: 58.0645; y: root.vy(root.values[root.idx(18)]); }
-        LineTo { x: 61.2903; y: root.vy(root.values[root.idx(19)]); }
-        LineTo { x: 64.5161; y: root.vy(root.values[root.idx(20)]); }
-        LineTo { x: 67.7419; y: root.vy(root.values[root.idx(21)]); }
-        LineTo { x: 70.9677; y: root.vy(root.values[root.idx(22)]); }
-        LineTo { x: 74.1935; y: root.vy(root.values[root.idx(23)]); }
-        LineTo { x: 77.4194; y: root.vy(root.values[root.idx(24)]); }
-        LineTo { x: 80.6452; y: root.vy(root.values[root.idx(25)]); }
-        LineTo { x: 83.871; y: root.vy(root.values[root.idx(26)]); }
-        LineTo { x: 87.0968; y: root.vy(root.values[root.idx(27)]); }
-        LineTo { x: 90.3226; y: root.vy(root.values[root.idx(28)]); }
-        LineTo { x: 93.5484; y: root.vy(root.values[root.idx(29)]); }
-        LineTo { x: 96.7742; y: root.vy(root.values[root.idx(30)]); }
-        LineTo { x: 100; y: root.vy(root.values[root.idx(31)]); }
+        QuadraticTo {
+            control-x: root.vx(0) + (root.vx(1) - root.vx(0)) / 2;
+            control-y: root.vy(root.values[root.idx(0)]);
+            x: root.vx(1);
+            y: root.vy(root.values[root.idx(1)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(1) + (root.vx(2) - root.vx(1)) / 2;
+            control-y: root.vy(root.values[root.idx(1)]);
+            x: root.vx(2);
+            y: root.vy(root.values[root.idx(2)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(2) + (root.vx(3) - root.vx(2)) / 2;
+            control-y: root.vy(root.values[root.idx(2)]);
+            x: root.vx(3);
+            y: root.vy(root.values[root.idx(3)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(3) + (root.vx(4) - root.vx(3)) / 2;
+            control-y: root.vy(root.values[root.idx(3)]);
+            x: root.vx(4);
+            y: root.vy(root.values[root.idx(4)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(4) + (root.vx(5) - root.vx(4)) / 2;
+            control-y: root.vy(root.values[root.idx(4)]);
+            x: root.vx(5);
+            y: root.vy(root.values[root.idx(5)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(5) + (root.vx(6) - root.vx(5)) / 2;
+            control-y: root.vy(root.values[root.idx(5)]);
+            x: root.vx(6);
+            y: root.vy(root.values[root.idx(6)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(6) + (root.vx(7) - root.vx(6)) / 2;
+            control-y: root.vy(root.values[root.idx(6)]);
+            x: root.vx(7);
+            y: root.vy(root.values[root.idx(7)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(7) + (root.vx(8) - root.vx(7)) / 2;
+            control-y: root.vy(root.values[root.idx(7)]);
+            x: root.vx(8);
+            y: root.vy(root.values[root.idx(8)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(8) + (root.vx(9) - root.vx(8)) / 2;
+            control-y: root.vy(root.values[root.idx(8)]);
+            x: root.vx(9);
+            y: root.vy(root.values[root.idx(9)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(9) + (root.vx(10) - root.vx(9)) / 2;
+            control-y: root.vy(root.values[root.idx(9)]);
+            x: root.vx(10);
+            y: root.vy(root.values[root.idx(10)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(10) + (root.vx(11) - root.vx(10)) / 2;
+            control-y: root.vy(root.values[root.idx(10)]);
+            x: root.vx(11);
+            y: root.vy(root.values[root.idx(11)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(11) + (root.vx(12) - root.vx(11)) / 2;
+            control-y: root.vy(root.values[root.idx(11)]);
+            x: root.vx(12);
+            y: root.vy(root.values[root.idx(12)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(12) + (root.vx(13) - root.vx(12)) / 2;
+            control-y: root.vy(root.values[root.idx(12)]);
+            x: root.vx(13);
+            y: root.vy(root.values[root.idx(13)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(13) + (root.vx(14) - root.vx(13)) / 2;
+            control-y: root.vy(root.values[root.idx(13)]);
+            x: root.vx(14);
+            y: root.vy(root.values[root.idx(14)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(14) + (root.vx(15) - root.vx(14)) / 2;
+            control-y: root.vy(root.values[root.idx(14)]);
+            x: root.vx(15);
+            y: root.vy(root.values[root.idx(15)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(15) + (root.vx(16) - root.vx(15)) / 2;
+            control-y: root.vy(root.values[root.idx(15)]);
+            x: root.vx(16);
+            y: root.vy(root.values[root.idx(16)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(16) + (root.vx(17) - root.vx(16)) / 2;
+            control-y: root.vy(root.values[root.idx(16)]);
+            x: root.vx(17);
+            y: root.vy(root.values[root.idx(17)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(17) + (root.vx(18) - root.vx(17)) / 2;
+            control-y: root.vy(root.values[root.idx(17)]);
+            x: root.vx(18);
+            y: root.vy(root.values[root.idx(18)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(18) + (root.vx(19) - root.vx(18)) / 2;
+            control-y: root.vy(root.values[root.idx(18)]);
+            x: root.vx(19);
+            y: root.vy(root.values[root.idx(19)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(19) + (root.vx(20) - root.vx(19)) / 2;
+            control-y: root.vy(root.values[root.idx(19)]);
+            x: root.vx(20);
+            y: root.vy(root.values[root.idx(20)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(20) + (root.vx(21) - root.vx(20)) / 2;
+            control-y: root.vy(root.values[root.idx(20)]);
+            x: root.vx(21);
+            y: root.vy(root.values[root.idx(21)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(21) + (root.vx(22) - root.vx(21)) / 2;
+            control-y: root.vy(root.values[root.idx(21)]);
+            x: root.vx(22);
+            y: root.vy(root.values[root.idx(22)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(22) + (root.vx(23) - root.vx(22)) / 2;
+            control-y: root.vy(root.values[root.idx(22)]);
+            x: root.vx(23);
+            y: root.vy(root.values[root.idx(23)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(23) + (root.vx(24) - root.vx(23)) / 2;
+            control-y: root.vy(root.values[root.idx(23)]);
+            x: root.vx(24);
+            y: root.vy(root.values[root.idx(24)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(24) + (root.vx(25) - root.vx(24)) / 2;
+            control-y: root.vy(root.values[root.idx(24)]);
+            x: root.vx(25);
+            y: root.vy(root.values[root.idx(25)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(25) + (root.vx(26) - root.vx(25)) / 2;
+            control-y: root.vy(root.values[root.idx(25)]);
+            x: root.vx(26);
+            y: root.vy(root.values[root.idx(26)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(26) + (root.vx(27) - root.vx(26)) / 2;
+            control-y: root.vy(root.values[root.idx(26)]);
+            x: root.vx(27);
+            y: root.vy(root.values[root.idx(27)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(27) + (root.vx(28) - root.vx(27)) / 2;
+            control-y: root.vy(root.values[root.idx(27)]);
+            x: root.vx(28);
+            y: root.vy(root.values[root.idx(28)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(28) + (root.vx(29) - root.vx(28)) / 2;
+            control-y: root.vy(root.values[root.idx(28)]);
+            x: root.vx(29);
+            y: root.vy(root.values[root.idx(29)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(29) + (root.vx(30) - root.vx(29)) / 2;
+            control-y: root.vy(root.values[root.idx(29)]);
+            x: root.vx(30);
+            y: root.vy(root.values[root.idx(30)]);
+        }
+        QuadraticTo {
+            control-x: root.vx(30) + (root.vx(31) - root.vx(30)) / 2;
+            control-y: root.vy(root.values[root.idx(30)]);
+            x: root.vx(31);
+            y: root.vy(root.values[root.idx(31)]);
+        }
         // 收口到基线（让 fill 成为面积图）
         LineTo { x: 100.0; y: 100.0; }
         LineTo { x: 0.0; y: 100.0; }
@@ -381,6 +535,7 @@ component SectionTitle inherits HorizontalLayout {
         font-size: 12px;
         color: Theme.fg-1;
         vertical-alignment: center;
+        horizontal-alignment: left;
         horizontal-stretch: 1;
     }
 }
@@ -524,8 +679,11 @@ component StatChip inherits Rectangle {
 
 export component RightPanel inherits Rectangle {
     in property <bool> lang-en: false;
-    // 服务器概览（综合页头卡用；Rust 的 refresh_sidebar 每秒刷新）
-    in property <[SysInfoRow]> sys-overview;
+    // 服务器信息头卡的四个字段（Rust 按标签从 overview 里挑好）
+    in property <string> panel-host;
+    in property <string> panel-ip;
+    in property <string> panel-os;
+    in property <string> panel-uptime;
     // 面板头部的页签：0 = 工具（真内容），1 = AI（占位）
     property <int> head-tab: 0;
     in property <[TransferInfo]> transfers;
@@ -901,7 +1059,7 @@ export component RightPanel inherits Rectangle {
                 spacing: 6px;
 
                 // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
-                if root.sys-overview.length >= 4 : Rectangle {
+                if root.panel-host != "" : Rectangle {
                     border-radius: Theme.radius-md;
                     background: Theme.sur-2;
 
@@ -920,7 +1078,7 @@ export component RightPanel inherits Rectangle {
                                 vertical-alignment: center;
                             }
                             Text {
-                                text: root.sys-overview[2].c2;   // 主机名称
+                                text: root.panel-host;          // 主机名称
                                 font-size: 13px;
                                 font-weight: 600;
                                 color: Theme.fg-1;
@@ -939,7 +1097,7 @@ export component RightPanel inherits Rectangle {
                                     padding-right: 6px;
 
                                     Text {
-                                        text: root.sys-overview[3].c2;   // IP
+                                        text: root.panel-ip;            // IP
                                         font-size: 10px;
                                         color: Theme.fg-2;
                                         vertical-alignment: center;
@@ -948,15 +1106,15 @@ export component RightPanel inherits Rectangle {
                             }
                         }
                         HorizontalLayout {
-                            Text {
-                                text: "\{root.sys-overview[0].c1}：\{root.sys-overview[0].c2}";
+                            if root.panel-os != "" : Text {
+                                text: "操作系统：\{root.panel-os}";
                                 font-size: 10px;
                                 color: Theme.fg-3;
                                 overflow: elide;
                                 horizontal-stretch: 1;
                             }
-                            if root.sys-overview.length >= 9 : Text {
-                                text: "\{root.sys-overview[8].c1} \{root.sys-overview[8].c2}";
+                            if root.panel-uptime != "" : Text {
+                                text: root.panel-uptime;
                                 font-size: 10px;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
@@ -1048,6 +1206,8 @@ export component RightPanel inherits Rectangle {
                                 font-size: 12px;
                                 color: Theme.fg-1;
                                 vertical-alignment: center;
+                                horizontal-alignment: left;
+                                horizontal-stretch: 1;
                             }
                         }
                         if root.disks.length == 0 : EmptyHint { lang-en: root.lang-en; }
@@ -1082,6 +1242,8 @@ export component RightPanel inherits Rectangle {
                                 font-size: 12px;
                                 color: Theme.fg-1;
                                 vertical-alignment: center;
+                                horizontal-alignment: left;
+                                horizontal-stretch: 1;
                             }
                         }
                         if root.net-rows.length == 0 : EmptyHint { lang-en: root.lang-en; }

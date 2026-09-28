@@ -130,6 +130,20 @@ pub(super) fn refresh_sidebar(
                              swap_detail: SharedString,
                              nets: Vec<SysNetRow>,
                              sys: SystemDetails| {
+        // 工具面板头卡用的四个字段：**按标签**从 overview 里取 —— 本机 / 远端两条
+        // 路径的字段顺序不一样，上一版按下标取，结果主机名的位置显示成了负载均值。
+        let pick = |labels: &[String]| -> SharedString {
+            sys.overview
+                .iter()
+                .find(|(k, _)| labels.iter().any(|label| k == label))
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+                .into()
+        };
+        win.set_panel_host(pick(&[t("主机名称", "Hostname").to_string()]));
+        win.set_panel_ip(pick(&[t("IP", "IP").to_string()]));
+        win.set_panel_os(pick(&[t("操作系统", "Operating system").to_string()]));
+        win.set_panel_uptime(pick(&[t("运行", "Uptime").to_string()]));
         if let Some(vm) = win
             .get_sys_metrics()
             .as_any()

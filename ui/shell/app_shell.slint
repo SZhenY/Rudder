@@ -269,6 +269,11 @@ export component AppWindow inherits Window {
     in property <[SysMetricRow]> sys-metrics;
     in property <[SysNetRow]> sys-net-rows;
     in property <[SysInfoRow]> sys-overview-rows;
+    // 工具面板头卡（按标签从 overview 里挑出来的四个字段）
+    in property <string> panel-host;
+    in property <string> panel-ip;
+    in property <string> panel-os;
+    in property <string> panel-uptime;
     in property <[SysInfoRow]> sys-cpu-info-rows;
     in property <[SysInfoRow]> sys-gpu-info-rows;
     in property <[SysInfoRow]> sys-cpu-usage-rows;
@@ -1312,7 +1317,10 @@ export component AppWindow inherits Window {
       if root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open : RightPanel {
           // 与 `panel-w` 同一条件：舞台已让出这块宽度，面板只负责画。
           x: root.width - root.panel-w;
-          sys-overview: root.sys-overview-rows;
+          panel-host: root.panel-host;
+          panel-ip: root.panel-ip;
+          panel-os: root.panel-os;
+          panel-uptime: root.panel-uptime;
           y: root.shell-top;
           width: root.panel-w;
           height: root.height - root.shell-top - 28px;
