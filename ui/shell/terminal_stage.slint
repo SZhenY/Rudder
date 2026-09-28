@@ -33,6 +33,11 @@ export component TerminalStage inherits Rectangle {
     in property <[TabInfo]> tabs;                 // SFTP 跨标签传输目标
     in property <string> active-tab-id;
     in property <bool> lang-en: false;
+    // 顶栏两个开关的当前状态（按钮常亮用）
+    in property <bool> right-panel-open: false;
+    // 快捷指令下拉的展开状态（列表画在本组件里，见 pane 循环之后 —— 只有声明在
+    // 终端画面之后才不会被画面盖住）
+    property <bool> quick-open: false;
 
     // --- 终端外观 / 命令栏 / 会话态（AppWindow 的设置项）-------------------
     in property <int> terminal-focus-sequence: 0;
@@ -158,12 +163,17 @@ export component TerminalStage inherits Rectangle {
                     tabs: pane.tabs;
                     active-id: pane.active-id;
                     reserve-right: pane.reserve-right;
+                    quick-count: root.quick-commands.length;
+                    panel-open: root.right-panel-open;
+                    quick-open: root.quick-open;
+                    lang-en: root.lang-en;
                     tab-selected(id) => { root.pane-tab-selected(pane.id, id); }
                     tab-closed(id) => { root.pane-tab-closed(pane.id, id); }
                     tab-rename-requested(id) => { root.tab-rename-request(id); }
                     new-tab() => { root.pane-new-tab(pane.id); }
                     split-active() => { root.pane-split(pane.id, pane.active-id, 0); }
                     toggle-panel() => { root.toggle-right-panel(); }
+                    toggle-quick() => { root.quick-open = !root.quick-open; }
                     toggle-full() => { root.toggle-zen-key(); }
                 }
             }
@@ -359,6 +369,88 @@ export component TerminalStage inherits Rectangle {
                     width: parent.width;
                     height: parent.height;
                     background: Theme.term-bg;
+                }
+            }
+        }
+    }
+
+    // ── 快捷指令下拉（参考图顶栏「快捷指令 ▾」）─────────────────────────
+    // 声明在 pane 循环之后 = 画在终端画面之上（PaneTabs 自己溢出的话会被画面盖住）；
+    // 点空白处收起。列表直接来自 `quick-commands` 模型（真数据），点一条即走
+    // `run-command`（`send-enter` 由 Rust 侧决定是否补一个回车）。
+    for pane[qi] in root.panes : Rectangle {
+        visible: pane.focused && root.quick-open;
+        x: pane.x; y: pane.y; width: pane.w; height: pane.h;
+        background: transparent;
+        clip: true;
+
+        back-ta := TouchArea {
+            clicked => {
+                root.quick-open = false;
+            }
+        }
+
+        Rectangle {
+            x: max(8px, parent.width - 300px);
+            y: 42px;                                   // 标签条（40px）正下方
+            width: min(300px, parent.width - 16px);
+            height: min(card-l.preferred-height, 260px);
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.sur-1;
+            clip: true;
+
+            card-l := VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+                alignment: start;
+
+                if root.quick-commands.length == 0 : Text {
+                    text: root.lang-en
+                        ? "No snippets yet — add them on the Snippets page"
+                        : "还没有快捷指令 —— 到「指令集」页添加";
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    wrap: word-wrap;
+                }
+
+                for q in root.quick-commands : Rectangle {
+                    height: 32px;
+                    border-radius: 5px;
+                    background: q-ta.has-hover ? Theme.sur-3 : transparent;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 8px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 0px;
+
+                            Text {
+                                text: q.name;
+                                font-size: 11px;
+                                color: Theme.fg-1;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: q.command-preview;
+                                font-size: 9px;
+                                color: Theme.fg-3;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                    q-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.run-command(pane.active-id, q.command, false);
+                            root.quick-open = false;
+                        }
+                    }
                 }
             }
         }

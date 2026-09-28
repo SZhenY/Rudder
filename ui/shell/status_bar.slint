@@ -1,10 +1,15 @@
 // 底部状态栏（按 ex/终端-会话并分屏.png）。
 //
-// 只放**有真实数据**的条目（不放假按钮）：
-// 左 —— 连接状态圆点（conn-state 0 灰 / 1 绿 / 2 黄）+ 主机名（点按复制 #192 的
-//       数据源）；「高亮」开关（output-highlight-enabled，点击翻转）；「历史命令 N」。
+// 只放**有真实功能**的条目（不放假按钮）：
+// 左 —— 连接状态圆点（conn-state 0 灰 / 1 绿 / 2 黄）+ 主机名；
+//       「广播输入」（sync-input，把输入广播到所有会话，Rust 侧原子标志）；
+//       「执行」（翻转命令栏显隐，show-cmd-bar + 落盘）；
+//       「高亮」（output-highlight-enabled，**走真回调落盘**）；
+//       「重连」（仅断开态可点：复用"断开后按 Enter 重连"那条成熟路径）；
+//       「历史命令 N」。
 // 右 —— 传输统计卡：TOTAL N + 活动指示（has-active-transfers）。
-// 重连 / 隧道 / 执行 / UTF-8 选择器等参考图条目等接上各自回调后再补。
+// 参考图里还有「隧道 / 录制」与 UTF-8 选择器：隧道 UI 暂缓、录制与运行期改编码
+// 项目都没有对应功能，一律先不做（见 CHANGELOG 记录）。
 
 import { Theme } from "../theme.slint";
 
@@ -13,11 +18,13 @@ component Pill inherits Rectangle {
     in property <string> text;
     in property <bool> togglable: false;
     in property <bool> on: false;
+    // 不可用（例如「重连」只在断开态可点）：变暗、不响应，而不是点了没反应。
+    in property <bool> enabled: true;
     callback clicked();
 
     height: 20px;
     border-radius: 5px;
-    background: ta.has-hover ? Theme.sur-3
+    background: (root.enabled && ta.has-hover) ? Theme.sur-3
         : (root.togglable && root.on ? Theme.rail-item-active : transparent);
 
     HorizontalLayout {
@@ -30,18 +37,20 @@ component Pill inherits Rectangle {
             text: root.glyph;
             font-family: "Material Icons";
             font-size: 12px;
-            color: Theme.fg-2;
+            color: root.enabled ? Theme.fg-2 : Theme.fg-3.with-alpha(0.5);
             vertical-alignment: center;
         }
         Text {
             text: root.text;
             font-size: 11px;
-            color: Theme.fg-2;
+            color: root.enabled ? Theme.fg-2 : Theme.fg-3.with-alpha(0.5);
             vertical-alignment: center;
         }
     }
 
     ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
         clicked => {
             root.clicked();
         }
@@ -57,7 +66,14 @@ export component StatusBar inherits Rectangle {
     in property <int> transfer-count;
     in property <bool> transfers-active: false;
     in property <bool> lang-en: false;
+    // 广播输入（sync-input）+ 命令栏是否可见（show-cmd-bar，翻转即落盘）
+    in property <bool> sync-input: false;
+    in property <bool> cmd-bar-visible: true;
     callback toggle-highlight();
+    callback toggle-sync-input();
+    callback toggle-cmd-bar();
+    // 重连：仅断开态（conn-state == 2）可用 —— 复用"断开后按 Enter 重连"的实现。
+    callback reconnect();
 
     height: 28px;
     background: Theme.rail-bg;
@@ -87,6 +103,24 @@ export component StatusBar inherits Rectangle {
             horizontal-stretch: 1;
         }
 
+        // 广播输入：把输入同时发到所有会话（Rust 侧 sync-input 原子标志）
+        Pill {
+            text: root.lang-en ? "Broadcast" : "广播输入";
+            togglable: true;
+            on: root.sync-input;
+            clicked => {
+                root.toggle-sync-input();
+            }
+        }
+        // 执行：翻转命令栏（show-cmd-bar 走真回调落盘）
+        Pill {
+            text: root.lang-en ? "Run" : "执行";
+            togglable: true;
+            on: root.cmd-bar-visible;
+            clicked => {
+                root.toggle-cmd-bar();
+            }
+        }
         Pill {
             glyph: "\u{E8F5}"; // highlight
             text: root.lang-en ? "Highlight" : "高亮";
@@ -94,6 +128,15 @@ export component StatusBar inherits Rectangle {
             on: root.highlight-enabled;
             clicked => {
                 root.toggle-highlight();
+            }
+        }
+        // 重连：只在断开态可点（复用"断开后按 Enter 重连"）
+        Pill {
+            glyph: "\u{E5D5}"; // refresh
+            text: root.lang-en ? "Reconnect" : "重连";
+            enabled: root.conn-state == 2;
+            clicked => {
+                root.reconnect();
             }
         }
         Pill {

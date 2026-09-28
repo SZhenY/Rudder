@@ -1316,6 +1316,8 @@ export component AppWindow inherits Window {
           tabs: root.tabs;
           active-tab-id: root.active-tab-id;
           lang-en: root.lang-en;
+          // 顶栏「工具」按钮的常亮状态
+          right-panel-open: root.right-panel-open;
           terminal-focus-sequence: root.terminal-focus-sequence;
           term-cursor-style: root.term-cursor-style;
           term-cursor-color: root.term-cursor-color;
@@ -1641,8 +1643,30 @@ export component AppWindow inherits Window {
           transfer-count: root.transfers.length;
           transfers-active: root.has-active-transfers;
           lang-en: root.lang-en;
+          sync-input: root.sync-input;
+          cmd-bar-visible: root.show-cmd-bar;
+          // 高亮：原来只翻 UI 属性、不落盘（重启就回去了）—— 改走真回调
+          // `set-output-highlight(enabled, preset)`，Rust 侧写配置 + 重编译规则。
           toggle-highlight() => {
               root.output-highlight-enabled = !root.output-highlight-enabled;
+              root.set-output-highlight(
+                  root.output-highlight-enabled,
+                  root.output-highlight-preset);
+          }
+          // 广播输入：Rust 侧原子标志（所有会话共享）
+          toggle-sync-input() => {
+              root.sync-input = !root.sync-input;
+              root.set-sync-input(root.sync-input);
+          }
+          // 执行：翻转命令栏（show-cmd-bar 由 Rust 落盘）
+          toggle-cmd-bar() => {
+              root.show-cmd-bar = !root.show-cmd-bar;
+              root.set-show-cmd-bar(root.show-cmd-bar);
+          }
+          // 重连：复用"断开后按 Enter 重连"那条成熟路径（含句柄回收 + 新终端缓冲），
+          // 所以这里只是把 Enter 发进该标签页；按钮本身只在断开态可点。
+          reconnect() => {
+              root.send-key(root.active-tab-id, "\n", false, false, false);
           }
       }
 

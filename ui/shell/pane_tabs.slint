@@ -85,11 +85,13 @@ component TabPill inherits Rectangle {
 component IconBtn inherits Rectangle {
     in property <string> glyph;
     in property <string> label: "";
+    // 对应功能处于打开状态时保持高亮（工具面板、快捷指令下拉）
+    in property <bool> active: false;
     callback clicked();
 
     height: 26px;
     border-radius: 7px;
-    background: ta.has-hover ? Theme.sur-3 : transparent;
+    background: ta.has-hover || root.active ? Theme.sur-3 : transparent;
 
     HorizontalLayout {
         padding-left: root.label == "" ? 0px : 8px;
@@ -125,12 +127,19 @@ export component PaneTabs inherits Rectangle {
     in property <string> active-id;
     // 顶部右侧工具图标占位宽度（旧 #122 语义保留：标签不从图标下面穿过）。
     in property <length> reserve-right: 0px;
+    // 快捷指令下拉的条目数只用于按钮是否高亮；列表本身由终端舞台渲染
+    // （声明在 pane 之后才画在终端画面之上，不会被画面盖住）。
+    in property <int> quick-count: 0;
+    in property <bool> panel-open: false;
+    in property <bool> quick-open: false;
+    in property <bool> lang-en: false;
     callback tab-selected(string);
     callback tab-closed(string);
     callback tab-rename-requested(string);
     callback new-tab();
     callback split-active();
     callback toggle-panel();
+    callback toggle-quick();
     callback toggle-full();
 
     height: 40px;
@@ -189,10 +198,20 @@ export component PaneTabs inherits Rectangle {
             horizontal-stretch: 1;
         }
 
-        // 右侧：工具面板 / 分屏 / 全屏（快捷指令侧栏按需求移除）
+        // 右侧：快捷指令 / 工具面板 / 分屏 / 全屏（快捷指令侧栏按需求移除，
+        // 但下拉入口按参考图补了回来：点开就是当前快捷命令列表）。
+        IconBtn {
+            glyph: "\u{E5CE}"; // expand_more：这是个下拉入口
+            label: root.lang-en ? "Snippets" : "快捷指令";
+            active: root.quick-open;
+            clicked => {
+                root.toggle-quick();
+            }
+        }
         IconBtn {
             glyph: "\u{E8B3}"; // view_sidebar
-            label: "工具";
+            label: root.lang-en ? "Tools" : "工具";
+            active: root.panel-open;
             clicked => {
                 root.toggle-panel();
             }
