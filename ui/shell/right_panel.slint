@@ -17,6 +17,8 @@
 import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
 import { DiskInfo } from "../resource_types.slint";
+import { Sparkline } from "../widgets.slint";
+import { SysNetRow } from "../system_info_window.slint";
 // 条目类型住在 `ui/sftp_types.slint`（第④步从 `sftp_panel.slint` 搬出），新外壳不依赖
 // 那个等着删除的旧面板组件文件。
 import { SftpEntry, TunnelInfo } from "../sftp_types.slint";
@@ -176,6 +178,113 @@ component ResCard inherits Rectangle {
     }
 }
 
+// 分段小标题（工具面板：CPU 趋势 / 磁盘分区 / 网络端口 等）。
+component SectionTitle inherits Text {
+    font-size: 10px;
+    color: Theme.fg-3;
+}
+
+// 一行指标：名称 + 数值 + 细进度条（内存 / 交换 / 磁盘分区共用）。
+component MetricRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <float> percent: 0;
+
+    height: 26px;
+
+    VerticalLayout {
+        spacing: 3px;
+        alignment: center;
+
+        HorizontalLayout {
+            spacing: 4px;
+
+            Text {
+                text: root.label;
+                font-size: 10px;
+                color: Theme.fg-2;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            Text {
+                text: root.value;
+                font-size: 10px;
+                color: Theme.fg-3;
+                vertical-alignment: center;
+            }
+        }
+        Rectangle {
+            height: 3px;
+            border-radius: 1.5px;
+            background: Theme.sur-3;
+
+            Rectangle {
+                width: parent.width * root.percent;
+                height: 3px;
+                border-radius: 1.5px;
+                background: Theme.accent;
+            }
+        }
+    }
+}
+
+// 网卡一行：名字 + ↓ 下行 + ↑ 上行（箭头用项目里已验证的 Material 码位）。
+component NetIfaceRow inherits Rectangle {
+    in property <string> name;
+    in property <string> down;
+    in property <string> up;
+
+    height: 22px;
+
+    HorizontalLayout {
+        spacing: 4px;
+
+        Text {
+            text: root.name;
+            font-size: 10px;
+            color: Theme.fg-2;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Text {
+            text: "\u{E5DB}";   // arrow_downward
+            font-family: "Material Icons";
+            font-size: 10px;
+            color: Theme.fg-3;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.down;
+            font-size: 9px;
+            color: Theme.fg-3;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "\u{E5D8}";   // arrow_upward
+            font-family: "Material Icons";
+            font-size: 10px;
+            color: Theme.fg-3;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.up;
+            font-size: 9px;
+            color: Theme.fg-3;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// 空数据提示（不放假数字：没样本就说没样本）。
+component EmptyHint inherits Text {
+    in property <bool> lang-en: false;
+    text: root.lang-en ? "No data yet" : "暂无数据";
+    font-size: 10px;
+    color: Theme.fg-3;
+}
+
 // footer 的小徽标：标签 + 值（参考图右下 PATH / DIR / FILE / TOTAL）。
 component StatChip inherits Rectangle {
     in property <string> label;
@@ -222,9 +331,17 @@ export component RightPanel inherits Rectangle {
     in property <float> cpu-percent;
     in property <float> mem-percent;
     in property <string> mem-detail;
+    in property <float> swap-percent;
+    in property <string> swap-detail;
     in property <[DiskInfo]> disks;
     in property <string> net-up;
     in property <string> net-down;
+    // 历史曲线（0..1 归一化）：CPU 趋势、当前会话网卡、本机网卡
+    in property <[float]> cpu-history;
+    in property <[float]> net-history;
+    in property <[float]> net-history-bot;
+    // 逐网卡速率（远端 = 会话自己的网卡表，本机 = 一行本地总速率）
+    in property <[SysNetRow]> net-rows;
     // 折叠成 22px 窄条（参考图「收起 SFTP 侧边栏」）：状态在窗口级，终端舞台按它让位。
     in-out property <bool> collapsed: false;
     // footer 徽标（Rust 数出来的当前目录统计）
@@ -381,26 +498,61 @@ export component RightPanel inherits Rectangle {
             background: Theme.line;
         }
 
-        // ── 内容标签：传输 / 文件（两个都是真视图）──────────────────────
+        // ── 内容标签：5 个监控视图 + 传输 / 文件（全部真数据）────────────
+        // 参考图的标签是 综合 / 处理器 / 显卡 / 内存 / 磁盘 / 网络；显卡项目没有采集，
+        // 不做（见文件头）。英文态用短标签，7 个才排得下 240px。
         HorizontalLayout {
             height: 30px;
-            padding-left: 6px;
-            padding-right: 6px;
+            padding-left: 4px;
+            padding-right: 4px;
 
             PanelTab {
-                label: root.lang-en ? "Transfers" : "传输";
+                label: root.lang-en ? "Sum" : "综合";
                 active: root.current-tab == 0;
                 clicked => {
                     root.current-tab = 0;
                 }
             }
             PanelTab {
-                label: root.lang-en ? "Files" : "文件";
+                label: "CPU";
                 active: root.current-tab == 1;
                 clicked => {
-                    // 删隧道标签时这里漏改成 1（仍写着三标签时代的 2），
-                    // 结果「文件」点了没反应 —— 随这次接真数据一并修掉。
                     root.current-tab = 1;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Mem" : "内存";
+                active: root.current-tab == 2;
+                clicked => {
+                    root.current-tab = 2;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Disk" : "磁盘";
+                active: root.current-tab == 3;
+                clicked => {
+                    root.current-tab = 3;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Net" : "网络";
+                active: root.current-tab == 4;
+                clicked => {
+                    root.current-tab = 4;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Xfers" : "传输";
+                active: root.current-tab == 5;
+                clicked => {
+                    root.current-tab = 5;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Files" : "文件";
+                active: root.current-tab == 6;
+                clicked => {
+                    root.current-tab = 6;
                 }
             }
         }
@@ -410,9 +562,136 @@ export component RightPanel inherits Rectangle {
             background: Theme.line;
         }
 
-        // ── 传输（真数据）──
-        if root.current-tab == 0 : VerticalLayout {
-            // 撑满「内容标签」与 footer 之间的高度（内容多时由内部滚动承担）
+        // ── 综合：CPU 趋势 + 磁盘分区 + 网络端口（卡片在上方常驻，不重复）──
+        if root.current-tab == 0 : Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+
+                SectionTitle { text: root.lang-en ? "CPU load trend" : "CPU 负载趋势"; }
+                if root.cpu-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                if root.cpu-history.length > 0 : Sparkline {
+                    values: root.cpu-history;
+                    height: 44px;
+                }
+
+                SectionTitle { text: root.lang-en ? "Disk partitions" : "磁盘分区"; }
+                if root.disks.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                for d in root.disks : MetricRow {
+                    label: d.path;
+                    value: d.detail;
+                    percent: d.percent;
+                }
+
+                SectionTitle { text: root.lang-en ? "Network interfaces" : "网络端口"; }
+                if root.net-rows.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                for n in root.net-rows : NetIfaceRow {
+                    name: n.name;
+                    down: n.down;
+                    up: n.up;
+                }
+            }
+        }
+
+        // ── 处理器：CPU 数值 + 趋势（放大版）────────────────────────────
+        if root.current-tab == 1 : Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+
+                MetricRow {
+                    label: "CPU";
+                    value: "\{round(root.cpu-percent * 100)}%";
+                    percent: root.cpu-percent;
+                }
+                SectionTitle { text: root.lang-en ? "CPU load trend" : "CPU 负载趋势"; }
+                if root.cpu-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                if root.cpu-history.length > 0 : Sparkline {
+                    values: root.cpu-history;
+                    height: 88px;
+                }
+            }
+        }
+
+        // ── 内存：内存 + 交换（真数据；参考图里的「用户 / 系统」拆分项目没有）──
+        if root.current-tab == 2 : Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+
+                SectionTitle { text: root.lang-en ? "Memory" : "内存"; }
+                MetricRow {
+                    label: root.lang-en ? "MEM" : "内存";
+                    value: root.mem-detail;
+                    percent: root.mem-percent;
+                }
+                SectionTitle { text: root.lang-en ? "Swap" : "交换"; }
+                MetricRow {
+                    label: root.lang-en ? "Swap" : "交换";
+                    value: root.swap-detail;
+                    percent: root.swap-percent;
+                }
+            }
+        }
+
+        // ── 磁盘：全部分区 ─────────────────────────────────────────────
+        if root.current-tab == 3 : Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+
+                SectionTitle { text: root.lang-en ? "Disk partitions" : "磁盘分区"; }
+                if root.disks.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                for d in root.disks : MetricRow {
+                    label: d.path;
+                    value: d.detail;
+                    percent: d.percent;
+                }
+            }
+        }
+
+        // ── 网络：端口表 + 上下行趋势 ───────────────────────────────────
+        if root.current-tab == 4 : Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+
+                SectionTitle { text: root.lang-en ? "Interfaces" : "网络端口"; }
+                if root.net-rows.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                for n in root.net-rows : NetIfaceRow {
+                    name: n.name;
+                    down: n.down;
+                    up: n.up;
+                }
+
+                SectionTitle { text: root.lang-en ? "Session NIC" : "会话网卡"; }
+                if root.net-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                if root.net-history.length > 0 : Sparkline {
+                    values: root.net-history;
+                    height: 40px;
+                }
+
+                SectionTitle { text: root.lang-en ? "Local NIC" : "本机网卡"; }
+                if root.net-history-bot.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                if root.net-history-bot.length > 0 : Sparkline {
+                    values: root.net-history-bot;
+                    height: 40px;
+                }
+            }
+        }
+
+        // ── 传输（真数据；条目多时由内部滚动承担）───────────────────────
+        if root.current-tab == 5 : VerticalLayout {
             vertical-stretch: 1;
             padding: 12px;
             spacing: 8px;
@@ -504,7 +783,7 @@ export component RightPanel inherits Rectangle {
         // alignment != stretch 时 stretch 因子会被忽略（子项一律用 preferred 高度），
         // 下面的列表区就撑不开了。默认 stretch + 单个 `vertical-stretch: 1` 的
         // 列表容器 = 上面的行保持原高、剩余高度全给列表（同 page_hosts 的写法）。
-        if root.current-tab == 1 : VerticalLayout {
+        if root.current-tab == 6 : VerticalLayout {
             vertical-stretch: 1;
             padding: 12px;
             spacing: 6px;
@@ -740,14 +1019,14 @@ export component RightPanel inherits Rectangle {
                     text: "\u{E2C7}";   // folder：切到文件视图
                     font-family: "Material Icons";
                     font-size: 11px;
-                    color: root.current-tab == 1 ? Theme.accent : Theme.fg-2;
+                    color: root.current-tab == 6 ? Theme.accent : Theme.fg-2;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
                 fv-ta := TouchArea {
                     mouse-cursor: pointer;
                     clicked => {
-                        root.current-tab = 1;
+                        root.current-tab = 6;
                     }
                 }
             }

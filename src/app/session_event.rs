@@ -178,6 +178,8 @@ pub(super) fn apply_session_event_to_window<'a>(
                 // Append the selected interface's total rate to its sparkline.
                 let (_, rx, tx) = selected_iface(st);
                 push_ring(&mut st.net_hist, (rx + tx) as f32);
+                // 同一份样本也喂给 CPU 趋势（工具面板的「CPU 负载趋势」）。
+                push_ring(&mut st.cpu_hist, cpu_percent);
             }
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses, local, local_net_hist);

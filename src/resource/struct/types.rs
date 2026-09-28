@@ -57,6 +57,9 @@ pub(crate) struct TabStatus {
     pub(crate) net: Vec<(String, u64, u64)>,
     pub(crate) selected_iface: String,
     pub(crate) net_hist: Vec<f32>,
+    /// CPU 使用率环形缓冲（0..1），供工具面板的「CPU 负载趋势」用 —— 与 `net_hist`
+    /// 同一套 push_ring/normalize。只有远端会话有；本机标签走本地快照。
+    pub(crate) cpu_hist: Vec<f32>,
     pub(crate) disks: Vec<(String, u64, u64)>,
     pub(crate) procs: Vec<ProcInfo>,
     pub(crate) sys: SystemDetails,

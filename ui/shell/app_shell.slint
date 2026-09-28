@@ -150,6 +150,9 @@ export component AppWindow inherits Window {
     in property <string> net-top-up;        // ↑ tx rate text
     in property <string> net-top-down;      // ↓ rx rate text
     in property <[float]> net-top-history;
+    // CPU 负载趋势（0..1 归一化），工具面板「综合 / 处理器」的曲线 —— Rust 侧
+    // `TabStatus.cpu_hist` 环形缓冲，与 net-*-history 同一套 push_ring/normalize。
+    in property <[float]> cpu-history;
     in property <string> net-bot-up;
     in property <string> net-bot-down;
     in property <[float]> net-bot-history;
@@ -1577,6 +1580,12 @@ export component AppWindow inherits Window {
           disks: root.disks;
           net-up: root.net-top-up;
           net-down: root.net-top-down;
+          net-history: root.net-top-history;
+          net-history-bot: root.net-bot-history;
+          cpu-history: root.cpu-history;
+          swap-percent: root.swap-percent;
+          swap-detail: root.swap-detail;
+          net-rows: root.sys-net-rows;
           // 活动标签的隧道 / SFTP（窗口级镜像，见属性声明处）。
           tunnels: root.active-tunnels;
           sftp-path: root.active-sftp-path;

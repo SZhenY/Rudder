@@ -74,6 +74,11 @@ pub(super) fn refresh_sidebar(
     let set_top_local = |win: &AppWindow, stats: &mut SidebarStats| {
         win.set_net_top_up(format_bytes_per_sec(snap.net_tx_per_sec).into());
         win.set_net_top_down(format_bytes_per_sec(snap.net_rx_per_sec).into());
+        // 本机 / 未连接 / 已断开：没有远端 CPU 样本，趋势图清空（只在非空时清一次，
+        // 免得 1 Hz tick 反复换模型身份）。
+        if win.get_cpu_history().row_count() > 0 {
+            win.set_cpu_history(ModelRc::from(Rc::new(VecModel::<f32>::default())));
+        }
         let top = win.get_net_top_history();
         write_model(stats, &top, &scaled, || graph_model(&scaled), |m| {
             win.set_net_top_history(m)
@@ -258,6 +263,16 @@ pub(super) fn refresh_sidebar(
             write_model(&mut stats, &top, &hist, || graph_model(&hist), |m| {
                 win.set_net_top_history(m)
             });
+            // CPU 负载趋势（工具面板「综合 / 处理器」用）：同一套归一化 + 就地写。
+            let cpu_hist = normalize(&st.cpu_hist);
+            let cpu_model = win.get_cpu_history();
+            write_model(
+                &mut stats,
+                &cpu_model,
+                &cpu_hist,
+                || graph_model(&cpu_hist),
+                |m| win.set_cpu_history(m),
+            );
             win.set_net_show_selector(!st.net.is_empty());
             win.set_net_selected(name.into());
             let ifaces: Vec<SharedString> = st.net.iter().map(|e| e.0.clone().into()).collect();
