@@ -1,16 +1,22 @@
-// 右侧工具面板（参考 ex/终端-会话并分屏.png 的右侧栏；AI 按需求暂不做）。
+// 右侧「工具」面板（参考 ex/终端-会话并分屏.png 的右侧栏；AI 按需求暂不做）。
 //
-// v2 接线范围（per-tab 状态搬家①之后）：
-// * 传输 —— transfers 模型（AppWindow 级 ✓ 真数据）+ 活动指示
-// * 文件 —— 活动标签的 SFTP 列表（AppWindow 级 `active-sftp-*` 镜像 ✓ 真数据）：
-//   路径栏（上级 / 刷新）、条目列表（目录点进入、文件点下载）、加载 / 空态 / 状态行
-// * 隧道 —— 数据已随这次搬家提升到 `active-tunnels`，但隧道 UI 按需求暂缓
-//   （2026-09 记录），所以这里不建标签、不放假列表；另行评估后再接。
-// * 参考图里的「传输模式 / 批量编辑限制 / 文件关联」区块属于旧 SFTP 面板的设置，
-//   随旧外壳删除一并评估，不在这里放空控件。
-
+// v3 骨架（终端页设计 B 步）：
+//   * 面板头：工具标题 + 折叠（收成 22px 窄条，参考「收起 SFTP 侧边栏」那张）+ 关闭
+//   * 资源卡片：CPU / 内存 / 磁盘 / 网络 —— 真数据（`sidebar.rs::refresh_sidebar` 每秒写
+//     cpu-percent / mem-percent / mem-detail / disks / net-top-*），2×2 铺开
+//   * 内容：传输（transfers 模型）+ 文件（活动标签的 SFTP 列表，`active-sftp-*` 镜像）
+//   * footer：打开文件视图的圆按钮 + PATH / DIR / FILE / TOTAL 徽标
+//     （计数与总大小由 Rust `refresh_active_term` 数出来，Slint 没有 reduce/filter）
+//
+// 参考图里有、项目**没有功能**因而先不做（2026-09 记录）：录制、运行期 UTF-8 选择器、
+// 显卡标签（无 GPU 采集）、AI 面板；隧道数据已提升到 `active-tunnels` 但 UI 按需求暂缓。
+// 「传输模式 / 批量编辑限制 / 文件关联」是旧 SFTP 面板的设置项，不在这里放空控件。
+//
+// C 步计划（后续）：内容标签扩成 综合 / 处理器 / 内存 / 磁盘 / 网络，接 CPU 趋势、
+// 磁盘分区、网络端口；D 步把文件视图升级成「工具条 + 面包屑 + 表格（名称/大小/时间）」。
 import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
+import { DiskInfo } from "../resource_types.slint";
 // 条目类型住在 `ui/sftp_types.slint`（第④步从 `sftp_panel.slint` 搬出），新外壳不依赖
 // 那个等着删除的旧面板组件文件。
 import { SftpEntry, TunnelInfo } from "../sftp_types.slint";
@@ -108,6 +114,101 @@ component IconBtn inherits Rectangle {
     }
 }
 
+// 资源卡片：标签 + 数值 +（可选）进度条 / 补充行。参考图右侧栏顶部那四张卡。
+component ResCard inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <float> percent: 0;
+    in property <string> hint;          // 9px 补充行（内存详情 / 网络上传速率…）
+    in property <bool> show-bar: true;
+
+    horizontal-stretch: 1;
+    // 固定高度：同一行的两张卡（一个有 hint 一个没有）才不会一高一矮。
+    height: 46px;
+    border-radius: 6px;
+    background: Theme.sur-2;
+
+    VerticalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 3px;
+        alignment: center;
+
+        HorizontalLayout {
+            spacing: 4px;
+
+            Text {
+                text: root.label;
+                font-size: 10px;
+                color: Theme.fg-3;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.value;
+                font-size: 11px;
+                font-weight: 600;
+                color: Theme.fg-1;
+                vertical-alignment: center;
+            }
+        }
+
+        if root.show-bar : Rectangle {
+            height: 3px;
+            border-radius: 1.5px;
+            background: Theme.sur-3;
+
+            Rectangle {
+                width: parent.width * root.percent;
+                height: 3px;
+                border-radius: 1.5px;
+                background: Theme.accent;
+            }
+        }
+        if root.hint != "" : Text {
+            text: root.hint;
+            font-size: 9px;
+            color: Theme.fg-3;
+            overflow: elide;
+        }
+    }
+}
+
+// footer 的小徽标：标签 + 值（参考图右下 PATH / DIR / FILE / TOTAL）。
+component StatChip inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+
+    height: 20px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: Theme.sur-2;
+
+    HorizontalLayout {
+        padding-left: 4px;
+        padding-right: 4px;
+        spacing: 3px;
+        alignment: center;
+
+        Text {
+            text: root.label;
+            font-size: 8px;
+            color: Theme.fg-3;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.value;
+            font-size: 9px;
+            color: Theme.fg-2;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
 export component RightPanel inherits Rectangle {
     in property <bool> lang-en: false;
     in property <[TransferInfo]> transfers;
@@ -117,6 +218,19 @@ export component RightPanel inherits Rectangle {
     callback set-flag-follow-cd(bool);
     callback set-flag-always-ask(bool);
     callback close-panel();
+    // 资源卡片（真数据：Rust `refresh_sidebar` 每秒写窗口属性，这里只负责摆）
+    in property <float> cpu-percent;
+    in property <float> mem-percent;
+    in property <string> mem-detail;
+    in property <[DiskInfo]> disks;
+    in property <string> net-up;
+    in property <string> net-down;
+    // 折叠成 22px 窄条（参考图「收起 SFTP 侧边栏」）：状态在窗口级，终端舞台按它让位。
+    in-out property <bool> collapsed: false;
+    // footer 徽标（Rust 数出来的当前目录统计）
+    in property <int> sftp-dir-count;
+    in property <int> sftp-file-count;
+    in property <string> sftp-total;
     // 活动标签的隧道 / SFTP —— 窗口级镜像（见 shell/app_shell.slint 的属性声明处）。
     in property <[TunnelInfo]> tunnels;
     in property <string> sftp-path;
@@ -139,16 +253,139 @@ export component RightPanel inherits Rectangle {
         : (root.sftp-loading && root.sftp-entries.length == 0 ? 1
         : (root.sftp-entries.length == 0 ? 2 : 3));
 
-    width: 240px;
+    // 展开 240px / 收起 22px 窄条（参考图「收起 SFTP 侧边栏」）
+    width: root.collapsed ? 22px : 240px;
     background: Theme.sur-1;
     clip: true;
 
-    VerticalLayout {
-        // 顶部：标签 + 关闭
+    // ── 收起态：一条窄条 + 一个展开按钮（图标与标签条的「工具」同一个）──────
+    if root.collapsed : Rectangle {
+        width: parent.width;
+        height: parent.height;
+
+        Rectangle {
+            width: 20px;
+            height: 20px;
+            y: (parent.height - 20px) / 2;
+            border-radius: 5px;
+            background: ex-ta.has-hover ? Theme.sur-3 : transparent;
+
+            Text {
+                text: "\u{E8B3}";
+                font-family: "Material Icons";
+                font-size: 12px;
+                color: Theme.fg-3;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            ex-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.collapsed = false;
+                }
+            }
+        }
+    }
+
+    if !root.collapsed : VerticalLayout {
+        // ── 面板头：工具 + 收起 + 关闭 ──────────────────────────────────
+        // 上下 padding 各 6px：行内高度正好 20px，固定 20px 的按钮因此在行内居中
+        // （HorizontalLayout 的交叉轴默认是拉伸，靠子项自身高度定死才不跑偏）。
         HorizontalLayout {
-            height: 34px;
-            padding-left: 8px;
+            height: 32px;
+            padding-left: 10px;
             padding-right: 4px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            spacing: 2px;
+
+            Text {
+                text: "\u{E8B3}";
+                font-family: "Material Icons";
+                font-size: 13px;
+                color: Theme.fg-2;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.lang-en ? "Tools" : "工具";
+                font-size: 12px;
+                font-weight: 600;
+                color: Theme.fg-1;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            IconBtn {
+                glyph: "\u{E5CC}";   // chevron_right：向窗口右缘收起
+                clicked => {
+                    root.collapsed = true;
+                }
+            }
+            IconBtn {
+                glyph: "\u{E5CD}";   // 关闭面板（舞台随之收回这块宽度）
+                clicked => {
+                    root.close-panel();
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+
+        // ── 资源卡片 2×2（真数据，1 Hz）─────────────────────────────────
+        // C 步会在下面接 CPU 趋势 / 磁盘分区 / 网络端口，并把这里收进「综合」标签。
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: 8px;
+            padding-bottom: 4px;
+            spacing: 4px;
+
+            ResCard {
+                label: "CPU";
+                value: "\{round(root.cpu-percent * 100)}%";
+                percent: root.cpu-percent;
+            }
+            ResCard {
+                label: root.lang-en ? "MEM" : "内存";
+                value: "\{round(root.mem-percent * 100)}%";
+                percent: root.mem-percent;
+                hint: root.mem-detail;
+            }
+        }
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: 4px;
+            padding-bottom: 8px;
+            spacing: 4px;
+
+            ResCard {
+                label: root.lang-en ? "DISK" : "磁盘";
+                value: root.disks.length > 0 ? "\{round(root.disks[0].percent * 100)}%" : "—";
+                percent: root.disks.length > 0 ? root.disks[0].percent : 0;
+                hint: root.disks.length > 0 ? root.disks[0].detail : "";
+            }
+            // 网络卡不画进度条：上下行速率就是它的数值与补充行（参考图 ↓ 在上、↑ 在下）。
+            ResCard {
+                label: root.lang-en ? "NET" : "网络";
+                value: root.net-down;
+                hint: "\{root.net-up}";
+                show-bar: false;
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+
+        // ── 内容标签：传输 / 文件（两个都是真视图）──────────────────────
+        HorizontalLayout {
+            height: 30px;
+            padding-left: 6px;
+            padding-right: 6px;
 
             PanelTab {
                 label: root.lang-en ? "Transfers" : "传输";
@@ -166,30 +403,6 @@ export component RightPanel inherits Rectangle {
                     root.current-tab = 1;
                 }
             }
-            Rectangle {
-                horizontal-stretch: 1;
-            }
-            Rectangle {
-                width: 22px;
-                height: 22px;
-                y: 6px;
-                border-radius: 5px;
-                background: ct-ta.has-hover ? Theme.sur-3 : transparent;
-
-                Text {
-                    text: "\u{E5CD}";
-                    font-family: "Material Icons";
-                    font-size: 13px;
-                    color: Theme.fg-3;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                ct-ta := TouchArea {
-                    clicked => {
-                        root.close-panel();
-                    }
-                }
-            }
         }
 
         Rectangle {
@@ -199,6 +412,8 @@ export component RightPanel inherits Rectangle {
 
         // ── 传输（真数据）──
         if root.current-tab == 0 : VerticalLayout {
+            // 撑满「内容标签」与 footer 之间的高度（内容多时由内部滚动承担）
+            vertical-stretch: 1;
             padding: 12px;
             spacing: 8px;
             alignment: start;
@@ -290,6 +505,7 @@ export component RightPanel inherits Rectangle {
         // 下面的列表区就撑不开了。默认 stretch + 单个 `vertical-stretch: 1` 的
         // 列表容器 = 上面的行保持原高、剩余高度全给列表（同 page_hosts 的写法）。
         if root.current-tab == 1 : VerticalLayout {
+            vertical-stretch: 1;
             padding: 12px;
             spacing: 6px;
 
@@ -495,6 +711,62 @@ export component RightPanel inherits Rectangle {
                 font-size: 10px;
                 color: Theme.fg-3;
                 overflow: elide;
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+
+        // ── footer：打开文件视图的圆按钮 + PATH / DIR / FILE / TOTAL ────
+        // 参考图里那个圆按钮就是"展开 SFTP 文件目录"的入口；计数由 Rust 数好传进来。
+        HorizontalLayout {
+            height: 26px;
+            padding-left: 6px;
+            padding-right: 6px;
+            spacing: 4px;
+
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                y: 3px;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: Theme.line-strong;
+                background: fv-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+
+                Text {
+                    text: "\u{E2C7}";   // folder：切到文件视图
+                    font-family: "Material Icons";
+                    font-size: 11px;
+                    color: root.current-tab == 1 ? Theme.accent : Theme.fg-2;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                fv-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.current-tab = 1;
+                    }
+                }
+            }
+            StatChip {
+                label: "PATH";
+                value: root.file-path-label;
+                horizontal-stretch: 1;
+            }
+            StatChip {
+                label: "DIR";
+                value: "\{root.sftp-dir-count}";
+            }
+            StatChip {
+                label: "FILE";
+                value: "\{root.sftp-file-count}";
+            }
+            StatChip {
+                label: "TOTAL";
+                value: root.sftp-total;
             }
         }
     }

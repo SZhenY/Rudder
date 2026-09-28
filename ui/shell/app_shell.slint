@@ -652,6 +652,10 @@ export component AppWindow inherits Window {
     in property <string> active-sftp-status;
     in property <bool> active-sftp-loading: false;
     in property <bool> active-sftp-available: false;
+    // 右面板 footer 的 PATH / DIR / FILE / TOTAL 徽标（Rust 侧数出来的真数据）。
+    in property <int> active-sftp-dir-count;
+    in property <int> active-sftp-file-count;
+    in property <string> active-sftp-total;
 
     // --- Dialog state ------------------------------------------------------
     in-out property <bool> dialog-open: false;
@@ -1255,11 +1259,15 @@ export component AppWindow inherits Window {
       in-out property <string> user-initial: "";
         // 侧栏与页面内容的整体下移量：自绘栏平台是栏高，macOS 是红绿灯让位高度。
         property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
-        // 右侧「工具」面板的占位宽度：面板打开时终端舞台整体让开它，而不是被它盖住
-        // —— 否则舞台里的底部命令栏（… 所有会话 / 发送）右端会被面板压住（用户截图
-        // 里红框那处）。舞台宽度变化会走 `content-resized`，Rust 据此重算分屏几何。
+        // 右侧「工具」面板：展开 240px，折叠成窄条（参考图「收起 SFTP 侧边栏」）时 22px。
+        // 状态提升到窗口级 —— 舞台的占位宽度（panel-w）要跟着它变。
+        in-out property <bool> panel-collapsed: false;
+        // 面板占位宽度：面板打开时终端舞台整体让开它，而不是被它盖住 —— 否则舞台里的
+        // 底部命令栏（… 所有会话 / 发送）右端会被面板压住（用户截图里红框那处）。
+        // 舞台宽度变化会走 `content-resized`，Rust 据此重算分屏几何。
         property <length> panel-w:
-            root.shell-page == 1 && root.panes.length > 0 && root.right-panel-open ? 240px : 0px;
+            root.shell-page == 1 && root.panes.length > 0 && root.right-panel-open
+                ? (root.panel-collapsed ? 22px : 240px) : 0px;
 
         Rail {
             x: 0;
@@ -1560,6 +1568,15 @@ export component AppWindow inherits Window {
           always-ask: root.download-always-ask;
           set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
           set-flag-always-ask(v) => { root.set-download-always-ask(v); }
+          // 折叠成窄条（双向：面板自己收起/展开，舞台按它让位）
+          collapsed <=> root.panel-collapsed;
+          // 资源卡片 / chips（真数据，1 Hz 刷新，见 sidebar.rs::refresh_sidebar）
+          cpu-percent: root.cpu-percent;
+          mem-percent: root.mem-percent;
+          mem-detail: root.mem-detail;
+          disks: root.disks;
+          net-up: root.net-top-up;
+          net-down: root.net-top-down;
           // 活动标签的隧道 / SFTP（窗口级镜像，见属性声明处）。
           tunnels: root.active-tunnels;
           sftp-path: root.active-sftp-path;
@@ -1567,6 +1584,10 @@ export component AppWindow inherits Window {
           sftp-status: root.active-sftp-status;
           sftp-loading: root.active-sftp-loading;
           sftp-available: root.active-sftp-available;
+          // footer 的 PATH / DIR / FILE / TOTAL 徽标
+          sftp-dir-count: root.active-sftp-dir-count;
+          sftp-file-count: root.active-sftp-file-count;
+          sftp-total: root.active-sftp-total;
           // 面板是窗口级的，回调统一带上活动标签 id，走既有的 per-tab 链路。
           sftp-navigate(path) => { root.sftp-navigate(root.active-tab-id, path); }
           sftp-refresh(path) => { root.sftp-refresh(root.active-tab-id, path); }

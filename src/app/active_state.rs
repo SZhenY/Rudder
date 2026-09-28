@@ -14,6 +14,10 @@
 //!
 //! 尚未提升的字段（树节点 / 勾选数 / 排序键 / 面板几何）仍留在 per-tab 模型里：
 //! 目前只有旧 SFTP 面板用，等旧外壳删除时一并处理。
+//!
+//! 另外顺带算出 `active-sftp-dir-count` / `-file-count` / `-total`（当前目录的目录数、
+//! 文件数、文件总大小），给右侧工具面板 footer 的 PATH / DIR / FILE / TOTAL 徽标用 ——
+//! Slint 没有 reduce/filter，这类统计只能在 Rust 侧数。
 
 use super::*;
 
@@ -43,6 +47,11 @@ pub(crate) fn refresh_active_term(win: &AppWindow) {
             win.set_active_sftp_status(row.sftp_status.clone());
             win.set_active_sftp_loading(row.sftp_loading);
             win.set_active_sftp_available(row.sftp_available);
+            // 右面板 footer 的 PATH / DIR / FILE / TOTAL 统计（真数据，不靠 UI 数）。
+            let (dirs, files, total) = sftp_stats(&row);
+            win.set_active_sftp_dir_count(dirs);
+            win.set_active_sftp_file_count(files);
+            win.set_active_sftp_total(total.into());
         }
         None => {
             let stale = !win.get_active_sftp_path().is_empty()
@@ -59,7 +68,32 @@ pub(crate) fn refresh_active_term(win: &AppWindow) {
                 win.set_active_sftp_status("".into());
                 win.set_active_sftp_loading(false);
                 win.set_active_sftp_available(false);
+                win.set_active_sftp_dir_count(0);
+                win.set_active_sftp_file_count(0);
+                win.set_active_sftp_total("".into());
             }
         }
     }
+}
+
+/// 当前目录的「目录数 / 文件数 / 文件总大小」——右面板 footer 那三个徽标的值。
+/// 只看已到达的列表（`size_bytes` 由 Rust 侧格式化时就带上了），不做异步统计。
+fn sftp_stats(row: &TerminalState) -> (i32, i32, String) {
+    let (mut dirs, mut files, mut bytes) = (0i32, 0i32, 0u64);
+    if let Some(entries) = row
+        .sftp_entries
+        .as_any()
+        .downcast_ref::<VecModel<SftpEntry>>()
+    {
+        for i in 0..entries.row_count() {
+            let Some(e) = entries.row_data(i) else { continue };
+            if e.is_dir {
+                dirs += 1;
+            } else {
+                files += 1;
+                bytes += e.size_bytes.max(0.0) as u64;
+            }
+        }
+    }
+    (dirs, files, format_size(bytes))
 }
