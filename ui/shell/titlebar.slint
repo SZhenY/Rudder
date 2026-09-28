@@ -34,3 +34,51 @@ export component AppTitleBar inherits WindowTitleBar {
     maximize-toggle() => { root.win-maximize-toggle(); }
     close() => { root.win-close(); }
 }
+
+/// 系统标题栏平台（macOS）的顶部栏：红绿灯由系统画在左上角，这里补「应用图标 +
+/// 程序名」与底部一条分隔线（参考图：标题栏与内容之间有一条线，标题栏显示程序名）。
+///
+/// 为什么不是"内容直接顶到窗口顶"：那样顶部只剩一圈背景，和下面各页面割裂；
+/// 参考图的做法是给它一个真正的标题栏内容。
+export component AppTitleBarSystem inherits Rectangle {
+    height: 28px;
+    background: Theme.sur-1;
+
+    HorizontalLayout {
+        // 给系统红绿灯让位（macOS 画在 x≈12..70）
+        padding-left: 78px;
+        padding-right: Theme.sp-3;
+        spacing: 6px;
+
+        VerticalLayout {
+            alignment: center;
+
+            Image {
+                source: @image-url("../../assets/icon.png");
+                width: 14px;
+                height: 14px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+
+            Text {
+                text: "Rudder";
+                font-size: 12px;
+                font-weight: 600;
+                color: Theme.fg-2;
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+    }
+
+    // 底部 1px 分隔线：标题栏与内容的分界（用户参考图）
+    Rectangle {
+        y: parent.height - 1px;
+        width: 100%;
+        height: 1px;
+        background: Theme.line;
+    }
+}

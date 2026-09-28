@@ -85,7 +85,7 @@ import { SettingsMenuPopup } from "../settings_menu.slint";
 import { AboutDialog } from "../about_dialog.slint";
 import { ConfirmOverlays } from "../confirm_overlays.slint";
 import { ShortcutsDialog } from "../shortcuts_dialog.slint";
-import { AppTitleBar } from "titlebar.slint";
+import { AppTitleBar, AppTitleBarSystem } from "titlebar.slint";
 import { PageTerminal } from "page_terminal.slint";
 import { StatusBar } from "status_bar.slint";
 import { RightPanel } from "right_panel.slint";
@@ -883,16 +883,6 @@ export component AppWindow inherits Window {
         image-fit: cover;
     }
 
-    // 顶部条（标题栏让位高度内、Rail 右侧那一横条）也铺一层与页面同款的磨砂底色，
-    // 否则那里会露出壁纸原色、和下面各页面形成色差（用户报的"顶部没有覆盖"）。
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        height: root.shell-top;
-        background: Theme.bg-root;
-    }
-
     // 旧外壳（旧侧栏 / 旧资源面板 / 旧欢迎侧栏 / 旧 dock 几何）已在第③步整体删除：
     // 这一带原来是 `VerticalLayout { dock-area { … } }`；终端舞台、左侧栏（Rail）、
     // 各页面与底部状态栏现在都是本窗口的直接子元素（绝对几何），不再需要这层。
@@ -976,7 +966,6 @@ export component AppWindow inherits Window {
             y: root.custom-titlebar ? root.bar-h : 0px;
             width: root.rail-w;
             height: root.height - (root.custom-titlebar ? root.bar-h : 0px);
-            top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
           lang-en: root.lang-en;
             current-page: root.shell-page;
             // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
@@ -1119,17 +1108,20 @@ export component AppWindow inherits Window {
           tunnel-stop(tab, id) => { root.tunnel-stop(tab, id); }
       }
         if root.shell-page == 0 : Rectangle {
-            // 系统有标题栏的平台（macOS）：页面从窗口最顶开始画，由页面自己用 `top-inset`
-            // 给红绿灯让位 —— 与参考图一致（顶部不留一圈"空背景"，那是用户说的割裂感）。
-            // 自绘标题栏的平台（Windows）仍从标题栏下面开始。
+            // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
+
+            // 自绘平台是 AppTitleBar），页面从它下面开始。
+
             x: root.rail-w;
-            y: root.custom-titlebar ? root.shell-top : 0px;
+
+            y: root.shell-top;
+
             width: root.width - root.rail-w;
-            height: root.height - (root.custom-titlebar ? root.shell-top : 0px);
+
+            height: root.height - root.shell-top;
             background: Theme.bg-root;
 
             PageHosts {
-                top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
                 width: 100%;
                 height: 100%;
                 lang-en: root.lang-en;
@@ -1156,17 +1148,20 @@ export component AppWindow inherits Window {
         }
 
         if root.shell-page == 2 : Rectangle {
-            // 系统有标题栏的平台（macOS）：页面从窗口最顶开始画，由页面自己用 `top-inset`
-            // 给红绿灯让位 —— 与参考图一致（顶部不留一圈"空背景"，那是用户说的割裂感）。
-            // 自绘标题栏的平台（Windows）仍从标题栏下面开始。
+            // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
+
+            // 自绘平台是 AppTitleBar），页面从它下面开始。
+
             x: root.rail-w;
-            y: root.custom-titlebar ? root.shell-top : 0px;
+
+            y: root.shell-top;
+
             width: root.width - root.rail-w;
-            height: root.height - (root.custom-titlebar ? root.shell-top : 0px);
+
+            height: root.height - root.shell-top;
             background: Theme.bg-root;
 
             PageSnippets {
-                top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
                 width: 100%;
                 height: 100%;
                 quick-commands: root.quick-commands;
@@ -1180,13 +1175,17 @@ export component AppWindow inherits Window {
         }
 
         if root.shell-page == 3 : Rectangle {
-            // 系统有标题栏的平台（macOS）：页面从窗口最顶开始画，由页面自己用 `top-inset`
-            // 给红绿灯让位 —— 与参考图一致（顶部不留一圈"空背景"，那是用户说的割裂感）。
-            // 自绘标题栏的平台（Windows）仍从标题栏下面开始。
+            // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
+
+            // 自绘平台是 AppTitleBar），页面从它下面开始。
+
             x: root.rail-w;
-            y: root.custom-titlebar ? root.shell-top : 0px;
+
+            y: root.shell-top;
+
             width: root.width - root.rail-w;
-            height: root.height - (root.custom-titlebar ? root.shell-top : 0px);
+
+            height: root.height - root.shell-top;
             background: Theme.bg-root;
 
             VerticalLayout {
@@ -1210,16 +1209,19 @@ export component AppWindow inherits Window {
 
       // 设置页（迁移第一步：基础/外观真接线，其余分组标注迁移中）。
       if root.shell-page == 4 : Rectangle {
-          // 系统有标题栏的平台（macOS）：页面从窗口最顶开始画，由页面自己用 `top-inset`
-          // 给红绿灯让位 —— 与参考图一致（顶部不留一圈"空背景"，那是用户说的割裂感）。
-          // 自绘标题栏的平台（Windows）仍从标题栏下面开始。
+          // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
+
+          // 自绘平台是 AppTitleBar），页面从它下面开始。
+
           x: root.rail-w;
-          y: root.custom-titlebar ? root.shell-top : 0px;
+
+          y: root.shell-top;
+
           width: root.width - root.rail-w;
-          height: root.height - (root.custom-titlebar ? root.shell-top : 0px);
+
+          height: root.height - root.shell-top;
 
           PageSettings {
-                top-inset: root.custom-titlebar ? 0px : root.titlebar-inset;
               width: 100%;
               height: 100%;
               lang-en: root.lang-en;
@@ -1401,13 +1403,17 @@ export component AppWindow inherits Window {
                 // 终端页空状态（一个标签都没有时）：参考图的「创建你的第一个终端会话」。
       // 声明在终端舞台之后 = 盖住它；有标签时这里不实例化，舞台的终端画面就露出来。
       if root.shell-page == 1 && root.panes.length == 0 : Rectangle {
-          // 系统有标题栏的平台（macOS）：页面从窗口最顶开始画，由页面自己用 `top-inset`
-          // 给红绿灯让位 —— 与参考图一致（顶部不留一圈"空背景"，那是用户说的割裂感）。
-          // 自绘标题栏的平台（Windows）仍从标题栏下面开始。
+          // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
+
+          // 自绘平台是 AppTitleBar），页面从它下面开始。
+
           x: root.rail-w;
-          y: root.custom-titlebar ? root.shell-top : 0px;
+
+          y: root.shell-top;
+
           width: root.width - root.rail-w;
-          height: root.height - (root.custom-titlebar ? root.shell-top : 0px);
+
+          height: root.height - root.shell-top;
           background: Theme.bg-root;
 
           PageTerminal {
@@ -1439,13 +1445,17 @@ export component AppWindow inherits Window {
 
       // 笔记随笔 / AI 助手：参考图里有入口，页面规划中（与 Docker 占位同款）。
       if root.shell-page == 5 || root.shell-page == 6 : Rectangle {
-          // 系统有标题栏的平台（macOS）：页面从窗口最顶开始画，由页面自己用 `top-inset`
-          // 给红绿灯让位 —— 与参考图一致（顶部不留一圈"空背景"，那是用户说的割裂感）。
-          // 自绘标题栏的平台（Windows）仍从标题栏下面开始。
+          // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
+
+          // 自绘平台是 AppTitleBar），页面从它下面开始。
+
           x: root.rail-w;
-          y: root.custom-titlebar ? root.shell-top : 0px;
+
+          y: root.shell-top;
+
           width: root.width - root.rail-w;
-          height: root.height - (root.custom-titlebar ? root.shell-top : 0px);
+
+          height: root.height - root.shell-top;
           background: Theme.bg-root;
 
           VerticalLayout {
@@ -1478,6 +1488,12 @@ export component AppWindow inherits Window {
       // 新标题栏（Windows/Linux）：通栏拖拽 + 双击最大化 + 右上角窗口按钮，
                 // 沉浸式无图标/标题。放在最后声明 = 盖在页面内容之上、按钮可点；
                 // macOS 不实例化（系统红绿灯 + 原生拖拽）。
+                // 系统标题栏平台（macOS）：补一条带「图标 + 程序名 + 底部分隔线」的
+                // 标题栏 —— 顶部不再是一圈空背景（用户参考图的做法）。
+                if !root.custom-titlebar : AppTitleBarSystem {
+                    width: root.width;
+                    y: 0;
+                }
                 if root.custom-titlebar : AppTitleBar {
                 width: root.width;
                 y: 0;

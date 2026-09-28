@@ -50,12 +50,14 @@ component MenuRow inherits Rectangle {
 component HostCard inherits Rectangle {
     in property <SessionInfo> session;
     in property <bool> lang-en: false;
-    // 「⋯」菜单是否展开（卡片内浮层，见卡片末尾）
-    property <bool> menu-open: false;
+    // 选中态（页面级单选）：卡片四周画一圈主题色高光
+    in property <bool> selected: false;
+    // 整卡点击 = 选中（不再是直接连终端）；只有「快速连接」才发起连接。
+    callback select();
     callback connect();
-    callback edit();
-    callback duplicate();
-    callback remove();
+    // 点「⋯」：把菜单锚点（窗口坐标）报给页面 —— 菜单画在页面级浮层上，
+    // 这样点卡片内外的任何地方都能把它关掉。
+    callback menu(length /* x */, length /* y */);
 
     // 主机卡片：图标块 + 名称/SSH 徽标 + 连接信息 + 快速连接
     width: 340px;
@@ -202,9 +204,9 @@ component HostCard inherits Rectangle {
         }
     }
 
-    // 卡片右上角「⋯」菜单按钮（参考图 主机-卡片-菜单.png）。
-    // 悬停时"亮起"，但**始终可点**：`enabled` 绝不挂在 hover 上 —— 鼠标从卡片移到
-    // 按钮上时若把它禁用，它自己的 hover 就永远来不了（之前 ✎ 踩过的死锁）。
+    // 卡片右上角「⋯」按钮（参考图 主机-卡片-菜单.png）：悬停该卡片时出现，
+    // 点它把菜单**锚点（窗口坐标）**报给页面 —— 菜单本身画在页面级的浮层上，
+    // 于是点卡片内外的任何位置都会把它关掉（画在卡片里时只能点卡片才关）。
     Rectangle {
         x: parent.width - self.width - 8px;
         y: 8px;
@@ -213,11 +215,8 @@ component HostCard inherits Rectangle {
         border-radius: Theme.radius-sm;
         border-width: 1px;
         border-color: Theme.line;
-        // 只在该卡片被悬停（或菜单已展开）时出现 —— 参考图注记："鼠标悬停在卡片上的
-        // 时候才显示菜单按钮"。`enabled` 仍然不挂 hover（鼠标移上来那一刻它自己
-        // 就有 hover 了，所以不会出现"点不到"的死锁）。
-        opacity: (card-ta.has-hover || menu-ta.has-hover || root.menu-open) ? 1 : 0;
-        background: root.menu-open ? Theme.sur-3 : Theme.sur-1;
+        opacity: card-ta.has-hover ? 1 : 0;
+        background: Theme.sur-1;
 
         Text {
             text: "\u{E5D3}"; // more_horiz
@@ -231,62 +230,12 @@ component HostCard inherits Rectangle {
         menu-ta := TouchArea {
             mouse-cursor: pointer;
             clicked => {
-                root.menu-open = !root.menu-open;
+                root.menu(root.absolute-position.x + root.width - 164px,
+                          root.absolute-position.y + 40px);
             }
         }
     }
 
-    // 点卡片其它地方收起菜单。声明在面板之前 = 在面板下层；`enabled` 只在菜单打开
-    // 时生效，平时点卡片照旧走"快速连接"。
-    TouchArea {
-        x: 0;
-        y: 0;
-        width: 100%;
-        height: 100%;
-        enabled: root.menu-open;
-        clicked => {
-            root.menu-open = false;
-        }
-    }
-
-    // 展开的菜单：**卡片内浮层**，不是 PopupWindow —— 卡片在 Flickable 里，弹层在
-    // 这个上下文里没验证过（对话框的协议下拉就翻过车），内浮层 100% 可控。
-    Rectangle {
-        visible: root.menu-open;
-        x: parent.width - self.width - 8px;
-        y: 40px;
-        width: 156px;
-        height: 3 * 30px + 8px;
-        border-radius: 8px;
-        border-width: 1px;
-        border-color: Theme.line;
-        background: Theme.sur-1;
-        drop-shadow-blur: Theme.shadow-popup-blur;
-        drop-shadow-color: Theme.shadow-popup-color;
-
-        VerticalLayout {
-            padding: 4px;
-            spacing: 1px;
-            alignment: start;
-
-            MenuRow {
-                glyph: "\u{E3C9}"; // edit
-                label: root.lang-en ? "Edit" : "编辑";
-                clicked => { root.menu-open = false; root.edit(); }
-            }
-            MenuRow {
-                glyph: "\u{E14D}"; // content_copy —— 克隆
-                label: root.lang-en ? "Duplicate" : "克隆";
-                clicked => { root.menu-open = false; root.duplicate(); }
-            }
-            MenuRow {
-                glyph: "\u{E872}"; // delete
-                label: root.lang-en ? "Delete" : "删除";
-                danger: true;
-                clicked => { root.menu-open = false; root.remove(); }
-            }
-        }
-    }
 }
 
 export component PageHosts inherits Rectangle {
@@ -308,10 +257,28 @@ export component PageHosts inherits Rectangle {
     // 待删除的会话（非空 = 确认框打开）
     property <string> pending-remove-id;
     property <string> pending-remove-name;
+    // 选中的卡片（点卡片选中，只有「快速连接」才连终端）；点页面空白处清空。
+    property <string> selected-id;
+    // 卡片「⋯」菜单：非空 = 菜单打开；坐标是窗口坐标（渲染时再减去本页偏移）。
+    property <string> menu-id;
+    property <string> menu-name;
+    property <length> menu-x;
+    property <length> menu-y;
 
     // 底色由外层页面容器提供（`Theme.bg-root` 磨砂，见 app_shell）：这里透明，
     // 否则两层磨砂叠加，本页会比别的页面更暗。
     background: transparent;
+
+    // 点页面空白处清空选中（最底层；卡片与工具栏的点击都落在它们自己身上）。
+    TouchArea {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        clicked => {
+            root.selected-id = "";
+        }
+    }
 
     HorizontalLayout {
         // ── 第二列：分组导航 ────────────────────────────────────────────
@@ -556,19 +523,19 @@ export component PageHosts inherits Rectangle {
                             horizontal-stretch: 1;
                             session: root.sessions[r * grid.cols + c];
                             lang-en: root.lang-en;
+                            selected: root.selected-id == root.sessions[r * grid.cols + c].id;
+                            select() => {
+                                root.selected-id = root.sessions[r * grid.cols + c].id;
+                            }
                             connect() => {
                                 root.connect-session(root.sessions[r * grid.cols + c].id);
                             }
-                            edit() => {
-                                root.edit-session(root.sessions[r * grid.cols + c].id);
-                            }
-                            duplicate() => {
-                                root.duplicate-session(root.sessions[r * grid.cols + c].id);
-                            }
-                            remove() => {
-                                // 先弹确认（删除是破坏性动作），确认后才落回调链。
-                                root.pending-remove-id = root.sessions[r * grid.cols + c].id;
-                                root.pending-remove-name = root.sessions[r * grid.cols + c].name;
+                            menu(x, y) => {
+                                // 菜单画在页面级浮层：只记下"哪张卡、在哪儿"。
+                                root.menu-id = root.sessions[r * grid.cols + c].id;
+                                root.menu-name = root.sessions[r * grid.cols + c].name;
+                                root.menu-x = x;
+                                root.menu-y = y;
                             }
                         }
                     }
@@ -576,6 +543,69 @@ export component PageHosts inherits Rectangle {
             }
         }
     }
+    // 卡片「⋯」菜单（页面级浮层）：点**任何**地方都会关闭 —— 卡片内外都先落到这层。
+    // （之前画在卡片内部，只有点卡片才关得掉 —— 用户反馈。）
+    if root.menu-id != "" : Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+
+        dismiss := TouchArea {
+            clicked => {
+                root.menu-id = "";
+            }
+        }
+
+        Rectangle {
+            // 窗口坐标 → 本页坐标；再夹在页面内，避免贴边被裁
+            x: clamp(root.menu-x - root.absolute-position.x, Theme.sp-2, root.width - self.width - Theme.sp-2);
+            y: clamp(root.menu-y - root.absolute-position.y, Theme.sp-2, root.height - self.height - Theme.sp-2);
+            width: 156px;
+            height: 3 * 30px + 8px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.sur-1;
+            drop-shadow-blur: Theme.shadow-popup-blur;
+            drop-shadow-color: Theme.shadow-popup-color;
+
+            VerticalLayout {
+                padding: 4px;
+                spacing: 1px;
+                alignment: start;
+
+                MenuRow {
+                    glyph: "\u{E3C9}"; // edit
+                    label: root.lang-en ? "Edit" : "编辑";
+                    clicked => {
+                        root.edit-session(root.menu-id);
+                        root.menu-id = "";
+                    }
+                }
+                MenuRow {
+                    glyph: "\u{E14D}"; // copy = 克隆
+                    label: root.lang-en ? "Duplicate" : "克隆";
+                    clicked => {
+                        root.duplicate-session(root.menu-id);
+                        root.menu-id = "";
+                    }
+                }
+                MenuRow {
+                    glyph: "\u{E872}"; // delete
+                    label: root.lang-en ? "Delete" : "删除";
+                    danger: true;
+                    clicked => {
+                        // 破坏性动作：先转成"待确认"，确认框在页面最后一件。
+                        root.pending-remove-id = root.menu-id;
+                        root.pending-remove-name = root.menu-name;
+                        root.menu-id = "";
+                    }
+                }
+            }
+        }
+    }
+
     // 删除确认（参考图里删除是菜单里的一项；破坏性动作前先确认，确认后才走回调链）。
     // 这个确认框是本页私有的：确认框组件通用，但"删除主机"要经过本页 → 窗口 → Rust。
     ConfirmDialog {
