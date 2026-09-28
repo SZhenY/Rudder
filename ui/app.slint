@@ -37,6 +37,9 @@ import { SessionInfo } from "welcome_rows.slint";
 import { Rail } from "shell/rail.slint";
 import { PageHosts } from "shell/page_hosts.slint";
 import { PageSnippets } from "shell/page_snippets.slint";
+// 终端舞台的类型（②-1 从本文件搬走）：import 之后再 export，Rust 生成类型不变。
+import { TerminalState, PaneInfo, SplitterInfo } from "shell/stage_types.slint";
+export { TerminalState, PaneInfo, SplitterInfo }
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
@@ -92,71 +95,13 @@ export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo
 // 直接读写主题 —— 这样 AppWindow 上那 14 条 `<=> Theme.x` 镜像就不必存在了。
 export { AnimationSettings, Theme }
 
-// --- TerminalState ---------------------------------------------------------
-// Per-terminal view-model exposed to Rust. A TabInfo has the metadata; the
-// TerminalState carries the streaming log + status line. Kept as a parallel
-// model so opening/closing tabs doesn't churn the log strings.
-// One file-transfer record shown in the download manager.
+// --- TerminalState / PaneInfo / SplitterInfo --------------------------------
+// 旧外壳删除②-1：这三个 struct 已挪到 `shell/stage_types.slint`（终端舞台要抽成
+// shell 组件，Slint 组件不能反向 import 本窗口文件）。这里 import + 再 export ——
+// Rust 侧的 `crate::ui::TerminalState` / `PaneInfo` / `SplitterInfo` 名字与生成
+// 结果都保持不变（同 EditorFindResult 随编辑器搬走后的做法）。
+// 注：One file-transfer record shown in the download manager.
 // ProcRow now lives in proc_window.slint (the detachable process window).
-
-export struct TerminalState {
-    id: string,
-    status: string,
-    spans: [TermSpan],     // coloured runs of the visible terminal screen
-    cursor-row: int,       // cursor cell on the grid
-    cursor-col: int,
-    rows-used: int,        // content rows, for viewport sizing
-    scroll-max: int,       // scrollback depth (max offset) — terminal scrollbar (#103)
-    scroll-offset: int,    // current scrollback offset (0 = live bottom)
-    is-alt-screen: bool,
-    mouse-tracked: bool,          // remote app wants mouse events (btop/htop/mc)
-    find-matches: [TermMatch], // search-highlight rectangles
-    selection: [TermMatch],    // drag-selection highlight rectangles
-    // Per-session font-size override in px; 0 = follow the global setting.
-    // Set by Ctrl+=/-/0 (⌘) zoom; Ctrl+Shift variants clear overrides so the
-    // window-wide size applies to every session.
-    font-size: float,
-    // SFTP panel state
-    sftp-path: string,
-    sftp-entries: [SftpEntry],
-    sftp-status: string,
-    sftp-loading: bool,
-    sftp-tree-nodes: [SftpTreeNode],
-    sftp-selected-count: int,   // checked entries in the SFTP panel (#100)
-    sftp-sort-key: string,      // ""|"name"|"size"|"modified" (#248)
-    sftp-sort-dir: int,         // 0 default / 1 asc / -1 desc (#248)
-    sftp-available: bool,       // false for local/serial/telnet sessions
-    tunnels: [TunnelInfo],      // runtime SSH tunnels (#206)
-    sftp-collapsed: bool,       // SFTP panel minimised — per session (#v0.5)
-    sftp-panel-height: length,  // SFTP panel extent (bottom dock) — per session
-    sftp-panel-width: length,   // SFTP panel extent (side dock) — per session
-}
-
-// One leaf pane of the split layout (v0.5). Geometry (x/y/w/h) is computed in Rust
-// from the split tree; `tabs` is the pane's own tab group and `active-id` the tab
-// it currently shows. `reserve-right` keeps room for the top-right toolbar icons on
-// whichever pane touches the top-right corner.
-export struct PaneInfo {
-    id: int,
-    x: length,
-    y: length,
-    w: length,
-    h: length,
-    active-id: string,
-    focused: bool,
-    reserve-right: length,
-    tabs: [TabInfo],
-}
-
-// A draggable splitter between two regions of the split layout (v0.5).
-export struct SplitterInfo {
-    split-id: int,
-    x: length,
-    y: length,
-    w: length,
-    h: length,
-    vertical: bool,   // true = vertical handle (drag left/right)
-}
 
 // Editor find step result (#287): the byte offsets to select and the total
 

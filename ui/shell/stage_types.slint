@@ -1,0 +1,74 @@
+// 终端舞台（终端页）的数据类型。
+//
+// 旧外壳删除②-1：这三个 struct 原先是 `ui/app.slint` 里就地声明的。终端舞台要抽成
+// `shell/terminal_stage.slint`，而 Slint 的组件**不能反向 import 窗口文件**（会成环：
+// app.slint → shell/terminal_stage.slint → app.slint），所以类型先挪到这份幸存文件里，
+// 由 app.slint import 后再 `export` 出去 —— Rust 侧的 `crate::ui::TerminalState` /
+// `PaneInfo` / `SplitterInfo` 与 `slint::include_modules!` 生成的类型一并保持不变
+// （同 `EditorFindResult` 搬去 file_editor.slint 后的做法）。
+
+import { TermSpan, TermMatch } from "../terminal_view.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "../sftp_panel.slint";
+import { TabInfo } from "../tabs.slint";
+
+// Per-terminal view-model exposed to Rust. A TabInfo has the metadata; the
+// TerminalState carries the streaming log + status line. Kept as a parallel
+// model so opening/closing tabs doesn't churn the log strings.
+export struct TerminalState {
+    id: string,
+    status: string,
+    spans: [TermSpan],     // coloured runs of the visible terminal screen
+    cursor-row: int,       // cursor cell on the grid
+    cursor-col: int,
+    rows-used: int,        // content rows, for viewport sizing
+    scroll-max: int,       // scrollback depth (max offset) — terminal scrollbar (#103)
+    scroll-offset: int,    // current scrollback offset (0 = live bottom)
+    is-alt-screen: bool,
+    mouse-tracked: bool,          // remote app wants mouse events (btop/htop/mc)
+    find-matches: [TermMatch], // search-highlight rectangles
+    selection: [TermMatch],    // drag-selection highlight rectangles
+    // Per-session font-size override in px; 0 = follow the global setting.
+    // Set by Ctrl+=/-/0 (⌘) zoom; Ctrl+Shift variants clear overrides so the
+    // window-wide size applies to every session.
+    font-size: float,
+    // SFTP panel state
+    sftp-path: string,
+    sftp-entries: [SftpEntry],
+    sftp-status: string,
+    sftp-loading: bool,
+    sftp-tree-nodes: [SftpTreeNode],
+    sftp-selected-count: int,   // checked entries in the SFTP panel (#100)
+    sftp-sort-key: string,      // ""|"name"|"size"|"modified" (#248)
+    sftp-sort-dir: int,         // 0 default / 1 asc / -1 desc (#248)
+    sftp-available: bool,       // false for local/serial/telnet sessions
+    tunnels: [TunnelInfo],      // runtime SSH tunnels (#206)
+    sftp-collapsed: bool,       // SFTP panel minimised — per session (#v0.5)
+    sftp-panel-height: length,  // SFTP panel extent (bottom dock) — per session
+    sftp-panel-width: length,   // SFTP panel extent (side dock) — per session
+}
+
+// One leaf pane of the split layout (v0.5). Geometry (x/y/w/h) is computed in Rust
+// from the split tree; `tabs` is the pane's own tab group and `active-id` the tab
+// it currently shows. `reserve-right` keeps room for the top-right toolbar icons on
+// whichever pane touches the top-right corner.
+export struct PaneInfo {
+    id: int,
+    x: length,
+    y: length,
+    w: length,
+    h: length,
+    active-id: string,
+    focused: bool,
+    reserve-right: length,
+    tabs: [TabInfo],
+}
+
+// A draggable splitter between two regions of the split layout (v0.5).
+export struct SplitterInfo {
+    split-id: int,
+    x: length,
+    y: length,
+    w: length,
+    h: length,
+    vertical: bool,   // true = vertical handle (drag left/right)
+}
