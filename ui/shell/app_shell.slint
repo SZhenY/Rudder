@@ -957,7 +957,7 @@ export component AppWindow inherits Window {
         // 底部命令栏（… 所有会话 / 发送）右端会被面板压住（用户截图里红框那处）。
         // 舞台宽度变化会走 `content-resized`，Rust 据此重算分屏几何。
         property <length> panel-w:
-            root.shell-page == 1 && root.panes.length > 0 && root.right-panel-open
+            root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open
                 ? (root.panel-collapsed ? 22px : 240px) : 0px;
 
         Rail {
@@ -986,11 +986,12 @@ export component AppWindow inherits Window {
         }
 
       // Rail 与页面之间那条分隔线：两边都是 sur-1，没有线就看不出边界。
+      // 从标题栏下面开始画 —— 伸进标题栏会把它切断（用户反馈）。
       Rectangle {
           x: root.rail-w;
-          y: 0;
+          y: root.shell-top;
           width: 1px;
-          height: parent.height;
+          height: parent.height - root.shell-top;
           background: Theme.line;
       }
 
@@ -1000,10 +1001,12 @@ export component AppWindow inherits Window {
       // 空布局时由 PageTerminal 空状态（声明在后）盖住。常驻、不随切页销毁 ——
       // 与旧外壳一致：切页不重建 TerminalView（保住滚动/悬停/查找条状态与键盘焦点）。
       TerminalStage {
-          // 只在终端页显示：各页面底色改成"壁纸磨砂"（半透明）之后，常驻的终端
-          // 画面会透到别的页面上（用户最初报的那个 bug）。隐藏只是 visible 切换，
-          // TerminalView 实例仍在（滚动 / 查找条 / 会话状态不丢）。
-          visible: root.shell-page == 1;
+          // 只在终端页、且**还有会话**时显示：各页面底色是"壁纸磨砂"（半透明），
+          // 常驻的终端画面会透到别的页面上（用户最初报的 bug）；而关掉最后一个会话后
+          // Rust 会留一个空 pane，舞台那层"从左侧主机里选一个"的提示也会透过空态卡片
+          // —— 干脆在没有会话时整个舞台都不画。隐藏只是 visible 切换，TerminalView
+          // 实例仍在（滚动 / 查找条 / 会话状态不丢）。
+          visible: root.shell-page == 1 && root.terminals.length > 0;
           x: root.rail-w;
           y: root.shell-top;
           // 让开右侧工具面板（panel-w）与底部状态栏
@@ -1302,7 +1305,7 @@ export component AppWindow inherits Window {
       }
 
       // 右侧工具面板（会话中；AI 暂不做）
-      if root.shell-page == 1 && root.panes.length > 0 && root.right-panel-open : RightPanel {
+      if root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open : RightPanel {
           // 与 `panel-w` 同一条件：舞台已让出这块宽度，面板只负责画。
           x: root.width - root.panel-w;
           y: root.shell-top;
@@ -1365,7 +1368,7 @@ export component AppWindow inherits Window {
       }
 
       // 底部状态栏（参考图：连接状态 / 高亮 / 历史命令 / 传输统计）。
-      if root.shell-page == 1 && root.panes.length > 0 : StatusBar {
+      if root.shell-page == 1 && root.terminals.length > 0 : StatusBar {
           x: root.rail-w;
           y: root.height - 28px;
           width: root.width - root.rail-w;
@@ -1406,7 +1409,7 @@ export component AppWindow inherits Window {
 
                 // 终端页空状态（一个标签都没有时）：参考图的「创建你的第一个终端会话」。
       // 声明在终端舞台之后 = 盖住它；有标签时这里不实例化，舞台的终端画面就露出来。
-      if root.shell-page == 1 && root.panes.length == 0 : Rectangle {
+      if root.shell-page == 1 && root.terminals.length == 0 : Rectangle {
           // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
 
           // 自绘平台是 AppTitleBar），页面从它下面开始。
