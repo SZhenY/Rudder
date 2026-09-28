@@ -55,6 +55,9 @@ component HostCard inherits Rectangle {
     // 整卡点击 = 选中（不再是直接连终端）；只有「快速连接」才发起连接。
     callback select();
     callback connect();
+    // 本卡的「⋯」菜单是否打开（菜单画在页面级浮层，本页把状态传进来 —— 菜单
+    // 打开期间按钮要一直亮着，别跟着鼠标离开卡片就淡掉）。
+    in property <bool> menu-open: false;
     // 点「⋯」：把菜单锚点（窗口坐标）报给页面 —— 菜单画在页面级浮层上，
     // 这样点卡片内外的任何地方都能把它关掉。
     callback menu(length /* x */, length /* y */);
@@ -216,7 +219,11 @@ component HostCard inherits Rectangle {
         border-radius: Theme.radius-sm;
         border-width: 1px;
         border-color: Theme.line;
-        opacity: card-ta.has-hover ? 1 : 0;
+        // ⚠ 只能看 card-ta.has-hover：鼠标移到按钮上时，按钮自己的 TouchArea
+        // （menu-ta，声明在后 = 在上面）会接管悬停，card-ta 的 has-hover 立刻变
+        // false —— 三点会随鼠标靠近而消失（用户报的 bug）。三档都要算上：
+        // 卡片悬停 / 按钮自身悬停 / 菜单正开着。
+        opacity: (root.menu-open || card-ta.has-hover || menu-ta.has-hover) ? 1 : 0;
         background: Theme.sur-1;
 
         Text {
@@ -525,6 +532,7 @@ export component PageHosts inherits Rectangle {
                             session: root.sessions[r * grid.cols + c];
                             lang-en: root.lang-en;
                             selected: root.selected-id == root.sessions[r * grid.cols + c].id;
+                            menu-open: root.menu-id == root.sessions[r * grid.cols + c].id;
                             select() => {
                                 root.selected-id = root.sessions[r * grid.cols + c].id;
                             }
