@@ -26,6 +26,7 @@ import { Theme } from "../theme.slint";
 import { AnimationSettings } from "../theme.slint";
 import { PaneInfo, SplitterInfo, TerminalState } from "stage_types.slint";
 import { PaneTabs } from "pane_tabs.slint";
+import { HistoryPanel } from "history_panel.slint";
 import { TerminalView, QuickCmd } from "../terminal_view.slint";
 import { TabInfo } from "../tabs.slint";
 
@@ -42,6 +43,9 @@ export component TerminalStage inherits Rectangle {
     // 快捷指令下拉的展开状态（列表画在本组件里，见 pane 循环之后 —— 只有声明在
     // 终端画面之后才不会被画面盖住）
     property <bool> quick-open: false;
+    // 历史命令浮层的展开状态（终端页重做③）：双向 —— 状态栏「历史命令」按钮、
+    // ⌘⇧R 快捷键与浮层自己的关闭按钮都改它（窗口侧同名属性透传给状态栏）。
+    in-out property <bool> history-open: false;
 
     // --- 终端外观 / 会话态（AppWindow 的设置项）---------------------------
     in property <int> terminal-focus-sequence: 0;
@@ -83,6 +87,7 @@ export component TerminalStage inherits Rectangle {
     callback pane-split(int, string, int);
     callback toggle-zen-key();
     callback toggle-right-panel();
+    callback toggle-history();      // 画布里的 ⌘⇧R / Ctrl+Shift+R → 开/关历史浮层
     callback cycle-tab(bool);
     callback splitter-drag(int, length, bool);
     // 终端输入 / 尺寸 / 滚动
@@ -227,6 +232,7 @@ export component TerminalStage inherits Rectangle {
                     selection: term.selection;
                     send-key(key, ctrl, alt, shift) => { root.send-key(term.id, key, ctrl, alt, shift) }
                     cycle-tab(reverse) => { root.cycle-tab(reverse); }
+                    toggle-history() => { root.history-open = !root.history-open; }
                     terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
                     paste-from-clipboard() => { root.paste-from-clipboard(term.id); }
                     copy-terminal-text() => { root.copy-terminal-text(term.id); }
@@ -366,6 +372,40 @@ export component TerminalStage inherits Rectangle {
                         sp.vertical);
                 }
             }
+        }
+    }
+
+    // 历史命令浮层（终端页重做③）：声明在最后 = 画在最上层；点击浮层以外关闭。
+    // 数据来自窗口级 command-history / history-view / history-preview（Rust 填充），
+    // 运行 / 删除走既有的 run-command / delete-history-cmd 链路。
+    if root.history-open : Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+
+        backdrop := TouchArea {
+            clicked => {
+                root.history-open = false;
+            }
+        }
+
+        HistoryPanel {
+            x: Theme.sp-3;
+            y: max(Theme.sp-2, root.height - self.height - Theme.sp-3);
+            width: 360px;
+            height: min(400px, root.height - Theme.sp-4);
+            lang-en: root.lang-en;
+            open: root.history-open;
+            entries: root.history-view;
+            previews: root.history-preview;
+            run(cmd) => {
+                root.run-command(root.active-tab-id, cmd, false);
+                root.history-open = false;
+            }
+            remove(cmd) => { root.delete-history-cmd(cmd); }
+            search(q) => { root.search-history(q); }
+            closed() => { root.history-open = false; }
         }
     }
 }

@@ -182,6 +182,7 @@ export component TerminalView inherits Rectangle {
 
     callback send-key(string, bool, bool, bool);
     callback cycle-tab(bool /* reverse */);
+    callback toggle-history();      // ⌘⇧R / Ctrl+Shift+R：开/关历史命令浮层（由舞台渲染）
     callback terminal-resize(float, float);
     callback paste-from-clipboard();
     callback copy-terminal-text();
@@ -939,6 +940,13 @@ export component TerminalView inherits Rectangle {
                             && (event.text == "f" || event.text == "F"
                                 || event.text == "\u{0006}")) {
                         root.find-active = true;
+                        accept
+                    // ── Command history: ⌘⇧R / Ctrl+Shift+R (#140) ──
+                    // 历史命令浮层由舞台渲染（命令栏删除后它的新入口）。
+                    } else if (event.modifiers.control && event.modifiers.shift
+                            && (event.text == "r" || event.text == "R"
+                                || event.text == "\u{0012}")) {
+                        root.toggle-history();
                         accept
                     // ── Copy: ⌘C (macOS, no Shift) / Ctrl+Shift+C ──
                     } else if (event.modifiers.control

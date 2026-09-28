@@ -290,6 +290,9 @@ export component AppWindow inherits Window {
     // 与 `history-view` 逐项对齐的**显示用**单行预览：历史条目可能是多行（heredoc…），
     // 而列表行是固定 28px 高，直接渲染会溢出。回填 / ▶ / 复制仍用 history-view（上游 9725617）。
     in property <[string]> history-preview;
+    // 历史命令浮层（终端页重做③）：命令栏删除后历史的新入口 —— 状态栏「历史命令」
+    // 按钮或 ⌘⇧R 开合；浮层本身由终端舞台渲染，双向绑定把开关同步过去。
+    in-out property <bool> history-panel-open: false;
     callback run-command(string /* tab-id */, string /* cmd */, bool /* to-all */);
     callback copy-text(string);                 // copy a history command (#96)
     callback delete-history(int /* index */);   // remove a history entry (#96)
@@ -1323,6 +1326,8 @@ export component AppWindow inherits Window {
           history-view: root.history-view;
           history-preview: root.history-preview;
           quick-commands: root.quick-commands;
+          // 历史命令浮层：舞台渲染、状态栏 / 快捷键开合（双向）
+          history-open <=> root.history-panel-open;
           // 会话内共享状态 / 对话框状态：双向，舞台上会就地改
           sftp-prompt-open <=> root.sftp-prompt-open;
           sftp-prompt-kind <=> root.sftp-prompt-kind;
@@ -1636,6 +1641,11 @@ export component AppWindow inherits Window {
           transfers-active: root.has-active-transfers;
           lang-en: root.lang-en;
           sync-input: root.sync-input;
+          history-open: root.history-panel-open;
+          // 历史命令浮层：命令栏删除后历史的新入口（舞台渲染）
+          open-history() => {
+              root.history-panel-open = !root.history-panel-open;
+          }
           // 高亮：原来只翻 UI 属性、不落盘（重启就回去了）—— 改走真回调
           // `set-output-highlight(enabled, preset)`，Rust 侧写配置 + 重编译规则。
           toggle-highlight() => {

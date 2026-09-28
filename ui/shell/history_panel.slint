@@ -1,0 +1,246 @@
+// 历史命令浮层（终端页重做③）—— 底部命令栏按需求删除后，命令历史的入口挪到这里：
+// 状态栏「历史命令」按钮，或 ⌘⇧R / Ctrl+Shift+R（旧 #140 的快捷键）打开，
+// 浮在终端页面左下角，点击浮层以外关闭。
+//
+// 数据全部复用既有链路（零 Rust 改动）：
+//   * 列表 = 窗口级 `history-view`（Rust 侧过滤后的命令，oldest first）+
+//     逐项对齐的 `history-preview`（多行命令的单行预览，见 app_shell 的注释）；
+//     这里按 newest first 显示 —— 行索引走 `length - 1 - i`。
+//   * 搜索框 → `search-history(query)`：Rust 侧重新过滤并回填上面两个模型。
+//   * 行内动作：▶ 运行（发到当前活动标签）/ ⧉ 复制 / 🗑 删除该条历史。
+
+import { Theme } from "../theme.slint";
+
+component RowBtn inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> active: false;      // 父行悬停中 = 按钮亮起且可点
+    callback clicked();
+
+    width: 20px;
+    height: 20px;
+    border-radius: Theme.radius-sm;
+    background: (root.active && ta.has-hover) ? Theme.sur-2 : transparent;
+
+    Text {
+        text: root.glyph;
+        font-family: "Material Icons";
+        font-size: 13px;
+        color: Theme.fg-2;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        enabled: root.active;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component HistoryPanel inherits Rectangle {
+    in property <bool> lang-en: false;
+    in property <[string]> entries;         // history-view：oldest first
+    in property <[string]> previews;        // history-preview：与 entries 逐项对齐
+    in property <bool> open: false;
+    callback run(string /* cmd */);
+    callback remove(string /* cmd */);
+    callback search(string /* query */);
+    callback closed();
+
+    // 打开时把焦点交给搜索框（延到下一个事件循环 tick：与查找条同一处理，
+    // 在事件分发途中同步 focus 会重入 IME / AccessKit 的构建，#343）。
+    property <bool> focus-pending: false;
+    changed open => {
+        if (root.open) { root.focus-pending = true; }
+    }
+
+    focus-timer := Timer {
+        interval: 0ms;
+        running: root.focus-pending;
+        triggered => {
+            root.focus-pending = false;
+            input.focus();
+        }
+    }
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: Theme.radius-lg;
+        border-width: 1px;
+        border-color: Theme.line;
+        background: Theme.sur-1;
+        drop-shadow-blur: Theme.shadow-raised-blur;
+        drop-shadow-color: Theme.shadow-raised-color;
+
+        VerticalLayout {
+            padding: 10px;
+            spacing: 8px;
+
+            // ── 标题：历史命令 · N · 关闭 ─────────────────────────────
+            HorizontalLayout {
+                spacing: 6px;
+
+                Text {
+                    text: root.lang-en ? "Command history" : "历史命令";
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: Theme.fg-1;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "\{root.entries.length}";
+                    font-size: 10px;
+                    color: Theme.fg-3;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    width: 20px;
+                    height: 20px;
+                    border-radius: Theme.radius-sm;
+                    background: close-ta.has-hover ? Theme.sur-3 : transparent;
+
+                    Text {
+                        text: "\u{E5CD}"; // close
+                        font-family: "Material Icons";
+                        font-size: 13px;
+                        color: Theme.fg-2;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    close-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.closed();
+                        }
+                    }
+                }
+            }
+
+            // ── 搜索框（过滤走 Rust，保持与旧命令栏一致的语义）──────────
+            Rectangle {
+                height: 28px;
+                border-radius: Theme.radius-md;
+                border-width: 1px;
+                border-color: input.has-focus ? Theme.accent : Theme.line;
+                background: Theme.sur-2;
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 6px;
+
+                    Text {
+                        text: "\u{E8B6}"; // search
+                        font-family: "Material Icons";
+                        font-size: 13px;
+                        color: Theme.fg-3;
+                        vertical-alignment: center;
+                    }
+                    input := TextInput {
+                        input-method-hints: Theme.plain-input-hints;
+                        horizontal-stretch: 1;
+                        height: parent.height;
+                        color: Theme.fg-1;
+                        font-family: Theme.ui-font-family;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        single-line: true;
+                        edited => {
+                            root.search(self.text);
+                        }
+                        key-pressed(e) => {
+                            if (e.text == "\u{001b}") {       // Esc 关闭
+                                root.closed();
+                                accept
+                            } else if (e.text == "\u{000d}" || e.text == "\u{000a}") {
+                                // Enter：运行最新一条（列表是 newest first）
+                                if (root.entries.length > 0) {
+                                    root.run(root.entries[root.entries.length - 1]);
+                                }
+                                accept
+                            } else {
+                                reject
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 列表（newest first）────────────────────────────────────
+            Rectangle {
+                vertical-stretch: 1;
+                clip: true;
+
+                if root.entries.length == 0 : Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: root.lang-en ? "No history yet" : "还没有历史命令";
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                if root.entries.length > 0 : Flickable {
+                    width: parent.width;
+                    height: parent.height;
+
+                    VerticalLayout {
+                        spacing: 1px;
+                        alignment: start;
+
+                        for e[i] in root.entries : Rectangle {
+                            height: 26px;
+                            border-radius: Theme.radius-sm;
+                            background: row-ta.has-hover ? Theme.sur-3 : transparent;
+
+                            // 行 TouchArea 先声明（= 画在下层），行内按钮才点得到。
+                            row-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.run(root.entries[root.entries.length - 1 - i]);
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 4px;
+                                spacing: 4px;
+
+                                Text {
+                                    text: root.previews.length > (root.entries.length - 1 - i)
+                                        ? root.previews[root.entries.length - 1 - i]
+                                        : e;
+                                    font-family: Theme.term-font-family;
+                                    font-size: 11px;
+                                    color: Theme.fg-1;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                                RowBtn {
+                                    glyph: "\u{E037}"; // play_arrow
+                                    active: row-ta.has-hover;
+                                    clicked => {
+                                        root.run(root.entries[root.entries.length - 1 - i]);
+                                    }
+                                }
+                                RowBtn {
+                                    glyph: "\u{E872}"; // delete
+                                    active: row-ta.has-hover;
+                                    clicked => {
+                                        root.remove(root.entries[root.entries.length - 1 - i]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

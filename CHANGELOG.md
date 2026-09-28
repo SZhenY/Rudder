@@ -37,6 +37,10 @@ All notable changes are documented here. 本文件记录所有重要变更。
   浮层，见下一步），终端区内 24px 旧状态条与内嵌 SFTP 停靠区（面板 / 分割条 / 吸附
   浮层 / 窄条把手）一并删除 —— `TerminalView` 只剩纯画布（画面 / 输入 / 选区 / 查找
   / 鼠标上报），终端画面铺满整个区域；底部状态栏去掉随之失去意义的「执行」。
+- 终端页重做③：命令历史有了新入口 —— 状态栏「历史命令」按钮或 ⌘⇧R（Ctrl+Shift+R）
+  打开左下角浮层（`shell/history_panel.slint`）：搜索（走 Rust 过滤）、按最新在前列出、
+  ▶ 运行到当前会话、🗑 删除该条、点击浮层以外关闭；数据全用既有的
+  `history-view` / `history-preview` / `run-command` / `delete-history-cmd` 链路。
 
 ## [0.8.0] - 2026-09-26
 

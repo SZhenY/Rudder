@@ -68,8 +68,11 @@ export component StatusBar inherits Rectangle {
     in property <bool> lang-en: false;
     // 广播输入（sync-input；命令栏已随终端页重做删除，不再有显隐开关）
     in property <bool> sync-input: false;
+    // 历史命令浮层是否打开（浮层本身在终端舞台里渲染）
+    in property <bool> history-open: false;
     callback toggle-highlight();
     callback toggle-sync-input();
+    callback open-history();
     // 重连：仅断开态（conn-state == 2）可用 —— 复用"断开后按 Enter 重连"的实现。
     callback reconnect();
 
@@ -128,10 +131,15 @@ export component StatusBar inherits Rectangle {
                 root.reconnect();
             }
         }
+        // 历史命令：打开/收起历史浮层（终端页重做③；命令栏的原入口已删除）
         Pill {
             glyph: "\u{E88B}"; // history
             text: root.lang-en ? "History \{root.history-count}" : "历史命令 \{root.history-count}";
-            clicked => { }
+            togglable: true;
+            on: root.history-open;
+            clicked => {
+                root.open-history();
+            }
         }
 
         Rectangle {
