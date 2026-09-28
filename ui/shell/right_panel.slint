@@ -241,91 +241,109 @@ component IconBtn inherits Rectangle {
     }
 }
 
-// 资源卡片：标签 + 数值 +（可选）进度条 / 补充行。参考图右侧栏顶部那四张卡。
+// 资源卡片（参考图 `ex/终端-工具-综合.png` 的四张）：三行紧凑布局 ——
+//   ① 图标（主色）+ 标签（白）+ 数值（右对齐、主色大字）
+//   ② 进度条（主色）
+//   ③ 补充行（小灰字，没有就不画）
+// 高度随内容（不同 DPI / 字号下都不会挤）；宽度由调用方平分。
 component ResCard inherits Rectangle {
     in property <string> label;
     in property <string> value;
     in property <float> percent: 0;
-    in property <string> hint;          // 9px 补充行（内存详情 / 网络上传速率…）
+    in property <string> hint;          // 补充行（内存详情 / 磁盘总量…）
     in property <bool> show-bar: true;
-    // 左上角小图标（参考图每张卡都有：CPU / 内存 / 磁盘 / 网络各一枚）
-    in property <string> icon: "";
+    in property <string> icon: "";      // Material Icons 码位
+    // 卡片主色：图标 / 数值 / 进度条同色（参考图：CPU 青、内存 紫、磁盘 黄、网络 绿）
+    in property <color> tone: Theme.accent;
 
     horizontal-stretch: 1;
-    // 高度**随内容**（不写死）：不同字号 / DPI / 机型下写死高度都会挤（进度条被压到
-    // 补充行上）；同一行的两张卡由 HorizontalLayout 拉齐。宽度由实例化处显式平分
-    // （工具面板以后要能拖拽拉伸，卡片必须跟着等分）。
     border-radius: Theme.radius-md;
     background: Theme.sur-2;
+    clip: true;
 
     VerticalLayout {
-        padding-left: 8px;
-        padding-right: 8px;
-        padding-top: 6px;
-        padding-bottom: 6px;
-        spacing: 3px;
-        // ⚠ 这里**不要**写 alignment —— 它管的是交叉轴（水平）对齐，一写
-        // `center` 子元素就只占首选宽度并居中：进度条会缩成中间一小段
-        //（用户截图里 CPU / 内存 / 磁盘的条都变成了居中的小短条）。
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 6px;
+        // ⚠ 这里**不要**写 alignment —— 它管的是交叉轴（水平）对齐，一写 `center`
+        // 子元素就只占首选宽度并居中（进度条会缩成中间一小段）。
 
         HorizontalLayout {
-            spacing: 4px;
+            spacing: 6px;
 
             if root.icon != "" : Text {
                 text: root.icon;
                 font-family: "Material Icons";
-                font-size: 11px;
-                color: Theme.fg-3;
+                font-size: 14px;
+                color: root.tone;
                 vertical-alignment: center;
             }
             Text {
                 text: root.label;
-                font-size: 10px;
-                color: Theme.fg-3;
+                font-size: 12px;
+                color: Theme.fg-1;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
+                overflow: elide;
             }
             Text {
                 text: root.value;
-                font-size: 14px;
+                font-size: 18px;
                 font-weight: 700;
-                color: Theme.fg-1;
+                color: root.tone;
                 vertical-alignment: center;
             }
         }
 
         if root.show-bar : Rectangle {
-            height: 4px;
-            border-radius: 2px;
+            height: 3px;
+            border-radius: 1.5px;
             background: Theme.sur-3;
 
             // ⚠ `x: 0; y: 0;` **必须写**：Slint 里带显式 width 的子 Rectangle 不写 x
             // 时会水平居中（代码库里其它进度条 —— download_manager / proc_window ——
-            // 都显式写了）。少了这两个坐标，占比条就从中间往两边长：11% 的填充会
-            // 落在轨道正中（截图实测：轨道 x 20..206、紫色 x 104..123，左右各留
-            // 84 / 83 px）。
+            // 都显式写了）。少了这两个坐标，占比条就从中间往两边长。
             Rectangle {
                 x: 0;
                 y: 0;
                 width: parent.width * clamp(root.percent, 0.0, 1.0);
                 height: parent.height;
-                border-radius: 2px;
-                background: Theme.accent;
+                border-radius: 1.5px;
+                background: root.tone;
             }
         }
         if root.hint != "" : Text {
             text: root.hint;
-            font-size: 9px;
+            font-size: 10px;
             color: Theme.fg-3;
             overflow: elide;
         }
     }
 }
 
-// 分段小标题（工具面板：CPU 趋势 / 磁盘分区 / 网络端口 等）。
-component SectionTitle inherits Text {
-    font-size: 10px;
-    color: Theme.fg-3;
+// 分段小标题（工具面板：CPU 趋势 / 磁盘分区 / 网络端口 等）—— 参考图是"小图标 + 白色标题"。
+component SectionTitle inherits HorizontalLayout {
+    in property <string> text;
+    in property <string> icon: "";
+
+    spacing: 6px;
+
+    if root.icon != "" : Text {
+        text: root.icon;
+        font-family: "Material Icons";
+        font-size: 13px;
+        color: Theme.fg-3;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.text;
+        font-size: 12px;
+        color: Theme.fg-1;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
 }
 
 // 一行指标：名称 + 数值 + 细进度条（内存 / 交换 / 磁盘分区共用）。
@@ -621,6 +639,9 @@ export component RightPanel inherits Rectangle {
         // ── 资源卡片 2×2（真数据，1 Hz）─────────────────────────────────
         // C 步会在下面接 CPU 趋势 / 磁盘分区 / 网络端口，并把这里收进「综合」标签。
         HorizontalLayout {
+            // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
+            //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
+            vertical-stretch: 0;
             padding-left: 8px;
             padding-right: 8px;
             padding-top: 8px;
@@ -634,6 +655,7 @@ export component RightPanel inherits Rectangle {
 
                 label: "CPU";
                 icon: "\u{E30C}";   // computer
+                tone: Theme.accent;
                 value: "\{round(root.cpu-percent * 100)}%";
                 percent: root.cpu-percent;
             }
@@ -644,12 +666,16 @@ export component RightPanel inherits Rectangle {
 
                 label: root.lang-en ? "MEM" : "内存";
                 icon: "\u{E322}";   // memory
+                tone: Theme.success;
                 value: "\{round(root.mem-percent * 100)}%";
                 percent: root.mem-percent;
                 hint: root.mem-detail;
             }
         }
         HorizontalLayout {
+            // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
+            //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
+            vertical-stretch: 0;
             padding-left: 8px;
             padding-right: 8px;
             padding-top: 4px;
@@ -663,6 +689,7 @@ export component RightPanel inherits Rectangle {
 
                 label: root.lang-en ? "DISK" : "磁盘";
                 icon: "\u{E1DB}";   // storage
+                tone: Theme.warning;
                 value: root.disks.length > 0 ? "\{round(root.disks[0].percent * 100)}%" : "—";
                 percent: root.disks.length > 0 ? root.disks[0].percent : 0;
                 hint: root.disks.length > 0 ? root.disks[0].detail : "";
@@ -675,6 +702,7 @@ export component RightPanel inherits Rectangle {
 
                 label: root.lang-en ? "NET" : "网络";
                 icon: "\u{E1AF}";   // network_check
+                tone: Theme.ok;
                 value: root.net-down;
                 hint: "\{root.net-up}";
                 show-bar: false;
@@ -690,6 +718,8 @@ export component RightPanel inherits Rectangle {
         // 参考图的标签是 综合 / 处理器 / 显卡 / 内存 / 磁盘 / 网络；显卡项目没有采集，
         // 不做（见文件头）。每个标签 图标 + 文案、等分宽度（见 PanelTab）。
         HorizontalLayout {
+            // 标签条高度随内容、不参与拉伸（多出来的高度只给下面的内容区）
+            vertical-stretch: 0;
             height: 32px;
             padding-left: 6px;
             padding-right: 6px;
@@ -785,9 +815,16 @@ export component RightPanel inherits Rectangle {
                             spacing: 4px;
 
                             Text {
-                                text: root.lang-en ? "CPU load trend" : "CPU 负载趋势";
-                                font-size: 10px;
+                                text: "\u{E30C}";   // computer
+                                font-family: "Material Icons";
+                                font-size: 13px;
                                 color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: root.lang-en ? "CPU load trend" : "CPU 负载趋势";
+                                font-size: 12px;
+                                color: Theme.fg-1;
                                 vertical-alignment: center;
                                 horizontal-stretch: 1;
                             }
@@ -819,10 +856,22 @@ export component RightPanel inherits Rectangle {
                         padding: 8px;
                         spacing: 6px;
 
-                        Text {
-                            text: root.lang-en ? "Disk partitions" : "磁盘分区";
-                            font-size: 10px;
-                            color: Theme.fg-3;
+                        HorizontalLayout {
+                            spacing: 6px;
+
+                            Text {
+                                text: "\u{E1DB}";   // storage
+                                font-family: "Material Icons";
+                                font-size: 13px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: root.lang-en ? "Disk partitions" : "磁盘分区";
+                                font-size: 12px;
+                                color: Theme.fg-1;
+                                vertical-alignment: center;
+                            }
                         }
                         if root.disks.length == 0 : EmptyHint { lang-en: root.lang-en; }
                         for d in root.disks : MetricRow {
@@ -841,10 +890,22 @@ export component RightPanel inherits Rectangle {
                         padding: 8px;
                         spacing: 6px;
 
-                        Text {
-                            text: root.lang-en ? "Network interfaces" : "网络端口";
-                            font-size: 10px;
-                            color: Theme.fg-3;
+                        HorizontalLayout {
+                            spacing: 6px;
+
+                            Text {
+                                text: "\u{E1AF}";   // network_check
+                                font-family: "Material Icons";
+                                font-size: 13px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: root.lang-en ? "Network interfaces" : "网络端口";
+                                font-size: 12px;
+                                color: Theme.fg-1;
+                                vertical-alignment: center;
+                            }
                         }
                         if root.net-rows.length == 0 : EmptyHint { lang-en: root.lang-en; }
                         for n in root.net-rows : NetIfaceRow {
