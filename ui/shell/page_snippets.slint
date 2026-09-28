@@ -80,6 +80,8 @@ export component PageSnippets inherits Rectangle {
                 // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）默认按父级
                 // 100% 高布局，内容会被"摊开"到整个视口（卡片被拉伸）。
                 height: self.preferred-height;
+                x: 0;
+                y: 0;
                 padding: Theme.sp-2;
                 spacing: Theme.sp-1;
                 alignment: start;

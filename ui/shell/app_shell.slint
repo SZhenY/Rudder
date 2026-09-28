@@ -1312,6 +1312,7 @@ export component AppWindow inherits Window {
       if root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open : RightPanel {
           // 与 `panel-w` 同一条件：舞台已让出这块宽度，面板只负责画。
           x: root.width - root.panel-w;
+          sys-overview: root.sys-overview-rows;
           y: root.shell-top;
           width: root.panel-w;
           height: root.height - root.shell-top - 28px;

@@ -18,7 +18,7 @@ import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
 import { DiskInfo } from "../resource_types.slint";
 // Sparkline（旧组件，widgets.slint）本文件已不再使用 —— 趋势改用同文件里的 LineChart。
-import { SysNetRow } from "../system_info_window.slint";
+import { SysInfoRow, SysNetRow } from "../system_info_window.slint";
 // 条目类型住在 `ui/sftp_types.slint`（第④步从 `sftp_panel.slint` 搬出），新外壳不依赖
 // 那个等着删除的旧面板组件文件。
 import { SftpCrumb, SftpEntry, TunnelInfo } from "../sftp_types.slint";
@@ -137,7 +137,8 @@ component LineChart inherits Rectangle {
         fit: fill;
         stroke: root.line-color;
         stroke-width: 1.5px;
-        fill: transparent;
+        // 参考图是"线 + 浅色面积"：末尾收口到基线后再闭合成多边形。
+        fill: root.line-color.with-alpha(0.16);
 
         // 两个**看不见的锚点**把包围盒钉死在 0..100 × 0..100：Path 会把整条路径
         // 缩放着填进自己的宽高边界，没有锚点时"0 值附近"的曲线会被放大成山峰。
@@ -177,6 +178,10 @@ component LineChart inherits Rectangle {
         LineTo { x: 93.5484; y: root.vy(root.values[root.idx(29)]); }
         LineTo { x: 96.7742; y: root.vy(root.values[root.idx(30)]); }
         LineTo { x: 100; y: root.vy(root.values[root.idx(31)]); }
+        // 收口到基线（让 fill 成为面积图）
+        LineTo { x: 100.0; y: 100.0; }
+        LineTo { x: 0.0; y: 100.0; }
+        // 第二个隐形锚点：把包围盒的右下角钉住
         MoveTo { x: 99.99; y: 100.0; }
         LineTo { x: 100.0; y: 100.0; }
     }
@@ -485,6 +490,8 @@ component StatChip inherits Rectangle {
 
 export component RightPanel inherits Rectangle {
     in property <bool> lang-en: false;
+    // 服务器概览（综合页头卡用；Rust 的 refresh_sidebar 每秒刷新）
+    in property <[SysInfoRow]> sys-overview;
     in property <[TransferInfo]> transfers;
     in property <bool> transfers-active: false;
     in property <bool> sftp-follow-cd;
@@ -558,7 +565,9 @@ export component RightPanel inherits Rectangle {
     // 240px 那版 7 个标签挤在一起、指标卡里的详情文字也被压到换行（用户截图），
     // 参考图的面板本身就很宽 —— 加宽到 340px（app_shell 的 panel-w 同步）。
     width: root.collapsed ? 22px : 340px;
-    background: Theme.sur-1;
+    // 与终端区同底色（参考图里工具面板和终端是同一张"纸"，没有生硬的分隔线；
+    // 卡片靠 sur-2 自己浮出来）
+    background: Theme.bg-root;
     clip: true;
 
     // ── 收起态：一条窄条 + 一个展开按钮（图标与标签条的「工具」同一个）──────
@@ -799,8 +808,66 @@ export component RightPanel inherits Rectangle {
                 // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
                 // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
                 height: self.preferred-height;
+                x: 0;
+                y: 0;
                 padding: 10px;
                 spacing: 6px;
+
+                // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
+                if root.sys-overview.length >= 4 : Rectangle {
+                    border-radius: Theme.radius-md;
+                    background: Theme.sur-2;
+
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+
+                        HorizontalLayout {
+                            spacing: 8px;
+
+                            Text {
+                                text: "\u{EB8E}";   // terminal
+                                font-family: "Material Icons";
+                                font-size: 14px;
+                                color: Theme.accent;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: root.sys-overview[2].c2;   // 主机名称
+                                font-size: 13px;
+                                font-weight: 600;
+                                color: Theme.fg-1;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            Rectangle {
+                                border-radius: 4px;
+                                border-width: 1px;
+                                border-color: Theme.line;
+                                background: Theme.sur-3;
+
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 6px;
+
+                                    Text {
+                                        text: root.sys-overview[3].c2;   // IP
+                                        font-size: 10px;
+                                        color: Theme.fg-2;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                        Text {
+                            text: "\{root.sys-overview[0].c1}：\{root.sys-overview[0].c2}";
+                            font-size: 10px;
+                            color: Theme.fg-3;
+                            overflow: elide;
+                        }
+                    }
+                }
 
                 // 参考图：综合页的每个区块都是一张卡（标题 + 内容），不再是裸标题。
                 Rectangle {
@@ -927,6 +994,8 @@ export component RightPanel inherits Rectangle {
                 // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
                 // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
                 height: self.preferred-height;
+                x: 0;
+                y: 0;
                 padding: 10px;
                 spacing: 6px;
 
@@ -953,6 +1022,8 @@ export component RightPanel inherits Rectangle {
                 // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
                 // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
                 height: self.preferred-height;
+                x: 0;
+                y: 0;
                 padding: 10px;
                 spacing: 6px;
 
@@ -980,6 +1051,8 @@ export component RightPanel inherits Rectangle {
                 // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
                 // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
                 height: self.preferred-height;
+                x: 0;
+                y: 0;
                 padding: 10px;
                 spacing: 6px;
 
@@ -1002,6 +1075,8 @@ export component RightPanel inherits Rectangle {
                 // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
                 // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
                 height: self.preferred-height;
+                x: 0;
+                y: 0;
                 padding: 10px;
                 spacing: 6px;
 
@@ -1467,6 +1542,8 @@ export component RightPanel inherits Rectangle {
                         // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）默认按父级
                         // 100% 高布局，内容会被"摊开"到整个视口（卡片被拉伸）。
                         height: self.preferred-height;
+                        x: 0;
+                        y: 0;
                         spacing: 1px;
                         alignment: start;
 
