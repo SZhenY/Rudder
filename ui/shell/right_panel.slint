@@ -17,7 +17,7 @@
 import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
 import { DiskInfo } from "../resource_types.slint";
-// Sparkline（旧组件）本文件已不再使用 —— 趋势改用同文件里的 TrendBars。
+// Sparkline（旧组件，widgets.slint）本文件已不再使用 —— 趋势改用同文件里的 LineChart。
 import { SysNetRow } from "../system_info_window.slint";
 // 条目类型住在 `ui/sftp_types.slint`（第④步从 `sftp_panel.slint` 搬出），新外壳不依赖
 // 那个等着删除的旧面板组件文件。
@@ -66,30 +66,95 @@ component PanelTab inherits Rectangle {
     }
 }
 
-// 趋势柱（新设计版 Sparkline）：画在卡片里，自带 0 值基线 —— 数据全 0 时也不会
-// 看起来像"卡片坏了"（旧 Sparkline 用的是半透明磨砂底 + 无基线，全 0 就一片空）。
-component TrendBars inherits Rectangle {
+// 折线趋势（参考图里的曲线）：**一条 Path 画完整条线**，比"每个采样点一根柱子"
+// 便宜得多（一个绘制项 vs 几十个），也符合参考图的观感 —— 线 + 浅色面积填充 +
+// 0 值基线。
+//
+// ⚠ 两个关键点：
+// 1) `width` / `height` 显式置 0：Path 在宽高非 0 时会把整条路径**缩放**到该边界里
+//    （"the entire shape is fit into these bounds"），0 值附近的曲线就会被放大成
+//    一堆山峰 —— 置 0 后用像素坐标原样绘制。
+// 2) 坐标全部按像素算：x = i / (n-1) × 本组件宽度，y = chart-h × (1 - v)。
+component LineChart inherits Rectangle {
     in property <[float]> values;
     in property <length> chart-h: 44px;
+    in property <color> line-color: Theme.accent;
+    // 展开写死的采样点数（见下面 Path 里的说明）
+    property <int> npts: 32;
+    // 第 k 个绘图点取哪个样本（数据长度可变 → 均匀取样）
+    pure function idx(k: int) -> int {
+        return min(root.values.length - 1,
+                   max(0, round(k * max(1, root.values.length - 1) * 1.0 / (root.npts - 1))));
+    }
+    pure function vx(k: int) -> float {
+        return k * 100.0 / (root.npts - 1);
+    }
+    pure function vy(v: float) -> float {
+        return 100.0 * (1.0 - clamp(v, 0.0, 1.0));
+    }
 
-    height: root.chart-h + 4px;
+    height: root.chart-h + 1px;
     background: transparent;
 
     // 0 值基线
     Rectangle {
-        y: root.chart-h + 1px;
+        y: root.chart-h;
         width: parent.width;
         height: 1px;
         background: Theme.line;
     }
 
-    for v[i] in root.values : Rectangle {
-        x: i * (parent.width / max(1, root.values.length));
-        y: root.chart-h - (root.chart-h * clamp(v, 0.0, 1.0));
-        width: max(1px, (parent.width / max(1, root.values.length)) - 1px);
-        height: root.chart-h * clamp(v, 0.0, 1.0);
-        background: Theme.accent.with-alpha(0.85);
-        border-radius: 1px;
+    // ⚠ Path **不支持** `for`（Slint #754："Path elements are not supported with
+    // `for`-`in` syntax, yet"），所以下面 32 个采样点是**展开写死**的（脚本生成，
+    // 别手改）：第 k 个点取 `idx(k)` 处的数据 —— 数据长度可变，这里均匀取样，
+    // 于是同一个组件能吃任意长度的历史序列。
+    if root.values.length > 0 : Path {
+        width: parent.width;
+        height: root.chart-h;
+        stroke: root.line-color;
+        stroke-width: 1.5px;
+        fill: transparent;
+
+        // 两个**看不见的锚点**把包围盒钉死在 0..100 × 0..100：Path 会把整条路径
+        // 缩放着填进自己的宽高边界，没有锚点时"0 值附近"的曲线会被放大成山峰。
+        // 锚点只有 0.01 单位长（不到一个像素），画不出来。
+        MoveTo { x: 0.0; y: 0.0; }
+        LineTo { x: 0.01; y: 0.0; }
+        MoveTo { x: root.vx(0); y: root.vy(root.values[root.idx(0)]); }
+        LineTo { x: 0; y: root.vy(root.values[root.idx(0)]); }
+        LineTo { x: 3.2258; y: root.vy(root.values[root.idx(1)]); }
+        LineTo { x: 6.4516; y: root.vy(root.values[root.idx(2)]); }
+        LineTo { x: 9.6774; y: root.vy(root.values[root.idx(3)]); }
+        LineTo { x: 12.9032; y: root.vy(root.values[root.idx(4)]); }
+        LineTo { x: 16.129; y: root.vy(root.values[root.idx(5)]); }
+        LineTo { x: 19.3548; y: root.vy(root.values[root.idx(6)]); }
+        LineTo { x: 22.5806; y: root.vy(root.values[root.idx(7)]); }
+        LineTo { x: 25.8065; y: root.vy(root.values[root.idx(8)]); }
+        LineTo { x: 29.0323; y: root.vy(root.values[root.idx(9)]); }
+        LineTo { x: 32.2581; y: root.vy(root.values[root.idx(10)]); }
+        LineTo { x: 35.4839; y: root.vy(root.values[root.idx(11)]); }
+        LineTo { x: 38.7097; y: root.vy(root.values[root.idx(12)]); }
+        LineTo { x: 41.9355; y: root.vy(root.values[root.idx(13)]); }
+        LineTo { x: 45.1613; y: root.vy(root.values[root.idx(14)]); }
+        LineTo { x: 48.3871; y: root.vy(root.values[root.idx(15)]); }
+        LineTo { x: 51.6129; y: root.vy(root.values[root.idx(16)]); }
+        LineTo { x: 54.8387; y: root.vy(root.values[root.idx(17)]); }
+        LineTo { x: 58.0645; y: root.vy(root.values[root.idx(18)]); }
+        LineTo { x: 61.2903; y: root.vy(root.values[root.idx(19)]); }
+        LineTo { x: 64.5161; y: root.vy(root.values[root.idx(20)]); }
+        LineTo { x: 67.7419; y: root.vy(root.values[root.idx(21)]); }
+        LineTo { x: 70.9677; y: root.vy(root.values[root.idx(22)]); }
+        LineTo { x: 74.1935; y: root.vy(root.values[root.idx(23)]); }
+        LineTo { x: 77.4194; y: root.vy(root.values[root.idx(24)]); }
+        LineTo { x: 80.6452; y: root.vy(root.values[root.idx(25)]); }
+        LineTo { x: 83.871; y: root.vy(root.values[root.idx(26)]); }
+        LineTo { x: 87.0968; y: root.vy(root.values[root.idx(27)]); }
+        LineTo { x: 90.3226; y: root.vy(root.values[root.idx(28)]); }
+        LineTo { x: 93.5484; y: root.vy(root.values[root.idx(29)]); }
+        LineTo { x: 96.7742; y: root.vy(root.values[root.idx(30)]); }
+        LineTo { x: 100; y: root.vy(root.values[root.idx(31)]); }
+        MoveTo { x: 99.99; y: 100.0; }
+        LineTo { x: 100.0; y: 100.0; }
     }
 }
 
@@ -174,7 +239,9 @@ component ResCard inherits Rectangle {
         padding-top: 6px;
         padding-bottom: 6px;
         spacing: 3px;
-        alignment: center;
+        // ⚠ 这里**不要**写 alignment —— 它管的是交叉轴（水平）对齐，一写
+        // `center` 子元素就只占首选宽度并居中：进度条会缩成中间一小段
+        //（用户截图里 CPU / 内存 / 磁盘的条都变成了居中的小短条）。
 
         HorizontalLayout {
             spacing: 4px;
@@ -195,22 +262,22 @@ component ResCard inherits Rectangle {
             }
             Text {
                 text: root.value;
-                font-size: 11px;
-                font-weight: 600;
+                font-size: 14px;
+                font-weight: 700;
                 color: Theme.fg-1;
                 vertical-alignment: center;
             }
         }
 
         if root.show-bar : Rectangle {
-            height: 3px;
-            border-radius: 1.5px;
+            height: 4px;
+            border-radius: 2px;
             background: Theme.sur-3;
 
             Rectangle {
-                width: parent.width * root.percent;
-                height: 3px;
-                border-radius: 1.5px;
+                width: parent.width * clamp(root.percent, 0.0, 1.0);
+                height: 4px;
+                border-radius: 2px;
                 background: Theme.accent;
             }
         }
@@ -239,7 +306,7 @@ component MetricRow inherits Rectangle {
 
     VerticalLayout {
         spacing: 3px;
-        alignment: center;
+        // （同上：不写 alignment，进度条才铺满整行）
 
         HorizontalLayout {
             spacing: 4px;
@@ -260,14 +327,14 @@ component MetricRow inherits Rectangle {
             }
         }
         Rectangle {
-            height: 3px;
-            border-radius: 1.5px;
+            height: 4px;
+            border-radius: 2px;
             background: Theme.sur-3;
 
             Rectangle {
-                width: parent.width * root.percent;
-                height: 3px;
-                border-radius: 1.5px;
+                width: parent.width * clamp(root.percent, 0.0, 1.0);
+                height: 4px;
+                border-radius: 2px;
                 background: Theme.accent;
             }
         }
@@ -280,7 +347,7 @@ component NetIfaceRow inherits Rectangle {
     in property <string> down;
     in property <string> up;
 
-    height: 22px;
+    height: 24px;
 
     HorizontalLayout {
         spacing: 4px;
@@ -293,30 +360,31 @@ component NetIfaceRow inherits Rectangle {
             horizontal-stretch: 1;
             overflow: elide;
         }
+        // 参考图：下行绿色、上行红色（箭头与数值同色）
         Text {
             text: "\u{E5DB}";   // arrow_downward
             font-family: "Material Icons";
             font-size: 10px;
-            color: Theme.fg-3;
+            color: Theme.ok;
             vertical-alignment: center;
         }
         Text {
             text: root.down;
             font-size: 9px;
-            color: Theme.fg-3;
+            color: Theme.ok;
             vertical-alignment: center;
         }
         Text {
             text: "\u{E5D8}";   // arrow_upward
             font-family: "Material Icons";
             font-size: 10px;
-            color: Theme.fg-3;
+            color: Theme.danger;
             vertical-alignment: center;
         }
         Text {
             text: root.up;
             font-size: 9px;
-            color: Theme.fg-3;
+            color: Theme.danger;
             vertical-alignment: center;
         }
     }
@@ -677,7 +745,7 @@ export component RightPanel inherits Rectangle {
                                 vertical-alignment: center;
                             }
                         }
-                        TrendBars { values: root.cpu-history; }
+                        LineChart { values: root.cpu-history; }
                     }
                 }
 
@@ -742,7 +810,7 @@ export component RightPanel inherits Rectangle {
                 }
                 SectionTitle { text: root.lang-en ? "CPU load trend" : "CPU 负载趋势"; }
                 if root.cpu-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                if root.cpu-history.length > 0 : TrendBars {
+                if root.cpu-history.length > 0 : LineChart {
                     values: root.cpu-history;
                     chart-h: 88px;
                 }
@@ -808,14 +876,14 @@ export component RightPanel inherits Rectangle {
 
                 SectionTitle { text: root.lang-en ? "Session NIC" : "会话网卡"; }
                 if root.net-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                if root.net-history.length > 0 : TrendBars {
+                if root.net-history.length > 0 : LineChart {
                     values: root.net-history;
                     chart-h: 40px;
                 }
 
                 SectionTitle { text: root.lang-en ? "Local NIC" : "本机网卡"; }
                 if root.net-history-bot.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                if root.net-history-bot.length > 0 : TrendBars {
+                if root.net-history-bot.length > 0 : LineChart {
                     values: root.net-history-bot;
                     chart-h: 40px;
                 }
