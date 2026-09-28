@@ -12,14 +12,14 @@ export component PageHosts inherits Rectangle {
     callback new-session();
     callback connect-session(string /* id */);
 
-    background: Theme.bg-root;
+    background: Theme.sur-0;
 
     HorizontalLayout {
         // ── 第二列：分组导航 ────────────────────────────────────────────
         // 用窗口底色（比侧栏的 sur-1 更深一层），与左侧栏拉开层次
         Rectangle {
             width: 190px;
-            background: Theme.bg-root;
+            background: Theme.sur-0;
 
             VerticalLayout {
                 padding: Theme.sp-3;
