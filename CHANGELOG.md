@@ -44,6 +44,13 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - 终端页重做⑤：无会话空态按参考图补齐 —— 标题行右上角两枚能力徽标（本地与远程支持 /
   多标签与分屏，窄窗自动收起）、「最近连接」标题用 schedule 图标 + 条数、列表行改成
   图标方块 + 名称/主机 + 上次使用时间 + 箭头的 42px 行（悬停高亮）。
+- 终端页重做④（死件清理，-1754 行）：删掉已无实例化点的旧组件 —— 旧标签条
+  （`tabs.slint` 的 `TabBar` / `SingleTab` / `TabMenuItem`，文件只剩 `TabInfo` 类型）、
+  旧右键菜单行与快捷命令停靠侧栏（`terminal_parts.slint` 的 `MenuItem` /
+  `QuickDockPanel`，只剩 `QuickCmd`）、旧内嵌 SFTP 面板 `sftp_panel.slint`（1086 行）
+  与其部件文件 `sftp_parts.slint`；20 个文件里的遗留导入一并清理。设置页那条只管
+  命令栏显隐、随命令栏一起空转的「显示命令栏」开关也移除（Rust 侧配置链路保留，
+  命令栏以新设计回归时再接）。
 
 ## [0.8.0] - 2026-09-26
 

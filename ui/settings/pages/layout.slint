@@ -66,30 +66,6 @@ export component LayoutPage inherits VerticalLayout {
         }
             
     }
-    SettingsSection {
-        section-id: "layout.cmd-bar";
-        lang-en: root.lang-en;
-        title-zh: "命令栏";
-        title-en: "COMMAND BAR";
-        title-height: 24px;
-        // 终端底部那条输入条（快捷命令 + 命令历史）。此前**只有**右上角工具栏那个代码
-        // 图标能切换它，设置里没有入口 —— 用户把它关掉后就再也找不回来了。
-        //
-        // 开关**默认打开**（= 出厂默认命令栏可见）。整条链路都是正向语义
-        // `show-cmd-bar`，只有 config 字段仍是反向的 hide_cmd_bar —— 翻转集中在
-        // Rust 侧三处（播种 / 持久化回调 / 还原），UI 侧不出现取反。
-        SettingSwitch {
-            label: root.lang-en ? "Show the command bar" : "显示命令栏";
-            desc: root.lang-en
-                ? "The strip under the terminal: quick commands and command history. The same switch as the code icon in the top-right toolbar."
-                : "终端下方的输入条：快捷命令与命令历史。与右上角工具栏的代码图标是同一个开关（两边状态同步）。";
-            show-divider: false;
-            checked <=> root.show-cmd-bar;
-            toggled(v) => { root.set-show-cmd-bar(v); }
-        }
-
-        // 还原本页默认（本页最后一个设置项之后）
-    }
     ResetBar {
         page-id: "layout";
         reset-page(p) => { root.reset-page(p); }

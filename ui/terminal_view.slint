@@ -17,11 +17,9 @@ import "fonts/JetBrainsMono-Regular.ttf";
 import "fonts/JetBrainsMono-Bold.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
-import { QuickCmd, QuickDockPanel } from "terminal_parts.slint";
+import { QuickCmd } from "terminal_parts.slint";
 // QuickCmd 从这里搬走了，但对外仍是本文件的导出（外部导入点不变）。
 export { QuickCmd }
-// QuickDockPanel 从这里搬走了，但对外仍是本文件的导出（外部导入点不变）。
-export { QuickDockPanel }
 
 // Large CJK fonts are runtime-loaded from the fonts dir (src/fonts.rs), not
 // embedded — the cell-probe falls back to a system font for unregistered
