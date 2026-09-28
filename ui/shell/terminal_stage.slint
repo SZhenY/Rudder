@@ -17,6 +17,10 @@
 // 没搬进来的旧外壳遗留：快捷命令侧栏的拖拽停靠（`quick-dock-drag-move` / `-end`）——
 // 快捷侧栏 2026-09 已按需求移除、`quick-panel-docked` 恒为 false，那两条回调在舞台上
 // 直接不接（Slint 回调允许不绑定），顺带不再牵扯 dock-area / welcome-sidebar 那套旧几何。
+//
+// 终端页重做①（2026-09-28）：TerminalView 内部的旧外壳（底部命令栏 / 24px 状态条 /
+// 内嵌 SFTP 停靠区）整体删除，舞台不再向它转发那批属性与回调 —— 现在每个 TerminalView
+// 就是一块纯画布（画面 / 输入 / 选区 / 查找），页面的会话条、工具面板、状态栏都在舞台上。
 
 import { Theme } from "../theme.slint";
 import { AnimationSettings } from "../theme.slint";
@@ -39,22 +43,18 @@ export component TerminalStage inherits Rectangle {
     // 终端画面之后才不会被画面盖住）
     property <bool> quick-open: false;
 
-    // --- 终端外观 / 命令栏 / 会话态（AppWindow 的设置项）-------------------
+    // --- 终端外观 / 会话态（AppWindow 的设置项）---------------------------
     in property <int> terminal-focus-sequence: 0;
     in property <string> term-cursor-style: "block";
     in property <color> term-cursor-color;
-    in property <bool> show-cmd-bar: true;
     in property <bool> terminal-restore-cover: false;
+    // 命令历史：底部命令栏删除后，只由「历史命令」浮层消费（见本文件尾部）。
     in property <[string]> command-history;
     in property <[string]> history-view;
     in property <[string]> history-preview;
     in property <[QuickCmd]> quick-commands;
-    in property <string> quick-external-command;
-    in property <bool> quick-external-send-enter: false;
-    in property <int> quick-external-sequence;
 
     // --- 会话内共享状态 / 对话框状态（舞台上就地改，所以双向）-------------
-    in-out property <string> sftp-dock: "bottom";
     in-out property <bool> sftp-prompt-open: false;
     in-out property <string> sftp-prompt-kind;    // "rename"|"chmod"|"mkdir"|"touch"
     in-out property <string> sftp-prompt-tab;
@@ -210,7 +210,6 @@ export component TerminalStage inherits Rectangle {
                     width: term.id == pane.active-id ? parent.width : 0px;
                     height: term.id == pane.active-id ? parent.height : 0px;
                     tab-id: term.id;
-                    status-line: term.status;
                     spans: term.spans;
                     cursor-row: term.cursor-row;
                     cursor-col: term.cursor-col;
@@ -226,123 +225,9 @@ export component TerminalStage inherits Rectangle {
                     }
                     find-matches: term.find-matches;
                     selection: term.selection;
-                    sftp-panel-height: term.sftp-panel-height;
-                    set-sftp-panel-height(v) => { root.set-pane-sftp-height(term.id, v); }
-                    sftp-panel-width: term.sftp-panel-width;
-                    set-sftp-panel-width(v) => { root.set-pane-sftp-width(term.id, v); }
-                    sftp-dock <=> root.sftp-dock;
-                    sftp-available: false; // 旧 SFTP 侧栏移除（新设计：文件走右侧面板）
-                    sftp-collapsed: term.sftp-collapsed;
-                    set-sftp-collapsed(v) => { root.set-pane-sftp-collapsed(term.id, v); }
-                    sftp-path: term.sftp-path;
-                    sftp-entries: term.sftp-entries;
-                    sftp-status: term.sftp-status;
-                    sftp-loading: term.sftp-loading;
-                    sftp-tree-nodes: term.sftp-tree-nodes;
-                    sftp-transfer-targets: root.tabs;
-                    sftp-selected-count: term.sftp-selected-count;
-                    sftp-sort-key: term.sftp-sort-key;
-                    sftp-sort-dir: term.sftp-sort-dir;
-                    tunnels: term.tunnels;
-                    quick-commands: root.quick-commands;
-                    // 快捷命令侧栏已按需求移除（2026-09）：配置里的旧值不再生效。
-                    quick-sidebar-enabled: false;
-                    // Quick 入口按钮只在「快捷命令未停靠为侧栏」时显示。
-                    // 此前误绑 quick-panel-open：布局还原把 as-sidebar 关掉之后，
-                    // 侧栏消失而入口按钮仍被隐藏，快捷命令就彻底无法访问了。
-                    quick-panel-docked: false;
-                    cmd-bar-hidden: !root.show-cmd-bar;
-                    // Per-session zoom override wins over the global size.
-                    term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : Theme.term-font-size / 1px;
-                    quick-external-command: root.quick-external-command;
-                    quick-external-send-enter: root.quick-external-send-enter;
-                    quick-external-sequence: root.quick-external-sequence;
-                    command-history: root.command-history;
-                    history-view: root.history-view;
-                    history-preview: root.history-preview;
-                    run-command(cmd, all) => { root.run-command(term.id, cmd, all); }
-                    copy-text(t) => { root.copy-text(t); }
-                    delete-history(i) => { root.delete-history(i); }
-                    delete-history-cmd(c) => { root.delete-history-cmd(c); }
-                    search-history(q) => { root.search-history(q); }
-                    manage-quick-commands() => {
-                        root.qcm-name = "";
-                        root.qcm-command = "";
-                        root.qcm-group = "";
-                        root.qcm-edit-index = -1;
-                        root.quick-cmd-manage-open = true;
-                    }
-                    toggle-quick-group(g) => { root.toggle-quick-group(g); }
-                    edit-quick-command(i) => { root.edit-quick-command(i); }
-                    duplicate-quick-command(i) => { root.duplicate-quick-command(i); }
-                    delete-quick-command(i) => { root.delete-quick-command(i); }
-                    move-quick-command(i, g) => { root.move-quick-command(i, g); }
-                    new-quick-group() => { root.qcg-orig = ""; root.qcg-name = ""; root.qcg-open = true; }
-                    rename-quick-group(g) => { root.qcg-orig = g; root.qcg-name = g; root.qcg-open = true; }
-                    delete-quick-group(g) => { root.delete-quick-group(g); }
                     send-key(key, ctrl, alt, shift) => { root.send-key(term.id, key, ctrl, alt, shift) }
                     cycle-tab(reverse) => { root.cycle-tab(reverse); }
                     terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
-                    sftp-navigate(path) => { root.sftp-navigate(term.id, path); }
-                    sftp-download(path) => { root.sftp-download(term.id, path); }
-                    sftp-upload-clicked(dir, folder) => { root.sftp-upload-clicked(term.id, dir, folder); }
-                    sftp-refresh(path) => { root.sftp-refresh(term.id, path); }
-                    sftp-tree-expand(path) => { root.sftp-tree-expand(term.id, path); }
-                    sftp-toggle-select(i) => { root.sftp-toggle-select(term.id, i); }
-                    sftp-download-selected() => { root.sftp-download-selected(term.id); }
-                    sftp-copy-to-target(path, target) => { root.sftp-copy-to-target(term.id, path, target); }
-                    sftp-copy-selected-to-target(target) => { root.sftp-copy-selected-to-target(term.id, target); }
-                    // Confirm before deleting the checked entries (#100), reusing
-                    // the delete-confirm dialog in batch mode.
-                    sftp-delete-selected() => {
-                        root.confirm-delete-tab = term.id;
-                        root.confirm-delete-batch = true;
-                        root.confirm-delete-path = root.lang-en ? "the selected items" : "选中的项目";
-                        root.confirm-delete-open = true;
-                    }
-                    // Gate delete behind an in-app confirmation (#28): stash the
-                    // target and open the modal; the real delete fires on confirm.
-                    sftp-delete(path) => {
-                        root.confirm-delete-tab = term.id;
-                        root.confirm-delete-path = path;
-                        root.confirm-delete-open = true;
-                    }
-                    sftp-view(path) => { root.sftp-view(term.id, path); }
-                    sftp-edit(path) => { root.sftp-edit(term.id, path); }
-                    sftp-open-external(path) => { root.sftp-open-external(term.id, path); }
-                    sftp-edit-external(path) => { root.sftp-edit-external(term.id, path); }
-                    sftp-sort-request(key) => { root.sftp-sort-request(term.id, key); }
-                    sftp-clear-sort() => { root.sftp-clear-sort(term.id); }
-                    tunnel-add(name, kind, bind, bind-port, host, host-port) => {
-                        root.tunnel-add(term.id, name, kind, bind, bind-port, host, host-port);
-                    }
-                    tunnel-stop(id) => { root.tunnel-stop(term.id, id); }
-                    // #69 context-menu extensions → shared prompt dialog.
-                    sftp-rename-request(path, name) => {
-                        root.sftp-prompt-kind = "rename";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = path;
-                        root.sftp-prompt-value = name;
-                        root.sftp-prompt-open = true;
-                    }
-                    sftp-chmod-request(path, name, mode) => {
-                        root.sftp-chmod-open(term.id, path, name, mode);
-                    }
-                    sftp-copy-path(path) => { root.sftp-copy-path(path); }
-                    sftp-new-folder(dir) => {
-                        root.sftp-prompt-kind = "mkdir";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = dir;
-                        root.sftp-prompt-value = "";
-                        root.sftp-prompt-open = true;
-                    }
-                    sftp-new-file(dir) => {
-                        root.sftp-prompt-kind = "touch";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = dir;
-                        root.sftp-prompt-value = "";
-                        root.sftp-prompt-open = true;
-                    }
                     paste-from-clipboard() => { root.paste-from-clipboard(term.id); }
                     copy-terminal-text() => { root.copy-terminal-text(term.id); }
                     clear-terminal() => { root.clear-terminal(term.id); }

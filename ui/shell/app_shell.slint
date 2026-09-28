@@ -285,9 +285,6 @@ export component AppWindow inherits Window {
     in-out property <length> quick-panel-width: 260px;
     in-out property <length> quick-panel-height: 220px;
     in-out property <string> quick-panel-dock: "right";
-    property <string> quick-external-command;
-    property <bool> quick-external-send-enter;
-    property <int> quick-external-sequence;
     in property <[string]> command-history;          // oldest first (newest last, #113)
     in property <[string]> history-view;             // filtered dropdown, oldest first (newest last, #101)
     // 与 `history-view` 逐项对齐的**显示用**单行预览：历史条目可能是多行（heredoc…），
@@ -1321,17 +1318,12 @@ export component AppWindow inherits Window {
           terminal-focus-sequence: root.terminal-focus-sequence;
           term-cursor-style: root.term-cursor-style;
           term-cursor-color: root.term-cursor-color;
-          show-cmd-bar: root.show-cmd-bar;
           terminal-restore-cover: root.terminal-restore-cover;
           command-history: root.command-history;
           history-view: root.history-view;
           history-preview: root.history-preview;
           quick-commands: root.quick-commands;
-          quick-external-command: root.quick-external-command;
-          quick-external-send-enter: root.quick-external-send-enter;
-          quick-external-sequence: root.quick-external-sequence;
           // 会话内共享状态 / 对话框状态：双向，舞台上会就地改
-          sftp-dock <=> root.sftp-dock;
           sftp-prompt-open <=> root.sftp-prompt-open;
           sftp-prompt-kind <=> root.sftp-prompt-kind;
           sftp-prompt-tab <=> root.sftp-prompt-tab;
@@ -1644,7 +1636,6 @@ export component AppWindow inherits Window {
           transfers-active: root.has-active-transfers;
           lang-en: root.lang-en;
           sync-input: root.sync-input;
-          cmd-bar-visible: root.show-cmd-bar;
           // 高亮：原来只翻 UI 属性、不落盘（重启就回去了）—— 改走真回调
           // `set-output-highlight(enabled, preset)`，Rust 侧写配置 + 重编译规则。
           toggle-highlight() => {
@@ -1657,11 +1648,6 @@ export component AppWindow inherits Window {
           toggle-sync-input() => {
               root.sync-input = !root.sync-input;
               root.set-sync-input(root.sync-input);
-          }
-          // 执行：翻转命令栏（show-cmd-bar 由 Rust 落盘）
-          toggle-cmd-bar() => {
-              root.show-cmd-bar = !root.show-cmd-bar;
-              root.set-show-cmd-bar(root.show-cmd-bar);
           }
           // 重连：复用"断开后按 Enter 重连"那条成熟路径（含句柄回收 + 新终端缓冲），
           // 所以这里只是把 Enter 发进该标签页；按钮本身只在断开态可点。

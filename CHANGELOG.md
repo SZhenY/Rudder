@@ -32,6 +32,11 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - 类型搬家（为后续删除旧 SFTP 面板铺路）：`SessionInfo`、`DiskInfo`、
   `SftpEntry` / `SftpTreeNode` / `TunnelInfo`、`TerminalState` / `PaneInfo` /
   `SplitterInfo` 各自住进独立的 `*_types.slint`，不再依赖待删的组件文件。
+- 终端页重做①（按参考图重新设计，不再沿用旧设计）：底部命令栏（Quick / 输入框 /
+  历史下拉 / 发送到所有会话）**暂时删除**（命令历史数据链路保留，历史入口挪到状态栏
+  浮层，见下一步），终端区内 24px 旧状态条与内嵌 SFTP 停靠区（面板 / 分割条 / 吸附
+  浮层 / 窄条把手）一并删除 —— `TerminalView` 只剩纯画布（画面 / 输入 / 选区 / 查找
+  / 鼠标上报），终端画面铺满整个区域；底部状态栏去掉随之失去意义的「执行」。
 
 ## [0.8.0] - 2026-09-26
 
