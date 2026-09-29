@@ -976,7 +976,7 @@ new tests. 495 tests passing.
 
 ### 新增 / Added
 
-- **「大回滚缓冲区」开关（最多 100 万行）。** 回滚行数的**常规上限从 100 万降到 10 万**（默认值仍是 5 000 行，所以对绝大多数使用零影响，只约束手动填大数的场景）。需要检索超长输出时，可在 **设置 → 终端 → 回滚行数** 下方打开「大回滚缓冲区（最多 100 万行）」——开关旁写明内存代价：内存随终端使用**持续增长**直到上限，**每个标签页独立计算**；参考（200 列）10 万行满载约 458 MB、100 万行约 4.8 GB。**老配置已自动迁移**：若你此前设置过 10 万以上的行数，升级后开关会自动打开，回滚不会被截断。**Added a "large scrollback buffer" switch (up to 1,000,000 lines).** The regular cap drops from 1M to 100k lines — the default stays at 5,000, so this only affects hand-entered large values. Existing configs that already stored more than the new cap get the switch turned on automatically, so nothing is truncated.
+- **「大回滚缓冲区」开关（最多 100 万行）。** 回滚行数的**常规上限从 100 万降到 10 万**（默认值仍是 5 000 行，所以对绝大多数使用零影响，只约束手动填大数的场景）。需要检索超长输出时，可在 **设置 → 终端 → 回滚行数** 下方打开「大回滚缓冲区（最多 100 万行）」——开关旁写明内存代价：内存随终端使用**持续增长**直到上限，**每个标签页独立计算**；示例（200 列）10 万行满载约 458 MB、100 万行约 4.8 GB。**老配置已自动迁移**：若你此前设置过 10 万以上的行数，升级后开关会自动打开，回滚不会被截断。**Added a "large scrollback buffer" switch (up to 1,000,000 lines).** The regular cap drops from 1M to 100k lines — the default stays at 5,000, so this only affects hand-entered large values. Existing configs that already stored more than the new cap get the switch turned on automatically, so nothing is truncated.
 
 ### 修复 / Fixed
 
@@ -2750,9 +2750,9 @@ new tests. 495 tests passing.
   box now honours common readline bindings (Ctrl+A/E/K/U/W, Alt+B/F/D/Backspace,
   etc.) for fast inline editing; a keyboard-shortcuts reference panel is also
   added so users can discover available bindings at a glance.
-  **命令输入框支持 Readline 快捷键 + 快捷键参考 (#103)。** 命令框现在支持常见
+  **命令输入框支持 Readline 快捷键 + 快捷键速查 (#103)。** 命令框现在支持常见
   readline 绑定(Ctrl+A/E/K/U/W、Alt+B/F/D/Backspace 等)进行快速行内编辑;
-  另加快捷键参考面板,方便用户一览可用组合键。
+  另加快捷键速查面板,方便用户一览可用组合键。
 
 - **Scroll arrows when tabs overflow (#122).** When open tabs exceed the tab bar
   width, left/right arrow buttons appear so users can scroll through the hidden

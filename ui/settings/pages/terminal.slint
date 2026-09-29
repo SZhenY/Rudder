@@ -263,7 +263,7 @@ export component TerminalPage inherits VerticalLayout {
                 : "大回滚缓冲区（最多 100 万行）";
             desc: root.lang-en
                 ? "Memory grows as the terminal is used until the cap is reached, counted per tab. At 200 columns: 100k ≈ 458 MB, 1M ≈ 4.8 GB. Enable only when you need to search very long output."
-                : "内存随终端使用持续增长直到上限，每个标签页独立计算。参考（200 列）：10 万行满载约 458 MB，100 万行约 4.8 GB。请仅在需要检索超长输出时开启。";
+                : "内存随终端使用持续增长直到上限，每个标签页独立计算。示例（200 列）：10 万行满载约 458 MB，100 万行约 4.8 GB。请仅在需要检索超长输出时开启。";
             checked <=> root.large-scrollback;
             toggled(v) => { root.set-large-scrollback(v); }
         }
