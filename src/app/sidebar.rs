@@ -126,7 +126,8 @@ pub(super) fn refresh_sidebar(
             apply_rows(vm, proc_rows(procs, current_user, tab_id));
         }
     };
-    // 工具面板「进程 CPU 占用排行」：PROC_CMD 已 `--sort=-pcpu`，直接取前 8 行。
+    // 工具面板「进程 CPU 占用排行」：PROC_CMD 已 `--sort=-pcpu`，取前 20 行
+    //（排行卡吸收页面剩余高度，行数超出可视范围时列表内滚轮滚动）。
     let set_proc_top = |win: &AppWindow, procs: &[ProcInfo], current_user: &str, tab_id: &str| {
         if let Some(vm) = win
             .get_proc_top()
@@ -137,7 +138,7 @@ pub(super) fn refresh_sidebar(
                 vm,
                 proc_rows(procs, current_user, tab_id)
                     .into_iter()
-                    .take(8)
+                    .take(20)
                     .collect::<Vec<_>>(),
             );
         }

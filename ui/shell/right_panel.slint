@@ -872,6 +872,9 @@ export component RightPanel inherits Rectangle {
     property <string> net-filter: "";
     // 负载历史的展示窗口（秒）：1/5/15 分钟 = 60/300/900；综合页与 CPU 页各自记忆
     property <int> cpu-window: 60;
+    // 所有内容页（Flickable 内容列）的统一内边距 —— 单一处管理，改这里全页生效。
+    // 7px ≈ 顶部切换条的 6px 按钮边距（10px 时明显错位，用户反馈）。
+    property <length> content-pad: 7px;
     in property <[TransferInfo]> transfers;
     in property <bool> transfers-active: false;
     in property <bool> sftp-follow-cd;
@@ -1191,7 +1194,7 @@ export component RightPanel inherits Rectangle {
                 // 其余卡片都是 `vertical-stretch: 0` 保持紧凑。
                 x: 0;
                 y: 0;
-                padding: 10px;
+                padding: root.content-pad;
                 spacing: 6px;
 
 
@@ -1513,13 +1516,12 @@ export component RightPanel inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
-                // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）
-                // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
-                // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
-                height: self.preferred-height;
+                // 内容列随 Flickable 撑满/滚动：各卡用 vertical-stretch 定角色 ——
+                // 占比卡 / 核心详情 / 趋势卡 0（自然高度），进程排行 1（吸收剩余
+                // 高度，底部不再留白 —— 用户截图）；行数超出时列表内部滚动。
                 x: 0;
                 y: 0;
-                padding: 10px;
+                padding: root.content-pad;
                 spacing: 6px;
 
                 // 参考图（终端-工具-处理器）：**有占比条的卡在左两列**（总负载/用户态 +
@@ -1599,6 +1601,7 @@ export component RightPanel inherits Rectangle {
 
                 // 核心详情：每核一条占用条（差分自 /proc/stat 的 cpuN 行，2s 一拍）
                 Rectangle {
+                    vertical-stretch: 0;
                     border-radius: Theme.radius-md;
                     background: Theme.sur-2;
 
@@ -1734,8 +1737,11 @@ export component RightPanel inherits Rectangle {
                     }
                 }
 
-                // 进程 CPU 占用排行：PROC_CMD 已 --sort=-pcpu，取前 8 行，2s 一拍
+                // 进程 CPU 占用排行：PROC_CMD 已 --sort=-pcpu，取前 20 行，2s 一拍。
+                // vertical-stretch: 1 吸收页面剩余高度（底部空白 —— 用户截图）；
+                // 行列表套自己的 Flickable，行数超出可视高度时鼠标滚轮内滚动。
                 Rectangle {
+                    vertical-stretch: 1;
                     border-radius: Theme.radius-md;
                     background: Theme.sur-2;
 
@@ -1774,6 +1780,13 @@ export component RightPanel inherits Rectangle {
                             Text { text: "CPU%"; width: 42px; font-size: 9px; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
                             Text { text: "MEM%"; width: 42px; font-size: 9px; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
                         }
+                        Flickable {
+                            vertical-stretch: 1;
+
+                            VerticalLayout {
+                                height: self.preferred-height;
+                                spacing: 3px;
+
                         if root.proc-top.length == 0 : Text {
                             text: root.lang-en ? "No process data" : "暂无进程数据";
                             font-size: 10px;
@@ -1788,6 +1801,8 @@ export component RightPanel inherits Rectangle {
                             Text { text: pr.cpu + "%"; width: 42px; font-size: 10px; font-weight: 600; color: Theme.fg-1; horizontal-alignment: right; vertical-alignment: center; }
                             Text { text: pr.mem + "%"; width: 42px; font-size: 10px; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
                         }
+                                }
+                            }
                     }
                 }
 
@@ -1813,7 +1828,7 @@ export component RightPanel inherits Rectangle {
                 height: self.preferred-height;
                 x: 0;
                 y: 0;
-                padding: 10px;
+                padding: root.content-pad;
                 spacing: 6px;
 
                 SectionTitle { text: root.lang-en ? "Memory" : "内存"; }
@@ -1842,7 +1857,7 @@ export component RightPanel inherits Rectangle {
                 height: self.preferred-height;
                 x: 0;
                 y: 0;
-                padding: 10px;
+                padding: root.content-pad;
                 spacing: 6px;
 
                 SectionTitle { text: root.lang-en ? "Disk partitions" : "磁盘分区"; }
@@ -1866,7 +1881,7 @@ export component RightPanel inherits Rectangle {
                 height: self.preferred-height;
                 x: 0;
                 y: 0;
-                padding: 10px;
+                padding: root.content-pad;
                 spacing: 6px;
 
                 SectionTitle { text: root.lang-en ? "Interfaces" : "网络端口"; }
@@ -1894,9 +1909,11 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 传输（真数据；条目多时由内部滚动承担）───────────────────────
-        if root.current-tab == 5 : VerticalLayout {
+        if root.current-tab == 5 : Flickable {
             vertical-stretch: 1;
-            padding: 12px;
+
+            VerticalLayout {
+                padding: root.content-pad;
             spacing: 8px;
             alignment: start;
 
@@ -1986,9 +2003,12 @@ export component RightPanel inherits Rectangle {
         // alignment != stretch 时 stretch 因子会被忽略（子项一律用 preferred 高度），
         // 下面的列表区就撑不开了。默认 stretch + 单个 `vertical-stretch: 1` 的
         // 列表容器 = 上面的行保持原高、剩余高度全给列表（同 page_hosts 的写法）。
-        if root.current-tab == 6 : VerticalLayout {
+            }
+        if root.current-tab == 6 : Flickable {
             vertical-stretch: 1;
-            padding: 12px;
+
+            VerticalLayout {
+                padding: root.content-pad;
             spacing: 6px;
 
             // ── 工具条：面包屑（根 / … / 末两段可点）+ 刷新 / 上传 / 新建目录 ──
@@ -2411,6 +2431,7 @@ export component RightPanel inherits Rectangle {
             background: Theme.line;
         }
 
+            }
         // ── footer：打开文件视图的圆按钮 + PATH / DIR / FILE / TOTAL ────
         // 参考图里那个圆按钮就是"展开 SFTP 文件目录"的入口；计数由 Rust 数好传进来。
         HorizontalLayout {
