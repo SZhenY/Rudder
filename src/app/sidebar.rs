@@ -126,6 +126,22 @@ pub(super) fn refresh_sidebar(
             apply_rows(vm, proc_rows(procs, current_user, tab_id));
         }
     };
+    // 工具面板「进程 CPU 占用排行」：PROC_CMD 已 `--sort=-pcpu`，直接取前 8 行。
+    let set_proc_top = |win: &AppWindow, procs: &[ProcInfo], current_user: &str, tab_id: &str| {
+        if let Some(vm) = win
+            .get_proc_top()
+            .as_any()
+            .downcast_ref::<VecModel<ProcRow>>()
+        {
+            apply_rows(
+                vm,
+                proc_rows(procs, current_user, tab_id)
+                    .into_iter()
+                    .take(8)
+                    .collect::<Vec<_>>(),
+            );
+        }
+    };
     let set_system_models = |win: &AppWindow,
                              cpu: f32,
                              mem: f32,
@@ -264,6 +280,23 @@ pub(super) fn refresh_sidebar(
     win.set_system_info_available(false);
     set_procs(win, &[], "", "");
 
+    // 远端专属的面板数据先归位：本地 / 欢迎标签不吃上一个会话的残留
+    //（远端连接分支会覆盖这些值）。
+    win.set_cpu_user(0.0);
+    win.set_cpu_system(0.0);
+    win.set_cpu_iowait(0.0);
+    win.set_cpu_temp("".into());
+    if win.get_core_cpus().row_count() > 0 {
+        win.set_core_cpus(ModelRc::from(Rc::new(VecModel::<f32>::default())));
+    }
+    if let Some(vm) = win
+        .get_proc_top()
+        .as_any()
+        .downcast_ref::<VecModel<ProcRow>>()
+    {
+        apply_rows(vm, Vec::new());
+    }
+
     let active = win.get_active_tab_id().to_string();
     let status = if active == "welcome" {
         None
@@ -298,6 +331,27 @@ pub(super) fn refresh_sidebar(
             );
             win.set_mem_used(format_mib(st.mem_used_kib / 1024).into());
             win.set_mem_total(format_mib(st.mem_total_kib / 1024).into());
+            // CPU 明细（用户态/内核态/IO 等待）+ 每核占用 + 温度（工具面板 CPU 页）
+            win.set_cpu_user(st.cpu_user);
+            win.set_cpu_system(st.cpu_system);
+            win.set_cpu_iowait(st.cpu_iowait);
+            win.set_cpu_temp(
+                st.sys
+                    .cpu_info
+                    .iter()
+                    .find(|(k, _)| *k == t("温度", "Temperature"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default()
+                    .into(),
+            );
+            write_model(
+                &mut stats,
+                &win.get_core_cpus(),
+                &st.core_cpus,
+                || ModelRc::from(Rc::new(VecModel::from(st.core_cpus.clone()))),
+                |m| win.set_core_cpus(m),
+            );
+            set_proc_top(win, &st.procs, &st.user, &active);
             let (name, rx, tx) = selected_iface(&st);
             win.set_net_top_up(format_bytes_per_sec(tx).into());
             win.set_net_top_down(format_bytes_per_sec(rx).into());

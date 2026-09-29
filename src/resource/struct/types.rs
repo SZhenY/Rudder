@@ -62,6 +62,12 @@ pub(crate) struct TabStatus {
     pub(crate) cpu_hist: Vec<f32>,
     pub(crate) disks: Vec<(String, u64, u64)>,
     pub(crate) procs: Vec<ProcInfo>,
+    /// CPU 明细（0..1，与 cpu 同一差分间隔）：用户态(+nice)/内核态(+irq+softirq)/IO 等待
+    pub(crate) cpu_user: f32,
+    pub(crate) cpu_system: f32,
+    pub(crate) cpu_iowait: f32,
+    /// 每核占用（0..1，核心顺序）
+    pub(crate) core_cpus: Vec<f32>,
     pub(crate) sys: SystemDetails,
     /// A local-shell tab (WSL / cmd / PowerShell). These reach the connected
     /// state but never produce remote resource stats, so the sidebar must fall

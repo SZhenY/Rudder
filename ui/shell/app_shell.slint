@@ -281,6 +281,13 @@ export component AppWindow inherits Window {
     // 内存 已用 / 总量（四卡底部行拆分显示）
     in property <string> mem-used;
     in property <string> mem-total;
+    // CPU 明细（0..1）+ 每核占用 + 温度 + 进程 CPU 排行（工具面板 CPU 页）
+    in property <float> cpu-user: 0;
+    in property <float> cpu-system: 0;
+    in property <float> cpu-iowait: 0;
+    in property <string> cpu-temp;
+    in property <[float]> core-cpus;
+    in property <[ProcRow]> proc-top;
     in property <[SysInfoRow]> sys-cpu-info-rows;
     in property <[SysInfoRow]> sys-gpu-info-rows;
     in property <[SysInfoRow]> sys-cpu-usage-rows;
@@ -1337,6 +1344,12 @@ export component AppWindow inherits Window {
           mem-used: root.mem-used;
           mem-total: root.mem-total;
           net-selected: root.net-selected;
+          cpu-user: root.cpu-user;
+          cpu-system: root.cpu-system;
+          cpu-iowait: root.cpu-iowait;
+          cpu-temp: root.cpu-temp;
+          core-cpus: root.core-cpus;
+          proc-top: root.proc-top;
           y: root.shell-top;
           width: root.panel-w;
           height: root.height - root.shell-top - 28px;

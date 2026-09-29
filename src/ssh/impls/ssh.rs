@@ -1109,6 +1109,13 @@ pub enum SessionEvent {
     /// Memory/swap are in KiB (as reported by /proc/meminfo).
     ResourceStats {
         cpu_percent: f32,
+        /// CPU 明细（与 cpu_percent 同一差分间隔，0..1）：
+        /// 用户态(+nice) / 内核态(+irq+softirq) / IO 等待。
+        cpu_user: f32,
+        cpu_system: f32,
+        cpu_iowait: f32,
+        /// 每核占用（0..1，核心顺序；首轮无基线时为空）。
+        core_cpus: Vec<f32>,
         mem_used_kib: u64,
         mem_total_kib: u64,
         swap_used_kib: u64,
@@ -2214,11 +2221,11 @@ async fn run_session(
     // pid/user/pcpu/pmem/args, each line clipped to 200 chars so a giant command
     // line can't bloat the stream. A host whose `ps` lacks `--sort`/`-o` simply
     // yields nothing (2>/dev/null), degrading to an empty process list.
-    const MON_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; while :; do awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __MSTICK__; sleep 2; done\n";
+    const MON_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; while :; do awk '/^cpu /{print}' /proc/stat; grep '^cpu[0-9]' /proc/stat 2>/dev/null; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __MSTICK__; sleep 2; done\n";
     // Detailed system information is intentionally one-shot and last priority.
     // It includes commands such as lspci/hostname that may be slow on some hosts
     // and must never delay either the terminal or the lightweight sidebar sample.
-    const SYS_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __SYS__; { . /etc/os-release 2>/dev/null; echo OS=${PRETTY_NAME:-$(uname -o 2>/dev/null)}; }; echo KERNEL=$(uname -s 2>/dev/null); echo KERNEL_RELEASE=$(uname -r 2>/dev/null); echo ARCH=$(uname -m 2>/dev/null); echo HOSTNAME=$(hostname 2>/dev/null); echo IPS=$(hostname -I 2>/dev/null); echo UPTIME=$(uptime -p 2>/dev/null); echo LOAD=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null); awk -F: '/model name|Hardware/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_MODEL=\"$2; exit}' /proc/cpuinfo 2>/dev/null; echo CPU_CORES=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null); awk -F: '/cache size/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_CACHE=\"$2; exit}' /proc/cpuinfo 2>/dev/null; awk -F: '/bogomips/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_BOGO=\"$2; exit}' /proc/cpuinfo 2>/dev/null; lspci 2>/dev/null | awk -F': ' '/VGA|3D|Display/{print \"GPU=\" $2; exit}'; echo __MSTICK__\n";
+    const SYS_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; awk '/^cpu /{print}' /proc/stat; grep '^cpu[0-9]' /proc/stat 2>/dev/null; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __SYS__; { . /etc/os-release 2>/dev/null; echo OS=${PRETTY_NAME:-$(uname -o 2>/dev/null)}; }; echo KERNEL=$(uname -s 2>/dev/null); echo KERNEL_RELEASE=$(uname -r 2>/dev/null); echo ARCH=$(uname -m 2>/dev/null); echo HOSTNAME=$(hostname 2>/dev/null); echo IPS=$(hostname -I 2>/dev/null); echo UPTIME=$(uptime -p 2>/dev/null); echo LOAD=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null); awk -F: '/model name|Hardware/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_MODEL=\"$2; exit}' /proc/cpuinfo 2>/dev/null; echo CPU_CORES=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null); awk -F: '/cache size/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_CACHE=\"$2; exit}' /proc/cpuinfo 2>/dev/null; awk -F: '/bogomips/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_BOGO=\"$2; exit}' /proc/cpuinfo 2>/dev/null; echo CPU_TEMP=$(cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | awk 'NR==1||$1>m{m=$1}END{printf \"%.0f\", m/1000}'); lspci 2>/dev/null | awk -F': ' '/VGA|3D|Display/{print \"GPU=\" $2; exit}'; echo __MSTICK__\n";
     // Skip the resource monitor entirely when shell integration is off (a
     // non-POSIX / Windows server) — the /proc-based loop only spews errors there
     // (#140).
@@ -2230,6 +2237,8 @@ async fn run_session(
     let mut last_process: Option<SessionEvent> = None;
     let mut sys_buf = String::new();
     let mut prev_cpu: Option<(u64, u64)> = None; // (total jiffies, idle jiffies)
+    let mut prev_nums: Option<Vec<u64>> = None; // 上一拍聚合行（CPU 明细差分）
+    let mut prev_cores: Vec<(u64, u64)> = Vec::new(); // 上一拍每核 (total, idle)
     let mut prev_net: std::collections::HashMap<String, (u64, u64)> =
         std::collections::HashMap::new(); // iface -> (rx_bytes, tx_bytes)
     let mut prev_net_at = std::time::Instant::now();
@@ -2498,6 +2507,8 @@ async fn run_session(
                                 && !aux_open_in_flight
                             {
                                 prev_cpu = None;
+                                prev_nums = None;
+                                prev_cores.clear();
                                 prev_net.clear();
                                 prev_net_at = std::time::Instant::now();
                                 aux_open_in_flight = true;
@@ -3001,6 +3012,8 @@ async fn run_session(
                             if let Some(stats) = parse_monitor_block(
                                 &block,
                                 &mut prev_cpu,
+                                &mut prev_nums,
+                                &mut prev_cores,
                                 &mut prev_net,
                                 &mut prev_net_at,
                             ) {
@@ -3046,11 +3059,15 @@ async fn run_session(
                         if let Some(idx) = sys_buf.find("__MSTICK__") {
                             let block = sys_buf[..idx].to_string();
                             let mut detail_cpu = None;
+                            let mut detail_nums: Option<Vec<u64>> = None;
+                            let mut detail_cores: Vec<(u64, u64)> = Vec::new();
                             let mut detail_net = std::collections::HashMap::new();
                             let mut detail_at = std::time::Instant::now();
                             if let Some(details) = parse_monitor_block(
                                 &block,
                                 &mut detail_cpu,
+                                &mut detail_nums,
+                                &mut detail_cores,
                                 &mut detail_net,
                                 &mut detail_at,
                             ) {
@@ -3160,9 +3177,12 @@ fn parse_process_block(block: &str) -> (String, Vec<ProcInfo>) {
 fn parse_monitor_block(
     block: &str,
     prev: &mut Option<(u64, u64)>,
+    prev_nums: &mut Option<Vec<u64>>,
+    prev_cores: &mut Vec<(u64, u64)>,
     prev_net: &mut std::collections::HashMap<String, (u64, u64)>,
     prev_net_at: &mut std::time::Instant,
 ) -> Option<SessionEvent> {
+    let mut cores_now: Vec<(u64, u64)> = Vec::new(); // 本拍每核 (total, idle)
     let mut cpu_total = 0u64;
     let mut cpu_idle = 0u64;
     let mut have_cpu = false;
@@ -3243,6 +3263,20 @@ fn parse_monitor_block(
                 have_cpu = true;
                 cpu_nums = nums;
             }
+        } else if line.starts_with("cpu")
+            && line.as_bytes().get(3).is_some_and(u8::is_ascii_digit)
+        {
+            // 每核行：cpu0 ... cpuN（格式同聚合行）
+            let nums: Vec<u64> = line
+                .split_whitespace()
+                .skip(1)
+                .filter_map(|x| x.parse().ok())
+                .collect();
+            if nums.len() >= 4 {
+                let total = nums.iter().copied().fold(0u64, u64::saturating_add);
+                let idle = nums[3].saturating_add(nums.get(4).copied().unwrap_or(0));
+                cores_now.push((total, idle));
+            }
         } else if let Some(v) = line.strip_prefix("MemTotal:") {
             mem_total = parse_meminfo_kib(v);
         } else if let Some(v) = line.strip_prefix("MemAvailable:") {
@@ -3283,6 +3317,67 @@ fn parse_monitor_block(
         // Show busiest first so the default-selected NIC is the active one.
         net.sort_by_key(|a| std::cmp::Reverse(a.1 + a.2));
     }
+
+    // CPU 明细与每核占用：与 cpu_percent 同一个差分间隔（相邻两拍 /proc/stat）。
+    // 首轮没有基线，全部 0 —— 下一拍起就是真实值。user+nice=用户态；
+    // system+irq+softirq=内核态；iowait 单列（top 语义）。
+    let (cpu_user, cpu_system, cpu_iowait, core_cpus) = if have_cpu && !cpu_nums.is_empty() {
+        let dt = match *prev {
+            Some((ptotal, _)) => cpu_total.saturating_sub(ptotal),
+            None => 0,
+        };
+        let share = |now: u64, was: u64| -> f32 {
+            if dt > 0 {
+                (now.saturating_sub(was) as f32 / dt as f32).clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        let (u, s, w) = match &*prev_nums {
+            Some(pn) if dt > 0 => {
+                let grab = |idxs: &[usize]| -> u64 {
+                    idxs.iter()
+                        .map(|&i| cpu_nums.get(i).copied().unwrap_or(0))
+                        .fold(0u64, u64::saturating_add)
+                };
+                let was = |idxs: &[usize]| -> u64 {
+                    idxs.iter()
+                        .map(|&i| pn.get(i).copied().unwrap_or(0))
+                        .fold(0u64, u64::saturating_add)
+                };
+                (
+                    share(grab(&[0, 1]), was(&[0, 1])),
+                    share(grab(&[2, 5, 6]), was(&[2, 5, 6])),
+                    share(
+                        cpu_nums.get(4).copied().unwrap_or(0),
+                        pn.get(4).copied().unwrap_or(0),
+                    ),
+                )
+            }
+            _ => (0.0, 0.0, 0.0),
+        };
+        let cores = cores_now
+            .iter()
+            .enumerate()
+            .map(|(i, &(t_now, i_now))| match prev_cores.get(i) {
+                Some(&(pt, pi)) => {
+                    let d = t_now.saturating_sub(pt);
+                    if d > 0 {
+                        (1.0 - i_now.saturating_sub(pi) as f32 / d as f32).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    }
+                }
+                None => 0.0,
+            })
+            .collect();
+        *prev_nums = Some(cpu_nums.clone());
+        *prev_cores = cores_now;
+        (u, s, w, cores)
+    } else {
+        *prev_cores = cores_now;
+        (0.0, 0.0, 0.0, Vec::new())
+    };
 
     let cpu_percent = if have_cpu {
         let result = match *prev {
@@ -3325,6 +3420,10 @@ fn parse_monitor_block(
 
     Some(SessionEvent::ResourceStats {
         cpu_percent,
+        cpu_user,
+        cpu_system,
+        cpu_iowait,
+        core_cpus,
         mem_used_kib: mem_total.saturating_sub(mem_avail),
         mem_total_kib: mem_total,
         swap_used_kib: swap_total.saturating_sub(swap_free),
@@ -3451,6 +3550,13 @@ fn build_system_details(input: SystemDetailsInput) -> SystemDetails {
             (
                 t("核心数", "Cores").to_string(),
                 sys_value(sys, "CPU_CORES"),
+            ),
+            (
+                t("温度", "Temperature").to_string(),
+                match sys.get("CPU_TEMP").map(|s| s.trim()).unwrap_or("") {
+                    "" => "-".to_string(),
+                    v => format!("{v}°C"),
+                },
             ),
             (t("频率", "Frequency").to_string(), "-".to_string()),
             (t("缓存", "Cache").to_string(), sys_value(sys, "CPU_CACHE")),
@@ -4259,7 +4365,7 @@ mod monitor_hardening_tests {
         let mut prev_net = HashMap::new();
         let mut at = Instant::now();
         // Must not panic; with no baseline the first sample reports 0% CPU.
-        assert!(parse_monitor_block(&block, &mut prev, &mut prev_net, &mut at).is_some());
+        assert!(parse_monitor_block(&block, &mut prev, &mut None, &mut Vec::new(), &mut prev_net, &mut at).is_some());
     }
 
     #[test]
@@ -4271,7 +4377,7 @@ mod monitor_hardening_tests {
         let mut prev = None;
         let mut prev_net = HashMap::new();
         let mut at = Instant::now();
-        assert!(parse_monitor_block(&block, &mut prev, &mut prev_net, &mut at).is_some());
+        assert!(parse_monitor_block(&block, &mut prev, &mut None, &mut Vec::new(), &mut prev_net, &mut at).is_some());
         // The remembered interface set is capped, not 500.
         assert!(prev_net.len() <= 64, "prev_net held {}", prev_net.len());
     }
@@ -4283,7 +4389,7 @@ mod monitor_hardening_tests {
         let mut prev = None;
         let mut prev_net = HashMap::new();
         let mut at = Instant::now();
-        let event = parse_monitor_block(block, &mut prev, &mut prev_net, &mut at).unwrap();
+        let event = parse_monitor_block(block, &mut prev, &mut None, &mut Vec::new(), &mut prev_net, &mut at).unwrap();
         match event {
             super::SessionEvent::ResourceStats { sys, .. } => assert!(sys.is_none()),
             other => panic!("unexpected event: {other:?}"),
@@ -4296,7 +4402,7 @@ mod monitor_hardening_tests {
         let mut prev = None;
         let mut prev_net = HashMap::new();
         let mut at = Instant::now();
-        let event = parse_monitor_block(block, &mut prev, &mut prev_net, &mut at).unwrap();
+        let event = parse_monitor_block(block, &mut prev, &mut None, &mut Vec::new(), &mut prev_net, &mut at).unwrap();
         match event {
             super::SessionEvent::ResourceStats { sys, .. } => {
                 let sys = sys.expect("delayed sample should include details");

@@ -150,6 +150,10 @@ pub(super) fn apply_session_event_to_window<'a>(
         }
         SessionEvent::ResourceStats {
             cpu_percent,
+            cpu_user,
+            cpu_system,
+            cpu_iowait,
+            core_cpus,
             mem_used_kib,
             mem_total_kib,
             swap_used_kib,
@@ -162,6 +166,10 @@ pub(super) fn apply_session_event_to_window<'a>(
                 && let Some(st) = s.get_mut(tab_id)
             {
                 st.cpu = cpu_percent;
+                st.cpu_user = cpu_user;
+                st.cpu_system = cpu_system;
+                st.cpu_iowait = cpu_iowait;
+                st.core_cpus = core_cpus;
                 st.mem_used_kib = mem_used_kib;
                 st.mem_total_kib = mem_total_kib;
                 st.swap_used_kib = swap_used_kib;

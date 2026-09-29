@@ -17,6 +17,7 @@
 import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
 import { DiskInfo } from "../resource_types.slint";
+import { ProcRow } from "../proc_window.slint";
 // Sparkline（旧组件，widgets.slint）本文件已不再使用 —— 趋势改用同文件里的 LineChart。
 import { SysNetRow } from "../system_info_window.slint";
 // 条目类型住在 `ui/sftp_types.slint`（第④步从 `sftp_panel.slint` 搬出），新外壳不依赖
@@ -768,6 +769,78 @@ component StatChip inherits Rectangle {
     }
 }
 
+// 趋势卡（综合页 / CPU 页共用）：sur-2 圆角卡 = 标题行（图标 + 标题 + 可选当前值 +
+// 1/5/15 分钟窗口切换）+ 面积折线 + 时间轴。vertical-stretch 在使用处给（综合页 1、
+// CPU 页 0）；LineChart 自带 vertical-stretch —— 卡片被拉高时折线跟着长。
+component TrendCard inherits Rectangle {
+    in property <string> title;
+    in property <string> title-icon: "\u{E9E2}";   // monitoring
+    in property <bool> lang-en: false;
+    in property <[float]> values;
+    in-out property <int> window: 60;
+    in property <length> chart-h: 34px;             // 图的最小高度（卡被拉伸时图会更高）
+    in property <string> value: "";                 // 标题行右侧当前值（如 2%）
+    in property <color> tone: Theme.accent;         // 线色
+
+    border-radius: Theme.radius-md;
+    background: Theme.sur-2;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 4px;
+
+        HorizontalLayout {
+            spacing: 4px;
+
+            Text {
+                text: root.title-icon;
+                font-family: "Material Icons";
+                font-size: 13px;
+                color: Theme.fg-3;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.title;
+                font-size: 12px;
+                color: Theme.fg-1;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            if root.value != "" : Text {
+                text: root.value;
+                font-size: 10px;
+                font-weight: 600;
+                color: Theme.fg-2;
+                vertical-alignment: center;
+            }
+            WindowSwitch { value <=> root.window; lang-en: root.lang-en; }
+        }
+        if root.values.length == 0 : EmptyHint { lang-en: root.lang-en; }
+        if root.values.length > 0 : LineChart {
+            values: root.values;
+            window: root.window;
+            chart-h: root.chart-h;
+            line-color: root.tone;
+        }
+        // 时间轴：历史是 1 Hz 采样，展示窗口就是秒数（左端 = N 秒前）
+        if root.values.length > 0 : HorizontalLayout {
+            Text {
+                text: "-\{root.window > 0 ? min(root.window, root.values.length) : root.values.length}s";
+                font-size: 9px;
+                color: Theme.fg-3;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.lang-en ? "now" : "现在";
+                font-size: 9px;
+                color: Theme.fg-3;
+            }
+        }
+    }
+}
+
+
 export component RightPanel inherits Rectangle {
     in property <bool> lang-en: false;
     // 服务器信息头卡的四个字段（Rust 按标签从 overview 里挑好）
@@ -783,6 +856,13 @@ export component RightPanel inherits Rectangle {
     in property <string> mem-used;
     in property <string> mem-total;
     in property <string> net-selected;
+    // CPU 明细（0..1）/ 每核占用 / 温度 / 进程 CPU 排行（CPU 页）
+    in property <float> cpu-user: 0;
+    in property <float> cpu-system: 0;
+    in property <float> cpu-iowait: 0;
+    in property <string> cpu-temp;
+    in property <[float]> core-cpus;
+    in property <[ProcRow]> proc-top;
     property <int> head-tab: 0;
     property <string> net-filter: "";
     // 负载历史的展示窗口（秒）：1/5/15 分钟 = 60/300/900；综合页与 CPU 页各自记忆
@@ -1025,19 +1105,22 @@ export component RightPanel inherits Rectangle {
                 spacing: 12px;
 
                 Text {
-                    text: "\u{E1DB}";   // storage：参考图的层叠小图标
+                    // 转圈加载：sync 双箭头圆环，360° 无限旋转
+                    text: "\u{E627}";
                     font-family: "Material Icons";
-                    font-size: 34px;
+                    font-size: 32px;
                     color: Theme.fg-3;
                     horizontal-alignment: center;
-                    // 呼吸：透明度 1.2s 往返
-                    animate opacity { duration: 1200ms; iteration-count: -1; direction: alternate; easing: ease-in-out; }
+                    transform-rotation: 360deg;
+                    animate transform-rotation { duration: 1600ms; iteration-count: -1; }
                 }
                 Text {
                     text: root.lang-en ? "Waiting for monitoring data..." : "等待监控数据…";
                     font-size: 11px;
                     color: Theme.fg-3;
                     horizontal-alignment: center;
+                    // 呼吸：透明度 1.2s 往返
+                    animate opacity { duration: 1200ms; iteration-count: -1; direction: alternate; easing: ease-in-out; }
                 }
             }
         }
@@ -1261,57 +1344,14 @@ export component RightPanel inherits Rectangle {
 
 
                 // 参考图：综合页的每个区块都是一张卡（标题 + 内容），不再是裸标题。
-                Rectangle {
+                TrendCard {
                     vertical-stretch: 1;   // 趋势卡吸收面板的多余高度（填满底部空白）
-                    border-radius: Theme.radius-md;
-                    background: Theme.sur-2;
-
-                    VerticalLayout {
-                        padding: 8px;
-                        spacing: 6px;
-
-                        HorizontalLayout {
-                            spacing: 4px;
-
-                            Text {
-                                text: "\u{E30C}";   // computer
-                                font-family: "Material Icons";
-                                font-size: 13px;
-                                color: Theme.fg-3;
-                                vertical-alignment: center;
-                            }
-                            Text {
-                                text: root.lang-en ? "CPU load trend" : "CPU 负载趋势";
-                                font-size: 12px;
-                                color: Theme.fg-1;
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;
-                            }
-                            Text {
-                                text: "\{round(root.cpu-percent * 100)}%";
-                                font-size: 10px;
-                                font-weight: 600;
-                                color: Theme.fg-2;
-                                vertical-alignment: center;
-                            }
-                            WindowSwitch { value <=> root.cpu-window; lang-en: root.lang-en; }
-                        }
-                        trend := LineChart { values: root.cpu-history; window: root.cpu-window; chart-h: 34px; }
-                        // 时间轴：历史是 1 Hz 采样，序列长度就是窗口秒数（左端 = N 秒前）
-                        if root.cpu-history.length > 0 : HorizontalLayout {
-                            Text {
-                                text: "-\{root.cpu-history.length}s";
-                                font-size: 9px;
-                                color: Theme.fg-3;
-                                horizontal-stretch: 1;
-                            }
-                            Text {
-                                text: root.lang-en ? "now" : "现在";
-                                font-size: 9px;
-                                color: Theme.fg-3;
-                            }
-                        }
-                    }
+                    title: root.lang-en ? "CPU load trend" : "CPU 负载趋势";
+                    lang-en: root.lang-en;
+                    values: root.cpu-history;
+                    window <=> root.cpu-window;
+                    value: "\{round(root.cpu-percent * 100)}%";
+                    chart-h: 34px;
                 }
 
                 Rectangle {
@@ -1490,11 +1530,11 @@ export component RightPanel inherits Rectangle {
                 padding: 10px;
                 spacing: 6px;
 
-                // 参考图（终端-工具-处理器）：两张概览卡 + 负载历史。
-                // 用户态/内核态/IO 等待、每核占用、CPU 温度、进程排行需要采样器补数据，暂缺。
+                // 参考图（终端-工具-处理器）：概览卡（总负载/负载均值/温度）+
+                // 用户态/内核态/IO 等待 + 核心详情 + 进程 CPU 排行 + 负载历史。
                 HorizontalLayout {
                     vertical-stretch: 0;
-                    spacing: 6px;
+                    spacing: 4px;
 
                     ResCard {
                         label: root.lang-en ? "Total load" : "总负载";
@@ -1504,50 +1544,192 @@ export component RightPanel inherits Rectangle {
                         percent: root.cpu-percent;
                     }
                     ResCard {
-                        label: root.lang-en ? "Load avg (1m)" : "负载均值（1m）";
+                        label: root.lang-en ? "Load avg" : "负载均值";
                         icon: "\u{E8B5}";   // schedule
                         tone: Theme.ok;
                         value: root.panel-load-1m == "" ? "—" : root.panel-load-1m;
                         show-bar: false;
-                        hint: root.lang-en ? "1 minute average" : "1 分钟平均负载";
+                    }
+                    ResCard {
+                        label: root.lang-en ? "Temp" : "温度";
+                        icon: "\u{E1FF}";   // device_thermostat
+                        tone: Theme.danger;
+                        value: (root.cpu-temp == "" || root.cpu-temp == "-") ? "N/A" : root.cpu-temp;
+                        show-bar: false;
                     }
                 }
+                HorizontalLayout {
+                    vertical-stretch: 0;
+                    spacing: 4px;
+
+                    ResCard {
+                        label: root.lang-en ? "User" : "用户态";
+                        icon: "\u{E7FD}";   // person
+                        tone: Theme.accent;
+                        value: "\{round(root.cpu-user * 1000) / 10}%";
+                        percent: root.cpu-user;
+                    }
+                    ResCard {
+                        label: root.lang-en ? "System" : "内核态";
+                        icon: "\u{E8B8}";   // settings
+                        tone: Theme.success;
+                        value: "\{round(root.cpu-system * 1000) / 10}%";
+                        percent: root.cpu-system;
+                    }
+                    ResCard {
+                        label: root.lang-en ? "IO wait" : "IO 等待";
+                        icon: "\u{E8B5}";   // schedule
+                        tone: Theme.warning;
+                        value: "\{round(root.cpu-iowait * 1000) / 10}%";
+                        percent: root.cpu-iowait;
+                    }
+                }
+
+                // 核心详情：每核一条占用条（差分自 /proc/stat 的 cpuN 行，2s 一拍）
                 Rectangle {
-                    vertical-stretch: 1;   // 负载历史吸收剩余高度（图更高看得更清）
                     border-radius: Theme.radius-md;
                     background: Theme.sur-2;
 
                     VerticalLayout {
                         padding: 8px;
-                        spacing: 6px;
+                        spacing: 4px;
 
                         HorizontalLayout {
-                            spacing: 4px;
+                            spacing: 6px;
 
                             Text {
-                                text: "\u{E9E2}";   // monitoring
+                                text: "\u{E30D}";   // developer_board
                                 font-family: "Material Icons";
                                 font-size: 13px;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
                             }
                             Text {
-                                text: root.lang-en ? "Load history" : "负载历史";
+                                text: root.lang-en ? "Core details" : "核心详情";
                                 font-size: 12px;
                                 color: Theme.fg-1;
                                 vertical-alignment: center;
-                                horizontal-alignment: left;
                                 horizontal-stretch: 1;
                             }
-                            WindowSwitch { value <=> root.cpu-window; lang-en: root.lang-en; }
+                            Text {
+                                text: "\{root.core-cpus.length} " + (root.lang-en ? "cores" : "核");
+                                font-size: 10px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
                         }
-                        if root.cpu-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                        if root.cpu-history.length > 0 : LineChart {
-                            values: root.cpu-history;
-                            window: root.cpu-window;
-                            chart-h: 160px;
+                        if root.core-cpus.length == 0 : Text {
+                            text: root.lang-en ? "Sampling..." : "采样中…";
+                            font-size: 10px;
+                            color: Theme.fg-3;
+                        }
+                        for cp[i] in root.core-cpus : HorizontalLayout {
+                            height: 15px;
+
+                            Text {
+                                text: "#" + i;
+                                width: 26px;
+                                font-size: 9px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
+                            Rectangle {
+                                height: 15px;
+
+                                Rectangle {
+                                    y: (parent.height - 4px) / 2;
+                                    x: 0;
+                                    width: parent.width;
+                                    height: 4px;
+                                    border-radius: 2px;
+                                    background: Theme.sur-3;
+
+                                    Rectangle {
+                                        x: 0;
+                                        y: 0;
+                                        width: parent.width * clamp(cp, 0.0, 1.0);
+                                        height: parent.height;
+                                        border-radius: 2px;
+                                        background: cp > 0.85 ? Theme.danger : Theme.success;
+                                    }
+                                }
+                            }
+                            Text {
+                                text: "\{round(cp * 1000) / 10}%";
+                                width: 38px;
+                                font-size: 9px;
+                                color: Theme.fg-2;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
                         }
                     }
+                }
+
+                // 进程 CPU 占用排行：PROC_CMD 已 --sort=-pcpu，取前 8 行，2s 一拍
+                Rectangle {
+                    border-radius: Theme.radius-md;
+                    background: Theme.sur-2;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 3px;
+
+                        HorizontalLayout {
+                            spacing: 6px;
+
+                            Text {
+                                text: "\u{E242}";   // format_list_numbered
+                                font-family: "Material Icons";
+                                font-size: 13px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: root.lang-en ? "Top processes (CPU)" : "进程 CPU 占用排行";
+                                font-size: 12px;
+                                color: Theme.fg-1;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: root.lang-en ? "auto 2s" : "2 秒自动刷新";
+                                font-size: 9px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
+                        }
+                        HorizontalLayout {
+                            Text { text: "PID"; width: 40px; font-size: 9px; color: Theme.fg-3; vertical-alignment: center; }
+                            Text { text: root.lang-en ? "USER" : "用户"; width: 56px; font-size: 9px; color: Theme.fg-3; overflow: elide; vertical-alignment: center; }
+                            Text { text: root.lang-en ? "COMMAND" : "命令行"; horizontal-stretch: 1; font-size: 9px; color: Theme.fg-3; overflow: elide; vertical-alignment: center; }
+                            Text { text: "CPU%"; width: 42px; font-size: 9px; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "MEM%"; width: 42px; font-size: 9px; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
+                        }
+                        if root.proc-top.length == 0 : Text {
+                            text: root.lang-en ? "No process data" : "暂无进程数据";
+                            font-size: 10px;
+                            color: Theme.fg-3;
+                        }
+                        for pr in root.proc-top : HorizontalLayout {
+                            height: 17px;
+
+                            Text { text: pr.pid; width: 40px; font-size: 10px; color: Theme.fg-2; vertical-alignment: center; }
+                            Text { text: pr.user; width: 56px; font-size: 10px; color: Theme.fg-3; overflow: elide; vertical-alignment: center; }
+                            Text { text: pr.command; horizontal-stretch: 1; font-size: 10px; color: Theme.fg-2; overflow: elide; vertical-alignment: center; }
+                            Text { text: pr.cpu + "%"; width: 42px; font-size: 10px; font-weight: 600; color: Theme.fg-1; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: pr.mem + "%"; width: 42px; font-size: 10px; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
+                        }
+                    }
+                }
+
+                // 负载历史：综合页同款 TrendCard（本页内容长，图高固定、整页滚动）
+                TrendCard {
+                    title: root.lang-en ? "Load history" : "负载历史";
+                    lang-en: root.lang-en;
+                    values: root.cpu-history;
+                    window <=> root.cpu-window;
+                    chart-h: 120px;
                 }
             }
         }
