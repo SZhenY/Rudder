@@ -1332,6 +1332,15 @@ export component AppWindow inherits Window {
               set-term-cursor-color(v) => { root.set-term-cursor-color(v); }
               set-update-channel(v) => { root.set-update-channel(v); }
               set-sync-upload-enabled(v) => { root.set-sync-upload-enabled(v); }
+              // 输出高亮（v0.8.0 终端设置页迁移）
+              output-highlight-enabled: root.output-highlight-enabled;
+              output-highlight-preset: root.output-highlight-preset;
+              output-highlight-rule-status: root.output-highlight-rule-status;
+              output-highlight-rules: root.output-highlight-rules;
+              set-output-highlight(on, preset) => { root.set-output-highlight(on, preset); }
+              add-output-highlight-rule(pat, re, cs, wl, c) => { return root.add-output-highlight-rule(pat, re, cs, wl, c); }
+              remove-output-highlight-rule(i) => { root.remove-output-highlight-rule(i); }
+              set-output-highlight-rule-enabled(i, on) => { root.set-output-highlight-rule-enabled(i, on); }
               term-font(f) => {
                   root.set-term-font(f);
               }

@@ -2,6 +2,7 @@
 // 行间无分隔线；大输入项控件在下方；语言是双 pill。全部真回调，无假控件。）
 
 import { Theme, AnimationSettings } from "../theme.slint";
+import { OutputRuleItem } from "../settings/types.slint";
 
 struct CapsuleOpt {
     value: string,
@@ -348,9 +349,24 @@ export component PageSettings inherits Rectangle {
     in property <bool> follow-cd;
     in property <bool> collapse-sftp;
     in property <string> app-version;
+    // ── 输出高亮（v0.8.0 终端设置页迁移）──────────────────────────────
+    in property <bool> output-highlight-enabled: false;
+    in property <string> output-highlight-preset: "log-levels";
+    in property <string> output-highlight-rule-status: "";
+    in property <[OutputRuleItem]> output-highlight-rules;
+    // 表单临时状态（页面本地，不进配置）
+    in-out property <string> new-rule-pattern: "";
+    in-out property <bool> new-rule-regex: false;
+    in-out property <bool> new-rule-case: false;
+    in-out property <bool> new-rule-whole: false;
+    in-out property <string> new-rule-color: "yellow";
+    callback set-output-highlight(bool, string);
+    callback add-output-highlight-rule(string, bool, bool, bool, string) -> bool;
+    callback remove-output-highlight-rule(int);
+    callback set-output-highlight-rule-enabled(int, bool);
     // ── 老设置窗口迁移进来的项（v0.8.0 设置面板 → 新页补全）──────────────
     in property <string> appearance-mode: "system";   // system / dark / light
-    in property <string> renderer-mode: "auto";       // auto / software（重启生效）
+    in property <string> renderer-mode: "femtovg-wgpu"; // femtovg-wgpu(GPU) / software（重启生效）
     in property <string> update-channel: "stable";    // stable / beta
     in property <string> term-cursor-style: "block";  // block / bar / underline
     in property <string> term-cursor-choice: "";      // "" = 跟随主题
@@ -571,7 +587,6 @@ export component PageSettings inherits Rectangle {
                         // ═══ 基础 ═══
                         if root.current-cat == 0 : VerticalLayout {
                             spacing: 4px;
-                            alignment: start;
 
                             FieldBlock {
                                 title: root.lang-en ? "Language" : "界面语言";
@@ -977,7 +992,8 @@ Rectangle {
                             
                                 CapsuleRow {
                                     opts: [
-                                        {value: "auto", label: root.lang-en ? "Auto" : "自动"},
+                                        // 老设置窗的两档制：GPU = femtovg-wgpu（配置值），旧 femtovg/skia 已归一化
+                                        {value: "femtovg-wgpu", label: "GPU"},
                                         {value: "software", label: root.lang-en ? "Software" : "软件渲染"},
                                     ];
                                     value: root.renderer-mode;
@@ -1063,7 +1079,6 @@ Rectangle {
                         // ═══ 终端 ═══
                         if root.current-cat == 1 : VerticalLayout {
                             spacing: 4px;
-                            alignment: start;
 
                             FieldBlock {
                                 title: root.lang-en ? "Terminal Font" : "终端字体";
@@ -1312,12 +1327,222 @@ Rectangle {
                                 }
                             }
                         }
+
+                        // ── 输出高亮（v0.8.0 终端设置页迁移）──────────────────
+                        ToggleRow {
+                            label: root.lang-en ? "Output Highlighting" : "输出高亮";
+                            desc: root.lang-en ? "Colourise log levels, URLs, IPs and more" : "给日志等级、URL、IP 等上色";
+                            on: root.output-highlight-enabled;
+                            toggled => {
+                                root.set-output-highlight(!root.output-highlight-enabled, root.output-highlight-preset);
+                            }
+                        }
+                        FieldBlock {
+                            title: root.lang-en ? "Highlight Preset" : "高亮预设";
+                            desc: root.lang-en ? "Log levels is conservative; DevOps recognises deployment states; Built-in colours numbers, URLs, IPs, UUIDs and dates" : "日志等级较保守；运维识别部署状态；内置多彩覆盖数字、URL、IP、UUID、日期等";
+                            CapsuleRow {
+                                opts: [
+                                    {value: "log-levels", label: root.lang-en ? "Log levels" : "日志等级"},
+                                    {value: "devops", label: "DevOps"},
+                                    {value: "builtin", label: root.lang-en ? "Built-in" : "内置多彩"},
+                                ];
+                                value: root.output-highlight-preset;
+                                picked(v) => { root.set-output-highlight(root.output-highlight-enabled, v); }
+                            }
+                        }
+                        FieldBlock {
+                            title: root.lang-en ? "Custom Rules" : "自定义规则";
+                            desc: root.lang-en ? "Custom rules run before the preset and never overwrite ANSI colours" : "自定义规则优先于内置规则，且不会覆盖程序输出的 ANSI 颜色";
+
+                            if root.output-highlight-rule-status != "" : Text {
+                                text: root.output-highlight-rule-status;
+                                font-size: 10px;
+                                color: Theme.danger;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+
+                                Rectangle {
+                                    width: 220px;
+                                    height: 30px;
+                                    border-radius: 7px;
+                                    border-width: 1px;
+                                    border-color: Theme.line;
+                                    background: Theme.sur-2;
+
+                                    pat-input := TextInput {
+                                        text: root.new-rule-pattern;
+                                        font-size: 11px;
+                                        color: Theme.fg-1;
+                                        vertical-alignment: center;
+                                        accepted => {
+                                            if root.new-rule-pattern != "" {
+                                                if root.add-output-highlight-rule(
+                                                    root.new-rule-pattern, root.new-rule-regex,
+                                                    root.new-rule-case, root.new-rule-whole,
+                                                    root.new-rule-color) {
+                                                    root.new-rule-pattern = "";
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                CapsuleRow {
+                                    opts: [
+                                        {value: "kw", label: root.lang-en ? "Keyword" : "关键词"},
+                                        {value: "re", label: root.lang-en ? "Regex" : "正则"},
+                                    ];
+                                    value: root.new-rule-regex ? "re" : "kw";
+                                    picked(v) => { root.new-rule-regex = (v == "re"); }
+                                }
+                                CapsuleRow {
+                                    opts: [
+                                        {value: "red", label: root.lang-en ? "Red" : "红"},
+                                        {value: "yellow", label: root.lang-en ? "Yellow" : "黄"},
+                                        {value: "green", label: root.lang-en ? "Green" : "绿"},
+                                        {value: "cyan", label: root.lang-en ? "Cyan" : "青"},
+                                        {value: "magenta", label: root.lang-en ? "Magenta" : "紫"},
+                                        {value: "gray", label: root.lang-en ? "Gray" : "灰"},
+                                    ];
+                                    value: root.new-rule-color;
+                                    picked(v) => { root.new-rule-color = v; }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 14px;
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Switch { on: root.new-rule-case; toggled => { root.new-rule-case = !root.new-rule-case; } }
+                                    Text {
+                                        text: root.lang-en ? "Case sensitive" : "区分大小写";
+                                        font-size: 11px;
+                                        color: Theme.fg-2;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Switch { on: root.new-rule-whole; toggled => { root.new-rule-whole = !root.new-rule-whole; } }
+                                    Text {
+                                        text: root.lang-en ? "Whole line" : "仅整行";
+                                        font-size: 11px;
+                                        color: Theme.fg-2;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                Rectangle {
+                                    min-width: 76px;
+                                    max-width: 120px;
+                                    height: 28px;
+                                    border-radius: 7px;
+                                    background: root.new-rule-pattern == "" ? Theme.sur-3 : Theme.accent;
+                                    horizontal-stretch: 1;
+
+                                    Text {
+                                        text: root.lang-en ? "Add Rule" : "添加规则";
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: root.new-rule-pattern == "" ? Theme.fg-3 : Theme.bg-root;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    add-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            if root.new-rule-pattern != "" {
+                                                if root.add-output-highlight-rule(
+                                                    root.new-rule-pattern, root.new-rule-regex,
+                                                    root.new-rule-case, root.new-rule-whole,
+                                                    root.new-rule-color) {
+                                                    root.new-rule-pattern = "";
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 0;
+
+                                for rule[index] in root.output-highlight-rules : Rectangle {
+                                    height: 44px;
+
+                                    HorizontalLayout {
+                                        y: 0;
+                                        width: parent.width;
+                                        height: parent.height - 1px;
+                                        spacing: 9px;
+
+                                        Rectangle {
+                                            width: 8px;
+                                            height: 8px;
+                                            border-radius: 4px;
+                                            background: rule.color == "yellow" ? Theme.warning
+                                                : rule.color == "green" ? Theme.success
+                                                : rule.color == "cyan" ? Theme.accent
+                                                : rule.color == "magenta" ? #d670d6
+                                                : rule.color == "gray" ? Theme.fg-3
+                                                : Theme.danger;
+                                            vertical-stretch: 0;
+                                        }
+                                        VerticalLayout {
+                                            horizontal-stretch: 1;
+                                            spacing: 2px;
+
+                                            Text {
+                                                text: rule.pattern;
+                                                color: rule.enabled ? Theme.fg-1 : Theme.fg-3;
+                                                font-family: Theme.term-font-family;
+                                                overflow: elide;
+                                            }
+                                            Text {
+                                                text: (rule.regex ? "Regex" : (root.lang-en ? "Keyword" : "关键词"))
+                                                    + (rule.case-sensitive ? " · Aa" : "")
+                                                    + (rule.whole-line ? (root.lang-en ? " · whole line" : " · 整行") : "");
+                                                color: Theme.fg-3;
+                                                font-size: 10px;
+                                            }
+                                        }
+                                        Switch {
+                                            on: rule.enabled;
+                                            toggled => { root.set-output-highlight-rule-enabled(index, !rule.enabled); }
+                                        }
+                                        Rectangle {
+                                            width: 28px;
+                                            height: 28px;
+                                            border-radius: 5px;
+                                            background: del-ta.has-hover ? Theme.sur-3 : transparent;
+
+                                            del-ta := TouchArea {
+                                                mouse-cursor: pointer;
+                                                clicked => { root.remove-output-highlight-rule(index); }
+                                            }
+                                            Text {
+                                                text: "\u{E872}";
+                                                font-family: "Material Icons";
+                                                font-size: 15px;
+                                                color: Theme.fg-3;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        y: parent.height - 1px;
+                                        width: parent.width;
+                                        height: 1px;
+                                        background: Theme.line;
+                                    }
+                                }
+                            }
+                        }
                         }
 
                         // ═══ 文件 ═══
                         if root.current-cat == 2 : VerticalLayout {
                             spacing: 4px;
-                            alignment: start;
 
                             ToggleRow {
                                 label: root.lang-en ? "EOL Conversion (LF ↔ CRLF)" : "换行转换 (LF ↔ CRLF)";
@@ -1397,7 +1622,6 @@ Rectangle {
                         if root.current-cat == 4 : VerticalLayout {
                             spacing: 5px;
                             padding-top: 12px;
-                            alignment: start;
 
                             Text {
                                 text: root.lang-en ? "Tabs" : "标签页";
@@ -1483,7 +1707,6 @@ Rectangle {
                         // ═══ 云同步（WebDAV，参考图：同步目标 + 表单 + 底部操作）═══
                         if root.current-cat == 6 : VerticalLayout {
                             spacing: 4px;
-                            alignment: start;
 
                             ToggleRow {
                                 label: root.lang-en ? "Session File Sync" : "文件上传同步";
@@ -1697,7 +1920,6 @@ Rectangle {
                         if root.current-cat == 5 : VerticalLayout {
                             spacing: 12px;
                             padding-top: 8px;
-                            alignment: start;
 
                             Rectangle {
                                 border-radius: 10px;
