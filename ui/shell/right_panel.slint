@@ -89,24 +89,8 @@ component LineChart inherits Rectangle {
     pure function vx(k: int) -> float {
         return k * 100.0 / (root.npts - 1);
     }
-    // 纵轴比例尺：随峰值自适应（下限 10% —— 否则 4% 的 CPU 在 0..100% 的比例尺下
-    // 会贴着底边，看起来就是一条直线）。Slint 没有数组归约，用 16 个等距采样点
-    // 嵌套 max 近似峰值（脚本展开的，别手改）。
-    pure function sample(j: int) -> float {
-        return root.values.length > 0
-            ? root.values[min(root.values.length - 1,
-                              max(0, round(j * max(1, root.values.length - 1) * 1.0 / 15)))]
-            : 0.0;
-    }
-    pure function peak() -> float {
-        return max(root.sample(15), max(root.sample(14), max(root.sample(13), max(root.sample(12), max(root.sample(11), max(root.sample(10), max(root.sample(9), max(root.sample(8), max(root.sample(7), max(root.sample(6), max(root.sample(5), max(root.sample(4), max(root.sample(3), max(root.sample(2), max(root.sample(1), root.sample(0))))))))))))))));
-    }
-    property <float> yscale: clamp(max(0.1, root.peak()), 0.1, 1.0);
-    // 当前比例尺（百分比整数），供卡片在标题行显示，避免"自动缩放"看起来像数据变了
-    out property <int> scale-percent: round(root.yscale * 100);
-
     pure function vy(v: float) -> float {
-        return 100.0 * (1.0 - clamp(v / root.yscale, 0.0, 1.0));
+        return 100.0 * (1.0 - clamp(v, 0.0, 1.0));
     }
     // 中点：平滑曲线的节点取相邻采样点的中点，数据点只做控制点 ——
     // 直连数据点的折线太生硬（用户反馈），这样曲率柔和也不会过冲。
@@ -127,6 +111,14 @@ component LineChart inherits Rectangle {
         width: parent.width;
         height: 1px;
         background: Theme.line;
+    }
+    // 50% 参考线（固定 0..100% 比例尺下的读数辅助）
+    Rectangle {
+        x: 0;
+        y: root.chart-h / 2;
+        width: parent.width;
+        height: 1px;
+        background: Theme.line.with-alpha(0.5);
     }
 
     // ⚠ Path **不支持** `for`（Slint #754："Path elements are not supported with
@@ -844,6 +836,74 @@ export component RightPanel inherits Rectangle {
 
         // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
 
+        // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
+        if root.panel-host != "" : Rectangle {
+            border-radius: Theme.radius-md;
+            background: Theme.sur-2;
+
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    Text {
+                        text: "\u{EB8E}";   // terminal
+                        font-family: "Material Icons";
+                        font-size: 14px;
+                        color: Theme.accent;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.panel-host;          // 主机名称
+                        font-size: 13px;
+                        font-weight: 600;
+                        color: Theme.fg-1;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    Rectangle {
+                        max-width: 150px;
+                        border-radius: 4px;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        background: Theme.sur-3;
+                        clip: true;
+
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+
+                            Text {
+                                text: root.panel-ip;
+                                font-size: 10px;
+                                color: Theme.fg-2;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    if root.panel-os != "" : Text {
+                        text: "操作系统：\{root.panel-os}";
+                        font-size: 10px;
+                        color: Theme.fg-3;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    if root.panel-uptime != "" : Text {
+                        text: root.panel-uptime;
+                        font-size: 10px;
+                        color: Theme.fg-3;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
         // ── 资源卡片 2×2（真数据，1 Hz）─────────────────────────────────
         // C 步会在下面接 CPU 趋势 / 磁盘分区 / 网络端口，并把这里收进「综合」标签。
         HorizontalLayout {
@@ -1057,72 +1117,6 @@ export component RightPanel inherits Rectangle {
                 padding: 10px;
                 spacing: 6px;
 
-                if root.panel-host != "" : Rectangle {
-                    border-radius: Theme.radius-md;
-                    background: Theme.sur-2;
-
-                    VerticalLayout {
-                        padding: 10px;
-                        spacing: 6px;
-
-                        HorizontalLayout {
-                            spacing: 8px;
-
-                            Text {
-                                text: "\u{EB8E}";   // terminal
-                                font-family: "Material Icons";
-                                font-size: 14px;
-                                color: Theme.accent;
-                                vertical-alignment: center;
-                            }
-                            Text {
-                                text: root.panel-host;          // 主机名称
-                                font-size: 13px;
-                                font-weight: 600;
-                                color: Theme.fg-1;
-                                vertical-alignment: center;
-                                overflow: elide;
-                                horizontal-stretch: 1;
-                            }
-                            Rectangle {
-                                max-width: 150px;
-                                border-radius: 4px;
-                                border-width: 1px;
-                                border-color: Theme.line;
-                                background: Theme.sur-3;
-                                clip: true;
-
-                                HorizontalLayout {
-                                    padding-left: 6px;
-                                    padding-right: 6px;
-
-                                    Text {
-                                        text: root.panel-ip;
-                                        font-size: 10px;
-                                        color: Theme.fg-2;
-                                        vertical-alignment: center;
-                                        overflow: elide;
-                                    }
-                                }
-                            }
-                        }
-                        HorizontalLayout {
-                            if root.panel-os != "" : Text {
-                                text: "操作系统：\{root.panel-os}";
-                                font-size: 10px;
-                                color: Theme.fg-3;
-                                overflow: elide;
-                                horizontal-stretch: 1;
-                            }
-                            if root.panel-uptime != "" : Text {
-                                text: root.panel-uptime;
-                                font-size: 10px;
-                                color: Theme.fg-3;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-                }
 
                 // 参考图：综合页的每个区块都是一张卡（标题 + 内容），不再是裸标题。
                 Rectangle {
@@ -1155,14 +1149,6 @@ export component RightPanel inherits Rectangle {
                                 font-size: 10px;
                                 font-weight: 600;
                                 color: Theme.fg-2;
-                                vertical-alignment: center;
-                            }
-                            // 比例尺（纵轴自动跟随峰值，下限 10%）—— 标出来，免得自动缩放
-                            // 看起来像"数据变了"
-                            Text {
-                                text: "≤\{trend.scale-percent}%";
-                                font-size: 9px;
-                                color: Theme.fg-3;
                                 vertical-alignment: center;
                             }
                         }
