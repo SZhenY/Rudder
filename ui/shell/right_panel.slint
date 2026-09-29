@@ -79,12 +79,20 @@ component LineChart inherits Rectangle {
     in property <[float]> values;
     in property <length> chart-h: 44px;
     in property <color> line-color: Theme.accent;
+    // 展示窗口：0 = 全部；>0 = 只画**最后 N 个采样**（1/5/15 分钟 = 60/300/900，
+    // 历史环现在是 900 个点，窗口切换靠它，不需要重建模型）。
+    in property <int> window: 0;
     // 展开写死的采样点数（见下面 Path 里的说明）
     property <int> npts: 32;
     // 第 k 个绘图点取哪个样本（数据长度可变 → 均匀取样）
+    pure function wlen() -> int {
+        return root.window > 0 ? min(root.window, root.values.length) : root.values.length;
+    }
     pure function idx(k: int) -> int {
+        // 第 k 个绘图点落在「最后 wlen() 个采样」里：offset = length - wlen()
         return min(root.values.length - 1,
-                   max(0, round(k * max(1, root.values.length - 1) * 1.0 / (root.npts - 1))));
+                   max(0, root.values.length - root.wlen()
+                          + round(k * max(1, root.wlen() - 1) * 1.0 / (root.npts - 1))));
     }
     pure function vx(k: int) -> float {
         return k * 100.0 / (root.npts - 1);
@@ -438,6 +446,39 @@ component PanelHeadTab inherits Rectangle {
     }
 }
 
+// 1/5/15 分钟窗口切换（参考图的 segmented control）：激活项 = 圆角胶囊 + 主题色。
+component WindowSwitch inherits HorizontalLayout {
+    in-out property <int> value: 60;
+    in property <bool> lang-en: false;
+
+    property <[int]> options: [60, 300, 900];
+
+    for wv in root.options : Rectangle {
+        property <bool> on: root.value == wv;
+        width: wlab.preferred-width + 12px;
+        height: 18px;
+        border-radius: 9px;
+        background: wv-ta.has-hover && !on ? Theme.sur-3 : (on ? Theme.accent.with-alpha(0.22) : transparent);
+
+        HorizontalLayout {
+            padding-left: 6px;
+            padding-right: 6px;
+
+            wlab := Text {
+                text: (wv == 60 ? "1" : (wv == 300 ? "5" : "15")) + (root.lang-en ? "min" : "分钟");
+                font-size: 9px;
+                font-weight: on ? 700 : 500;
+                color: on ? Theme.accent : Theme.fg-3;
+                vertical-alignment: center;
+            }
+        }
+        wv-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.value = wv; }
+        }
+    }
+}
+
 component ResCard inherits Rectangle {
     in property <string> label;
     in property <string> value;
@@ -683,9 +724,11 @@ export component RightPanel inherits Rectangle {
     in property <string> panel-ip;
     in property <string> panel-os;
     in property <string> panel-uptime;
+    in property <string> panel-load-1m;
     property <int> head-tab: 0;
-    // 「网络端口」的网口筛选：空 = 显示全部（默认全部、下拉选择）
     property <string> net-filter: "";
+    // 负载历史的展示窗口（秒）：1/5/15 分钟 = 60/300/900；综合页与 CPU 页各自记忆
+    property <int> cpu-window: 60;
     in property <[TransferInfo]> transfers;
     in property <bool> transfers-active: false;
     in property <bool> sftp-follow-cd;
@@ -1160,8 +1203,9 @@ export component RightPanel inherits Rectangle {
                                 color: Theme.fg-2;
                                 vertical-alignment: center;
                             }
+                            WindowSwitch { value <=> root.cpu-window; lang-en: root.lang-en; }
                         }
-                        trend := LineChart { values: root.cpu-history; }
+                        trend := LineChart { values: root.cpu-history; window: root.cpu-window; }
                         // 时间轴：历史是 1 Hz 采样，序列长度就是窗口秒数（左端 = N 秒前）
                         if root.cpu-history.length > 0 : HorizontalLayout {
                             Text {
@@ -1355,16 +1399,64 @@ export component RightPanel inherits Rectangle {
                 padding: 10px;
                 spacing: 6px;
 
-                MetricRow {
-                    label: "CPU";
-                    value: "\{round(root.cpu-percent * 100)}%";
-                    percent: root.cpu-percent;
+                // 参考图（终端-工具-处理器）：两张概览卡 + 负载历史。
+                // 用户态/内核态/IO 等待、每核占用、CPU 温度、进程排行需要采样器补数据，暂缺。
+                HorizontalLayout {
+                    vertical-stretch: 0;
+                    spacing: 6px;
+
+                    ResCard {
+                        label: root.lang-en ? "Total load" : "总负载";
+                        icon: "\u{E30C}";   // computer
+                        tone: Theme.accent;
+                        value: "\{round(root.cpu-percent * 100)}%";
+                        percent: root.cpu-percent;
+                    }
+                    ResCard {
+                        label: root.lang-en ? "Load avg (1m)" : "负载均值（1m）";
+                        icon: "\u{E8B5}";   // schedule
+                        tone: Theme.ok;
+                        value: root.panel-load-1m == "" ? "—" : root.panel-load-1m;
+                        show-bar: false;
+                        hint: root.lang-en ? "1 minute average" : "1 分钟平均负载";
+                    }
                 }
-                SectionTitle { text: root.lang-en ? "CPU load trend" : "CPU 负载趋势"; }
-                if root.cpu-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
-                if root.cpu-history.length > 0 : LineChart {
-                    values: root.cpu-history;
-                    chart-h: 88px;
+                Rectangle {
+                    vertical-stretch: 1;   // 负载历史吸收剩余高度（图更高看得更清）
+                    border-radius: Theme.radius-md;
+                    background: Theme.sur-2;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        HorizontalLayout {
+                            spacing: 4px;
+
+                            Text {
+                                text: "\u{E9E2}";   // monitoring
+                                font-family: "Material Icons";
+                                font-size: 13px;
+                                color: Theme.fg-3;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: root.lang-en ? "Load history" : "负载历史";
+                                font-size: 12px;
+                                color: Theme.fg-1;
+                                vertical-alignment: center;
+                                horizontal-alignment: left;
+                                horizontal-stretch: 1;
+                            }
+                            WindowSwitch { value <=> root.cpu-window; lang-en: root.lang-en; }
+                        }
+                        if root.cpu-history.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                        if root.cpu-history.length > 0 : LineChart {
+                            values: root.cpu-history;
+                            window: root.cpu-window;
+                            chart-h: 160px;
+                        }
+                    }
                 }
             }
         }

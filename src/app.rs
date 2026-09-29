@@ -265,7 +265,9 @@ pub(crate) fn visible_tab_ids(win: &AppWindow) -> HashSet<String> {
 }
 
 /// Number of samples kept for the sparkline.
-const NET_HISTORY_LEN: usize = 60;
+// 1 Hz 采样 × 15 分钟：支撑工具面板「负载历史」的 1 / 5 / 15 分钟窗口切换
+//（60 = 1 分钟、300 = 5 分钟、900 = 15 分钟；环一次性开满，成本可忽略）。
+const NET_HISTORY_LEN: usize = 900;
 
 
 

@@ -274,6 +274,8 @@ export component AppWindow inherits Window {
     in property <string> panel-ip;
     in property <string> panel-os;
     in property <string> panel-uptime;
+    // 负载均值（1 分钟，两位小数字符串）
+    in property <string> panel-load-1m;
     in property <[SysInfoRow]> sys-cpu-info-rows;
     in property <[SysInfoRow]> sys-gpu-info-rows;
     in property <[SysInfoRow]> sys-cpu-usage-rows;
@@ -1325,6 +1327,7 @@ export component AppWindow inherits Window {
           panel-ip: root.panel-ip;
           panel-os: root.panel-os;
           panel-uptime: root.panel-uptime;
+          panel-load-1m: root.panel-load-1m;
           y: root.shell-top;
           width: root.panel-w;
           height: root.height - root.shell-top - 28px;

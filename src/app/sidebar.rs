@@ -153,6 +153,13 @@ pub(super) fn refresh_sidebar(
             conn_ip(host).into()
         };
         win.set_panel_ip(panel_ip);
+        // 负载均值（1 分钟）：overview 的「负载」是 "1m 5m 15m" 三个数，取第一个。
+        let load_1m = pick(&[t("负载", "Load").to_string()])
+            .split_whitespace()
+            .next()
+            .unwrap_or("0")
+            .to_string();
+        win.set_panel_load_1m(load_1m.into());
         if let Some(vm) = win
             .get_sys_metrics()
             .as_any()
