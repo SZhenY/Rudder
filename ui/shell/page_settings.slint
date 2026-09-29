@@ -3,6 +3,7 @@
 
 import { Theme, AnimationSettings } from "../theme.slint";
 import { OutputRuleItem } from "../settings/types.slint";
+import { LineEdit, Slider } from "std-widgets.slint";
 
 struct CapsuleOpt {
     value: string,
@@ -458,9 +459,6 @@ export component PageSettings inherits Rectangle {
             background: Theme.sur-1;
 
             VerticalLayout {
-                // 占据导航（200px）之外的全部宽度：不写 stretch 会被按首选宽排
-                //（内容挤在左侧 —— 用户截图）。
-                horizontal-stretch: 1;
                 padding-top: 16px + root.top-inset;
                 padding-bottom: 16px;
                 padding-left: 12px;
@@ -489,47 +487,10 @@ export component PageSettings inherits Rectangle {
                         vertical-alignment: center;
                     }
                 }
-                Rectangle {
-                    height: 26px;
-                    border-radius: 7px;
-                    border-width: 1px;
-                    border-color: Theme.line;
-                    background: Theme.sur-2;
-
-                    if root.nav-search == "" : Text {
-                        text: root.lang-en ? "Search settings..." : "搜索设置…";
-                        font-size: 11px;
-                        color: Theme.fg-3;
-                        vertical-alignment: center;
-                        x: 8px;
-                    }
-                    nav-search-input := TextInput {
-                        x: 8px;
-                        width: parent.width - 16px;
-                        height: parent.height;
-                        font-size: 11px;
-                        color: Theme.fg-1;
-                        vertical-alignment: center;
-                        edited => { root.nav-search-changed(self.text); }
-                    }
-                    nav-clear := TouchArea {
-                        width: 18px;
-                        height: parent.height;
-                        x: parent.width - 20px;
-                        mouse-cursor: pointer;
-                        clicked => {
-                            root.nav-search = "";
-                            root.nav-search-changed("");
-                        }
-                    }
-                    if root.nav-search != "" : Text {
-                        text: "\u{E5CD}";
-                        font-family: "Material Icons";
-                        font-size: 13px;
-                        color: Theme.fg-3;
-                        x: parent.width - 20px;
-                        vertical-alignment: center;
-                    }
+                LineEdit {
+                    placeholder-text: root.lang-en ? "Search settings..." : "搜索设置…";
+                    text <=> root.nav-search;
+                    edited(t) => { root.nav-search-changed(t); }
                 }
 
                 Rectangle {
@@ -604,12 +565,16 @@ export component PageSettings inherits Rectangle {
             horizontal-stretch: 1;
 
             VerticalLayout {
+                // ⚠ 普通(Rectangle)父级里的 VerticalLayout 按**首选尺寸**布局 —— 不显式
+                // 铺满就会挤成内容首选宽、贴左（连续三轮反馈的根因）。
+                // alignment:start 同理会让 Flickable 不吸收剩余高度（列表无法滚动）。
+                width: parent.width;
+                height: parent.height;
                 padding-top: 20px;
                 padding-bottom: 20px;
                 padding-left: 24px;
                 padding-right: 24px;
                 spacing: 0;
-                alignment: start;
 
                 Text {
                     height: 34px;
@@ -631,6 +596,7 @@ export component PageSettings inherits Rectangle {
                 }
 
                 Flickable {
+                    vertical-stretch: 1;
                     VerticalLayout {
                         // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）默认按父级
                         // 100% 高布局，内容会被"摊开"到整个视口（卡片被拉伸）。
@@ -1066,19 +1032,19 @@ Rectangle {
                                     spacing: 8px;
                                     alignment: start;
                             
-                                    FrostSlider {
-                                        min: 80;
-                                        max: 200;
-                                        step: 10;
+                                    Slider {
+                                        minimum: 80;
+                                        maximum: 200;
                                         value: Theme.ui-scale * 100;
-                                        changed(v) => { root.set-ui-scale(round(v)); }
-                                        released(v) => { root.set-ui-scale(round(v)); }
+                                        changed(v) => { root.set-ui-scale(round(v / 10) * 10); }
+                                        released(v) => { root.set-ui-scale(round(v / 10) * 10); }
                                     }
                                     Text {
                                         text: "\{round(Theme.ui-scale * 100)}%";
                                         font-size: 11px;
                                         color: Theme.fg-2;
                                         vertical-alignment: center;
+                                        width: 40px;
                                     }
                                 }
                             }
@@ -1364,23 +1330,11 @@ Rectangle {
                                         clicked => { root.set-term-cursor-preset(c.hex); }
                                     }
                                 }
-                                Rectangle {
+                                LineEdit {
                                     width: 110px;
-                                    height: 26px;
-                                    border-radius: 7px;
-                                    border-width: 1px;
-                                    border-color: Theme.line;
-                                    background: Theme.sur-2;
-
-                                    color-input := TextInput {
-                                        text: root.term-cursor-color-hex;
-                                        font-size: 11px;
-                                        color: Theme.fg-1;
-                                        vertical-alignment: center;
-                                        horizontal-alignment: center;
-                                        // accepted 无参 —— 用自身 text 提交（回车生效）
-                                        accepted => { root.set-term-cursor-color(color-input.text); }
-                                    }
+                                    placeholder-text: "#RRGGBB";
+                                    text: root.term-cursor-color-hex;
+                                    accepted(t) => { root.set-term-cursor-color(t); }
                                 }
                             }
                         }
@@ -1420,28 +1374,15 @@ Rectangle {
                             HorizontalLayout {
                                 spacing: 6px;
 
-                                Rectangle {
+                                pat-edit := LineEdit {
                                     width: 220px;
-                                    height: 30px;
-                                    border-radius: 7px;
-                                    border-width: 1px;
-                                    border-color: Theme.line;
-                                    background: Theme.sur-2;
-
-                                    pat-input := TextInput {
-                                        text: root.new-rule-pattern;
-                                        font-size: 11px;
-                                        color: Theme.fg-1;
-                                        vertical-alignment: center;
-                                        accepted => {
-                                            if root.new-rule-pattern != "" {
-                                                if root.add-output-highlight-rule(
-                                                    root.new-rule-pattern, root.new-rule-regex,
-                                                    root.new-rule-case, root.new-rule-whole,
-                                                    root.new-rule-color) {
-                                                    root.new-rule-pattern = "";
-                                                }
-                                            }
+                                    placeholder-text: root.lang-en ? "connection refused" : "connection refused";
+                                    text <=> root.new-rule-pattern;
+                                    accepted(t) => {
+                                        if root.add-output-highlight-rule(
+                                            t, root.new-rule-regex, root.new-rule-case,
+                                            root.new-rule-whole, root.new-rule-color) {
+                                            root.new-rule-pattern = "";
                                         }
                                     }
                                 }
@@ -1650,27 +1591,11 @@ Rectangle {
                                 title: root.lang-en ? "Mount Filter" : "挂载过滤";
                                 desc: root.lang-en ? "Show only partitions whose path contains the keyword (empty = all), Enter to apply" : "只显示路径含该关键字的分区（留空显示全部），回车生效";
 
-                                Rectangle {
+                                LineEdit {
                                     width: 300px;
-                                    height: 30px;
-                                    border-radius: 7px;
-                                    border-width: 1px;
-                                    border-color: Theme.line;
-                                    background: Theme.sur-2;
-
-                                    TextInput {
-                                        x: 10px;
-                                        width: parent.width - 20px;
-                                        height: 100%;
-                                        text <=> root.mount-filter-text;
-                                        font-size: 12px;
-                                        color: Theme.fg-1;
-                                        vertical-alignment: center;
-                                        single-line: true;
-                                        accepted => {
-                                            root.set-mount-filter-text(root.mount-filter-text);
-                                        }
-                                    }
+                                    placeholder-text: root.lang-en ? "e.g. /home (empty = all)" : "如 /home（留空显示全部）";
+                                    text <=> root.mount-filter-text;
+                                    accepted(t) => { root.set-mount-filter-text(t); }
                                 }
                             }
                         }
