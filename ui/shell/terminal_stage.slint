@@ -33,6 +33,10 @@ import { TerminalView, QuickCmd } from "../terminal_view.slint";
 import { TabInfo } from "../tabs.slint";
 
 export component TerminalStage inherits Rectangle {
+    // 舞台整体就是那块磨砂玻璃（与右侧工具面板同一个 `term-bg`）—— 标签条行、
+    // 内容区、画布都不再各自叠一层，否则同一列里会出现"标签条透出蓝色壁纸、
+    // 下面却是深色"的割裂（用户圈出的接缝就是这么来的）。
+    background: Theme.term-bg;
     // --- 数据模型（AppWindow 级）-------------------------------------------
     in property <[PaneInfo]> panes;
     in property <[TerminalState]> terminals;
@@ -194,7 +198,9 @@ export component TerminalStage inherits Rectangle {
             // Content area swaps based on active tab kind.
             Rectangle {
                 vertical-stretch: 1;
-                background: Theme.bg-root;
+                // 透明：让舞台根上的那层磨砂玻璃统一透出来（这里再叠一层 bg-root
+                // 会变成"双层磨砂"，和右侧面板对不上）。
+                background: transparent;
 
                 // 空 pane（分屏后还没放标签）：给一条提示，别留一片空洞。
                 if pane.tabs.length == 0 : Rectangle {

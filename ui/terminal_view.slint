@@ -251,7 +251,8 @@ export component TerminalView inherits Rectangle {
     }
 
 
-    background: Theme.term-bg;
+    // 透明：磨砂玻璃由舞台根统一提供（画布再叠一层会加倍、和面板对不上）。
+    background: transparent;
     forward-focus: ime-input;
 
 

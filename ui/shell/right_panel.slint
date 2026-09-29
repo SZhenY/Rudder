@@ -800,7 +800,8 @@ export component RightPanel inherits Rectangle {
         // 上下 padding 各 6px：行内高度正好 20px，固定 20px 的按钮因此在行内居中
         // （HorizontalLayout 的交叉轴默认是拉伸，靠子项自身高度定死才不跑偏）。
         HorizontalLayout {
-            height: 32px;
+            // 与终端标签条同高（40px）：两条"页签行"在同一水平线上，顶部才连得起来
+            height: 40px;
             padding-left: 10px;
             padding-right: 4px;
             padding-top: 6px;
