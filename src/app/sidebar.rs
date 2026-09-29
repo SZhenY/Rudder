@@ -129,7 +129,8 @@ pub(super) fn refresh_sidebar(
                              mem_detail: SharedString,
                              swap_detail: SharedString,
                              nets: Vec<SysNetRow>,
-                             sys: SystemDetails| {
+                             sys: SystemDetails,
+                             host: &str| {
         // 工具面板头卡用的四个字段：**按标签**从 overview 里取 —— 本机 / 远端两条
         // 路径的字段顺序不一样，上一版按下标取，结果主机名的位置显示成了负载均值。
         let pick = |labels: &[String]| -> SharedString {
@@ -144,6 +145,14 @@ pub(super) fn refresh_sidebar(
         win.set_panel_ip(pick(&[t("IP", "IP").to_string()]));
         win.set_panel_os(pick(&[t("操作系统", "Operating system").to_string()]));
         win.set_panel_uptime(pick(&[t("运行", "Uptime").to_string()]));
+        // 头卡 IP：**只显示本会话连接所用的地址**（用户要求；overview 里的 IPS 是
+        // 全部网卡的列表，会撑爆徽标）。本机资源没有"会话地址"，回退到 overview 的 IP。
+        let panel_ip = if host.trim().is_empty() {
+            pick(&[t("IP", "IP").to_string()])
+        } else {
+            conn_ip(host).into()
+        };
+        win.set_panel_ip(panel_ip);
         if let Some(vm) = win
             .get_sys_metrics()
             .as_any()
@@ -231,6 +240,7 @@ pub(super) fn refresh_sidebar(
                 down: format_bytes_per_sec(snap.net_rx_per_sec).into(),
             }],
             SystemDetails::default(),
+            "",
         );
     };
     win.set_proc_available(false);
@@ -312,6 +322,7 @@ pub(super) fn refresh_sidebar(
                 format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
                 net_rows(&st.net),
                 st.sys.clone(),
+                &st.host,
             );
         }
         // Disconnected / timed-out session.
@@ -331,6 +342,7 @@ pub(super) fn refresh_sidebar(
                 "".into(),
                 Vec::new(),
                 SystemDetails::default(),
+                &st.host,
             );
         }
         // Still connecting.
@@ -350,6 +362,7 @@ pub(super) fn refresh_sidebar(
                 "".into(),
                 Vec::new(),
                 SystemDetails::default(),
+                &st.host,
             );
         }
         // Welcome tab (or unknown) → local machine top + bottom.

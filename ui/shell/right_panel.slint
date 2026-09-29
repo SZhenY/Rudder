@@ -683,8 +683,9 @@ export component RightPanel inherits Rectangle {
     in property <string> panel-ip;
     in property <string> panel-os;
     in property <string> panel-uptime;
-    // 面板头部的页签：0 = 工具（真内容），1 = AI（占位）
     property <int> head-tab: 0;
+    // 「网络端口」的网口筛选：空 = 显示全部（默认全部、下拉选择）
+    property <string> net-filter: "";
     in property <[TransferInfo]> transfers;
     in property <bool> transfers-active: false;
     in property <bool> sftp-follow-cd;
@@ -1242,12 +1243,98 @@ export component RightPanel inherits Rectangle {
                                 horizontal-alignment: left;
                                 horizontal-stretch: 1;
                             }
+                            Rectangle {
+                                width: nic-btn.preferred-width + 16px;
+                                height: 20px;
+                                border-radius: 4px;
+                                border-width: 1px;
+                                border-color: Theme.line;
+                                background: nic-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+                                clip: true;
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 3px;
+                                    spacing: 2px;
+                                    nic-btn := Text {
+                                        text: root.net-filter == ""
+                                            ? (root.lang-en ? "All" : "全部网口")
+                                            : root.net-filter;
+                                        font-size: 10px;
+                                        color: Theme.fg-2;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: "\u{E5CE}";
+                                        font-family: "Material Icons";
+                                        font-size: 10px;
+                                        color: Theme.fg-3;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                nic-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { net-popup.show(); }
+                                }
+                            }
                         }
                         if root.net-rows.length == 0 : EmptyHint { lang-en: root.lang-en; }
                         for n in root.net-rows : NetIfaceRow {
+                            visible: root.net-filter == "" || root.net-filter == n.name;
                             name: n.name;
                             down: n.down;
                             up: n.up;
+                        }
+
+                        net-popup := PopupWindow {
+                            Rectangle {
+                                width: 190px;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: Theme.line;
+                                background: Theme.sur-1;
+                                VerticalLayout {
+                                    spacing: 0;
+                                    alignment: start;
+                                    Rectangle {
+                                        height: 28px;
+                                        background: root.net-filter == "" ? Theme.rail-item-active
+                                            : (nall-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                        HorizontalLayout {
+                                            padding-left: 10px;
+                                            Text {
+                                                text: root.lang-en ? "All interfaces" : "全部网口";
+                                                font-size: 11px;
+                                                color: root.net-filter == "" ? Theme.accent : Theme.fg-1;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                        nall-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.net-filter = ""; net-popup.close(); }
+                                        }
+                                    }
+                                    for n in root.net-rows : Rectangle {
+                                        height: 28px;
+                                        background: root.net-filter == n.name ? Theme.rail-item-active
+                                            : (nrow-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                        HorizontalLayout {
+                                            padding-left: 10px;
+                                            Text {
+                                                text: n.name;
+                                                font-size: 11px;
+                                                color: root.net-filter == n.name ? Theme.accent : Theme.fg-1;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                            }
+                                        }
+                                        nrow-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.net-filter = n.name; net-popup.close(); }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
