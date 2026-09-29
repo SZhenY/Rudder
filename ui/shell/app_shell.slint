@@ -497,6 +497,14 @@ export component AppWindow inherits Window {
     callback set-welcome-collapsed(bool);          // apply + persist
     in-out property <bool> collapse-sftp-default: false;
     callback set-collapse-sftp-default(bool);      // apply + persist
+    // 设置页导航搜索：Rust 过滤后回写六个分类的可见性
+    in property <bool> cat-visible-0: true;
+    in property <bool> cat-visible-1: true;
+    in property <bool> cat-visible-2: true;
+    in property <bool> cat-visible-4: true;
+    in property <bool> cat-visible-6: true;
+    in property <bool> cat-visible-5: true;
+    callback nav-search-changed(string);
     in-out property <bool> sftp-collapsed: false;       // (legacy global; per-tab now)
     // Per-session SFTP state: persist the collapse + sizes into that tab's
     // TerminalState so split panes / other tabs keep their own (#v0.5).
@@ -1315,6 +1323,13 @@ export component AppWindow inherits Window {
               set-flag-always-ask(v) => { root.set-download-always-ask(v); }
               set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
               set-flag-collapse-sftp(v) => { root.set-collapse-sftp-default(v); }
+              cat-visible-0: root.cat-visible-0;
+              cat-visible-1: root.cat-visible-1;
+              cat-visible-2: root.cat-visible-2;
+              cat-visible-4: root.cat-visible-4;
+              cat-visible-6: root.cat-visible-6;
+              cat-visible-5: root.cat-visible-5;
+              nav-search-changed(v) => { root.nav-search-changed(v); }
               // ── v0.8.0 设置窗迁移项的转发 ─────────────────────────────
               appearance-mode: root.appearance-mode;
               renderer-mode: root.renderer-mode;

@@ -435,6 +435,15 @@ export component PageSettings inherits Rectangle {
 
     // 0 基础 · 1 终端 · 2 文件 · 3 布局 · 4 快捷键
     property <int> current-cat: 0;
+    // 导航搜索：Rust 按关键词过滤分类（contains 无法在 Slint 里表达）
+    in-out property <string> nav-search: "";
+    in property <bool> cat-visible-0: true;
+    in property <bool> cat-visible-1: true;
+    in property <bool> cat-visible-2: true;
+    in property <bool> cat-visible-4: true;
+    in property <bool> cat-visible-6: true;
+    in property <bool> cat-visible-5: true;
+    callback nav-search-changed(string);
     // 系统标题栏让位高度（macOS 红绿灯；自绘标题栏的平台传 0）。
     in property <length> top-inset: 0px;
 
@@ -449,11 +458,17 @@ export component PageSettings inherits Rectangle {
             background: Theme.sur-1;
 
             VerticalLayout {
+                // 占据导航（200px）之外的全部宽度：不写 stretch 会被按首选宽排
+                //（内容挤在左侧 —— 用户截图）。
+                horizontal-stretch: 1;
                 padding-top: 16px + root.top-inset;
                 padding-bottom: 16px;
                 padding-left: 12px;
                 padding-right: 12px;
                 spacing: 2px;
+                // ⚠ VerticalLayout 的 alignment 是**主轴（垂直）**分布 —— start = 子项
+                // 顶部对齐。删了它子项会被垂直摊开（用户截图：分类跑到底部）。
+                alignment: start;
 
                 HorizontalLayout {
                     spacing: 6px;
@@ -474,10 +489,47 @@ export component PageSettings inherits Rectangle {
                         vertical-alignment: center;
                     }
                 }
-                Text {
-                    text: root.lang-en ? "Search and locate your settings" : "搜索并快速定位你的配置项";
-                    font-size: 10px;
-                    color: Theme.fg-3;
+                Rectangle {
+                    height: 26px;
+                    border-radius: 7px;
+                    border-width: 1px;
+                    border-color: Theme.line;
+                    background: Theme.sur-2;
+
+                    if root.nav-search == "" : Text {
+                        text: root.lang-en ? "Search settings..." : "搜索设置…";
+                        font-size: 11px;
+                        color: Theme.fg-3;
+                        vertical-alignment: center;
+                        x: 8px;
+                    }
+                    nav-search-input := TextInput {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        height: parent.height;
+                        font-size: 11px;
+                        color: Theme.fg-1;
+                        vertical-alignment: center;
+                        edited => { root.nav-search-changed(self.text); }
+                    }
+                    nav-clear := TouchArea {
+                        width: 18px;
+                        height: parent.height;
+                        x: parent.width - 20px;
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.nav-search = "";
+                            root.nav-search-changed("");
+                        }
+                    }
+                    if root.nav-search != "" : Text {
+                        text: "\u{E5CD}";
+                        font-family: "Material Icons";
+                        font-size: 13px;
+                        color: Theme.fg-3;
+                        x: parent.width - 20px;
+                        vertical-alignment: center;
+                    }
                 }
 
                 Rectangle {
@@ -485,6 +537,7 @@ export component PageSettings inherits Rectangle {
                 }
 
                 CategoryItem {
+                    visible: root.cat-visible-0;
                     glyph: "\u{E8B8}";
                     label: root.lang-en ? "General" : "基础";
                     sub: root.lang-en ? "Language, theme, updates" : "语言、主题、更新与功能入口";
@@ -494,6 +547,7 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 CategoryItem {
+                    visible: root.cat-visible-1;
                     glyph: "\u{EB8E}";
                     label: root.lang-en ? "Terminal" : "终端";
                     sub: root.lang-en ? "Fonts, cursor and scrollback" : "终端、字体与渲染";
@@ -503,6 +557,7 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 CategoryItem {
+                    visible: root.cat-visible-2;
                     glyph: "\u{E2C7}";
                     label: root.lang-en ? "Files" : "文件";
                     sub: root.lang-en ? "SFTP, partitions and transfers" : "SFTP、分区与传输行为";
@@ -512,6 +567,7 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 CategoryItem {
+                    visible: root.cat-visible-4;
                     glyph: "\u{E312}";
                     label: root.lang-en ? "Shortcuts" : "快捷键";
                     sub: root.lang-en ? "Global and terminal shortcuts" : "全局快捷键与终端快捷键";
@@ -521,6 +577,7 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 CategoryItem {
+                    visible: root.cat-visible-6;
                     glyph: "\u{E2EB}"; // cloud
                     label: root.lang-en ? "Cloud Sync" : "云同步";
                     sub: root.lang-en ? "WebDAV backup and restore" : "官方云 · WebDAV、加密与恢复";
@@ -530,6 +587,7 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 CategoryItem {
+                    visible: root.cat-visible-5;
                     glyph: "\u{E88E}";
                     label: root.lang-en ? "About" : "关于";
                     sub: root.lang-en ? "Version, logs and feedback" : "版本、日志与反馈";
@@ -581,6 +639,7 @@ export component PageSettings inherits Rectangle {
                         y: 0;
                         padding-top: 8px + root.top-inset;
                         spacing: 0;
+                        alignment: start;
 
                         // ═══ 基础 ═══
                         if root.current-cat == 0 : VerticalLayout {

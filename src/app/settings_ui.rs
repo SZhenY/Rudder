@@ -207,6 +207,35 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_collapse_sftp_default(s.collapse_sftp_default());
     }
 
+    // 设置页导航搜索：按关键词过滤分类（中/英文标签 + 副标题都参与匹配）。
+    // contains 无法在 Slint 里表达，过滤在 Rust 做完回写六个可见性。
+    {
+        let hay = [
+            (0i32, "基础 general language 语言 主题 更新 功能入口 theme accent wallpaper 壁纸 缩放 scale 动画 animation 渲染器 renderer 更新渠道 channel"),
+            (1, "终端 terminal fonts 字体 cursor 光标 scrollback 滚回 osc52 高亮 highlight 规则 rule preset 预设"),
+            (2, "文件 files sftp 分区 partitions 传输 transfer eol json 下载 download 挂载 mount filter 过滤 折叠 collapse"),
+            (4, "快捷键 shortcuts keys 全局 global 终端快捷键"),
+            (6, "云同步 cloud webdav 同步 sync 上传 upload 下载 download"),
+            (5, "关于 about 版本 version 日志 log 反馈 feedback libs"),
+        ];
+        let weak = window.as_weak();
+        window.on_nav_search_changed(move |q: slint::SharedString| {
+            let Some(w) = weak.upgrade() else { return };
+            let q = q.trim().to_lowercase();
+            for (id, text) in hay {
+                let hit = q.is_empty() || text.to_lowercase().contains(&q);
+                match id {
+                    0 => w.set_cat_visible_0(hit),
+                    1 => w.set_cat_visible_1(hit),
+                    2 => w.set_cat_visible_2(hit),
+                    4 => w.set_cat_visible_4(hit),
+                    6 => w.set_cat_visible_6(hit),
+                    _ => w.set_cat_visible_5(hit),
+                }
+            }
+        });
+    }
+
     // Apply the saved immersive wallpaper (overrides dark/light when set; a
     // missing custom file falls back to the plain theme).
     {
