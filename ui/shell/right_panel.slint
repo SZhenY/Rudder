@@ -1155,6 +1155,11 @@ export component RightPanel inherits Rectangle {
         // 其它标签页顶部留一块空白（用户截图）；if 的条件元素才真正不占位。
         if root.current-tab == 0 : HorizontalLayout {
             vertical-stretch: 0;
+            // 与内容页（Flickable > VerticalLayout padding: 10px）同一左右内边距、
+            // 同一顶部间隙 —— 头卡/四卡才和下面的趋势卡等竖向对齐（用户截图）。
+            padding-left: 10px;
+            padding-right: 10px;
+            padding-top: 10px;
 
             if root.panel-host != "" : Rectangle {
             border-radius: Theme.radius-md;
@@ -1264,6 +1269,8 @@ export component RightPanel inherits Rectangle {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
+            padding-left: 10px;
+            padding-right: 10px;
             padding-top: 8px;
             padding-bottom: 4px;
             spacing: 4px;
@@ -1299,6 +1306,8 @@ export component RightPanel inherits Rectangle {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
+            padding-left: 10px;
+            padding-right: 10px;
             padding-top: 4px;
             padding-bottom: 8px;
             spacing: 4px;
