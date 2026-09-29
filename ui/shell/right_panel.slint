@@ -872,6 +872,13 @@ export component RightPanel inherits Rectangle {
     property <string> net-filter: "";
     // 负载历史的展示窗口（秒）：1/5/15 分钟 = 60/300/900；综合页与 CPU 页各自记忆
     property <int> cpu-window: 60;
+    // 网口筛选弹窗的锚点（窗口坐标）：show 前按触发按钮的 absolute-position 算好，
+    // 向上展开、右对齐 —— 综合页的网络端口卡贴着面板底部，默认向下弹会溢出（用户截图）。
+    property <length> net-popup-x: 0;
+    property <length> net-popup-y: 0;
+    pure function net-popup-h() -> length {
+        return min(280px, 28px * (root.net-rows.length + 1));
+    }
     // 所有内容页（Flickable 内容列）的统一内边距 —— 单一处管理，改这里全页生效。
     // 7px ≈ 顶部切换条的 6px 按钮边距（10px 时明显错位，用户反馈）。
     property <length> content-pad: 7px;
@@ -1413,7 +1420,7 @@ export component RightPanel inherits Rectangle {
                                 horizontal-alignment: left;
                                 horizontal-stretch: 1;
                             }
-                            Rectangle {
+                            net-btn := Rectangle {
                                 width: nic-btn.preferred-width + 16px;
                                 height: 20px;
                                 border-radius: 4px;
@@ -1444,7 +1451,12 @@ export component RightPanel inherits Rectangle {
                                 }
                                 nic-ta := TouchArea {
                                     mouse-cursor: pointer;
-                                    clicked => { net-popup.show(); }
+                                    clicked => {
+                                        // 右对齐到按钮、弹窗底缘在按钮上方 6px
+                                        root.net-popup-x = max(8px, net-btn.absolute-position.x + net-btn.width - 190px);
+                                        root.net-popup-y = max(8px, net-btn.absolute-position.y - root.net-popup-h() - 6px);
+                                        net-popup.show();
+                                    }
                                 }
                             }
                         }
@@ -1457,8 +1469,11 @@ export component RightPanel inherits Rectangle {
                         }
 
                         net-popup := PopupWindow {
+                            x: root.net-popup-x;
+                            y: root.net-popup-y;
                             Rectangle {
                                 width: 190px;
+                                height: root.net-popup-h();
                                 border-radius: 8px;
                                 border-width: 1px;
                                 border-color: Theme.line;
@@ -1484,6 +1499,9 @@ export component RightPanel inherits Rectangle {
                                             clicked => { root.net-filter = ""; net-popup.close(); }
                                         }
                                     }
+                                    Flickable {
+                                    VerticalLayout {
+                                        height: self.preferred-height;
                                     for n in root.net-rows : Rectangle {
                                         height: 28px;
                                         background: root.net-filter == n.name ? Theme.rail-item-active
@@ -1502,6 +1520,8 @@ export component RightPanel inherits Rectangle {
                                             mouse-cursor: pointer;
                                             clicked => { root.net-filter = n.name; net-popup.close(); }
                                         }
+                                    }
+                                }
                                     }
                                 }
                             }
