@@ -1026,10 +1026,10 @@ export component RightPanel inherits Rectangle {
         // ── 内容标签：5 个监控视图 + 传输 / 文件（全部真数据）────────────
         // 参考图的标签是 综合 / 处理器 / 显卡 / 内存 / 磁盘 / 网络；显卡项目没有采集，
         // 不做（见文件头）。每个标签 图标 + 文案、等分宽度（见 PanelTab）。
-        HorizontalLayout {
+        if root.head-tab == 0 && root.panel-ready : HorizontalLayout {
             // 标签条高度随内容、不参与拉伸（多出来的高度只给下面的内容区）
+            // （用 if 而不是 visible —— visible 的元素在布局里占位。）
             vertical-stretch: 0;
-            visible: root.head-tab == 0 && root.panel-ready;
             height: 32px;
             padding-left: 6px;
             padding-right: 6px;
@@ -1150,13 +1150,11 @@ export component RightPanel inherits Rectangle {
 
 
         // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
-        // 外面包一层与指标行相同的 8px 左右内边距，四张卡与它左右对齐。
         // 头卡和下面的四张资源卡都是「综合」页的内容：切到 CPU/内存/… 跟着隐藏。
-        HorizontalLayout {
+        // ⚠ 必须用 if 而不是 visible：**visible 的元素在布局里仍然占位**，会在
+        // 其它标签页顶部留一块空白（用户截图）；if 的条件元素才真正不占位。
+        if root.current-tab == 0 : HorizontalLayout {
             vertical-stretch: 0;
-            visible: root.current-tab == 0;
-            padding-left: 8px;
-            padding-right: 8px;
 
             if root.panel-host != "" : Rectangle {
             border-radius: Theme.radius-md;
@@ -1261,13 +1259,11 @@ export component RightPanel inherits Rectangle {
 
         // ── 资源卡片 2×2（真数据，1 Hz）─────────────────────────────────
         // C 步会在下面接 CPU 趋势 / 磁盘分区 / 网络端口，并把这里收进「综合」标签。
-        HorizontalLayout {
+        // ⚠ 用 if 而不是 visible：visible 的元素在布局里占位（其它标签页顶部留白）。
+        if root.head-tab == 0 && root.current-tab == 0 && root.panel-ready : HorizontalLayout {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
-            visible: root.head-tab == 0 && root.current-tab == 0 && root.panel-ready;
-            padding-left: 8px;
-            padding-right: 8px;
             padding-top: 8px;
             padding-bottom: 4px;
             spacing: 4px;
@@ -1275,7 +1271,7 @@ export component RightPanel inherits Rectangle {
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
-                width: (parent.width - 20px) / 2;
+                width: (parent.width - 4px) / 2;
 
                 label: "CPU";
                 icon: "\u{E322}";   // memory-chip：参考图的 CPU 图标
@@ -1287,7 +1283,7 @@ export component RightPanel inherits Rectangle {
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
-                width: (parent.width - 20px) / 2;
+                width: (parent.width - 4px) / 2;
 
                 label: root.lang-en ? "MEM" : "内存";
                 icon: "\u{E1DB}";   // storage：参考图的层叠图标
@@ -1298,13 +1294,11 @@ export component RightPanel inherits Rectangle {
                 foot-right: root.mem-total;
             }
         }
-        HorizontalLayout {
+        // ⚠ 用 if 而不是 visible：visible 的元素在布局里占位（其它标签页顶部留白）。
+        if root.head-tab == 0 && root.current-tab == 0 && root.panel-ready : HorizontalLayout {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
-            visible: root.head-tab == 0 && root.current-tab == 0 && root.panel-ready;
-            padding-left: 8px;
-            padding-right: 8px;
             padding-top: 4px;
             padding-bottom: 8px;
             spacing: 4px;
@@ -1312,7 +1306,7 @@ export component RightPanel inherits Rectangle {
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
-                width: (parent.width - 20px) / 2;
+                width: (parent.width - 4px) / 2;
 
                 label: root.lang-en ? "DISK" : "磁盘";
                 icon: "\u{E875}";   // dns：参考图的磁盘盒子
@@ -1326,7 +1320,7 @@ export component RightPanel inherits Rectangle {
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
-                width: (parent.width - 20px) / 2;
+                width: (parent.width - 4px) / 2;
 
                 label: root.lang-en ? "NET" : "网络";
                 icon: "\u{E63E}";   // wifi
@@ -1543,8 +1537,6 @@ export component RightPanel inherits Rectangle {
                 // 六张卡同宽 w=(root.width-44)/3：左区=2w+4、右列=w，正好铺满一行。
                 HorizontalLayout {
                     vertical-stretch: 0;
-                    padding-left: 8px;
-                    padding-right: 8px;
                     spacing: 4px;
 
                     // 左 2/3：占比卡 2×2
@@ -1555,7 +1547,7 @@ export component RightPanel inherits Rectangle {
                             spacing: 4px;
 
                             ResCard {
-                                width: (root.width - 44px) / 3;
+                                width: (root.width - 28px) / 3;
                                 label: root.lang-en ? "Total load" : "总负载";
                                 icon: "\u{E30C}";   // computer
                                 tone: Theme.accent;
@@ -1563,7 +1555,7 @@ export component RightPanel inherits Rectangle {
                                 percent: root.cpu-percent;
                             }
                             ResCard {
-                                width: (root.width - 44px) / 3;
+                                width: (root.width - 28px) / 3;
                                 label: root.lang-en ? "User" : "用户态";
                                 icon: "\u{E7FD}";   // person
                                 tone: Theme.accent;
@@ -1575,7 +1567,7 @@ export component RightPanel inherits Rectangle {
                             spacing: 4px;
 
                             ResCard {
-                                width: (root.width - 44px) / 3;
+                                width: (root.width - 28px) / 3;
                                 label: root.lang-en ? "System" : "内核态";
                                 icon: "\u{E8B8}";   // settings
                                 tone: Theme.success;
@@ -1583,7 +1575,7 @@ export component RightPanel inherits Rectangle {
                                 percent: root.cpu-system;
                             }
                             ResCard {
-                                width: (root.width - 44px) / 3;
+                                width: (root.width - 28px) / 3;
                                 label: root.lang-en ? "IO wait" : "IO 等待";
                                 icon: "\u{E8B5}";   // schedule
                                 tone: Theme.warning;
@@ -1597,7 +1589,7 @@ export component RightPanel inherits Rectangle {
                         spacing: 4px;
 
                         ResCard {
-                            width: (root.width - 44px) / 3;
+                            width: (root.width - 28px) / 3;
                             label: root.lang-en ? "Load avg" : "负载均值";
                             icon: "\u{E8B5}";   // schedule
                             tone: Theme.ok;
@@ -1605,7 +1597,7 @@ export component RightPanel inherits Rectangle {
                             show-bar: false;
                         }
                         ResCard {
-                            width: (root.width - 44px) / 3;
+                            width: (root.width - 28px) / 3;
                             label: root.lang-en ? "Temp" : "温度";
                             icon: "\u{E1FF}";   // device_thermostat
                             tone: Theme.danger;
