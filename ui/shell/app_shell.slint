@@ -1268,6 +1268,8 @@ export component AppWindow inherits Window {
               set-accent-color(c) => { root.set-accent(c); }
               set-wallpaper-label(l) => { root.set-wallpaper(l); }
               pick-wallpaper() => { root.pick-wallpaper-file(); }
+              // 磨砂透明度落盘（实时预览由页面直接改 Theme.panel-alpha）
+              persist-frost-alpha(v) => { root.persist-wallpaper-overlay(v); }
               open-log-dir() => { root.open-log-dir(); }
               term-ui-font(f) => { root.set-ui-font(f); }
               about-libs: root.about-libs;
