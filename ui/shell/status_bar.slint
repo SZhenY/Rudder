@@ -7,7 +7,7 @@
 //       「重连」（仅断开态可点：复用"断开后按 Enter 重连"那条成熟路径）；
 //       「历史命令 N」。
 // 右 —— 传输统计卡：TOTAL N + 活动指示（has-active-transfers）。
-// 参考图里还有「隧道 / 录制」与 UTF-8 选择器：隧道 UI 暂缓、录制与运行期改编码
+// 设计里还有「隧道 / 录制」与 UTF-8 选择器：隧道 UI 暂缓、录制与运行期改编码
 // 项目都没有对应功能，一律先不做（见 CHANGELOG 记录）。
 
 import { Theme } from "../theme.slint";
@@ -145,7 +145,7 @@ export component StatusBar inherits Rectangle {
             horizontal-stretch: 1;
         }
 
-        // 传输统计卡（参考图右侧 PATH/DIR/FILE/TOTAL 的 v1：只放有数据的 TOTAL）
+  // 传输统计卡（右侧 PATH/DIR/FILE/TOTAL 的 v1：只放有数据的 TOTAL）
         Rectangle {
             height: 20px;
             y: (parent.height - 20px) / 2;

@@ -1,4 +1,4 @@
-// 主机管理页（按 ex/主机.png 参考稿）。
+// 主机管理页（版式取自 ex/主机.png）。
 //
 // 三栏：左侧栏（外壳提供）→ 本页的「分组导航」列 → 主内容（顶栏 + 主机卡片）。
 // 数据仍走 AppWindow 既有的 sessions 模型与 connect-session 回调，Rust 零改动。
@@ -7,7 +7,7 @@ import { Theme } from "../theme.slint";
 import { SessionInfo } from "../session_types.slint";
 import { ConfirmDialog } from "../confirm_dialog.slint";
 
-// 卡片菜单里的一行（参考图 主机-卡片-菜单.png：图标 + 文案，删除是红色）。
+// 卡片菜单里的一行（主机-卡片-菜单.png：图标 + 文案，删除是红色）。
 component MenuRow inherits Rectangle {
     in property <string> glyph;
     in property <string> label;
@@ -66,7 +66,7 @@ component HostCard inherits Rectangle {
     width: 340px;
     height: 168px;
     border-radius: Theme.radius-lg;
-    // 选中态：一圈主题色高光（参考图「选中卡片」）—— 边框加粗到 2px + accent 色。
+  // 选中态：一圈主题色高光（「选中卡片」）—— 边框加粗到 2px + accent 色。
     border-width: root.selected ? 2px : 1px;
     border-color: root.selected ? Theme.accent : Theme.line;
     // 悬停在卡片或右上角「⋯」上都算"卡片悬停"（否则鼠标移到按钮上时底色会闪）。
@@ -167,8 +167,8 @@ component HostCard inherits Rectangle {
                 }
             }
 
-            // 备注 / 标签两行（参考图 主机.png 卡片下半部分）：备注是真数据，
-            // 空时显示「暂无备注」；标签体系还没进配置，先按参考图显示「无标签」
+  // 备注 / 标签两行（主机.png 卡片下半部分）：备注是真数据，
+  // 空时显示「暂无备注」；标签体系还没进配置，先按设计显示「无标签」
             //（与左侧「标签筛选」里的占位 chip 同一约定）。
             Text {
                 text: root.session.note == ""
@@ -186,7 +186,7 @@ component HostCard inherits Rectangle {
         }
 
         // 快速连接：平时低调（sur-3 + 次文字色），鼠标悬停在卡片上（或按钮上）才
-        // "亮起"（accent 底 + accent 文字）—— 参考图 主机-卡片-菜单.png 的注记。
+  // "亮起"（accent 底 + accent 文字）—— 主机-卡片-菜单.png 的注记。
         Rectangle {
             height: 30px;
             border-radius: Theme.radius-md;
@@ -208,7 +208,7 @@ component HostCard inherits Rectangle {
         }
     }
 
-    // 卡片右上角「⋯」按钮（参考图 主机-卡片-菜单.png）：悬停该卡片时出现，
+  // 卡片右上角「⋯」按钮（主机-卡片-菜单.png）：悬停该卡片时出现，
     // 点它把菜单**锚点（窗口坐标）**报给页面 —— 菜单本身画在页面级的浮层上，
     // 于是点卡片内外的任何位置都会把它关掉（画在卡片里时只能点卡片才关）。
     Rectangle {
@@ -455,7 +455,7 @@ export component PageHosts inherits Rectangle {
                     // 于是和左边「主机管理」那几个字对不齐（用户截图里的红框）。套一层
                     // `VerticalLayout{alignment: center}` 显式居中。
                     // 宽度由文案决定（中英长度不同），避免固定 96px 时溢出/挤边。
-                    // 参考图里是实心强调色按钮 —— 与右侧工具面板的主按钮一致。
+  // 设计里是实心强调色按钮 —— 与右侧工具面板的主按钮一致。
                     VerticalLayout {
                         alignment: center;
 
@@ -504,7 +504,7 @@ export component PageHosts inherits Rectangle {
             if root.sessions.length > 0 : host-flick := Flickable {
                 vertical-stretch: 1;
 
-                // 卡片网格（参考图是网格，不是一行一张）：列数按可用宽度算，每行
+  // 卡片网格（是网格，不是一行一张）：列数按可用宽度算，每行
                 // 由 HorizontalLayout 平均分格、卡片随之伸缩；最后一行的空位不补。
                 grid := VerticalLayout {
                     padding: Theme.sp-4;
@@ -615,7 +615,7 @@ export component PageHosts inherits Rectangle {
         }
     }
 
-    // 删除确认（参考图里删除是菜单里的一项；破坏性动作前先确认，确认后才走回调链）。
+  // 删除确认（里删除是菜单里的一项；破坏性动作前先确认，确认后才走回调链）。
     // 这个确认框是本页私有的：确认框组件通用，但"删除主机"要经过本页 → 窗口 → Rust。
     ConfirmDialog {
         is-open: root.pending-remove-id != "";

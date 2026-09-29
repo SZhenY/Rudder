@@ -173,7 +173,7 @@ export component TerminalStage inherits Rectangle {
             HorizontalLayout {
                 spacing: 0;
 
-                // 标签条（A-2.4，按参考图）：药丸标签 + ➕ + 快捷指令/分屏/全屏。
+  // 标签条：药丸标签 + ➕ + 快捷指令/分屏/全屏。
                 // 旧 TabBar 的拖拽排序 / 跨分屏合并 / 重复标签暂未迁移。
                 PaneTabs {
                     pane-id: pane.id;
@@ -297,7 +297,7 @@ export component TerminalStage inherits Rectangle {
         }
     }
 
-    // ── 快捷指令下拉（参考图顶栏「快捷指令 ▾」）─────────────────────────
+  // ── 快捷指令下拉（顶栏「快捷指令 ▾」）─────────────────────────
     // 声明在 pane 循环之后 = 画在终端画面之上（PaneTabs 自己溢出的话会被画面盖住）；
     // 点空白处收起。列表直接来自 `quick-commands` 模型（真数据），点一条即走
     // `run-command`（`send-enter` 由 Rust 侧决定是否补一个回车）。

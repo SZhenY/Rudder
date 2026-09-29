@@ -1,4 +1,4 @@
-// 新标题栏（UI 重构，按 ex/ 参考稿）。
+// 新标题栏（UI 重构，版式取自 ex/ 里的界面截图）。
 //
 // 只在无边框平台（Windows/Linux）实例化：整条 38px 都是可拖拽区（拖动移动窗口、
 // 双击最大化），右上角是最小化 / 最大化 / 关闭。沉浸式 —— 不画应用图标与标题
@@ -36,10 +36,10 @@ export component AppTitleBar inherits WindowTitleBar {
 }
 
 /// 系统标题栏平台（macOS）的顶部栏：红绿灯由系统画在左上角，这里补「应用图标 +
-/// 程序名」与底部一条分隔线（参考图：标题栏与内容之间有一条线，标题栏显示程序名）。
+/// 程序名」与底部一条分隔线（标题栏与内容之间有一条线，标题栏显示程序名）。
 ///
 /// 为什么不是"内容直接顶到窗口顶"：那样顶部只剩一圈背景，和下面各页面割裂；
-/// 参考图的做法是给它一个真正的标题栏内容。
+/// 设计的做法是给它一个真正的标题栏内容。
 export component AppTitleBarSystem inherits Rectangle {
     height: 28px;
     background: Theme.sur-1;
@@ -74,7 +74,7 @@ export component AppTitleBarSystem inherits Rectangle {
         }
     }
 
-    // 底部 1px 分隔线：标题栏与内容的分界（用户参考图）
+  // 底部 1px 分隔线：标题栏与内容的分界
     Rectangle {
         y: parent.height - 1px;
         width: 100%;

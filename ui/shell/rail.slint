@@ -1,7 +1,7 @@
-// 左侧栏（按参考设计：iShell Pro 那套）。
+// 左侧栏（按设计：原版设计 那套）。
 //
 // 展开 180px（图标 + 文字）· 收起 56px（只留图标，顶部只留展开按钮）。
-// 选中项做成"加粗填充药丸"（accent 淡底 + 主色文字），与参考图一致；
+// 选中项做成"加粗填充药丸"（accent 淡底 + 主色文字），与整体设计一致；
 // 图标用项目里既有的 Material Icons 字体。
 
 import { Theme } from "../theme.slint";
@@ -44,7 +44,7 @@ component RailButton inherits Rectangle {
             overflow: elide;
         }
 
-        // 参考图：选中项右侧的小圆点
+  // 选中项右侧的小圆点
         if !root.collapsed && root.active : Rectangle {
             width: 5px;
             height: 5px;

@@ -1,6 +1,6 @@
 // 终端页「无会话」空状态（按 ex/终端-无会话.png 逐项对齐）。
 //
-// 参考图结构：居中一张带边框的卡片 —— 标题 + 副标题；三张子卡（本地终端 /
+// 结构：居中一张带边框的卡片 —— 标题 + 副标题；三张子卡（本地终端 /
 // 选择本地壳 / 远程·串口）各带**动作按钮**；下方「最近连接」行（图标 + 名称 +
 // user@host + →）。会话态（真正的终端画面）嵌现有终端核心，另行接线。
 
@@ -43,7 +43,7 @@ component MiniBtn inherits Rectangle {
     }
 }
 
-// 参考图右上角的能力徽标（本地与远程支持 / 多标签与分屏）。
+// 右上角的能力徽标（本地与远程支持 / 多标签与分屏）。
 component Chip inherits Rectangle {
     in property <string> text;
 
@@ -107,7 +107,7 @@ export component PageTerminal inherits Rectangle {
     in property <bool> lang-en: false;
     in property <[SessionInfo]> sessions;
     // 本地终端：直接起本地默认 shell 的会话（本地 shell 不再做成主机卡片，
-    // 入口只有这里 —— 参考图 终端-无会话.png）。
+  // 入口只有这里 —— 终端-无会话.png）。
     callback new-local-session();
     // 串口 / 自定义：这些要选参数，仍然走「新建主机」对话框。
     callback custom-session();
@@ -117,7 +117,7 @@ export component PageTerminal inherits Rectangle {
     // 否则两层磨砂叠加，本页会比别的页面更暗。
     background: transparent;
 
-    // 居中的一张卡片（参考图：不铺满、四周留白）
+  // 居中的一张卡片（不铺满、四周留白）
     VerticalLayout {
         alignment: center;
 
@@ -137,7 +137,7 @@ export component PageTerminal inherits Rectangle {
                     spacing: 14px;
                     alignment: start;
 
-                    // ── 标题 + 副标题 + 能力徽标（参考图右上角两枚）──────
+  // ── 标题 + 副标题 + 能力徽标（右上角两枚）──────
                     HorizontalLayout {
                         spacing: 10px;
 

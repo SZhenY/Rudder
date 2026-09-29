@@ -977,7 +977,7 @@ export component AppWindow inherits Window {
         property <length> bar-h: 38px;
         // 侧栏与页面内容的整体下移量：自绘栏平台是栏高，macOS 是红绿灯让位高度。
         property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
-        // 右侧「工具」面板：展开 240px，折叠成窄条（参考图「收起 SFTP 侧边栏」）时 22px。
+  // 右侧「工具」面板：展开 240px，折叠成窄条（「收起 SFTP 侧边栏」）时 22px。
         // 状态提升到窗口级 —— 舞台的占位宽度（panel-w）要跟着它变。
         in-out property <bool> panel-collapsed: false;
         // 面板占位宽度：面板打开时终端舞台整体让开它，而不是被它盖住 —— 否则舞台里的
@@ -1481,7 +1481,7 @@ export component AppWindow inherits Window {
         }
     }
 
-      // 底部状态栏（参考图：连接状态 / 高亮 / 历史命令 / 传输统计）。
+  // 底部状态栏（连接状态 / 高亮 / 历史命令 / 传输统计）。
       if root.shell-page == 1 && root.terminals.length > 0 : StatusBar {
           x: root.rail-w;
           y: root.height - 28px;
@@ -1521,7 +1521,7 @@ export component AppWindow inherits Window {
       }
 
 
-                // 终端页空状态（一个标签都没有时）：参考图的「创建你的第一个终端会话」。
+  // 终端页空状态（一个标签都没有时）：设计的「创建你的第一个终端会话」。
       // 声明在终端舞台之后 = 盖住它；有标签时这里不实例化，舞台的终端画面就露出来。
       if root.shell-page == 1 && root.terminals.length == 0 : Rectangle {
           // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
@@ -1564,7 +1564,7 @@ export component AppWindow inherits Window {
           }
       }
 
-      // 笔记随笔 / AI 助手：参考图里有入口，页面规划中（与 Docker 占位同款）。
+  // 笔记随笔 / AI 助手：设计里有入口，页面规划中（与 Docker 占位同款）。
       if root.shell-page == 5 || root.shell-page == 6 : Rectangle {
           // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
 
@@ -1610,7 +1610,7 @@ export component AppWindow inherits Window {
                 // 沉浸式无图标/标题。放在最后声明 = 盖在页面内容之上、按钮可点；
                 // macOS 不实例化（系统红绿灯 + 原生拖拽）。
                 // 系统标题栏平台（macOS）：补一条带「图标 + 程序名 + 底部分隔线」的
-                // 标题栏 —— 顶部不再是一圈空背景（用户参考图的做法）。
+  // 标题栏 —— 顶部不再是一圈空背景。
                 if !root.custom-titlebar : AppTitleBarSystem {
                     width: root.width;
                     y: 0;

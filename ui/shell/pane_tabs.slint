@@ -19,7 +19,7 @@ component TabPill inherits Rectangle {
 
     height: 30px;
     border-radius: 8px;
-    // 参考图（终端-会话-收起/展开）：会话标签是一枚**描边圆角矩形**（1px 灰边），
+  // （终端-会话-收起/展开）：会话标签是一枚**描边圆角矩形**（1px 灰边），
     // 激活态边更亮 + 微填充；未激活透明、悬停微填充。
     border-width: 1px;
     border-color: root.active ? Theme.line-strong
@@ -215,7 +215,7 @@ export component PaneTabs inherits Rectangle {
             }
 
             // 右侧：快捷指令 / 工具面板 / 分屏 / 全屏（快捷指令侧栏按需求移除，
-            // 但下拉入口按参考图补了回来：点开就是当前快捷命令列表）。
+  // 但下拉入口按设计补了回来：点开就是当前快捷命令列表）。
             IconBtn {
                 glyph: "\u{E5CE}"; // expand_more：这是个下拉入口
                 label: root.lang-en ? "Snippets" : "快捷指令";
@@ -232,7 +232,7 @@ export component PaneTabs inherits Rectangle {
                     root.toggle-panel();
                 }
             }
-            // 参考图：下拉入口与窗口按钮之间有一条竖分隔线
+  // 下拉入口与窗口按钮之间有一条竖分隔线
             Rectangle {
                 width: 1px;
                 height: 16px;

@@ -1,14 +1,14 @@
-// 右侧「工具」面板（参考 ex/终端-会话并分屏.png 的右侧栏；AI 按需求暂不做）。
+// 右侧「工具」面板（版式取自 ex/终端-会话并分屏.png 的右侧栏；AI 按需求暂不做）。
 //
 // v3 骨架（终端页设计 B 步）：
-//   * 面板头：工具标题 + 折叠（收成 22px 窄条，参考「收起 SFTP 侧边栏」那张）+ 关闭
+//   * 面板头：工具标题 + 折叠（收成 22px 窄条，「收起 SFTP 侧边栏」那张）+ 关闭
 //   * 资源卡片：CPU / 内存 / 磁盘 / 网络 —— 真数据（`sidebar.rs::refresh_sidebar` 每秒写
 //     cpu-percent / mem-percent / mem-detail / disks / net-top-*），2×2 铺开
 //   * 内容：传输（transfers 模型）+ 文件（活动标签的 SFTP 列表，`active-sftp-*` 镜像）
 //   * footer：打开文件视图的圆按钮 + PATH / DIR / FILE / TOTAL 徽标
 //     （计数与总大小由 Rust `refresh_active_term` 数出来，Slint 没有 reduce/filter）
 //
-// 参考图里有、项目**没有功能**因而先不做（2026-09 记录）：录制、运行期 UTF-8 选择器、
+// 有设计但项目**没有功能**因而先不做（2026-09 记录）：录制、运行期 UTF-8 选择器、
 // 显卡标签（无 GPU 采集）、AI 面板；隧道数据已提升到 `active-tunnels` 但 UI 按需求暂缓。
 // 「传输模式 / 批量编辑限制 / 文件关联」是旧 SFTP 面板的设置项，不在这里放空控件。
 //
@@ -24,7 +24,7 @@ import { SysNetRow } from "../system_info_window.slint";
 // 那个等着删除的旧面板组件文件。
 import { SftpCrumb, SftpEntry, TunnelInfo } from "../sftp_types.slint";
 
-// 内容标签（参考图样式）：小图标 + 文案；激活态是一枚圆角胶囊（sur-3 底 + 主题色
+// 内容标签（样式）：小图标 + 文案；激活态是一枚圆角胶囊（sur-3 底 + 主题色
 // 图标 + 加粗白字），未激活透明、悬停淡底。等分宽度（horizontal-stretch）—— 7 个
 // 标签在窄面板里也排得开，不会挤成一串。
 component PanelTab inherits Rectangle {
@@ -67,8 +67,8 @@ component PanelTab inherits Rectangle {
     }
 }
 
-// 折线趋势（参考图里的曲线）：**一条 Path 画完整条线**，比"每个采样点一根柱子"
-// 便宜得多（一个绘制项 vs 几十个），也符合参考图的观感 —— 线 + 浅色面积填充 +
+// 折线趋势（里的曲线）：**一条 Path 画完整条线**，比"每个采样点一根柱子"
+// 便宜得多（一个绘制项 vs 几十个），也符合设计观感 —— 线 + 浅色面积填充 +
 // 0 值基线。
 //
 // ⚠ 两个关键点：
@@ -150,7 +150,7 @@ component LineChart inherits Rectangle {
         fit: fill;
         stroke: root.line-color;
         stroke-width: 1.5px;
-        // 参考图是"线 + 浅色面积"：末尾收口到基线后再闭合成多边形。
+  // 设计是"线 + 浅色面积"：末尾收口到基线后再闭合成多边形。
         fill: root.line-color.with-alpha(0.16);
 
         // 两个**看不见的锚点**把包围盒钉死在 0..100 × 0..100：Path 会把整条路径
@@ -408,12 +408,12 @@ component IconBtn inherits Rectangle {
     }
 }
 
-// 资源卡片（参考图 `ex/终端-工具-综合.png` 的四张）：三行紧凑布局 ——
+// 资源卡片（`ex/终端-工具-综合.png` 的四张）：三行紧凑布局 ——
 //   ① 图标（主色）+ 标签（白）+ 数值（右对齐、主色大字）
 //   ② 进度条（主色）
 //   ③ 补充行（小灰字，没有就不画）
 // 高度随内容（不同 DPI / 字号下都不会挤）；宽度由调用方平分。
-// 面板头部的页签（参考图「工具 | AI」）：激活态是一条主题色下划线。
+// 面板头部的页签（「工具 | AI」）：激活态是一条主题色下划线。
 component PanelHeadTab inherits Rectangle {
     in property <string> label;
     in property <bool> active: false;
@@ -447,7 +447,7 @@ component PanelHeadTab inherits Rectangle {
     }
 }
 
-// 1/5/15 分钟窗口切换（参考图的 segmented control）：激活项 = 圆角胶囊 + 主题色。
+// 1/5/15 分钟窗口切换（的 segmented control）：激活项 = 圆角胶囊 + 主题色。
 component WindowSwitch inherits HorizontalLayout {
     in-out property <int> value: 60;
     in property <bool> lang-en: false;
@@ -480,7 +480,7 @@ component WindowSwitch inherits HorizontalLayout {
     }
 }
 
-// 资源卡（参考图的三段式，四张卡**同构** —— 统一排版）：
+// 资源卡（的三段式，四张卡**同构** —— 统一排版）：
 //   第一行：图标 + 标签 …… 大数值（同色）
 //   中间槽：固定高 14px —— 有 bar 画 bar，否则放 ↓/↑ 一对（网络卡），都没有就留白
 //   底部行：左……右两段说明（内存 已用/总量、磁盘 已用/总量、CPU 负载均值）
@@ -492,7 +492,7 @@ component ResCard inherits Rectangle {
     in property <string> hint;          // 兼容旧用法：单条补充行（落到底部行左侧）
     in property <bool> show-bar: true;
     in property <string> icon: "";      // Material Icons 码位
-    // 卡片主色：图标 / 数值 / 进度条同色（参考图：CPU 青、内存 紫、磁盘 黄、网络 绿）
+  // 卡片主色：图标 / 数值 / 进度条同色（CPU 青、内存 紫、磁盘 黄、网络 绿）
     in property <color> tone: Theme.accent;
     // 中间槽的左右两段（网络卡：↓ 上行 / ↑ 下行）
     in property <string> mid-left: "";
@@ -608,7 +608,7 @@ component ResCard inherits Rectangle {
     }
 }
 
-// 分段小标题（工具面板：CPU 趋势 / 磁盘分区 / 网络端口 等）—— 参考图是"小图标 + 白色标题"。
+// 分段小标题（工具面板：CPU 趋势 / 磁盘分区 / 网络端口 等）—— 设计是"小图标 + 白色标题"。
 component SectionTitle inherits HorizontalLayout {
     in property <string> text;
     in property <string> icon: "";
@@ -698,7 +698,7 @@ component NetIfaceRow inherits Rectangle {
             horizontal-stretch: 1;
             overflow: elide;
         }
-        // 参考图：下行绿色、上行红色（箭头与数值同色）
+  // 下行绿色、上行红色（箭头与数值同色）
         Text {
             text: "\u{E5DB}";   // arrow_downward
             font-family: "Material Icons";
@@ -736,7 +736,7 @@ component EmptyHint inherits Text {
     color: Theme.fg-3;
 }
 
-// footer 的小徽标：标签 + 值（参考图右下 PATH / DIR / FILE / TOTAL）。
+// footer 的小徽标：标签 + 值（右下 PATH / DIR / FILE / TOTAL）。
 component StatChip inherits Rectangle {
     in property <string> label;
     in property <string> value;
@@ -852,7 +852,7 @@ export component RightPanel inherits Rectangle {
     in property <string> panel-uptime;
     in property <string> panel-load-1m;
     // 监控数据是否就绪（远端要等 overview 异步采回来）—— 未就绪时「工具」内容
-    // 先不画，显示「等待监控数据…」加载态（参考 iShell）。
+  // 先不画，显示「等待监控数据…」加载态。
     in property <bool> panel-ready: false;
     // 内存 已用 / 总量（四卡底部行拆分显示）
     in property <string> mem-used;
@@ -904,7 +904,7 @@ export component RightPanel inherits Rectangle {
     in property <[float]> net-history-bot;
     // 逐网卡速率（远端 = 会话自己的网卡表，本机 = 一行本地总速率）
     in property <[SysNetRow]> net-rows;
-    // 折叠成 22px 窄条（参考图「收起 SFTP 侧边栏」）：状态在窗口级，终端舞台按它让位。
+  // 折叠成 22px 窄条（「收起 SFTP 侧边栏」）：状态在窗口级，终端舞台按它让位。
     in-out property <bool> collapsed: false;
     // footer 徽标（Rust 数出来的当前目录统计）
     in property <int> sftp-dir-count;
@@ -951,9 +951,9 @@ export component RightPanel inherits Rectangle {
         : (root.sftp-loading && root.sftp-entries.length == 0 ? 1
         : (root.sftp-entries.length == 0 ? 2 : 3));
 
-    // 展开 340px / 收起 22px 窄条（参考图「收起 SFTP 侧边栏」）。
+  // 展开 340px / 收起 22px 窄条（「收起 SFTP 侧边栏」）。
     // 240px 那版 7 个标签挤在一起、指标卡里的详情文字也被压到换行（用户截图），
-    // 参考图的面板本身就很宽 —— 加宽到 340px（app_shell 的 panel-w 同步）。
+  // 设计的面板本身就很宽 —— 加宽到 340px（app_shell 的 panel-w 同步）。
     width: root.collapsed ? 22px : 340px;
     // 与终端同一块"磨砂玻璃"：都用 `term-bg` —— 它跟着「外观 ▸ 遮罩」的
     // 壁纸遮罩透明度（0–70%）一起变，面板与终端因此始终同色同透，没有生硬的
@@ -1009,7 +1009,7 @@ export component RightPanel inherits Rectangle {
                 active: root.head-tab == 0;
                 clicked => { root.head-tab = 0; }
             }
-            // AI 只是占位（参考图有这一项，项目还没接模型）—— 点开只有一张说明卡。
+  // AI 只是占位（有这一项，项目还没接模型）—— 点开只有一张说明卡。
             PanelHeadTab {
                 label: "AI";
                 active: root.head-tab == 1;
@@ -1034,7 +1034,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 内容标签：5 个监控视图 + 传输 / 文件（全部真数据）────────────
-        // 参考图的标签是 综合 / 处理器 / 显卡 / 内存 / 磁盘 / 网络；显卡项目没有采集，
+  // 设计的标签是 综合 / 处理器 / 显卡 / 内存 / 磁盘 / 网络；显卡项目没有采集，
         // 不做（见文件头）。每个标签 图标 + 文案、等分宽度（见 PanelTab）。
         if root.head-tab == 0 && root.panel-ready : HorizontalLayout {
             // 标签条高度随内容、不参与拉伸（多出来的高度只给下面的内容区）
@@ -1111,7 +1111,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 综合：CPU 趋势 + 磁盘分区 + 网络端口（卡片在上方常驻，不重复）──
-        // ── AI 占位卡（参考图头部有这一项；项目还没接模型，不放假功能）──
+  // ── AI 占位卡（头部有这一项；项目还没接模型，不放假功能）──
         if root.head-tab == 1 : Rectangle {
             vertical-stretch: 1;
             background: transparent;
@@ -1159,7 +1159,7 @@ export component RightPanel inherits Rectangle {
         }
 
 
-        // ── 加载态（参考 iShell）：会话刚连上、overview 还没采回来时，「工具」
+  // ── 加载态：会话刚连上、overview 还没采回来时，「工具」
         // 内容先不画 —— 数据到齐（panel-ready）再一次性亮出来，避免看到一堆
         // 0% / 空卡片的中间态。
         if root.head-tab == 0 && !root.panel-ready : Rectangle {
@@ -1288,7 +1288,7 @@ export component RightPanel inherits Rectangle {
                 width: (root.width - 24px) / 2;
 
                 label: "CPU";
-                icon: "\u{E322}";   // memory-chip：参考图的 CPU 图标
+  icon: "\u{E322}";  // memory-chip：设计的 CPU 图标
                 tone: Theme.accent;
                 value: "\{round(root.cpu-percent * 100)}%";
                 percent: root.cpu-percent;
@@ -1300,7 +1300,7 @@ export component RightPanel inherits Rectangle {
                 width: (root.width - 24px) / 2;
 
                 label: root.lang-en ? "MEM" : "内存";
-                icon: "\u{E1DB}";   // storage：参考图的层叠图标
+  icon: "\u{E1DB}";  // storage：设计的层叠图标
                 tone: Theme.success;
                 value: "\{round(root.mem-percent * 100)}%";
                 percent: root.mem-percent;
@@ -1321,14 +1321,14 @@ export component RightPanel inherits Rectangle {
                 width: (root.width - 24px) / 2;
 
                 label: root.lang-en ? "DISK" : "磁盘";
-                icon: "\u{E875}";   // dns：参考图的磁盘盒子
+  icon: "\u{E875}";  // dns：设计的磁盘盒子
                 tone: Theme.warning;
                 value: root.disks.length > 0 ? "\{round(root.disks[0].percent * 100)}%" : "—";
                 percent: root.disks.length > 0 ? root.disks[0].percent : 0;
                 foot-left: root.disks.length > 0 ? root.disks[0].used : "";
                 foot-right: root.disks.length > 0 ? root.disks[0].total : "";
             }
-            // 网络卡：参考图没有进度条 —— 中间槽放 ↓/↑ 一对速率，底部行放当前网卡。
+  // 网络卡：没有进度条 —— 中间槽放 ↓/↑ 一对速率，底部行放当前网卡。
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
@@ -1345,7 +1345,7 @@ export component RightPanel inherits Rectangle {
         }
 
 
-                // 参考图：综合页的每个区块都是一张卡（标题 + 内容），不再是裸标题。
+  // 综合页的每个区块都是一张卡（标题 + 内容），不再是裸标题。
                 TrendCard {
                     vertical-stretch: 1;   // 趋势卡吸收面板的多余高度（填满底部空白）
                     title: root.lang-en ? "CPU load trend" : "CPU 负载趋势";
@@ -1544,7 +1544,7 @@ export component RightPanel inherits Rectangle {
                 padding: root.content-pad;
                 spacing: 6px;
 
-                // 参考图（终端-工具-处理器）：**有占比条的卡在左两列**（总负载/用户态 +
+  // （终端-工具-处理器）：**有占比条的卡在左两列**（总负载/用户态 +
                 // 内核态/IO 等待，2×2），**只有数字的卡在右一列**（负载均值/温度，竖排）。
                 // 六张卡同宽 w=(root.width-44)/3：左区=2w+4、右列=w，正好铺满一行。
                 HorizontalLayout {
@@ -1837,7 +1837,7 @@ export component RightPanel inherits Rectangle {
             }
         }
 
-        // ── 内存：内存 + 交换（真数据；参考图里的「用户 / 系统」拆分项目没有）──
+  // ── 内存：内存 + 交换──
         if root.head-tab == 0 && root.current-tab == 2 && root.panel-ready : Flickable {
             vertical-stretch: 1;
 
@@ -2046,7 +2046,7 @@ export component RightPanel inherits Rectangle {
                         spacing: 1px;
                         alignment: start;
 
-                        // 中间层省略号：点它 = 上一级（参考图里的「…」就是上级入口）。
+  // 中间层省略号：点它 = 上一级（里的「…」就是上级入口）。
                         // 放在 i==1 这个槽位，省得在静态元素与 for 之间插队。
                         HorizontalLayout {
                             visible: root.sftp-crumbs.length > 3 && i == 1;
@@ -2067,7 +2067,7 @@ export component RightPanel inherits Rectangle {
                             }
                         }
 
-                        // 面包屑本身：根段用文件夹图标代替「/」（省宽度，也更像参考图）；
+  // 面包屑本身：根段用文件夹图标代替「/」；
                         // 长度 > 3 时只留首段与末两段。
                         HorizontalLayout {
                             visible: root.sftp-crumbs.length <= 3 || i == 0
@@ -2453,7 +2453,7 @@ export component RightPanel inherits Rectangle {
 
             }
         // ── footer：打开文件视图的圆按钮 + PATH / DIR / FILE / TOTAL ────
-        // 参考图里那个圆按钮就是"展开 SFTP 文件目录"的入口；计数由 Rust 数好传进来。
+  // 设计里那个圆按钮就是"展开 SFTP 文件目录"的入口；计数由 Rust 数好传进来。
         HorizontalLayout {
             height: 26px;
             padding-left: 6px;

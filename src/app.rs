@@ -346,7 +346,7 @@ impl AppContext {
 
         // --- UI models (window is created before the context) -------------
         let tabs_model: Rc<VecModel<TabInfo>> = Rc::new(VecModel::default());
-        // 参考图的「无会话」状态：启动时**没有任何标签** —— 终端页直接显示
+  // 设计的「无会话」状态：启动时**没有任何标签** —— 终端页直接显示
         // 「创建你的第一个终端会话」空状态（PageTerminal）；点 ➕ 或在主机页点
         // 会话才出现标签。（原先这里塞一个 kind="welcome" 的「新标签页」，
         // 把空状态挡住了，看起来像一条孤零零的标签栏 + 一片空洞。）

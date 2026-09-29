@@ -74,7 +74,7 @@ component CapsuleRow inherits HorizontalLayout {
     }
 }
 
-// ── 版式骨架（参考图：分区标题 + 卡片；卡内是"左标签 / 右控件"的设置行）──────
+// ── 版式骨架（分区标题 + 卡片；卡内是"左标签 / 右控件"的设置行）──────
 //
 // 分区标题：小号弱化字，给一屏设置做出层次。
 component SectionTitle inherits Text {
@@ -104,7 +104,7 @@ component Card inherits Rectangle {
     }
 }
 
-// [- value +] 步进器（参考图的字号 / 缩放都是这个控件）。
+// [- value +] 步进器（的字号 / 缩放都是这个控件）。
 component Stepper inherits Rectangle {
     in property <int> value;
     in property <int> minimum: 0;
@@ -171,7 +171,7 @@ component Stepper inherits Rectangle {
     }
 }
 
-// 光标样式三选：带真实光标形状预览（参考图）。
+// 光标样式三选：带真实光标形状预览。
 component CursorStyleButton inherits Rectangle {
     in property <string> label;
     in property <string> cursor-kind;
@@ -220,7 +220,7 @@ component CursorStyleButton inherits Rectangle {
     }
 }
 
-// 上传按钮：挑字体 / 壁纸 → 复制进 config 目录并立刻可选（参考图：下拉框右侧的图标）。
+// 上传按钮：挑字体 / 壁纸 → 复制进 config 目录并立刻可选（下拉框右侧的图标）。
 component UploadButton inherits Rectangle {
     callback clicked();
 
@@ -247,7 +247,7 @@ component UploadButton inherits Rectangle {
 }
 
 
-// 页头右上「还原本页默认」：第一下上膛、第二下才执行（参考图就是右上角这个按钮）。
+// 页头右上「还原本页默认」：第一下上膛、第二下才执行（就是右上角这个按钮）。
 // armed 归组件自己 —— 共用一份状态会出现"在 A 页上膛、切到 B 页直接执行"的误触。
 component ResetButton inherits Rectangle {
     in property <string> page;
@@ -287,7 +287,7 @@ component ResetButton inherits Rectangle {
 }
 
 
-// 参考图版式的"设置行"：左侧标签/说明，右侧控件槽（@children），整行铺满内容宽。
+// 版式里的"设置行"：左侧标签/说明，右侧控件槽（@children），整行铺满内容宽。
 // 用于胶囊组、开关、语言 pill 等紧凑控件；大输入块仍走 FieldBlock（控件在下方铺满）。
 component OptionRow inherits Rectangle {
     background: Theme.sur-2;
@@ -419,7 +419,7 @@ component SelectBox inherits Rectangle {
     }
 }
 
-// 大输入项区块：标题 + 说明 + 控件在下方（参考图 字体/滚回 的样式）
+// 大输入项区块：标题 + 说明 + 控件在下方（字体/滚回 的样式）
 component FieldBlock inherits Rectangle {
     background: Theme.sur-2;
     in property <string> title;
@@ -680,7 +680,7 @@ export component PageSettings inherits Rectangle {
         // 就是"内容挤在左半边、右侧整块空白"的根因（与右侧内容列同一类坑）。
         width: 100%;
         height: 100%;
-        // ── 左列：标题 + 分类（带副标题，参考图）────────────
+  // ── 左列：标题 + 分类────────────
         nav-col := Rectangle {
             width: 200px;
             background: Theme.sur-1;
@@ -968,7 +968,7 @@ HorizontalLayout {
                                 HorizontalLayout {
                                     spacing: 8px;
                                     SelectBox {
-                                        // 全宽（参考图：壁纸下拉铺满内容列）
+  // 全宽（壁纸下拉铺满内容列）
                                         horizontal-stretch: 1;
                                         text: root.wallpaper-labels.length > 0 && root.wallpaper-index < root.wallpaper-labels.length
                                             ? root.wallpaper-labels[root.wallpaper-index]
@@ -1095,7 +1095,7 @@ HorizontalLayout {
                                         alignment: start;
 
                                         SelectBox {
-                                            // 全宽（参考图：字体下拉铺满内容列）
+  // 全宽（字体下拉铺满内容列）
                                             horizontal-stretch: 1;
                                             text: root.ui-fonts.length > 0 && root.ui-font-index < root.ui-fonts.length
                                                 ? root.ui-fonts[root.ui-font-index]
@@ -1992,7 +1992,7 @@ Rectangle {
                             }
                         }
 
-                        // ═══ 云同步（WebDAV，参考图：同步目标 + 表单 + 底部操作）═══
+  // ═══ 云同步═══
                         if root.current-cat == 6 : VerticalLayout {
                             spacing: 4px;
 
@@ -2213,7 +2213,7 @@ Rectangle {
                                 }
                             }
 
-                            // 日志与诊断卡（参考图有此卡；打开日志目录回调已接）
+  // 日志与诊断卡（有此卡；打开日志目录回调已接）
                             Rectangle {
                                 border-radius: 10px;
                                 border-width: 1px;

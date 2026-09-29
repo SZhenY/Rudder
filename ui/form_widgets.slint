@@ -40,7 +40,7 @@ export component Switch inherits Rectangle {
     }
 }
 
-// 一行开关：左标题 + 说明，右开关（参考图「SOCKS5 代理 / 跳板机」那两行）。
+// 一行开关：左标题 + 说明，右开关（「SOCKS5 代理 / 跳板机」那两行）。
 export component ToggleRow inherits Rectangle {
     in property <string> label;
     in property <string> desc: "";
@@ -265,7 +265,7 @@ export component Area inherits Rectangle {
 }
 
 // ── 下拉选择 ───────────────────────────────────────────────────────────────
-// 参考图的「主机分组 / 协议」那种：一个描边按钮 + 点开的浮层列表。
+// 设计的「主机分组 / 协议」那种：一个描边按钮 + 点开的浮层列表。
 export component Select inherits Rectangle {
     in property <string> text;
     in property <[string]> options;
@@ -440,7 +440,7 @@ export component OptionCard inherits Rectangle {
 }
 
 // ── 区块标题 ───────────────────────────────────────────────────────────────
-// 参考图的「基础信息 / 连接设置 / 认证方式」：标题 + 下面一条分隔线 + 内容。
+// 设计的「基础信息 / 连接设置 / 认证方式」：标题 + 下面一条分隔线 + 内容。
 export component Section inherits Rectangle {
     in property <string> title;
     height: sec-layout.preferred-height;
