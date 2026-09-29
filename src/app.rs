@@ -158,7 +158,7 @@ use crate::i18n::t;
 
 // Dependency versions baked in by build.rs → $OUT_DIR/deps.rs.
 include!(concat!(env!("OUT_DIR"), "/deps.rs"));
-use crate::resource::system::{format_bytes_per_sec, format_mem};
+use crate::resource::system::{format_bytes_per_sec, format_mem, format_mib};
 use crate::resource::{LocalSnap, NetHist, TabStatus, TabStatuses};
 use crate::resource::SystemSnapshot;
 use crate::session::{ConnectCtx, PendingCred, PendingHostKey, PendingMfa};

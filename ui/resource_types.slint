@@ -9,5 +9,7 @@
 export struct DiskInfo {
     path: string,
     detail: string,   // "available/total"
+    used: string,     // 已用（工具面板四卡底部行左侧）
+    total: string,    // 总量（工具面板四卡底部行右侧）
     percent: float,   // used fraction 0.0..1.0
 }

@@ -153,6 +153,20 @@ pub fn format_mem(used_mib: u64, total_mib: u64) -> String {
     format!("{}G/{}G", gib(used_mib), gib(total_mib))
 }
 
+/// 单值版 format_mem（同一套宽度规则）：0.6G / 1.9G / 512M —— 工具面板四卡
+/// 底部行要「已用 / 总量」分列显示，拆开传。
+pub fn format_mib(mib: u64) -> String {
+    if mib < 1024 {
+        return format!("{mib}M");
+    }
+    let g = mib as f64 / 1024.0;
+    if g.fract() == 0.0 || g >= 100.0 {
+        format!("{}G", g as u64)
+    } else {
+        format!("{g:.1}G")
+    }
+}
+
 /// Human-readable network throughput (e.g. `"1.2 MB/s"`).
 pub fn format_bytes_per_sec(bytes: u64) -> String {
     crate::ssh::format_bytes_units(bytes, &["B/s", "KB/s", "MB/s", "GB/s"])

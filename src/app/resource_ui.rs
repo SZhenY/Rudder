@@ -108,6 +108,9 @@ pub(super) fn disk_rows(
             DiskInfo {
                 path: mount.clone().into(),
                 detail: format!("{}/{}", format_size(*avail), format_size(*total)).into(),
+                // 工具面板四卡底部行：已用 / 总量 分列（detail 是 avail/total）
+                used: format_size(used).into(),
+                total: format_size(*total).into(),
                 percent,
             }
         })

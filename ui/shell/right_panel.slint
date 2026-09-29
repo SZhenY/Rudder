@@ -479,15 +479,26 @@ component WindowSwitch inherits HorizontalLayout {
     }
 }
 
+// 资源卡（参考图的三段式，四张卡**同构** —— 统一排版）：
+//   第一行：图标 + 标签 …… 大数值（同色）
+//   中间槽：固定高 14px —— 有 bar 画 bar，否则放 ↓/↑ 一对（网络卡），都没有就留白
+//   底部行：左……右两段说明（内存 已用/总量、磁盘 已用/总量、CPU 负载均值）
+// 中间槽与底部行**永远渲染**（空串占位）：一行四张卡的三段才能水平对齐。
 component ResCard inherits Rectangle {
     in property <string> label;
     in property <string> value;
     in property <float> percent: 0;
-    in property <string> hint;          // 补充行（内存详情 / 磁盘总量…）
+    in property <string> hint;          // 兼容旧用法：单条补充行（落到底部行左侧）
     in property <bool> show-bar: true;
     in property <string> icon: "";      // Material Icons 码位
     // 卡片主色：图标 / 数值 / 进度条同色（参考图：CPU 青、内存 紫、磁盘 黄、网络 绿）
     in property <color> tone: Theme.accent;
+    // 中间槽的左右两段（网络卡：↓ 上行 / ↑ 下行）
+    in property <string> mid-left: "";
+    in property <string> mid-right: "";
+    // 底部行的左右两段
+    in property <string> foot-left: "";
+    in property <string> foot-right: "";
 
     horizontal-stretch: 1;
     border-radius: Theme.radius-md;
@@ -497,9 +508,9 @@ component ResCard inherits Rectangle {
     VerticalLayout {
         padding-left: 10px;
         padding-right: 10px;
-        padding-top: 8px;
-        padding-bottom: 8px;
-        spacing: 6px;
+        padding-top: 9px;
+        padding-bottom: 9px;
+        spacing: 7px;
         // ⚠ 这里**不要**写 alignment —— 它管的是交叉轴（水平）对齐，一写 `center`
         // 子元素就只占首选宽度并居中（进度条会缩成中间一小段）。
 
@@ -509,7 +520,7 @@ component ResCard inherits Rectangle {
             if root.icon != "" : Text {
                 text: root.icon;
                 font-family: "Material Icons";
-                font-size: 14px;
+                font-size: 15px;
                 color: root.tone;
                 vertical-alignment: center;
             }
@@ -523,35 +534,75 @@ component ResCard inherits Rectangle {
             }
             Text {
                 text: root.value;
-                font-size: 18px;
+                font-size: 17px;
                 font-weight: 700;
                 color: root.tone;
                 vertical-alignment: center;
             }
         }
 
-        if root.show-bar : Rectangle {
-            height: 3px;
-            border-radius: 1.5px;
-            background: Theme.sur-3;
+        // 中间槽：固定高 —— 四卡对齐的锚点
+        Rectangle {
+            height: 14px;
 
-            // ⚠ `x: 0; y: 0;` **必须写**：Slint 里带显式 width 的子 Rectangle 不写 x
-            // 时会水平居中（代码库里其它进度条 —— download_manager / proc_window ——
-            // 都显式写了）。少了这两个坐标，占比条就从中间往两边长。
-            Rectangle {
-                x: 0;
-                y: 0;
-                width: parent.width * clamp(root.percent, 0.0, 1.0);
-                height: parent.height;
-                border-radius: 1.5px;
-                background: root.tone;
+            if root.show-bar : Rectangle {
+                y: (parent.height - 4px) / 2;
+                height: 4px;
+                width: parent.width;
+                border-radius: 2px;
+                background: Theme.sur-3;
+
+                // ⚠ `x: 0; y: 0;` **必须写**：Slint 里带显式 width 的子 Rectangle 不写 x
+                // 时会水平居中。少了这两个坐标，占比条就从中间往两边长。
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width * clamp(root.percent, 0.0, 1.0);
+                    height: parent.height;
+                    border-radius: 2px;
+                    background: root.tone;
+                }
+            }
+            if !root.show-bar && (root.mid-left != "" || root.mid-right != "") : HorizontalLayout {
+                Text {
+                    text: root.mid-left;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: root.tone;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.mid-right;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: root.tone;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                }
             }
         }
-        if root.hint != "" : Text {
-            text: root.hint;
-            font-size: 10px;
-            color: Theme.fg-3;
-            overflow: elide;
+
+        // 底部行：永远渲染（空串占位），四卡等高
+        HorizontalLayout {
+            Text {
+                text: root.foot-left == "" ? root.hint : root.foot-left;
+                font-size: 10px;
+                color: Theme.fg-3;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            Text {
+                text: root.foot-right;
+                font-size: 10px;
+                color: Theme.fg-3;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                overflow: elide;
+            }
         }
     }
 }
@@ -725,6 +776,13 @@ export component RightPanel inherits Rectangle {
     in property <string> panel-os;
     in property <string> panel-uptime;
     in property <string> panel-load-1m;
+    // 监控数据是否就绪（远端要等 overview 异步采回来）—— 未就绪时「工具」内容
+    // 先不画，显示「等待监控数据…」加载态（参考 iShell）。
+    in property <bool> panel-ready: false;
+    // 内存 已用 / 总量（四卡底部行拆分显示）
+    in property <string> mem-used;
+    in property <string> mem-total;
+    in property <string> net-selected;
     property <int> head-tab: 0;
     property <string> net-filter: "";
     // 负载历史的展示窗口（秒）：1/5/15 分钟 = 60/300/900；综合页与 CPU 页各自记忆
@@ -955,6 +1013,35 @@ export component RightPanel inherits Rectangle {
         }
         }
 
+        // ── 加载态（参考 iShell）：会话刚连上、overview 还没采回来时，「工具」
+        // 内容先不画 —— 数据到齐（panel-ready）再一次性亮出来，避免看到一堆
+        // 0% / 空卡片的中间态。
+        if root.head-tab == 0 && !root.panel-ready : Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 12px;
+
+                Text {
+                    text: "\u{E1DB}";   // storage：参考图的层叠小图标
+                    font-family: "Material Icons";
+                    font-size: 34px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                    // 呼吸：透明度 1.2s 往返
+                    animate opacity { duration: 1200ms; iteration-count: -1; direction: alternate; easing: ease-in-out; }
+                }
+                Text {
+                    text: root.lang-en ? "Waiting for monitoring data..." : "等待监控数据…";
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
 
         // ── 资源卡片 2×2（真数据，1 Hz）─────────────────────────────────
         // C 步会在下面接 CPU 趋势 / 磁盘分区 / 网络端口，并把这里收进「综合」标签。
@@ -962,7 +1049,7 @@ export component RightPanel inherits Rectangle {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
-            visible: root.head-tab == 0;
+            visible: root.head-tab == 0 && root.panel-ready;
             padding-left: 8px;
             padding-right: 8px;
             padding-top: 8px;
@@ -975,10 +1062,11 @@ export component RightPanel inherits Rectangle {
                 width: (parent.width - 20px) / 2;
 
                 label: "CPU";
-                icon: "\u{E30C}";   // computer
+                icon: "\u{E322}";   // memory-chip：参考图的 CPU 图标
                 tone: Theme.accent;
                 value: "\{round(root.cpu-percent * 100)}%";
                 percent: root.cpu-percent;
+                foot-left: root.panel-load-1m == "" ? "" : (root.lang-en ? "load \{root.panel-load-1m}" : "负载 \{root.panel-load-1m}");
             }
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
@@ -986,18 +1074,19 @@ export component RightPanel inherits Rectangle {
                 width: (parent.width - 20px) / 2;
 
                 label: root.lang-en ? "MEM" : "内存";
-                icon: "\u{E322}";   // memory
+                icon: "\u{E1DB}";   // storage：参考图的层叠图标
                 tone: Theme.success;
                 value: "\{round(root.mem-percent * 100)}%";
                 percent: root.mem-percent;
-                hint: root.mem-detail;
+                foot-left: root.mem-used;
+                foot-right: root.mem-total;
             }
         }
         HorizontalLayout {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
-            visible: root.head-tab == 0;
+            visible: root.head-tab == 0 && root.panel-ready;
             padding-left: 8px;
             padding-right: 8px;
             padding-top: 4px;
@@ -1010,24 +1099,26 @@ export component RightPanel inherits Rectangle {
                 width: (parent.width - 20px) / 2;
 
                 label: root.lang-en ? "DISK" : "磁盘";
-                icon: "\u{E1DB}";   // storage
+                icon: "\u{E875}";   // dns：参考图的磁盘盒子
                 tone: Theme.warning;
                 value: root.disks.length > 0 ? "\{round(root.disks[0].percent * 100)}%" : "—";
                 percent: root.disks.length > 0 ? root.disks[0].percent : 0;
-                hint: root.disks.length > 0 ? root.disks[0].detail : "";
+                foot-left: root.disks.length > 0 ? root.disks[0].used : "";
+                foot-right: root.disks.length > 0 ? root.disks[0].total : "";
             }
-            // 网络卡不画进度条：上下行速率就是它的数值与补充行（参考图 ↓ 在上、↑ 在下）。
+            // 网络卡：参考图没有进度条 —— 中间槽放 ↓/↑ 一对速率，底部行放当前网卡。
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
                 width: (parent.width - 20px) / 2;
 
                 label: root.lang-en ? "NET" : "网络";
-                icon: "\u{E1AF}";   // network_check
+                icon: "\u{E63E}";   // wifi
                 tone: Theme.ok;
-                value: root.net-down;
-                hint: "\{root.net-up}";
                 show-bar: false;
+                mid-left: "↓ \{root.net-down}";
+                mid-right: "↑ \{root.net-up}";
+                foot-left: root.net-selected;
             }
         }
 
@@ -1037,7 +1128,7 @@ export component RightPanel inherits Rectangle {
         HorizontalLayout {
             // 标签条高度随内容、不参与拉伸（多出来的高度只给下面的内容区）
             vertical-stretch: 0;
-            visible: root.head-tab == 0;
+            visible: root.head-tab == 0 && root.panel-ready;
             height: 32px;
             padding-left: 6px;
             padding-right: 6px;
@@ -1156,7 +1247,7 @@ export component RightPanel inherits Rectangle {
             }
         }
 
-        if root.head-tab == 0 && root.current-tab == 0 : Flickable {
+        if root.head-tab == 0 && root.current-tab == 0 && root.panel-ready : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -1205,7 +1296,7 @@ export component RightPanel inherits Rectangle {
                             }
                             WindowSwitch { value <=> root.cpu-window; lang-en: root.lang-en; }
                         }
-                        trend := LineChart { values: root.cpu-history; window: root.cpu-window; }
+                        trend := LineChart { values: root.cpu-history; window: root.cpu-window; chart-h: 34px; }
                         // 时间轴：历史是 1 Hz 采样，序列长度就是窗口秒数（左端 = N 秒前）
                         if root.cpu-history.length > 0 : HorizontalLayout {
                             Text {
@@ -1386,7 +1477,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 处理器：CPU 数值 + 趋势（放大版）────────────────────────────
-        if root.head-tab == 0 && root.current-tab == 1 : Flickable {
+        if root.head-tab == 0 && root.current-tab == 1 && root.panel-ready : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -1462,7 +1553,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 内存：内存 + 交换（真数据；参考图里的「用户 / 系统」拆分项目没有）──
-        if root.head-tab == 0 && root.current-tab == 2 : Flickable {
+        if root.head-tab == 0 && root.current-tab == 2 && root.panel-ready : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -1491,7 +1582,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 磁盘：全部分区 ─────────────────────────────────────────────
-        if root.head-tab == 0 && root.current-tab == 3 : Flickable {
+        if root.head-tab == 0 && root.current-tab == 3 && root.panel-ready : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -1515,7 +1606,7 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 网络：端口表 + 上下行趋势 ───────────────────────────────────
-        if root.head-tab == 0 && root.current-tab == 4 : Flickable {
+        if root.head-tab == 0 && root.current-tab == 4 && root.panel-ready : Flickable {
             vertical-stretch: 1;
 
             VerticalLayout {

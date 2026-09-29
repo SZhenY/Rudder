@@ -276,6 +276,11 @@ export component AppWindow inherits Window {
     in property <string> panel-uptime;
     // 负载均值（1 分钟，两位小数字符串）
     in property <string> panel-load-1m;
+    // 监控数据就绪（远端 overview 异步采回来才算）—— 未就绪时工具面板显示加载态
+    in property <bool> panel-ready: false;
+    // 内存 已用 / 总量（四卡底部行拆分显示）
+    in property <string> mem-used;
+    in property <string> mem-total;
     in property <[SysInfoRow]> sys-cpu-info-rows;
     in property <[SysInfoRow]> sys-gpu-info-rows;
     in property <[SysInfoRow]> sys-cpu-usage-rows;
@@ -1328,6 +1333,10 @@ export component AppWindow inherits Window {
           panel-os: root.panel-os;
           panel-uptime: root.panel-uptime;
           panel-load-1m: root.panel-load-1m;
+          panel-ready: root.panel-ready;
+          mem-used: root.mem-used;
+          mem-total: root.mem-total;
+          net-selected: root.net-selected;
           y: root.shell-top;
           width: root.panel-w;
           height: root.height - root.shell-top - 28px;

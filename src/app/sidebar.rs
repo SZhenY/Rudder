@@ -99,6 +99,8 @@ pub(super) fn refresh_sidebar(
         win.set_swap_percent(snap.swap_percent);
         win.set_mem_detail(format_mem(snap.mem_used_mib, snap.mem_total_mib).into());
         win.set_swap_detail(format_mem(snap.swap_used_mib, snap.swap_total_mib).into());
+        win.set_mem_used(format_mib(snap.mem_used_mib).into());
+        win.set_mem_total(format_mib(snap.mem_total_mib).into());
     };
     let clear_stats = |win: &AppWindow| {
         win.set_cpu_percent(0.0);
@@ -106,6 +108,8 @@ pub(super) fn refresh_sidebar(
         win.set_swap_percent(0.0);
         win.set_mem_detail("".into());
         win.set_swap_detail("".into());
+        win.set_mem_used("".into());
+        win.set_mem_total("".into());
     };
 
     // Process monitor (#23) lives in a shared model (the AppWindow and the
@@ -160,6 +164,10 @@ pub(super) fn refresh_sidebar(
             .unwrap_or("0")
             .to_string();
         win.set_panel_load_1m(load_1m.into());
+        // 「等待监控数据」加载态：overview / CPU 信息一到就算就绪。远端要等异步
+        // 采样回来（连接中 / 已断开传 SystemDetails::default() → 未就绪）；本机
+        // 数据即时可用，由 show_local_system_models 置真。
+        win.set_panel_ready(!sys.overview.is_empty() || !sys.cpu_info.is_empty());
         if let Some(vm) = win
             .get_sys_metrics()
             .as_any()
@@ -249,6 +257,8 @@ pub(super) fn refresh_sidebar(
             SystemDetails::default(),
             "",
         );
+        // 本机数据即时可用：不做「等待监控数据」加载态
+        win.set_panel_ready(true);
     };
     win.set_proc_available(false);
     win.set_system_info_available(false);
@@ -286,6 +296,8 @@ pub(super) fn refresh_sidebar(
             win.set_swap_detail(
                 format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
             );
+            win.set_mem_used(format_mib(st.mem_used_kib / 1024).into());
+            win.set_mem_total(format_mib(st.mem_total_kib / 1024).into());
             let (name, rx, tx) = selected_iface(&st);
             win.set_net_top_up(format_bytes_per_sec(tx).into());
             win.set_net_top_down(format_bytes_per_sec(rx).into());
