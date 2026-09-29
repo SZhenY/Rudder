@@ -3553,9 +3553,14 @@ fn build_system_details(input: SystemDetailsInput) -> SystemDetails {
             ),
             (
                 t("温度", "Temperature").to_string(),
-                match sys.get("CPU_TEMP").map(|s| s.trim()).unwrap_or("") {
-                    "" => "-".to_string(),
-                    v => format!("{v}°C"),
+                // 虚报传感器（读到 0.x°C）与无传感器一样按 N/A 处理（用户反馈）。
+                match sys
+                    .get("CPU_TEMP")
+                    .map(|s| s.trim().parse::<f32>().ok())
+                    .unwrap_or(None)
+                {
+                    Some(t) if t >= 1.0 => format!("{t}°C"),
+                    _ => "-".to_string(),
                 },
             ),
             (t("频率", "Frequency").to_string(), "-".to_string()),
