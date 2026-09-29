@@ -219,7 +219,7 @@ export component TerminalStage inherits Rectangle {
                 }
 
                 // 欢迎标签页（标签栏「+」新建的那种）：旧欢迎页随旧外壳删掉了，
-                // 这里直接复用终端页的空态卡片（ex/终端-无会话.png 那张）。
+                // 这里直接复用终端页的空态卡片。
                 for wt[wti] in pane.tabs : Rectangle {
                     visible: wt.kind == "welcome" && pane.active-id == wt.id;
                     width: parent.width;

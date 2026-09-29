@@ -18,3 +18,6 @@ ui/fonts/MapleMono*.ttf
 *.mp4
 *.mkv
 *.avi
+
+# 界面稿（本地保留，不入库）
+ex/
