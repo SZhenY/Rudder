@@ -1,7 +1,12 @@
 // 设置页（按 ex/设置-*.png 版式：左分类带副标题；右侧开关行 = 左标签/右滑块、
 // 行间无分隔线；大输入项控件在下方；语言是双 pill。全部真回调，无假控件。）
 
-import { Theme } from "../theme.slint";
+import { Theme, AnimationSettings } from "../theme.slint";
+
+struct CapsuleOpt {
+    value: string,
+    label: string,
+}
 
 component Switch inherits Rectangle {
     in property <bool> on: false;
@@ -30,6 +35,37 @@ component Switch inherits Rectangle {
     ta := TouchArea {
         clicked => {
             root.toggled();
+        }
+    }
+}
+
+// 胶囊选择行（老设置窗的段控迁移）：opts = [{value, label}]，调用方按语言给文案
+//（Slint 的 for 里不能按值反查下标，所以值与文案成对传）。点击写回 picked。
+component CapsuleRow inherits HorizontalLayout {
+    in property <[CapsuleOpt]> opts;
+    in property <string> value;
+    callback picked(string);
+
+    for o in root.opts : Rectangle {
+        property <bool> on: root.value == o.value;
+        width: cap.preferred-width + 20px;
+        height: 24px;
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: on ? Theme.accent : Theme.line;
+        background: on ? Theme.accent.with-alpha(0.16)
+                       : (pta.has-hover ? Theme.sur-3 : transparent);
+
+        cap := Text {
+            text: o.label;
+            font-size: 11px;
+            color: on ? Theme.accent : Theme.fg-2;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+        pta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.picked(o.value); }
         }
     }
 }
@@ -195,13 +231,21 @@ component CategoryItem inherits Rectangle {
 // 磨砂透明度滑块（0–70%）：拖动实时改 `Theme.panel-alpha`（面板 / 终端同一块玻璃），
 // 松手才落盘。
 component FrostSlider inherits Rectangle {
-    in property <float> value: 0;         // 0..70（透明度百分比）
+    in property <float> value: 0;         // 当前值（默认 0..70 = 磨砂百分比）
+    in property <float> min: 0;
+    in property <float> max: 70;
+    in property <float> step: 1;
     callback changed(float);
     callback released(float);
 
     height: 22px;
     width: 170px;
-    property <float> frac: clamp(root.value / 70, 0.0, 1.0);
+    property <float> span: root.max - root.min;
+    property <float> frac: clamp((root.value - root.min) / root.span, 0.0, 1.0);
+    pure function snap(raw: float) -> float {
+        return clamp(round((raw - root.min) / root.step) * root.step + root.min,
+                     root.min, root.max);
+    }
 
     Rectangle {
         x: 0;
@@ -236,18 +280,18 @@ component FrostSlider inherits Rectangle {
         height: parent.height;
         mouse-cursor: pointer;
         clicked => {
-            root.changed(clamp(self.mouse-x / self.width * 70, 0.0, 70.0));
-            root.released(clamp(self.mouse-x / self.width * 70, 0.0, 70.0));
+            root.changed(root.snap(self.mouse-x / self.width * root.span + root.min));
+            root.released(root.snap(self.mouse-x / self.width * root.span + root.min));
         }
         moved => {
             if (self.pressed) {
-                root.changed(clamp(self.mouse-x / self.width * 70, 0.0, 70.0));
+                root.changed(root.snap(self.mouse-x / self.width * root.span + root.min));
             }
         }
         pointer-event(e) => {
             // 拖动结束时落盘（只写一次，不在拖动过程中反复写配置）
             if (e.kind == PointerEventKind.up) {
-                root.released(clamp(self.mouse-x / self.width * 70, 0.0, 70.0));
+                root.released(root.snap(self.mouse-x / self.width * root.span + root.min));
             }
         }
     }
@@ -304,6 +348,23 @@ export component PageSettings inherits Rectangle {
     in property <bool> follow-cd;
     in property <bool> collapse-sftp;
     in property <string> app-version;
+    // ── 老设置窗口迁移进来的项（v0.8.0 设置面板 → 新页补全）──────────────
+    in property <string> appearance-mode: "system";   // system / dark / light
+    in property <string> renderer-mode: "auto";       // auto / software（重启生效）
+    in property <string> update-channel: "stable";    // stable / beta
+    in property <string> term-cursor-style: "block";  // block / bar / underline
+    in property <string> term-cursor-choice: "";      // "" = 跟随主题
+    in property <string> term-cursor-color-hex: "";
+    in property <bool> sync-upload-enabled: false;
+    callback set-appearance-mode(string);
+    callback set-animations-enabled(bool);
+    callback set-ui-scale(int);
+    callback set-renderer-mode(string);
+    callback set-term-cursor-style(string);
+    callback set-term-cursor-preset(string);
+    callback set-term-cursor-color(string);
+    callback set-update-channel(string);
+    callback set-sync-upload-enabled(bool);
     in property <[string]> ui-fonts;
     in property <int> ui-font-index;
     in property <[string]> term-fonts;
@@ -886,6 +947,82 @@ Rectangle {
                                     root.set-flag-update-check(!root.update-check);
                                 }
                             }
+                            // ── 外观模式（v0.8.0 设置窗迁移）────────────────────────────────
+                            FieldBlock {
+                                title: root.lang-en ? "Appearance Mode" : "外观模式";
+                                desc: root.lang-en ? "Light, dark, or follow the system" : "浅色、深色或跟随系统切换";
+                            
+                                CapsuleRow {
+                                    opts: [
+                                        {value: "system", label: root.lang-en ? "System" : "跟随系统"},
+                                        {value: "dark", label: root.lang-en ? "Dark" : "深色"},
+                                        {value: "light", label: root.lang-en ? "Light" : "浅色"},
+                                    ];
+                                    value: root.appearance-mode;
+                                    picked(v) => { root.set-appearance-mode(v); }
+                                }
+                            }
+                            ToggleRow {
+                                label: root.lang-en ? "Animations" : "界面动画";
+                                desc: root.lang-en ? "Sidebar and panel transition animations" : "侧栏与面板的过渡动画开关";
+                                on: AnimationSettings.enabled;
+                                toggled => {
+                                    root.set-animations-enabled(!AnimationSettings.enabled);
+                                }
+                            }
+                            // ── 渲染器（v0.8.0 设置窗迁移；重启生效）────────────────────────
+                            FieldBlock {
+                                title: root.lang-en ? "Renderer" : "渲染器";
+                                desc: root.lang-en ? "Software rendering is the most compatible; takes effect after restart" : "软件渲染兼容性最好；切换后重启生效";
+                            
+                                CapsuleRow {
+                                    opts: [
+                                        {value: "auto", label: root.lang-en ? "Auto" : "自动"},
+                                        {value: "software", label: root.lang-en ? "Software" : "软件渲染"},
+                                    ];
+                                    value: root.renderer-mode;
+                                    picked(v) => { root.set-renderer-mode(v); }
+                                }
+                            }
+                            // ── 界面缩放（v0.8.0 设置窗迁移）────────────────────────────────
+                            FieldBlock {
+                                title: root.lang-en ? "UI Scale" : "界面缩放";
+                                desc: root.lang-en ? "Scales fonts and controls (80% – 200%)" : "整体缩放界面字体与控件（80% – 200%）";
+                            
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                            
+                                    FrostSlider {
+                                        min: 80;
+                                        max: 200;
+                                        step: 10;
+                                        value: Theme.ui-scale * 100;
+                                        changed(v) => { root.set-ui-scale(round(v)); }
+                                        released(v) => { root.set-ui-scale(round(v)); }
+                                    }
+                                    Text {
+                                        text: "\{round(Theme.ui-scale * 100)}%";
+                                        font-size: 11px;
+                                        color: Theme.fg-2;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            // ── 更新渠道（v0.8.0 设置窗迁移）────────────────────────────────
+                            FieldBlock {
+                                title: root.lang-en ? "Update Channel" : "更新渠道";
+                                desc: root.lang-en ? "Beta receives new features earlier" : "测试版更早拿到新功能与修复";
+                            
+                                CapsuleRow {
+                                    opts: [
+                                        {value: "stable", label: root.lang-en ? "Stable" : "稳定版"},
+                                        {value: "beta", label: root.lang-en ? "Beta" : "测试版"},
+                                    ];
+                                    value: root.update-channel;
+                                    picked(v) => { root.set-update-channel(v); }
+                                }
+                            }
                             FieldBlock {
                                 title: root.lang-en ? "Check Interval" : "检查频率";
                                 desc: "自动检查更新的间隔";
@@ -1113,6 +1250,68 @@ Rectangle {
                                     root.set-flag-osc52(!root.flag-osc);
                                 }
                             }
+
+                        // ── 光标（v0.8.0 设置窗迁移）──────────────────────────
+                        FieldBlock {
+                            title: root.lang-en ? "Cursor Style" : "光标样式";
+                            desc: "";
+                            CapsuleRow {
+                                opts: [
+                                    {value: "block", label: root.lang-en ? "Block" : "方块"},
+                                    {value: "bar", label: root.lang-en ? "Bar" : "竖线"},
+                                    {value: "underline", label: root.lang-en ? "Underline" : "下划线"},
+                                ];
+                                value: root.term-cursor-style;
+                                picked(v) => { root.set-term-cursor-style(v); }
+                            }
+                        }
+                        FieldBlock {
+                            title: root.lang-en ? "Cursor Color" : "光标颜色";
+                            desc: root.lang-en ? "Pick a preset or type a hex color; empty = follow the theme" : "选预设色块或输入十六进制色值；留空跟随主题";
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+
+                                for c in [
+                                    {hex: "", sw: Theme.term-fg},
+                                    {hex: "#D4D4D4", sw: #D4D4D4},
+                                    {hex: "#FF5252", sw: #FF5252},
+                                    {hex: "#69F0AE", sw: #69F0AE},
+                                    {hex: "#40C4FF", sw: #40C4FF},
+                                ] : Rectangle {
+                                    property <bool> on: root.term-cursor-choice == c.hex;
+                                    width: 22px;
+                                    height: 22px;
+                                    border-radius: 11px;
+                                    background: c.sw;
+                                    border-width: 2px;
+                                    border-color: on ? Theme.accent : Theme.line;
+
+                                    ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.set-term-cursor-preset(c.hex); }
+                                    }
+                                }
+                                Rectangle {
+                                    width: 110px;
+                                    height: 26px;
+                                    border-radius: 7px;
+                                    border-width: 1px;
+                                    border-color: Theme.line;
+                                    background: Theme.sur-2;
+
+                                    color-input := TextInput {
+                                        text: root.term-cursor-color-hex;
+                                        font-size: 11px;
+                                        color: Theme.fg-1;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: center;
+                                        // accepted 无参 —— 用自身 text 提交（回车生效）
+                                        accepted => { root.set-term-cursor-color(color-input.text); }
+                                    }
+                                }
+                            }
+                        }
                         }
 
                         // ═══ 文件 ═══
@@ -1286,6 +1485,14 @@ Rectangle {
                             spacing: 4px;
                             alignment: start;
 
+                            ToggleRow {
+                                label: root.lang-en ? "Session File Sync" : "文件上传同步";
+                                desc: root.lang-en ? "Uploads go to the same path on every session" : "会话同步开启时，上传发往各会话的相同路径";
+                                on: root.sync-upload-enabled;
+                                toggled => {
+                                    root.set-sync-upload-enabled(!root.sync-upload-enabled);
+                                }
+                            }
                             FieldBlock {
                                 title: root.lang-en ? "WebDAV Sync" : "WebDAV 同步";
                                 desc: root.webdav-status == "" ? (root.lang-en ? "Back up config, sessions and notes to your NAS or WebDAV" : "把配置、会话、笔记等备份到自己的 NAS 或企业 WebDAV 服务") : root.webdav-status;

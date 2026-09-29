@@ -1114,8 +1114,13 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
             // 每个会话仍各自记着 SFTP 状态与尺寸（右面板按活动标签取用）。
             // 「默认收起 SFTP」这个旧偏好随设置页「布局」删除（新外壳里 SFTP 是
             // 右侧工具面板的「文件」标签，没有可折叠的停靠区）—— 一律展开起步。
-            let (sftp_collapsed_default, sftp_h_default, sftp_w_default) =
-                (false, 220.0, 380.0);
+            let (sftp_collapsed_default, sftp_h_default, sftp_w_default) = (
+                weak.upgrade()
+                    .map(|w| w.get_collapse_sftp_default())
+                    .unwrap_or(false),
+                220.0,
+                380.0,
+            );
             terminals_model.push(TerminalState {
                 id: tab_id.clone().into(),
                 status: t("连接中...", "Connecting...").into(),

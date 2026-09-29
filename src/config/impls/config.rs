@@ -1743,6 +1743,14 @@ impl ConfigStore {
         self.cache.appearance.hide_special_partitions = v;
     }
     /// All sidebar / panel animations enabled (Interface › Animations).
+    pub fn collapse_sftp_default(&self) -> bool {
+        self.cache.layout.collapse_sftp_default
+    }
+
+    pub fn set_collapse_sftp_default(&mut self, v: bool) {
+        self.cache.layout.collapse_sftp_default = v;
+    }
+
     pub fn animations_enabled(&self) -> bool {
         !self.cache.appearance.animations_disabled
     }

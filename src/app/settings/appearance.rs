@@ -31,6 +31,17 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
     }
 
     {
+        // 「默认折叠 SFTP 面板」（v0.8.0 设置页迁移）：新外壳里决定新会话的
+        // 右侧工具面板是否以折叠状态起步（会话创建时读取，见 session_callbacks）。
+        let store = store.clone();
+        window.on_set_collapse_sftp_default(move |v| {
+            persist(&store, |s| {
+                s.set_collapse_sftp_default(v);
+            });
+        });
+    }
+
+    {
         // Renderer selection is consumed before the first native window exists,
         // so persist it now and apply it on the next launch (#280).
         let store = store.clone();

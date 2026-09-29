@@ -202,6 +202,9 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0); // global UI zoom (#100)
         window.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0); // settings-panel font scale
         window.set_renderer_mode(s.renderer_mode().into());
+        // v0.8.0 设置窗迁移项：新设置页需要回显当前值。
+        window.set_appearance_mode(s.theme_pref().into());
+        window.set_collapse_sftp_default(s.collapse_sftp_default());
     }
 
     // Apply the saved immersive wallpaper (overrides dark/light when set; a

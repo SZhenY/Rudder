@@ -455,6 +455,7 @@ export component AppWindow inherits Window {
     callback set-accent(string) -> bool;           // 预设 id / "#RRGGBB" / ""；非法返回 false
     callback set-accent-rgb(int, int, int) -> bool;// 调色盘提交（Slint 无 hex 格式化）
     callback set-appearance-mode(string);          // system / dark / light
+    in-out property <string> appearance-mode: "system";   // 当前模式（设置页回显）
     // SFTP follows the terminal's cd; opt out in Interface settings.
     in-out property <bool> sftp-follow-cd: true;
     callback set-sftp-follow-cd(bool);             // apply + persist
@@ -1314,6 +1315,23 @@ export component AppWindow inherits Window {
               set-flag-always-ask(v) => { root.set-download-always-ask(v); }
               set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
               set-flag-collapse-sftp(v) => { root.set-collapse-sftp-default(v); }
+              // ── v0.8.0 设置窗迁移项的转发 ─────────────────────────────
+              appearance-mode: root.appearance-mode;
+              renderer-mode: root.renderer-mode;
+              update-channel: root.update-channel;
+              term-cursor-style: root.term-cursor-style;
+              term-cursor-choice: root.term-cursor-choice;
+              term-cursor-color-hex: root.term-cursor-color-hex;
+              sync-upload-enabled: root.sync-upload-enabled;
+              set-appearance-mode(v) => { root.set-appearance-mode(v); }
+              set-animations-enabled(v) => { root.set-animations-enabled(v); }
+              set-ui-scale(v) => { root.set-ui-scale(v); }
+              set-renderer-mode(v) => { root.set-renderer-mode(v); }
+              set-term-cursor-style(v) => { root.set-term-cursor-style(v); }
+              set-term-cursor-preset(v) => { root.set-term-cursor-preset(v); }
+              set-term-cursor-color(v) => { root.set-term-cursor-color(v); }
+              set-update-channel(v) => { root.set-update-channel(v); }
+              set-sync-upload-enabled(v) => { root.set-sync-upload-enabled(v); }
               term-font(f) => {
                   root.set-term-font(f);
               }
