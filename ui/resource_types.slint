@@ -6,6 +6,11 @@
 //! `ui/shell/app_shell.slint` 仍 `export { DiskInfo }`，Rust 的 `crate::ui::DiskInfo` 名字不变。
 
 // One filesystem row for the disk-usage panel.
+export struct CoreLoad {
+    idx: int,      // 核心编号（分列后行内仍要显示 #0 #1 …）
+    load: float,   // 0.0..1.0
+}
+
 export struct DiskInfo {
     path: string,
     detail: string,   // "available/total"

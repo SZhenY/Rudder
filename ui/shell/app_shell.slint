@@ -37,7 +37,7 @@ import "../fonts/MaterialIcons-Regular.ttf";
 // (src/fonts.rs), making them selectable in Settings after a restart.
 
 import { Theme } from "../theme.slint";
-import { DiskInfo } from "../resource_types.slint";
+import { DiskInfo, CoreLoad } from "../resource_types.slint";
 import { TabInfo } from "../tabs.slint";
 // 旧外壳删除③：`ui/app.slint` 已删，本文件就是它的新家（见文件头）。下面这些
 // import 是从 app.slint 逐字搬来的，只把相对路径加了一层 `../`。
@@ -287,6 +287,10 @@ export component AppWindow inherits Window {
     in property <float> cpu-iowait: 0;
     in property <string> cpu-temp;
     in property <[float]> core-cpus;
+    // 每核占用按奇偶分好列（偶数核左列 / 奇数核右列）—— Slint 的 for 不支持再挂 if，
+    // 分列在 Rust 侧做；行内用 CoreLoad.idx 显示真实核心编号。
+    in property <[CoreLoad]> cores-left;
+    in property <[CoreLoad]> cores-right;
     in property <[ProcRow]> proc-top;
     in property <[SysInfoRow]> sys-cpu-info-rows;
     in property <[SysInfoRow]> sys-gpu-info-rows;
@@ -1349,6 +1353,8 @@ export component AppWindow inherits Window {
           cpu-iowait: root.cpu-iowait;
           cpu-temp: root.cpu-temp;
           core-cpus: root.core-cpus;
+          cores-left: root.cores-left;
+          cores-right: root.cores-right;
           proc-top: root.proc-top;
           y: root.shell-top;
           width: root.panel-w;

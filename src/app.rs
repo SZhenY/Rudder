@@ -500,6 +500,9 @@ pub fn run() -> Result<()> {
     // it just hides it, so reopening is instant.
     let proc_rows_model: Rc<VecModel<ProcRow>> = Rc::new(VecModel::default());
     window.set_proc_list(ModelRc::from(proc_rows_model.clone()));
+    // 工具面板「进程 CPU 排行」：面板按 VecModel 增量写 —— Slint 属性的默认模型
+    // 不是 VecModel，不先放一个真 VecModel 进去，downcast 永远失败 → 排行永远空。
+    window.set_proc_top(ModelRc::from(Rc::new(VecModel::<ProcRow>::default())));
     let sys_metrics_model: Rc<VecModel<SysMetricRow>> = Rc::new(VecModel::default());
     let sys_net_rows_model: Rc<VecModel<SysNetRow>> = Rc::new(VecModel::default());
     let sys_overview_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());

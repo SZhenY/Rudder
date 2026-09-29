@@ -16,7 +16,7 @@
 // 磁盘分区、网络端口；D 步把文件视图升级成「工具条 + 面包屑 + 表格（名称/大小/时间）」。
 import { Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
-import { DiskInfo } from "../resource_types.slint";
+import { DiskInfo, CoreLoad } from "../resource_types.slint";
 import { ProcRow } from "../proc_window.slint";
 // Sparkline（旧组件，widgets.slint）本文件已不再使用 —— 趋势改用同文件里的 LineChart。
 import { SysNetRow } from "../system_info_window.slint";
@@ -864,6 +864,9 @@ export component RightPanel inherits Rectangle {
     in property <float> cpu-iowait: 0;
     in property <string> cpu-temp;
     in property <[float]> core-cpus;
+    // 每核占用按奇偶分好的两列（CoreLoad.idx = 真实核心编号）
+    in property <[CoreLoad]> cores-left;
+    in property <[CoreLoad]> cores-right;
     in property <[ProcRow]> proc-top;
     property <int> head-tab: 0;
     property <string> net-filter: "";
@@ -1148,8 +1151,10 @@ export component RightPanel inherits Rectangle {
 
         // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
         // 外面包一层与指标行相同的 8px 左右内边距，四张卡与它左右对齐。
+        // 头卡和下面的四张资源卡都是「综合」页的内容：切到 CPU/内存/… 跟着隐藏。
         HorizontalLayout {
             vertical-stretch: 0;
+            visible: root.current-tab == 0;
             padding-left: 8px;
             padding-right: 8px;
 
@@ -1260,7 +1265,7 @@ export component RightPanel inherits Rectangle {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
-            visible: root.head-tab == 0 && root.panel-ready;
+            visible: root.head-tab == 0 && root.current-tab == 0 && root.panel-ready;
             padding-left: 8px;
             padding-right: 8px;
             padding-top: 8px;
@@ -1297,7 +1302,7 @@ export component RightPanel inherits Rectangle {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
-            visible: root.head-tab == 0 && root.panel-ready;
+            visible: root.head-tab == 0 && root.current-tab == 0 && root.panel-ready;
             padding-left: 8px;
             padding-right: 8px;
             padding-top: 4px;
@@ -1533,68 +1538,80 @@ export component RightPanel inherits Rectangle {
                 padding: 10px;
                 spacing: 6px;
 
-                // 参考图（终端-工具-处理器）：概览卡（总负载/负载均值/温度）+
-                // 用户态/内核态/IO 等待 + 核心详情 + 进程 CPU 排行 + 负载历史。
+                // 参考图（终端-工具-处理器）：**有占比条的卡在左两列**（总负载/用户态 +
+                // 内核态/IO 等待，2×2），**只有数字的卡在右一列**（负载均值/温度，竖排）。
+                // 六张卡同宽 w=(root.width-44)/3：左区=2w+4、右列=w，正好铺满一行。
                 HorizontalLayout {
                     vertical-stretch: 0;
                     padding-left: 8px;
                     padding-right: 8px;
                     spacing: 4px;
 
-                    ResCard {
-                        width: (root.width - 44px) / 3;
-                        label: root.lang-en ? "Total load" : "总负载";
-                        icon: "\u{E30C}";   // computer
-                        tone: Theme.accent;
-                        value: "\{round(root.cpu-percent * 100)}%";
-                        percent: root.cpu-percent;
-                    }
-                    ResCard {
-                        width: (root.width - 44px) / 3;
-                        label: root.lang-en ? "Load avg" : "负载均值";
-                        icon: "\u{E8B5}";   // schedule
-                        tone: Theme.ok;
-                        value: root.panel-load-1m == "" ? "—" : root.panel-load-1m;
-                        show-bar: false;
-                    }
-                    ResCard {
-                        width: (root.width - 44px) / 3;
-                        label: root.lang-en ? "Temp" : "温度";
-                        icon: "\u{E1FF}";   // device_thermostat
-                        tone: Theme.danger;
-                        value: (root.cpu-temp == "" || root.cpu-temp == "-") ? "N/A" : root.cpu-temp;
-                        show-bar: false;
-                    }
-                }
-                HorizontalLayout {
-                    vertical-stretch: 0;
-                    padding-left: 8px;
-                    padding-right: 8px;
-                    spacing: 4px;
+                    // 左 2/3：占比卡 2×2
+                    VerticalLayout {
+                        spacing: 4px;
 
-                    ResCard {
-                        width: (root.width - 44px) / 3;
-                        label: root.lang-en ? "User" : "用户态";
-                        icon: "\u{E7FD}";   // person
-                        tone: Theme.accent;
-                        value: "\{round(root.cpu-user * 1000) / 10}%";
-                        percent: root.cpu-user;
+                        HorizontalLayout {
+                            spacing: 4px;
+
+                            ResCard {
+                                width: (root.width - 44px) / 3;
+                                label: root.lang-en ? "Total load" : "总负载";
+                                icon: "\u{E30C}";   // computer
+                                tone: Theme.accent;
+                                value: "\{round(root.cpu-percent * 100)}%";
+                                percent: root.cpu-percent;
+                            }
+                            ResCard {
+                                width: (root.width - 44px) / 3;
+                                label: root.lang-en ? "User" : "用户态";
+                                icon: "\u{E7FD}";   // person
+                                tone: Theme.accent;
+                                value: "\{round(root.cpu-user * 1000) / 10}%";
+                                percent: root.cpu-user;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 4px;
+
+                            ResCard {
+                                width: (root.width - 44px) / 3;
+                                label: root.lang-en ? "System" : "内核态";
+                                icon: "\u{E8B8}";   // settings
+                                tone: Theme.success;
+                                value: "\{round(root.cpu-system * 1000) / 10}%";
+                                percent: root.cpu-system;
+                            }
+                            ResCard {
+                                width: (root.width - 44px) / 3;
+                                label: root.lang-en ? "IO wait" : "IO 等待";
+                                icon: "\u{E8B5}";   // schedule
+                                tone: Theme.warning;
+                                value: "\{round(root.cpu-iowait * 1000) / 10}%";
+                                percent: root.cpu-iowait;
+                            }
+                        }
                     }
-                    ResCard {
-                        width: (root.width - 44px) / 3;
-                        label: root.lang-en ? "System" : "内核态";
-                        icon: "\u{E8B8}";   // settings
-                        tone: Theme.success;
-                        value: "\{round(root.cpu-system * 1000) / 10}%";
-                        percent: root.cpu-system;
-                    }
-                    ResCard {
-                        width: (root.width - 44px) / 3;
-                        label: root.lang-en ? "IO wait" : "IO 等待";
-                        icon: "\u{E8B5}";   // schedule
-                        tone: Theme.warning;
-                        value: "\{round(root.cpu-iowait * 1000) / 10}%";
-                        percent: root.cpu-iowait;
+                    // 右 1/3：数字卡竖排（负载均值 / 温度）
+                    VerticalLayout {
+                        spacing: 4px;
+
+                        ResCard {
+                            width: (root.width - 44px) / 3;
+                            label: root.lang-en ? "Load avg" : "负载均值";
+                            icon: "\u{E8B5}";   // schedule
+                            tone: Theme.ok;
+                            value: root.panel-load-1m == "" ? "—" : root.panel-load-1m;
+                            show-bar: false;
+                        }
+                        ResCard {
+                            width: (root.width - 44px) / 3;
+                            label: root.lang-en ? "Temp" : "温度";
+                            icon: "\u{E1FF}";   // device_thermostat
+                            tone: Theme.danger;
+                            value: (root.cpu-temp == "" || root.cpu-temp == "-") ? "N/A" : root.cpu-temp;
+                            show-bar: false;
+                        }
                     }
                 }
 
@@ -1636,44 +1653,100 @@ export component RightPanel inherits Rectangle {
                             font-size: 10px;
                             color: Theme.fg-3;
                         }
-                        for cp[i] in root.core-cpus : HorizontalLayout {
-                            height: 15px;
+                        // 两列排布：偶数核在左列、奇数核在右列 —— 超多核（32/64 核）
+                        // 只占一半行数，卡片不会被拖得过长（用户要求考虑多核排版）。
+                        HorizontalLayout {
+                            spacing: 10px;
 
-                            Text {
-                                text: "#" + i;
-                                width: 26px;
-                                font-size: 9px;
-                                color: Theme.fg-3;
-                                vertical-alignment: center;
-                            }
-                            Rectangle {
-                                height: 15px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 3px;
 
-                                Rectangle {
-                                    y: (parent.height - 4px) / 2;
-                                    x: 0;
-                                    width: parent.width;
-                                    height: 4px;
-                                    border-radius: 2px;
-                                    background: Theme.sur-3;
+                                for c in root.cores-left : HorizontalLayout {
+                                    height: 15px;
 
+                                    Text {
+                                        text: "#" + c.idx;
+                                        width: 24px;
+                                        font-size: 9px;
+                                        color: Theme.fg-3;
+                                        vertical-alignment: center;
+                                    }
                                     Rectangle {
-                                        x: 0;
-                                        y: 0;
-                                        width: parent.width * clamp(cp, 0.0, 1.0);
-                                        height: parent.height;
-                                        border-radius: 2px;
-                                        background: cp > 0.85 ? Theme.danger : Theme.success;
+                                        height: 15px;
+
+                                        Rectangle {
+                                            y: (parent.height - 4px) / 2;
+                                            x: 0;
+                                            width: parent.width;
+                                            height: 4px;
+                                            border-radius: 2px;
+                                            background: Theme.sur-3;
+
+                                            Rectangle {
+                                                x: 0;
+                                                y: 0;
+                                                width: parent.width * clamp(c.load, 0.0, 1.0);
+                                                height: parent.height;
+                                                border-radius: 2px;
+                                                background: c.load > 0.85 ? Theme.danger : Theme.success;
+                                            }
+                                        }
+                                    }
+                                    Text {
+                                        text: "\{round(c.load * 1000) / 10}%";
+                                        width: 36px;
+                                        font-size: 9px;
+                                        color: Theme.fg-2;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
                                     }
                                 }
                             }
-                            Text {
-                                text: "\{round(cp * 1000) / 10}%";
-                                width: 38px;
-                                font-size: 9px;
-                                color: Theme.fg-2;
-                                horizontal-alignment: right;
-                                vertical-alignment: center;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 3px;
+
+                                for c in root.cores-right : HorizontalLayout {
+                                    height: 15px;
+
+                                    Text {
+                                        text: "#" + c.idx;
+                                        width: 24px;
+                                        font-size: 9px;
+                                        color: Theme.fg-3;
+                                        vertical-alignment: center;
+                                    }
+                                    Rectangle {
+                                        height: 15px;
+
+                                        Rectangle {
+                                            y: (parent.height - 4px) / 2;
+                                            x: 0;
+                                            width: parent.width;
+                                            height: 4px;
+                                            border-radius: 2px;
+                                            background: Theme.sur-3;
+
+                                            Rectangle {
+                                                x: 0;
+                                                y: 0;
+                                                width: parent.width * clamp(c.load, 0.0, 1.0);
+                                                height: parent.height;
+                                                border-radius: 2px;
+                                                background: c.load > 0.85 ? Theme.danger : Theme.success;
+                                            }
+                                        }
+                                    }
+                                    Text {
+                                        text: "\{round(c.load * 1000) / 10}%";
+                                        width: 36px;
+                                        font-size: 9px;
+                                        color: Theme.fg-2;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                    }
+                                }
                             }
                         }
                     }

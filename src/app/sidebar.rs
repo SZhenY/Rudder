@@ -289,6 +289,12 @@ pub(super) fn refresh_sidebar(
     if win.get_core_cpus().row_count() > 0 {
         win.set_core_cpus(ModelRc::from(Rc::new(VecModel::<f32>::default())));
     }
+    if win.get_cores_left().row_count() > 0 {
+        win.set_cores_left(ModelRc::from(Rc::new(VecModel::<CoreLoad>::default())));
+    }
+    if win.get_cores_right().row_count() > 0 {
+        win.set_cores_right(ModelRc::from(Rc::new(VecModel::<CoreLoad>::default())));
+    }
     if let Some(vm) = win
         .get_proc_top()
         .as_any()
@@ -350,6 +356,32 @@ pub(super) fn refresh_sidebar(
                 &st.core_cpus,
                 || ModelRc::from(Rc::new(VecModel::from(st.core_cpus.clone()))),
                 |m| win.set_core_cpus(m),
+            );
+            // 面板两列排布：偶数核左列、奇数核右列（行内带真实核心编号）。
+            let core_rows = |pick: fn(usize) -> bool| -> Vec<CoreLoad> {
+                st.core_cpus
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| pick(*i))
+                    .map(|(i, v)| CoreLoad {
+                        idx: i as i32,
+                        load: *v,
+                    })
+                    .collect()
+            };
+            write_model(
+                &mut stats,
+                &win.get_cores_left(),
+                &core_rows(|i| i % 2 == 0),
+                || ModelRc::from(Rc::new(VecModel::from(core_rows(|i| i % 2 == 0)))),
+                |m| win.set_cores_left(m),
+            );
+            write_model(
+                &mut stats,
+                &win.get_cores_right(),
+                &core_rows(|i| i % 2 == 1),
+                || ModelRc::from(Rc::new(VecModel::from(core_rows(|i| i % 2 == 1)))),
+                |m| win.set_cores_right(m),
             );
             set_proc_top(win, &st.procs, &st.user, &active);
             let (name, rx, tx) = selected_iface(&st);
