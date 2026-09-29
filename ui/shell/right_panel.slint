@@ -101,13 +101,15 @@ component LineChart inherits Rectangle {
         return (root.vy(root.values[root.idx(k)]) + root.vy(root.values[root.idx(k + 1)])) / 2;
     }
 
-    height: root.chart-h + 1px;
+    // 高度可伸缩：综合页里随趋势卡拉伸（填满底部空白），其它页按 min-height 兜底
+    min-height: root.chart-h + 1px;
+    vertical-stretch: 1;
     background: transparent;
 
     // 0 值基线
     Rectangle {
         x: 0;
-        y: root.chart-h;
+        y: parent.height - 1px;
         width: parent.width;
         height: 1px;
         background: Theme.line;
@@ -115,7 +117,7 @@ component LineChart inherits Rectangle {
     // 50% 参考线（固定 0..100% 比例尺下的读数辅助）
     Rectangle {
         x: 0;
-        y: root.chart-h / 2;
+        y: parent.height / 2;
         width: parent.width;
         height: 1px;
         background: Theme.line.with-alpha(0.5);
@@ -131,7 +133,7 @@ component LineChart inherits Rectangle {
         x: 0;
         y: 0;
         width: parent.width;
-        height: root.chart-h;
+        height: parent.height;
         // ⚠ fit 默认是 `contain`：**等比**缩放到边界内并居中 —— 一张 430×44 的卡片里，
         // 100×100 的路径会被缩成中间一小团（截图里"折线没对齐 X/Y"就是这个）。
         // 图表要 `fill`：非等比拉伸，横向铺满 + 纵向按比例尺填满（纵轴范围由上面两个
@@ -835,9 +837,13 @@ export component RightPanel inherits Rectangle {
         }
 
         // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
+        // 外面包一层与指标行相同的 8px 左右内边距，四张卡与它左右对齐。
+        HorizontalLayout {
+            vertical-stretch: 0;
+            padding-left: 8px;
+            padding-right: 8px;
 
-        // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
-        if root.panel-host != "" : Rectangle {
+            if root.panel-host != "" : Rectangle {
             border-radius: Theme.radius-md;
             background: Theme.sur-2;
 
@@ -903,6 +909,8 @@ export component RightPanel inherits Rectangle {
                 }
             }
         }
+        }
+
 
         // ── 资源卡片 2×2（真数据，1 Hz）─────────────────────────────────
         // C 步会在下面接 CPU 趋势 / 磁盘分区 / 网络端口，并把这里收进「综合」标签。
@@ -1108,10 +1116,9 @@ export component RightPanel inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
-                // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）
-                // 默认按父级 100% 高布局，内容会被"摊开"到整个面板高度 —— 卡片被
-                // 拉伸、标题行跑到正中。钉住首选高度后按自然高度从上往下排。
-                height: self.preferred-height;
+                // 内容列**撑满面板**：底部不再留白（用户要求填满）。为了不让所有卡片
+                // 被一起摊高，只有 CPU 趋势卡 `vertical-stretch: 1`（图表吃掉多余高度），
+                // 其余卡片都是 `vertical-stretch: 0` 保持紧凑。
                 x: 0;
                 y: 0;
                 padding: 10px;
@@ -1120,6 +1127,7 @@ export component RightPanel inherits Rectangle {
 
                 // 参考图：综合页的每个区块都是一张卡（标题 + 内容），不再是裸标题。
                 Rectangle {
+                    vertical-stretch: 1;   // 趋势卡吸收面板的多余高度（填满底部空白）
                     border-radius: Theme.radius-md;
                     background: Theme.sur-2;
 
@@ -1172,6 +1180,7 @@ export component RightPanel inherits Rectangle {
 
                 Rectangle {
                     border-radius: Theme.radius-md;
+                    vertical-stretch: 0;
                     background: Theme.sur-2;
 
                     VerticalLayout {
@@ -1208,6 +1217,7 @@ export component RightPanel inherits Rectangle {
 
                 Rectangle {
                     border-radius: Theme.radius-md;
+                    vertical-stretch: 0;
                     background: Theme.sur-2;
 
                     VerticalLayout {
