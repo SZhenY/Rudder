@@ -1188,6 +1188,10 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
             // Add the new tab to the focused pane and re-flatten (this also sets
             // active-tab-id to the new tab via refresh_panes).
             layout.borrow_mut().add_tab(tab_id.clone());
+            // 连上会话后工具面板默认自动展开（面板里就是这台机器的资源/文件）。
+            if let Some(w) = weak.upgrade() {
+                w.set_right_panel_open(true);
+            }
             // 真会话接进来之后把「欢迎标签页」收掉：它只是「创建会话」那张卡片，
             // 留着会跟真会话并排（用户反馈：从主机页快速连接后，终端页里还能看到
             // 上一轮的「新建会话」标签页）。

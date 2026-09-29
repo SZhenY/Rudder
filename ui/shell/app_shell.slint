@@ -956,9 +956,11 @@ export component AppWindow inherits Window {
         // 面板占位宽度：面板打开时终端舞台整体让开它，而不是被它盖住 —— 否则舞台里的
         // 底部命令栏（… 所有会话 / 发送）右端会被面板压住（用户截图里红框那处）。
         // 舞台宽度变化会走 `content-resized`，Rust 据此重算分屏几何。
+        // 用户拖拽出来的面板宽度（会话内记忆；默认 = 出厂 340px）
+        property <length> panel-user-w: 340px;
         property <length> panel-w:
             root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open
-                ? (root.panel-collapsed ? 22px : 340px) : 0px;
+                ? (root.panel-collapsed ? 22px : root.panel-user-w) : 0px;
 
         Rail {
             x: 0;
@@ -1381,6 +1383,22 @@ export component AppWindow inherits Window {
           sftp-sort-request(key) => { root.sftp-sort-request(root.active-tab-id, key); }
           close-panel() => { root.right-panel-open = false; }
       }
+    // 面板左缘的拖拽把手：左右拉伸手柄，280-560px 之间自由调宽（会话内记忆；
+    // 重启恢复出厂 340px）。声明在面板之后 = 盖在面板左缘上。
+    TouchArea {
+        x: root.width - root.panel-w - 3px;
+        y: root.shell-top;
+        width: 6px;
+        height: root.height - root.shell-top - 28px;
+        mouse-cursor: ew-resize;
+
+        moved => {
+            if (self.pressed) {
+                root.panel-user-w = clamp(root.width - (self.absolute-position.x + self.mouse-x),
+                                          280px, 560px);
+            }
+        }
+    }
 
       // 底部状态栏（参考图：连接状态 / 高亮 / 历史命令 / 传输统计）。
       if root.shell-page == 1 && root.terminals.length > 0 : StatusBar {

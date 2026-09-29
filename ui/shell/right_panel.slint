@@ -108,6 +108,14 @@ component LineChart inherits Rectangle {
     pure function vy(v: float) -> float {
         return 100.0 * (1.0 - clamp(v / root.yscale, 0.0, 1.0));
     }
+    // 中点：平滑曲线的节点取相邻采样点的中点，数据点只做控制点 ——
+    // 直连数据点的折线太生硬（用户反馈），这样曲率柔和也不会过冲。
+    pure function mx(k: int) -> float {
+        return (root.vx(k) + root.vx(k + 1)) / 2;
+    }
+    pure function my(k: int) -> float {
+        return (root.vy(root.values[root.idx(k)]) + root.vy(root.values[root.idx(k + 1)])) / 2;
+    }
 
     height: root.chart-h + 1px;
     background: transparent;
@@ -125,6 +133,8 @@ component LineChart inherits Rectangle {
     // `for`-`in` syntax, yet"），所以下面 32 个采样点是**展开写死**的（脚本生成，
     // 别手改）：第 k 个点取 `idx(k)` 处的数据 —— 数据长度可变，这里均匀取样，
     // 于是同一个组件能吃任意长度的历史序列。
+    // 曲线走**中点二次贝塞尔**：节点取相邻采样点的中点、数据点只做控制点 ——
+    // 直连数据点的折线太生硬（用户反馈），这样曲率柔和且不过冲。
     if root.values.length > 0 : Path {
         x: 0;
         y: 0;
@@ -145,193 +155,188 @@ component LineChart inherits Rectangle {
         // 锚点只有 0.01 单位长（不到一个像素），画不出来。
         MoveTo { x: 0.0; y: 0.0; }
         LineTo { x: 0.01; y: 0.0; }
-        MoveTo { x: root.vx(0); y: root.vy(root.values[root.idx(0)]); }
+        MoveTo { x: root.mx(0); y: root.my(0); }
         QuadraticTo {
-            control-x: root.vx(0) + (root.vx(1) - root.vx(0)) / 2;
-            control-y: root.vy(root.values[root.idx(0)]);
-            x: root.vx(1);
-            y: root.vy(root.values[root.idx(1)]);
-        }
-        QuadraticTo {
-            control-x: root.vx(1) + (root.vx(2) - root.vx(1)) / 2;
+            control-x: root.vx(1);
             control-y: root.vy(root.values[root.idx(1)]);
-            x: root.vx(2);
-            y: root.vy(root.values[root.idx(2)]);
+            x: root.mx(1);
+            y: root.my(1);
         }
         QuadraticTo {
-            control-x: root.vx(2) + (root.vx(3) - root.vx(2)) / 2;
+            control-x: root.vx(2);
             control-y: root.vy(root.values[root.idx(2)]);
-            x: root.vx(3);
-            y: root.vy(root.values[root.idx(3)]);
+            x: root.mx(2);
+            y: root.my(2);
         }
         QuadraticTo {
-            control-x: root.vx(3) + (root.vx(4) - root.vx(3)) / 2;
+            control-x: root.vx(3);
             control-y: root.vy(root.values[root.idx(3)]);
-            x: root.vx(4);
-            y: root.vy(root.values[root.idx(4)]);
+            x: root.mx(3);
+            y: root.my(3);
         }
         QuadraticTo {
-            control-x: root.vx(4) + (root.vx(5) - root.vx(4)) / 2;
+            control-x: root.vx(4);
             control-y: root.vy(root.values[root.idx(4)]);
-            x: root.vx(5);
-            y: root.vy(root.values[root.idx(5)]);
+            x: root.mx(4);
+            y: root.my(4);
         }
         QuadraticTo {
-            control-x: root.vx(5) + (root.vx(6) - root.vx(5)) / 2;
+            control-x: root.vx(5);
             control-y: root.vy(root.values[root.idx(5)]);
-            x: root.vx(6);
-            y: root.vy(root.values[root.idx(6)]);
+            x: root.mx(5);
+            y: root.my(5);
         }
         QuadraticTo {
-            control-x: root.vx(6) + (root.vx(7) - root.vx(6)) / 2;
+            control-x: root.vx(6);
             control-y: root.vy(root.values[root.idx(6)]);
-            x: root.vx(7);
-            y: root.vy(root.values[root.idx(7)]);
+            x: root.mx(6);
+            y: root.my(6);
         }
         QuadraticTo {
-            control-x: root.vx(7) + (root.vx(8) - root.vx(7)) / 2;
+            control-x: root.vx(7);
             control-y: root.vy(root.values[root.idx(7)]);
-            x: root.vx(8);
-            y: root.vy(root.values[root.idx(8)]);
+            x: root.mx(7);
+            y: root.my(7);
         }
         QuadraticTo {
-            control-x: root.vx(8) + (root.vx(9) - root.vx(8)) / 2;
+            control-x: root.vx(8);
             control-y: root.vy(root.values[root.idx(8)]);
-            x: root.vx(9);
-            y: root.vy(root.values[root.idx(9)]);
+            x: root.mx(8);
+            y: root.my(8);
         }
         QuadraticTo {
-            control-x: root.vx(9) + (root.vx(10) - root.vx(9)) / 2;
+            control-x: root.vx(9);
             control-y: root.vy(root.values[root.idx(9)]);
-            x: root.vx(10);
-            y: root.vy(root.values[root.idx(10)]);
+            x: root.mx(9);
+            y: root.my(9);
         }
         QuadraticTo {
-            control-x: root.vx(10) + (root.vx(11) - root.vx(10)) / 2;
+            control-x: root.vx(10);
             control-y: root.vy(root.values[root.idx(10)]);
-            x: root.vx(11);
-            y: root.vy(root.values[root.idx(11)]);
+            x: root.mx(10);
+            y: root.my(10);
         }
         QuadraticTo {
-            control-x: root.vx(11) + (root.vx(12) - root.vx(11)) / 2;
+            control-x: root.vx(11);
             control-y: root.vy(root.values[root.idx(11)]);
-            x: root.vx(12);
-            y: root.vy(root.values[root.idx(12)]);
+            x: root.mx(11);
+            y: root.my(11);
         }
         QuadraticTo {
-            control-x: root.vx(12) + (root.vx(13) - root.vx(12)) / 2;
+            control-x: root.vx(12);
             control-y: root.vy(root.values[root.idx(12)]);
-            x: root.vx(13);
-            y: root.vy(root.values[root.idx(13)]);
+            x: root.mx(12);
+            y: root.my(12);
         }
         QuadraticTo {
-            control-x: root.vx(13) + (root.vx(14) - root.vx(13)) / 2;
+            control-x: root.vx(13);
             control-y: root.vy(root.values[root.idx(13)]);
-            x: root.vx(14);
-            y: root.vy(root.values[root.idx(14)]);
+            x: root.mx(13);
+            y: root.my(13);
         }
         QuadraticTo {
-            control-x: root.vx(14) + (root.vx(15) - root.vx(14)) / 2;
+            control-x: root.vx(14);
             control-y: root.vy(root.values[root.idx(14)]);
-            x: root.vx(15);
-            y: root.vy(root.values[root.idx(15)]);
+            x: root.mx(14);
+            y: root.my(14);
         }
         QuadraticTo {
-            control-x: root.vx(15) + (root.vx(16) - root.vx(15)) / 2;
+            control-x: root.vx(15);
             control-y: root.vy(root.values[root.idx(15)]);
-            x: root.vx(16);
-            y: root.vy(root.values[root.idx(16)]);
+            x: root.mx(15);
+            y: root.my(15);
         }
         QuadraticTo {
-            control-x: root.vx(16) + (root.vx(17) - root.vx(16)) / 2;
+            control-x: root.vx(16);
             control-y: root.vy(root.values[root.idx(16)]);
-            x: root.vx(17);
-            y: root.vy(root.values[root.idx(17)]);
+            x: root.mx(16);
+            y: root.my(16);
         }
         QuadraticTo {
-            control-x: root.vx(17) + (root.vx(18) - root.vx(17)) / 2;
+            control-x: root.vx(17);
             control-y: root.vy(root.values[root.idx(17)]);
-            x: root.vx(18);
-            y: root.vy(root.values[root.idx(18)]);
+            x: root.mx(17);
+            y: root.my(17);
         }
         QuadraticTo {
-            control-x: root.vx(18) + (root.vx(19) - root.vx(18)) / 2;
+            control-x: root.vx(18);
             control-y: root.vy(root.values[root.idx(18)]);
-            x: root.vx(19);
-            y: root.vy(root.values[root.idx(19)]);
+            x: root.mx(18);
+            y: root.my(18);
         }
         QuadraticTo {
-            control-x: root.vx(19) + (root.vx(20) - root.vx(19)) / 2;
+            control-x: root.vx(19);
             control-y: root.vy(root.values[root.idx(19)]);
-            x: root.vx(20);
-            y: root.vy(root.values[root.idx(20)]);
+            x: root.mx(19);
+            y: root.my(19);
         }
         QuadraticTo {
-            control-x: root.vx(20) + (root.vx(21) - root.vx(20)) / 2;
+            control-x: root.vx(20);
             control-y: root.vy(root.values[root.idx(20)]);
-            x: root.vx(21);
-            y: root.vy(root.values[root.idx(21)]);
+            x: root.mx(20);
+            y: root.my(20);
         }
         QuadraticTo {
-            control-x: root.vx(21) + (root.vx(22) - root.vx(21)) / 2;
+            control-x: root.vx(21);
             control-y: root.vy(root.values[root.idx(21)]);
-            x: root.vx(22);
-            y: root.vy(root.values[root.idx(22)]);
+            x: root.mx(21);
+            y: root.my(21);
         }
         QuadraticTo {
-            control-x: root.vx(22) + (root.vx(23) - root.vx(22)) / 2;
+            control-x: root.vx(22);
             control-y: root.vy(root.values[root.idx(22)]);
-            x: root.vx(23);
-            y: root.vy(root.values[root.idx(23)]);
+            x: root.mx(22);
+            y: root.my(22);
         }
         QuadraticTo {
-            control-x: root.vx(23) + (root.vx(24) - root.vx(23)) / 2;
+            control-x: root.vx(23);
             control-y: root.vy(root.values[root.idx(23)]);
-            x: root.vx(24);
-            y: root.vy(root.values[root.idx(24)]);
+            x: root.mx(23);
+            y: root.my(23);
         }
         QuadraticTo {
-            control-x: root.vx(24) + (root.vx(25) - root.vx(24)) / 2;
+            control-x: root.vx(24);
             control-y: root.vy(root.values[root.idx(24)]);
-            x: root.vx(25);
-            y: root.vy(root.values[root.idx(25)]);
+            x: root.mx(24);
+            y: root.my(24);
         }
         QuadraticTo {
-            control-x: root.vx(25) + (root.vx(26) - root.vx(25)) / 2;
+            control-x: root.vx(25);
             control-y: root.vy(root.values[root.idx(25)]);
-            x: root.vx(26);
-            y: root.vy(root.values[root.idx(26)]);
+            x: root.mx(25);
+            y: root.my(25);
         }
         QuadraticTo {
-            control-x: root.vx(26) + (root.vx(27) - root.vx(26)) / 2;
+            control-x: root.vx(26);
             control-y: root.vy(root.values[root.idx(26)]);
-            x: root.vx(27);
-            y: root.vy(root.values[root.idx(27)]);
+            x: root.mx(26);
+            y: root.my(26);
         }
         QuadraticTo {
-            control-x: root.vx(27) + (root.vx(28) - root.vx(27)) / 2;
+            control-x: root.vx(27);
             control-y: root.vy(root.values[root.idx(27)]);
-            x: root.vx(28);
-            y: root.vy(root.values[root.idx(28)]);
+            x: root.mx(27);
+            y: root.my(27);
         }
         QuadraticTo {
-            control-x: root.vx(28) + (root.vx(29) - root.vx(28)) / 2;
+            control-x: root.vx(28);
             control-y: root.vy(root.values[root.idx(28)]);
-            x: root.vx(29);
-            y: root.vy(root.values[root.idx(29)]);
+            x: root.mx(28);
+            y: root.my(28);
         }
         QuadraticTo {
-            control-x: root.vx(29) + (root.vx(30) - root.vx(29)) / 2;
+            control-x: root.vx(29);
             control-y: root.vy(root.values[root.idx(29)]);
-            x: root.vx(30);
-            y: root.vy(root.values[root.idx(30)]);
+            x: root.mx(29);
+            y: root.my(29);
         }
         QuadraticTo {
-            control-x: root.vx(30) + (root.vx(31) - root.vx(30)) / 2;
+            control-x: root.vx(30);
             control-y: root.vy(root.values[root.idx(30)]);
-            x: root.vx(31);
-            y: root.vy(root.values[root.idx(31)]);
+            x: root.mx(30);
+            y: root.my(30);
         }
+        LineTo { x: root.vx(31); y: root.vy(root.values[root.idx(31)]); }
         // 收口到基线（让 fill 成为面积图）
         LineTo { x: 100.0; y: 100.0; }
         LineTo { x: 0.0; y: 100.0; }
@@ -837,10 +842,7 @@ export component RightPanel inherits Rectangle {
             }
         }
 
-        Rectangle {
-            height: 1px;
-            background: Theme.line;
-        }
+        // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
 
         // ── 资源卡片 2×2（真数据，1 Hz）─────────────────────────────────
         // C 步会在下面接 CPU 趋势 / 磁盘分区 / 网络端口，并把这里收进「综合」标签。
@@ -915,12 +917,6 @@ export component RightPanel inherits Rectangle {
                 hint: "\{root.net-up}";
                 show-bar: false;
             }
-        }
-
-        Rectangle {
-            height: 1px;
-            background: Theme.line;
-            visible: root.head-tab == 0;
         }
 
         // ── 内容标签：5 个监控视图 + 传输 / 文件（全部真数据）────────────
@@ -1061,7 +1057,6 @@ export component RightPanel inherits Rectangle {
                 padding: 10px;
                 spacing: 6px;
 
-                // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
                 if root.panel-host != "" : Rectangle {
                     border-radius: Theme.radius-md;
                     background: Theme.sur-2;
@@ -1090,20 +1085,23 @@ export component RightPanel inherits Rectangle {
                                 horizontal-stretch: 1;
                             }
                             Rectangle {
+                                max-width: 150px;
                                 border-radius: 4px;
                                 border-width: 1px;
                                 border-color: Theme.line;
                                 background: Theme.sur-3;
+                                clip: true;
 
                                 HorizontalLayout {
                                     padding-left: 6px;
                                     padding-right: 6px;
 
                                     Text {
-                                        text: root.panel-ip;            // IP
+                                        text: root.panel-ip;
                                         font-size: 10px;
                                         color: Theme.fg-2;
                                         vertical-alignment: center;
+                                        overflow: elide;
                                     }
                                 }
                             }
