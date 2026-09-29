@@ -880,8 +880,8 @@ export component RightPanel inherits Rectangle {
         return min(280px, 28px * (root.net-rows.length + 1));
     }
     // 所有内容页（Flickable 内容列）的统一内边距 —— 单一处管理，改这里全页生效。
-    // 7px ≈ 顶部切换条的 6px 按钮边距（10px 时明显错位，用户反馈）。
-    property <length> content-pad: 7px;
+    // 5px = 顶部切换条的按钮边距（两边对齐；用户定值）。
+    property <length> content-pad: 5px;
     in property <[TransferInfo]> transfers;
     in property <bool> transfers-active: false;
     in property <bool> sftp-follow-cd;
@@ -1041,8 +1041,8 @@ export component RightPanel inherits Rectangle {
             // （用 if 而不是 visible —— visible 的元素在布局里占位。）
             vertical-stretch: 0;
             height: 32px;
-            padding-left: 6px;
-            padding-right: 6px;
+            padding-left: 5px;
+            padding-right: 5px;
             padding-top: 3px;
             padding-bottom: 3px;
             spacing: 3px;
