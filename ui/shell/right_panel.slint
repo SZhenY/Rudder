@@ -774,7 +774,9 @@ component StatChip inherits Rectangle {
 // CPU 页 0）；LineChart 自带 vertical-stretch —— 卡片被拉高时折线跟着长。
 component TrendCard inherits Rectangle {
     in property <string> title;
-    in property <string> title-icon: "\u{E9E2}";   // monitoring
+    // ⚠ 别用 E9E2（monitoring）—— 那是 Material **Symbols** 的码位，经典
+    // Material Icons 字体里没有这个字形 → 渲染成豆腐块（用户截图）。
+    in property <string> title-icon: "\u{E30C}";   // computer
     in property <bool> lang-en: false;
     in property <[float]> values;
     in-out property <int> window: 60;
@@ -1018,6 +1020,132 @@ export component RightPanel inherits Rectangle {
             }
         }
 
+        // ── 内容标签：5 个监控视图 + 传输 / 文件（全部真数据）────────────
+        // 参考图的标签是 综合 / 处理器 / 显卡 / 内存 / 磁盘 / 网络；显卡项目没有采集，
+        // 不做（见文件头）。每个标签 图标 + 文案、等分宽度（见 PanelTab）。
+        HorizontalLayout {
+            // 标签条高度随内容、不参与拉伸（多出来的高度只给下面的内容区）
+            vertical-stretch: 0;
+            visible: root.head-tab == 0 && root.panel-ready;
+            height: 32px;
+            padding-left: 6px;
+            padding-right: 6px;
+            padding-top: 3px;
+            padding-bottom: 3px;
+            spacing: 3px;
+
+            PanelTab {
+                label: root.lang-en ? "Sum" : "综合";
+                icon: "\u{E1C3}";   // table/rows
+                active: root.current-tab == 0;
+                clicked => {
+                    root.current-tab = 0;
+                }
+            }
+            PanelTab {
+                label: "CPU";
+                icon: "\u{E30C}";   // computer
+                active: root.current-tab == 1;
+                clicked => {
+                    root.current-tab = 1;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Mem" : "内存";
+                icon: "\u{E322}";   // memory
+                active: root.current-tab == 2;
+                clicked => {
+                    root.current-tab = 2;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Disk" : "磁盘";
+                icon: "\u{E1DB}";   // storage
+                active: root.current-tab == 3;
+                clicked => {
+                    root.current-tab = 3;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Net" : "网络";
+                icon: "\u{E1AF}";   // network_check
+                active: root.current-tab == 4;
+                clicked => {
+                    root.current-tab = 4;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Xfers" : "传输";
+                icon: "\u{E5D8}";   // arrow_upward（上传/下载一对，这里取一个）
+                active: root.current-tab == 5;
+                clicked => {
+                    root.current-tab = 5;
+                }
+            }
+            PanelTab {
+                label: root.lang-en ? "Files" : "文件";
+                icon: "\u{E2C7}";   // folder
+                active: root.current-tab == 6;
+                clicked => {
+                    root.current-tab = 6;
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+
+        // ── 综合：CPU 趋势 + 磁盘分区 + 网络端口（卡片在上方常驻，不重复）──
+        // ── AI 占位卡（参考图头部有这一项；项目还没接模型，不放假功能）──
+        if root.head-tab == 1 : Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
+
+            VerticalLayout {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                padding: 16px;
+                spacing: 10px;
+                alignment: center;
+
+                Rectangle {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 22px;
+                    background: Theme.sur-3;
+
+                    Text {
+                        text: "AI";
+                        font-size: 14px;
+                        font-weight: 700;
+                        color: Theme.accent;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                Text {
+                    text: root.lang-en ? "AI assistant" : "AI 助手";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.fg-1;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.lang-en
+                        ? "Coming soon — no model is wired up in this build."
+                        : "即将上线 —— 本版本尚未接入模型。";
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+
         // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
         // 外面包一层与指标行相同的 8px 左右内边距，四张卡与它左右对齐。
         HorizontalLayout {
@@ -1202,131 +1330,6 @@ export component RightPanel inherits Rectangle {
                 mid-left: "↓ \{root.net-down}";
                 mid-right: "↑ \{root.net-up}";
                 foot-left: root.net-selected;
-            }
-        }
-
-        // ── 内容标签：5 个监控视图 + 传输 / 文件（全部真数据）────────────
-        // 参考图的标签是 综合 / 处理器 / 显卡 / 内存 / 磁盘 / 网络；显卡项目没有采集，
-        // 不做（见文件头）。每个标签 图标 + 文案、等分宽度（见 PanelTab）。
-        HorizontalLayout {
-            // 标签条高度随内容、不参与拉伸（多出来的高度只给下面的内容区）
-            vertical-stretch: 0;
-            visible: root.head-tab == 0 && root.panel-ready;
-            height: 32px;
-            padding-left: 6px;
-            padding-right: 6px;
-            padding-top: 3px;
-            padding-bottom: 3px;
-            spacing: 3px;
-
-            PanelTab {
-                label: root.lang-en ? "Sum" : "综合";
-                icon: "\u{E1C3}";   // table/rows
-                active: root.current-tab == 0;
-                clicked => {
-                    root.current-tab = 0;
-                }
-            }
-            PanelTab {
-                label: "CPU";
-                icon: "\u{E30C}";   // computer
-                active: root.current-tab == 1;
-                clicked => {
-                    root.current-tab = 1;
-                }
-            }
-            PanelTab {
-                label: root.lang-en ? "Mem" : "内存";
-                icon: "\u{E322}";   // memory
-                active: root.current-tab == 2;
-                clicked => {
-                    root.current-tab = 2;
-                }
-            }
-            PanelTab {
-                label: root.lang-en ? "Disk" : "磁盘";
-                icon: "\u{E1DB}";   // storage
-                active: root.current-tab == 3;
-                clicked => {
-                    root.current-tab = 3;
-                }
-            }
-            PanelTab {
-                label: root.lang-en ? "Net" : "网络";
-                icon: "\u{E1AF}";   // network_check
-                active: root.current-tab == 4;
-                clicked => {
-                    root.current-tab = 4;
-                }
-            }
-            PanelTab {
-                label: root.lang-en ? "Xfers" : "传输";
-                icon: "\u{E5D8}";   // arrow_upward（上传/下载一对，这里取一个）
-                active: root.current-tab == 5;
-                clicked => {
-                    root.current-tab = 5;
-                }
-            }
-            PanelTab {
-                label: root.lang-en ? "Files" : "文件";
-                icon: "\u{E2C7}";   // folder
-                active: root.current-tab == 6;
-                clicked => {
-                    root.current-tab = 6;
-                }
-            }
-        }
-
-        Rectangle {
-            height: 1px;
-            background: Theme.line;
-        }
-
-        // ── 综合：CPU 趋势 + 磁盘分区 + 网络端口（卡片在上方常驻，不重复）──
-        // ── AI 占位卡（参考图头部有这一项；项目还没接模型，不放假功能）──
-        if root.head-tab == 1 : Rectangle {
-            vertical-stretch: 1;
-            background: transparent;
-
-            VerticalLayout {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                padding: 16px;
-                spacing: 10px;
-                alignment: center;
-
-                Rectangle {
-                    width: 44px;
-                    height: 44px;
-                    border-radius: 22px;
-                    background: Theme.sur-3;
-
-                    Text {
-                        text: "AI";
-                        font-size: 14px;
-                        font-weight: 700;
-                        color: Theme.accent;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-                Text {
-                    text: root.lang-en ? "AI assistant" : "AI 助手";
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: Theme.fg-1;
-                    horizontal-alignment: center;
-                }
-                Text {
-                    text: root.lang-en
-                        ? "Coming soon — no model is wired up in this build."
-                        : "即将上线 —— 本版本尚未接入模型。";
-                    font-size: 11px;
-                    color: Theme.fg-3;
-                    horizontal-alignment: center;
-                    wrap: word-wrap;
-                }
             }
         }
 
@@ -1534,9 +1537,12 @@ export component RightPanel inherits Rectangle {
                 // 用户态/内核态/IO 等待 + 核心详情 + 进程 CPU 排行 + 负载历史。
                 HorizontalLayout {
                     vertical-stretch: 0;
+                    padding-left: 8px;
+                    padding-right: 8px;
                     spacing: 4px;
 
                     ResCard {
+                        width: (root.width - 44px) / 3;
                         label: root.lang-en ? "Total load" : "总负载";
                         icon: "\u{E30C}";   // computer
                         tone: Theme.accent;
@@ -1544,6 +1550,7 @@ export component RightPanel inherits Rectangle {
                         percent: root.cpu-percent;
                     }
                     ResCard {
+                        width: (root.width - 44px) / 3;
                         label: root.lang-en ? "Load avg" : "负载均值";
                         icon: "\u{E8B5}";   // schedule
                         tone: Theme.ok;
@@ -1551,6 +1558,7 @@ export component RightPanel inherits Rectangle {
                         show-bar: false;
                     }
                     ResCard {
+                        width: (root.width - 44px) / 3;
                         label: root.lang-en ? "Temp" : "温度";
                         icon: "\u{E1FF}";   // device_thermostat
                         tone: Theme.danger;
@@ -1560,9 +1568,12 @@ export component RightPanel inherits Rectangle {
                 }
                 HorizontalLayout {
                     vertical-stretch: 0;
+                    padding-left: 8px;
+                    padding-right: 8px;
                     spacing: 4px;
 
                     ResCard {
+                        width: (root.width - 44px) / 3;
                         label: root.lang-en ? "User" : "用户态";
                         icon: "\u{E7FD}";   // person
                         tone: Theme.accent;
@@ -1570,6 +1581,7 @@ export component RightPanel inherits Rectangle {
                         percent: root.cpu-user;
                     }
                     ResCard {
+                        width: (root.width - 44px) / 3;
                         label: root.lang-en ? "System" : "内核态";
                         icon: "\u{E8B8}";   // settings
                         tone: Theme.success;
@@ -1577,6 +1589,7 @@ export component RightPanel inherits Rectangle {
                         percent: root.cpu-system;
                     }
                     ResCard {
+                        width: (root.width - 44px) / 3;
                         label: root.lang-en ? "IO wait" : "IO 等待";
                         icon: "\u{E8B5}";   // schedule
                         tone: Theme.warning;
