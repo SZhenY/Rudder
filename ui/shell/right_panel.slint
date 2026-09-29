@@ -1149,18 +1149,53 @@ export component RightPanel inherits Rectangle {
         }
 
 
-        // ── 服务器信息头卡（参考图第一张：主机名 + IP 徽标 + 系统行）──
-        // 头卡和下面的四张资源卡都是「综合」页的内容：切到 CPU/内存/… 跟着隐藏。
-        // ⚠ 必须用 if 而不是 visible：**visible 的元素在布局里仍然占位**，会在
-        // 其它标签页顶部留一块空白（用户截图）；if 的条件元素才真正不占位。
-        if root.current-tab == 0 : HorizontalLayout {
-            vertical-stretch: 0;
-            // 与内容页（Flickable > VerticalLayout padding: 10px）同一左右内边距、
-            // 同一顶部间隙 —— 头卡/四卡才和下面的趋势卡等竖向对齐（用户截图）。
-            padding-left: 10px;
-            padding-right: 10px;
-            padding-top: 10px;
+        // ── 加载态（参考 iShell）：会话刚连上、overview 还没采回来时，「工具」
+        // 内容先不画 —— 数据到齐（panel-ready）再一次性亮出来，避免看到一堆
+        // 0% / 空卡片的中间态。
+        if root.head-tab == 0 && !root.panel-ready : Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
 
+            VerticalLayout {
+                alignment: center;
+                spacing: 12px;
+
+                Text {
+                    // 转圈加载：sync 双箭头圆环，360° 无限旋转
+                    text: "\u{E627}";
+                    font-family: "Material Icons";
+                    font-size: 32px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                    transform-rotation: 360deg;
+                    animate transform-rotation { duration: 1600ms; iteration-count: -1; }
+                }
+                Text {
+                    text: root.lang-en ? "Waiting for monitoring data..." : "等待监控数据…";
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                    // 呼吸：透明度 1.2s 往返
+                    animate opacity { duration: 1200ms; iteration-count: -1; direction: alternate; easing: ease-in-out; }
+                }
+            }
+        }
+
+
+        if root.head-tab == 0 && root.current-tab == 0 && root.panel-ready : Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                // 内容列**撑满面板**：底部不再留白（用户要求填满）。为了不让所有卡片
+                // 被一起摊高，只有 CPU 趋势卡 `vertical-stretch: 1`（图表吃掉多余高度），
+                // 其余卡片都是 `vertical-stretch: 0` 保持紧凑。
+                x: 0;
+                y: 0;
+                padding: 10px;
+                spacing: 6px;
+
+
+        // 头卡：综合页内容的一部分 —— 跟趋势卡等同列同边距、随页面滚动。
             if root.panel-host != "" : Rectangle {
             border-radius: Theme.radius-md;
             background: Theme.sur-2;
@@ -1227,58 +1262,20 @@ export component RightPanel inherits Rectangle {
                 }
             }
         }
-        }
 
-        // ── 加载态（参考 iShell）：会话刚连上、overview 还没采回来时，「工具」
-        // 内容先不画 —— 数据到齐（panel-ready）再一次性亮出来，避免看到一堆
-        // 0% / 空卡片的中间态。
-        if root.head-tab == 0 && !root.panel-ready : Rectangle {
-            vertical-stretch: 1;
-            background: transparent;
-
-            VerticalLayout {
-                alignment: center;
-                spacing: 12px;
-
-                Text {
-                    // 转圈加载：sync 双箭头圆环，360° 无限旋转
-                    text: "\u{E627}";
-                    font-family: "Material Icons";
-                    font-size: 32px;
-                    color: Theme.fg-3;
-                    horizontal-alignment: center;
-                    transform-rotation: 360deg;
-                    animate transform-rotation { duration: 1600ms; iteration-count: -1; }
-                }
-                Text {
-                    text: root.lang-en ? "Waiting for monitoring data..." : "等待监控数据…";
-                    font-size: 11px;
-                    color: Theme.fg-3;
-                    horizontal-alignment: center;
-                    // 呼吸：透明度 1.2s 往返
-                    animate opacity { duration: 1200ms; iteration-count: -1; direction: alternate; easing: ease-in-out; }
-                }
-            }
-        }
-
-
-        // ── 资源卡片 2×2（真数据，1 Hz）─────────────────────────────────
+        // 四卡：综合页内容的一部分（宽度 = 内容卡宽的一半，见各行内公式）。
         // C 步会在下面接 CPU 趋势 / 磁盘分区 / 网络端口，并把这里收进「综合」标签。
         // ⚠ 用 if 而不是 visible：visible 的元素在布局里占位（其它标签页顶部留白）。
         if root.head-tab == 0 && root.current-tab == 0 && root.panel-ready : HorizontalLayout {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
-            padding-left: 10px;
-            padding-right: 10px;
-            padding-top: 8px;
-            padding-bottom: 4px;
             spacing: 4px;
 
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
-                width: (parent.width - 4px) / 2;
+                width: (root.width - 24px) / 2;
 
                 label: "CPU";
                 icon: "\u{E322}";   // memory-chip：参考图的 CPU 图标
@@ -1290,7 +1287,7 @@ export component RightPanel inherits Rectangle {
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
-                width: (parent.width - 4px) / 2;
+                width: (root.width - 24px) / 2;
 
                 label: root.lang-en ? "MEM" : "内存";
                 icon: "\u{E1DB}";   // storage：参考图的层叠图标
@@ -1306,16 +1303,12 @@ export component RightPanel inherits Rectangle {
             // 行高度随内容、**不允许拉伸**：面板里多出来的高度归下面的内容区
             //（否则这两行会平分剩余空间，卡片被摊成一大块 —— 用户截图）。
             vertical-stretch: 0;
-            padding-left: 10px;
-            padding-right: 10px;
-            padding-top: 4px;
-            padding-bottom: 8px;
             spacing: 4px;
 
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
-                width: (parent.width - 4px) / 2;
+                width: (root.width - 24px) / 2;
 
                 label: root.lang-en ? "DISK" : "磁盘";
                 icon: "\u{E875}";   // dns：参考图的磁盘盒子
@@ -1329,7 +1322,7 @@ export component RightPanel inherits Rectangle {
             ResCard {
                 // 四张卡宽度**平分**（以后工具面板能拖拽拉伸，必须跟着等分）：
                 // 行内 padding 8+8 + 卡片间距 4 = 20px 要扣掉。
-                width: (parent.width - 4px) / 2;
+                width: (root.width - 24px) / 2;
 
                 label: root.lang-en ? "NET" : "网络";
                 icon: "\u{E63E}";   // wifi
@@ -1340,18 +1333,6 @@ export component RightPanel inherits Rectangle {
                 foot-left: root.net-selected;
             }
         }
-
-        if root.head-tab == 0 && root.current-tab == 0 && root.panel-ready : Flickable {
-            vertical-stretch: 1;
-
-            VerticalLayout {
-                // 内容列**撑满面板**：底部不再留白（用户要求填满）。为了不让所有卡片
-                // 被一起摊高，只有 CPU 趋势卡 `vertical-stretch: 1`（图表吃掉多余高度），
-                // 其余卡片都是 `vertical-stretch: 0` 保持紧凑。
-                x: 0;
-                y: 0;
-                padding: 10px;
-                spacing: 6px;
 
 
                 // 参考图：综合页的每个区块都是一张卡（标题 + 内容），不再是裸标题。
