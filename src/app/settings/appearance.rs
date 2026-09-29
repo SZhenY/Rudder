@@ -23,10 +23,15 @@ use crate::ui::{ AccentPreset, AnimationSettings, AppWindow, ProcWindow, Theme }
 pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_win: &ProcWindow) {
     {
         let store = store.clone();
+        let weak = window.as_weak();
         window.on_set_animations_enabled(move |v| {
             persist(&store, |s| {
                 s.set_animations_enabled(v);
             });
+            // 即时生效（只落盘的话开关看起来是坏的 —— 用户反馈）
+            if let Some(w) = weak.upgrade() {
+                w.global::<AnimationSettings>().set_enabled(v);
+            }
         });
     }
 
