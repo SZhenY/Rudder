@@ -19,6 +19,11 @@ component TabPill inherits Rectangle {
 
     height: 30px;
     border-radius: 8px;
+    // 参考图（终端-会话-收起/展开）：会话标签是一枚**描边圆角矩形**（1px 灰边），
+    // 激活态边更亮 + 微填充；未激活透明、悬停微填充。
+    border-width: 1px;
+    border-color: root.active ? Theme.line-strong
+        : (ta.has-hover ? Theme.line : transparent);
     background: root.active
         ? Theme.rail-item-active
         : (ta.has-hover ? Theme.rail-item-hover : transparent);
@@ -226,6 +231,13 @@ export component PaneTabs inherits Rectangle {
                 clicked => {
                     root.toggle-panel();
                 }
+            }
+            // 参考图：下拉入口与窗口按钮之间有一条竖分隔线
+            Rectangle {
+                width: 1px;
+                height: 16px;
+                y: (parent.height - 16px) / 2;
+                background: Theme.line;
             }
             IconBtn {
                 glyph: "\u{E8EC}"; // view_column
