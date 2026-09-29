@@ -1282,6 +1282,14 @@ export component AppWindow inherits Window {
               collapse-sftp: root.collapse-sftp-default;
               app-version: root.app-version;
               accent-hex: root.accent-hex;
+              accent-presets: root.accent-presets;
+              accent-choice: root.accent-choice;
+              accent-name: root.accent-name;
+              update-last-check: root.update-last-check;
+              set-accent-rgb(a0, a1, a2) => { return root.set-accent-rgb(a0, a1, a2); }
+              check-update-now() => { root.check-update-now(); }
+              set-panel-font(v) => { root.set-panel-font(v); }
+              reset-page(p) => { root.reset-page(p); }
               ui-fonts: root.ui-fonts;
               term-fonts: root.term-fonts;
               term-font-index: root.term-font-index;

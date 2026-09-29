@@ -2,8 +2,10 @@
 // 行间无分隔线；大输入项控件在下方；语言是双 pill。全部真回调，无假控件。）
 
 import { Theme, AnimationSettings } from "../theme.slint";
-import { OutputRuleItem } from "../settings/types.slint";
+import { OutputRuleItem, AccentPreset } from "../settings/types.slint";
 import { LineEdit, Slider } from "std-widgets.slint";
+// 主题色：预设色块 + HSV 取色盘（与旧设置窗同一套组件，色表由 Rust 提供）。
+import { CursorPaletteSwatch, CursorColorInput } from "../settings/chrome.slint";
 
 struct CapsuleOpt {
     value: string,
@@ -72,7 +74,266 @@ component CapsuleRow inherits HorizontalLayout {
     }
 }
 
+// ── 版式骨架（参考图：分区标题 + 卡片；卡内是"左标签 / 右控件"的设置行）──────
+//
+// 分区标题：小号弱化字，给一屏设置做出层次。
+component SectionTitle inherits Text {
+    height: 26px;
+    font-size: 11px;
+    font-weight: 700;
+    color: Theme.fg-3;
+    vertical-alignment: center;
+}
+
+// 卡片：一组相关设置的容器（描边 + 圆角 + 卡片底色 `sur-2`）。
+// 内部一列、横向留白，行与行之间由行自己的 `show-divider` 画分隔线。
+component Card inherits Rectangle {
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.line;
+    clip: true;
+    background: Theme.line;
+
+    VerticalLayout {
+        // ⚠ 普通(Rectangle)父级里的 Layout 必须显式铺满（本页挤左的根因，见文件头）。
+        width: 100%;
+        height: 100%;
+        spacing: 1px;
+
+        @children
+    }
+}
+
+// [- value +] 步进器（参考图的字号 / 缩放都是这个控件）。
+component Stepper inherits Rectangle {
+    in property <int> value;
+    in property <int> minimum: 0;
+    in property <int> maximum: 100;
+    in property <int> step: 1;
+    in property <string> unit;
+    callback changed(int);
+
+    width: 112px;
+    height: 26px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: Theme.sur-2;
+    clip: true;
+
+    HorizontalLayout {
+        Rectangle {
+            width: 30px;
+            background: minus-ta.has-hover ? Theme.rail-item-hover : transparent;
+            minus-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.changed(max(root.minimum, root.value - root.step)); }
+            }
+            Text {
+                width: 100%;
+                height: 100%;
+                text: "\u{E15B}";
+                font-family: "Material Icons";
+                font-size: 14px;
+                color: Theme.fg-2;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        Rectangle { width: 1px; background: Theme.line; }
+        Text {
+            horizontal-stretch: 1;
+            text: root.value + root.unit;
+            font-size: 12px;
+            color: Theme.fg-1;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        Rectangle { width: 1px; background: Theme.line; }
+        Rectangle {
+            width: 30px;
+            background: plus-ta.has-hover ? Theme.rail-item-hover : transparent;
+            plus-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.changed(min(root.maximum, root.value + root.step)); }
+            }
+            Text {
+                width: 100%;
+                height: 100%;
+                text: "\u{E145}";
+                font-family: "Material Icons";
+                font-size: 14px;
+                color: Theme.fg-2;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// 光标样式三选：带真实光标形状预览（参考图）。
+component CursorStyleButton inherits Rectangle {
+    in property <string> label;
+    in property <string> cursor-kind;
+    in property <bool> selected;
+    callback clicked();
+
+    width: 74px;
+    height: 30px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent : Theme.line;
+    background: root.selected ? Theme.accent-soft
+        : (cs-ta.has-hover ? Theme.rail-item-hover : Theme.sur-2);
+    cs-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 7px;
+        spacing: 6px;
+        Rectangle {
+            width: 14px;
+            height: 100%;
+            background: transparent;
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 14px;
+                height: 18px;
+                background: Theme.term-bg;
+                Rectangle {
+                    x: 2px;
+                    y: root.cursor-kind == "underline" ? parent.height - 3px : 2px;
+                    width: root.cursor-kind == "bar" ? 2px : 10px;
+                    height: root.cursor-kind == "underline" ? 2px : 14px;
+                    background: Theme.term-fg;
+                }
+            }
+        }
+        Text {
+            text: root.label;
+            color: root.selected ? Theme.fg-1 : Theme.fg-2;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// 上传按钮：挑字体 / 壁纸 → 复制进 config 目录并立刻可选（参考图：下拉框右侧的图标）。
+component UploadButton inherits Rectangle {
+    callback clicked();
+
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: ub-ta.has-hover ? Theme.accent-soft : Theme.sur-2;
+    ub-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        width: 100%;
+        height: 100%;
+        text: "\u{E2C6}";   // folder-open
+        font-family: "Material Icons";
+        font-size: 16px;
+        color: Theme.fg-2;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+
+// 页头右上「还原本页默认」：第一下上膛、第二下才执行（参考图就是右上角这个按钮）。
+// armed 归组件自己 —— 共用一份状态会出现"在 A 页上膛、切到 B 页直接执行"的误触。
+component ResetButton inherits Rectangle {
+    in property <string> page;
+    in property <string> label: "还原本页默认";
+    in property <string> label-armed: "确认还原？";
+    callback reset(string);
+
+    property <bool> armed: false;
+
+    height: 26px;
+    width: rb-text.preferred-width + 20px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.armed ? Theme.danger : Theme.line;
+    background: root.armed ? Theme.danger : Theme.sur-2;
+
+    rb-text := Text {
+        width: 100%;
+        height: 100%;
+        text: root.armed ? root.label-armed : root.label;
+        font-size: 11px;
+        color: root.armed ? white : Theme.fg-2;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    rb-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            if (root.armed) {
+                root.armed = false;
+                root.reset(root.page);
+            } else {
+                root.armed = true;
+            }
+        }
+    }
+}
+
+
+// 参考图版式的"设置行"：左侧标签/说明，右侧控件槽（@children），整行铺满内容宽。
+// 用于胶囊组、开关、语言 pill 等紧凑控件；大输入块仍走 FieldBlock（控件在下方铺满）。
+component OptionRow inherits Rectangle {
+    background: Theme.sur-2;
+    in property <string> label;
+    in property <string> desc: "";
+
+    VerticalLayout {
+        width: 100%;
+        spacing: 0;
+
+        HorizontalLayout {
+            spacing: 14px;
+            padding-top: 9px;
+            padding-bottom: 9px;
+            padding-left: 12px;
+            padding-right: 12px;
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 3px;
+
+                Text {
+                    text: root.label;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.fg-1;
+                }
+                if root.desc != "" : Text {
+                    text: root.desc;
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                    wrap: word-wrap;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+
+                @children
+            }
+        }
+    }
+}
+
 component ToggleRow inherits Rectangle {
+    background: Theme.sur-2;
     in property <string> label;
     in property <string> desc: "";
     in property <bool> on: false;
@@ -80,33 +341,40 @@ component ToggleRow inherits Rectangle {
 
     height: root.desc == "" ? 44px : 56px;
 
-    HorizontalLayout {
-        spacing: 12px;
+    VerticalLayout {
+        width: 100%;
+        spacing: 0;
 
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
+        HorizontalLayout {
+            spacing: 12px;
+            padding-left: 12px;
+            padding-right: 12px;
 
-            Text {
-                text: root.label;
-                font-size: 13px;
-                font-weight: 600;
-                color: Theme.fg-1;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+
+                Text {
+                    text: root.label;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.fg-1;
+                }
+                if root.desc != "" : Text {
+                    text: root.desc;
+                    font-size: 11px;
+                    color: Theme.fg-3;
+                }
             }
-            if root.desc != "" : Text {
-                text: root.desc;
-                font-size: 11px;
-                color: Theme.fg-3;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
+            VerticalLayout {
+                alignment: center;
 
-            Switch {
-                on: root.on;
-                toggled => {
-                    root.toggled();
+                Switch {
+                    on: root.on;
+                    toggled => {
+                        root.toggled();
+                    }
                 }
             }
         }
@@ -153,6 +421,7 @@ component SelectBox inherits Rectangle {
 
 // 大输入项区块：标题 + 说明 + 控件在下方（参考图 字体/滚回 的样式）
 component FieldBlock inherits Rectangle {
+    background: Theme.sur-2;
     in property <string> title;
     in property <string> desc: "";
     height: block.preferred-height;
@@ -160,6 +429,8 @@ component FieldBlock inherits Rectangle {
     block := VerticalLayout {
         padding-top: 12px;
         padding-bottom: 12px;
+        padding-left: 12px;
+        padding-right: 12px;
         spacing: 8px;
         alignment: start;
 
@@ -230,82 +501,16 @@ component CategoryItem inherits Rectangle {
     }
 }
 
-// 磨砂透明度滑块（0–70%）：拖动实时改 `Theme.panel-alpha`（面板 / 终端同一块玻璃），
-// 松手才落盘。
-component FrostSlider inherits Rectangle {
-    in property <float> value: 0;         // 当前值（默认 0..70 = 磨砂百分比）
-    in property <float> min: 0;
-    in property <float> max: 70;
-    in property <float> step: 1;
-    callback changed(float);
-    callback released(float);
-
-    height: 22px;
-    width: 170px;
-    property <float> span: root.max - root.min;
-    property <float> frac: clamp((root.value - root.min) / root.span, 0.0, 1.0);
-    pure function snap(raw: float) -> float {
-        return clamp(round((raw - root.min) / root.step) * root.step + root.min,
-                     root.min, root.max);
-    }
-
-    Rectangle {
-        x: 0;
-        y: (parent.height - self.height) / 2;
-        width: parent.width;
-        height: 4px;
-        border-radius: 2px;
-        background: Theme.sur-3;
-
-        Rectangle {
-            x: 0;
-            y: 0;
-            width: parent.width * root.frac;
-            height: parent.height;
-            border-radius: 2px;
-            background: Theme.accent;
-        }
-    }
-    Rectangle {
-        x: (parent.width - self.width) * root.frac;
-        y: (parent.height - self.height) / 2;
-        width: 12px;
-        height: 12px;
-        border-radius: 6px;
-        background: Theme.fg-1;
-        border-width: 1px;
-        border-color: Theme.line;
-    }
-
-    ta := TouchArea {
-        width: parent.width;
-        height: parent.height;
-        mouse-cursor: pointer;
-        clicked => {
-            root.changed(root.snap(self.mouse-x / self.width * root.span + root.min));
-            root.released(root.snap(self.mouse-x / self.width * root.span + root.min));
-        }
-        moved => {
-            if (self.pressed) {
-                root.changed(root.snap(self.mouse-x / self.width * root.span + root.min));
-            }
-        }
-        pointer-event(e) => {
-            // 拖动结束时落盘（只写一次，不在拖动过程中反复写配置）
-            if (e.kind == PointerEventKind.up) {
-                root.released(root.snap(self.mouse-x / self.width * root.span + root.min));
-            }
-        }
-    }
-}
-
 component KeyRow inherits Rectangle {
+    background: Theme.sur-2;
     in property <string> keys;
     in property <string> desc;
     height: 26px;
 
     HorizontalLayout {
         spacing: 10px;
+        padding-left: 12px;
+        padding-right: 12px;
         alignment: start;
 
         Rectangle {
@@ -352,7 +557,7 @@ export component PageSettings inherits Rectangle {
     in property <string> app-version;
     // ── 输出高亮（v0.8.0 终端设置页迁移）──────────────────────────────
     in property <bool> output-highlight-enabled: false;
-    in property <string> output-highlight-preset: "log-levels";
+    in property <string> output-highlight-preset: "log";
     in property <string> output-highlight-rule-status: "";
     in property <[OutputRuleItem]> output-highlight-rules;
     // 表单临时状态（页面本地，不进配置）
@@ -389,7 +594,15 @@ export component PageSettings inherits Rectangle {
     callback upload-ui-font();
     property <bool> font-menu-open: false;
     property <bool> tfont-menu-open: false;
-    in property <string> accent-hex;
+    in-out property <string> accent-hex;   // 取色盘要就地改这个值；状态仍由 Rust 持有
+    /// 预设色表由 Rust 提供（含"当前深浅档已解析好的颜色"）；第一条是出厂默认蓝。
+    in property <[AccentPreset]> accent-presets;
+    /// 配置里的原值（"" = 出厂默认 / 预设 id / "#RRGGBB"），用于判断选中态。
+    in property <string> accent-choice;
+    /// 当前配色的显示名（默认蓝 / 预设名 / 自定义 hex）。
+    in property <string> accent-name;
+    /// 上次检查时间（Rust 侧已本地化；空串 = 还没查过）。
+    in property <string> update-last-check;
     in property <[string]> wallpaper-labels;
     // 磨砂透明度：**直接双向绑到主题全局** `panel-alpha` —— 拖动即实时生效（面板与
     // 终端共用这一层），不需要经过 Rust 预览回调；只在松手时落盘。
@@ -402,6 +615,10 @@ export component PageSettings inherits Rectangle {
     callback set-mount-filter-text(string);
     in property <int> wallpaper-index;
     callback set-accent-color(string);
+    callback set-accent-rgb(int, int, int) -> bool;   // 取色盘提交（Slint 无 hex 格式化）
+    callback check-update-now();
+    callback reset-page(string);                      // 还原本页默认（Rust 已注册 AppWindow）
+    callback set-panel-font(int);                     // 设置面板字体大小（百分比）
     callback set-wallpaper-label(string);
     callback pick-wallpaper();
     callback open-log-dir();
@@ -434,6 +651,12 @@ export component PageSettings inherits Rectangle {
     callback set-flag-follow-cd(bool);
     callback set-flag-collapse-sftp(bool);
 
+    // 滚回行数：上限随「大容量滚回」变化，非法输入不应用（Rust 侧同样会拒绝）。
+    property <bool> scrollback-valid: true;
+    property <int> scrollback-max: root.large-scrollback ? 1000000 : 100000;
+    pure function scrollback-ok(t: string) -> bool {
+        return t.to-float() >= 100 && t.to-float() <= root.scrollback-max;
+    }
     // 0 基础 · 1 终端 · 2 文件 · 3 布局 · 4 快捷键
     property <int> current-cat: 0;
     // 导航搜索：Rust 按关键词过滤分类（contains 无法在 Slint 里表达）
@@ -453,8 +676,12 @@ export component PageSettings inherits Rectangle {
     background: transparent;
 
     HorizontalLayout {
+        // ⚠ 普通(Rectangle)父级里的 Layout 按**首选尺寸**布局并贴左 —— 不显式铺满
+        // 就是"内容挤在左半边、右侧整块空白"的根因（与右侧内容列同一类坑）。
+        width: 100%;
+        height: 100%;
         // ── 左列：标题 + 分类（带副标题，参考图）────────────
-        Rectangle {
+        nav-col := Rectangle {
             width: 200px;
             background: Theme.sur-1;
 
@@ -561,14 +788,15 @@ export component PageSettings inherits Rectangle {
         }
 
         // ── 右侧：页头 + 设置区 ─────────────────────────
-        Rectangle {
+        content-rect := Rectangle {
             horizontal-stretch: 1;
+            // ⚠ 必须**显式**、且**不能反过来依赖自己这一列**：实测（Timer + debug 探针量宽）
+            // 布局里单元格的拉伸会被自身 LayoutInfo 的 max 夹住 —— 只写 horizontal-stretch
+            // 时本列拿不到剩余宽度（1274 − 200 = 1074 被夹成 453，右侧整块空白）。
+            width: root.width - nav-col.width;
 
-            VerticalLayout {
-                // ⚠ 普通(Rectangle)父级里的 VerticalLayout 按**首选尺寸**布局 —— 不显式
-                // 铺满就会挤成内容首选宽、贴左（连续三轮反馈的根因）。
-                // alignment:start 同理会让 Flickable 不吸收剩余高度（列表无法滚动）。
-                width: parent.width;
+            content-col := VerticalLayout {
+                width: 100%;
                 height: parent.height;
                 padding-top: 20px;
                 padding-bottom: 20px;
@@ -576,18 +804,34 @@ export component PageSettings inherits Rectangle {
                 padding-right: 24px;
                 spacing: 0;
 
-                Text {
-                    height: 34px;
-                    text: root.current-cat == 0 ? "基础设置"
-                        : root.current-cat == 1 ? "终端设置"
-                        : root.current-cat == 2 ? "文件设置"
-                        : root.current-cat == 5 ? "关于"
-                        : root.current-cat == 6 ? "云同步"
-                        : "快捷键";
-                    font-size: 17px;
-                    font-weight: 700;
-                    color: Theme.fg-1;
-                    vertical-alignment: center;
+HorizontalLayout {
+                    Text {
+                        height: 34px;
+                        text: root.current-cat == 0 ? "基础设置"
+                            : root.current-cat == 1 ? "终端设置"
+                            : root.current-cat == 2 ? "文件设置"
+                            : root.current-cat == 5 ? "关于"
+                            : root.current-cat == 6 ? "云同步"
+                            : "快捷键";
+                        font-size: 17px;
+                        font-weight: 700;
+                        color: Theme.fg-1;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    // 只有 Rust 侧有还原分支的三页才有按钮（terminal / appearance / transfer）。
+                    if root.current-cat == 0 : ResetButton {
+                        page: "appearance";
+                        reset(p) => { root.reset-page(p); }
+                    }
+                    if root.current-cat == 1 : ResetButton {
+                        page: "terminal";
+                        reset(p) => { root.reset-page(p); }
+                    }
+                    if root.current-cat == 2 : ResetButton {
+                        page: "transfer";
+                        reset(p) => { root.reset-page(p); }
+                    }
                 }
 
                 Rectangle {
@@ -595,282 +839,137 @@ export component PageSettings inherits Rectangle {
                     background: Theme.line;
                 }
 
-                Flickable {
+                flick := Flickable {
                     vertical-stretch: 1;
-                    VerticalLayout {
-                        // ⚠ 内容列高度 = 自己的首选高度：Flickable 的子元素（不在布局里）默认按父级
-                        // 100% 高布局，内容会被"摊开"到整个视口（卡片被拉伸）。
+                    // 同 content-rect：百分比是不会自指的写法（`parent.width` 会与本列互相依赖），
+                    // 量出来的结果是从 405 变成整宽 —— 上面那处注释有完整的实测数据。
+                    width: 100%;
+                    flick-col := VerticalLayout {
+                        // 高度取首选：Flickable 的子元素默认按视口高布局，卡片会被拉伸。
+                        width: 100%;
                         height: self.preferred-height;
                         x: 0;
                         y: 0;
                         padding-top: 8px + root.top-inset;
                         spacing: 0;
-                        alignment: start;
 
                         // ═══ 基础 ═══
                         if root.current-cat == 0 : VerticalLayout {
                             spacing: 4px;
+                            SectionTitle { text: root.lang-en ? "Language & theme" : "语言与主题"; }
+                            Card {
+                                OptionRow {
+                                    label: root.lang-en ? "Language" : "界面语言";
+                                    desc: root.lang-en ? "Applies immediately across the window" : "选择应用的显示语言";
 
-                            FieldBlock {
-                                title: root.lang-en ? "Language" : "界面语言";
-                                desc: root.lang-en ? "Applies immediately across the window" : "选择应用的显示语言";
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        alignment: start;
+
+                                        Rectangle {
+                                            width: 52px;
+                                            height: 26px;
+                                            border-radius: 6px;
+                                            background: !root.lang-en ? Theme.accent : Theme.sur-2;
+
+                                            HorizontalLayout {
+                                                alignment: center;
+                                                Text {
+                                                    text: "中文";
+                                                    font-size: 11px;
+                                                    color: !root.lang-en ? white : Theme.fg-2;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+                                            TouchArea {
+                                                clicked => {
+                                                    root.set-language("zh");
+                                                }
+                                            }
+                                        }
+                                        Rectangle {
+                                            width: 64px;
+                                            height: 26px;
+                                            border-radius: 6px;
+                                            background: root.lang-en ? Theme.accent : Theme.sur-2;
+
+                                            HorizontalLayout {
+                                                alignment: center;
+                                                Text {
+                                                    text: "English";
+                                                    font-size: 11px;
+                                                    color: root.lang-en ? white : Theme.fg-2;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+                                            TouchArea {
+                                                clicked => {
+                                                    root.set-language("en");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                ToggleRow {
+                                    label: root.lang-en ? "Dark Theme" : "深色主题";
+                                    desc: root.lang-en ? "Toggle between dark and light, whole window" : "在深色与浅色之间切换，整窗配色同步";
+                                    on: root.dark;
+                                    toggled => {
+                                        root.toggle-theme();
+                                    }
+                                }
+                                OptionRow {
+                                    label: root.lang-en ? "Appearance Mode" : "外观模式";
+                                    desc: root.lang-en ? "Light, dark, or follow the system" : "浅色、深色或跟随系统切换";
+                            
+                                    CapsuleRow {
+                                        opts: [
+                                            {value: "system", label: root.lang-en ? "System" : "跟随系统"},
+                                            {value: "dark", label: root.lang-en ? "Dark" : "深色"},
+                                            {value: "light", label: root.lang-en ? "Light" : "浅色"},
+                                        ];
+                                        value: root.appearance-mode;
+                                        picked(v) => { root.set-appearance-mode(v); }
+                                    }
+                                }
+}
+                            SectionTitle { text: root.lang-en ? "Theme & wallpaper" : "主题与壁纸"; }
+                            Card {
+                                OptionRow {
+                                label: root.lang-en ? "Accent colour" : "主题色";
+                                desc: root.lang-en
+                                    ? "Buttons, tabs, selections and highlights follow this colour."
+                                    : "按钮、标签页、选中态与高亮都跟随这个颜色。";
 
                                 HorizontalLayout {
                                     spacing: 6px;
                                     alignment: start;
-
-                                    Rectangle {
-                                        width: 52px;
-                                        height: 26px;
-                                        border-radius: 6px;
-                                        background: !root.lang-en ? Theme.accent : Theme.sur-2;
-
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Text {
-                                                text: "中文";
-                                                font-size: 11px;
-                                                color: !root.lang-en ? white : Theme.fg-2;
-                                                vertical-alignment: center;
-                                            }
-                                        }
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-language("zh");
-                                            }
-                                        }
+                                    // 色表由 Rust 提供，**第一条就是出厂默认蓝**（id 为空串）。
+                                    for p in root.accent-presets : CursorPaletteSwatch {
+                                        hex: p.id;
+                                        swatch-color: p.color;
+                                        selected: root.accent-choice == p.id;
+                                        chosen(id) => { root.set-accent-color(id); }
                                     }
-                                    Rectangle {
-                                        width: 64px;
-                                        height: 26px;
-                                        border-radius: 6px;
-                                        background: root.lang-en ? Theme.accent : Theme.sur-2;
-
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Text {
-                                                text: "English";
-                                                font-size: 11px;
-                                                color: root.lang-en ? white : Theme.fg-2;
-                                                vertical-alignment: center;
-                                            }
-                                        }
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-language("en");
-                                            }
-                                        }
+                                    Text {
+                                        text: root.accent-name;
+                                        color: Theme.fg-2;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
                                     }
                                 }
                             }
-                            ToggleRow {
-                                label: root.lang-en ? "Dark Theme" : "深色主题";
-                                desc: root.lang-en ? "Toggle between dark and light, whole window" : "在深色与浅色之间切换，整窗配色同步";
-                                on: root.dark;
-                                toggled => {
-                                    root.toggle-theme();
-                                }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "UI Font" : "界面字体";
-                                desc: root.lang-en ? "Window-wide UI font; import external fonts into the list" : "整窗 UI 字体；外部字体经「导入」加入清单（终端字体在终端分组）";
-
-                                VerticalLayout {
-                                    spacing: 4px;
-                                    alignment: start;
-
-                                    SelectBox {
-                                        width: 240px;
-                                        text: root.ui-fonts.length > 0 && root.ui-font-index < root.ui-fonts.length
-                                            ? root.ui-fonts[root.ui-font-index]
-                                            : (root.lang-en ? "Auto" : "自动");
-                                        clicked => { font-popup.show(); }
-                                    }
-
-                                    font-popup := PopupWindow {
-Rectangle {
-                                        width: 240px;
-                                        border-radius: 8px;
-                                        border-width: 1px;
-                                        border-color: Theme.line;
-                                        background: Theme.sur-1;
-
-                                        VerticalLayout {
-                                            spacing: 0;
-                                            alignment: start;
-
-                                            for lbl[i] in root.ui-fonts : Rectangle {
-                                                height: 30px;
-                                                background: root.ui-font-index == i
-                                                    ? Theme.rail-item-active
-                                                    : (f-ta.has-hover ? Theme.rail-item-hover : transparent);
-
-                                                HorizontalLayout {
-                                                    padding-left: 10px;
-                                                    padding-right: 10px;
-                                                    alignment: start;
-
-                                                    Text {
-                                                        Text {
-                                                            text: lbl;
-                                                            font-size: 12px;
-                                                            color: root.ui-font-index == i ? Theme.accent : Theme.fg-1;
-                                                            vertical-alignment: center;
-                                                        }
-                                                    }
-                                                }
-
-                                                f-ta := TouchArea {
-                                                    clicked => {
-                                                        root.term-ui-font(lbl);
-                                                        font-popup.close();
-                                                    }
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                height: 1px;
-                                                background: Theme.line;
-                                            }
-                                            Rectangle {
-                                                height: 30px;
-                                                background: imp-ta.has-hover ? Theme.rail-item-hover : transparent;
-
-                                                HorizontalLayout {
-                                                    padding-left: 10px;
-                                                    alignment: start;
-
-                                                    Text {
-                                                        text: "\u{E2C6}"; // import
-                                                        font-family: "Material Icons";
-                                                        font-size: 13px;
-                                                        color: Theme.fg-2;
-                                                        vertical-alignment: center;
-                                                    }
-                                                    Text {
-                                                        text: root.lang-en ? "Import External Font…" : "导入外部字体…";
-                                                        font-size: 12px;
-                                                        color: Theme.fg-1;
-                                                        vertical-alignment: center;
-                                                    }
-                                                }
-
-                                                imp-ta := TouchArea {
-                                                    clicked => {
-                                                        root.upload-ui-font();
-                                                        font-popup.close();
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    
-}
-}
-                                }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "Accent Color" : "主题色";
-                                desc: "当前：\{root.accent-hex}";
+                                FieldBlock {
+                                    title: root.lang-en ? "Wallpaper" : "壁纸";
+                                    desc: root.lang-en ? "Panels frost over the current wallpaper" : "面板磨砂取自当前壁纸；导入的自定义壁纸也会进入清单";
 
                                 HorizontalLayout {
                                     spacing: 8px;
-                                    alignment: start;
-
-                                    Rectangle {
-                                        width: 24px;
-                                        height: 24px;
-                                        border-radius: 12px;
-                                        background: #4a90e2;
-                                        border-width: 2px;
-                                        border-color: root.accent-hex == "#4a90e2" ? Theme.fg-1 : transparent;
-
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-accent-color("#4a90e2");
-                                            }
-                                        }
-                                    }
-                                    Rectangle {
-                                        width: 24px;
-                                        height: 24px;
-                                        border-radius: 12px;
-                                        background: #5856d6;
-                                        border-width: 2px;
-                                        border-color: root.accent-hex == "#5856d6" ? Theme.fg-1 : transparent;
-
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-accent-color("#5856d6");
-                                            }
-                                        }
-                                    }
-                                    Rectangle {
-                                        width: 24px;
-                                        height: 24px;
-                                        border-radius: 12px;
-                                        background: #34c759;
-                                        border-width: 2px;
-                                        border-color: root.accent-hex == "#34c759" ? Theme.fg-1 : transparent;
-
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-accent-color("#34c759");
-                                            }
-                                        }
-                                    }
-                                    Rectangle {
-                                        width: 24px;
-                                        height: 24px;
-                                        border-radius: 12px;
-                                        background: #ff9500;
-                                        border-width: 2px;
-                                        border-color: root.accent-hex == "#ff9500" ? Theme.fg-1 : transparent;
-
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-accent-color("#ff9500");
-                                            }
-                                        }
-                                    }
-                                    Rectangle {
-                                        width: 24px;
-                                        height: 24px;
-                                        border-radius: 12px;
-                                        background: #ff3b30;
-                                        border-width: 2px;
-                                        border-color: root.accent-hex == "#ff3b30" ? Theme.fg-1 : transparent;
-
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-accent-color("#ff3b30");
-                                            }
-                                        }
-                                    }
-                                    Rectangle {
-                                        width: 24px;
-                                        height: 24px;
-                                        border-radius: 12px;
-                                        background: #af52de;
-                                        border-width: 2px;
-                                        border-color: root.accent-hex == "#af52de" ? Theme.fg-1 : transparent;
-
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-accent-color("#af52de");
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "Wallpaper" : "壁纸";
-                                desc: root.lang-en ? "Panels frost over the current wallpaper" : "面板磨砂取自当前壁纸；导入的自定义壁纸也会进入清单";
-
-                                HorizontalLayout {
-                                    alignment: start;
-
                                     SelectBox {
-                                        width: 240px;
+                                        // 全宽（参考图：壁纸下拉铺满内容列）
+                                        horizontal-stretch: 1;
                                         text: root.wallpaper-labels.length > 0 && root.wallpaper-index < root.wallpaper-labels.length
                                             ? root.wallpaper-labels[root.wallpaper-index]
                                             : (root.lang-en ? "Default" : "默认");
@@ -878,660 +977,856 @@ Rectangle {
                                             wp-popup.show();
                                         }
                                     }
-                                }
+                                    UploadButton {
+                                        clicked => { root.pick-wallpaper(); }
+                                    }
+                                    }
 
-                                wp-popup := PopupWindow {
+                                    wp-popup := PopupWindow {
+                                        Rectangle {
+                                            width: 260px;
+                                            border-radius: 8px;
+                                            border-width: 1px;
+                                            border-color: Theme.line;
+                                            background: Theme.sur-1;
+
+                                            VerticalLayout {
+                                                spacing: 0;
+                                                alignment: start;
+
+                                                for wlab[i] in root.wallpaper-labels : Rectangle {
+                                                    height: 30px;
+                                                    background: root.wallpaper-index == i
+                                                        ? Theme.rail-item-active
+                                                        : (wp-ta.has-hover ? Theme.rail-item-hover : transparent);
+
+                                                    HorizontalLayout {
+                                                        padding-left: 10px;
+                                                        alignment: start;
+
+                                                        Text {
+                                                            text: wlab;
+                                                            font-size: 12px;
+                                                            color: root.wallpaper-index == i ? Theme.accent : Theme.fg-1;
+                                                            vertical-alignment: center;
+                                                        }
+                                                    }
+
+                                                    wp-ta := TouchArea {
+                                                        clicked => {
+                                                            root.set-wallpaper-label(wlab);
+                                                            wp-popup.close();
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    height: 1px;
+                                                    background: Theme.line;
+                                                }
+                                                Rectangle {
+                                                    height: 30px;
+                                                    background: wimp-ta.has-hover ? Theme.rail-item-hover : transparent;
+
+                                                    HorizontalLayout {
+                                                        padding-left: 10px;
+                                                        alignment: start;
+
+                                                        Text {
+                                                            text: "\u{E2C6} 导入自定义壁纸…";
+                                                            font-size: 12px;
+                                                            color: Theme.fg-1;
+                                                            vertical-alignment: center;
+                                                        }
+                                                    }
+
+                                                    wimp-ta := TouchArea {
+                                                        clicked => {
+                                                            root.pick-wallpaper();
+                                                            wp-popup.close();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                FieldBlock {
+                                    title: root.lang-en ? "Frosted-glass opacity" : "面板 / 终端磨砂透明度";
+                                    desc: root.lang-en
+                                        ? "How much the wallpaper shows through the panels and the terminal (0–70%)."
+                                        : "壁纸透过面板 / 终端背景的程度（0–70%,越往右越透;没设壁纸时不生效）";
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+
+                                        // 官方 Slider 铺满内容列（拖动实时预览，松手落盘）
+                                        Slider {
+                                            minimum: 0;
+                                            maximum: 70;
+                                            value: (1.0 - root.frost-alpha) * 100;
+                                            changed(v) => {
+                                                root.frost-alpha = 1.0 - v / 100;
+                                            }
+                                            released(v) => {
+                                                root.persist-frost-alpha(1.0 - v / 100);
+                                            }
+                                        }
+                                        Text {
+                                            text: "\{round((1.0 - root.frost-alpha) * 100)}%";
+                                            font-size: 12px;
+                                            color: Theme.fg-2;
+                                            vertical-alignment: center;
+                                            width: 34px;
+                                        }
+                                    }
+                                }
+                                // ── 外观模式（v0.8.0 设置窗迁移）────────────────────────────────
+                            }
+                                // ── 渲染器（v0.8.0 设置窗迁移；重启生效）────────────────────────
+                            SectionTitle { text: root.lang-en ? "Font & scale" : "字体与缩放"; }
+                            Card {
+                                FieldBlock {
+                                    title: root.lang-en ? "UI Font" : "界面字体";
+                                    desc: root.lang-en ? "Window-wide UI font; import external fonts into the list" : "整窗 UI 字体；外部字体经「导入」加入清单（终端字体在终端分组）";
+
+                                    VerticalLayout {
+                                        spacing: 4px;
+                                        alignment: start;
+
+                                        SelectBox {
+                                            // 全宽（参考图：字体下拉铺满内容列）
+                                            horizontal-stretch: 1;
+                                            text: root.ui-fonts.length > 0 && root.ui-font-index < root.ui-fonts.length
+                                                ? root.ui-fonts[root.ui-font-index]
+                                                : (root.lang-en ? "Auto" : "自动");
+                                            clicked => { font-popup.show(); }
+                                        UploadButton {
+                                            clicked => { root.upload-ui-font(); }
+                                        }
+                                        }
+
+                                        font-popup := PopupWindow {
+    Rectangle {
+                                            width: 240px;
+                                            border-radius: 8px;
+                                            border-width: 1px;
+                                            border-color: Theme.line;
+                                            background: Theme.sur-1;
+
+                                            VerticalLayout {
+                                                spacing: 0;
+                                                alignment: start;
+
+                                                for lbl[i] in root.ui-fonts : Rectangle {
+                                                    height: 30px;
+                                                    background: root.ui-font-index == i
+                                                        ? Theme.rail-item-active
+                                                        : (f-ta.has-hover ? Theme.rail-item-hover : transparent);
+
+                                                    HorizontalLayout {
+                                                        padding-left: 10px;
+                                                        padding-right: 10px;
+                                                        alignment: start;
+
+                                                        Text {
+                                                            text: lbl;
+                                                            font-size: 12px;
+                                                            color: root.ui-font-index == i ? Theme.accent : Theme.fg-1;
+                                                            vertical-alignment: center;
+                                                        }
+                                                    }
+
+                                                    f-ta := TouchArea {
+                                                        clicked => {
+                                                            root.term-ui-font(lbl);
+                                                            font-popup.close();
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    height: 1px;
+                                                    background: Theme.line;
+                                                }
+                                                Rectangle {
+                                                    height: 30px;
+                                                    background: imp-ta.has-hover ? Theme.rail-item-hover : transparent;
+
+                                                    HorizontalLayout {
+                                                        padding-left: 10px;
+                                                        alignment: start;
+
+                                                        Text {
+                                                            text: "\u{E2C6}"; // import
+                                                            font-family: "Material Icons";
+                                                            font-size: 13px;
+                                                            color: Theme.fg-2;
+                                                            vertical-alignment: center;
+                                                        }
+                                                        Text {
+                                                            text: root.lang-en ? "Import External Font…" : "导入外部字体…";
+                                                            font-size: 12px;
+                                                            color: Theme.fg-1;
+                                                            vertical-alignment: center;
+                                                        }
+                                                    }
+
+                                                    imp-ta := TouchArea {
+                                                        clicked => {
+                                                            root.upload-ui-font();
+                                                            font-popup.close();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                    
+    }
+    }
+                                    }
+                                }
+                                FieldBlock {
+                                    title: root.lang-en ? "UI Scale" : "界面缩放";
+                                    desc: root.lang-en ? "Scales fonts and controls (80% – 200%)" : "整体缩放界面字体与控件（80% – 200%）";
+                            
+                                    HorizontalLayout {
+                                        spacing: 8px;
+
+Stepper {
+                                    value: round(Theme.ui-scale * 100);
+                                    minimum: 80;
+                                    maximum: 200;
+                                    step: 10;
+                                    unit: "%";
+                                    changed(v) => { root.set-ui-scale(v); }
+                                }
+                                OptionRow {
+                                    label: root.lang-en ? "Settings font size" : "设置面板字体大小";
+                                    desc: root.lang-en ? "Enlarges this settings panel (font + window)." : "放大本设置面板的字体与窗口。";
+
+                                    Stepper {
+                                        value: round(Theme.panel-font * 100);
+                                        minimum: 80;
+                                        maximum: 160;
+                                        step: 10;
+                                        unit: "%";
+                                        changed(v) => { root.set-panel-font(v); }
+                                    }
+                                }
+                                ToggleRow {
+                                    label: root.lang-en ? "Animations" : "界面动画";
+                                    desc: root.lang-en ? "Sidebar and panel transition animations" : "侧栏与面板的过渡动画开关";
+                                    on: AnimationSettings.enabled;
+                                    toggled => {
+                                        root.set-animations-enabled(!AnimationSettings.enabled);
+                                    }
+                                }
+                                        Text {
+                                            text: "\{round(Theme.ui-scale * 100)}%";
+                                            font-size: 11px;
+                                            color: Theme.fg-2;
+                                            vertical-alignment: center;
+                                            width: 40px;
+                                        }
+                                    }
+                                }
+                            }
+                            SectionTitle { text: root.lang-en ? "Rendering" : "渲染"; }
+                            Card {
+                                OptionRow {
+                                    label: root.lang-en ? "Renderer" : "渲染器";
+                                    desc: root.lang-en ? "Software rendering is the most compatible; takes effect after restart" : "软件渲染兼容性最好；切换后重启生效";
+                            
+                                    CapsuleRow {
+                                        opts: [
+                                            // 老设置窗的两档制：GPU = femtovg-wgpu（配置值），旧 femtovg/skia 已归一化
+                                            {value: "femtovg-wgpu", label: "GPU"},
+                                            {value: "software", label: root.lang-en ? "Software" : "软件渲染"},
+                                        ];
+                                        value: root.renderer-mode;
+                                        picked(v) => { root.set-renderer-mode(v); }
+                                    }
+                                }
+                                // ── 界面缩放（v0.8.0 设置窗迁移）────────────────────────────────
+                                // ── 更新渠道（v0.8.0 设置窗迁移）────────────────────────────────
+                            }
+                            SectionTitle { text: root.lang-en ? "Updates" : "更新"; }
+                            Card {
+                                ToggleRow {
+                                    label: root.lang-en ? "Check for Updates" : "自动检查更新";
+                                    desc: root.lang-en ? "Check on startup (manual check anytime)" : "启动时检查新版本（可随时手动检查）";
+                                    on: root.update-check;
+                                    toggled => {
+                                        root.set-flag-update-check(!root.update-check);
+                                    }
+                                }
+                                OptionRow {
+                                    label: root.lang-en ? "Update Channel" : "更新渠道";
+                                    desc: root.lang-en ? "Beta receives new features earlier" : "测试版更早拿到新功能与修复";
+                            
+                                    CapsuleRow {
+                                        opts: [
+                                            {value: "stable", label: root.lang-en ? "Stable" : "稳定版"},
+                                            {value: "beta", label: root.lang-en ? "Beta" : "测试版"},
+                                            {value: "all", label: root.lang-en ? "All channels" : "全通道"},
+                                        ];
+                                        value: root.update-channel;
+                                        picked(v) => { root.set-update-channel(v); }
+                                    }
+                                }
+                                OptionRow {
+                                    label: root.lang-en ? "Check Interval" : "检查频率";
+                                    desc: "自动检查更新的间隔";
+
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        alignment: start;
+
+                                        for fl[i] in root.update-freq-labels : Rectangle {
+                                            width: ftext.preferred-width + 20px;
+                                            height: 26px;
+                                            border-radius: 6px;
+                                            border-width: 1px;
+                                            border-color: root.update-freq-index == i ? Theme.accent : Theme.line;
+                                            background: root.update-freq-index == i ? Theme.rail-item-active : Theme.sur-2;
+
+                                            HorizontalLayout {
+                                                padding-left: 10px;
+                                                padding-right: 10px;
+                                                alignment: center;
+                                                ftext := Text {
+                                                    text: fl;
+                                                    font-size: 11px;
+                                                    color: root.update-freq-index == i ? Theme.accent : Theme.fg-2;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+                                            TouchArea {
+                                                clicked => {
+                                                    root.set-update-freq(i);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                OptionRow {
+                                    label: root.lang-en ? "Last checked" : "上次检查时间";
+                                    desc: root.update-last-check;
+
                                     Rectangle {
-                                        width: 260px;
-                                        border-radius: 8px;
+                                        width: 80px;
+                                        height: 28px;
+                                        border-radius: 6px;
+                                        background: upd-ck-ta.has-hover ? Theme.rail-item-hover : Theme.sur-2;
                                         border-width: 1px;
                                         border-color: Theme.line;
-                                        background: Theme.sur-1;
-
-                                        VerticalLayout {
-                                            spacing: 0;
-                                            alignment: start;
-
-                                            for wlab[i] in root.wallpaper-labels : Rectangle {
-                                                height: 30px;
-                                                background: root.wallpaper-index == i
-                                                    ? Theme.rail-item-active
-                                                    : (wp-ta.has-hover ? Theme.rail-item-hover : transparent);
-
-                                                HorizontalLayout {
-                                                    padding-left: 10px;
-                                                    alignment: start;
-
-                                                    Text {
-                                                        text: wlab;
-                                                        font-size: 12px;
-                                                        color: root.wallpaper-index == i ? Theme.accent : Theme.fg-1;
-                                                        vertical-alignment: center;
-                                                    }
-                                                }
-
-                                                wp-ta := TouchArea {
-                                                    clicked => {
-                                                        root.set-wallpaper-label(wlab);
-                                                        wp-popup.close();
-                                                    }
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                height: 1px;
-                                                background: Theme.line;
-                                            }
-                                            Rectangle {
-                                                height: 30px;
-                                                background: wimp-ta.has-hover ? Theme.rail-item-hover : transparent;
-
-                                                HorizontalLayout {
-                                                    padding-left: 10px;
-                                                    alignment: start;
-
-                                                    Text {
-                                                        text: "\u{E2C6} 导入自定义壁纸…";
-                                                        font-size: 12px;
-                                                        color: Theme.fg-1;
-                                                        vertical-alignment: center;
-                                                    }
-                                                }
-
-                                                wimp-ta := TouchArea {
-                                                    clicked => {
-                                                        root.pick-wallpaper();
-                                                        wp-popup.close();
-                                                    }
-                                                }
-                                            }
+                                        upd-ck-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.check-update-now(); }
+                                        }
+                                        Text {
+                                            width: 100%;
+                                            height: 100%;
+                                            text: root.lang-en ? "Check now" : "立即检查";
+                                            font-size: 11px;
+                                            color: Theme.fg-1;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
                                         }
                                     }
                                 }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "Frosted-glass opacity" : "面板 / 终端磨砂透明度";
-                                desc: root.lang-en
-                                    ? "How much the wallpaper shows through the panels and the terminal (0–70%)."
-                                    : "壁纸透过面板 / 终端背景的程度（0–70%,越往右越透;没设壁纸时不生效）";
-
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    alignment: start;
-
-                                    FrostSlider {
-                                        value: (1.0 - root.frost-alpha) * 100;
-                                        changed(v) => {
-                                            root.frost-alpha = 1.0 - v / 100;
-                                        }
-                                        released(v) => {
-                                            root.persist-frost-alpha(1.0 - v / 100);
-                                        }
-                                    }
-                                    Text {
-                                        text: "\{round((1.0 - root.frost-alpha) * 100)}%";
-                                        font-size: 12px;
-                                        color: Theme.fg-2;
-                                        vertical-alignment: center;
-                                        width: 34px;
-                                    }
-                                }
-                            }
-                            ToggleRow {
-                                label: root.lang-en ? "Check for Updates" : "自动检查更新";
-                                desc: root.lang-en ? "Check on startup (manual check anytime)" : "启动时检查新版本（可随时手动检查）";
-                                on: root.update-check;
-                                toggled => {
-                                    root.set-flag-update-check(!root.update-check);
-                                }
-                            }
-                            // ── 外观模式（v0.8.0 设置窗迁移）────────────────────────────────
-                            FieldBlock {
-                                title: root.lang-en ? "Appearance Mode" : "外观模式";
-                                desc: root.lang-en ? "Light, dark, or follow the system" : "浅色、深色或跟随系统切换";
-                            
-                                CapsuleRow {
-                                    opts: [
-                                        {value: "system", label: root.lang-en ? "System" : "跟随系统"},
-                                        {value: "dark", label: root.lang-en ? "Dark" : "深色"},
-                                        {value: "light", label: root.lang-en ? "Light" : "浅色"},
-                                    ];
-                                    value: root.appearance-mode;
-                                    picked(v) => { root.set-appearance-mode(v); }
-                                }
-                            }
-                            ToggleRow {
-                                label: root.lang-en ? "Animations" : "界面动画";
-                                desc: root.lang-en ? "Sidebar and panel transition animations" : "侧栏与面板的过渡动画开关";
-                                on: AnimationSettings.enabled;
-                                toggled => {
-                                    root.set-animations-enabled(!AnimationSettings.enabled);
-                                }
-                            }
-                            // ── 渲染器（v0.8.0 设置窗迁移；重启生效）────────────────────────
-                            FieldBlock {
-                                title: root.lang-en ? "Renderer" : "渲染器";
-                                desc: root.lang-en ? "Software rendering is the most compatible; takes effect after restart" : "软件渲染兼容性最好；切换后重启生效";
-                            
-                                CapsuleRow {
-                                    opts: [
-                                        // 老设置窗的两档制：GPU = femtovg-wgpu（配置值），旧 femtovg/skia 已归一化
-                                        {value: "femtovg-wgpu", label: "GPU"},
-                                        {value: "software", label: root.lang-en ? "Software" : "软件渲染"},
-                                    ];
-                                    value: root.renderer-mode;
-                                    picked(v) => { root.set-renderer-mode(v); }
-                                }
-                            }
-                            // ── 界面缩放（v0.8.0 设置窗迁移）────────────────────────────────
-                            FieldBlock {
-                                title: root.lang-en ? "UI Scale" : "界面缩放";
-                                desc: root.lang-en ? "Scales fonts and controls (80% – 200%)" : "整体缩放界面字体与控件（80% – 200%）";
-                            
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    alignment: start;
-                            
-                                    Slider {
-                                        minimum: 80;
-                                        maximum: 200;
-                                        value: Theme.ui-scale * 100;
-                                        changed(v) => { root.set-ui-scale(round(v / 10) * 10); }
-                                        released(v) => { root.set-ui-scale(round(v / 10) * 10); }
-                                    }
-                                    Text {
-                                        text: "\{round(Theme.ui-scale * 100)}%";
-                                        font-size: 11px;
-                                        color: Theme.fg-2;
-                                        vertical-alignment: center;
-                                        width: 40px;
-                                    }
-                                }
-                            }
-                            // ── 更新渠道（v0.8.0 设置窗迁移）────────────────────────────────
-                            FieldBlock {
-                                title: root.lang-en ? "Update Channel" : "更新渠道";
-                                desc: root.lang-en ? "Beta receives new features earlier" : "测试版更早拿到新功能与修复";
-                            
-                                CapsuleRow {
-                                    opts: [
-                                        {value: "stable", label: root.lang-en ? "Stable" : "稳定版"},
-                                        {value: "beta", label: root.lang-en ? "Beta" : "测试版"},
-                                    ];
-                                    value: root.update-channel;
-                                    picked(v) => { root.set-update-channel(v); }
-                                }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "Check Interval" : "检查频率";
-                                desc: "自动检查更新的间隔";
-
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    alignment: start;
-
-                                    for fl[i] in root.update-freq-labels : Rectangle {
-                                        width: ftext.preferred-width + 20px;
-                                        height: 26px;
-                                        border-radius: 6px;
-                                        border-width: 1px;
-                                        border-color: root.update-freq-index == i ? Theme.accent : Theme.line;
-                                        background: root.update-freq-index == i ? Theme.rail-item-active : Theme.sur-2;
-
-                                        HorizontalLayout {
-                                            padding-left: 10px;
-                                            padding-right: 10px;
-                                            alignment: center;
-                                            ftext := Text {
-                                                text: fl;
-                                                font-size: 11px;
-                                                color: root.update-freq-index == i ? Theme.accent : Theme.fg-2;
-                                                vertical-alignment: center;
-                                            }
-                                        }
-                                        TouchArea {
-                                            clicked => {
-                                                root.set-update-freq(i);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        }
                         }
 
                         // ═══ 终端 ═══
                         if root.current-cat == 1 : VerticalLayout {
                             spacing: 4px;
 
-                            FieldBlock {
-                                title: root.lang-en ? "Terminal Font" : "终端字体";
-                                desc: root.lang-en ? "Installed monospace families, applies instantly" : "已安装的等宽字体，随改随生效并持久化";
+                            SectionTitle { text: root.lang-en ? "Font & display" : "字体与显示"; }
+                            Card {
+                                FieldBlock {
+                                    title: root.lang-en ? "Terminal Font" : "终端字体";
+                                    desc: root.lang-en ? "Installed monospace families, applies instantly" : "已安装的等宽字体，随改随生效并持久化";
 
-                                VerticalLayout {
-                                    spacing: 4px;
-                                    alignment: start;
-
-                                    HorizontalLayout {
-                                        spacing: 8px;
+                                    VerticalLayout {
+                                        spacing: 4px;
                                         alignment: start;
 
-                                        SelectBox {
+                                        HorizontalLayout {
+                                            spacing: 8px;
+
+                                            SelectBox {
+                                                horizontal-stretch: 1;
+                                                text: root.term-fonts.length > 0 && root.term-font-index < root.term-fonts.length
+                                                    ? root.term-fonts[root.term-font-index]
+                                                    : Theme.term-font-family;
+                                                clicked => { tfont-popup.show(); }
+                                                                              UploadButton {
+                                                                                  clicked => { root.upload-ui-font(); }
+                                                                              }
+                                            }
+                                            Switch {
+                                                on: Theme.term-font-bold;
+                                                toggled => {
+                                                    root.term-font-bold(!Theme.term-font-bold);
+                                                }
+                                            }
+                                            Text {
+                                                text: root.lang-en ? "Bold" : "粗体";
+                                                font-size: 11px;
+                                                color: Theme.fg-3;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+
+                                        tfont-popup := PopupWindow {
+    Rectangle {
                                             width: 240px;
-                                            text: root.term-fonts.length > 0 && root.term-font-index < root.term-fonts.length
-                                                ? root.term-fonts[root.term-font-index]
-                                                : Theme.term-font-family;
-                                            clicked => { tfont-popup.show(); }
-                                        }
-                                        Switch {
-                                            on: Theme.term-font-bold;
-                                            toggled => {
-                                                root.term-font-bold(!Theme.term-font-bold);
-                                            }
-                                        }
-                                        Text {
-                                            text: root.lang-en ? "Bold" : "粗体";
-                                            font-size: 11px;
-                                            color: Theme.fg-3;
-                                            vertical-alignment: center;
-                                        }
-                                    }
+                                            border-radius: 8px;
+                                            border-width: 1px;
+                                            border-color: Theme.line;
+                                            background: Theme.sur-1;
 
-                                    tfont-popup := PopupWindow {
-Rectangle {
-                                        width: 240px;
-                                        border-radius: 8px;
-                                        border-width: 1px;
-                                        border-color: Theme.line;
-                                        background: Theme.sur-1;
+                                            VerticalLayout {
+                                                spacing: 0;
+                                                alignment: start;
 
-                                        VerticalLayout {
-                                            spacing: 0;
-                                            alignment: start;
+                                                for lbl[i] in root.term-fonts : Rectangle {
+                                                    height: 30px;
+                                                    background: root.term-font-index == i
+                                                        ? Theme.rail-item-active
+                                                        : (tf-ta.has-hover ? Theme.rail-item-hover : transparent);
 
-                                            for lbl[i] in root.term-fonts : Rectangle {
-                                                height: 30px;
-                                                background: root.term-font-index == i
-                                                    ? Theme.rail-item-active
-                                                    : (tf-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                                    HorizontalLayout {
+                                                        padding-left: 10px;
+                                                        padding-right: 10px;
+                                                        alignment: start;
 
-                                                HorizontalLayout {
-                                                    padding-left: 10px;
-                                                    padding-right: 10px;
-                                                    alignment: start;
-
-                                                    Text {
-                                                        text: lbl;
-                                                        font-size: 12px;
-                                                        color: root.term-font-index == i ? Theme.accent : Theme.fg-1;
-                                                        vertical-alignment: center;
+                                                        Text {
+                                                            text: lbl;
+                                                            font-size: 12px;
+                                                            color: root.term-font-index == i ? Theme.accent : Theme.fg-1;
+                                                            vertical-alignment: center;
+                                                        }
                                                     }
-                                                }
 
-                                                tf-ta := TouchArea {
-                                                    clicked => {
-                                                        root.term-font(lbl);
-                                                        tfont-popup.close();
+                                                    tf-ta := TouchArea {
+                                                        clicked => {
+                                                            root.term-font(lbl);
+                                                            tfont-popup.close();
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
                                     
+    }
+    }
+                                    }
+                                }
+OptionRow {
+    label: root.lang-en ? "Font Size" : "字号";
+    desc: root.lang-en ? "8–32px, default 13" : "8–32px，默认 13";
+
+    Stepper {
+        value: round(Theme.term-font-size / 1px);
+        minimum: 8;
+        maximum: 32;
+        unit: "px";
+        changed(v) => { root.term-font-size(v); }
+    }
 }
+                                OptionRow {
+                                    label: root.lang-en ? "Custom colour" : "自定义颜色";
+                                    desc: root.lang-en
+                                        ? "Any #RRGGBB value; darkened a little in light mode so it stays legible."
+                                        : "任意 #RRGGBB 颜色；浅色模式下会自动压深以保证可读。";
+
+                                    CursorColorInput {
+                                        value <=> root.accent-hex;
+                                        preview-color: Theme.accent-seed;
+                                        apply-color(v) => { root.set-accent-color(v); return true; }
+                                        apply-color-rgb(r, g, b) => { return root.set-accent-rgb(r, g, b); }
+                                    }
+                                }
+
+// 字体预览：与终端同色同字体，改字号 / 字体 / 粗体立刻可见。
+Rectangle {
+    background: Theme.sur-2;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        Text {
+            horizontal-stretch: 1;
+            text: root.lang-en ? "Font preview" : "字体预览";
+            font-size: 11px;
+            color: Theme.fg-3;
+        }
+    }
 }
+Rectangle {
+    height: 52px;
+    background: Theme.term-bg;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.line;
+    Text {
+        x: 12px;
+        text: "Rudder ~$ echo preview 0123";
+        font-family: Theme.term-font-family;
+        font-size: Theme.term-font-size;
+        font-weight: Theme.term-font-bold ? 700 : 400;
+        color: Theme.term-fg;
+        vertical-alignment: center;
+        height: parent.height;
+    }
+}
+                            }
+                            SectionTitle { text: root.lang-en ? "Scrollback & clipboard" : "滚回与剪贴板"; }
+                            Card {
+OptionRow {
+    label: root.lang-en ? "Scrollback Lines" : "滚回行数";
+    desc: root.lang-en
+        ? "History lines kept in the terminal (100 – 1,000,000)."
+        : "终端可回看的历史行数（100 – 100 万）。";
+
+    LineEdit {
+        width: 160px;
+        text: root.scrollback;
+        accepted(t) => {
+            root.scrollback-valid = root.scrollback-ok(t);
+            if (root.scrollback-valid) { root.term-scrollback(t); }
+        }
+    }
+}
+Rectangle {
+    background: Theme.sur-2;
+    HorizontalLayout {
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 2px;
+    padding-bottom: 8px;
+    Text {
+    horizontal-stretch: 1;
+    text: root.scrollback-valid
+        ? (root.large-scrollback
+            ? (root.lang-en ? "Up to 1,000,000 lines (large buffer enabled)." : "上限 100 万行（已开启大缓冲区）。")
+            : (root.lang-en ? "Up to 100,000 lines. Enable the large buffer below to go higher." : "上限 10 万行；需要更多请开启下方的「大容量滚回模式」。"))
+        : (root.lang-en ? "Out of range — the value was not applied." : "超出范围，未应用。");
+    font-size: 11px;
+    color: root.scrollback-valid ? Theme.fg-3 : Theme.danger;
+    wrap: word-wrap;
+    line-height-factor: 1.3;
+    }
+    }
+}
+                                ToggleRow {
+                                    label: root.lang-en ? "Large Scrollback" : "大容量滚回模式";
+                                desc: root.lang-en
+                                    ? "Doubles the history buffer (up to 1,000,000 lines). Memory grows per tab: 100k ≈ 458 MB, 1M ≈ 4.8 GB at 200 columns."
+                                    : "历史缓存翻倍（最多 100 万行）。内存按标签页独立计算：200 列时 10 万行约 458 MB，100 万行约 4.8 GB。";
+                                    on: root.large-scrollback;
+                                    toggled => {
+                                        root.set-flag-large-scrollback(!root.large-scrollback);
+                                    }
+                                }
+                                ToggleRow {
+                                    label: root.lang-en ? "OSC52 Clipboard" : "OSC52 剪贴板同步";
+                                    desc: root.lang-en ? "Let remote programs read/write the local clipboard" : "允许远端程序经转义序列读写本机剪贴板";
+                                    on: root.flag-osc;
+                                    toggled => {
+                                        root.set-flag-osc52(!root.flag-osc);
+                                    }
+                                }
+
+                            // ── 光标（v0.8.0 设置窗迁移）──────────────────────────
+                        }
+                            SectionTitle { text: root.lang-en ? "Cursor" : "光标"; }
+                            Card {
+                            OptionRow {
+                                label: root.lang-en ? "Cursor Style" : "光标样式";
+                                desc: "";
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    CursorStyleButton {
+                                        label: root.lang-en ? "Block" : "方块";
+                                        cursor-kind: "block";
+                                        selected: root.term-cursor-style == "block";
+                                        clicked => { root.set-term-cursor-style("block"); }
+                                    }
+                                    CursorStyleButton {
+                                        label: root.lang-en ? "Bar" : "竖线";
+                                        cursor-kind: "bar";
+                                        selected: root.term-cursor-style == "bar";
+                                        clicked => { root.set-term-cursor-style("bar"); }
+                                    }
+                                    CursorStyleButton {
+                                        label: root.lang-en ? "Line" : "下划线";
+                                        cursor-kind: "underline";
+                                        selected: root.term-cursor-style == "underline";
+                                        clicked => { root.set-term-cursor-style("underline"); }
+                                    }
                                 }
                             }
-                            FieldBlock {
-                                title: root.lang-en ? "Font Size" : "字号";
-                                desc: root.lang-en ? "8–32px, default 13" : "8–32px，默认 13";
-
+                            OptionRow {
+                                label: root.lang-en ? "Cursor Color" : "光标颜色";
+                                desc: root.lang-en ? "Pick a preset or type a hex color; empty = follow the theme" : "选预设色块或输入十六进制色值；留空跟随主题";
                                 HorizontalLayout {
                                     spacing: 6px;
                                     alignment: start;
 
-                                    for sz in [12, 13, 14, 16, 18] : Rectangle {
-                                        width: 44px;
-                                        height: 26px;
-                                        border-radius: 6px;
-                                        border-width: 1px;
-                                        border-color: Theme.term-font-size == sz * 1px ? Theme.accent : Theme.line;
-                                        background: Theme.term-font-size == sz * 1px ? Theme.rail-item-active : Theme.sur-2;
+                                    for c in [
+                                        {hex: "", sw: Theme.term-fg},
+                                        {hex: "#D4D4D4", sw: #D4D4D4},
+                                        {hex: "#FF5252", sw: #FF5252},
+                                        {hex: "#69F0AE", sw: #69F0AE},
+                                        {hex: "#40C4FF", sw: #40C4FF},
+                                    ] : Rectangle {
+                                        property <bool> on: root.term-cursor-choice == c.hex;
+                                        width: 22px;
+                                        height: 22px;
+                                        border-radius: 11px;
+                                        background: c.sw;
+                                        border-width: 2px;
+                                        border-color: on ? Theme.accent : Theme.line;
 
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Text {
-                                                text: sz;
-                                                font-size: 11px;
-                                                color: Theme.term-font-size == sz * 1px ? Theme.accent : Theme.fg-2;
-                                                vertical-alignment: center;
-                                                horizontal-alignment: center;
-                                            }
+                                        ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.set-term-cursor-preset(c.hex); }
                                         }
-
-                                        TouchArea {
-                                            clicked => {
-                                                root.term-font-size(sz);
-                                            }
-                                        }
+                                    }
+                                    LineEdit {
+                                        width: 110px;
+                                        placeholder-text: "#RRGGBB";
+                                        text: root.term-cursor-color-hex;
+                                        accepted(t) => { root.set-term-cursor-color(t); }
                                     }
                                 }
                             }
+
+                            // ── 输出高亮（v0.8.0 终端设置页迁移）──────────────────
+                        }
+                            SectionTitle { text: root.lang-en ? "Output highlighting" : "输出高亮"; }
+                            Card {
+                            ToggleRow {
+                                label: root.lang-en ? "Output Highlighting" : "输出高亮";
+                                desc: root.lang-en ? "Colourise log levels, URLs, IPs and more" : "给日志等级、URL、IP 等上色";
+                                on: root.output-highlight-enabled;
+                                toggled => {
+                                    root.set-output-highlight(!root.output-highlight-enabled, root.output-highlight-preset);
+                                }
+                            }
+                            OptionRow {
+                                label: root.lang-en ? "Highlight Preset" : "高亮预设";
+                                desc: root.lang-en ? "Log levels is conservative; DevOps recognises deployment states; Built-in colours numbers, URLs, IPs, UUIDs and dates" : "日志等级较保守；运维识别部署状态；内置多彩覆盖数字、URL、IP、UUID、日期等";
+                                CapsuleRow {
+                                    opts: [
+                                        {value: "log", label: root.lang-en ? "Log levels" : "日志等级"},
+                                        {value: "devops", label: "DevOps"},
+                                        {value: "builtin", label: root.lang-en ? "Built-in" : "内置多彩"},
+                                    ];
+                                    value: root.output-highlight-preset;
+                                    picked(v) => { root.set-output-highlight(root.output-highlight-enabled, v); }
+                                }
+                            }
+
+// 高亮预览：按当前预设给样例上色，开关关闭时回到终端原色。
+Rectangle {
+    height: root.output-highlight-preset == "builtin" ? 116px : 92px;
+    background: Theme.term-bg;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.line;
+    VerticalLayout {
+        padding: 12px;
+        spacing: 5px;
+        if root.output-highlight-preset == "builtin" : VerticalLayout {
+            spacing: 5px;
+            Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+            Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+            Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+        }
+        if root.output-highlight-preset != "builtin" : VerticalLayout {
+            spacing: 5px;
+            Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+            Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+            Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+            Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+            if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+        }
+    }
+}
                             FieldBlock {
-                                title: root.lang-en ? "Scrollback Lines" : "滚回行数";
-                                desc: root.lang-en ? "History lines kept in the terminal" : "终端可回看的历史行数（大容量模式内存占用更高）";
+                                title: root.lang-en ? "Custom Rules" : "自定义规则";
+                                desc: root.lang-en ? "Custom rules run before the preset and never overwrite ANSI colours" : "自定义规则优先于内置规则，且不会覆盖程序输出的 ANSI 颜色";
 
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    alignment: start;
-
-                                    for n in ["1000", "5000", "10000", "50000"] : Rectangle {
-                                        width: 64px;
-                                        height: 26px;
-                                        border-radius: 6px;
-                                        border-width: 1px;
-                                        border-color: root.scrollback == n ? Theme.accent : Theme.line;
-                                        background: root.scrollback == n ? Theme.rail-item-active : Theme.sur-2;
-
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Text {
-                                                text: n;
-                                                font-size: 11px;
-                                                color: root.scrollback == n ? Theme.accent : Theme.fg-2;
-                                                vertical-alignment: center;
-                                                horizontal-alignment: center;
-                                            }
-                                        }
-
-                                        TouchArea {
-                                            clicked => {
-                                                root.term-scrollback(n);
-                                            }
-                                        }
-                                    }
-                                    Rectangle {
-                                        width: 120px;
-                                        height: 26px;
-                                        border-radius: 6px;
-                                        border-width: 1px;
-                                        border-color: Theme.line;
-                                        background: Theme.sur-2;
-
-                                        TextInput {
-                                            x: 8px;
-                                            width: parent.width - 16px;
-                                            height: 100%;
-                                            text: root.scrollback;
-                                            font-size: 11px;
-                                            color: Theme.fg-1;
-                                            vertical-alignment: center;
-                                            single-line: true;
-                                            accepted => {
-                                                root.term-scrollback(self.text);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            ToggleRow {
-                                label: root.lang-en ? "Large Scrollback" : "大容量滚回模式";
-                                desc: root.lang-en ? "Double the history buffer for long sessions" : "历史缓存翻倍，适合长跑日志会话";
-                                on: root.large-scrollback;
-                                toggled => {
-                                    root.set-flag-large-scrollback(!root.large-scrollback);
-                                }
-                            }
-                            ToggleRow {
-                                label: root.lang-en ? "OSC52 Clipboard" : "OSC52 剪贴板同步";
-                                desc: root.lang-en ? "Let remote programs read/write the local clipboard" : "允许远端程序经转义序列读写本机剪贴板";
-                                on: root.flag-osc;
-                                toggled => {
-                                    root.set-flag-osc52(!root.flag-osc);
-                                }
-                            }
-
-                        // ── 光标（v0.8.0 设置窗迁移）──────────────────────────
-                        FieldBlock {
-                            title: root.lang-en ? "Cursor Style" : "光标样式";
-                            desc: "";
-                            CapsuleRow {
-                                opts: [
-                                    {value: "block", label: root.lang-en ? "Block" : "方块"},
-                                    {value: "bar", label: root.lang-en ? "Bar" : "竖线"},
-                                    {value: "underline", label: root.lang-en ? "Underline" : "下划线"},
-                                ];
-                                value: root.term-cursor-style;
-                                picked(v) => { root.set-term-cursor-style(v); }
-                            }
-                        }
-                        FieldBlock {
-                            title: root.lang-en ? "Cursor Color" : "光标颜色";
-                            desc: root.lang-en ? "Pick a preset or type a hex color; empty = follow the theme" : "选预设色块或输入十六进制色值；留空跟随主题";
-                            HorizontalLayout {
-                                spacing: 6px;
-                                alignment: start;
-
-                                for c in [
-                                    {hex: "", sw: Theme.term-fg},
-                                    {hex: "#D4D4D4", sw: #D4D4D4},
-                                    {hex: "#FF5252", sw: #FF5252},
-                                    {hex: "#69F0AE", sw: #69F0AE},
-                                    {hex: "#40C4FF", sw: #40C4FF},
-                                ] : Rectangle {
-                                    property <bool> on: root.term-cursor-choice == c.hex;
-                                    width: 22px;
-                                    height: 22px;
-                                    border-radius: 11px;
-                                    background: c.sw;
-                                    border-width: 2px;
-                                    border-color: on ? Theme.accent : Theme.line;
-
-                                    ta := TouchArea {
-                                        mouse-cursor: pointer;
-                                        clicked => { root.set-term-cursor-preset(c.hex); }
-                                    }
-                                }
-                                LineEdit {
-                                    width: 110px;
-                                    placeholder-text: "#RRGGBB";
-                                    text: root.term-cursor-color-hex;
-                                    accepted(t) => { root.set-term-cursor-color(t); }
-                                }
-                            }
-                        }
-
-                        // ── 输出高亮（v0.8.0 终端设置页迁移）──────────────────
-                        ToggleRow {
-                            label: root.lang-en ? "Output Highlighting" : "输出高亮";
-                            desc: root.lang-en ? "Colourise log levels, URLs, IPs and more" : "给日志等级、URL、IP 等上色";
-                            on: root.output-highlight-enabled;
-                            toggled => {
-                                root.set-output-highlight(!root.output-highlight-enabled, root.output-highlight-preset);
-                            }
-                        }
-                        FieldBlock {
-                            title: root.lang-en ? "Highlight Preset" : "高亮预设";
-                            desc: root.lang-en ? "Log levels is conservative; DevOps recognises deployment states; Built-in colours numbers, URLs, IPs, UUIDs and dates" : "日志等级较保守；运维识别部署状态；内置多彩覆盖数字、URL、IP、UUID、日期等";
-                            CapsuleRow {
-                                opts: [
-                                    {value: "log-levels", label: root.lang-en ? "Log levels" : "日志等级"},
-                                    {value: "devops", label: "DevOps"},
-                                    {value: "builtin", label: root.lang-en ? "Built-in" : "内置多彩"},
-                                ];
-                                value: root.output-highlight-preset;
-                                picked(v) => { root.set-output-highlight(root.output-highlight-enabled, v); }
-                            }
-                        }
-                        FieldBlock {
-                            title: root.lang-en ? "Custom Rules" : "自定义规则";
-                            desc: root.lang-en ? "Custom rules run before the preset and never overwrite ANSI colours" : "自定义规则优先于内置规则，且不会覆盖程序输出的 ANSI 颜色";
-
-                            if root.output-highlight-rule-status != "" : Text {
-                                text: root.output-highlight-rule-status;
-                                font-size: 10px;
-                                color: Theme.danger;
-                                wrap: word-wrap;
-                            }
-                            HorizontalLayout {
-                                spacing: 6px;
-
-                                pat-edit := LineEdit {
-                                    width: 220px;
-                                    placeholder-text: root.lang-en ? "connection refused" : "connection refused";
-                                    text <=> root.new-rule-pattern;
-                                    accepted(t) => {
-                                        if root.add-output-highlight-rule(
-                                            t, root.new-rule-regex, root.new-rule-case,
-                                            root.new-rule-whole, root.new-rule-color) {
-                                            root.new-rule-pattern = "";
-                                        }
-                                    }
-                                }
-                                CapsuleRow {
-                                    opts: [
-                                        {value: "kw", label: root.lang-en ? "Keyword" : "关键词"},
-                                        {value: "re", label: root.lang-en ? "Regex" : "正则"},
-                                    ];
-                                    value: root.new-rule-regex ? "re" : "kw";
-                                    picked(v) => { root.new-rule-regex = (v == "re"); }
-                                }
-                                CapsuleRow {
-                                    opts: [
-                                        {value: "red", label: root.lang-en ? "Red" : "红"},
-                                        {value: "yellow", label: root.lang-en ? "Yellow" : "黄"},
-                                        {value: "green", label: root.lang-en ? "Green" : "绿"},
-                                        {value: "cyan", label: root.lang-en ? "Cyan" : "青"},
-                                        {value: "magenta", label: root.lang-en ? "Magenta" : "紫"},
-                                        {value: "gray", label: root.lang-en ? "Gray" : "灰"},
-                                    ];
-                                    value: root.new-rule-color;
-                                    picked(v) => { root.new-rule-color = v; }
-                                }
-                            }
-                            HorizontalLayout {
-                                spacing: 14px;
-
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    Switch { on: root.new-rule-case; toggled => { root.new-rule-case = !root.new-rule-case; } }
-                                    Text {
-                                        text: root.lang-en ? "Case sensitive" : "区分大小写";
-                                        font-size: 11px;
-                                        color: Theme.fg-2;
-                                        vertical-alignment: center;
-                                    }
+                                if root.output-highlight-rule-status != "" : Text {
+                                    text: root.output-highlight-rule-status;
+                                    font-size: 10px;
+                                    color: Theme.danger;
+                                    wrap: word-wrap;
                                 }
                                 HorizontalLayout {
                                     spacing: 6px;
-                                    Switch { on: root.new-rule-whole; toggled => { root.new-rule-whole = !root.new-rule-whole; } }
-                                    Text {
-                                        text: root.lang-en ? "Whole line" : "仅整行";
-                                        font-size: 11px;
-                                        color: Theme.fg-2;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                                Rectangle {
-                                    min-width: 76px;
-                                    max-width: 120px;
-                                    height: 28px;
-                                    border-radius: 7px;
-                                    background: root.new-rule-pattern == "" ? Theme.sur-3 : Theme.accent;
-                                    horizontal-stretch: 1;
 
-                                    Text {
-                                        text: root.lang-en ? "Add Rule" : "添加规则";
-                                        font-size: 11px;
-                                        font-weight: 600;
-                                        color: root.new-rule-pattern == "" ? Theme.fg-3 : Theme.bg-root;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                    add-ta := TouchArea {
-                                        mouse-cursor: pointer;
-                                        clicked => {
-                                            if root.new-rule-pattern != "" {
-                                                if root.add-output-highlight-rule(
-                                                    root.new-rule-pattern, root.new-rule-regex,
-                                                    root.new-rule-case, root.new-rule-whole,
-                                                    root.new-rule-color) {
-                                                    root.new-rule-pattern = "";
-                                                }
+                                    pat-edit := LineEdit {
+                                        width: 220px;
+                                        placeholder-text: root.lang-en ? "connection refused" : "connection refused";
+                                        text <=> root.new-rule-pattern;
+                                        accepted(t) => {
+                                            if root.add-output-highlight-rule(
+                                                t, root.new-rule-regex, root.new-rule-case,
+                                                root.new-rule-whole, root.new-rule-color) {
+                                                root.new-rule-pattern = "";
                                             }
                                         }
                                     }
+                                    CapsuleRow {
+                                        opts: [
+                                            {value: "kw", label: root.lang-en ? "Keyword" : "关键词"},
+                                            {value: "re", label: root.lang-en ? "Regex" : "正则"},
+                                        ];
+                                        value: root.new-rule-regex ? "re" : "kw";
+                                        picked(v) => { root.new-rule-regex = (v == "re"); }
+                                    }
+                                    CapsuleRow {
+                                        opts: [
+                                            {value: "red", label: root.lang-en ? "Red" : "红"},
+                                            {value: "yellow", label: root.lang-en ? "Yellow" : "黄"},
+                                            {value: "green", label: root.lang-en ? "Green" : "绿"},
+                                            {value: "cyan", label: root.lang-en ? "Cyan" : "青"},
+                                            {value: "magenta", label: root.lang-en ? "Magenta" : "紫"},
+                                            {value: "gray", label: root.lang-en ? "Gray" : "灰"},
+                                        ];
+                                        value: root.new-rule-color;
+                                        picked(v) => { root.new-rule-color = v; }
+                                    }
                                 }
-                            }
-                            VerticalLayout {
-                                spacing: 0;
-
-                                for rule[index] in root.output-highlight-rules : Rectangle {
-                                    height: 44px;
+                                HorizontalLayout {
+                                    spacing: 14px;
 
                                     HorizontalLayout {
-                                        y: 0;
-                                        width: parent.width;
-                                        height: parent.height - 1px;
-                                        spacing: 9px;
-
-                                        Rectangle {
-                                            width: 8px;
-                                            height: 8px;
-                                            border-radius: 4px;
-                                            background: rule.color == "yellow" ? Theme.warning
-                                                : rule.color == "green" ? Theme.success
-                                                : rule.color == "cyan" ? Theme.accent
-                                                : rule.color == "magenta" ? #d670d6
-                                                : rule.color == "gray" ? Theme.fg-3
-                                                : Theme.danger;
-                                            vertical-stretch: 0;
+                                        spacing: 6px;
+                                        Switch { on: root.new-rule-case; toggled => { root.new-rule-case = !root.new-rule-case; } }
+                                        Text {
+                                            text: root.lang-en ? "Case sensitive" : "区分大小写";
+                                            font-size: 11px;
+                                            color: Theme.fg-2;
+                                            vertical-alignment: center;
                                         }
-                                        VerticalLayout {
-                                            horizontal-stretch: 1;
-                                            spacing: 2px;
-
-                                            Text {
-                                                text: rule.pattern;
-                                                color: rule.enabled ? Theme.fg-1 : Theme.fg-3;
-                                                font-family: Theme.term-font-family;
-                                                overflow: elide;
-                                            }
-                                            Text {
-                                                text: (rule.regex ? "Regex" : (root.lang-en ? "Keyword" : "关键词"))
-                                                    + (rule.case-sensitive ? " · Aa" : "")
-                                                    + (rule.whole-line ? (root.lang-en ? " · whole line" : " · 整行") : "");
-                                                color: Theme.fg-3;
-                                                font-size: 10px;
-                                            }
-                                        }
-                                        Switch {
-                                            on: rule.enabled;
-                                            toggled => { root.set-output-highlight-rule-enabled(index, !rule.enabled); }
-                                        }
-                                        Rectangle {
-                                            width: 28px;
-                                            height: 28px;
-                                            border-radius: 5px;
-                                            background: del-ta.has-hover ? Theme.sur-3 : transparent;
-
-                                            del-ta := TouchArea {
-                                                mouse-cursor: pointer;
-                                                clicked => { root.remove-output-highlight-rule(index); }
-                                            }
-                                            Text {
-                                                text: "\u{E872}";
-                                                font-family: "Material Icons";
-                                                font-size: 15px;
-                                                color: Theme.fg-3;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                            }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Switch { on: root.new-rule-whole; toggled => { root.new-rule-whole = !root.new-rule-whole; } }
+                                        Text {
+                                            text: root.lang-en ? "Whole line" : "仅整行";
+                                            font-size: 11px;
+                                            color: Theme.fg-2;
+                                            vertical-alignment: center;
                                         }
                                     }
                                     Rectangle {
-                                        y: parent.height - 1px;
-                                        width: parent.width;
-                                        height: 1px;
-                                        background: Theme.line;
+                                        min-width: 76px;
+                                        max-width: 120px;
+                                        height: 28px;
+                                        border-radius: 7px;
+                                        background: root.new-rule-pattern == "" ? Theme.sur-3 : Theme.accent;
+                                        horizontal-stretch: 1;
+
+                                        Text {
+                                            text: root.lang-en ? "Add Rule" : "添加规则";
+                                            font-size: 11px;
+                                            font-weight: 600;
+                                            color: root.new-rule-pattern == "" ? Theme.fg-3 : Theme.bg-root;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                        add-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                if root.new-rule-pattern != "" {
+                                                    if root.add-output-highlight-rule(
+                                                        root.new-rule-pattern, root.new-rule-regex,
+                                                        root.new-rule-case, root.new-rule-whole,
+                                                        root.new-rule-color) {
+                                                        root.new-rule-pattern = "";
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                VerticalLayout {
+                                    spacing: 0;
+
+                                    for rule[index] in root.output-highlight-rules : Rectangle {
+                                        height: 44px;
+
+                                        HorizontalLayout {
+                                            y: 0;
+                                            width: parent.width;
+                                            height: parent.height - 1px;
+                                            spacing: 9px;
+
+                                            Rectangle {
+                                                width: 8px;
+                                                height: 8px;
+                                                border-radius: 4px;
+                                                background: rule.color == "yellow" ? Theme.warning
+                                                    : rule.color == "green" ? Theme.success
+                                                    : rule.color == "cyan" ? Theme.accent
+                                                    : rule.color == "magenta" ? #d670d6
+                                                    : rule.color == "gray" ? Theme.fg-3
+                                                    : Theme.danger;
+                                                vertical-stretch: 0;
+                                            }
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                spacing: 2px;
+
+                                                Text {
+                                                    text: rule.pattern;
+                                                    color: rule.enabled ? Theme.fg-1 : Theme.fg-3;
+                                                    font-family: Theme.term-font-family;
+                                                    overflow: elide;
+                                                }
+                                                Text {
+                                                    text: (rule.regex ? "Regex" : (root.lang-en ? "Keyword" : "关键词"))
+                                                        + (rule.case-sensitive ? " · Aa" : "")
+                                                        + (rule.whole-line ? (root.lang-en ? " · whole line" : " · 整行") : "");
+                                                    color: Theme.fg-3;
+                                                    font-size: 10px;
+                                                }
+                                            }
+                                            Switch {
+                                                on: rule.enabled;
+                                                toggled => { root.set-output-highlight-rule-enabled(index, !rule.enabled); }
+                                            }
+                                            Rectangle {
+                                                width: 28px;
+                                                height: 28px;
+                                                border-radius: 5px;
+                                                background: del-ta.has-hover ? Theme.sur-3 : transparent;
+
+                                                del-ta := TouchArea {
+                                                    mouse-cursor: pointer;
+                                                    clicked => { root.remove-output-highlight-rule(index); }
+                                                }
+                                                Text {
+                                                    text: "\u{E872}";
+                                                    font-family: "Material Icons";
+                                                    font-size: 15px;
+                                                    color: Theme.fg-3;
+                                                    horizontal-alignment: center;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+                                        }
+                                        Rectangle {
+                                            y: parent.height - 1px;
+                                            width: parent.width;
+                                            height: 1px;
+                                            background: Theme.line;
+                                        }
                                     }
                                 }
                             }
@@ -1542,62 +1837,67 @@ Rectangle {
                         if root.current-cat == 2 : VerticalLayout {
                             spacing: 4px;
 
-                            ToggleRow {
-                                label: root.lang-en ? "EOL Conversion (LF ↔ CRLF)" : "换行转换 (LF ↔ CRLF)";
-                                desc: root.lang-en ? "Convert EOL when uploading/editing text" : "上传/编辑文本时按目标系统转换换行符";
-                                on: root.convert-eol;
-                                toggled => {
-                                    root.set-flag-convert-eol(!root.convert-eol);
+                            SectionTitle { text: root.lang-en ? "Transfers" : "传输行为"; }
+                            Card {
+                                ToggleRow {
+                                    label: root.lang-en ? "EOL Conversion (LF ↔ CRLF)" : "换行转换 (LF ↔ CRLF)";
+                                    desc: root.lang-en ? "Convert EOL when uploading/editing text" : "上传/编辑文本时按目标系统转换换行符";
+                                    on: root.convert-eol;
+                                    toggled => {
+                                        root.set-flag-convert-eol(!root.convert-eol);
+                                    }
+                                }
+                                ToggleRow {
+                                    label: root.lang-en ? "JSON Output" : "命令输出 JSON 格式化";
+                                    on: root.json-format-output;
+                                    toggled => {
+                                        root.set-flag-json-output(!root.json-format-output);
+                                    }
+                                }
+                                ToggleRow {
+                                    label: root.lang-en ? "Always Ask Where to Save" : "下载前始终询问位置";
+                                    on: root.always-ask;
+                                    toggled => {
+                                        root.set-flag-always-ask(!root.always-ask);
+                                    }
                                 }
                             }
-                            ToggleRow {
-                                label: root.lang-en ? "JSON Output" : "命令输出 JSON 格式化";
-                                on: root.json-format-output;
-                                toggled => {
-                                    root.set-flag-json-output(!root.json-format-output);
+                            SectionTitle { text: root.lang-en ? "SFTP panel" : "SFTP 面板"; }
+                            Card {
+                                ToggleRow {
+                                    label: root.lang-en ? "Hide Special Partitions" : "隐藏特殊分区";
+                                    desc: root.lang-en ? "Hide tmpfs / overlay virtual partitions" : "文件面板不显示 tmpfs / overlay 等虚拟分区";
+                                    on: root.hide-partitions;
+                                    toggled => {
+                                        root.set-flag-hide-partitions(!root.hide-partitions);
+                                    }
                                 }
-                            }
-                            ToggleRow {
-                                label: root.lang-en ? "Hide Special Partitions" : "隐藏特殊分区";
-                                desc: root.lang-en ? "Hide tmpfs / overlay virtual partitions" : "文件面板不显示 tmpfs / overlay 等虚拟分区";
-                                on: root.hide-partitions;
-                                toggled => {
-                                    root.set-flag-hide-partitions(!root.hide-partitions);
+                                ToggleRow {
+                                    label: root.lang-en ? "Follow Remote cwd" : "面板跟随远端 cwd";
+                                    desc: root.lang-en ? "SFTP panel follows terminal cd" : "终端 cd 时 SFTP 面板自动切到同目录";
+                                    on: root.follow-cd;
+                                    toggled => {
+                                        root.set-flag-follow-cd(!root.follow-cd);
+                                    }
                                 }
-                            }
-                            ToggleRow {
-                                label: root.lang-en ? "Always Ask Where to Save" : "下载前始终询问位置";
-                                on: root.always-ask;
-                                toggled => {
-                                    root.set-flag-always-ask(!root.always-ask);
+                                ToggleRow {
+                                    label: root.lang-en ? "Collapse SFTP Panel" : "默认折叠 SFTP 面板";
+                                    on: root.collapse-sftp;
+                                    toggled => {
+                                        root.set-flag-collapse-sftp(!root.collapse-sftp);
+                                    }
                                 }
-                            }
-                            ToggleRow {
-                                label: root.lang-en ? "Follow Remote cwd" : "面板跟随远端 cwd";
-                                desc: root.lang-en ? "SFTP panel follows terminal cd" : "终端 cd 时 SFTP 面板自动切到同目录";
-                                on: root.follow-cd;
-                                toggled => {
-                                    root.set-flag-follow-cd(!root.follow-cd);
-                                }
-                            }
-                            ToggleRow {
-                                label: root.lang-en ? "Collapse SFTP Panel" : "默认折叠 SFTP 面板";
-                                on: root.collapse-sftp;
-                                toggled => {
-                                    root.set-flag-collapse-sftp(!root.collapse-sftp);
-                                }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "Mount Filter" : "挂载过滤";
-                                desc: root.lang-en ? "Show only partitions whose path contains the keyword (empty = all), Enter to apply" : "只显示路径含该关键字的分区（留空显示全部），回车生效";
+                                FieldBlock {
+                                    title: root.lang-en ? "Mount Filter" : "挂载过滤";
+                                    desc: root.lang-en ? "Only these mount points are shown (space / comma / semicolon separated). Leave empty to show all." : "仅显示这些挂载点（空格 / 逗号 / 分号分隔）。留空表示显示全部。";
 
-                                LineEdit {
-                                    width: 300px;
-                                    placeholder-text: root.lang-en ? "e.g. /home (empty = all)" : "如 /home（留空显示全部）";
-                                    text <=> root.mount-filter-text;
-                                    accepted(t) => { root.set-mount-filter-text(t); }
+                                    LineEdit {
+                                        placeholder-text: root.lang-en ? "/home /mnt/data (empty = all)" : "/home /mnt/data（留空显示全部）";
+                                        text <=> root.mount-filter-text;
+                                        accepted(t) => { root.set-mount-filter-text(t); }
+                                    }
                                 }
-                            }
+                        }
                         }
 
                         // ═══ 快捷键 ═══
@@ -1605,84 +1905,90 @@ Rectangle {
                             spacing: 5px;
                             padding-top: 12px;
 
-                            Text {
+                            SectionTitle {
                                 text: root.lang-en ? "Tabs" : "标签页";
                                 font-size: 10px;
                                 color: Theme.fg-3;
                             }
-                            KeyRow {
-                                keys: "Ctrl+Tab";
-                                desc: root.lang-en ? "Next tab" : "下一个标签页";
+                            Card {
+                                KeyRow {
+                                    keys: "Ctrl+Tab";
+                                    desc: root.lang-en ? "Next tab" : "下一个标签页";
+                                }
+                                KeyRow {
+                                    keys: "Ctrl+Shift+Tab";
+                                    desc: root.lang-en ? "Previous tab" : "上一个标签页";
+                                }
                             }
-                            KeyRow {
-                                keys: "Ctrl+Shift+Tab";
-                                desc: root.lang-en ? "Previous tab" : "上一个标签页";
-                            }
-                            Text {
+                            SectionTitle {
                                 text: root.lang-en ? "Terminal" : "终端";
                                 font-size: 10px;
                                 color: Theme.fg-3;
                             }
-                            KeyRow {
-                                keys: "Ctrl+Shift+C";
-                                desc: root.lang-en ? "Copy selection" : "复制选中内容";
+                            Card {
+                                KeyRow {
+                                    keys: "Ctrl+Shift+C";
+                                    desc: root.lang-en ? "Copy selection" : "复制选中内容";
+                                }
+                                KeyRow {
+                                    keys: "Ctrl+V";
+                                    desc: root.lang-en ? "Paste" : "粘贴";
+                                }
+                                KeyRow {
+                                    keys: "Ctrl+F";
+                                    desc: root.lang-en ? "Find in terminal" : "查找";
+                                }
+                                KeyRow {
+                                    keys: "Ctrl+Shift+R";
+                                    desc: root.lang-en ? "Jump to history search" : "跳到命令历史搜索";
+                                }
+                                KeyRow {
+                                    keys: root.lang-en ? "Drag" : "鼠标拖动";
+                                    desc: root.lang-en ? "Select text" : "选择文本";
+                                }
+                                KeyRow {
+                                    keys: root.lang-en ? "Wheel / Scrollbar" : "滚轮 / 滚动条";
+                                    desc: root.lang-en ? "Scroll history" : "滚动历史";
+                                }
                             }
-                            KeyRow {
-                                keys: "Ctrl+V";
-                                desc: root.lang-en ? "Paste" : "粘贴";
-                            }
-                            KeyRow {
-                                keys: "Ctrl+F";
-                                desc: root.lang-en ? "Find in terminal" : "查找";
-                            }
-                            KeyRow {
-                                keys: "Ctrl+Shift+R";
-                                desc: root.lang-en ? "Jump to history search" : "跳到命令历史搜索";
-                            }
-                            KeyRow {
-                                keys: root.lang-en ? "Drag" : "鼠标拖动";
-                                desc: root.lang-en ? "Select text" : "选择文本";
-                            }
-                            KeyRow {
-                                keys: root.lang-en ? "Wheel / Scrollbar" : "滚轮 / 滚动条";
-                                desc: root.lang-en ? "Scroll history" : "滚动历史";
-                            }
-                            Text {
+                            SectionTitle {
                                 text: root.lang-en ? "Command Box" : "命令输入框";
                                 font-size: 10px;
                                 color: Theme.fg-3;
                             }
-                            KeyRow {
-                                keys: "Enter";
-                                desc: root.lang-en ? "Send command" : "发送命令";
-                            }
-                            KeyRow {
-                                keys: "↑ / ↓";
-                                desc: root.lang-en ? "Previous / next in history" : "上一条 / 下一条历史";
-                            }
-                            KeyRow {
-                                keys: "Ctrl+R";
-                                desc: root.lang-en ? "Search history (↑↓ select, Enter run, Esc close)" : "搜索命令历史（↑↓ 选择，回车执行，Esc 关闭）";
-                            }
-                            KeyRow {
-                                keys: "Esc";
-                                desc: root.lang-en ? "Close history / focus terminal" : "关闭历史 / 聚焦终端";
-                            }
-                            KeyRow {
-                                keys: "Ctrl+A";
-                                desc: root.lang-en ? "Move to start of line" : "移到行首";
-                            }
-                            KeyRow {
-                                keys: "Ctrl+E";
-                                desc: root.lang-en ? "Move to end of line" : "移到行尾";
-                            }
-                            KeyRow {
-                                keys: "Ctrl+K";
-                                desc: root.lang-en ? "Delete to end of line" : "删除到行尾";
-                            }
-                            KeyRow {
-                                keys: "Ctrl+U";
-                                desc: root.lang-en ? "Delete to start of line" : "删除到行首";
+                            Card {
+                                KeyRow {
+                                    keys: "Enter";
+                                    desc: root.lang-en ? "Send command" : "发送命令";
+                                }
+                                KeyRow {
+                                    keys: "↑ / ↓";
+                                    desc: root.lang-en ? "Previous / next in history" : "上一条 / 下一条历史";
+                                }
+                                KeyRow {
+                                    keys: "Ctrl+R";
+                                    desc: root.lang-en ? "Search history (↑↓ select, Enter run, Esc close)" : "搜索命令历史（↑↓ 选择，回车执行，Esc 关闭）";
+                                }
+                                KeyRow {
+                                    keys: "Esc";
+                                    desc: root.lang-en ? "Close history / focus terminal" : "关闭历史 / 聚焦终端";
+                                }
+                                KeyRow {
+                                    keys: "Ctrl+A";
+                                    desc: root.lang-en ? "Move to start of line" : "移到行首";
+                                }
+                                KeyRow {
+                                    keys: "Ctrl+E";
+                                    desc: root.lang-en ? "Move to end of line" : "移到行尾";
+                                }
+                                KeyRow {
+                                    keys: "Ctrl+K";
+                                    desc: root.lang-en ? "Delete to end of line" : "删除到行尾";
+                                }
+                                KeyRow {
+                                    keys: "Ctrl+U";
+                                    desc: root.lang-en ? "Delete to start of line" : "删除到行首";
+                                }
                             }
                         }
 
@@ -1690,212 +1996,158 @@ Rectangle {
                         if root.current-cat == 6 : VerticalLayout {
                             spacing: 4px;
 
-                            ToggleRow {
-                                label: root.lang-en ? "Session File Sync" : "文件上传同步";
-                                desc: root.lang-en ? "Uploads go to the same path on every session" : "会话同步开启时，上传发往各会话的相同路径";
-                                on: root.sync-upload-enabled;
-                                toggled => {
-                                    root.set-sync-upload-enabled(!root.sync-upload-enabled);
-                                }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "WebDAV Sync" : "WebDAV 同步";
-                                desc: root.webdav-status == "" ? (root.lang-en ? "Back up config, sessions and notes to your NAS or WebDAV" : "把配置、会话、笔记等备份到自己的 NAS 或企业 WebDAV 服务") : root.webdav-status;
-
-                                Switch {
-                                    on: root.webdav-enabled;
+                            SectionTitle { text: root.lang-en ? "Sync target" : "同步目标"; }
+                            Card {
+                                ToggleRow {
+                                    label: root.lang-en ? "Session File Sync" : "文件上传同步";
+                                    desc: root.lang-en ? "Uploads go to the same path on every session" : "会话同步开启时，上传发往各会话的相同路径";
+                                    on: root.sync-upload-enabled;
                                     toggled => {
-                                        root.webdav-enabled = !root.webdav-enabled;
+                                        root.set-sync-upload-enabled(!root.sync-upload-enabled);
                                     }
                                 }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "WebDAV URL" : "WebDAV 地址";
+                                OptionRow {
+                                    label: root.lang-en ? "WebDAV Sync" : "WebDAV 同步";
+                                    desc: root.webdav-status == "" ? (root.lang-en ? "Back up config, sessions and notes to your NAS or WebDAV" : "把配置、会话、笔记等备份到自己的 NAS 或企业 WebDAV 服务") : root.webdav-status;
 
-                                Rectangle {
-                                    width: 420px;
-                                    height: 30px;
-                                    border-radius: 7px;
-                                    border-width: 1px;
-                                    border-color: Theme.line;
-                                    background: Theme.sur-2;
-
-                                    TextInput {
-                                        x: 10px;
-                                        width: parent.width - 20px;
-                                        height: 100%;
-                                        text <=> root.webdav-url;
-                                        font-size: 12px;
-                                        color: Theme.fg-1;
-                                        vertical-alignment: center;
-                                        single-line: true;
-                                    }
-                                }
-                            }
-                            HorizontalLayout {
-                                spacing: 12px;
-                                alignment: start;
-
-                                FieldBlock {
-                                    title: root.lang-en ? "Username" : "用户名";
-                                    width: 200px;
-
-                                    Rectangle {
-                                        width: 200px;
-                                        height: 30px;
-                                        border-radius: 7px;
-                                        border-width: 1px;
-                                        border-color: Theme.line;
-                                        background: Theme.sur-2;
-
-                                        TextInput {
-                                            x: 10px;
-                                            width: parent.width - 20px;
-                                            height: 100%;
-                                            text <=> root.webdav-username;
-                                            font-size: 12px;
-                                            color: Theme.fg-1;
-                                            vertical-alignment: center;
-                                            single-line: true;
+                                    Switch {
+                                        on: root.webdav-enabled;
+                                        toggled => {
+                                            root.webdav-enabled = !root.webdav-enabled;
                                         }
                                     }
                                 }
                                 FieldBlock {
-                                    title: root.lang-en ? "Password / App Password" : "密码 / 应用密码";
-                                    width: 200px;
+                                    title: root.lang-en ? "WebDAV URL" : "WebDAV 地址";
 
-                                    Rectangle {
-                                        width: 200px;
-                                        height: 30px;
-                                        border-radius: 7px;
-                                        border-width: 1px;
-                                        border-color: Theme.line;
-                                        background: Theme.sur-2;
+                                    LineEdit {
+                                        placeholder-text: "https://nas:5006/all/ 或 …/rudder-connections.json";
+                                        text <=> root.webdav-url;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 0;
 
-                                        TextInput {
-                                            x: 10px;
-                                            width: parent.width - 20px;
-                                            height: 100%;
+                                    FieldBlock {
+                                        title: root.lang-en ? "Username" : "用户名";
+                                        horizontal-stretch: 1;
+
+                                        LineEdit {
+                                            placeholder-text: root.lang-en ? "Optional" : "可选";
+                                            text <=> root.webdav-username;
+                                        }
+                                    }
+                                    Rectangle { width: 12px; background: Theme.sur-2; }
+                                    FieldBlock {
+                                        title: root.lang-en ? "Password / App Password" : "密码 / 应用密码";
+                                        horizontal-stretch: 1;
+
+                                        LineEdit {
+                                            placeholder-text: root.lang-en ? "Leave blank to keep the saved one" : "留空表示不修改";
                                             text <=> root.webdav-password;
-                                            font-size: 12px;
-                                            color: Theme.fg-1;
-                                            vertical-alignment: center;
-                                            single-line: true;
                                             input-type: password;
                                         }
                                     }
                                 }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "Remote Directory" : "远程目录";
+                                FieldBlock {
+                                    title: root.lang-en ? "Remote Directory" : "远程目录";
 
-                                Rectangle {
-                                    width: 420px;
-                                    height: 30px;
-                                    border-radius: 7px;
-                                    border-width: 1px;
-                                    border-color: Theme.line;
-                                    background: Theme.sur-2;
-
-                                    TextInput {
-                                        x: 10px;
-                                        width: parent.width - 20px;
-                                        height: 100%;
+                                    LineEdit {
+                                        placeholder-text: "rudder-connections.json";
                                         text <=> root.webdav-remote-path;
-                                        font-size: 12px;
-                                        color: Theme.fg-1;
-                                        vertical-alignment: center;
-                                        single-line: true;
+                                    }
+                                }
+                                ToggleRow {
+                                    label: root.lang-en ? "Allow Self-signed Certs" : "允许自签名无效证书";
+                                    desc: root.lang-en ? "Test the connection again after saving" : "与保存后请再测试连接";
+                                    on: root.webdav-certs;
+                                    toggled => {
+                                        root.webdav-certs = !root.webdav-certs;
                                     }
                                 }
                             }
-                            ToggleRow {
-                                label: root.lang-en ? "Allow Self-signed Certs" : "允许自签名无效证书";
-                                desc: root.lang-en ? "Test the connection again after saving" : "与保存后请再测试连接";
-                                on: root.webdav-certs;
-                                toggled => {
-                                    root.webdav-certs = !root.webdav-certs;
-                                }
-                            }
-                            FieldBlock {
-                                title: root.lang-en ? "Actions" : "操作";
-                                desc: root.lang-en ? "Upload / restore after saving" : "保存配置后可上传 / 下载备份";
+                            SectionTitle { text: root.lang-en ? "Actions" : "操作"; }
+                            Card {
+                                OptionRow {
+                                    label: root.lang-en ? "Actions" : "操作";
+                                    desc: root.lang-en ? "Upload / restore after saving" : "保存配置后可上传 / 下载备份";
 
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    alignment: start;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        alignment: start;
 
-                                    Rectangle {
-                                        width: 88px;
-                                        height: 28px;
-                                        border-radius: 7px;
-                                        background: Theme.accent;
+                                        Rectangle {
+                                            width: 88px;
+                                            height: 28px;
+                                            border-radius: 7px;
+                                            background: Theme.accent;
 
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Text {
-                                                text: root.lang-en ? "Save" : "保存配置";
-                                                font-size: 12px;
-                                                color: white;
-                                                vertical-alignment: center;
+                                            HorizontalLayout {
+                                                alignment: center;
+                                                Text {
+                                                    text: root.lang-en ? "Save" : "保存配置";
+                                                    font-size: 12px;
+                                                    color: white;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+                                            TouchArea {
+                                                clicked => {
+                                                    root.save-webdav(root.webdav-enabled, root.webdav-url,
+                                                        root.webdav-username, root.webdav-password,
+                                                        root.webdav-remote-path, root.webdav-certs);
+                                                }
                                             }
                                         }
-                                        TouchArea {
-                                            clicked => {
-                                                root.save-webdav(root.webdav-enabled, root.webdav-url,
-                                                    root.webdav-username, root.webdav-password,
-                                                    root.webdav-remote-path, root.webdav-certs);
-                                            }
-                                        }
-                                    }
-                                    Rectangle {
-                                        width: 74px;
-                                        height: 28px;
-                                        border-radius: 7px;
-                                        border-width: 1px;
-                                        border-color: Theme.line;
-                                        background: up-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+                                        Rectangle {
+                                            width: 74px;
+                                            height: 28px;
+                                            border-radius: 7px;
+                                            border-width: 1px;
+                                            border-color: Theme.line;
+                                            background: up-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
 
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Text {
-                                                text: root.lang-en ? "Upload" : "上传备份";
-                                                font-size: 12px;
-                                                color: Theme.fg-1;
-                                                vertical-alignment: center;
+                                            HorizontalLayout {
+                                                alignment: center;
+                                                Text {
+                                                    text: root.lang-en ? "Upload" : "上传备份";
+                                                    font-size: 12px;
+                                                    color: Theme.fg-1;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+                                            up-ta := TouchArea {
+                                                clicked => {
+                                                    root.webdav-upload();
+                                                }
                                             }
                                         }
-                                        up-ta := TouchArea {
-                                            clicked => {
-                                                root.webdav-upload();
-                                            }
-                                        }
-                                    }
-                                    Rectangle {
-                                        width: 74px;
-                                        height: 28px;
-                                        border-radius: 7px;
-                                        border-width: 1px;
-                                        border-color: Theme.line;
-                                        background: dl-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+                                        Rectangle {
+                                            width: 74px;
+                                            height: 28px;
+                                            border-radius: 7px;
+                                            border-width: 1px;
+                                            border-color: Theme.line;
+                                            background: dl-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
 
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Text {
-                                                text: root.lang-en ? "Restore" : "下载恢复";
-                                                font-size: 12px;
-                                                color: Theme.fg-1;
-                                                vertical-alignment: center;
+                                            HorizontalLayout {
+                                                alignment: center;
+                                                Text {
+                                                    text: root.lang-en ? "Restore" : "下载恢复";
+                                                    font-size: 12px;
+                                                    color: Theme.fg-1;
+                                                    vertical-alignment: center;
+                                                }
                                             }
-                                        }
-                                        dl-ta := TouchArea {
-                                            clicked => {
-                                                root.webdav-download();
+                                            dl-ta := TouchArea {
+                                                clicked => {
+                                                    root.webdav-download();
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
+                        }
                         }
 
                         // ═══ 关于 ═══
@@ -1941,6 +2193,7 @@ Rectangle {
                                             font-weight: 700;
                                             color: Theme.fg-1;
                                         }
+                            SectionTitle { text: root.lang-en ? "Application" : "应用"; }
                                         Text {
                                             text: root.lang-en ? "Version v\{root.app-version}" : "当前版本 v\{root.app-version}";
                                             font-size: 11px;
@@ -1977,6 +2230,7 @@ Rectangle {
                                         alignment: center;
                                         spacing: 2px;
 
+                            SectionTitle { text: root.lang-en ? "Diagnostics" : "诊断"; }
                                         Text {
                                             text: root.lang-en ? "Logs & Diagnostics" : "日志与诊断";
                                             font-size: 13px;
@@ -2026,6 +2280,7 @@ Rectangle {
                                     spacing: 8px;
                                     alignment: start;
 
+                            SectionTitle { text: root.lang-en ? "Open source" : "开源组件"; }
                                     Text {
                                         text: "开源组件";
                                         font-size: 13px;
