@@ -1254,6 +1254,7 @@ export component AppWindow inherits Window {
 
       // 设置页（迁移第一步：基础/外观真接线，其余分组标注迁移中）。
       if root.shell-page == 4 : Rectangle {
+          background: Theme.bg-root;      // 与其它页面一致：磨砂透明度在本页也生效
           // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
 
           // 自绘平台是 AppTitleBar），页面从它下面开始。
@@ -1339,14 +1340,12 @@ export component AppWindow inherits Window {
               cat-visible-5: root.cat-visible-5;
               nav-search-changed(v) => { root.nav-search-changed(v); }
               // ── v0.8.0 设置窗迁移项的转发 ─────────────────────────────
-              appearance-mode: root.appearance-mode;
               renderer-mode: root.renderer-mode;
               update-channel: root.update-channel;
               term-cursor-style: root.term-cursor-style;
               term-cursor-choice: root.term-cursor-choice;
               term-cursor-color-hex: root.term-cursor-color-hex;
               sync-upload-enabled: root.sync-upload-enabled;
-              set-appearance-mode(v) => { root.set-appearance-mode(v); }
               set-animations-enabled(v) => { root.set-animations-enabled(v); }
               set-ui-scale(v) => { root.set-ui-scale(v); }
               set-renderer-mode(v) => { root.set-renderer-mode(v); }

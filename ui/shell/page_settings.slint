@@ -4,8 +4,6 @@
 import { Theme, AnimationSettings } from "../theme.slint";
 import { OutputRuleItem, AccentPreset } from "../settings/types.slint";
 import { LineEdit, Slider } from "std-widgets.slint";
-// 主题色：预设色块 + HSV 取色盘（与旧设置窗同一套组件，色表由 Rust 提供）。
-import { CursorPaletteSwatch, CursorColorInput } from "../settings/chrome.slint";
 
 struct CapsuleOpt {
     value: string,
@@ -289,6 +287,261 @@ component ResetButton inherits Rectangle {
 
 // 版式里的"设置行"：左侧标签/说明，右侧控件槽（@children），整行铺满内容宽。
 // 用于胶囊组、开关、语言 pill 等紧凑控件；大输入块仍走 FieldBlock（控件在下方铺满）。
+// 主题色选择器：预设色块 + 当前配色名 + 「自定义…」（点开 HSV 调色盘）。
+//
+// 色表由 Rust 提供（已按当前深浅档解析好），界面不存第二份色表；
+// 调色盘里拖动只预览，**松手才提交一次**（与磨砂滑杆同一套路），免得每帧写盘。
+component AccentPicker inherits Rectangle {
+    in property <bool> lang-en;
+    in-out property <string> value;            // 输入框里的 hex（回显当前生效色）
+    in property <color> preview-color;         // 当前生效色
+    in property <[AccentPreset]> presets;
+    in property <string> choice;               // 配置原值："" = 出厂默认 / 预设 id / hex
+    in property <string> accent-name;
+    callback pick-preset(string);
+    callback apply-color(string) -> bool;
+    callback apply-color-rgb(int, int, int) -> bool;
+
+    property <float> hue: 0;
+    property <float> sat: 1;
+    property <float> val: 1;
+    property <bool> valid: true;
+
+    pure function live-color() -> color { return hsv(root.hue, root.sat, root.val); }
+    pure function clamp01(v: float) -> float { return max(0.0, min(1.0, v)); }
+
+    function set-sv(x: length, y: length, w: length, h: length) {
+        root.sat = root.clamp01(x / w);
+        root.val = root.clamp01(1.0 - y / h);
+    }
+
+    /// 色相条位置 → 色相（上界 359.9，免得正好回到 0 时指示圈弹到最左）。
+    pure function hue-from(x: length, w: length) -> float {
+        return max(0.0, min(359.9, (x / w) * 360.0));
+    }
+
+    function sync-from-color() {
+        let c = root.preview-color.to-hsv();
+        root.hue = c.hue;
+        root.sat = c.saturation;
+        root.val = c.value;
+    }
+
+    function commit() {
+        let c = root.live-color();
+        root.valid = root.apply-color-rgb(c.red, c.green, c.blue);
+    }
+
+    init => { root.sync-from-color(); }
+    changed preview-color => { root.sync-from-color(); }
+
+    HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+
+        for p in root.presets : Rectangle {
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            border-width: root.choice == p.id ? 2px : 1px;
+            border-color: root.choice == p.id ? Theme.accent : Theme.line;
+            background: p.color;
+            swatch-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.pick-preset(p.id); }
+            }
+        }
+        Text {
+            text: root.accent-name;
+            color: Theme.fg-2;
+            font-size: 12px;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        // 自定义：当前色块 + 点开调色盘
+        Rectangle {
+            width: 84px;
+            height: 26px;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.sur-2;
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 6px;
+                alignment: center;
+                Rectangle {
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 3px;
+                    border-width: 1px;
+                    border-color: Theme.line;
+                    background: root.preview-color;
+                }
+                Text {
+                    text: root.lang-en ? "Custom…" : "自定义…";
+                    font-size: 11px;
+                    color: Theme.fg-1;
+                    vertical-alignment: center;
+                }
+            }
+            custom-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { palette.show(); }
+            }
+        }
+    }
+
+    palette := PopupWindow {
+        x: parent.width - self.width;
+        y: parent.height + 6px;
+        width: 248px;
+        // ⚠ 默认是 CloseOnClick（点任何地方都关）；这里要"点外面才关"。
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.sur-1;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.line;
+            drop-shadow-blur: Theme.shadow-popup-blur;
+            drop-shadow-color: Theme.shadow-popup-color;
+            VerticalLayout {
+                padding: 12px;
+                spacing: 10px;
+
+                // 饱和度（横）/ 明度（纵）
+                sv-square := Rectangle {
+                    height: 140px;
+                    width: 100%;
+                    border-radius: 6px;
+                    clip: true;
+                    background: @linear-gradient(90deg, #ffffff 0%, hsv(root.hue, 1.0, 1.0) 100%);
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        background: @linear-gradient(180deg, transparent 0%, #000000 100%);
+                    }
+                    sv-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        moved => {
+                            if (sv-ta.pressed) {
+                                root.set-sv(sv-ta.mouse-x, sv-ta.mouse-y, sv-square.width, sv-square.height);
+                            }
+                        }
+                        pointer-event(ev) => {
+                            if (ev.kind == PointerEventKind.down) {
+                                root.set-sv(sv-ta.mouse-x, sv-ta.mouse-y, sv-square.width, sv-square.height);
+                            }
+                            if (ev.kind == PointerEventKind.up) { root.commit(); }
+                        }
+                    }
+                    Rectangle {
+                        x: root.sat * (parent.width - self.width);
+                        y: (1.0 - root.val) * (parent.height - self.height);
+                        width: 14px;
+                        height: 14px;
+                        border-radius: 7px;
+                        border-width: 2px;
+                        border-color: #ffffff;
+                        background: transparent;
+                        drop-shadow-blur: 3px;
+                        drop-shadow-color: #000000a0;
+                    }
+                }
+
+                // 色相条 + 实时预览
+                HorizontalLayout {
+                    spacing: 10px;
+                    hue-bar := Rectangle {
+                        height: 34px;
+                        horizontal-stretch: 1;
+                        Rectangle {
+                            y: 11px;
+                            height: 12px;
+                            width: 100%;
+                            border-radius: 6px;
+                            background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%);
+                        }
+                        hue-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            moved => {
+                                if (hue-ta.pressed) { root.hue = root.hue-from(hue-ta.mouse-x, hue-ta.width); }
+                            }
+                            pointer-event(ev) => {
+                                if (ev.kind == PointerEventKind.down) { root.hue = root.hue-from(hue-ta.mouse-x, hue-ta.width); }
+                                if (ev.kind == PointerEventKind.up) { root.commit(); }
+                            }
+                        }
+                        Rectangle {
+                            x: (root.hue / 360.0) * (parent.width - self.width);
+                            y: (parent.height - self.height) / 2;
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 8px;
+                            border-width: 2px;
+                            border-color: #ffffff;
+                            background: transparent;
+                            drop-shadow-blur: 3px;
+                            drop-shadow-color: #000000a0;
+                        }
+                    }
+                    Rectangle {
+                        width: 34px;
+                        height: 34px;
+                        border-radius: 17px;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        background: root.live-color();
+                    }
+                }
+
+                // HEX 输入
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    LineEdit {
+                        width: 120px;
+                        text: root.value;
+                        accepted(t) => { root.valid = root.apply-color(t); }
+                    }
+                    Text {
+                        text: "HEX";
+                        color: Theme.fg-3;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Text {
+                    text: root.lang-en ? "Drag to preview; release to apply." : "拖动实时预览，松手即应用。";
+                    color: Theme.fg-3;
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
+                Rectangle {
+                    height: 28px;
+                    border-radius: 6px;
+                    background: Theme.accent;
+                    Text {
+                        text: root.lang-en ? "Done" : "完成";
+                        color: white;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    done-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { palette.close(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 component OptionRow inherits Rectangle {
     background: Theme.sur-2;
     in property <string> label;
@@ -571,14 +824,12 @@ export component PageSettings inherits Rectangle {
     callback remove-output-highlight-rule(int);
     callback set-output-highlight-rule-enabled(int, bool);
     // ── 老设置窗口迁移进来的项（v0.8.0 设置面板 → 新页补全）──────────────
-    in property <string> appearance-mode: "system";   // system / dark / light
     in property <string> renderer-mode: "femtovg-wgpu"; // femtovg-wgpu(GPU) / software（重启生效）
     in property <string> update-channel: "stable";    // stable / beta
     in property <string> term-cursor-style: "block";  // block / bar / underline
     in property <string> term-cursor-choice: "";      // "" = 跟随主题
     in property <string> term-cursor-color-hex: "";
     in property <bool> sync-upload-enabled: false;
-    callback set-appearance-mode(string);
     callback set-animations-enabled(bool);
     callback set-ui-scale(int);
     callback set-renderer-mode(string);
@@ -918,20 +1169,6 @@ HorizontalLayout {
                                         root.toggle-theme();
                                     }
                                 }
-                                OptionRow {
-                                    label: root.lang-en ? "Appearance Mode" : "外观模式";
-                                    desc: root.lang-en ? "Light, dark, or follow the system" : "浅色、深色或跟随系统切换";
-                            
-                                    CapsuleRow {
-                                        opts: [
-                                            {value: "system", label: root.lang-en ? "System" : "跟随系统"},
-                                            {value: "dark", label: root.lang-en ? "Dark" : "深色"},
-                                            {value: "light", label: root.lang-en ? "Light" : "浅色"},
-                                        ];
-                                        value: root.appearance-mode;
-                                        picked(v) => { root.set-appearance-mode(v); }
-                                    }
-                                }
 }
                             SectionTitle { text: root.lang-en ? "Theme & wallpaper" : "主题与壁纸"; }
                             Card {
@@ -941,24 +1178,16 @@ HorizontalLayout {
                                     ? "Buttons, tabs, selections and highlights follow this colour."
                                     : "按钮、标签页、选中态与高亮都跟随这个颜色。";
 
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    alignment: start;
-                                    // 色表由 Rust 提供，**第一条就是出厂默认蓝**（id 为空串）。
-                                    for p in root.accent-presets : CursorPaletteSwatch {
-                                        hex: p.id;
-                                        swatch-color: p.color;
-                                        selected: root.accent-choice == p.id;
-                                        chosen(id) => { root.set-accent-color(id); }
-                                    }
-                                    Text {
-                                        text: root.accent-name;
-                                        color: Theme.fg-2;
-                                        font-size: 12px;
-                                        vertical-alignment: center;
-                                        horizontal-stretch: 1;
-                                        overflow: elide;
-                                    }
+AccentPicker {
+                                    lang-en: root.lang-en;
+                                    value <=> root.accent-hex;
+                                    preview-color: Theme.accent-seed;
+                                    presets: root.accent-presets;
+                                    choice: root.accent-choice;
+                                    accent-name: root.accent-name;
+                                    pick-preset(id) => { root.set-accent-color(id); }
+                                    apply-color(v) => { root.set-accent-color(v); return true; }
+                                    apply-color-rgb(r, g, b) => { return root.set-accent-rgb(r, g, b); }
                                 }
                             }
                                 FieldBlock {
@@ -1033,10 +1262,19 @@ HorizontalLayout {
                                                         alignment: start;
 
                                                         Text {
-                                                            text: "\u{E2C6} 导入自定义壁纸…";
-                                                            font-size: 12px;
-                                                            color: Theme.fg-1;
-                                                            vertical-alignment: center;
+                                                            Text {
+                                                                text: "\u{E2C6}";   // folder-open
+                                                                font-family: "Material Icons";
+                                                                font-size: 15px;
+                                                                color: Theme.fg-2;
+                                                                vertical-alignment: center;
+                                                            }
+                                                            Text {
+                                                                text: root.lang-en ? "Import your own wallpaper…" : "导入自定义壁纸…";
+                                                                font-size: 12px;
+                                                                color: Theme.fg-1;
+                                                                vertical-alignment: center;
+                                                            }
                                                         }
                                                     }
 
@@ -1423,29 +1661,16 @@ Stepper {
     }
                                     }
                                 }
-OptionRow {
-    label: root.lang-en ? "Font Size" : "字号";
-    desc: root.lang-en ? "8–32px, default 13" : "8–32px，默认 13";
-
-    Stepper {
-        value: round(Theme.term-font-size / 1px);
-        minimum: 8;
-        maximum: 32;
-        unit: "px";
-        changed(v) => { root.term-font-size(v); }
-    }
-}
                                 OptionRow {
-                                    label: root.lang-en ? "Custom colour" : "自定义颜色";
-                                    desc: root.lang-en
-                                        ? "Any #RRGGBB value; darkened a little in light mode so it stays legible."
-                                        : "任意 #RRGGBB 颜色；浅色模式下会自动压深以保证可读。";
+                                    label: root.lang-en ? "Font Size" : "字号";
+                                    desc: root.lang-en ? "8–32px, default 13" : "8–32px，默认 13";
 
-                                    CursorColorInput {
-                                        value <=> root.accent-hex;
-                                        preview-color: Theme.accent-seed;
-                                        apply-color(v) => { root.set-accent-color(v); return true; }
-                                        apply-color-rgb(r, g, b) => { return root.set-accent-rgb(r, g, b); }
+                                    Stepper {
+                                        value: round(Theme.term-font-size / 1px);
+                                        minimum: 8;
+                                        maximum: 32;
+                                        unit: "px";
+                                        changed(v) => { root.term-font-size(v); }
                                     }
                                 }
 
@@ -1483,21 +1708,21 @@ Rectangle {
                             }
                             SectionTitle { text: root.lang-en ? "Scrollback & clipboard" : "滚回与剪贴板"; }
                             Card {
-OptionRow {
-    label: root.lang-en ? "Scrollback Lines" : "滚回行数";
-    desc: root.lang-en
-        ? "History lines kept in the terminal (100 – 1,000,000)."
-        : "终端可回看的历史行数（100 – 100 万）。";
+                                OptionRow {
+                                    label: root.lang-en ? "Scrollback Lines" : "滚回行数";
+                                    desc: root.lang-en
+                                        ? "History lines kept in the terminal (100 – 1,000,000)."
+                                        : "终端可回看的历史行数（100 – 100 万）。";
 
-    LineEdit {
-        width: 160px;
-        text: root.scrollback;
-        accepted(t) => {
-            root.scrollback-valid = root.scrollback-ok(t);
-            if (root.scrollback-valid) { root.term-scrollback(t); }
-        }
-    }
-}
+                                    LineEdit {
+                                        width: 160px;
+                                        text: root.scrollback;
+                                        accepted(t) => {
+                                            root.scrollback-valid = root.scrollback-ok(t);
+                                            if (root.scrollback-valid) { root.term-scrollback(t); }
+                                        }
+                                    }
+                                }
 Rectangle {
     background: Theme.sur-2;
     HorizontalLayout {
