@@ -184,7 +184,20 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     // Apply the saved immersive wallpaper (overrides dark/light when set; a
     // missing custom file falls back to the plain theme).
     {
-        let id = store.borrow().wallpaper().to_string();
+        let id = {
+            let s = store.borrow();
+            let w = s.wallpaper().to_string();
+            // 老配置没有壁纸 → 补成内置深色图（深浅档与磨砂从此都有依据）。
+            if w.is_empty() {
+                drop(s);
+                settings::persist(store, |s| {
+                    s.set_wallpaper("builtin:dark".to_string());
+                });
+                "builtin:dark".to_string()
+            } else {
+                w
+            }
+        };
         // Restoring a saved wallpaper must not override the user's persisted
         // light/dark preference. Built-in wallpapers only suggest their paired
         // theme when the user actively selects them (#theme-persistence).

@@ -158,9 +158,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 apply_dark_mode(&w, &bufs_wp, dark);
                 builtin_wallpaper_for(&theme, dark).to_string()
             };
-            // `apply_builtin_theme = false`：深浅档刚刚已经由这一项定下来了，
-            // 不需要壁纸再猜一次（它只知道图片自己的明暗）。
-            apply_wallpaper(&w, &store.borrow(), &bufs_wp, &wallpaper_id, false);
+            // 内置深色 / 浅色项：档位已由这一项定下（false = 别让图片再改一次）；
+            // 上传的图片：交给图片自己的主导色明暗判档（true）。
+            apply_wallpaper(&w, &store.borrow(), &bufs_wp, &wallpaper_id, theme.is_empty());
             persist(&store, |s| {
                 if let Some(d) = chosen_dark {
                     s.set_dark(d);
@@ -171,10 +171,6 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             // 下拉也要回到配置里那一项。
             let choice = store.borrow().accent().to_string();
             apply_accent(&w, &choice);
-            // 自定义壁纸（上传的图片）另给光标一个默认值：照片上的"跟随主题"不成立。
-            if theme.is_empty() {
-                default_cursor_for_custom_wallpaper(&w, &store);
-            }
             let cursor = store.borrow().terminal_cursor_color().to_string();
             super::terminal::apply_cursor_color(&w, &cursor);
             publish_wallpaper_choices(&w, &store);
@@ -205,10 +201,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             };
             let id = dst.to_string_lossy().into_owned();
             if let Some(w) = weak.upgrade() {
-                // 上传的图片只换图：深浅档保持用户当前的选择（与主题项不同）。
-                apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, false);
-                // 自定义壁纸：光标给个稳妥的默认值（未挑过时才动）。
-                default_cursor_for_custom_wallpaper(&w, &store);
+                // 上传的图片也由自己的主导色明暗定档（与内置项同一套规则）。
+                apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, true);
                 persist(&store, |s| {
                     s.set_wallpaper(id.clone());
                 });
@@ -547,25 +541,6 @@ fn wallpaper_choice_of_label(label: &str) -> (String, String) {
         .unwrap_or_else(|| ("dark".to_string(), String::new()))
 }
 
-/// 选**自定义**壁纸（上传的图片）时，给光标一个稳妥的默认值。
-///
-/// 取的是"浅色档的暗色"（`resolve_cursor_color(false, "")`）—— 照片的明暗不可预知，
-/// "跟随主题"那套（浅底暗光标 / 深底亮光标）在照片上不成立，暗色在任何底图上都还算看得见。
-///
-/// ⚠️ 只在用户**还没自己挑过**光标色（配置为空 = 跟随主题）时才动，免得覆盖他的选择。
-fn default_cursor_for_custom_wallpaper(w: &AppWindow, store: &Store) {
-    if !store.borrow().terminal_cursor_color().is_empty() {
-        return;
-    }
-    let fallback = super::terminal::resolve_cursor_color(false, "");
-    persist(store, |s| {
-        s.set_terminal_cursor_color(&fallback);
-    });
-    let stored = store.borrow().terminal_cursor_color().to_string();
-    super::terminal::apply_cursor_color(w, &stored);
-}
-
-/// 把「壁纸」下拉的内容与选中项推给界面（内容 = 三个主题 + 上传的图片）。
 pub(crate) fn publish_wallpaper_choices(w: &AppWindow, store: &Store) {
     let choices = wallpaper_choices();
     let (theme, wallpaper) = {
@@ -612,9 +587,12 @@ fn accent_display_name(choice: &str) -> SharedString {
 /// ⚠️ 换深浅档后**必须再调一次**：预设的两档本来就是两个颜色，自定义色在浅色档还要压深。
 pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
     let dark = w.global::<Theme>().get_dark();
+    let theme = w.global::<Theme>();
     let (overridden, seed) = match resolve_accent(choice, dark) {
         Some(c) => (true, c),
-        // 未选（出厂默认）：不覆盖，交给 Theme 里每档的常量。
+        // 未手选 → **跟随壁纸**：用图片派生出的分裂互补色（对比色），
+        // 强调色因此在底图上一定看得出；没有壁纸时回到出厂色。
+        None if theme.get_wallpaper_active() => (true, theme.get_wp_accent()),
         None => (false, Color::from_rgb_u8(0x4a, 0x90, 0xe2)),
     };
     w.global::<Theme>().set_accent_overridden(overridden);
@@ -625,9 +603,19 @@ pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
     // 输入框回显**当前生效的颜色**（预设 / 出厂色也给具体色号）—— 用户一眼能看到实际值。
     // 这次回显会触发输入框的 `changed text` → `on_set_accent`，那里的"回声判定"会把它
     // 当成无操作，不会把预设变成自定义色。
-    w.set_accent_hex(effective_accent_hex(choice, dark).into());
+    let echo = if choice.is_empty() && theme.get_wallpaper_active() {
+        hex_from_rgb(seed.red() as i32, seed.green() as i32, seed.blue() as i32)
+    } else {
+        effective_accent_hex(choice, dark)
+    };
+    w.set_accent_hex(echo.into());
     w.set_accent_presets(accent_presets_model(dark));
-    w.set_accent_name(accent_display_name(choice));
+    let name = if choice.is_empty() && theme.get_wallpaper_active() {
+        t("跟随壁纸", "Follow wallpaper").into()
+    } else {
+        accent_display_name(choice)
+    };
+    w.set_accent_name(name);
 }
 
 /// 「还原本页默认」：替换外观域为出厂默认，再走与 `bind` 相同的落点。

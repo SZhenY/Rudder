@@ -1161,14 +1161,6 @@ HorizontalLayout {
                                         }
                                     }
                                 }
-                                ToggleRow {
-                                    label: root.lang-en ? "Dark Theme" : "深色主题";
-                                    desc: root.lang-en ? "Toggle between dark and light, whole window" : "在深色与浅色之间切换，整窗配色同步";
-                                    on: root.dark;
-                                    toggled => {
-                                        root.toggle-theme();
-                                    }
-                                }
 }
                             SectionTitle { text: root.lang-en ? "Theme & wallpaper" : "主题与壁纸"; }
                             Card {

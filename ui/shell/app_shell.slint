@@ -551,7 +551,6 @@ export component AppWindow inherits Window {
     in-out property <string> group-dialog-error;
     callback delete-group(string /* name */);
     callback submit-group(string /* orig */, string /* name */) -> string;
-    callback toggle-theme();               // flip dark ↔ light
     // Session sync / broadcast input (#78 pt.4): mirror keystrokes to every
     // online session. Default off (it types into ALL sessions at once).
     in-out property <bool> sync-input: false;
@@ -1374,9 +1373,6 @@ export component AppWindow inherits Window {
               }
               set-language(lang) => {
                   root.set-language(lang);
-              }
-              toggle-theme() => {
-                  root.toggle-theme();
               }
           }
       }

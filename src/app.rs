@@ -809,35 +809,6 @@ pub fn run() -> Result<()> {
     // Theme toggle: flip dark ↔ light, persist the preference, and re-render
     // every open terminal with the new ANSI palette so historical output is
     // also recoloured (not just new output).
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        let bufs_theme = bufs.clone();
-        let proc_weak = proc_win.as_weak();
-        window.on_toggle_theme(move || {
-            let Some(w) = weak.upgrade() else { return };
-            let next_dark = !w.global::<Theme>().get_dark();
-            // Flip theme + every terminal buffer + re-render (shared with wallpaper).
-            apply_dark_mode(&w, &bufs_theme, next_dark);
-            // 深浅档变了 → 主题色要按新档位重新解析（预设两档是两个颜色，自定义色在
-            // 浅色档要压深）。
-            let accent_choice = store.borrow().accent().to_string();
-            crate::app::settings::appearance::apply_accent(&w, &accent_choice);
-            // 光标色同理："跟随主题"（配置留空）时深色档取亮色 / 浅色档取暗色。
-            let cursor = store.borrow().terminal_cursor_color().to_string();
-            crate::app::settings::terminal::apply_cursor_color(&w, &cursor);
-            // Mirror the flip onto the detached process window (its Theme global
-            // is a separate instance) so an open process window follows.
-            if let Some(p) = proc_weak.upgrade() {
-                sync_proc_theme(&w, &p);
-                // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-                crate::app::settings_window::resync_if_open(&w);
-            }
-            let mut s = store.borrow_mut();
-            s.set_dark(next_dark);
-            s.save_logging();
-        });
-    }
 
     // Host-key confirmation dialog (#109-5): the user trusts or rejects the
     // presented server key; the decision fans back out to the blocked SSH/SFTP

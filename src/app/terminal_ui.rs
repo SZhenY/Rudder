@@ -366,12 +366,11 @@ pub(super) fn apply_wallpaper(
             window.global::<Theme>().set_wallpaper(wp.image);
             window.global::<Theme>().set_wp_accent(slint::Color::from_rgb_u8(ar, ag, ab));
             window.global::<Theme>().set_wp_tint(slint::Color::from_rgb_u8(tr, tg, tb));
-            // Only the built-ins (designed as a light/dark pair) auto-set the
-            // theme. A custom photo keeps the user's light/dark choice so the
-            // theme toggle still governs text contrast — a light/white wallpaper
-            // reads best in light mode (crisp dark text) rather than being forced
-            // dark and greying the text out (#wallpaper).
-            if apply_builtin_theme && crate::wallpaper::is_builtin(id) {
+            let (br, bg, bb) = wp.palette.base;
+            window.global::<Theme>().set_wp_base(slint::Color::from_rgb_u8(br, bg, bb));
+            // 深浅档统一由**壁纸**决定：内置深色 / 浅色图各自带档位，上传的图片按
+            // 自己的主导色明暗判档（定档权只有一个，不再有"开关 vs 壁纸"打架）。
+            if apply_builtin_theme {
                 apply_dark_mode(window, bufs, wp.palette.is_dark);
             }
             window.global::<Theme>().set_wallpaper_active(true);

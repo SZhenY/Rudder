@@ -47,7 +47,14 @@ fn is_follow_echo(v: &str, stored: &str) -> bool {
 /// ⚠️ 换深浅档后**必须再调一次**，与「配色」分区的主题色是同一个道理。
 pub(crate) fn apply_cursor_color(w: &AppWindow, stored: &str) {
     let dark = w.global::<Theme>().get_dark();
-    let effective = resolve_cursor_color(dark, stored);
+    // 跟着主题走：光标色 = 强调色（主题色；未手选主题色时即壁纸对比色）。
+    // 用户在终端设置页手填 / 点色块后，以他的选择为准。
+    let effective = if stored.trim().is_empty() {
+        let a = w.global::<Theme>().get_accent_solid();
+        hex_from_rgb_local(a.red() as i32, a.green() as i32, a.blue() as i32)
+    } else {
+        resolve_cursor_color(dark, stored)
+    };
     // 输入框回填**当前生效的颜色**（跟随主题时就是解析出来的那个色号）—— 用户因此始终
     // 看得到真实值。这次程序化回填会触发输入框的 `changed text` → `on_set_term_cursor_color`，
     // 那里的「回声」判定把它当无操作，不会把"跟随主题"写死成具体颜色。
@@ -486,6 +493,11 @@ fn parse_scrollback(raw: &str, max: usize) -> Option<usize> {
         _ => None,
     }
 }
+/// `#RRGGBB`（本地小工具，`appearance::hex_from_rgb` 的同款实现，避免跨模块取用）。
+fn hex_from_rgb_local(r: i32, g: i32, b: i32) -> String {
+    format!("#{r:02X}{g:02X}{b:02X}")
+}
+
 
 #[cfg(test)]
 mod tests {
