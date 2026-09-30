@@ -58,8 +58,8 @@ component CapsuleRow inherits HorizontalLayout {
         background: on ? Theme.accent.with-alpha(0.16)
                        : (pta.pressed ? Theme.accent-press
                        : (pta.has-hover ? Theme.sur-3 : transparent));
-        animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
-        animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+        animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+        animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
 
         cap := Text {
             text: o.label;
@@ -112,8 +112,8 @@ component Card inherits Rectangle {
         x: 0;
         y: 0;
         width: 100%;
-        height: 3px;
-        background: @linear-gradient(180deg, #ffffff0d 0%, #ffffff00 100%);
+        height: Theme.spec-glow-height;
+        background: Theme.spec-glow;
     }
 }
 
@@ -199,8 +199,8 @@ component CursorStyleButton inherits Rectangle {
     background: root.selected ? Theme.accent-soft
         : (cs-ta.pressed ? Theme.accent-press
         : (cs-ta.has-hover ? Theme.rail-item-hover : Theme.sur-2));
-    animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
-    animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+    animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+    animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
     cs-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -246,8 +246,8 @@ component UploadButton inherits Rectangle {
     border-width: 1px;
     border-color: ub-ta.has-hover ? Theme.accent-ring : Theme.line;
     background: ub-ta.pressed ? Theme.accent-press : (ub-ta.has-hover ? Theme.accent-soft : Theme.sur-2);
-    animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
-    animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+    animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+    animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
     ub-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -292,8 +292,8 @@ component ResetButton inherits Rectangle {
             background: root.armed ? Theme.danger
                 : (mta.pressed ? Theme.accent-press
                 : (mta.has-hover ? Theme.sur-3 : Theme.sur-2));
-            animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
-            animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+            animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+            animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
 
             main-text := Text {
                 width: 100%;
@@ -324,8 +324,8 @@ component ResetButton inherits Rectangle {
             border-width: 1px;
             border-color: cta.has-hover ? Theme.accent-ring : Theme.line;
             background: cta.pressed ? Theme.accent-press : (cta.has-hover ? Theme.sur-3 : Theme.sur-2);
-            animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
-            animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+            animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+            animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
 
             cancel-text := Text {
                 width: 100%;
@@ -780,8 +780,8 @@ component CategoryItem inherits Rectangle {
     background: root.active ? Theme.rail-item-active
         : (ta.pressed ? Theme.accent-press
         : (ta.has-hover ? Theme.rail-item-hover : transparent));
-    animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
-    animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+    animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+    animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
 
     HorizontalLayout {
         padding-left: Theme.sp-2;
@@ -1167,7 +1167,7 @@ export component PageSettings inherits Rectangle {
                     : root.current-cat == 4 ? root.cat-visible-4
                     : root.current-cat == 6 ? root.cat-visible-6
                     : root.cat-visible-5;
-                animate y { duration: AnimationSettings.enabled ? 150ms : 0ms; easing: ease-out; }
+                animate y { duration: AnimationSettings.slide(); easing: ease-out; }
             }
         }
 
@@ -2418,7 +2418,7 @@ Rectangle {
                                                 height: 100%;
                                                 background: sv-ta.pressed ? #000000 : #ffffff;
                                                 opacity: sv-ta.pressed ? 0.14 : (sv-ta.has-hover ? 0.10 : 0);
-                                                animate opacity { duration: AnimationSettings.enabled ? 80ms : 0ms; }
+                                                animate opacity { duration: AnimationSettings.fast(); }
                                             }
 
                                             HorizontalLayout {
@@ -2445,8 +2445,8 @@ Rectangle {
                                             border-width: 1px;
                                             border-color: up-ta.has-hover ? Theme.accent-ring : Theme.line;
                                             background: up-ta.pressed ? Theme.accent-press : (up-ta.has-hover ? Theme.sur-3 : Theme.sur-2);
-                                            animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
-                                            animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+                                            animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+                                            animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
 
                                             HorizontalLayout {
                                                 alignment: center;
@@ -2470,8 +2470,8 @@ Rectangle {
                                             border-width: 1px;
                                             border-color: dl-ta.has-hover ? Theme.accent-ring : Theme.line;
                                             background: dl-ta.pressed ? Theme.accent-press : (dl-ta.has-hover ? Theme.sur-3 : Theme.sur-2);
-                                            animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
-                                            animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+                                            animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+                                            animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
 
                                             HorizontalLayout {
                                                 alignment: center;

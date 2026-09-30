@@ -96,6 +96,25 @@ export global Theme {
     }
     /// 无壁纸时仍是两套固定色板；有壁纸时**一切由图片主导色派生** ——
     /// 深浅档只决定"往亮还是往暗推"的方向（`wp-base` 本身已在可读区间内）。
+    // ═══════════════════════════════════════════════════════════════════
+    // 视觉规范（Visual Spec）—— 壁纸派生视觉与交互优化的统一入口。
+    // 明度阶梯 / 玻璃高光的系数集中在这里；组件只引用令牌，后续调优或
+    // 新增视觉特性改这一块即可，不要在组件里写裸数值。
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ── 明度阶梯：darker/brighter 系数（深色壁纸档；浅色档内置减半）──
+    // L1 应用侧栏（最沉的实体层）—— 与二级侧栏的区分度旋钮
+    in-out property <float> spec-elev-rail: 0.22;
+    // L0 页面底（间隙 / 页头，壁纸最清楚处）
+    in-out property <float> spec-elev-root: 0.14;
+    // L3 卡片（比二级侧栏略沉；浮起感由描边 + 顶缘高光表达）
+    in-out property <float> spec-elev-card: 0.045;
+    // L4 弹层（最亮）
+    in-out property <float> spec-elev-pop: 0.30;
+    // ── 玻璃顶缘高光（卡片顶部，模拟玻璃厚度）──
+    out property <length> spec-glow-height: 3px;
+    out property <brush> spec-glow: @linear-gradient(180deg, #ffffff0d 0%, #ffffff00 100%);
+
     /// 「浮起」偏移量：层差补偿曲线。磨砂层的视觉层差会被透明度稀释
     /// （两层之差 = α × 基色差），偏移量按 (2 − α) 反向放大 —— 完全不透明时
     /// 系数 = 1（与固定偏移一致），半透明时层次依然可辨。
@@ -106,16 +125,16 @@ export global Theme {
         return 1.0 + k * (2.0 - root.panel-alpha);
     }
 
-    property <color> base-bg-root:      wallpaper-active ? wp-base.darker(elev-dark(0.14)) : (dark ? #1b1d23 : #f5f5f7);
+    property <color> base-bg-root:      wallpaper-active ? wp-base.darker(elev-dark(root.spec-elev-root)) : (dark ? #1b1d23 : #f5f5f7);
     property <color> base-bg-panel:     wallpaper-active ? wp-base : (dark ? #23262d : #ffffff);
     // 卡片 = L3：深色档 **−2%**（比导航略沉）。视觉依据：大面积表面的抬升会被
     // 人眼感知为"发灰"（设置卡是页内最大表面，+6% 实测发白）；卡片的"浮起感"
     // 改由 1px 描边 + 顶缘高光表达。浅色档维持 +2%（浅色 UI 浮起 = 更白）。
-    property <color> base-bg-panel-alt: wallpaper-active ? wp-base.darker(elev-dark(0.045)) : (dark ? #2a2d35 : #f2f2f7);
-    property <color> base-bg-elevated:  wallpaper-active ? wp-base.brighter(elev-light(0.30)) : (dark ? #30333c : #e8e8ed);
+    property <color> base-bg-panel-alt: wallpaper-active ? wp-base.darker(elev-dark(root.spec-elev-card)) : (dark ? #2a2d35 : #f2f2f7);
+    property <color> base-bg-elevated:  wallpaper-active ? wp-base.brighter(elev-light(root.spec-elev-pop)) : (dark ? #30333c : #e8e8ed);
     property <color> base-bg-hover:     wallpaper-active ? shade(wp-base, dark ? 0.14 : -0.12) : (dark ? #373a44 : #e0e0e6);
     property <color> base-bg-active:    wallpaper-active ? shade(wp-base, dark ? 0.18 : -0.16) : (dark ? #3f4350 : #d8d8de);
-    property <color> base-rail:          wallpaper-active ? wp-base.darker(elev-dark(0.22)) : (dark ? #1b1b1e : #ececed);
+    property <color> base-rail:          wallpaper-active ? wp-base.darker(elev-dark(root.spec-elev-rail)) : (dark ? #1b1b1e : #ececed);
 
     // bg-root frosts lighter (lower alpha) so the wallpaper reads clearly in
     // empty / inset areas; panels stay mostly opaque for legible text.
@@ -299,6 +318,10 @@ export global AnimationSettings {
     // 效果完全相同（调用点写 `AnimationSettings.color()` 即可）。
     /// hover/焦点等短时颜色与边框过渡
     public pure function color() -> easing { return ease-out; }
+    /// 交互态短过渡时长（hover 环 / 按下底 / 边框渐变）——跟随「界面动画」开关
+    public pure function fast() -> duration { return enabled ? 80ms : 0ms; }
+    /// 指示条滑动 / 壁纸交叉淡化等过渡时长
+    public pure function slide() -> duration { return enabled ? 150ms : 0ms; }
     /// 呼吸灯：正弦节奏最接近自然呼吸
     public pure function breathing() -> easing { return ease-in-out-sine; }
     /// 不涉及位移的过渡（透明度等）：Material emphasize 曲线

@@ -23,8 +23,8 @@ component RailButton inherits Rectangle {
         ? Theme.accent-soft
         : (ta.pressed ? Theme.accent-press
         : (ta.has-hover ? Theme.sur-3 : transparent));
-    animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
-    animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+    animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+    animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
 
     HorizontalLayout {
         padding-left: root.collapsed ? 0px : Theme.sp-3;

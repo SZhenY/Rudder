@@ -38,6 +38,11 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, follow_flag: &Arc<AtomicBool>)
     let d = fresh_config();
     let follow_cd = !d.transfer.sftp_no_follow_cd;
 
+    // SFTP 默认折叠也属传输页：配置 + 控件一起复位。
+    persist(store, |s| {
+        s.set_collapse_sftp_default(d.layout.collapse_sftp_default);
+    });
+
     persist(store, |s| {
         s.set_sftp_follow_cd(follow_cd);
         s.set_download_always_ask(d.transfer.download_always_ask);
@@ -47,4 +52,5 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, follow_flag: &Arc<AtomicBool>)
     follow_flag.store(follow_cd, Ordering::Relaxed);
     w.set_sftp_follow_cd(follow_cd);
     w.set_download_always_ask(d.transfer.download_always_ask);
+    w.set_collapse_sftp_default(d.layout.collapse_sftp_default);
 }

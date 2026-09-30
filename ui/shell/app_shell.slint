@@ -60,13 +60,9 @@ import { SftpCrumb, SftpEntry, SftpTreeNode, TunnelInfo } from "../sftp_types.sl
 import { ProcWindow, ProcRow } from "../proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "../system_info_window.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset } from "../settings/types.slint";
-// 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
-// `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
-// `slint::include_modules!` 才会生成对应的 Rust 窗口类型（只 import 不实例化的话，
-// 实测生成不出来 —— 上面的 export 行就是为这个存在的）。
-import { SettingsWindow } from "../settings_window.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
-export { ProcWindow, SystemInfoWindow, SettingsWindow }
+// （旧的独立设置窗口 `SettingsWindow` 已删除：设置统一走左侧栏「设置」页。）
+export { ProcWindow, SystemInfoWindow }
 import { LineEdit, Button, Palette } from "std-widgets.slint";
 import { VDivider } from "../components/surfaces.slint";
 // 「自动更新」对话框：挂在文件末尾只是为了减少改动；设置页改成独立窗口后，"谁压谁"
@@ -411,7 +407,6 @@ export component AppWindow inherits Window {
     in-out property <bool> interface-open: false;  // Interface settings window
     // 设置窗口是 Rust 侧的独立 root 窗口 → Slint 这里只说"要开/要关"，窗口由 Rust
     // `show()` / `hide()` 操作（只隐藏不销毁，所以没有 `#323/#343` 那类风险）。
-    callback toggle-interface-settings(bool);
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
     callback set-term-font-bold(bool);             // apply + persist bold terminal text
@@ -917,7 +912,7 @@ export component AppWindow inherits Window {
             source: Theme.wallpaper-prev;
             image-fit: cover;
             opacity: Theme.wallpaper-fade-opacity;
-            animate opacity { duration: AnimationSettings.enabled ? 150ms : 0ms; }
+            animate opacity { duration: AnimationSettings.slide(); }
         }
     }
 
@@ -1725,7 +1720,7 @@ export component AppWindow inherits Window {
         import-ssh-config() => { root.import-ssh-config(); }
         export-sessions() => { root.export-sessions(); }
         import-sessions() => { root.import-sessions(); }
-        open-interface-settings => { root.toggle-interface-settings(true); }
+        open-interface-settings => { root.shell-page = 4; }
         open-batch-import => { root.batch-import-text = ""; root.batch-import-open = true; }
         open-shortcuts => { root.shortcuts-open = true; }
         open-about => { root.about-open = true; }

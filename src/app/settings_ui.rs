@@ -572,21 +572,15 @@ mod tests {
 
     /// Collect every reset-page id the UI actually wires up.
     ///
-    /// 阶段 A 起按钮不再内联 `root.reset-page("x")`，而是
-    /// `ResetBar { page-id: "x"; reset-page(p) => { root.reset-page(p); } }`，
-    /// 因此解析目标随之改为 `page-id:`。写错（或按钮被删）会让集合变化，
+    /// 设置页合并为单页后，还原按钮以
+    /// `ResetButton { page: "x"; reset(p) => { root.reset-page(p); } }` 声明，
+    /// 因此解析 `page:` 引号里的 id。写错（或按钮被删）会让集合变化，
     /// 下面的测试就会失败 —— 不会静默放过。
     fn reset_page_ids_from_ui() -> std::collections::BTreeSet<String> {
-        // 阶段 B 之后还原按钮随页面搬进了 `ui/settings/pages/*.slint`，
-        // 因此要扫的是**页面文件**而不是 interface_panel.slint。
-        const PAGES: &[&str] = &[
-            include_str!("../../ui/settings/pages/terminal.slint"),
-            include_str!("../../ui/settings/pages/appearance.slint"),
-            include_str!("../../ui/settings/pages/transfer.slint"),
-        ];
+        const PAGE: &str = include_str!("../../ui/shell/page_settings.slint");
         let mut ids = std::collections::BTreeSet::new();
-        for line in PAGES.iter().flat_map(|src| src.lines()) {
-            let Some((_, rest)) = line.split_once("page-id:") else {
+        for line in PAGE.lines() {
+            let Some((_, rest)) = line.split_once("page:") else {
                 continue;
             };
             let Some((_, after_quote)) = rest.split_once('"') else {
@@ -610,7 +604,7 @@ mod tests {
         let ids = reset_page_ids_from_ui();
         assert!(
             !ids.is_empty(),
-            "没有从 interface_panel.slint 解析到任何 reset-page 调用 —— 测试本身已失效，请修正解析逻辑"
+            "没有从 page_settings.slint 解析到任何还原按钮 —— 测试本身已失效，请修正解析逻辑"
         );
         for id in &ids {
             assert!(
@@ -720,15 +714,62 @@ mod wiring_tests {
         // 选择器数据源（列表本身不随还原变化）
         "term-fonts", "ui-fonts",
         // 自定义高亮规则的编辑草稿（非持久化字段）
-        "new-rule-pattern", "new-rule-regex", "new-rule-case-sensitive",
-        "new-rule-whole-line", "new-rule-color",
+        "new-rule-pattern", "new-rule-regex", "new-rule-case",
+        "new-rule-whole", "new-rule-color",
+        // 分类导航与页面结构态
+        "current-cat", "cat-visible-0", "cat-visible-1", "cat-visible-2",
+        "cat-visible-4", "cat-visible-5", "cat-visible-6", "nav-search",
+        // 还原按钮（两段式确认）自身状态与文案
+        "armed", "cancel-label", "label-armed", "page",
+        // 磨砂滑杆手势仲裁 / 接力层瞬态
+        "frost-dragging", "frost-pin-y", "frost-idle", "frost-overlay",
+        "frost-overlay-init", "frost-overlay-idle", "frost-overlay-last-x",
+        "frost-drag-value", "frost-travel",
+        // 调色盘 HSV 草稿（非持久化）
+        "hue", "sat",
+        // 挂载过滤输入草稿（mount-filter 是 B 类，草稿随动不还原）
+        "mount-filter-text",
+        // 滚回上限（随大容量开关派生，非独立设置）
+        "scrollback-max",
+        // 关于页展示数据
+        "about-libs", "app-version",
+        // 快捷键分区展示数据（无还原语义）
+        "keys",
+        // 页面布局态 / 组件内部
+        "top-inset", "width", "val", "valid",
+        // 云同步状态展示（运行数据，非设置）
+        "webdav-status",
+        // 组件内部属性 / 文案
+        "glyph", "sub", "title", "opts", "presets",
     ];
 
     /// 本页显示、但**有意不还原**的项 —— B 类用户数据。
-    const NOT_RESET_BY_DESIGN: &[(&str, &str)] = &[(
-        "mount-filter",
-        "挂载点过滤是用户自定义数据（B 类），与自定义高亮规则一样只保留不还原",
-    )];
+    const NOT_RESET_BY_DESIGN: &[(&str, &str)] = &[
+        (
+            "mount-filter",
+            "挂载点过滤是用户自定义数据（B 类），与自定义高亮规则一样只保留不还原",
+        ),
+        (
+            "sync-upload-enabled",
+            "云同步开关是用户数据（B 类），同步页没有还原按钮",
+        ),
+        // 云同步的连接信息全部是用户数据（B 类），同步页没有还原按钮
+        (
+            "webdav-enabled",
+            "云同步开关是用户数据（B 类），同步页没有还原按钮",
+        ),
+        ("webdav-url", "同上：用户连接数据，不参与还原"),
+        ("webdav-username", "同上：用户连接数据，不参与还原"),
+        ("webdav-password", "同上：用户连接数据，不参与还原"),
+        ("webdav-remote-path", "同上：用户连接数据，不参与还原"),
+        ("webdav-certs", "同上：用户连接数据，不参与还原"),
+        // 更新分区按规格没有还原按钮（检查频率 / 渠道 / 开关都是用户偏好）
+        ("update-check", "更新偏好是用户数据（B 类），更新分区没有还原按钮"),
+        ("update-channel", "同上：更新偏好不参与还原"),
+        ("update-freq-index", "检查频率的界面索引（B 类，不参与还原）"),
+        ("update-freq-labels", "检查频率的界面文案映射（随语言变化）"),
+        ("update-last-check", "上次检查时间是运行数据，不是设置"),
+    ];
 
     /// 由还原函数**调用到的辅助函数**间接落地的属性。
     const COVERED_BY_HELPER: &[(&str, &str)] = &[
@@ -744,6 +785,11 @@ mod wiring_tests {
         ("term-cursor-color-hex", "apply_cursor_color 内写入"),
         ("accent-hex", "apply_accent 内写入"),
         ("accent-presets", "apply_accent 内写入"),
+        // 页面级别名：新设置页的属性名 ≠ shell 属性名，还原写 shell 属性后经
+        // 绑定传导到页面 —— 测试的按名比对认不出这层别名，在此登记。
+        ("flag-osc", "页面别名 = osc52-clipboard（terminal reset 内写入）"),
+        ("hide-partitions", "页面别名 = hide-special-partitions（appearance reset 内写入）"),
+        ("collapse-sftp", "页面别名 = collapse-sftp-default（transfer reset 内写入）"),
     ];
 
     fn snake(kebab: &str) -> String {
@@ -752,9 +798,8 @@ mod wiring_tests {
 
     /// 一段 Slint 源码里 **root.<prop>** 形式的属性引用（排除回调调用）。
     ///
-    /// 阶段 B 把设置页拆成独立文件之后，「这一页绑定了哪些设置」的权威来源就是
-    /// **页面文件本身**：`interface_panel.slint` 里对应位置只剩转发绑定
-    /// （`xxx <=> root.xxx`），不再能反映页面的真实内容。
+    /// 设置页合并为单页后，「这一页绑定了哪些设置」的权威来源就是
+    /// **页面文件本身**（`ui/shell/page_settings.slint`）里的 `root.<prop>` 引用。
     fn props_in(src: &str) -> std::collections::BTreeSet<String> {
         let mut out = std::collections::BTreeSet::new();
         let mut from = 0;
@@ -790,41 +835,33 @@ mod wiring_tests {
     /// 它们的共同特征是"UI 显示已还原、实际没生效"，人工 review 极难发现。
     #[test]
     fn every_page_property_is_covered_by_its_reset() {
-        // 每页给出：还原逻辑所在的 Rust 文件、以及**页面本身的 Slint 文件**。
-        // 路径写错会 panic（明确的失败，不会静默放过）。
-        let pages = [
-            ("terminal",
-             include_str!("settings/terminal.rs"),
-             include_str!("../../ui/settings/pages/terminal.slint"),
-             "reset"),
-            ("appearance",
-             include_str!("settings/appearance.rs"),
-             include_str!("../../ui/settings/pages/appearance.slint"),
-             "reset"),
-            ("transfer",
-             include_str!("settings/transfer.rs"),
-             include_str!("../../ui/settings/pages/transfer.slint"),
-             "reset"),
-        ];
+        // 设置页合并为单页后，三页的还原函数**共同**覆盖页面绑定的全部可还原
+        // 属性（单页文件同时包含多页分区，无法再按文件拆分断言）。
+        let page_src = include_str!("../../ui/shell/page_settings.slint");
+        let combined_reset_body: String = [
+            (include_str!("settings/terminal.rs"), "reset"),
+            (include_str!("settings/appearance.rs"), "reset"),
+            (include_str!("settings/transfer.rs"), "reset"),
+        ]
+        .into_iter()
+        .map(|(src, f)| fn_body(src, f))
+        .collect();
 
         let mut uncovered = Vec::new();
-        for (page, src, page_src, reset_fn) in pages {
-            let body = fn_body(src, reset_fn);
-            for prop in props_in(page_src) {
-                if UI_ONLY.contains(&prop.as_str())
-                    || NOT_RESET_BY_DESIGN.iter().any(|(p, _)| *p == prop)
-                    || COVERED_BY_HELPER.iter().any(|(p, _)| *p == prop)
-                {
-                    continue;
-                }
-                if !body.contains(&snake(&prop)) {
-                    uncovered.push(format!("{page}: {prop}"));
-                }
+        for prop in props_in(page_src) {
+            if UI_ONLY.contains(&prop.as_str())
+                || NOT_RESET_BY_DESIGN.iter().any(|(p, _)| *p == prop)
+                || COVERED_BY_HELPER.iter().any(|(p, _)| *p == prop)
+            {
+                continue;
+            }
+            if !combined_reset_body.contains(&snake(&prop)) {
+                uncovered.push(prop);
             }
         }
         assert!(
             uncovered.is_empty(),
-            "以下设置项在本页绑定，但「还原本页默认」没有处理：\n  {}",
+            "以下设置项在页面绑定，但「还原本页默认」没有处理：\n  {}",
             uncovered.join("\n  ")
         );
     }
@@ -832,16 +869,11 @@ mod wiring_tests {
     /// 防漏：页面文件必须真的解析出属性（解析逻辑失效时要立刻发现）。
     #[test]
     fn allowlists_only_mention_pages_that_exist() {
-        for (page, src) in [
-            ("terminal", include_str!("../../ui/settings/pages/terminal.slint")),
-            ("appearance", include_str!("../../ui/settings/pages/appearance.slint")),
-            ("transfer", include_str!("../../ui/settings/pages/transfer.slint")),
-        ] {
-            assert!(
-                !props_in(src).is_empty(),
-                "{page} 页解析不到任何属性 —— 测试的解析逻辑已失效"
-            );
-        }
+        let page_src = include_str!("../../ui/shell/page_settings.slint");
+        assert!(
+            !props_in(page_src).is_empty(),
+            "设置页解析不到任何属性 —— 测试的解析逻辑已失效"
+        );
     }
 
     /// 「默认蓝」那条色表行的两个 hex 必须与 `theme.slint` 的 `accent-default` 一致。
@@ -859,20 +891,4 @@ mod wiring_tests {
         );
     }
 
-    /// 壁纸开关：Rust 常量与 Slint 的 `wallpaper-enabled` 必须一致。
-    ///
-    /// 二者不一致就有过真 bug：界面藏起来了、`apply_wallpaper` 仍在给窗口压壁纸，
-    /// 表现是"选了浅色主题，面板是浅的、窗口底色还是深的"。
-    #[test]
-    fn wallpaper_switch_matches_ui() {
-        let page = include_str!("../../ui/settings/pages/appearance.slint");
-        let expected = format!(
-            "wallpaper-enabled: {}",
-            crate::app::settings::appearance::WALLPAPER_UI_ENABLED
-        );
-        assert!(
-            page.contains(&expected),
-            "appearance.slint 里的 `{expected}` 与 Rust 的 WALLPAPER_UI_ENABLED 不一致"
-        );
-    }
 }

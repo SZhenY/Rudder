@@ -181,8 +181,6 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             publish_wallpaper_choices(&w, &store);
             if let Some(p) = proc_weak.upgrade() {
                 sync_proc_theme(&w, &p);
-                // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-                crate::app::settings_window::resync_if_open(&w);
             }
         });
     }
@@ -220,8 +218,6 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 publish_wallpaper_choices(&w, &store);
                 if let Some(p) = proc_weak.upgrade() {
                     sync_proc_theme(&w, &p);
-                    // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-                    crate::app::settings_window::resync_if_open(&w);
                 }
             } else {
                 persist(&store, |s| {
@@ -714,8 +710,6 @@ pub(crate) fn reset(
     // 已打开的进程监视窗要跟着换肤（窗口可能没开，upgrade 失败就跳过）。
     if let Some(p) = proc_win.upgrade() {
         sync_proc_theme(w, &p);
-        // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-        crate::app::settings_window::resync_if_open(w);
     }
     // 动画开关没有后端持久化（Slint 全局，重启即回），还原即重新开启。
     w.global::<AnimationSettings>().set_enabled(true);
