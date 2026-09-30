@@ -4,7 +4,7 @@
 // 选中项做成"加粗填充药丸"（accent 淡底 + 主色文字），与整体设计一致；
 // 图标用项目里既有的 Material Icons 字体。
 
-import { Theme } from "../theme.slint";
+import { Theme, AnimationSettings } from "../theme.slint";
 
 component RailButton inherits Rectangle {
     in property <string> glyph;
@@ -15,9 +15,16 @@ component RailButton inherits Rectangle {
 
     height: 38px;
     border-radius: Theme.radius-md;
+    // 交互态三件套：hover = 主题色细环 @40%（中性底不变）；按下 = 主题色 @12% 确认底；
+    // 选中 = accent 淡底药丸（accent-soft）+ 主色文字，环让位给选中底。
+    border-width: 1px;
+    border-color: !root.active && ta.has-hover ? Theme.accent-ring : transparent;
     background: root.active
         ? Theme.accent-soft
-        : (ta.has-hover ? Theme.sur-3 : transparent);
+        : (ta.pressed ? Theme.accent-press
+        : (ta.has-hover ? Theme.sur-3 : transparent));
+    animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+    animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
 
     HorizontalLayout {
         padding-left: root.collapsed ? 0px : Theme.sp-3;
@@ -72,7 +79,8 @@ export component Rail inherits Rectangle {
     callback search-requested();
 
     width: root.collapsed ? 56px : 180px;
-    background: Theme.sur-1;
+    // L1 层：比二级侧栏（sur-1 = wp-base）更沉一档（深色壁纸 −8%），两级侧栏由此区分。
+    background: Theme.rail-bg;
 
     VerticalLayout {
         padding-top: root.top-inset + Theme.sp-2;

@@ -42,6 +42,14 @@ fn is_follow_echo(v: &str, stored: &str) -> bool {
             || v.eq_ignore_ascii_case(&resolve_cursor_color(false, "")))
 }
 
+// 程序化回填输入框期间为 true。Slint 的 `changed text` 会**同步**触发，
+// setters 借这个标志识别回声 —— 比按值判定可靠：跟随主题时生效色是**任意**
+// 主题色（随壁纸/配色变），按值判定（is_follow_echo 只认两个旧默认色号）
+// 永远追不全，结果回填被当成显式选择存盘，"跟随"从此断掉。
+thread_local! {
+    static BACKFILLING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// 把光标色写到窗口 —— 并在"跟随主题"时按**当前深浅档**解析。
 ///
 /// ⚠️ 换深浅档后**必须再调一次**，与「配色」分区的主题色是同一个道理。
@@ -56,13 +64,48 @@ pub(crate) fn apply_cursor_color(w: &AppWindow, stored: &str) {
         resolve_cursor_color(dark, stored)
     };
     // 输入框回填**当前生效的颜色**（跟随主题时就是解析出来的那个色号）—— 用户因此始终
-    // 看得到真实值。这次程序化回填会触发输入框的 `changed text` → `on_set_term_cursor_color`，
-    // 那里的「回声」判定把它当无操作，不会把"跟随主题"写死成具体颜色。
+    // 看得到真实值。程序化回填会同步触发 `changed text`，用 BACKFILLING 标志让 setters
+    // 把它当无操作 —— 否则"跟随主题"会被写死成具体颜色（历史 bug：配置里出现过
+    // #2D2D2F / #4453D8 这类"伪显式"值）。
+    BACKFILLING.with(|f| f.set(true));
     w.set_term_cursor_color_hex(effective.as_str().into());
+    BACKFILLING.with(|f| f.set(false));
     // 色块的选中态看**存储值**（"" = 跟随主题那一项），输入框看生效色 —— 两者本就不同。
     w.set_term_cursor_choice(stored.into());
     if let Some(color) = parse_hex_color(&effective) {
         w.set_term_cursor_color(color);
+    }
+}
+
+/// 这次写入是不是程序化回填的回声（是 → 当无操作）。
+fn is_backfill_echo() -> bool {
+    BACKFILLING.with(std::cell::Cell::get)
+}
+
+/// 启动迁移：把历史泄漏的"伪显式"光标色归零（= 跟随主题）。
+///
+/// 两类泄漏：①旧版两档默认色的回填回声（`#2D2D2F` / `#D4D4D4`）；
+/// ②"跟随主题"时把解析出的**主题色生效色**回填进输入框、被当成显式选择存盘
+/// （按值回声判定追不全 —— 生效色随主题/壁纸变）。②的判据：存储值 == 当前
+/// 主题色生效色。用户真手选了与主题色相同的色号会被误伤，概率可忽略；
+/// 必须在 `apply_accent` **之后**调用（要拿已解析的生效色）。
+pub(crate) fn migrate_cursor_follow(store: &Store, w: &AppWindow) {
+    let stored = store.borrow().terminal_cursor_color().to_string();
+    if stored.is_empty() {
+        return;
+    }
+    let legacy = stored.eq_ignore_ascii_case("#2D2D2F") || stored.eq_ignore_ascii_case("#D4D4D4");
+    let a = w.global::<Theme>().get_accent_solid();
+    let accent_hex = hex_from_rgb_local(a.red() as i32, a.green() as i32, a.blue() as i32);
+    if legacy || stored.eq_ignore_ascii_case(&accent_hex) {
+        {
+            let mut s = store.borrow_mut();
+            if s.set_terminal_cursor_color("") {
+                s.save_logging();
+            }
+        }
+        let stored = store.borrow().terminal_cursor_color().to_string();
+        apply_cursor_color(w, &stored);
     }
 }
 
@@ -102,6 +145,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
         let weak = window.as_weak();
         let store = store.clone();
         window.on_set_term_cursor_color(move |value: SharedString| {
+            // 程序化回填的回声：当无操作（否则"跟随主题"被写死成生效色）。
+            if is_backfill_echo() {
+                return true;
+            }
             // 空串 = 回到"跟随主题"；其余必须是合法 hex（与界面上的红框校验一致）。
             let v = value.as_str().trim();
             if !v.is_empty() && parse_hex_color(v).is_none() {
@@ -140,12 +187,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
         let store = store.clone();
         window.on_set_term_cursor_color_rgb(move |red: i32, green: i32, blue: i32| {
             let hex = hex_from_rgb(red, green, blue);
-            // 与 hex 输入同一条「回声」判定：拖到与当前生效色相同的位置时保持"跟随主题"。
-            {
-                let stored = store.borrow().terminal_cursor_color().to_string();
-                if is_follow_echo(&hex, &stored) {
-                    return true;
-                }
+            // 程序化回填的回声：当无操作（与 hex 输入同一条 BACKFILLING 通道）。
+            if is_backfill_echo() {
+                return true;
             }
             {
                 let mut s = store.borrow_mut();

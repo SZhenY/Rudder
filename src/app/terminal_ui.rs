@@ -1,5 +1,5 @@
 use super::*;
-use crate::ui::Theme;
+use crate::ui::{ AnimationSettings, Theme };
 
 pub(crate) fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
     let rows: Vec<SharedString> = store
@@ -361,6 +361,30 @@ pub(super) fn apply_wallpaper(
     };
     match crate::wallpaper::load(id) {
         Some(wp) => {
+            // 换壁纸交叉淡化：旧图放 prev 层盖在新图上，Slint 侧 150ms 渐隐。
+            // 时序：置 fading + fade-opacity=1 → 30ms 后（确保先渲染了一帧）降到 0
+            // 触发动画 → 220ms 后撤掉 prev 层。尊重「界面动画」开关；启动首帧
+            // （此前无壁纸）不做淡化。仅上传/切换真壁纸时走这里。
+            if window.global::<Theme>().get_wallpaper_active()
+                && window.global::<AnimationSettings>().get_enabled()
+            {
+                let prev = window.global::<Theme>().get_wallpaper();
+                window.global::<Theme>().set_wallpaper_prev(prev);
+                window.global::<Theme>().set_wallpaper_fading(true);
+                window.global::<Theme>().set_wallpaper_fade_opacity(1.0);
+                let weak = window.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
+                    if let Some(w) = weak.upgrade() {
+                        w.global::<Theme>().set_wallpaper_fade_opacity(0.0);
+                    }
+                });
+                let weak = window.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(220), move || {
+                    if let Some(w) = weak.upgrade() {
+                        w.global::<Theme>().set_wallpaper_fading(false);
+                    }
+                });
+            }
             let (ar, ag, ab) = wp.palette.accent;
             let (tr, tg, tb) = wp.palette.tint;
             window.global::<Theme>().set_wallpaper(wp.image);

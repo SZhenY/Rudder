@@ -140,7 +140,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_large_scrollback(s.large_scrollback());
         window.set_term_cursor_style(s.terminal_cursor_style().into());
         // 光标色：空串 = 跟随主题 → 按当前（已确定的）深浅档解析。
-        settings::terminal::apply_cursor_color(window, s.terminal_cursor_color());
         window.set_output_highlight_enabled(s.output_highlight_enabled());
         window.set_output_highlight_preset(s.output_highlight_preset().into());
         window.set_output_highlight_rules(output_highlight_rule_model(&s));
@@ -212,6 +211,11 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     {
         let choice = store.borrow().accent().to_string();
         settings::appearance::apply_accent(window, &choice);
+        // 光标色"伪显式"值迁移（两类历史回填泄漏，见 migrate_cursor_follow 文档）——
+        // 必须在 apply_accent **之后**：要拿已解析的主题色生效色做比对。
+        settings::terminal::migrate_cursor_follow(store, window);
+        // 光标色在主题色**之后**应用：跟随主题时拿到的是壁纸对比色，不是出厂蓝。
+        settings::terminal::apply_cursor_color(window, store.borrow().terminal_cursor_color());
     }
 
     // Editable inputs (e.g. the SFTP path bar) need a CJK-capable font: the

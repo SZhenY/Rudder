@@ -54,9 +54,12 @@ component CapsuleRow inherits HorizontalLayout {
         height: 24px;
         border-radius: 12px;
         border-width: 1px;
-        border-color: on ? Theme.accent : Theme.line;
+        border-color: on ? Theme.accent : (pta.has-hover ? Theme.accent-ring : Theme.line);
         background: on ? Theme.accent.with-alpha(0.16)
-                       : (pta.has-hover ? Theme.sur-3 : transparent);
+                       : (pta.pressed ? Theme.accent-press
+                       : (pta.has-hover ? Theme.sur-3 : transparent));
+        animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+        animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
 
         cap := Text {
             text: o.label;
@@ -89,16 +92,28 @@ component Card inherits Rectangle {
     border-radius: Theme.radius-lg;
     border-width: 1px;
     border-color: Theme.line;
-    clip: true;
-    background: Theme.line;
+    // ⚠ 圆角必须由**卡片自己**画（background = 磨砂面，天然带圆角），行全部透明。
+    // 旧实现（透明卡 + 不透明行 + clip 圆角裁剪）依赖 femtovg 的圆角 clip —— 它只支持
+    // 矩形裁剪（combine_clip 里 debug_assert!(radius.is_zero())），圆角走离屏图层路径，
+    // 行的方形填充会盖掉圆角（用户截图：卡片变直角）。卡片自绘后无任何裁剪依赖。
+    background: Theme.sur-2;
 
     VerticalLayout {
         // ⚠ 普通(Rectangle)父级里的 Layout 必须显式铺满（本页挤左的根因，见文件头）。
         width: 100%;
         height: 100%;
-        spacing: 1px;
+        spacing: 0;
 
         @children
+    }
+
+    // 玻璃顶缘高光：顶部 3px 白@5% 渐隐，模拟玻璃厚度（clip 已开，圆角内裁剪）。
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 3px;
+        background: @linear-gradient(180deg, #ffffff0d 0%, #ffffff00 100%);
     }
 }
 
@@ -113,7 +128,7 @@ component Stepper inherits Rectangle {
 
     width: 112px;
     height: 26px;
-    border-radius: 6px;
+    border-radius: Theme.radius-btn;
     border-width: 1px;
     border-color: Theme.line;
     background: Theme.sur-2;
@@ -178,11 +193,14 @@ component CursorStyleButton inherits Rectangle {
 
     width: 74px;
     height: 30px;
-    border-radius: 6px;
+    border-radius: Theme.radius-btn;
     border-width: 1px;
-    border-color: root.selected ? Theme.accent : Theme.line;
+    border-color: root.selected ? Theme.accent : (cs-ta.has-hover ? Theme.accent-ring : Theme.line);
     background: root.selected ? Theme.accent-soft
-        : (cs-ta.has-hover ? Theme.rail-item-hover : Theme.sur-2);
+        : (cs-ta.pressed ? Theme.accent-press
+        : (cs-ta.has-hover ? Theme.rail-item-hover : Theme.sur-2));
+    animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+    animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
     cs-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -224,10 +242,12 @@ component UploadButton inherits Rectangle {
 
     width: 30px;
     height: 30px;
-    border-radius: 6px;
+    border-radius: Theme.radius-btn;
     border-width: 1px;
-    border-color: Theme.line;
-    background: ub-ta.has-hover ? Theme.accent-soft : Theme.sur-2;
+    border-color: ub-ta.has-hover ? Theme.accent-ring : Theme.line;
+    background: ub-ta.pressed ? Theme.accent-press : (ub-ta.has-hover ? Theme.accent-soft : Theme.sur-2);
+    animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+    animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
     ub-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -253,32 +273,72 @@ component ResetButton inherits Rectangle {
     in property <string> label-armed: "确认还原？";
     callback reset(string);
 
+    in property <string> cancel-label: "取消";
     property <bool> armed: false;
 
     height: 26px;
-    width: rb-text.preferred-width + 20px;
-    border-radius: 6px;
-    border-width: 1px;
-    border-color: root.armed ? Theme.danger : Theme.line;
-    background: root.armed ? Theme.danger : Theme.sur-2;
+    width: main-seg.width + (root.armed ? 62px : 0px); // 取消段固定宽（if 内 id 不可外引）
 
-    rb-text := Text {
-        width: 100%;
-        height: 100%;
-        text: root.armed ? root.label-armed : root.label;
-        font-size: 11px;
-        color: root.armed ? white : Theme.fg-2;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-    rb-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => {
-            if (root.armed) {
-                root.armed = false;
-                root.reset(root.page);
-            } else {
-                root.armed = true;
+    HorizontalLayout {
+        spacing: 6px;
+
+        // 主段：未上膛 = 「还原本页默认」（hover 主题色环 / 按下 accent 底）；
+        // 上膛 = danger 红底「确认还原？」（保持醒目）。
+        main-seg := Rectangle {
+            width: main-text.preferred-width + 20px;
+            border-radius: Theme.radius-btn;
+            border-width: 1px;
+            border-color: root.armed ? Theme.danger : (mta.has-hover ? Theme.accent-ring : Theme.line);
+            background: root.armed ? Theme.danger
+                : (mta.pressed ? Theme.accent-press
+                : (mta.has-hover ? Theme.sur-3 : Theme.sur-2));
+            animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+            animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+
+            main-text := Text {
+                width: 100%;
+                height: 100%;
+                text: root.armed ? root.label-armed : root.label;
+                font-size: 11px;
+                color: root.armed ? white : Theme.fg-2;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            mta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if (root.armed) {
+                        root.armed = false;
+                        root.reset(root.page);
+                    } else {
+                        root.armed = true;
+                    }
+                }
+            }
+        }
+
+        // 取消段：上膛时出现，点击解除上膛（两段式确认可反悔）。
+        if root.armed : Rectangle {
+            width: 56px;
+            border-radius: Theme.radius-btn;
+            border-width: 1px;
+            border-color: cta.has-hover ? Theme.accent-ring : Theme.line;
+            background: cta.pressed ? Theme.accent-press : (cta.has-hover ? Theme.sur-3 : Theme.sur-2);
+            animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+            animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+
+            cancel-text := Text {
+                width: 100%;
+                height: 100%;
+                text: root.cancel-label;
+                font-size: 11px;
+                color: Theme.fg-2;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            cta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.armed = false; }
             }
         }
     }
@@ -345,7 +405,8 @@ component AccentPicker inherits Rectangle {
             border-radius: 12px;
             border-width: root.choice == p.id ? 2px : 1px;
             border-color: root.choice == p.id ? Theme.accent : Theme.line;
-            background: p.color;
+            // 第一块（id=""）=「跟随壁纸」：显示当前生效色（壁纸对比色），而不是出厂蓝。
+            background: p.id == "" ? root.preview-color : p.color;
             swatch-ta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => { root.pick-preset(p.id); }
@@ -363,7 +424,7 @@ component AccentPicker inherits Rectangle {
         Rectangle {
             width: 84px;
             height: 26px;
-            border-radius: 6px;
+            border-radius: Theme.radius-btn;
             border-width: 1px;
             border-color: Theme.line;
             background: Theme.sur-2;
@@ -415,7 +476,7 @@ component AccentPicker inherits Rectangle {
                 sv-square := Rectangle {
                     height: 140px;
                     width: 100%;
-                    border-radius: 6px;
+                    border-radius: Theme.radius-btn;
                     clip: true;
                     background: @linear-gradient(90deg, #ffffff 0%, hsv(root.hue, 1.0, 1.0) 100%);
                     Rectangle {
@@ -442,7 +503,7 @@ component AccentPicker inherits Rectangle {
                         y: (1.0 - root.val) * (parent.height - self.height);
                         width: 14px;
                         height: 14px;
-                        border-radius: 7px;
+                        border-radius: Theme.radius-btn;
                         border-width: 2px;
                         border-color: #ffffff;
                         background: transparent;
@@ -461,7 +522,7 @@ component AccentPicker inherits Rectangle {
                             y: 11px;
                             height: 12px;
                             width: 100%;
-                            border-radius: 6px;
+                            border-radius: Theme.radius-btn;
                             background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%);
                         }
                         hue-ta := TouchArea {
@@ -522,7 +583,7 @@ component AccentPicker inherits Rectangle {
                 }
                 Rectangle {
                     height: 28px;
-                    border-radius: 6px;
+                    border-radius: Theme.radius-btn;
                     background: Theme.accent;
                     Text {
                         text: root.lang-en ? "Done" : "完成";
@@ -543,7 +604,7 @@ component AccentPicker inherits Rectangle {
 
 
 component OptionRow inherits Rectangle {
-    background: Theme.sur-2;
+    // 行透明：磨砂底由 Card 统一绘制（原生圆角），行不再自带填充。
     in property <string> label;
     in property <string> desc: "";
 
@@ -586,7 +647,7 @@ component OptionRow inherits Rectangle {
 }
 
 component ToggleRow inherits Rectangle {
-    background: Theme.sur-2;
+    // 行透明：磨砂底由 Card 统一绘制（原生圆角），行不再自带填充。
     in property <string> label;
     in property <string> desc: "";
     in property <bool> on: false;
@@ -639,7 +700,7 @@ component SelectBox inherits Rectangle {
     callback clicked();
 
     height: 30px;
-    border-radius: 7px;
+    border-radius: Theme.radius-btn;
     border-width: 1px;
     border-color: Theme.line;
     background: Theme.sur-2;
@@ -674,7 +735,7 @@ component SelectBox inherits Rectangle {
 
 // 大输入项区块：标题 + 说明 + 控件在下方（字体/滚回 的样式）
 component FieldBlock inherits Rectangle {
-    background: Theme.sur-2;
+    // 行透明：磨砂底由 Card 统一绘制（原生圆角），行不再自带填充。
     in property <string> title;
     in property <string> desc: "";
     height: block.preferred-height;
@@ -712,8 +773,15 @@ component CategoryItem inherits Rectangle {
 
     height: 46px;
     border-radius: Theme.radius-md;
+    // 交互态三件套（与 RailButton 同语言）：hover = 主题色细环 @40%；按下 = @12% 底；
+    // 选中 = rail-item-active 药丸（左侧另有滑动指示条，见 nav-col）。
+    border-width: 1px;
+    border-color: !root.active && ta.has-hover ? Theme.accent-ring : transparent;
     background: root.active ? Theme.rail-item-active
-        : (ta.has-hover ? Theme.rail-item-hover : transparent);
+        : (ta.pressed ? Theme.accent-press
+        : (ta.has-hover ? Theme.rail-item-hover : transparent));
+    animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+    animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
 
     HorizontalLayout {
         padding-left: Theme.sp-2;
@@ -755,7 +823,7 @@ component CategoryItem inherits Rectangle {
 }
 
 component KeyRow inherits Rectangle {
-    background: Theme.sur-2;
+    // 行透明：磨砂底由 Card 统一绘制（原生圆角），行不再自带填充。
     in property <string> keys;
     in property <string> desc;
     height: 26px;
@@ -908,6 +976,49 @@ export component PageSettings inherits Rectangle {
     pure function scrollback-ok(t: string) -> bool {
         return t.to-float() >= 100 && t.to-float() <= root.scrollback-max;
     }
+    // ── 滑杆 vs 滚动容器手势仲裁 ──────────────────────────────
+    // Slint 的 Flickable 会在按下后 500ms 内、纵向漂移 >8px 时抢走手势
+    // （DISTANCE_THRESHOLD=8 / DURATION_THRESHOLD=500ms，源码常量不可配）——
+    // 横向拖磨砂滑杆时手一抖整页就被拖走、滑杆中断。对策：拖动期间把页面
+    // 钉在 content-y 快照上（检测到抢夺立即拉回），松手/停顿 500ms 后放行。
+    property <bool> frost-dragging: false;
+    property <length> frost-pin-y: 0px;
+    property <int> frost-idle: 0;
+    // ── 接力拖动层：滑杆被 Flickable 抢走手势时接管，鼠标横向位移继续驱动数值 ──
+    property <bool> frost-overlay: false;
+    property <length> frost-travel: 600px; // 滑杆把手行程（width−把手宽），由滑杆自身回写
+    property <float> frost-drag-value: 70;
+    property <length> frost-overlay-last-x: 0px;
+    property <bool> frost-overlay-init: false;
+    property <int> frost-overlay-idle: 0;
+    overlay-timer := Timer {
+        interval: 300ms;
+        running: root.frost-overlay;
+        triggered => {
+            // 300ms 鼠标无位移 = 已松手 → 结束接力并落盘
+            root.frost-overlay-idle += 1;
+            if (root.frost-overlay-idle >= 1) {
+                root.frost-overlay = false;
+                root.frost-overlay-init = false;
+                root.frost-overlay-idle = 0;
+                root.frost-dragging = false;
+                root.persist-frost-alpha(1.0 - root.frost-drag-value / 100);
+            }
+        }
+    }
+    watchdog := Timer {
+        interval: 250ms;
+        running: root.frost-dragging;
+        triggered => {
+            root.frost-idle += 1;
+            // 500ms 内滑杆值没有再变化 = 拖动已结束（正常松手或被抢断）→ 放行滚动
+            if (root.frost-idle >= 2) {
+                root.frost-dragging = false;
+                root.frost-idle = 0;
+            }
+        }
+    }
+
     // 0 基础 · 1 终端 · 2 文件 · 3 布局 · 4 快捷键
     property <int> current-cat: 0;
     // 导航搜索：Rust 按关键词过滤分类（contains 无法在 Slint 里表达）
@@ -936,7 +1047,7 @@ export component PageSettings inherits Rectangle {
             width: 200px;
             background: Theme.sur-1;
 
-            VerticalLayout {
+            nav-list := VerticalLayout {
                 padding-top: 16px + root.top-inset;
                 padding-bottom: 16px;
                 padding-left: 12px;
@@ -975,7 +1086,7 @@ export component PageSettings inherits Rectangle {
                     height: 10px;
                 }
 
-                CategoryItem {
+                it0 := CategoryItem {
                     visible: root.cat-visible-0;
                     glyph: "\u{E8B8}";
                     label: root.lang-en ? "General" : "基础";
@@ -985,7 +1096,7 @@ export component PageSettings inherits Rectangle {
                         root.current-cat = 0;
                     }
                 }
-                CategoryItem {
+                it1 := CategoryItem {
                     visible: root.cat-visible-1;
                     glyph: "\u{EB8E}";
                     label: root.lang-en ? "Terminal" : "终端";
@@ -995,7 +1106,7 @@ export component PageSettings inherits Rectangle {
                         root.current-cat = 1;
                     }
                 }
-                CategoryItem {
+                it2 := CategoryItem {
                     visible: root.cat-visible-2;
                     glyph: "\u{E2C7}";
                     label: root.lang-en ? "Files" : "文件";
@@ -1005,7 +1116,7 @@ export component PageSettings inherits Rectangle {
                         root.current-cat = 2;
                     }
                 }
-                CategoryItem {
+                it3 := CategoryItem {
                     visible: root.cat-visible-4;
                     glyph: "\u{E312}";
                     label: root.lang-en ? "Shortcuts" : "快捷键";
@@ -1015,7 +1126,7 @@ export component PageSettings inherits Rectangle {
                         root.current-cat = 4;
                     }
                 }
-                CategoryItem {
+                it4 := CategoryItem {
                     visible: root.cat-visible-6;
                     glyph: "\u{E2EB}"; // cloud
                     label: root.lang-en ? "Cloud Sync" : "云同步";
@@ -1025,7 +1136,7 @@ export component PageSettings inherits Rectangle {
                         root.current-cat = 6;
                     }
                 }
-                CategoryItem {
+                it5 := CategoryItem {
                     visible: root.cat-visible-5;
                     glyph: "\u{E88E}";
                     label: root.lang-en ? "About" : "关于";
@@ -1035,6 +1146,28 @@ export component PageSettings inherits Rectangle {
                         root.current-cat = 5;
                     }
                 }
+            }
+            // 选中指示条：单个 3px accent 竖条，切换分类时 150ms 滑到选中行
+            // （行高一致 46px；y = 列表布局 y + 选中行 y；搜索过滤隐藏选中行时一并隐藏）。
+            Rectangle {
+                width: 3px;
+                height: it0.height;
+                border-radius: 1.5px;
+                background: Theme.accent;
+                x: 0;
+                y: nav-list.y + (root.current-cat == 0 ? it0.y
+                    : root.current-cat == 1 ? it1.y
+                    : root.current-cat == 2 ? it2.y
+                    : root.current-cat == 4 ? it3.y
+                    : root.current-cat == 6 ? it4.y
+                    : it5.y);
+                visible: root.current-cat == 0 ? root.cat-visible-0
+                    : root.current-cat == 1 ? root.cat-visible-1
+                    : root.current-cat == 2 ? root.cat-visible-2
+                    : root.current-cat == 4 ? root.cat-visible-4
+                    : root.current-cat == 6 ? root.cat-visible-6
+                    : root.cat-visible-5;
+                animate y { duration: AnimationSettings.enabled ? 150ms : 0ms; easing: ease-out; }
             }
         }
 
@@ -1092,6 +1225,18 @@ HorizontalLayout {
 
                 flick := Flickable {
                     vertical-stretch: 1;
+                    // 拖滑杆期间页面被抢 → 钉回拖动开始的位置（页面不再被整页拖走），
+                    // 并弹出接力层接管拖动（接力层在 Flickable 之外，不会再被抢）。
+                    changed content-y => {
+                        if (root.frost-dragging || root.frost-overlay) {
+                            flick.content-y = root.frost-pin-y;
+                        }
+                        if (root.frost-dragging && !root.frost-overlay) {
+                            root.frost-drag-value = (1.0 - Theme.panel-alpha) * 100;
+                            root.frost-overlay-init = false;
+                            root.frost-overlay = true;
+                        }
+                    }
                     // 同 content-rect：百分比是不会自指的写法（`parent.width` 会与本列互相依赖），
                     // 量出来的结果是从 405 变成整宽 —— 上面那处注释有完整的实测数据。
                     width: 100%;
@@ -1120,7 +1265,7 @@ HorizontalLayout {
                                         Rectangle {
                                             width: 52px;
                                             height: 26px;
-                                            border-radius: 6px;
+                                            border-radius: Theme.radius-btn;
                                             background: !root.lang-en ? Theme.accent : Theme.sur-2;
 
                                             HorizontalLayout {
@@ -1141,7 +1286,7 @@ HorizontalLayout {
                                         Rectangle {
                                             width: 64px;
                                             height: 26px;
-                                            border-radius: 6px;
+                                            border-radius: Theme.radius-btn;
                                             background: root.lang-en ? Theme.accent : Theme.sur-2;
 
                                             HorizontalLayout {
@@ -1167,8 +1312,8 @@ HorizontalLayout {
                                 OptionRow {
                                 label: root.lang-en ? "Accent colour" : "主题色";
                                 desc: root.lang-en
-                                    ? "Buttons, tabs, selections and highlights follow this colour."
-                                    : "按钮、标签页、选中态与高亮都跟随这个颜色。";
+                                    ? "Buttons, tabs, selections and highlights follow this colour. Switching wallpaper returns it to \"follow wallpaper\"."
+                                    : "按钮、标签页、选中态与高亮都跟随这个颜色。切换壁纸会回到「跟随壁纸」。";
 
 AccentPicker {
                                     lang-en: root.lang-en;
@@ -1255,14 +1400,19 @@ AccentPicker {
                                         spacing: 8px;
 
                                         // 官方 Slider 铺满内容列（拖动实时预览，松手落盘）
-                                        Slider {
+                                        frost-slider := Slider {
                                             minimum: 0;
                                             maximum: 70;
+                                            changed width => { root.frost-travel = self.width - 20px; }
                                             value: (1.0 - Theme.panel-alpha) * 100;
                                             changed(v) => {
+                                                root.frost-idle = 0;
+                                                root.frost-pin-y = flick.content-y;
+                                                root.frost-dragging = true;
                                                 Theme.panel-alpha = 1.0 - v / 100;
                                             }
                                             released(v) => {
+                                                root.frost-dragging = false;
                                                 root.persist-frost-alpha(1.0 - v / 100);
                                             }
                                         }
@@ -1478,7 +1628,7 @@ Stepper {
                                         for fl[i] in root.update-freq-labels : Rectangle {
                                             width: ftext.preferred-width + 20px;
                                             height: 26px;
-                                            border-radius: 6px;
+                                            border-radius: Theme.radius-btn;
                                             border-width: 1px;
                                             border-color: root.update-freq-index == i ? Theme.accent : Theme.line;
                                             background: root.update-freq-index == i ? Theme.rail-item-active : Theme.sur-2;
@@ -1509,7 +1659,7 @@ Stepper {
                                     Rectangle {
                                         width: 80px;
                                         height: 28px;
-                                        border-radius: 6px;
+                                        border-radius: Theme.radius-btn;
                                         background: upd-ck-ta.has-hover ? Theme.rail-item-hover : Theme.sur-2;
                                         border-width: 1px;
                                         border-color: Theme.line;
@@ -1646,7 +1796,7 @@ Rectangle {
 Rectangle {
     height: 52px;
     background: Theme.term-bg;
-    border-radius: 6px;
+    border-radius: Theme.radius-btn;
     border-width: 1px;
     border-color: Theme.line;
     Text {
@@ -1813,7 +1963,7 @@ Rectangle {
 Rectangle {
     height: root.output-highlight-preset == "builtin" ? 116px : 92px;
     background: Theme.term-bg;
-    border-radius: 6px;
+    border-radius: Theme.radius-btn;
     border-width: 1px;
     border-color: Theme.line;
     VerticalLayout {
@@ -1908,7 +2058,7 @@ Rectangle {
                                         min-width: 76px;
                                         max-width: 120px;
                                         height: 28px;
-                                        border-radius: 7px;
+                                        border-radius: Theme.radius-btn;
                                         background: root.new-rule-pattern == "" ? Theme.sur-3 : Theme.accent;
                                         horizontal-stretch: 1;
 
@@ -2259,8 +2409,17 @@ Rectangle {
                                         Rectangle {
                                             width: 88px;
                                             height: 28px;
-                                            border-radius: 7px;
+                                            border-radius: Theme.radius-btn;
                                             background: Theme.accent;
+
+                                            // hover 提亮 / 按下压暗（覆盖层，兼容渐变刷）
+                                            Rectangle {
+                                                width: 100%;
+                                                height: 100%;
+                                                background: sv-ta.pressed ? #000000 : #ffffff;
+                                                opacity: sv-ta.pressed ? 0.14 : (sv-ta.has-hover ? 0.10 : 0);
+                                                animate opacity { duration: AnimationSettings.enabled ? 80ms : 0ms; }
+                                            }
 
                                             HorizontalLayout {
                                                 alignment: center;
@@ -2271,7 +2430,7 @@ Rectangle {
                                                     vertical-alignment: center;
                                                 }
                                             }
-                                            TouchArea {
+                                            sv-ta := TouchArea {
                                                 clicked => {
                                                     root.save-webdav(root.webdav-enabled, root.webdav-url,
                                                         root.webdav-username, root.webdav-password,
@@ -2282,10 +2441,12 @@ Rectangle {
                                         Rectangle {
                                             width: 74px;
                                             height: 28px;
-                                            border-radius: 7px;
+                                            border-radius: Theme.radius-btn;
                                             border-width: 1px;
-                                            border-color: Theme.line;
-                                            background: up-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+                                            border-color: up-ta.has-hover ? Theme.accent-ring : Theme.line;
+                                            background: up-ta.pressed ? Theme.accent-press : (up-ta.has-hover ? Theme.sur-3 : Theme.sur-2);
+                                            animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+                                            animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
 
                                             HorizontalLayout {
                                                 alignment: center;
@@ -2305,10 +2466,12 @@ Rectangle {
                                         Rectangle {
                                             width: 74px;
                                             height: 28px;
-                                            border-radius: 7px;
+                                            border-radius: Theme.radius-btn;
                                             border-width: 1px;
-                                            border-color: Theme.line;
-                                            background: dl-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+                                            border-color: dl-ta.has-hover ? Theme.accent-ring : Theme.line;
+                                            background: dl-ta.pressed ? Theme.accent-press : (dl-ta.has-hover ? Theme.sur-3 : Theme.sur-2);
+                                            animate background { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
+                                            animate border-color { duration: AnimationSettings.enabled ? 80ms : 0ms; easing: AnimationSettings.color(); }
 
                                             HorizontalLayout {
                                                 alignment: center;
@@ -2339,7 +2502,7 @@ Rectangle {
                                 border-radius: 10px;
                                 border-width: 1px;
                                 border-color: Theme.line;
-                                background: Theme.sur-1;
+                                background: Theme.sur-2;
 
                                 HorizontalLayout {
                                     padding: 16px;
@@ -2398,7 +2561,7 @@ Rectangle {
                                 border-radius: 10px;
                                 border-width: 1px;
                                 border-color: Theme.line;
-                                background: Theme.sur-1;
+                                background: Theme.sur-2;
 
                                 HorizontalLayout {
                                     padding: 16px;
@@ -2426,7 +2589,7 @@ Rectangle {
                                     Rectangle {
                                         width: 110px;
                                         height: 28px;
-                                        border-radius: 7px;
+                                        border-radius: Theme.radius-btn;
                                         border-width: 1px;
                                         border-color: Theme.line;
                                         background: log-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
@@ -2453,7 +2616,7 @@ Rectangle {
                                 border-radius: 10px;
                                 border-width: 1px;
                                 border-color: Theme.line;
-                                background: Theme.sur-1;
+                                background: Theme.sur-2;
 
                                 VerticalLayout {
                                     padding: 16px;
@@ -2491,5 +2654,30 @@ Rectangle {
                 }
             }
         }
+    }
+
+    // ── 接力拖动层：滑杆手势被 Flickable 抢走时出现，全页跟踪鼠标继续调值 ──
+    // 位于 Flickable 之外（不受其手势仲裁），鼠标停 300ms 视为松手，自动落盘隐藏。
+    if root.frost-overlay : TouchArea {
+        width: 100%;
+        height: 100%;
+        mouse-cursor: ew-resize;
+
+        changed mouse-x => {
+            root.frost-overlay-idle = 0;
+            if (root.frost-overlay-init) {
+                // 横向位移 → 数值：滑杆全行程映射（把手宽 ~20px 扣除）
+                root.frost-drag-value = clamp(
+                    root.frost-drag-value
+                        + (self.mouse-x - root.frost-overlay-last-x)
+                          / root.frost-travel * 70,
+                    0, 70);
+                Theme.panel-alpha = 1.0 - root.frost-drag-value / 100;
+            } else {
+                root.frost-overlay-init = true;
+            }
+            root.frost-overlay-last-x = self.mouse-x;
+        }
+        changed mouse-y => { root.frost-overlay-idle = 0; }
     }
 }

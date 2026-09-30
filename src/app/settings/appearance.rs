@@ -160,6 +160,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             };
             // 内置深色 / 浅色项：档位已由这一项定下（false = 别让图片再改一次）；
             // 上传的图片：交给图片自己的主导色明暗判档（true）。
+            let wallpaper_changed = store.borrow().wallpaper() != wallpaper_id;
             apply_wallpaper(&w, &store.borrow(), &bufs_wp, &wallpaper_id, theme.is_empty());
             persist(&store, |s| {
                 if let Some(d) = chosen_dark {
@@ -167,6 +168,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 }
                 s.set_wallpaper(wallpaper_id.clone());
             });
+            // 换了壁纸 → 主题色/光标色回跟随态（下面的重解析直接吃到新壁纸对比色）。
+            if wallpaper_changed {
+                reset_follow_on_wallpaper_change(&store);
+            }
             // 深浅档可能刚变 → 主题色与光标色都要按新档位重新解析（两档下本来就是不同的值），
             // 下拉也要回到配置里那一项。
             let choice = store.borrow().accent().to_string();
@@ -206,6 +211,11 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 persist(&store, |s| {
                     s.set_wallpaper(id.clone());
                 });
+                // 换壁纸 = 换主题源：主题色/光标色回跟随，并按**新壁纸**重解析。
+                // 此前上传路径漏了这两步 —— 上传后主题色/光标纹丝不动。
+                reset_follow_on_wallpaper_change(&store);
+                apply_accent(&w, store.borrow().accent());
+                super::terminal::apply_cursor_color(&w, store.borrow().terminal_cursor_color());
                 // 刚落盘的文件要立刻出现在下拉里并被选中。
                 publish_wallpaper_choices(&w, &store);
                 if let Some(p) = proc_weak.upgrade() {
@@ -585,6 +595,18 @@ fn accent_display_name(choice: &str) -> SharedString {
 /// 把配置里的主题色套到界面上。
 ///
 /// ⚠️ 换深浅档后**必须再调一次**：预设的两档本来就是两个颜色，自定义色在浅色档还要压深。
+/// 换壁纸 = 换主题源：主题色与光标色回到**跟随**态（前者吃新壁纸的分裂互补色，
+/// 后者吃主题色）。用户手选的预设/自定义色在**下一次换壁纸**时让位 —— 想固定
+/// 某个颜色，换完壁纸再点一次即可。这是「壁纸即主题源」的完整语义：跟随态随
+/// 壁纸联动；显式态只在同一张壁纸上生效（否则用户换壁纸时主题/光标纹丝不动，
+/// 连续四轮反馈的期望都是"换壁纸就该跟着变"）。
+fn reset_follow_on_wallpaper_change(store: &Store) {
+    persist(store, |s| {
+        s.set_accent(String::new());
+        s.set_terminal_cursor_color("");
+    });
+}
+
 pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
     let dark = w.global::<Theme>().get_dark();
     let theme = w.global::<Theme>();

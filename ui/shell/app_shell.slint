@@ -898,12 +898,27 @@ export component AppWindow inherits Window {
 
     // Immersive wallpaper layer — painted behind everything, filling the window.
     // Panels/terminal frost over it (see Theme.frost). Only present when active.
-    if Theme.wallpaper-active : Image {
+    if Theme.wallpaper-active : Rectangle {
         x: 0; y: 0;
         width: parent.width;
         height: parent.height;
-        source: Theme.wallpaper;
-        image-fit: cover;
+        // 新壁纸直接就位；
+        Image {
+            width: 100%;
+            height: 100%;
+            source: Theme.wallpaper;
+            image-fit: cover;
+        }
+        // 旧壁纸盖在上面 150ms 渐隐（Rust 侧在换图时置 fading + fade-opacity=1，
+        // 下一帧降 0 触发动画）——切换瞬间不再生硬跳变。
+        if Theme.wallpaper-fading : Image {
+            width: 100%;
+            height: 100%;
+            source: Theme.wallpaper-prev;
+            image-fit: cover;
+            opacity: Theme.wallpaper-fade-opacity;
+            animate opacity { duration: AnimationSettings.enabled ? 150ms : 0ms; }
+        }
     }
 
     // 旧外壳（旧侧栏 / 旧资源面板 / 旧欢迎侧栏 / 旧 dock 几何）已在第③步整体删除：

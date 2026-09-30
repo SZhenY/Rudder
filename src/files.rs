@@ -31,6 +31,24 @@ pub(crate) fn scan_files(dir: &Path, exts: &[&str]) -> Vec<PathBuf> {
 /// 复制而不是记住原路径：原文件挪走 / 删掉之后字体与壁纸不会失效，重装也还在。
 pub(crate) fn import_file(src: &Path, dest_dir: &Path) -> Option<PathBuf> {
     std::fs::create_dir_all(dest_dir).ok()?;
+    // **内容相同** = 重复上传同一张图 / 同一款字体：直接复用已落盘的那份，
+    // 不再生成 `<名字> 2` 副本 —— 否则壁纸/字体下拉里同一项重复显示
+    // （用户"只上传了三张壁纸"却出现七个条目就是这么来的）。
+    let src_len = std::fs::metadata(src).ok()?.len();
+    if let (true, Ok(entries)) = (src_len > 0, std::fs::read_dir(dest_dir)) {
+        for entry in entries.flatten() {
+            let candidate = entry.path();
+            if !candidate.is_file() {
+                continue;
+            }
+            if std::fs::metadata(&candidate).map(|m| m.len()).unwrap_or(0) != src_len {
+                continue;
+            }
+            if same_content(src, &candidate) {
+                return Some(candidate);
+            }
+        }
+    }
     let file_name = src.file_name()?.to_string_lossy().into_owned();
     let (stem, ext) = match file_name.rsplit_once('.') {
         Some((stem, ext)) => (stem.to_string(), format!(".{ext}")),
@@ -44,6 +62,30 @@ pub(crate) fn import_file(src: &Path, dest_dir: &Path) -> Option<PathBuf> {
     }
     std::fs::copy(src, &dst).ok()?;
     Some(dst)
+}
+
+/// 两个文件内容是否逐字节一致（分块读，不整读进内存）。
+fn same_content(a: &Path, b: &Path) -> bool {
+    use std::io::Read;
+    let (mut fa, mut fb) = match (std::fs::File::open(a), std::fs::File::open(b)) {
+        (Ok(x), Ok(y)) => (x, y),
+        _ => return false,
+    };
+    let mut buf_a = [0u8; 8192];
+    let mut buf_b = [0u8; 8192];
+    loop {
+        let na = fa.read(&mut buf_a).unwrap_or(0);
+        let nb = fb.read(&mut buf_b).unwrap_or(0);
+        if na != nb {
+            return false;
+        }
+        if na == 0 {
+            return true;
+        }
+        if buf_a[..na] != buf_b[..nb] {
+            return false;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -85,14 +127,19 @@ mod tests {
 
         let first = import_file(&src, &dst_dir).expect("第一次导入");
         assert_eq!(first.file_name().unwrap(), "logo.png");
+        // 同一内容再导入：**复用**已落盘的那份（不再生成编号副本 —— 副本会让
+        // 壁纸/字体下拉重复显示同一项）。
         let second = import_file(&src, &dst_dir).expect("第二次导入");
-        assert_eq!(second.file_name().unwrap(), "logo 2.png");
+        assert_eq!(second, first);
+        // 内容**不同**但同名：不覆盖，走 `<名字> 2` 后缀。
+        std::fs::write(&src, b"two").unwrap();
         let third = import_file(&src, &dst_dir).expect("第三次导入");
-        assert_eq!(third.file_name().unwrap(), "logo 3.png");
+        assert_eq!(third.file_name().unwrap(), "logo 2.png");
+        assert_eq!(std::fs::read(&third).unwrap(), b"two");
+        assert_eq!(std::fs::read(&first).unwrap(), b"one");
 
-        // 原文件仍在原处 ✓，副本内容与源一致 ✓
+        // 原文件仍在原处 ✓（first 仍是 one、third 是 two 已在上面断言）
         assert!(src.exists());
-        assert_eq!(std::fs::read(&third).unwrap(), b"one");
 
         // 没有扩展名的文件也能导入（不会多出一个点）
         let bare = src_dir.join("LICENSE");
