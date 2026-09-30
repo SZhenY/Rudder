@@ -294,18 +294,6 @@ pub(crate) fn refresh_terminal_selection(win: &AppWindow, bufs: &TermBuffers, ta
     win.window().request_redraw();
 }
 
-pub(super) fn theme_pref_is_dark(store: &ConfigStore) -> bool {
-    match store.theme_pref() {
-        "light" => false,
-        "dark" => true,
-        _ => match dark_light::detect() {
-            dark_light::Mode::Light => false,
-            dark_light::Mode::Dark => true,
-            dark_light::Mode::Default => true, // undetectable → dark
-        },
-    }
-}
-
 /// Apply `apply` to every open terminal buffer, then rebuild each tab.
 ///
 /// The three `apply_*` settings tweaks below are identical apart from the field
@@ -402,7 +390,7 @@ pub(super) fn apply_wallpaper(
             window.global::<Theme>().set_wallpaper_active(false);
             window.set_current_wallpaper("".into());
             window.set_custom_wallpaper_name("".into());
-            apply_dark_mode(window, bufs, theme_pref_is_dark(store));
+            apply_dark_mode(window, bufs, store.dark());
         }
     }
 }

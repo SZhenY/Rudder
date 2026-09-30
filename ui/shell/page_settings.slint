@@ -1292,8 +1292,8 @@ AccentPicker {
                                 FieldBlock {
                                     title: root.lang-en ? "Frosted-glass opacity" : "面板 / 终端磨砂透明度";
                                     desc: root.lang-en
-                                        ? "How much the wallpaper shows through the panels and the terminal (0–70%)."
-                                        : "壁纸透过面板 / 终端背景的程度（0–70%,越往右越透;没设壁纸时不生效）";
+                                        ? "Frost strength for panels, the sidebar, the status bar and the terminal: 0% is fully opaque, the larger the number the more the wallpaper shows through."
+                                        : "面板 / 侧栏 / 状态栏 / 终端的磨砂程度：0% 为完全不透明，数值越大越透（同一套实现，一处改动四处生效）";
 
                                     HorizontalLayout {
                                         spacing: 8px;
@@ -1319,7 +1319,6 @@ AccentPicker {
                                         }
                                     }
                                 }
-                                // ── 外观模式（v0.8.0 设置窗迁移）────────────────────────────────
                             }
                                 // ── 渲染器（v0.8.0 设置窗迁移；重启生效）────────────────────────
                             SectionTitle { text: root.lang-en ? "Font & scale" : "字体与缩放"; }

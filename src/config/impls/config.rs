@@ -1530,23 +1530,16 @@ impl ConfigStore {
         self.cache.appearance.language = lang;
     }
 
-    /// Theme preference: "system" (default) | "dark" | "light".
+    /// 深浅档：true = 深色。
     ///
-    /// 未知取值（含老配置里的空串与大小写变体）一律按 "system"。
-    pub fn theme_pref(&self) -> &str {
-        match self.cache.appearance.theme_pref.as_str() {
-            "dark" | "light" => &self.cache.appearance.theme_pref,
-            _ => "system",
-        }
+    /// "跟随系统"已删除 —— 档位只由壁纸决定（内置深色 / 浅色图，或按上传图片自身的
+    /// 明暗判定）；这里只负责回显与落盘最终值。
+    pub fn dark(&self) -> bool {
+        self.cache.appearance.dark
     }
 
-    /// 只接受三个取值，其余（含大小写变体）落到 "system" —— 免得界面下拉框回落到一个
-    /// 既不是"跟随系统"也认不出来的空档。
-    pub fn set_theme_pref(&mut self, pref: String) {
-        self.cache.appearance.theme_pref = match pref.as_str() {
-            "dark" | "light" => pref,
-            _ => "system".to_string(),
-        };
+    pub fn set_dark(&mut self, dark: bool) {
+        self.cache.appearance.dark = dark;
     }
 
     /// 主题色："" = 出厂默认 / 预设 id / "#RRGGBB"。

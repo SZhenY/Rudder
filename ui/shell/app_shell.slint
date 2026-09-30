@@ -447,15 +447,12 @@ export component AppWindow inherits Window {
     // 配色：主题（深浅）+ 主题色。
     // `accent-presets` 由 Rust 提供（含**当前深浅档已解析好的**颜色，Slint 不存第二份
     // 色表）；`accent-choice` 是配置原值："" = 出厂默认 / 预设 id / "#RRGGBB"。
-    in property <string> accent-mode: "system";
     in property <string> accent-choice: "";
     in property <[AccentPreset]> accent-presets;
     in-out property <string> accent-hex: "";
     in property <string> accent-name: "";          // 当前配色的显示名（默认蓝 / 预设 / hex）
     callback set-accent(string) -> bool;           // 预设 id / "#RRGGBB" / ""；非法返回 false
     callback set-accent-rgb(int, int, int) -> bool;// 调色盘提交（Slint 无 hex 格式化）
-    callback set-appearance-mode(string);          // system / dark / light
-    in-out property <string> appearance-mode: "system";   // 当前模式（设置页回显）
     // SFTP follows the terminal's cd; opt out in Interface settings.
     in-out property <bool> sftp-follow-cd: true;
     callback set-sftp-follow-cd(bool);             // apply + persist

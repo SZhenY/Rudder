@@ -131,7 +131,6 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_accent_hex(m.get_accent_hex());
     sw.set_accent_name(m.get_accent_name());
     sw.set_accent_presets(m.get_accent_presets());
-    sw.set_accent_mode(m.get_accent_mode());
     // 字体 / 壁纸 / 渲染器（其余可能被 Rust 侧规范化或回落的值）
     sw.set_term_font_index(m.get_term_font_index());
     sw.set_ui_font_index(m.get_ui_font_index());
@@ -201,7 +200,6 @@ pub(super) fn close_if_open() {
 
 /// 开窗播种：把主窗口的当前值整份拷过来（57 项，全部由脚本生成核对过）。
 fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
-    sw.set_accent_mode(m.get_accent_mode());
     sw.set_accent_choice(m.get_accent_choice());
     sw.set_accent_presets(m.get_accent_presets());
     sw.set_accent_hex(m.get_accent_hex());
@@ -337,7 +335,6 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_ui_scale => invoke_set_ui_scale, (a0));
     forward!(sw, m, s, on_set_accent -> invoke_set_accent, (a0));
     forward!(sw, m, s, on_set_accent_rgb -> invoke_set_accent_rgb, (a0, a1, a2));
-    forward!(sw, m, s, on_set_appearance_mode => invoke_set_appearance_mode, (a0));
     forward!(sw, m, s, on_set_update_check_enabled => invoke_set_update_check_enabled, (a0));
     forward!(sw, m, s, on_set_update_channel => invoke_set_update_channel, (a0));
     forward!(sw, m, s, on_set_update_freq => invoke_set_update_freq, (a0));

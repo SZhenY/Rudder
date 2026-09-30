@@ -38,7 +38,6 @@ export component AppearancePage inherits VerticalLayout {
     // 配色：主题（深浅）+ 主题色。
     // `accent-presets` 由 Rust 提供（含"当前深浅档下已解析好的颜色"），Slint 侧不存
     // 第二份色表；`accent-choice` 是配置里的原值："" = 出厂默认 / 预设 id / "#RRGGBB"。
-    in property <string> accent-mode;
     in property <string> accent-choice;
     in property <[AccentPreset]> accent-presets;
     // 当前配色的显示名（默认蓝 / 预设名 / 自定义 hex），由 Rust 提供 —— 色表在 Rust 里，
@@ -59,7 +58,6 @@ export component AppearancePage inherits VerticalLayout {
     callback reset-page(string);
     callback set-accent(string) -> bool;
     callback set-accent-rgb(int, int, int) -> bool;
-    callback set-appearance-mode(string);
     callback set-animations-enabled(bool);
     callback set-hide-special-partitions(bool);
     callback set-mount-filter(string);

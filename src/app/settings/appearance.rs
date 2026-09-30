@@ -13,7 +13,7 @@ use crate::app::FontEntry;
 use crate::app::fonts_ui::{auto_font_label, family_from_label, font_choices, resolve_ui_font_family};
 use crate::app::resource_ui::sync_proc_theme;
 use crate::app::terminal_ui::{
-    apply_dark_mode, hex_from_rgb, parse_hex_color, theme_pref_is_dark,
+    apply_dark_mode, hex_from_rgb, parse_hex_color,
 };
 use crate::i18n::t;
 use crate::terminal::TermBuffers;
@@ -144,15 +144,17 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             // 下拉里的一项 = 主题（跟随系统 / 深色 / 浅色）或一张上传的图片。
             let (theme, file) = wallpaper_choice_of_label(label.as_str());
             let Some(w) = weak.upgrade() else { return };
-            // 用哪张背景图：主题项配它自己的内置图（跟随系统就按系统外观取），上传项就是文件。
+            // 用哪张背景图：主题项配它自己的内置图（深色 / 浅色两档），上传项就是文件。
+            let mut chosen_dark: Option<bool> = None;
             let wallpaper_id = if theme.is_empty() {
                 file
             } else {
                 let dark = match theme.as_str() {
                     "dark" => true,
                     "light" => false,
-                    _ => theme_pref_is_dark(&store.borrow()),
+                    _ => store.borrow().dark(),
                 };
+                chosen_dark = Some(dark);
                 apply_dark_mode(&w, &bufs_wp, dark);
                 builtin_wallpaper_for(&theme, dark).to_string()
             };
@@ -160,8 +162,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             // 不需要壁纸再猜一次（它只知道图片自己的明暗）。
             apply_wallpaper(&w, &store.borrow(), &bufs_wp, &wallpaper_id, false);
             persist(&store, |s| {
-                if !theme.is_empty() {
-                    s.set_theme_pref(theme.clone());
+                if let Some(d) = chosen_dark {
+                    s.set_dark(d);
                 }
                 s.set_wallpaper(wallpaper_id.clone());
             });
@@ -175,7 +177,6 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             }
             let cursor = store.borrow().terminal_cursor_color().to_string();
             super::terminal::apply_cursor_color(&w, &cursor);
-            w.set_accent_mode(store.borrow().theme_pref().into());
             publish_wallpaper_choices(&w, &store);
             if let Some(p) = proc_weak.upgrade() {
                 sync_proc_theme(&w, &p);
@@ -248,36 +249,6 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         });
     }
 
-    {
-        // 主题（深浅）：跟随系统 / 深色 / 浅色。切档要同时做三件事 —— 写偏好、换肤、
-        // **按新档位重新解析主题色**（预设两档是两个颜色，自定义色在浅色档要压深）。
-        let weak = window.as_weak();
-        let store = store.clone();
-        let bufs_mode = bufs.clone();
-        let proc_weak = proc_win.as_weak();
-        window.on_set_appearance_mode(move |mode: SharedString| {
-            let normalized = match mode.as_str() {
-                "dark" | "light" => mode.to_string(),
-                _ => "system".to_string(),
-            };
-            persist(&store, |s| {
-                s.set_theme_pref(normalized.clone());
-            });
-            let Some(w) = weak.upgrade() else { return };
-            apply_dark_mode(&w, &bufs_mode, theme_pref_is_dark(&store.borrow()));
-            let choice = store.borrow().accent().to_string();
-            apply_accent(&w, &choice);
-            // 光标色在"跟随主题"时也要按新档位重新取。
-            let cursor = store.borrow().terminal_cursor_color().to_string();
-            super::terminal::apply_cursor_color(&w, &cursor);
-            w.set_accent_mode(normalized.into());
-            if let Some(p) = proc_weak.upgrade() {
-                sync_proc_theme(&w, &p);
-                // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-                crate::app::settings_window::resync_if_open(&w);
-            }
-        });
-    }
 
     {
         // 主题色：预设 id / "#RRGGBB" / ""（出厂默认）。非法值返回 false —— 界面据此
@@ -515,14 +486,9 @@ pub(crate) fn builtin_wallpaper_for(theme: &str, dark: bool) -> &'static str {
     }
 }
 
-/// 可选的「壁纸」项：三个主题 + 用户上传的图片（按文件名排序）。
+/// 可选的「壁纸」项：深色 / 浅色两个内置主题 + 用户上传的图片（按文件名排序）。
 pub(crate) fn wallpaper_choices() -> Vec<WallpaperChoice> {
     let mut choices = vec![
-        WallpaperChoice {
-            label: t("跟随系统", "Follow system").to_string(),
-            theme: "system",
-            wallpaper: String::new(),
-        },
         WallpaperChoice {
             label: t("深色", "Dark").to_string(),
             theme: "dark",
@@ -572,13 +538,13 @@ pub(crate) fn wallpaper_index_of(choices: &[WallpaperChoice], theme: &str, wallp
         .unwrap_or(0) as i32
 }
 
-/// 显示名 → (主题, 壁纸 id)（认不出来 → 跟随系统）。ComboBox 给的是**文本**。
+/// 显示名 → (主题, 壁纸 id)（认不出来 → 深色）。ComboBox 给的是**文本**。
 fn wallpaper_choice_of_label(label: &str) -> (String, String) {
     wallpaper_choices()
         .into_iter()
         .find(|c| c.label == label)
         .map(|c| (c.theme.to_string(), c.wallpaper))
-        .unwrap_or_else(|| ("system".to_string(), String::new()))
+        .unwrap_or_else(|| ("dark".to_string(), String::new()))
 }
 
 /// 选**自定义**壁纸（上传的图片）时，给光标一个稳妥的默认值。
@@ -604,7 +570,7 @@ pub(crate) fn publish_wallpaper_choices(w: &AppWindow, store: &Store) {
     let choices = wallpaper_choices();
     let (theme, wallpaper) = {
         let s = store.borrow();
-        (s.theme_pref().to_string(), s.wallpaper().to_string())
+        (if s.dark() { "dark" } else { "light" }.to_string(), s.wallpaper().to_string())
     };
     w.set_wallpaper_labels(wallpaper_labels_model(&choices));
     w.set_wallpaper_index(wallpaper_index_of(&choices, &theme, &wallpaper));
@@ -717,7 +683,7 @@ pub(crate) fn reset(
     // ⚠️ 这里的 `apply_builtin_theme` 必须是 **true**。出厂默认壁纸是 `builtin:dark`，
     // 而用户此前可能停在"简约·浅"：只换图、不套用它推荐的深浅色，就会得到
     // "背景已经变暗、外层还罩着一层白"的错配 —— 而且重启也不会自愈，因为
-    // `theme_pref` 仍是浅色。与"用户手选内置壁纸"完全同一套规则。
+    // `dark` 仍是浅色。与"用户手选内置壁纸"完全同一套规则。
     apply_wallpaper(w, &store.borrow(), bufs, &d.appearance.wallpaper, true);
     // 壁纸下拉也要回到出厂默认那一项（内容 = 三个主题 + 上传的图片）。
     publish_wallpaper_choices(w, store);
@@ -725,13 +691,12 @@ pub(crate) fn reset(
         // 把刚套用的深浅色持久化（同 on_set_wallpaper），否则下次启动又回到旧偏好。
         let dark = w.global::<Theme>().get_dark();
         persist(store, |s| {
-            s.set_theme_pref(if dark { "dark" } else { "light" }.to_string());
+            s.set_dark(dark);
         });
     }
     // 主题色：出厂默认是"未选（跟随每档常量）"。放在换肤**之后** —— 壁纸会决定深浅档，
-    // 而主题色要按最终档位解析；下拉框也要跟着回到还原后的 theme_pref。
+    // 而主题色要按最终档位解析；壁纸下拉也要跟着回到还原后的档位。
     apply_accent(w, store.borrow().accent());
-    w.set_accent_mode(store.borrow().theme_pref().into());
     // 终端光标色同理：本页还原会把主题改回出厂默认（深浅档可能因此翻转），光标色在
     // "跟随主题"时要按**新的**档位重新解析 —— 否则设置页与终端里都还留着旧档位的颜色。
     let cursor = store.borrow().terminal_cursor_color().to_string();
@@ -803,29 +768,25 @@ mod tests {
         assert!(normalize_accent("blue").is_none());
     }
 
-    /// 「壁纸」下拉：前三项是**主题**（跟随系统 / 深色 / 浅色），其余来自
+    /// 「壁纸」下拉：前两项是**主题**（深色 / 浅色），其余来自
     /// `config/wallpapers`。界面给显示名、配置里存"主题偏好 + 壁纸 id"，三者要能互查。
     #[test]
     fn wallpaper_choices_start_with_themes_and_map_back() {
         let choices = wallpaper_choices();
-        assert!(choices.len() >= 3, "至少三个主题项");
-        assert_eq!(choices[0].theme, "system");
-        assert_eq!(choices[1].theme, "dark");
-        assert_eq!(choices[2].theme, "light");
+        assert!(choices.len() >= 2, "至少两个主题项");
+        assert_eq!(choices[0].theme, "dark");
+        assert_eq!(choices[1].theme, "light");
         // 主题项本身不带壁纸 id —— 图由主题推出来（深色 ↔ 原来那张"简约·暗"）。
         assert!(choices[0].wallpaper.is_empty());
         assert_eq!(builtin_wallpaper_for("dark", false), "builtin:dark");
         assert_eq!(builtin_wallpaper_for("light", true), "builtin:light");
-        // 跟随系统：跟着系统外观走。
-        assert_eq!(builtin_wallpaper_for("system", true), "builtin:dark");
-        assert_eq!(builtin_wallpaper_for("system", false), "builtin:light");
         // 显示名 → 主题（界面回传的是名字）
-        assert_eq!(wallpaper_choice_of_label(&choices[2].label).0, "light");
+        assert_eq!(wallpaper_choice_of_label(&choices[1].label).0, "light");
         // (主题, 壁纸) → 下标
-        assert_eq!(wallpaper_index_of(&choices, "dark", "builtin:dark"), 1);
-        assert_eq!(wallpaper_index_of(&choices, "system", "builtin:light"), 0);
-        // 认不出来的名字 → 跟随系统
-        assert_eq!(wallpaper_choice_of_label("不存在的项").0, "system");
+        assert_eq!(wallpaper_index_of(&choices, "dark", "builtin:dark"), 0);
+        assert_eq!(wallpaper_index_of(&choices, "light", "builtin:light"), 1);
+        // 认不出来的名字 → 回到深色档（已无"跟随系统"这一项）
+        assert_eq!(wallpaper_choice_of_label("不存在的项").0, "dark");
     }
 
     /// 「回声」判定（主色）：预设两档的解析结果都不该被当成用户改动 —— 否则预设会被

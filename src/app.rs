@@ -833,11 +833,8 @@ pub fn run() -> Result<()> {
                 // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
                 crate::app::settings_window::resync_if_open(&w);
             }
-            let pref = if next_dark { "dark" } else { "light" };
-            // 下拉框要跟着走：手动切档后 preference 不再是 system。
-            w.set_accent_mode(pref.into());
             let mut s = store.borrow_mut();
-            s.set_theme_pref(pref.to_string());
+            s.set_dark(next_dark);
             s.save_logging();
         });
     }

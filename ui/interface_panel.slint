@@ -71,7 +71,6 @@ export component InterfacePanel inherits Rectangle {
     in-out property <int> wallpaper-index;
     // 配色：主题（深浅）+ 主题色。`accent-presets` 由 Rust 提供（含当前深浅档已解析好的
     // 颜色），`accent-choice` 是配置原值（""=出厂默认 / 预设 id / "#RRGGBB"）。
-    in property <string> accent-mode;
     in property <string> accent-choice;
     in property <[AccentPreset]> accent-presets;
     in-out property <string> accent-hex;
@@ -128,7 +127,6 @@ export component InterfacePanel inherits Rectangle {
     callback set-wallpaper(string);    // none / builtin selection
     callback set-accent(string) -> bool;   // preset id / "#RRGGBB" / ""; false = 非法值
     callback set-accent-rgb(int, int, int) -> bool;          // 调色盘提交
-    callback set-appearance-mode(string);  // system / dark / light
     in-out property <bool> hide-special-partitions: true;
     callback set-hide-special-partitions(bool);
     in-out property <string> mount-filter: "";
@@ -262,7 +260,6 @@ export component InterfacePanel inherits Rectangle {
                             accent-choice: root.accent-choice;
                             accent-hex <=> root.accent-hex;
                             accent-name: root.accent-name;
-                            accent-mode: root.accent-mode;
                             accent-presets: root.accent-presets;
                             wallpaper-labels: root.wallpaper-labels;
                             wallpaper-index <=> root.wallpaper-index;
@@ -283,7 +280,6 @@ export component InterfacePanel inherits Rectangle {
                             reset-page(a0) => { root.reset-page(a0); }
                             set-accent(a0) => { return root.set-accent(a0); }
                             set-accent-rgb(a0, a1, a2) => { return root.set-accent-rgb(a0, a1, a2); }
-                            set-appearance-mode(a0) => { root.set-appearance-mode(a0); }
                             set-animations-enabled(a0) => { root.set-animations-enabled(a0); }
                             set-hide-special-partitions(a0) => { root.set-hide-special-partitions(a0); }
                             set-mount-filter(a0) => { root.set-mount-filter(a0); }

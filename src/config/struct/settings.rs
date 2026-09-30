@@ -21,7 +21,7 @@
 //! 挂回 `ConfigFile` 时用 `#[serde(flatten)]`，**on-disk 仍是平铺 key-value**，
 //! 老 `sessions.json` 可原样读取，无需迁移。
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::config::{DEFAULT_WALLPAPER_OVERLAY, OutputHighlightRule, Secret};
 
@@ -81,14 +81,39 @@ impl Default for TerminalSettings {
     }
 }
 
+/// 老配置里的 `theme_pref` 是字符串（"dark" / "light" / "system"），字段名也换了；
+/// 反序列化时统一折算成布尔，未识别的取值按出厂深色档处理。
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum DarkValue {
+    Bool(bool),
+    Text(String),
+}
+
+fn deserialize_dark<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(match DarkValue::deserialize(deserializer)? {
+        DarkValue::Bool(b) => b,
+        // "system" 与老配置的空串：出厂默认就是深色档（系统联动已取消，不再探测）。
+        DarkValue::Text(t) => t.as_str() != "light",
+    })
+}
+
 /// 外观页：界面字体 / 壁纸 / 渲染后端 / 缩放 / 资源面板过滤。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppearanceSettings {
     /// 界面语言："zh" / "en"；空 = zh。
     pub language: String,
-    /// 主题偏好："system" / "dark" / "light"；空 = system。
-    pub theme_pref: String,
+    /// 深浅档：true = 深色。
+    ///
+    /// 原为三态的 `theme_pref`（system / dark / "light"）；"跟随系统"已删除 ——
+    /// 深浅档现在只由**壁纸**决定（内置深色 / 浅色图，或按上传图片自身的明暗判定），
+    /// 这里只存最终档位，老配置的字符串取值由 `deserialize_dark` 折算。
+    #[serde(default, alias = "theme_pref", deserialize_with = "deserialize_dark")]
+    pub dark: bool,
     /// 主题色："" = 出厂默认 / 预设 id（如 "aurora"）/ "#RRGGBB" 自定义色。
     ///
     /// 只存**一个值**而不是"预设 id + 自定义色"两个字段：二者互斥，两个字段就会出现
@@ -119,7 +144,7 @@ impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
             language: String::new(),
-            theme_pref: String::new(),
+            dark: true,
             accent: String::new(),
             renderer_mode: String::new(),
             ui_font_family: String::new(),

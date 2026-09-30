@@ -106,7 +106,6 @@ export component SettingsWindow inherits Window {
     changed dark-mode-watch => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }
     // ── 状态（窗口透传）──────────────────────────────────────────────
     // 配色：主题（深浅）+ 主题色（由 Rust 播种；预设色已按当前深浅档解析好颜色）。
-    in property <string> accent-mode:"system";
     in property <string> accent-choice:"";
     in property <[AccentPreset]> accent-presets;
     in-out property <string> accent-hex:"";
@@ -199,7 +198,6 @@ export component SettingsWindow inherits Window {
     callback set-ui-scale(int);
     callback set-accent(string) -> bool;
     callback set-accent-rgb(int, int, int) -> bool;
-    callback set-appearance-mode(string);
     callback set-update-check-enabled(bool);
     callback set-update-channel(string);
     callback set-update-freq(int);
@@ -296,7 +294,6 @@ export component SettingsWindow inherits Window {
                 update-freq-labels: update-freq-labels;
                 update-freq-index <=> update-freq-index;
                 update-last-check: update-last-check;
-                accent-mode: accent-mode;
                 accent-choice: accent-choice;
                 accent-presets: accent-presets;
                 accent-hex <=> accent-hex;
@@ -310,7 +307,6 @@ export component SettingsWindow inherits Window {
                 wsl-new-directory <=> wsl-new-directory;
                 set-accent(v) => { return root.set-accent(v); }
                 set-accent-rgb(a0, a1, a2) => { return root.set-accent-rgb(a0, a1, a2); }
-                set-appearance-mode(v) => { root.set-appearance-mode(v); }
                 set-wallpaper(v) => { root.set-wallpaper(v); }
                 pick-wallpaper-file() => { root.pick-wallpaper-file(); }
                 set-term-font(v) => { root.set-term-font(v); }

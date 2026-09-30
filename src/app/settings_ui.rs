@@ -77,58 +77,6 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
 
 
 
-/// 「跟随系统」的**实时**跟随：启动时只探测一次，之后系统外观改了界面不会自己变。
-///
-/// 用一个低频定时器补上这一步：**只有** preference 是 `system` 时才真的去问系统
-/// （其它偏好下只是读一次配置就返回）。`dark_light::detect()` 实测 ≈ 4.8 ms/次
-/// （20 次 95 ms），5 s 一次约 0.1% 单核 —— 换来"改系统外观 → 界面几秒内跟着变"。
-///
-/// 定时器**故意不 stop**：它随窗口活到进程结束（与侧栏采样器同一套做法）。
-fn start_system_theme_watcher(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
-    let timer = slint::Timer::default();
-    let weak = window.as_weak();
-    let store = store.clone();
-    let bufs_watch = bufs.clone();
-    timer.start(
-        slint::TimerMode::Repeated,
-        std::time::Duration::from_secs(5),
-        move || {
-            let Some(w) = weak.upgrade() else { return };
-            if store.borrow().theme_pref() != "system" {
-                return;
-            }
-            let dark = theme_pref_is_dark(&store.borrow());
-            if dark == w.global::<Theme>().get_dark() {
-                return;
-            }
-            apply_dark_mode(&w, &bufs_watch, dark);
-            // 深浅档变了 → 主题色要按新档位重新解析（预设两档是两个颜色，自定义色在
-            // 浅色档要压深）；光标色在"跟随主题"时同样按新档位取（深→亮 / 浅→暗）。
-            let choice = store.borrow().accent().to_string();
-            settings::appearance::apply_accent(&w, &choice);
-            let cursor = store.borrow().terminal_cursor_color().to_string();
-            settings::terminal::apply_cursor_color(&w, &cursor);
-            // 背景图也跟着系统走：「跟随系统」用的内置图是按深浅档取的，不重取就会出现
-            // "浅色界面配深色底图"。上传的图片与系统外观无关，跳过。
-            let wallpaper_now = store.borrow().wallpaper().to_string();
-            if crate::wallpaper::is_builtin(&wallpaper_now) {
-                let id = settings::appearance::builtin_wallpaper_for("system", dark);
-                if id != wallpaper_now {
-                    apply_wallpaper(&w, &store.borrow(), &bufs_watch, id, false);
-                    settings::persist(&store, |s| {
-                        s.set_wallpaper(id.to_string());
-                    });
-                    settings::appearance::publish_wallpaper_choices(&w, &store);
-                }
-            }
-            // 系统外观变了 → 设置窗口（独立窗口，`Theme` / `Palette` 各一份副本）也要刷，
-            // 否则"跟随系统"自动切换时它还是旧样子。
-            crate::app::settings_window::resync_if_open(&w);
-        },
-    );
-    // Timer 被 drop 就停 —— 这里 `leak` 保活（与侧栏采样器同一套做法）。
-    Box::leak(Box::new(timer));
-}
 
 pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &AppContext) {
     let AppContext {
@@ -156,11 +104,9 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     crate::i18n::apply_to_slint();
     window.set_lang_en(crate::i18n::is_en());
 
-    // Apply the saved (or system-detected) theme.
-    // "dark" / "light" → use that directly; "system" or unset → ask the OS;
-    // OS unknown → fall back to dark.
+    // 应用已保存的深浅档（档位只由壁纸决定，系统联动已取消）。
     {
-        let is_dark = theme_pref_is_dark(&store.borrow());
+        let is_dark = store.borrow().dark();
         window.global::<Theme>().set_dark(is_dark);
     }
     // On macOS, app shortcuts use Cmd (⌘) so physical Ctrl stays free for the
@@ -203,7 +149,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0); // settings-panel font scale
         window.set_renderer_mode(s.renderer_mode().into());
         // v0.8.0 设置窗迁移项：新设置页需要回显当前值。
-        window.set_appearance_mode(s.theme_pref().into());
         window.set_collapse_sftp_default(s.collapse_sftp_default());
     }
 
@@ -252,15 +197,10 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     // 主题色 + 主题（深浅）：放在换肤**之后** —— 壁纸会决定深浅档，而主题色要按最终
     // 档位解析（预设两档是两个颜色，自定义色在浅色档要压深）。
     {
-        let (choice, mode) = {
-            let s = store.borrow();
-            (s.accent().to_string(), s.theme_pref().to_string())
-        };
+        let choice = store.borrow().accent().to_string();
         settings::appearance::apply_accent(window, &choice);
-        window.set_accent_mode(mode.into());
     }
 
-    start_system_theme_watcher(window, store, bufs);
     // Editable inputs (e.g. the SFTP path bar) need a CJK-capable font: the
     // embedded mono font has no Chinese glyphs and native TextInput doesn't
     // glyph-fallback like Text does, so typed Chinese would render as tofu (#54).
@@ -753,9 +693,9 @@ mod wiring_tests {
         // 渲染档位的**显示名**（不是配置字段）：真正参与还原的是 `renderer-mode`，
         // 这几个只是「值 ↔ 界面文字」映射用的常量，随语言/平台变化。
         "lbl-auto", "lbl-soft", "lbl-gpu",
-        // 主题（深浅）档位的**显示名**：真正参与还原的是配置里的 `theme_pref`，
-        // 这三个只是"值 ↔ 界面文字"映射用的常量，随语言变化。
-        "lbl-system", "lbl-dark", "lbl-light",
+        // 主题（深浅）档位的**显示名**：真正参与还原的是配置里的 `dark`，
+        // 这两个只是"值 ↔ 界面文字"映射用的常量，随语言变化。
+        "lbl-dark", "lbl-light",
         // 壁纸分区的临时开关：编译期常量（置回 true 即恢复），不是设置项。
         "wallpaper-enabled",
         // 一次性瞬态

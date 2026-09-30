@@ -41,7 +41,9 @@ export global Theme {
     // 新外壳左侧栏用的一组令牌。深色 / 浅色各一套，与其它令牌一样是响应式的：
     // 切换 `dark` 就会整体重绘。（壁纸取色等外壳接入壁纸时再接上。）
 
-    in-out property <color> rail-bg: root.dark ? #1b1b1e : #ececed;
+    // 底部状态栏底：与面板走**同一个** `frost()`，磨砂滑杆一改它跟着变 ——
+    // 此前这里是硬编码的不透明色，所以侧栏/面板在变、它不变（口径不一致）。
+    out property <brush> rail-bg: frost(base-rail, root.panel-alpha);
     in-out property <color> rail-item-hover: root.dark ? #ffffff1a : #00000012;
     in-out property <color> rail-item-active: root.dark ? #ffffff26 : #0000001a;
     in-out property <color> rail-fg: root.dark ? #d8d8d8 : #3c3c43;
@@ -86,6 +88,7 @@ export global Theme {
     property <color> base-bg-elevated:  dark ? #30333c : #e8e8ed;
     property <color> base-bg-hover:     dark ? #373a44 : #e0e0e6;
     property <color> base-bg-active:    dark ? #3f4350 : #d8d8de;
+    property <color> base-rail:          dark ? #1b1b1e : #ececed;
 
     // bg-root frosts lighter (lower alpha) so the wallpaper reads clearly in
     // empty / inset areas; panels stay mostly opaque for legible text.
