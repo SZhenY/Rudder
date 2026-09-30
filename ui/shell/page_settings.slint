@@ -855,9 +855,9 @@ export component PageSettings inherits Rectangle {
     /// 上次检查时间（Rust 侧已本地化；空串 = 还没查过）。
     in property <string> update-last-check;
     in property <[string]> wallpaper-labels;
-    // 磨砂透明度：**直接双向绑到主题全局** `panel-alpha` —— 拖动即实时生效（面板与
-    // 终端共用这一层），不需要经过 Rust 预览回调；只在松手时落盘。
-    property <float> frost-alpha <=> Theme.panel-alpha;
+    // 磨砂透明度：直接读写主题全局 `panel-alpha`。
+    // ⚠ 不能用 `property <=> Theme.xxx` 双向绑 —— 对 global 的双向绑定是**只读**的，
+    // 滑杆会动但主题纹丝不动（本页此前"调不动透明度"就是这个原因）；松手时才落盘。
     callback persist-frost-alpha(float);
     in property <[string]> update-freq-labels;
     in property <int> update-freq-index;
@@ -1249,42 +1249,6 @@ AccentPicker {
                                                     }
                                                 }
 
-                                                Rectangle {
-                                                    height: 1px;
-                                                    background: Theme.line;
-                                                }
-                                                Rectangle {
-                                                    height: 30px;
-                                                    background: wimp-ta.has-hover ? Theme.rail-item-hover : transparent;
-
-                                                    HorizontalLayout {
-                                                        padding-left: 10px;
-                                                        alignment: start;
-
-                                                        Text {
-                                                            Text {
-                                                                text: "\u{E2C6}";   // folder-open
-                                                                font-family: "Material Icons";
-                                                                font-size: 15px;
-                                                                color: Theme.fg-2;
-                                                                vertical-alignment: center;
-                                                            }
-                                                            Text {
-                                                                text: root.lang-en ? "Import your own wallpaper…" : "导入自定义壁纸…";
-                                                                font-size: 12px;
-                                                                color: Theme.fg-1;
-                                                                vertical-alignment: center;
-                                                            }
-                                                        }
-                                                    }
-
-                                                    wimp-ta := TouchArea {
-                                                        clicked => {
-                                                            root.pick-wallpaper();
-                                                            wp-popup.close();
-                                                        }
-                                                    }
-                                                }
                                             }
                                         }
                                     }
@@ -1302,16 +1266,16 @@ AccentPicker {
                                         Slider {
                                             minimum: 0;
                                             maximum: 70;
-                                            value: (1.0 - root.frost-alpha) * 100;
+                                            value: (1.0 - Theme.panel-alpha) * 100;
                                             changed(v) => {
-                                                root.frost-alpha = 1.0 - v / 100;
+                                                Theme.panel-alpha = 1.0 - v / 100;
                                             }
                                             released(v) => {
                                                 root.persist-frost-alpha(1.0 - v / 100);
                                             }
                                         }
                                         Text {
-                                            text: "\{round((1.0 - root.frost-alpha) * 100)}%";
+                                            text: "\{round((1.0 - Theme.panel-alpha) * 100)}%";
                                             font-size: 12px;
                                             color: Theme.fg-2;
                                             vertical-alignment: center;
