@@ -8,7 +8,7 @@
 // 与 `shell/page_settings.slint` 里的同名局部组件是"同款不同处"：那份是设置页私有的，
 // 之后可以合并到本文件（避免跨文件大改，先各留一份）。
 
-import { Theme } from "theme.slint";
+import { AnimationSettings, Theme } from "theme.slint";
 
 // ── 开关 ───────────────────────────────────────────────────────────────────
 export component Switch inherits Rectangle {
@@ -29,7 +29,12 @@ export component Switch inherits Rectangle {
         height: 16px;
         border-radius: 8px;
         background: white;
-        animate x { duration: 120ms; }
+        // 开关滑块：小控件的空间位移用**回弹弹簧**（与另两处 Switch 同一手感）
+        animate x {
+            duration: AnimationSettings.medium1();
+            easing: AnimationSettings.s-bouncy();
+            enabled: AnimationSettings.enabled;
+        }
     }
 
     ta := TouchArea {

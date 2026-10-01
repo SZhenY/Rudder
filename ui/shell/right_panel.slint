@@ -14,7 +14,7 @@
 //
 // C 步计划（后续）：内容标签扩成 综合 / 处理器 / 内存 / 磁盘 / 网络，接 CPU 趋势、
 // 磁盘分区、网络端口；D 步把文件视图升级成「工具条 + 面包屑 + 表格（名称/大小/时间）」。
-import { Theme } from "../theme.slint";
+import { AnimationSettings, Theme } from "../theme.slint";
 import { TransferInfo } from "../download_manager.slint";
 import { DiskInfo, CoreLoad } from "../resource_types.slint";
 import { ProcRow } from "../proc_window.slint";
@@ -45,13 +45,13 @@ component PanelTab inherits Rectangle {
         if root.icon != "" : Text {
             text: root.icon;
             font-family: "Material Icons";
-            font-size: 12px;
+            font-size: 12px * Theme.ui-scale;
             color: root.active ? Theme.accent : Theme.fg-3;
             vertical-alignment: center;
         }
         Text {
             text: root.label;
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             color: root.active ? Theme.fg-1 : Theme.fg-3;
             font-weight: root.active ? 600 : 400;
             vertical-alignment: center;
@@ -368,8 +368,11 @@ component Switch inherits Rectangle {
         border-radius: 8px;
         background: white;
 
+        // 开关滑块：小控件的空间位移用**回弹弹簧**（M3 Expressive：短距离运动留回弹）
         animate x {
-            duration: 120ms;
+            duration: AnimationSettings.medium1();
+            easing: AnimationSettings.s-bouncy();
+            enabled: AnimationSettings.enabled;
         }
     }
 
@@ -393,7 +396,7 @@ component IconBtn inherits Rectangle {
     Text {
         text: root.glyph;
         font-family: "Material Icons";
-        font-size: 12px;
+        font-size: 12px * Theme.ui-scale;
         color: root.enabled ? Theme.fg-3 : Theme.fg-3.with-alpha(0.35);
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -425,7 +428,7 @@ component PanelHeadTab inherits Rectangle {
 
     t := Text {
         text: root.label;
-        font-size: 13px;
+        font-size: 13px * Theme.ui-scale;
         font-weight: root.active ? 700 : 500;
         color: root.active ? Theme.fg-1 : Theme.fg-3;
         horizontal-alignment: center;
@@ -467,7 +470,7 @@ component WindowSwitch inherits HorizontalLayout {
 
             wlab := Text {
                 text: (wv == 60 ? "1" : (wv == 300 ? "5" : "15")) + (root.lang-en ? "min" : "分钟");
-                font-size: 9px;
+                font-size: 9px * Theme.ui-scale;
                 font-weight: on ? 700 : 500;
                 color: on ? Theme.accent : Theme.fg-3;
                 vertical-alignment: center;
@@ -521,13 +524,13 @@ component ResCard inherits Rectangle {
             if root.icon != "" : Text {
                 text: root.icon;
                 font-family: "Material Icons";
-                font-size: 15px;
+                font-size: 15px * Theme.ui-scale;
                 color: root.tone;
                 vertical-alignment: center;
             }
             Text {
                 text: root.label;
-                font-size: 12px;
+                font-size: 12px * Theme.ui-scale;
                 color: Theme.fg-1;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
@@ -535,7 +538,7 @@ component ResCard inherits Rectangle {
             }
             Text {
                 text: root.value;
-                font-size: 17px;
+                font-size: 17px * Theme.ui-scale;
                 font-weight: 700;
                 color: root.tone;
                 vertical-alignment: center;
@@ -567,7 +570,7 @@ component ResCard inherits Rectangle {
             if !root.show-bar && (root.mid-left != "" || root.mid-right != "") : HorizontalLayout {
                 Text {
                     text: root.mid-left;
-                    font-size: 13px;
+                    font-size: 13px * Theme.ui-scale;
                     font-weight: 600;
                     color: root.tone;
                     vertical-alignment: center;
@@ -576,7 +579,7 @@ component ResCard inherits Rectangle {
                 }
                 Text {
                     text: root.mid-right;
-                    font-size: 13px;
+                    font-size: 13px * Theme.ui-scale;
                     font-weight: 600;
                     color: root.tone;
                     vertical-alignment: center;
@@ -590,7 +593,7 @@ component ResCard inherits Rectangle {
         HorizontalLayout {
             Text {
                 text: root.foot-left == "" ? root.hint : root.foot-left;
-                font-size: 10px;
+                font-size: 10px * Theme.ui-scale;
                 color: Theme.fg-3;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
@@ -598,7 +601,7 @@ component ResCard inherits Rectangle {
             }
             Text {
                 text: root.foot-right;
-                font-size: 10px;
+                font-size: 10px * Theme.ui-scale;
                 color: Theme.fg-3;
                 vertical-alignment: center;
                 horizontal-alignment: right;
@@ -618,13 +621,13 @@ component SectionTitle inherits HorizontalLayout {
     if root.icon != "" : Text {
         text: root.icon;
         font-family: "Material Icons";
-        font-size: 13px;
+        font-size: 13px * Theme.ui-scale;
         color: Theme.fg-3;
         vertical-alignment: center;
     }
     Text {
         text: root.text;
-        font-size: 12px;
+        font-size: 12px * Theme.ui-scale;
         color: Theme.fg-1;
         vertical-alignment: center;
         horizontal-alignment: left;
@@ -648,7 +651,7 @@ component MetricRow inherits Rectangle {
 
             Text {
                 text: root.label;
-                font-size: 10px;
+                font-size: 10px * Theme.ui-scale;
                 color: Theme.fg-2;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
@@ -656,7 +659,7 @@ component MetricRow inherits Rectangle {
             }
             Text {
                 text: root.value;
-                font-size: 10px;
+                font-size: 10px * Theme.ui-scale;
                 color: Theme.fg-3;
                 vertical-alignment: center;
             }
@@ -692,7 +695,7 @@ component NetIfaceRow inherits Rectangle {
 
         Text {
             text: root.name;
-            font-size: 10px;
+            font-size: 10px * Theme.ui-scale;
             color: Theme.fg-2;
             vertical-alignment: center;
             horizontal-stretch: 1;
@@ -702,26 +705,26 @@ component NetIfaceRow inherits Rectangle {
         Text {
             text: "\u{E5DB}";   // arrow_downward
             font-family: "Material Icons";
-            font-size: 10px;
+            font-size: 10px * Theme.ui-scale;
             color: Theme.ok;
             vertical-alignment: center;
         }
         Text {
             text: root.down;
-            font-size: 9px;
+            font-size: 9px * Theme.ui-scale;
             color: Theme.ok;
             vertical-alignment: center;
         }
         Text {
             text: "\u{E5D8}";   // arrow_upward
             font-family: "Material Icons";
-            font-size: 10px;
+            font-size: 10px * Theme.ui-scale;
             color: Theme.danger;
             vertical-alignment: center;
         }
         Text {
             text: root.up;
-            font-size: 9px;
+            font-size: 9px * Theme.ui-scale;
             color: Theme.danger;
             vertical-alignment: center;
         }
@@ -732,7 +735,7 @@ component NetIfaceRow inherits Rectangle {
 component EmptyHint inherits Text {
     in property <bool> lang-en: false;
     text: root.lang-en ? "No data yet" : "暂无数据";
-    font-size: 10px;
+    font-size: 10px * Theme.ui-scale;
     color: Theme.fg-3;
 }
 
@@ -755,13 +758,13 @@ component StatChip inherits Rectangle {
 
         Text {
             text: root.label;
-            font-size: 8px;
+            font-size: 8px * Theme.ui-scale;
             color: Theme.fg-3;
             vertical-alignment: center;
         }
         Text {
             text: root.value;
-            font-size: 9px;
+            font-size: 9px * Theme.ui-scale;
             color: Theme.fg-2;
             vertical-alignment: center;
             overflow: elide;
@@ -797,13 +800,13 @@ component TrendCard inherits Rectangle {
             Text {
                 text: root.title-icon;
                 font-family: "Material Icons";
-                font-size: 13px;
+                font-size: 13px * Theme.ui-scale;
                 color: Theme.fg-3;
                 vertical-alignment: center;
             }
             Text {
                 text: root.title;
-                font-size: 12px;
+                font-size: 12px * Theme.ui-scale;
                 color: Theme.fg-1;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
@@ -811,7 +814,7 @@ component TrendCard inherits Rectangle {
             }
             if root.value != "" : Text {
                 text: root.value;
-                font-size: 10px;
+                font-size: 10px * Theme.ui-scale;
                 font-weight: 600;
                 color: Theme.fg-2;
                 vertical-alignment: center;
@@ -829,13 +832,13 @@ component TrendCard inherits Rectangle {
         if root.values.length > 0 : HorizontalLayout {
             Text {
                 text: "-\{root.window > 0 ? min(root.window, root.values.length) : root.values.length}s";
-                font-size: 9px;
+                font-size: 9px * Theme.ui-scale;
                 color: Theme.fg-3;
                 horizontal-stretch: 1;
             }
             Text {
                 text: root.lang-en ? "now" : "现在";
-                font-size: 9px;
+                font-size: 9px * Theme.ui-scale;
                 color: Theme.fg-3;
             }
         }
@@ -977,7 +980,7 @@ export component RightPanel inherits Rectangle {
             Text {
                 text: "\u{E8B3}";
                 font-family: "Material Icons";
-                font-size: 12px;
+                font-size: 12px * Theme.ui-scale;
                 color: Theme.fg-3;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -1132,7 +1135,7 @@ export component RightPanel inherits Rectangle {
 
                     Text {
                         text: "AI";
-                        font-size: 14px;
+                        font-size: 14px * Theme.ui-scale;
                         font-weight: 700;
                         color: Theme.accent;
                         horizontal-alignment: center;
@@ -1141,7 +1144,7 @@ export component RightPanel inherits Rectangle {
                 }
                 Text {
                     text: root.lang-en ? "AI assistant" : "AI 助手";
-                    font-size: 13px;
+                    font-size: 13px * Theme.ui-scale;
                     font-weight: 600;
                     color: Theme.fg-1;
                     horizontal-alignment: center;
@@ -1150,7 +1153,7 @@ export component RightPanel inherits Rectangle {
                     text: root.lang-en
                         ? "Coming soon — no model is wired up in this build."
                         : "即将上线 —— 本版本尚未接入模型。";
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                     horizontal-alignment: center;
                     wrap: word-wrap;
@@ -1174,19 +1177,30 @@ export component RightPanel inherits Rectangle {
                     // 转圈加载：sync 双箭头圆环，360° 无限旋转
                     text: "\u{E627}";
                     font-family: "Material Icons";
-                    font-size: 32px;
+                    font-size: 32px * Theme.ui-scale;
                     color: Theme.fg-3;
                     horizontal-alignment: center;
                     transform-rotation: 360deg;
-                    animate transform-rotation { duration: 1600ms; iteration-count: -1; }
+                    animate transform-rotation {
+                        duration: AnimationSettings.ambient();
+                        iteration-count: -1;
+                        enabled: AnimationSettings.enabled;
+                    }
                 }
                 Text {
                     text: root.lang-en ? "Waiting for monitoring data..." : "等待监控数据…";
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                     horizontal-alignment: center;
                     // 呼吸：透明度 1.2s 往返
-                    animate opacity { duration: 1200ms; iteration-count: -1; direction: alternate; easing: ease-in-out; }
+                    // 呼吸：透明度往返（常驻循环，受「界面动画」开关门控）
+                    animate opacity {
+                        duration: AnimationSettings.ambient();
+                        iteration-count: -1;
+                        direction: alternate;
+                        easing: AnimationSettings.breathing();
+                        enabled: AnimationSettings.enabled;
+                    }
                 }
             }
         }
@@ -1220,13 +1234,13 @@ export component RightPanel inherits Rectangle {
                     Text {
                         text: "\u{EB8E}";   // terminal
                         font-family: "Material Icons";
-                        font-size: 14px;
+                        font-size: 14px * Theme.ui-scale;
                         color: Theme.accent;
                         vertical-alignment: center;
                     }
                     Text {
                         text: root.panel-host;          // 主机名称
-                        font-size: 13px;
+                        font-size: 13px * Theme.ui-scale;
                         font-weight: 600;
                         color: Theme.fg-1;
                         vertical-alignment: center;
@@ -1247,7 +1261,7 @@ export component RightPanel inherits Rectangle {
 
                             Text {
                                 text: root.panel-ip;
-                                font-size: 10px;
+                                font-size: 10px * Theme.ui-scale;
                                 color: Theme.fg-2;
                                 vertical-alignment: center;
                                 overflow: elide;
@@ -1258,14 +1272,14 @@ export component RightPanel inherits Rectangle {
                 HorizontalLayout {
                     if root.panel-os != "" : Text {
                         text: "操作系统：\{root.panel-os}";
-                        font-size: 10px;
+                        font-size: 10px * Theme.ui-scale;
                         color: Theme.fg-3;
                         overflow: elide;
                         horizontal-stretch: 1;
                     }
                     if root.panel-uptime != "" : Text {
                         text: root.panel-uptime;
-                        font-size: 10px;
+                        font-size: 10px * Theme.ui-scale;
                         color: Theme.fg-3;
                         vertical-alignment: center;
                     }
@@ -1371,13 +1385,13 @@ export component RightPanel inherits Rectangle {
                             Text {
                                 text: "\u{E1DB}";   // storage
                                 font-family: "Material Icons";
-                                font-size: 13px;
+                                font-size: 13px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
                             }
                             Text {
                                 text: root.lang-en ? "Disk partitions" : "磁盘分区";
-                                font-size: 12px;
+                                font-size: 12px * Theme.ui-scale;
                                 color: Theme.fg-1;
                                 vertical-alignment: center;
                                 horizontal-alignment: left;
@@ -1408,13 +1422,13 @@ export component RightPanel inherits Rectangle {
                             Text {
                                 text: "\u{E1AF}";   // network_check
                                 font-family: "Material Icons";
-                                font-size: 13px;
+                                font-size: 13px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
                             }
                             Text {
                                 text: root.lang-en ? "Network interfaces" : "网络端口";
-                                font-size: 12px;
+                                font-size: 12px * Theme.ui-scale;
                                 color: Theme.fg-1;
                                 vertical-alignment: center;
                                 horizontal-alignment: left;
@@ -1436,7 +1450,7 @@ export component RightPanel inherits Rectangle {
                                         text: root.net-filter == ""
                                             ? (root.lang-en ? "All" : "全部网口")
                                             : root.net-filter;
-                                        font-size: 10px;
+                                        font-size: 10px * Theme.ui-scale;
                                         color: Theme.fg-2;
                                         vertical-alignment: center;
                                         overflow: elide;
@@ -1444,7 +1458,7 @@ export component RightPanel inherits Rectangle {
                                     Text {
                                         text: "\u{E5CE}";
                                         font-family: "Material Icons";
-                                        font-size: 10px;
+                                        font-size: 10px * Theme.ui-scale;
                                         color: Theme.fg-3;
                                         vertical-alignment: center;
                                     }
@@ -1489,7 +1503,7 @@ export component RightPanel inherits Rectangle {
                                             padding-left: 10px;
                                             Text {
                                                 text: root.lang-en ? "All interfaces" : "全部网口";
-                                                font-size: 11px;
+                                                font-size: 11px * Theme.ui-scale;
                                                 color: root.net-filter == "" ? Theme.accent : Theme.fg-1;
                                                 vertical-alignment: center;
                                             }
@@ -1510,7 +1524,7 @@ export component RightPanel inherits Rectangle {
                                             padding-left: 10px;
                                             Text {
                                                 text: n.name;
-                                                font-size: 11px;
+                                                font-size: 11px * Theme.ui-scale;
                                                 color: root.net-filter == n.name ? Theme.accent : Theme.fg-1;
                                                 vertical-alignment: center;
                                                 overflow: elide;
@@ -1635,27 +1649,27 @@ export component RightPanel inherits Rectangle {
                             Text {
                                 text: "\u{E30D}";   // developer_board
                                 font-family: "Material Icons";
-                                font-size: 13px;
+                                font-size: 13px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
                             }
                             Text {
                                 text: root.lang-en ? "Core details" : "核心详情";
-                                font-size: 12px;
+                                font-size: 12px * Theme.ui-scale;
                                 color: Theme.fg-1;
                                 vertical-alignment: center;
                                 horizontal-stretch: 1;
                             }
                             Text {
                                 text: "\{root.core-cpus.length} " + (root.lang-en ? "cores" : "核");
-                                font-size: 10px;
+                                font-size: 10px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
                             }
                         }
                         if root.core-cpus.length == 0 : Text {
                             text: root.lang-en ? "Sampling..." : "采样中…";
-                            font-size: 10px;
+                            font-size: 10px * Theme.ui-scale;
                             color: Theme.fg-3;
                         }
                         // 两列排布：偶数核在左列、奇数核在右列 —— 超多核（32/64 核）
@@ -1673,7 +1687,7 @@ export component RightPanel inherits Rectangle {
                                     Text {
                                         text: "#" + c.idx;
                                         width: 24px;
-                                        font-size: 9px;
+                                        font-size: 9px * Theme.ui-scale;
                                         color: Theme.fg-3;
                                         vertical-alignment: center;
                                     }
@@ -1701,7 +1715,7 @@ export component RightPanel inherits Rectangle {
                                     Text {
                                         text: "\{round(c.load * 1000) / 10}%";
                                         width: 36px;
-                                        font-size: 9px;
+                                        font-size: 9px * Theme.ui-scale;
                                         color: Theme.fg-2;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
@@ -1718,7 +1732,7 @@ export component RightPanel inherits Rectangle {
                                     Text {
                                         text: "#" + c.idx;
                                         width: 24px;
-                                        font-size: 9px;
+                                        font-size: 9px * Theme.ui-scale;
                                         color: Theme.fg-3;
                                         vertical-alignment: center;
                                     }
@@ -1746,7 +1760,7 @@ export component RightPanel inherits Rectangle {
                                     Text {
                                         text: "\{round(c.load * 1000) / 10}%";
                                         width: 36px;
-                                        font-size: 9px;
+                                        font-size: 9px * Theme.ui-scale;
                                         color: Theme.fg-2;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
@@ -1775,30 +1789,30 @@ export component RightPanel inherits Rectangle {
                             Text {
                                 text: "\u{E242}";   // format_list_numbered
                                 font-family: "Material Icons";
-                                font-size: 13px;
+                                font-size: 13px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
                             }
                             Text {
                                 text: root.lang-en ? "Top processes (CPU)" : "进程 CPU 占用排行";
-                                font-size: 12px;
+                                font-size: 12px * Theme.ui-scale;
                                 color: Theme.fg-1;
                                 vertical-alignment: center;
                                 horizontal-stretch: 1;
                             }
                             Text {
                                 text: root.lang-en ? "auto 2s" : "2 秒自动刷新";
-                                font-size: 9px;
+                                font-size: 9px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
                             }
                         }
                         HorizontalLayout {
-                            Text { text: "PID"; width: 40px; font-size: 9px; color: Theme.fg-3; vertical-alignment: center; }
-                            Text { text: root.lang-en ? "USER" : "用户"; width: 56px; font-size: 9px; color: Theme.fg-3; overflow: elide; vertical-alignment: center; }
-                            Text { text: root.lang-en ? "COMMAND" : "命令行"; horizontal-stretch: 1; font-size: 9px; color: Theme.fg-3; overflow: elide; vertical-alignment: center; }
-                            Text { text: "CPU%"; width: 42px; font-size: 9px; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
-                            Text { text: "MEM%"; width: 42px; font-size: 9px; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "PID"; width: 40px; font-size: 9px * Theme.ui-scale; color: Theme.fg-3; vertical-alignment: center; }
+                            Text { text: root.lang-en ? "USER" : "用户"; width: 56px; font-size: 9px * Theme.ui-scale; color: Theme.fg-3; overflow: elide; vertical-alignment: center; }
+                            Text { text: root.lang-en ? "COMMAND" : "命令行"; horizontal-stretch: 1; font-size: 9px * Theme.ui-scale; color: Theme.fg-3; overflow: elide; vertical-alignment: center; }
+                            Text { text: "CPU%"; width: 42px; font-size: 9px * Theme.ui-scale; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "MEM%"; width: 42px; font-size: 9px * Theme.ui-scale; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
                         }
                         Flickable {
                             vertical-stretch: 1;
@@ -1809,17 +1823,17 @@ export component RightPanel inherits Rectangle {
 
                         if root.proc-top.length == 0 : Text {
                             text: root.lang-en ? "No process data" : "暂无进程数据";
-                            font-size: 10px;
+                            font-size: 10px * Theme.ui-scale;
                             color: Theme.fg-3;
                         }
                         for pr in root.proc-top : HorizontalLayout {
                             height: 17px;
 
-                            Text { text: pr.pid; width: 40px; font-size: 10px; color: Theme.fg-2; vertical-alignment: center; }
-                            Text { text: pr.user; width: 56px; font-size: 10px; color: Theme.fg-3; overflow: elide; vertical-alignment: center; }
-                            Text { text: pr.command; horizontal-stretch: 1; font-size: 10px; color: Theme.fg-2; overflow: elide; vertical-alignment: center; }
-                            Text { text: pr.cpu + "%"; width: 42px; font-size: 10px; font-weight: 600; color: Theme.fg-1; horizontal-alignment: right; vertical-alignment: center; }
-                            Text { text: pr.mem + "%"; width: 42px; font-size: 10px; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: pr.pid; width: 40px; font-size: 10px * Theme.ui-scale; color: Theme.fg-2; vertical-alignment: center; }
+                            Text { text: pr.user; width: 56px; font-size: 10px * Theme.ui-scale; color: Theme.fg-3; overflow: elide; vertical-alignment: center; }
+                            Text { text: pr.command; horizontal-stretch: 1; font-size: 10px * Theme.ui-scale; color: Theme.fg-2; overflow: elide; vertical-alignment: center; }
+                            Text { text: pr.cpu + "%"; width: 42px; font-size: 10px * Theme.ui-scale; font-weight: 600; color: Theme.fg-1; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: pr.mem + "%"; width: 42px; font-size: 10px * Theme.ui-scale; color: Theme.fg-3; horizontal-alignment: right; vertical-alignment: center; }
                         }
                                 }
                             }
@@ -1944,7 +1958,7 @@ export component RightPanel inherits Rectangle {
                 Text {
                     text: "\u{E2C6}";
                     font-family: "Material Icons";
-                    font-size: 13px;
+                    font-size: 13px * Theme.ui-scale;
                     color: root.transfers-active ? Theme.accent : Theme.fg-3;
                     vertical-alignment: center;
                 }
@@ -1952,7 +1966,7 @@ export component RightPanel inherits Rectangle {
                     text: root.lang-en
                         ? "Transfers · \{root.transfers.length}"
                         : "传输记录 · \{root.transfers.length}";
-                    font-size: 12px;
+                    font-size: 12px * Theme.ui-scale;
                     color: Theme.fg-2;
                     vertical-alignment: center;
                 }
@@ -1960,7 +1974,7 @@ export component RightPanel inherits Rectangle {
 
             if root.transfers.length == 0 : Text {
                 text: root.lang-en ? "No transfers yet" : "暂无传输记录";
-                font-size: 11px;
+                font-size: 11px * Theme.ui-scale;
                 color: Theme.fg-3;
             }
 
@@ -1977,7 +1991,7 @@ export component RightPanel inherits Rectangle {
                     Text {
                         text: t.is-upload ? "\u{E5DB}" : "\u{E5D8}";
                         font-family: "Material Icons";
-                        font-size: 13px;
+                        font-size: 13px * Theme.ui-scale;
                         color: t.state == 0 ? Theme.accent : Theme.fg-3;
                         vertical-alignment: center;
                     }
@@ -1988,13 +2002,13 @@ export component RightPanel inherits Rectangle {
 
                         Text {
                             text: t.name;
-                            font-size: 11px;
+                            font-size: 11px * Theme.ui-scale;
                             color: Theme.fg-1;
                             overflow: elide;
                         }
                         Text {
                             text: t.detail;
-                            font-size: 10px;
+                            font-size: 10px * Theme.ui-scale;
                             color: Theme.fg-3;
                             overflow: elide;
                         }
@@ -2055,7 +2069,7 @@ export component RightPanel inherits Rectangle {
 
                             Text {
                                 text: "…";
-                                font-size: 10px;
+                                font-size: 10px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
                             }
@@ -2078,7 +2092,7 @@ export component RightPanel inherits Rectangle {
                             Text {
                                 text: i == 0 ? "\u{E2C7}" : "/" + c.name;
                                 font-family: i == 0 ? "Material Icons" : Theme.ui-font-family;
-                                font-size: 10px;
+                                font-size: 10px * Theme.ui-scale;
                                 color: i == root.sftp-crumbs.length - 1 ? Theme.fg-1 : Theme.fg-3;
                                 vertical-alignment: center;
                                 overflow: elide;
@@ -2128,7 +2142,7 @@ export component RightPanel inherits Rectangle {
                     y: 0;
                     text: "\u{E8B6}";   // search
                     font-family: "Material Icons";
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                     height: parent.height;
                     vertical-alignment: center;
@@ -2140,7 +2154,7 @@ export component RightPanel inherits Rectangle {
                     height: parent.height;
                     visible: search-input.text == "";
                     text: root.lang-en ? "Search" : "搜索";
-                    font-size: 10px;
+                    font-size: 10px * Theme.ui-scale;
                     color: Theme.fg-3;
                     vertical-alignment: center;
                     overflow: elide;
@@ -2151,7 +2165,7 @@ export component RightPanel inherits Rectangle {
                     height: parent.height;
                     text <=> root.search;
                     single-line: true;
-                    font-size: 10px;
+                    font-size: 10px * Theme.ui-scale;
                     color: Theme.fg-1;
                     vertical-alignment: center;
                     edited => {
@@ -2174,7 +2188,7 @@ export component RightPanel inherits Rectangle {
 
                     Text {
                         text: (root.lang-en ? "Name" : "名称") + root.sort-suffix-name;
-                        font-size: 9px;
+                        font-size: 9px * Theme.ui-scale;
                         color: Theme.fg-3;
                         vertical-alignment: center;
                     }
@@ -2192,7 +2206,7 @@ export component RightPanel inherits Rectangle {
 
                     Text {
                         text: (root.lang-en ? "Size" : "大小") + root.sort-suffix-size;
-                        font-size: 9px;
+                        font-size: 9px * Theme.ui-scale;
                         color: Theme.fg-3;
                         vertical-alignment: center;
                         horizontal-alignment: right;
@@ -2212,7 +2226,7 @@ export component RightPanel inherits Rectangle {
 
                     Text {
                         text: (root.lang-en ? "Time" : "时间") + root.sort-suffix-modified;
-                        font-size: 9px;
+                        font-size: 9px * Theme.ui-scale;
                         color: Theme.fg-3;
                         vertical-alignment: center;
                         horizontal-alignment: right;
@@ -2234,7 +2248,7 @@ export component RightPanel inherits Rectangle {
 
                 Text {
                     text: root.lang-en ? "Auto-sync" : "目录自动同步";
-                    font-size: 9px;
+                    font-size: 9px * Theme.ui-scale;
                     color: Theme.fg-3;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
@@ -2248,7 +2262,7 @@ export component RightPanel inherits Rectangle {
                 }
                 Text {
                     text: root.lang-en ? "Ask to save" : "下载前询问";
-                    font-size: 9px;
+                    font-size: 9px * Theme.ui-scale;
                     color: Theme.fg-3;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
@@ -2274,13 +2288,13 @@ export component RightPanel inherits Rectangle {
 
                     Text {
                         text: root.lang-en ? "Auto-sync directory" : "SFTP 目录自动同步";
-                        font-size: 12px;
+                        font-size: 12px * Theme.ui-scale;
                         font-weight: 600;
                         color: Theme.fg-1;
                     }
                     Text {
                         text: root.lang-en ? "Panel follows terminal cd" : "启用后，打开 SFTP 面板时将自动同步当前工作目录";
-                        font-size: 10px;
+                        font-size: 10px * Theme.ui-scale;
                         color: Theme.fg-3;
                         wrap: word-wrap;
                     }
@@ -2309,13 +2323,13 @@ export component RightPanel inherits Rectangle {
 
                     Text {
                         text: root.lang-en ? "Always ask where to save" : "下载前始终询问位置";
-                        font-size: 12px;
+                        font-size: 12px * Theme.ui-scale;
                         font-weight: 600;
                         color: Theme.fg-1;
                     }
                     Text {
                         text: root.lang-en ? "Ask for a destination on every download" : "每次下载都选择目标目录";
-                        font-size: 10px;
+                        font-size: 10px * Theme.ui-scale;
                         color: Theme.fg-3;
                         wrap: word-wrap;
                     }
@@ -2343,7 +2357,7 @@ export component RightPanel inherits Rectangle {
                     text: root.lang-en ? "Loading directory…" : "正在加载目录…";
                     width: parent.width;
                     height: parent.height;
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                     wrap: word-wrap;
                     vertical-alignment: center;
@@ -2356,7 +2370,7 @@ export component RightPanel inherits Rectangle {
                         : "目录为空 —— 也可能是还没同步，点右上角刷新。";
                     width: parent.width;
                     height: parent.height;
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                     wrap: word-wrap;
                     vertical-alignment: center;
@@ -2389,13 +2403,13 @@ export component RightPanel inherits Rectangle {
                                 Text {
                                     text: e.is-dir ? "\u{E2C7}" : "\u{E24D}"; // folder / insert_drive_file
                                     font-family: "Material Icons";
-                                    font-size: 12px;
+                                    font-size: 12px * Theme.ui-scale;
                                     color: e.is-dir ? Theme.accent : Theme.fg-3;
                                     vertical-alignment: center;
                                 }
                                 Text {
                                     text: e.name;
-                                    font-size: 10px;
+                                    font-size: 10px * Theme.ui-scale;
                                     color: Theme.fg-1;
                                     overflow: elide;
                                     horizontal-stretch: 1;
@@ -2405,7 +2419,7 @@ export component RightPanel inherits Rectangle {
                                 Text {
                                     text: e.is-dir ? "" : e.size;
                                     width: 54px;
-                                    font-size: 9px;
+                                    font-size: 9px * Theme.ui-scale;
                                     color: Theme.fg-3;
                                     vertical-alignment: center;
                                     horizontal-alignment: right;
@@ -2414,7 +2428,7 @@ export component RightPanel inherits Rectangle {
                                 Text {
                                     text: e.is-dir ? "" : e.modified;
                                     width: 50px;
-                                    font-size: 9px;
+                                    font-size: 9px * Theme.ui-scale;
                                     color: Theme.fg-3;
                                     vertical-alignment: center;
                                     horizontal-alignment: right;
@@ -2440,7 +2454,7 @@ export component RightPanel inherits Rectangle {
             // 状态行（"SFTP 连接中…" / 出错原因 / 传输提示）
             if root.sftp-status != "" : Text {
                 text: root.sftp-status;
-                font-size: 10px;
+                font-size: 10px * Theme.ui-scale;
                 color: Theme.fg-3;
                 overflow: elide;
             }
@@ -2472,7 +2486,7 @@ export component RightPanel inherits Rectangle {
                 Text {
                     text: "\u{E2C7}";   // folder：切到文件视图
                     font-family: "Material Icons";
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: root.current-tab == 6 ? Theme.accent : Theme.fg-2;
                     horizontal-alignment: center;
                     vertical-alignment: center;

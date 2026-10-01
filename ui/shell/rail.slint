@@ -23,20 +23,24 @@ component RailButton inherits Rectangle {
         ? Theme.accent-soft
         : (ta.pressed ? Theme.accent-press
         : (ta.has-hover ? Theme.sur-3 : transparent));
-    animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
-    animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+    animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+    animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
     HorizontalLayout {
-        padding-left: root.collapsed ? 0px : Theme.sp-3;
-        padding-right: root.collapsed ? 0px : Theme.sp-2;
+        // ⚠ 收起时**不要**切换 alignment / padding：它们在宽度动画启动的同一帧就
+        // 跳变 —— 图标先"瞬移"到中心、再随侧栏宽度收缩漂移，两段位移叠在一起就是
+        // 用户看到的"弹一下"。现在图标位置只由侧栏宽度动画驱动（alignment 恒为
+        // start、padding 恒定），收起后图标自然落在窄栏中间（40px 行宽 - 20px 图标）。
+        padding-left: Theme.sp-3;
+        padding-right: Theme.sp-2;
         spacing: Theme.sp-3;
-        alignment: root.collapsed ? center : start;
+        alignment: start;
 
         Text {
             width: 20px;
             text: root.glyph;
             font-family: "Material Icons";
-            font-size: 18px;
+            font-size: 18px * Theme.ui-scale;
             color: root.active ? Theme.accent : Theme.fg-2;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -44,7 +48,7 @@ component RailButton inherits Rectangle {
 
         if !root.collapsed : Text {
             text: root.label;
-            font-size: 13px;
+            font-size: 13px * Theme.ui-scale;
             color: root.active ? Theme.accent : Theme.fg-1;
             font-weight: root.active ? 600 : 400;
             vertical-alignment: center;
@@ -70,7 +74,7 @@ component RailButton inherits Rectangle {
 
 export component Rail inherits Rectangle {
     // 0 主机 · 1 终端 · 2 指令集 · 3 Docker · 4 设置 · 5 笔记随笔 · 6 AI 助手
-    in-out property <int> current-page: 1;
+    in-out property <int> current-page: 0;
     in-out property <bool> collapsed: false;
     // 顶部给系统红绿灯让位的高度（macOS 无边框窗口下由外层传入 titlebar-inset）
     in property <length> top-inset: 0px;
@@ -79,10 +83,21 @@ export component Rail inherits Rectangle {
     callback search-requested();
 
     width: root.collapsed ? 56px : 180px;
+    // 非对称 + 弹簧：展开 300ms 弹簧落位（新内容有时间呈现），
+    // 收起 200ms 加速让位。此前只动了工具条偏移量，侧栏本身纹丝不动。
+    animate width {
+        duration: root.collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
+        easing: root.collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
+        enabled: AnimationSettings.enabled;
+    }
     // L1 层：比二级侧栏（sur-1 = wp-base）更沉一档（深色壁纸 −8%），两级侧栏由此区分。
     background: Theme.rail-bg;
 
     VerticalLayout {
+        // ⚠ 普通（Rectangle）父级里的 Layout 按**首选尺寸**布局，必须显式铺满 ——
+        // 否则它不跟随侧栏动画中的宽度，选中项高亮会等动画结束才骤然缩窄。
+        width: 100%;
+        height: 100%;
         padding-top: root.top-inset + Theme.sp-2;
         padding-left: Theme.sp-2;
         padding-right: Theme.sp-2;
@@ -110,7 +125,7 @@ export component Rail inherits Rectangle {
                         width: 16px;
                         text: "\u{E8B6}"; // search
                         font-family: "Material Icons";
-                        font-size: 15px;
+                        font-size: 15px * Theme.ui-scale;
                         color: Theme.fg-3;
                         horizontal-alignment: center;
                         vertical-alignment: center;
@@ -125,7 +140,7 @@ export component Rail inherits Rectangle {
                             width: 100%;
                             height: 100%;
                             text: root.lang-en ? "Search hosts, settings…" : "搜索主机、设置…";
-                            font-size: 12px;
+                            font-size: 12px * Theme.ui-scale;
                             color: Theme.fg-3;
                             vertical-alignment: center;
                             overflow: elide;
@@ -134,7 +149,7 @@ export component Rail inherits Rectangle {
                         search-input := TextInput {
                             width: 100%;
                             height: 100%;
-                            font-size: 12px;
+                            font-size: 12px * Theme.ui-scale;
                             color: Theme.fg-1;
                             single-line: true;
                             accepted => {
@@ -159,7 +174,7 @@ export component Rail inherits Rectangle {
                 Text {
                     text: "\u{E5CB}"; // chevron_left
                     font-family: "Material Icons";
-                    font-size: 18px;
+                    font-size: 18px * Theme.ui-scale;
                     color: Theme.fg-2;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -181,7 +196,7 @@ export component Rail inherits Rectangle {
             Text {
                 text: "\u{E5CC}"; // chevron_right
                 font-family: "Material Icons";
-                font-size: 18px;
+                font-size: 18px * Theme.ui-scale;
                 color: Theme.fg-2;
                 horizontal-alignment: center;
                 vertical-alignment: center;

@@ -212,7 +212,7 @@ export component TerminalStage inherits Rectangle {
                             ? "Pick a host on the left to begin"
                             : "从左侧「主机」里选一个会话开始";
                         color: Theme.fg-3;
-                        font-size: 11px;
+                        font-size: 11px * Theme.ui-scale;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
@@ -333,7 +333,7 @@ export component TerminalStage inherits Rectangle {
                     text: root.lang-en
                         ? "No snippets yet — add them on the Snippets page"
                         : "还没有快捷指令 —— 到「指令集」页添加";
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                     wrap: word-wrap;
                 }
@@ -355,13 +355,13 @@ export component TerminalStage inherits Rectangle {
 
                             Text {
                                 text: q.name;
-                                font-size: 11px;
+                                font-size: 11px * Theme.ui-scale;
                                 color: Theme.fg-1;
                                 overflow: elide;
                             }
                             Text {
                                 text: q.command-preview;
-                                font-size: 9px;
+                                font-size: 9px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 overflow: elide;
                             }
@@ -386,8 +386,8 @@ export component TerminalStage inherits Rectangle {
         x: sp.x; y: sp.y; width: sp.w; height: sp.h;
         background: sp-ta.has-hover || sp-ta.pressed ? Theme.accent : Theme.line;
         animate background {
-            duration: 100ms;
-            easing: AnimationSettings.color();
+            duration: AnimationSettings.short2();
+            easing: AnimationSettings.e-standard-decelerate();
             enabled: AnimationSettings.enabled;
         }
         sp-ta := TouchArea {

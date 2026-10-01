@@ -118,6 +118,9 @@ pub(crate) fn system_monospace_families() -> Vec<String> {
         .faces()
         .filter(|f| f.monospaced)
         .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
+        // macOS 的内部/自动化字体以"."开头（.Apple SD Gothic NeoI 等），
+        // 不该出现在用户选择器里。
+        .filter(|n| !n.starts_with('.'))
         .collect();
     names.sort();
     names.dedup();
@@ -133,6 +136,8 @@ pub(crate) fn system_families() -> Vec<String> {
     let mut names: Vec<String> = db
         .faces()
         .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
+        // 同上：过滤 macOS 隐藏字体（"."开头）。
+        .filter(|n| !n.starts_with('.'))
         .collect();
     names.sort();
     names.dedup();

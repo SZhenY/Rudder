@@ -51,7 +51,7 @@ component TabPill inherits Rectangle {
             // 欢迎标签页用「+」图标（它还没有会话）
             text: root.tab.kind == "welcome" ? "\u{E145}" : "\u{EB8E}"; // add / terminal
             font-family: "Material Icons";
-            font-size: 13px;
+            font-size: 13px * Theme.ui-scale;
             color: root.active ? Theme.accent : Theme.fg-3;
             vertical-alignment: center;
         }
@@ -60,7 +60,7 @@ component TabPill inherits Rectangle {
             text: root.tab.kind == "welcome"
                 ? (root.lang-en ? "New session" : "新建会话")
                 : root.tab.title;
-            font-size: 12px;
+            font-size: 12px * Theme.ui-scale;
             color: root.active ? Theme.rail-fg : Theme.fg-2;
             font-weight: root.active ? 600 : 400;
             vertical-alignment: center;
@@ -77,7 +77,7 @@ component TabPill inherits Rectangle {
             Text {
                 text: "\u{E5CD}"; // close
                 font-family: "Material Icons";
-                font-size: 12px;
+                font-size: 12px * Theme.ui-scale;
                 color: Theme.fg-3;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -112,13 +112,13 @@ component IconBtn inherits Rectangle {
         Text {
             text: root.glyph;
             font-family: "Material Icons";
-            font-size: 15px;
+            font-size: 15px * Theme.ui-scale;
             color: Theme.fg-2;
             vertical-alignment: center;
         }
         if root.label != "" : Text {
             text: root.label;
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             color: Theme.fg-2;
             vertical-alignment: center;
         }
@@ -198,7 +198,7 @@ export component PaneTabs inherits Rectangle {
                 Text {
                     text: "\u{E145}"; // add
                     font-family: "Material Icons";
-                    font-size: 16px;
+                    font-size: 16px * Theme.ui-scale;
                     color: Theme.fg-2;
                     horizontal-alignment: center;
                     vertical-alignment: center;

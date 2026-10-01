@@ -24,7 +24,7 @@ component RowBtn inherits Rectangle {
     Text {
         text: root.glyph;
         font-family: "Material Icons";
-        font-size: 13px;
+        font-size: 13px * Theme.ui-scale;
         color: Theme.fg-2;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -85,7 +85,7 @@ export component HistoryPanel inherits Rectangle {
 
                 Text {
                     text: root.lang-en ? "Command history" : "历史命令";
-                    font-size: 13px;
+                    font-size: 13px * Theme.ui-scale;
                     font-weight: 700;
                     color: Theme.fg-1;
                     vertical-alignment: center;
@@ -93,7 +93,7 @@ export component HistoryPanel inherits Rectangle {
                 }
                 Text {
                     text: "\{root.entries.length}";
-                    font-size: 10px;
+                    font-size: 10px * Theme.ui-scale;
                     color: Theme.fg-3;
                     vertical-alignment: center;
                 }
@@ -106,7 +106,7 @@ export component HistoryPanel inherits Rectangle {
                     Text {
                         text: "\u{E5CD}"; // close
                         font-family: "Material Icons";
-                        font-size: 13px;
+                        font-size: 13px * Theme.ui-scale;
                         color: Theme.fg-2;
                         horizontal-alignment: center;
                         vertical-alignment: center;
@@ -136,7 +136,7 @@ export component HistoryPanel inherits Rectangle {
                     Text {
                         text: "\u{E8B6}"; // search
                         font-family: "Material Icons";
-                        font-size: 13px;
+                        font-size: 13px * Theme.ui-scale;
                         color: Theme.fg-3;
                         vertical-alignment: center;
                     }
@@ -146,7 +146,7 @@ export component HistoryPanel inherits Rectangle {
                         height: parent.height;
                         color: Theme.fg-1;
                         font-family: Theme.ui-font-family;
-                        font-size: 12px;
+                        font-size: 12px * Theme.ui-scale;
                         vertical-alignment: center;
                         single-line: true;
                         edited => {
@@ -179,7 +179,7 @@ export component HistoryPanel inherits Rectangle {
                     width: parent.width;
                     height: parent.height;
                     text: root.lang-en ? "No history yet" : "还没有历史命令";
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -221,7 +221,7 @@ export component HistoryPanel inherits Rectangle {
                                         ? root.previews[root.entries.length - 1 - i]
                                         : e;
                                     font-family: Theme.term-font-family;
-                                    font-size: 11px;
+                                    font-size: 11px * Theme.ui-scale;
                                     color: Theme.fg-1;
                                     vertical-alignment: center;
                                     overflow: elide;

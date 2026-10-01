@@ -75,9 +75,10 @@ export component UpdateDialog inherits Rectangle {
     height: 100%;
     visible: self.opacity > 0.001;
     opacity: open ? 1 : 0;
+    // 非对称时间安排：进入 350ms 减速落位，退出 150ms 迅速让位
     animate opacity {
-        duration: 160ms;
-        easing: AnimationSettings.color();
+        duration: root.open ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
+        easing: root.open ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
         enabled: AnimationSettings.enabled;
     }
     background: #00000080;   // dim backdrop
@@ -98,8 +99,8 @@ export component UpdateDialog inherits Rectangle {
         drop-shadow-blur: Theme.shadow-dialog-blur;
         drop-shadow-color: Theme.shadow-dialog-color;
         animate y {
-            duration: 200ms;
-            easing: AnimationSettings.spring-settle();
+            duration: AnimationSettings.short4();
+            easing: AnimationSettings.s-default();
             enabled: AnimationSettings.enabled;
         }
         TouchArea { enabled: open; }   // 吞掉卡片内部点击，不冒泡到遮罩

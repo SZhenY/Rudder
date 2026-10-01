@@ -309,9 +309,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
     }
 
     {
-        let weak = window.as_weak();
         let store = store.clone();
         let bufs = bufs.clone();
+        let weak = window.as_weak();
         window.on_set_output_highlight(move |enabled, preset: SharedString| {
             let preset = preset.to_string();
             {
@@ -322,6 +322,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             }
             if let Some(w) = weak.upgrade() {
                 apply_output_highlight(&w, &bufs, enabled, &preset);
+                // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（拖了没反应）。
+                w.set_output_highlight_enabled(enabled);
             }
         });
     }
@@ -329,6 +331,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
     {
         let store = store.clone();
         let bufs = bufs.clone();
+        let weak = window.as_weak();
         window.on_set_json_format_output(move |enabled| {
             {
                 let mut s = store.borrow_mut();
@@ -341,6 +344,11 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .json_format_output = enabled;
+            }
+        
+            // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（用户拖了没反应）。
+            if let Some(w) = weak.upgrade() {
+                w.set_json_format_output(enabled);
             }
         });
     }
@@ -421,21 +429,33 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
 
     {
         let store = store.clone();
+        let weak = window.as_weak();
         window.on_set_convert_eol(move |v: bool| {
             let mut s = store.borrow_mut();
             s.set_convert_eol(v);
             s.save_logging();
+        
+            // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（用户拖了没反应）。
+            if let Some(w) = weak.upgrade() {
+                w.set_convert_eol(v);
+            }
         });
     }
 
     {
         let store = store.clone();
+        let weak = window.as_weak();
         window.on_set_osc52_clipboard(move |v: bool| {
             let mut s = store.borrow_mut();
             s.set_osc52_clipboard(v);
             s.save_logging();
             crate::terminal::vt_adapter::OSC52_ENABLED
                 .store(v, std::sync::atomic::Ordering::Relaxed);
+        
+            // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（用户拖了没反应）。
+            if let Some(w) = weak.upgrade() {
+                w.set_osc52_clipboard(v);
+            }
         });
     }
 

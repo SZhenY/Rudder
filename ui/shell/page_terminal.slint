@@ -27,7 +27,7 @@ component MiniBtn inherits Rectangle {
 
         Text {
             text: root.text;
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             color: root.primary ? #ffffff : Theme.fg-1;
             vertical-alignment: center;
             overflow: elide;
@@ -60,7 +60,7 @@ component Chip inherits Rectangle {
 
         Text {
             text: root.text;
-            font-size: 10px;
+            font-size: 10px * Theme.ui-scale;
             color: Theme.fg-3;
             vertical-alignment: center;
             overflow: elide;
@@ -86,14 +86,14 @@ component SubCard inherits Rectangle {
 
         Text {
             text: root.title;
-            font-size: 13px;
+            font-size: 13px * Theme.ui-scale;
             font-weight: 600;
             color: Theme.fg-1;
             overflow: elide;
         }
         Text {
             text: root.desc;
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             color: Theme.fg-3;
             wrap: word-wrap;
             min-height: 30px;
@@ -148,13 +148,13 @@ export component PageTerminal inherits Rectangle {
 
                             Text {
                                 text: root.lang-en ? "Create your first terminal session" : "创建你的第一个终端会话";
-                                font-size: 16px;
+                                font-size: 16px * Theme.ui-scale;
                                 font-weight: 700;
                                 color: Theme.fg-1;
                             }
                             Text {
                                 text: root.lang-en ? "Local, SSH and serial — sessions persist" : "支持本地、SSH 与串口，会话可持久保存";
-                                font-size: 11px;
+                                font-size: 11px * Theme.ui-scale;
                                 color: Theme.fg-3;
                             }
                         }
@@ -239,20 +239,20 @@ export component PageTerminal inherits Rectangle {
                         Text {
                             text: "\u{E8B5}"; // schedule
                             font-family: "Material Icons";
-                            font-size: 13px;
+                            font-size: 13px * Theme.ui-scale;
                             color: Theme.fg-3;
                             vertical-alignment: center;
                         }
                         Text {
                             text: root.lang-en ? "Recent Connections" : "最近连接";
-                            font-size: 12px;
+                            font-size: 12px * Theme.ui-scale;
                             color: Theme.fg-2;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                         }
                         if root.sessions.length > 0 : Text {
                             text: "\{root.sessions.length}";
-                            font-size: 10px;
+                            font-size: 10px * Theme.ui-scale;
                             color: Theme.fg-3;
                             vertical-alignment: center;
                         }
@@ -260,7 +260,7 @@ export component PageTerminal inherits Rectangle {
 
                     if root.sessions.length == 0 : Text {
                         text: root.lang-en ? "No history yet — pick a way above to start" : "还没有连接记录 —— 上面挑一种方式开始";
-                        font-size: 11px;
+                        font-size: 11px * Theme.ui-scale;
                         color: Theme.fg-3;
                     }
 
@@ -297,7 +297,7 @@ export component PageTerminal inherits Rectangle {
                                     Text {
                                         text: "\u{EB8E}"; // terminal
                                         font-family: "Material Icons";
-                                        font-size: 14px;
+                                        font-size: 14px * Theme.ui-scale;
                                         color: Theme.fg-2;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
@@ -310,7 +310,7 @@ export component PageTerminal inherits Rectangle {
 
                                     Text {
                                         text: s.name;
-                                        font-size: 12px;
+                                        font-size: 12px * Theme.ui-scale;
                                         color: Theme.fg-1;
                                         overflow: elide;
                                     }
@@ -318,7 +318,7 @@ export component PageTerminal inherits Rectangle {
                                         text: s.user != ""
                                             ? "\{s.user}@\{s.host}"
                                             : s.host;
-                                        font-size: 10px;
+                                        font-size: 10px * Theme.ui-scale;
                                         color: Theme.fg-3;
                                         overflow: elide;
                                     }
@@ -326,7 +326,7 @@ export component PageTerminal inherits Rectangle {
                                 // 上次使用时间（`last-used`：ISO 时间戳或 "never"）
                                 if s.last-used != "" && s.last-used != "never" : Text {
                                     text: s.last-used;
-                                    font-size: 10px;
+                                    font-size: 10px * Theme.ui-scale;
                                     color: Theme.fg-3;
                                     vertical-alignment: center;
                                     overflow: elide;
@@ -334,7 +334,7 @@ export component PageTerminal inherits Rectangle {
                                 Text {
                                     text: "\u{E5CC}"; // chevron_right
                                     font-family: "Material Icons";
-                                    font-size: 15px;
+                                    font-size: 15px * Theme.ui-scale;
                                     color: Theme.fg-3;
                                     vertical-alignment: center;
                                 }

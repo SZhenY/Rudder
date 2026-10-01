@@ -35,13 +35,13 @@ component Pill inherits Rectangle {
         if root.glyph != "" : Text {
             text: root.glyph;
             font-family: "Material Icons";
-            font-size: 12px;
+            font-size: 12px * Theme.ui-scale;
             color: root.enabled ? Theme.fg-2 : Theme.fg-3.with-alpha(0.5);
             vertical-alignment: center;
         }
         Text {
             text: root.text;
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             color: root.enabled ? Theme.fg-2 : Theme.fg-3.with-alpha(0.5);
             vertical-alignment: center;
         }
@@ -96,7 +96,7 @@ export component StatusBar inherits Rectangle {
         }
         Text {
             text: root.conn-host == "" ? root.connection-text : root.conn-host;
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             color: Theme.fg-2;
             vertical-alignment: center;
             overflow: elide;
@@ -163,14 +163,14 @@ export component StatusBar inherits Rectangle {
                 Text {
                     text: "\u{E2C6}"; // swap_vert
                     font-family: "Material Icons";
-                    font-size: 12px;
+                    font-size: 12px * Theme.ui-scale;
                     color: root.transfers-active ? Theme.accent : Theme.fg-3;
                     vertical-alignment: center;
                 }
                 Text {
                     total-text := Text {
                         text: "TOTAL \{root.transfer-count}";
-                        font-size: 10px;
+                        font-size: 10px * Theme.ui-scale;
                         color: Theme.fg-2;
                         vertical-alignment: center;
                     }

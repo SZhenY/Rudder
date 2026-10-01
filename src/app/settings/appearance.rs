@@ -39,10 +39,16 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         // 「默认折叠 SFTP 面板」（v0.8.0 设置页迁移）：新外壳里决定新会话的
         // 右侧工具面板是否以折叠状态起步（会话创建时读取，见 session_callbacks）。
         let store = store.clone();
+        let weak = window.as_weak();
         window.on_set_collapse_sftp_default(move |v| {
             persist(&store, |s| {
                 s.set_collapse_sftp_default(v);
             });
+        
+            // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（用户拖了没反应）。
+            if let Some(w) = weak.upgrade() {
+                w.set_collapse_sftp_default(v);
+            }
         });
     }
 
@@ -87,10 +93,16 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
 
     {
         let store = store.clone();
+        let weak = window.as_weak();
         window.on_set_hide_special_partitions(move |v: bool| {
             persist(&store, |s| {
                 s.set_hide_special_partitions(v);
             });
+        
+            // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（用户拖了没反应）。
+            if let Some(w) = weak.upgrade() {
+                w.set_hide_special_partitions(v);
+            }
         });
     }
 
@@ -119,21 +131,6 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         });
     }
 
-    {
-        let weak = window.as_weak();
-        let store = store.clone();
-        window.on_set_panel_font(move |percent: i32| {
-            let clamped = clamp_panel_font(percent);
-            {
-                persist(&store, |s| {
-                    s.set_panel_font(clamped);
-                });
-            }
-            if let Some(w) = weak.upgrade() {
-                w.global::<Theme>().set_panel_font(clamped as f32 / 100.0);
-            }
-        });
-    }
 
     {
         let weak = window.as_weak();
@@ -654,7 +651,6 @@ pub(crate) fn reset(
         persist(store, |s| {
             s.set_ui_font_family(d.appearance.ui_font_family.clone());
             s.set_ui_scale(d.appearance.ui_scale);
-            s.set_panel_font(d.appearance.panel_font);
             s.set_renderer_mode(d.appearance.renderer_mode.clone());
             s.set_wallpaper(d.appearance.wallpaper.clone());
             s.set_wallpaper_overlay(d.appearance.wallpaper_overlay);
@@ -676,7 +672,6 @@ pub(crate) fn reset(
     w.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
     w.set_ui_font_index(fonts.ui_index(&ui_stored));
     w.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0);
-    w.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0);
     w.set_renderer_mode(s.renderer_mode().into());
     w.global::<Theme>().set_panel_alpha(s.wallpaper_overlay());
     // 动画开关此前是 Slint-only 全局、从不持久化；现在与其它偏好一样由 config 驱动。
@@ -719,11 +714,6 @@ fn clamp_ui_scale(percent: i32) -> u32 {
     (percent.max(0) as u32).clamp(80, 200)
 }
 
-/// 面板字号的百分比：同上，范围 80–160。
-fn clamp_panel_font(percent: i32) -> u32 {
-    (percent.max(0) as u32).clamp(80, 160)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -740,15 +730,6 @@ mod tests {
         assert_eq!(clamp_ui_scale(200), 200);
         assert_eq!(clamp_ui_scale(201), 200);
         assert_eq!(clamp_ui_scale(i32::MAX), 200);
-    }
-
-    #[test]
-    fn panel_font_clamps_below_and_above() {
-        assert_eq!(clamp_panel_font(i32::MIN), 80);
-        assert_eq!(clamp_panel_font(0), 80);
-        assert_eq!(clamp_panel_font(160), 160);
-        assert_eq!(clamp_panel_font(161), 160);
-        assert_eq!(clamp_panel_font(i32::MAX), 160);
     }
 
     /// 主题色输入的归一化：`""` / 预设 id / `#RRGGBB`；`#RGB` 展开并大写；其余非法。

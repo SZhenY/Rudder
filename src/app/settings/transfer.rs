@@ -1,5 +1,6 @@
 //! 传输页：SFTP 跟随 cd / 总是询问保存位置。
 
+use slint::ComponentHandle;   // `as_weak()` 来自这个 trait
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -15,9 +16,15 @@ pub(crate) fn bind(w: &AppWindow, store: &Store, follow_flag: &Arc<AtomicBool>) 
     {
         let store = store.clone();
         let flag = follow_flag.clone();
+        let weak = w.as_weak();
         w.on_set_sftp_follow_cd(move |follow| {
             flag.store(follow, Ordering::Relaxed);
             persist(&store, |s| s.set_sftp_follow_cd(follow));
+        
+            // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（用户拖了没反应）。
+            if let Some(w) = weak.upgrade() {
+                w.set_sftp_follow_cd(follow);
+            }
         });
     }
 
@@ -25,8 +32,14 @@ pub(crate) fn bind(w: &AppWindow, store: &Store, follow_flag: &Arc<AtomicBool>) 
     w.set_download_always_ask(store.borrow().download_always_ask());
     {
         let store = store.clone();
+        let weak = w.as_weak();
         w.on_set_download_always_ask(move |ask| {
             persist(&store, |s| s.set_download_always_ask(ask));
+        
+            // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（用户拖了没反应）。
+            if let Some(w) = weak.upgrade() {
+                w.set_download_always_ask(ask);
+            }
         });
     }
 }

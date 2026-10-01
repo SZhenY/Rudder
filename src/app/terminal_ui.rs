@@ -361,9 +361,9 @@ pub(super) fn apply_wallpaper(
     };
     match crate::wallpaper::load(id) {
         Some(wp) => {
-            // 换壁纸交叉淡化：旧图放 prev 层盖在新图上，Slint 侧 150ms 渐隐。
+            // 换壁纸交叉淡化：旧图放 prev 层盖在新图上，Slint 侧 400ms 渐隐（AnimationSettings.medium4()）。
             // 时序：置 fading + fade-opacity=1 → 30ms 后（确保先渲染了一帧）降到 0
-            // 触发动画 → 220ms 后撤掉 prev 层。尊重「界面动画」开关；启动首帧
+            // 触发动画 → 480ms 后（淡出结束后）撤掉 prev 层。尊重「界面动画」开关；启动首帧
             // （此前无壁纸）不做淡化。仅上传/切换真壁纸时走这里。
             if window.global::<Theme>().get_wallpaper_active()
                 && window.global::<AnimationSettings>().get_enabled()
@@ -379,7 +379,10 @@ pub(super) fn apply_wallpaper(
                     }
                 });
                 let weak = window.as_weak();
-                slint::Timer::single_shot(std::time::Duration::from_millis(220), move || {
+                // ⚠ 撤 prev 层的时刻必须 **晚于** Slint 侧的淡出动画结束
+                // （Theme 里是 `AnimationSettings.medium4()` = 400ms）：早撤会把还没
+                // 淡完的旧图硬切掉 —— 深色↔浅色切换时表现为"闪一下"。
+                slint::Timer::single_shot(std::time::Duration::from_millis(480), move || {
                     if let Some(w) = weak.upgrade() {
                         w.global::<Theme>().set_wallpaper_fading(false);
                     }

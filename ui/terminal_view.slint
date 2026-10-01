@@ -1042,8 +1042,8 @@ export component TerminalView inherits Rectangle {
                         ? Theme.fg-2
                         : Theme.fg-3.with-alpha(Theme.is-mac ? 0.45 : 0.6);
                     border-radius: 3px;
-                    animate background { duration: 100ms;
-            easing: AnimationSettings.color();
+                    animate background { duration: AnimationSettings.short2();
+            easing: AnimationSettings.e-standard-decelerate();
             enabled: AnimationSettings.enabled;
         }
                 }

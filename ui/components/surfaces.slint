@@ -7,7 +7,7 @@
 // * 只含样式、不含业务状态；属性一律 `in`，事件一律 callback 上抛；
 // * 不引入新的视觉：默认值与本组件替换掉的旧内联写法**逐字对应**。
 
-import { Theme } from "../theme.slint";
+import { AnimationSettings, Theme } from "../theme.slint";
 
 /// 横向 1px 分隔线：替换散落各处的「高 1px 的空 Rectangle + border-subtle 底色」（原 19 处）。
 /// 只设 height，宽度交给 `Rectangle` 的默认填充行为。
@@ -77,9 +77,31 @@ export component ModalCard inherits Rectangle {
     // 否则关闭状态下这层全窗口 TouchArea 会把整个界面的点击吞掉。
     in property <bool> active: true;
 
+    // ── 入场动效（M3 Expressive：模态用**弹簧**）──────────────────────────
+    // Slint 的 Rectangle 没有 `scale`，"放大落位"用 y 位移 + 淡入表达：弹簧驱动
+    // appear（0→1），卡片从下方 14px 弹入落位；遮罩单独淡入（不跟着弹，回弹的
+    // 遮罩显得轻佻）。
+    //
+    // ⚠️ `init` 里改值**会**触发 animate —— 实测 100ms 时 appear≈0.935、随后超调
+    //    到 1.0009 再收敛。所以 `if` 创建（非常驻）的弹窗同样有入场动画。
+    property <float> appear: 0;
+    animate appear {
+        duration: AnimationSettings.enter-modal();
+        easing: AnimationSettings.s-default();
+        enabled: AnimationSettings.enabled;
+    }
+    property <float> backdrop-appear: 0;
+    animate backdrop-appear {
+        duration: AnimationSettings.short3();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+    init => { appear = 1; backdrop-appear = 1; }
+
     width: 100%;
     height: 100%;
     background: root.backdrop;
+    opacity: root.backdrop-appear;
     // 遮罩本身吞掉点击：点击遮罩即 dismissed，卡片内部的点击被 card 自己吞掉。
     backdrop-ta := TouchArea {
         enabled: root.active;
@@ -92,7 +114,9 @@ export component ModalCard inherits Rectangle {
             ? min(card-body.preferred-height, parent.height - 40px)
             : root.card-height;
         x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
+        // 入场：从下方 14px 弹入（弹簧驱动），同时淡入
+        y: (parent.height - self.height) / 2 + (1 - root.appear) * 14px;
+        opacity: root.appear;
         background: root.card-background;
         border-radius: root.radius;
         border-width: 1px;

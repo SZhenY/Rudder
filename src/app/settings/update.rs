@@ -49,9 +49,15 @@ pub(crate) fn bind(w: &AppWindow, store: &Store) {
     w.set_update_last_check(format_last_check(store.borrow().update_last_check()).into());
 
     let store_cb = store.clone();
+    let weak = w.as_weak();
     w.on_set_update_check_enabled(move |v| {
         persist(&store_cb, |s| s.set_update_check_enabled(v));
-    });
+    
+            // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（用户拖了没反应）。
+            if let Some(w) = weak.upgrade() {
+                w.set_update_check_enabled(v);
+            }
+        });
 
     let store_cb = store.clone();
     let weak = w.as_weak();

@@ -16,8 +16,8 @@ component DangerButton inherits Rectangle {
         held when touch.pressed : { background: #c44a4a; }
         hovered when touch.has-hover : { background: #ec6a6a; }
     ]
-    animate background { duration: 120ms;
-            easing: AnimationSettings.color();
+    animate background { duration: AnimationSettings.short3();
+            easing: AnimationSettings.e-standard-decelerate();
             enabled: AnimationSettings.enabled;
         }
     HorizontalLayout {
@@ -68,9 +68,10 @@ export component ConfirmDialog inherits Rectangle {
     // 才真正隐藏（Slint 无动画完成回调，这是标准替代）。
     visible: self.opacity > 0.001;
     opacity: (root.is-open && !root.covered) ? 1 : 0;
+    // 非对称时间安排：进入 350ms 减速落位，退出 150ms 迅速让位
     animate opacity {
-        duration: 180ms;
-        easing: AnimationSettings.color();
+        duration: (root.is-open && !root.covered) ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
+        easing: (root.is-open && !root.covered) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
         enabled: AnimationSettings.enabled;
     }
     background: #000000aa;
@@ -112,8 +113,8 @@ export component ConfirmDialog inherits Rectangle {
         y: (parent.height - self.height) / 2
             + (root.is-open && !root.covered ? 0px : 12px);
         animate y {
-            duration: 200ms;
-            easing: AnimationSettings.spring-settle();
+            duration: AnimationSettings.short4();
+            easing: AnimationSettings.s-default();
             enabled: AnimationSettings.enabled;
         }
         background: Theme.bg-panel;

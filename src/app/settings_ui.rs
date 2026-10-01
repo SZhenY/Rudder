@@ -145,7 +145,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_output_highlight_rules(output_highlight_rule_model(&s));
         window.set_json_format_output(s.json_format_output());
         window.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0); // global UI zoom (#100)
-        window.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0); // settings-panel font scale
         window.set_renderer_mode(s.renderer_mode().into());
         // v0.8.0 设置窗迁移项：新设置页需要回显当前值。
         window.set_collapse_sftp_default(s.collapse_sftp_default());
@@ -701,6 +700,13 @@ mod wiring_tests {
         "swatch-color", "preview-color", "cursor-kind", "minimum", "maximum", "step", "unit",
         // 由输入内容派生的 Slint 内部状态
         "scrollback-valid",
+        // 分类页淡入容器（CatFade）的**布局转发属性**：只是把 spacing / padding-top
+        // 传给内层布局（Rectangle 已有同名属性故改名），不是设置项、无需还原。
+        "cat-spacing", "cat-padding-top",
+        // 分类页淡出/换页状态机的内部状态（纯 UI，非设置项）
+        "cat-shown", "cat-swapping", "cat-out", "cat-opacity",
+        // 弹层淡入驱动属性（changed 不可用：is-open 引用触发编译器 panic，见 page_settings 注释）
+        "wp-appear", "font-appear", "tfont-appear",
         // 渲染档位的**显示名**（不是配置字段）：真正参与还原的是 `renderer-mode`，
         // 这几个只是「值 ↔ 界面文字」映射用的常量，随语言/平台变化。
         "lbl-auto", "lbl-soft", "lbl-gpu",

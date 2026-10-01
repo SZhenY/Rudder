@@ -223,9 +223,6 @@ export global Theme {
     // all font sizes and spacing/radii below multiply by it, so the whole UI
     // grows/shrinks live (the terminal font has its own size setting).
     in-out property <float> ui-scale: 1.0;
-    // Settings-panel font scale (#v0.5). The settings card + its text multiply by
-    // this so the panel (which is exempt from ui-scale) can still be enlarged.
-    in-out property <float> panel-font: 1.0;
 
     // --- Typography --------------------------------------------------------
     out property <length> fs-xs: 11px * root.ui-scale;
@@ -307,31 +304,82 @@ export global Theme {
 }
 
 export global AnimationSettings {
+    // ══════════════════════════════════════════════════════════════════════
+    // 全项目动效令牌（Material Design 3 Expressive 动效体系）
+    //
+    // 规则一：**所有**时长与曲线都定义在这里，组件只调用、不写字面量 ——
+    //         保证 12+ 组件的节奏统一（调参只改这一处）。
+    // 规则二：⚠️ 一律用 `pure function` 而**不是** `property <easing>`：
+    //         编译器的 `check_public_api.rs` 对 easing 类型的属性一律告警
+    //         （与可见性无关，private 也压不住）："Properties of type easing
+    //         are not supported yet for public API"。函数不在检查范围内。
+    // 规则三：非对称时间安排 —— 进入比退出**长**：新内容有时间呈现，退出
+    //         内容迅速消失。`duration:`/`easing:` 在动画**启动时**求值，此时
+    //         状态已是新值，所以组件用三元即可拿到方向差异：
+    //           duration: hovered ? Motion.enter-state() : Motion.exit-state();
+    // ══════════════════════════════════════════════════════════════════════
     in-out property <bool> enabled: true;
 
-    // ── 标准缓动曲线（全项目统一手感，调参改这一处）────────────
+    // ── ① 时长令牌（M3 Expressive 档位，全部受开关门控：关 = 0ms）───────
+    public pure function short1() -> duration { return enabled ? 50ms : 0ms; }
+    public pure function short2() -> duration { return enabled ? 100ms : 0ms; }
+    public pure function short3() -> duration { return enabled ? 150ms : 0ms; }
+    public pure function short4() -> duration { return enabled ? 200ms : 0ms; }
+    public pure function medium1() -> duration { return enabled ? 250ms : 0ms; }
+    public pure function medium2() -> duration { return enabled ? 300ms : 0ms; }
+    public pure function medium3() -> duration { return enabled ? 350ms : 0ms; }
+    public pure function medium4() -> duration { return enabled ? 400ms : 0ms; }
+    public pure function long1() -> duration { return enabled ? 450ms : 0ms; }
+    public pure function long2() -> duration { return enabled ? 500ms : 0ms; }
+    /// 常驻循环动画（呼吸灯 / 加载旋转）：不在 M3 时长档位里，单独一档；
+    /// 这类动画靠 `animate` 的 `enabled` 门控（duration 归零会让无限循环失去意义）。
+    public pure function ambient() -> duration { return 1400ms; }
+
+    // ── ② 语义时长（组件调这一层；非对称成对提供）──────────────────────
+    /// 交互态（hover 环 / 按下底 / 边框）：进 100 / 退 50
+    public pure function enter-state() -> duration { return root.short2(); }
+    public pure function exit-state() -> duration { return root.short1(); }
+    /// 容器（下拉 / 面板 / 侧栏 / 指示条）：进 300 / 退 200
+    public pure function enter-container() -> duration { return root.medium2(); }
+    public pure function exit-container() -> duration { return root.medium1(); }
+    /// 全屏页面切换（左侧边栏主导航）：表面积大，允许比容器更慢的节奏。
+    public pure function enter-screen() -> duration { return root.long1(); }
+    public pure function exit-screen() -> duration { return root.short4(); }
+    /// 模态对话框：进 350 / 退 150
+    public pure function enter-modal() -> duration { return root.medium3(); }
+    public pure function exit-modal() -> duration { return root.short3(); }
+    /// 页面切换：进 250 / 退 150
+    public pure function enter-page() -> duration { return root.medium1(); }
+    public pure function exit-page() -> duration { return root.short3(); }
+
+    // ── ③ 曲线令牌 ──────────────────────────────────────────────────────
+    /// 强调减速（**进入**）：起步快、末尾长距离减速 —— 新内容"落位"
+    public pure function e-enter() -> easing { return cubic-bezier(0.2, 0, 0, 1); }
+    /// 强调加速（**退出**）：起步慢、迅速离场 —— 给新内容让位
+    public pure function e-exit() -> easing { return cubic-bezier(0.3, 0, 0.8, 0.15); }
+    /// 标准减速 / 加速：无方向语义的小过渡（颜色、边框）
+    public pure function e-standard-decelerate() -> easing { return cubic-bezier(0, 0, 0, 1); }
+    public pure function e-standard-accelerate() -> easing { return cubic-bezier(0.3, 0, 1, 1); }
+    /// 对称兜底：无法区分方向时用（M3 legacy standard）
+    public pure function e-symmetric() -> easing { return cubic-bezier(0.4, 0, 0.2, 1); }
+
+    // ── ④ 弹簧令牌（Slint 1.18 原生；参数是**字面量**，故每档一个函数）───
     //
-    // ⚠️ 这里用 `pure function` 而**不是** `property <easing>`：Slint 1.17 的
-    // `check_public_api.rs` 对 `easing` 类型的属性一一律告警（且**与可见性无关**，
-    // `private` 也压不住）："Properties of type easing are not supported yet for
-    // public API" —— 因为 Rust 侧没有对应的公开属性 API。函数不在该检查范围内，
-    // 效果完全相同（调用点写 `AnimationSettings.color()` 即可）。
-    /// hover/焦点等短时颜色与边框过渡
-    public pure function color() -> easing { return ease-out; }
-    /// 交互态短过渡时长（hover 环 / 按下底 / 边框渐变）——跟随「界面动画」开关
-    public pure function fast() -> duration { return enabled ? 80ms : 0ms; }
-    /// 指示条滑动 / 壁纸交叉淡化等过渡时长
-    public pure function slide() -> duration { return enabled ? 150ms : 0ms; }
-    /// 呼吸灯：正弦节奏最接近自然呼吸
+    // 与 `cubic-bezier` 的差别出现在**目标值中途改变**时：弹簧保留当前速度继续
+    // 走，不会从头重启（侧栏折叠连点、面板宽度跟着窗口变化手感差别最明显）。
+    // 回弹量取值 -1…1；`duration` 决定弹簧的固有频率（不是播放时长）。
+    /// 0 = 不回弹：破坏性确认 / 需精确对齐的元素
+    /// 门控内置在弹簧里：开关关闭时退化为普通曲线 —— `duration: 0ms` 与弹簧
+    /// 混用会让"频率"失去意义（弹簧靠 duration 定固有频率），不如直接换曲线。
+    public pure function s-none() -> easing { return enabled ? spring(0) : root.e-symmetric(); }
+    /// 柔和：大位移（抽屉 / 侧栏 / 面板）
+    public pure function s-soft() -> easing { return enabled ? spring(0.15) : root.e-symmetric(); }
+    /// 默认：模态对话框
+    public pure function s-default() -> easing { return enabled ? spring(0.25) : root.e-symmetric(); }
+    /// 明显：小控件（开关滑块 / 复选框）
+    public pure function s-bouncy() -> easing { return enabled ? spring(0.4) : root.e-symmetric(); }
+
+    /// 呼吸灯：正弦节奏最接近自然呼吸（终端光标）
     public pure function breathing() -> easing { return ease-in-out-sine; }
-    /// 不涉及位移的过渡（透明度等）：Material emphasize 曲线
-    public pure function layout() -> easing { return cubic-bezier(0.2, 0, 0, 1); }
-    /// 位移与尺寸：物理弹簧曲线（Slint 1.18 新增）
-    ///
-    /// 与 `cubic-bezier` 的差别出现在**目标值中途改变**时：弹簧保留当前速度继续走，
-    /// 不会从头重启。侧栏折叠连点、面板宽度跟着窗口变化这类场景手感差别最明显。
-    ///
-    /// 参数是回弹量，取值 -1…1，且**必须是字面量**（`spring(50%)`、`spring(a * 1)`
-    /// 都会被编译器拒绝）。返回值写在函数里是为了全项目统一调参 —— 只有这一处字面量。
-    public pure function spring-settle() -> easing { return spring(0.25); }
+
 }

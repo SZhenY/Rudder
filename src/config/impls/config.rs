@@ -2086,16 +2086,6 @@ impl ConfigStore {
     pub fn set_wallpaper_overlay(&mut self, v: f32) {
         self.cache.appearance.wallpaper_overlay = v.clamp(0.30, 1.0);
     }
-    pub fn panel_font(&self) -> u32 {
-        if self.cache.appearance.panel_font == 0 {
-            100
-        } else {
-            self.cache.appearance.panel_font
-        }
-    }
-    pub fn set_panel_font(&mut self, percent: u32) {
-        self.cache.appearance.panel_font = percent.clamp(80, 160);
-    }
     /// Last window size in logical px; `(0,0)` means unset (use the default).
     pub fn window_size(&self) -> (f32, f32) {
         (self.cache.layout.window_width, self.cache.layout.window_height)
@@ -3746,7 +3736,6 @@ mod domain_split_compat_tests {
             "terminal_cursor_color": "#1A2B3C",
             "output_highlight_preset": "devops",
             "ui_scale": 120,
-            "panel_font": 90,
             "wallpaper": "builtin:light",
             "wallpaper_overlay": 0.8,
             "hide_special_partitions": false,
@@ -3841,7 +3830,6 @@ mod domain_split_compat_tests {
             assert_eq!(cfg.appearance.wallpaper, a.wallpaper);
             assert_eq!(cfg.appearance.wallpaper_overlay, a.wallpaper_overlay);
             assert_eq!(cfg.appearance.ui_scale, a.ui_scale);
-            assert_eq!(cfg.appearance.panel_font, a.panel_font);
             assert_eq!(cfg.appearance.hide_special_partitions, a.hide_special_partitions);
 
             assert_eq!(cfg.layout.sidebar_dock, l.sidebar_dock);

@@ -24,10 +24,16 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
     register_ui_handles(store, sessions_model);
     {
         let store = store.clone();
+        let weak = window.as_weak();
         window.on_set_sync_upload_enabled(move |v| {
             persist(&store, |s| {
                 s.set_sync_upload(v);
             });
+        
+            // 回写窗口属性：只落盘不回写的话，开关在界面上永远不动（用户拖了没反应）。
+            if let Some(w) = weak.upgrade() {
+                w.set_sync_upload_enabled(v);
+            }
         });
     }
 

@@ -112,6 +112,37 @@ export { AnimationSettings, Theme }
 // custom title bar (#119). `danger` gives the close button its red hover.
 // One row in the keyboard-shortcuts dialog: a key chip + a description (#103).
 
+/// 主页面淡入容器：切换左侧边栏（主机 / 指令集 / Docker / 设置）时，新页面从
+/// 壁纸里淡出来。页面块本身就是 `Rectangle`，直接换成它就保留全部几何与背景属性。
+/// 淡入靠 `init` 驱动（`if` 创建的页面新建时 appear 0 → 1，已实测会触发动画）。
+component PageFade inherits Rectangle {
+    // appear = 挂载淡入（init 驱动）；fade = 全局换页淡出（实例绑 root.page-opacity）；
+    // shift = 入场滑动方向（M3 Shared Axis：新页从侧栏点击方向滑入 24px 落位）。
+    // 三者相乘/叠加：换页时旧页 fade→0 淡出，新页 appear 0→1 且 y 从 shift→0。
+    // ⚠ 滑动放在**内层容器**的 y 上 —— 页面自身的 x/y 几何绑定不动（parent 语义不变，
+    // 内层与 PageFade 同尺寸）。
+    in property <float> fade: 1;
+    in property <length> shift: 0px;
+    // instant = 启动期挂载零动画（首页直接就位，不淡入）。由实例绑 !page-booted，
+    // page-booted 在启动 600ms 后由 Timer 置位 —— 之后用户的切页才带动效。
+    in property <bool> instant: false;
+    property <float> appear: 0;
+    animate appear {
+        duration: AnimationSettings.enter-screen();
+        easing: AnimationSettings.e-enter();
+        enabled: AnimationSettings.enabled && !root.instant;
+    }
+    init => { appear = 1; }
+    opacity: root.appear * root.fade;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        y: root.shift * (1 - root.appear);
+        @children
+    }
+}
+
 export component AppWindow inherits Window {
     title: "Rudder";
     icon: @image-url("../../assets/icon.png");
@@ -230,9 +261,18 @@ export component AppWindow inherits Window {
             || (root.sidebar-collapsed && root.sidebar-dock == edge);
     }
 
+    /// 侧栏占位宽度（折叠 = 36px 图标条）。抽成属性是为了给它加动画 ——
+    /// 内联表达式没法 `animate`；它只驱动浮动工具条的偏移，不参与内容重排。
+    property <length> sidebar-taken: root.sidebar-collapsed ? 36px : root.sidebar-width + 4px;
+    // 非对称 + 弹簧：展开 300ms 弹簧落位，收起 200ms 加速让位
+    animate sidebar-taken {
+        duration: root.sidebar-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
+        easing: root.sidebar-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
+        enabled: AnimationSettings.enabled;
+    }
+
     property <length> toolbar-x-off:
-        side-taken(true, root.sidebar-dock, "right",
-            root.sidebar-collapsed ? 36px : root.sidebar-width + 4px)
+        side-taken(true, root.sidebar-dock, "right", root.sidebar-taken)
         + side-taken(root.welcome-as-sidebar, root.welcome-sidebar-dock, "right",
             root.welcome-sidebar-taken)
         + side-taken(root.quick-panel-open, root.quick-panel-dock, "right",
@@ -383,7 +423,6 @@ export component AppWindow inherits Window {
     in-out property <string> output-highlight-preset: "log";
     in property <[OutputRuleItem]> output-highlight-rules;
     in-out property <string> output-highlight-rule-status;
-    callback set-panel-font(int);                          // apply + persist (percent)
     // Window focused & visible — Rust drives it from winit events; gates the
     // cursor blink so an idle background window stops repainting (#127).
     in-out property <bool> window-focused <=> Theme.window-focused;
@@ -483,6 +522,11 @@ export component AppWindow inherits Window {
         root.welcome-sidebar-dock == "left" || root.welcome-sidebar-dock == "right";
     property <length> welcome-sidebar-taken:
         root.welcome-collapsed ? 36px : root.welcome-sidebar-width;
+    animate welcome-sidebar-taken {
+        duration: root.welcome-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
+        easing: root.welcome-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
+        enabled: AnimationSettings.enabled;
+    }
     callback persist-welcome-sidebar-dock(string);
     // Welcome sidebar collapsed to the edge icon strip (IDEA-style), persisted.
     in-out property <bool> welcome-collapsed: false;
@@ -652,7 +696,53 @@ export component AppWindow inherits Window {
     in property <[SessionInfo]> sessions;
     // 新外壳的页面（0 主机 · 1 终端 · 2 指令集 · 3 Docker · 4 设置）与左侧栏收起状态。
     // 终端页（1）现在就是原有的界面内容，所以默认停在这一页、功能不受影响。
-    in-out property <int> shell-page: 1;
+    in-out property <int> shell-page: 0;   // 默认主机页
+    // ═══ 主页面「淡出 → 换页 → 淡入」状态机（与设置分类页同款；纱罩实验已移除）═══
+    // shell-page = 用户点选（侧栏高亮**立即**响应）；page-shown = 实际渲染。
+    // 换页时：page-opacity 淡出（e-exit 150ms）→ Timer 到点换 page-shown（新页的
+    // PageFade 自己 init 淡入）→ 透明度瞬回 1（此刻新页还是透明的，不会闪）。
+    property <int> page-shown: 0;
+    property <bool> page-swapping: false;
+    property <float> page-opacity: root.page-swapping ? (1 - root.page-out) : 1;
+    // 入场方向：侧栏自上而下有序 —— 切到更下面的页，新内容从下方滑入；反之从上。
+    property <length> page-shift: 0px;
+    // 旧页淡出驱动（纱罩实验已移除，方案存 git 历史 a63ff27 前后）。
+    property <float> page-out: 0;
+    animate page-out {
+        duration: AnimationSettings.exit-screen();
+        easing: AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    property <bool> page-booted: false;
+    // 启动 600ms 后才启用切页动效：期间所有页面挂载/同步直接就位（零淡入）。
+    Timer {
+        running: true;
+        interval: 600ms;
+        triggered => { self.running = false; root.page-booted = true; }
+    }
+    changed shell-page => {
+        if (root.shell-page != root.page-shown) {
+            if (!root.page-booted) {
+                // 启动期（600ms 内）的同步：直接就位零动画。
+                root.page-shown = root.shell-page;
+                return;
+            }
+            root.page-shift = (root.shell-page > root.page-shown ? 24px : -24px);
+            root.page-swapping = true;
+            root.page-out = 1;
+            page-swap-timer.running = true;
+        }
+    }
+    page-swap-timer := Timer {
+        // 数值镜像 exit-page 令牌（150ms）；关动画时 0ms 间隔会让 Timer 空转
+        interval: AnimationSettings.enabled ? 200ms : 16ms;
+        triggered => {
+            self.running = false;
+            root.page-shown = root.shell-page;
+            root.page-swapping = false;
+            root.page-out = 0;
+        }
+    }
     in-out property <bool> rail-collapsed: false;
     in-out property <string> host-search-query;
     callback host-search-changed(string);
@@ -912,7 +1002,11 @@ export component AppWindow inherits Window {
             source: Theme.wallpaper-prev;
             image-fit: cover;
             opacity: Theme.wallpaper-fade-opacity;
-            animate opacity { duration: AnimationSettings.slide(); }
+            animate opacity {
+                duration: AnimationSettings.medium4();
+                easing: AnimationSettings.e-standard-decelerate();
+                enabled: AnimationSettings.enabled;
+            }
         }
     }
 
@@ -1040,7 +1134,17 @@ export component AppWindow inherits Window {
           // Rust 会留一个空 pane，舞台那层"从左侧主机里选一个"的提示也会透过空态卡片
           // —— 干脆在没有会话时整个舞台都不画。隐藏只是 visible 切换，TerminalView
           // 实例仍在（滚动 / 查找条 / 会话状态不丢）。
-          visible: root.shell-page == 1 && root.terminals.length > 0;
+          // ⚠ 绑 page-shown（而非 shell-page）：与页面内容同一时机（换页瞬间）切换，
+          // 否则点击瞬间就出现、压在正在淡出的旧页上 = 硬切。常驻 + visible 切换，
+          // TerminalView 状态不受影响。
+          visible: root.page-shown == 1 && root.terminals.length > 0;
+          // 会话异步恢复（length 0→N）时 visible 翻转 → 透明度淡入，替代硬切。
+          opacity: (root.page-shown == 1 && root.terminals.length > 0) ? 1 : 0;
+          animate opacity {
+              duration: AnimationSettings.enter-screen();
+              easing: AnimationSettings.e-enter();
+              enabled: AnimationSettings.enabled;
+          }
           x: root.rail-w;
           y: root.shell-top;
           // 让开右侧工具面板（panel-w）与底部状态栏
@@ -1158,7 +1262,10 @@ export component AppWindow inherits Window {
           }
           tunnel-stop(tab, id) => { root.tunnel-stop(tab, id); }
       }
-        if root.shell-page == 0 : Rectangle {
+        if root.page-shown == 0 : PageFade {
+            fade: root.page-opacity;
+            instant: !root.page-booted;
+            shift: root.page-shift;
             // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
 
             // 自绘平台是 AppTitleBar），页面从它下面开始。
@@ -1198,7 +1305,10 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.shell-page == 2 : Rectangle {
+        if root.page-shown == 2 : PageFade {
+            fade: root.page-opacity;
+            instant: !root.page-booted;
+            shift: root.page-shift;
             // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
 
             // 自绘平台是 AppTitleBar），页面从它下面开始。
@@ -1225,7 +1335,10 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.shell-page == 3 : Rectangle {
+        if root.page-shown == 3 : PageFade {
+            fade: root.page-opacity;
+            instant: !root.page-booted;
+            shift: root.page-shift;
             // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
 
             // 自绘平台是 AppTitleBar），页面从它下面开始。
@@ -1245,13 +1358,13 @@ export component AppWindow inherits Window {
 
                 Text {
                     text: "Docker 管理";
-                    font-size: 18px;
+                    font-size: 18px * Theme.ui-scale;
                     color: Theme.fg-1;
                     horizontal-alignment: center;
                 }
                 Text {
                     text: "规划中 —— 将通过 SSH 直连远端 Docker Engine（容器 / 镜像 / 端口 / 操作）";
-                    font-size: 12px;
+                    font-size: 12px * Theme.ui-scale;
                     color: Theme.fg-3;
                     horizontal-alignment: center;
                 }
@@ -1259,7 +1372,10 @@ export component AppWindow inherits Window {
                 }
 
       // 设置页（迁移第一步：基础/外观真接线，其余分组标注迁移中）。
-      if root.shell-page == 4 : Rectangle {
+      if root.page-shown == 4 : PageFade {
+            fade: root.page-opacity;
+            instant: !root.page-booted;
+            shift: root.page-shift;
           background: Theme.bg-root;      // 与其它页面一致：磨砂透明度在本页也生效
           // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
 
@@ -1295,7 +1411,6 @@ export component AppWindow inherits Window {
               update-last-check: root.update-last-check;
               set-accent-rgb(a0, a1, a2) => { return root.set-accent-rgb(a0, a1, a2); }
               check-update-now() => { root.check-update-now(); }
-              set-panel-font(v) => { root.set-panel-font(v); }
               reset-page(p) => { root.reset-page(p); }
               ui-fonts: root.ui-fonts;
               term-fonts: root.term-fonts;
@@ -1315,7 +1430,7 @@ export component AppWindow inherits Window {
               // 磨砂透明度落盘（实时预览由页面直接改 Theme.panel-alpha）
               persist-frost-alpha(v) => { root.persist-wallpaper-overlay(v); }
               open-log-dir() => { root.open-log-dir(); }
-              term-ui-font(f) => { root.set-ui-font(f); }
+              pick-ui-font(f, i) => { root.set-ui-font(f); root.ui-font-index = i; }
               about-libs: root.about-libs;
               webdav-enabled <=> root.webdav-enabled;
               webdav-url <=> root.webdav-url;
@@ -1369,8 +1484,9 @@ export component AppWindow inherits Window {
               add-output-highlight-rule(pat, re, cs, wl, c) => { return root.add-output-highlight-rule(pat, re, cs, wl, c); }
               remove-output-highlight-rule(i) => { root.remove-output-highlight-rule(i); }
               set-output-highlight-rule-enabled(i, on) => { root.set-output-highlight-rule-enabled(i, on); }
-              term-font(f) => {
+              term-font(f, i) => {
                   root.set-term-font(f);
+                  root.term-font-index = i;
               }
               term-font-size(n) => {
                   root.set-term-font-size(n);
@@ -1388,7 +1504,7 @@ export component AppWindow inherits Window {
       }
 
       // 右侧工具面板（会话中；AI 暂不做）
-      if root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open : RightPanel {
+      if root.page-shown == 1 && root.terminals.length > 0 && root.right-panel-open : RightPanel {
           // 与 `panel-w` 同一条件：舞台已让出这块宽度，面板只负责画。
           x: root.width - root.panel-w;
           panel-host: root.panel-host;
@@ -1484,7 +1600,7 @@ export component AppWindow inherits Window {
     }
 
   // 底部状态栏（连接状态 / 高亮 / 历史命令 / 传输统计）。
-      if root.shell-page == 1 && root.terminals.length > 0 : StatusBar {
+      if root.page-shown == 1 && root.terminals.length > 0 : StatusBar {
           x: root.rail-w;
           y: root.height - 28px;
           width: root.width - root.rail-w;
@@ -1525,7 +1641,10 @@ export component AppWindow inherits Window {
 
   // 终端页空状态（一个标签都没有时）：设计的「创建你的第一个终端会话」。
       // 声明在终端舞台之后 = 盖住它；有标签时这里不实例化，舞台的终端画面就露出来。
-      if root.shell-page == 1 && root.terminals.length == 0 : Rectangle {
+      if root.page-shown == 1 && root.terminals.length == 0 : PageFade {
+          fade: root.page-opacity;
+            instant: !root.page-booted;
+          shift: root.page-shift;
           // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
 
           // 自绘平台是 AppTitleBar），页面从它下面开始。
@@ -1567,7 +1686,10 @@ export component AppWindow inherits Window {
       }
 
   // 笔记随笔 / AI 助手：设计里有入口，页面规划中（与 Docker 占位同款）。
-      if root.shell-page == 5 || root.shell-page == 6 : Rectangle {
+      if root.page-shown == 5 : PageFade {
+          fade: root.page-opacity;
+            instant: !root.page-booted;
+          shift: root.page-shift;
           // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
 
           // 自绘平台是 AppTitleBar），页面从它下面开始。
@@ -1586,22 +1708,65 @@ export component AppWindow inherits Window {
               spacing: Theme.sp-2;
 
               Text {
-                  text: root.shell-page == 5 ? "\u{E873}" : "\u{E65F}";
+                  text: "\u{E873}";
                   font-family: "Material Icons";
-                  font-size: 44px;
+                  font-size: 44px * Theme.ui-scale;
                   color: Theme.fg-3;
                   horizontal-alignment: center;
               }
               Text {
-                  text: root.shell-page == 5 ? "笔记随笔" : "AI 助手";
-                  font-size: 17px;
+                  text: "笔记随笔";
+                  font-size: 17px * Theme.ui-scale;
                   font-weight: 600;
                   color: Theme.fg-1;
                   horizontal-alignment: center;
               }
               Text {
                   text: "规划中 —— 敬请期待";
-                  font-size: 12px;
+                  font-size: 12px * Theme.ui-scale;
+                  color: Theme.fg-3;
+                  horizontal-alignment: center;
+              }
+          }
+      }
+      if root.page-shown == 6 : PageFade {
+          fade: root.page-opacity;
+            instant: !root.page-booted;
+          shift: root.page-shift;
+          // 顶部让给标题栏（两个平台都有：系统标题栏平台是 AppTitleBarSystem，
+
+          // 自绘平台是 AppTitleBar），页面从它下面开始。
+
+          x: root.rail-w;
+
+          y: root.shell-top;
+
+          width: root.width - root.rail-w;
+
+          height: root.height - root.shell-top;
+          background: Theme.bg-root;
+
+          VerticalLayout {
+              alignment: center;
+              spacing: Theme.sp-2;
+
+              Text {
+                  text: "\u{E65F}";
+                  font-family: "Material Icons";
+                  font-size: 44px * Theme.ui-scale;
+                  color: Theme.fg-3;
+                  horizontal-alignment: center;
+              }
+              Text {
+                  text: "AI 助手";
+                  font-size: 17px * Theme.ui-scale;
+                  font-weight: 600;
+                  color: Theme.fg-1;
+                  horizontal-alignment: center;
+              }
+              Text {
+                  text: "规划中 —— 敬请期待";
+                  font-size: 12px * Theme.ui-scale;
                   color: Theme.fg-3;
                   horizontal-alignment: center;
               }

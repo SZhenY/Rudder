@@ -3,7 +3,7 @@
 
 import { Theme, AnimationSettings } from "../theme.slint";
 import { OutputRuleItem, AccentPreset } from "../settings/types.slint";
-import { LineEdit, Slider } from "std-widgets.slint";
+import { LineEdit, Slider, ScrollView } from "std-widgets.slint";
 
 struct CapsuleOpt {
     value: string,
@@ -29,8 +29,11 @@ component Switch inherits Rectangle {
         border-radius: 8px;
         background: white;
 
+        // 开关滑块：小控件的空间位移用**回弹弹簧**（M3 Expressive：短距离运动留回弹）
         animate x {
-            duration: 120ms;
+            duration: AnimationSettings.medium1();
+            easing: AnimationSettings.s-bouncy();
+            enabled: AnimationSettings.enabled;
         }
     }
 
@@ -58,12 +61,12 @@ component CapsuleRow inherits HorizontalLayout {
         background: on ? Theme.accent.with-alpha(0.16)
                        : (pta.pressed ? Theme.accent-press
                        : (pta.has-hover ? Theme.sur-3 : transparent));
-        animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
-        animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+        animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+        animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
         cap := Text {
             text: o.label;
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             color: on ? Theme.accent : Theme.fg-2;
             vertical-alignment: center;
             horizontal-alignment: center;
@@ -80,7 +83,7 @@ component CapsuleRow inherits HorizontalLayout {
 // 分区标题：小号弱化字，给一屏设置做出层次。
 component SectionTitle inherits Text {
     height: 26px;
-    font-size: 11px;
+    font-size: 11px * Theme.ui-scale;
     font-weight: 700;
     color: Theme.fg-3;
     vertical-alignment: center;
@@ -147,7 +150,7 @@ component Stepper inherits Rectangle {
                 height: 100%;
                 text: "\u{E15B}";
                 font-family: "Material Icons";
-                font-size: 14px;
+                font-size: 14px * Theme.ui-scale;
                 color: Theme.fg-2;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -157,7 +160,7 @@ component Stepper inherits Rectangle {
         Text {
             horizontal-stretch: 1;
             text: root.value + root.unit;
-            font-size: 12px;
+            font-size: 12px * Theme.ui-scale;
             color: Theme.fg-1;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -175,7 +178,7 @@ component Stepper inherits Rectangle {
                 height: 100%;
                 text: "\u{E145}";
                 font-family: "Material Icons";
-                font-size: 14px;
+                font-size: 14px * Theme.ui-scale;
                 color: Theme.fg-2;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -199,8 +202,8 @@ component CursorStyleButton inherits Rectangle {
     background: root.selected ? Theme.accent-soft
         : (cs-ta.pressed ? Theme.accent-press
         : (cs-ta.has-hover ? Theme.rail-item-hover : Theme.sur-2));
-    animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
-    animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+    animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+    animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
     cs-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -230,7 +233,7 @@ component CursorStyleButton inherits Rectangle {
         Text {
             text: root.label;
             color: root.selected ? Theme.fg-1 : Theme.fg-2;
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             vertical-alignment: center;
         }
     }
@@ -246,8 +249,8 @@ component UploadButton inherits Rectangle {
     border-width: 1px;
     border-color: ub-ta.has-hover ? Theme.accent-ring : Theme.line;
     background: ub-ta.pressed ? Theme.accent-press : (ub-ta.has-hover ? Theme.accent-soft : Theme.sur-2);
-    animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
-    animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+    animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+    animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
     ub-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -257,7 +260,7 @@ component UploadButton inherits Rectangle {
         height: 100%;
         text: "\u{E2C6}";   // folder-open
         font-family: "Material Icons";
-        font-size: 16px;
+        font-size: 16px * Theme.ui-scale;
         color: Theme.fg-2;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -292,14 +295,14 @@ component ResetButton inherits Rectangle {
             background: root.armed ? Theme.danger
                 : (mta.pressed ? Theme.accent-press
                 : (mta.has-hover ? Theme.sur-3 : Theme.sur-2));
-            animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
-            animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+            animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+            animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
             main-text := Text {
                 width: 100%;
                 height: 100%;
                 text: root.armed ? root.label-armed : root.label;
-                font-size: 11px;
+                font-size: 11px * Theme.ui-scale;
                 color: root.armed ? white : Theme.fg-2;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -324,14 +327,14 @@ component ResetButton inherits Rectangle {
             border-width: 1px;
             border-color: cta.has-hover ? Theme.accent-ring : Theme.line;
             background: cta.pressed ? Theme.accent-press : (cta.has-hover ? Theme.sur-3 : Theme.sur-2);
-            animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
-            animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+            animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+            animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
             cancel-text := Text {
                 width: 100%;
                 height: 100%;
                 text: root.cancel-label;
-                font-size: 11px;
+                font-size: 11px * Theme.ui-scale;
                 color: Theme.fg-2;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -415,7 +418,7 @@ component AccentPicker inherits Rectangle {
         Text {
             text: root.accent-name;
             color: Theme.fg-2;
-            font-size: 12px;
+            font-size: 12px * Theme.ui-scale;
             vertical-alignment: center;
             horizontal-stretch: 1;
             overflow: elide;
@@ -443,7 +446,7 @@ component AccentPicker inherits Rectangle {
                 }
                 Text {
                     text: root.lang-en ? "Custom…" : "自定义…";
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-1;
                     vertical-alignment: center;
                 }
@@ -570,7 +573,7 @@ component AccentPicker inherits Rectangle {
                     Text {
                         text: "HEX";
                         color: Theme.fg-3;
-                        font-size: 11px;
+                        font-size: 11px * Theme.ui-scale;
                         vertical-alignment: center;
                     }
                 }
@@ -578,7 +581,7 @@ component AccentPicker inherits Rectangle {
                 Text {
                     text: root.lang-en ? "Drag to preview; release to apply." : "拖动实时预览，松手即应用。";
                     color: Theme.fg-3;
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     wrap: word-wrap;
                 }
                 Rectangle {
@@ -588,7 +591,7 @@ component AccentPicker inherits Rectangle {
                     Text {
                         text: root.lang-en ? "Done" : "完成";
                         color: white;
-                        font-size: 12px;
+                        font-size: 12px * Theme.ui-scale;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
@@ -626,13 +629,13 @@ component OptionRow inherits Rectangle {
 
                 Text {
                     text: root.label;
-                    font-size: 13px;
+                    font-size: 13px * Theme.ui-scale;
                     font-weight: 600;
                     color: Theme.fg-1;
                 }
                 if root.desc != "" : Text {
                     text: root.desc;
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                     wrap: word-wrap;
                 }
@@ -643,6 +646,42 @@ component OptionRow inherits Rectangle {
                 @children
             }
         }
+    }
+}
+
+/// 分类页淡入容器。
+///
+/// 两个 Slint 事实决定了写法：
+/// 1. **布局元素没有 `opacity`** —— 分类块原本是 `VerticalLayout`，要淡入必须包一层
+///    `Rectangle`，并把间距/上边距转发给内层布局（否则这些属性丢失）。
+///    ⚠ 转发属性不能叫 `spacing` / `padding-top` —— `Rectangle` 已带同名属性
+///    （"Cannot override property 'padding-top'"，与之前 `color` 那个坑同源）。
+/// 2. **`init` 里改值会触发 animate**（已实测）—— 分类块是 `if` 创建的，所以新建时
+///    `appear` 从 0 动画到 1 就是天然的内容入场淡入。
+component CatFade inherits Rectangle {
+    in property <length> cat-spacing: 0;
+    in property <length> cat-padding-top: 0px;
+
+    property <float> appear: 0;
+    animate appear {
+        duration: AnimationSettings.enter-page();
+        easing: AnimationSettings.e-enter();
+        enabled: AnimationSettings.enabled;
+    }
+    init => { appear = 1; }
+    opacity: root.appear;
+    // ⚠ Rectangle 不传播子布局 layout info —— 高度显式绑内层首选高，
+    // 否则 CatFade 在卡片列里高度 = 0（内容溢出渲染，布局塌缩）。
+    height: body.preferred-height;
+
+    body := VerticalLayout {
+        // ⚠ 高度取**首选**（内容高）：写 100% 会把 CatFade 的 preferred-height
+        // 拖成循环约束（= 0），分类块在卡片列里塌缩。宽度仍需显式铺满。
+        width: 100%;
+        height: self.preferred-height;
+        spacing: root.cat-spacing;
+        padding-top: root.cat-padding-top;
+        @children
     }
 }
 
@@ -671,13 +710,13 @@ component ToggleRow inherits Rectangle {
 
                 Text {
                     text: root.label;
-                    font-size: 13px;
+                    font-size: 13px * Theme.ui-scale;
                     font-weight: 600;
                     color: Theme.fg-1;
                 }
                 if root.desc != "" : Text {
                     text: root.desc;
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                 }
             }
@@ -713,14 +752,14 @@ component SelectBox inherits Rectangle {
         Text {
             horizontal-stretch: 1;
             text: root.text;
-            font-size: 12px;
+            font-size: 12px * Theme.ui-scale;
             color: Theme.fg-1;
             vertical-alignment: center;
         }
         Text {
             text: "\u{E5CF}";
             font-family: "Material Icons";
-            font-size: 15px;
+            font-size: 15px * Theme.ui-scale;
             color: Theme.fg-3;
             vertical-alignment: center;
         }
@@ -750,13 +789,13 @@ component FieldBlock inherits Rectangle {
 
         Text {
             text: root.title;
-            font-size: 13px;
+            font-size: 13px * Theme.ui-scale;
             font-weight: 600;
             color: Theme.fg-1;
         }
         if root.desc != "" : Text {
             text: root.desc;
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             color: Theme.fg-3;
             wrap: word-wrap;
         }
@@ -780,8 +819,8 @@ component CategoryItem inherits Rectangle {
     background: root.active ? Theme.rail-item-active
         : (ta.pressed ? Theme.accent-press
         : (ta.has-hover ? Theme.rail-item-hover : transparent));
-    animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
-    animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+    animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+    animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
     HorizontalLayout {
         padding-left: Theme.sp-2;
@@ -792,7 +831,7 @@ component CategoryItem inherits Rectangle {
             width: 18px;
             text: root.glyph;
             font-family: "Material Icons";
-            font-size: 16px;
+            font-size: 16px * Theme.ui-scale;
             color: root.active ? Theme.accent : Theme.fg-2;
             vertical-alignment: center;
         }
@@ -802,13 +841,13 @@ component CategoryItem inherits Rectangle {
 
             Text {
                 text: root.label;
-                font-size: 13px;
+                font-size: 13px * Theme.ui-scale;
                 color: root.active ? Theme.accent : Theme.fg-1;
                 font-weight: root.active ? 600 : 400;
             }
             Text {
                 text: root.sub;
-                font-size: 10px;
+                font-size: 10px * Theme.ui-scale;
                 color: Theme.fg-3;
                 overflow: elide;
             }
@@ -845,7 +884,7 @@ component KeyRow inherits Rectangle {
                 alignment: center;
                 ktext := Text {
                     text: root.keys;
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-1;
                     vertical-alignment: center;
                 }
@@ -853,7 +892,7 @@ component KeyRow inherits Rectangle {
         }
         Text {
             text: root.desc;
-            font-size: 12px;
+            font-size: 12px * Theme.ui-scale;
             color: Theme.fg-2;
             vertical-alignment: center;
             overflow: elide;
@@ -937,7 +976,6 @@ export component PageSettings inherits Rectangle {
     callback set-accent-rgb(int, int, int) -> bool;   // 取色盘提交（Slint 无 hex 格式化）
     callback check-update-now();
     callback reset-page(string);                      // 还原本页默认（Rust 已注册 AppWindow）
-    callback set-panel-font(int);                     // 设置面板字体大小（百分比）
     callback set-wallpaper-label(string);
     callback pick-wallpaper();
     callback open-log-dir();
@@ -953,10 +991,10 @@ export component PageSettings inherits Rectangle {
     callback webdav-upload();
     callback webdav-download();
     callback set-language(string);
-    callback term-ui-font(string);
+    callback pick-ui-font(string, int); // 选中界面字体（「跟随系统」存空串；int = 列表下标）
     in property <string> ui-font-now;
     callback toggle-theme();
-    callback term-font(string);
+    callback term-font(string, int); // 选中终端字体（int = 列表下标）
     callback term-font-size(int);
     callback term-font-bold(bool);
     callback term-scrollback(string);
@@ -1021,6 +1059,51 @@ export component PageSettings inherits Rectangle {
 
     // 0 基础 · 1 终端 · 2 文件 · 3 布局 · 4 快捷键
     property <int> current-cat: 0;
+
+    // ═══ 分类页「淡出 → 换页 → 淡入」状态机 ═══════════════════════════════
+    // current-cat = 用户点选（导航高亮/指示条**立即**响应）；cat-shown = 实际渲染。
+    // 换分类时：容器 opacity 淡出（e-exit 150ms）→ Timer 到点换 cat-shown（新内容的
+    // CatFade 自己 init 淡入）→ 容器瞬回 1。cat-opacity 是**无 animate** 的桥接属性：
+    // 淡出期跟 cat-out 进度走，换页瞬间跳回 1 不会闪（新内容此刻是透明的）。
+    property <int> cat-shown: 0;
+    property <bool> cat-swapping: false;
+    property <float> cat-out: 0;
+    animate cat-out {
+        duration: AnimationSettings.exit-page();
+        easing: AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    property <float> cat-opacity: root.cat-swapping ? (1 - root.cat-out) : 1;
+    changed current-cat => {
+        if (root.current-cat != root.cat-shown) {
+            root.cat-swapping = true;
+            root.cat-out = 1;
+            cat-swap-timer.running = true;
+        }
+    }
+    // 弹层（PopupWindow）淡入驱动：is-open 变化时置 appear，内容根用它做透明度。
+    // ⚠ 不能在弹层内容里引用 `popup.is-open` —— 会触发编译器 const_propagation 断言
+    // panic（1.18.0 的坑），所以用 changed 回调把状态搬到组件根属性上。
+    property <float> wp-appear: 0;
+    property <float> font-appear: 0;
+    property <float> tfont-appear: 0;
+    // ⚠ animate 必须写在**弹层外**（组件根）—— 放进 PopupWindow 内容里会触发
+    // 编译器 const_propagation 断言 panic（1.18.0）。内容只读属性值，动画在根上跑。
+    animate wp-appear { duration: AnimationSettings.enter-container(); easing: AnimationSettings.e-enter(); enabled: AnimationSettings.enabled; }
+    animate font-appear { duration: AnimationSettings.enter-container(); easing: AnimationSettings.e-enter(); enabled: AnimationSettings.enabled; }
+    animate tfont-appear { duration: AnimationSettings.enter-container(); easing: AnimationSettings.e-enter(); enabled: AnimationSettings.enabled; }
+
+    cat-swap-timer := Timer {
+        // 关动画时 0ms 间隔会让 Timer 空转，钳到一帧
+        interval: 150ms;
+        triggered => {
+            self.running = false;
+            root.cat-shown = root.current-cat;
+            root.cat-swapping = false;
+            root.cat-out = 0;
+        }
+    }
+
     // 导航搜索：Rust 按关键词过滤分类（contains 无法在 Slint 里表达）
     in-out property <string> nav-search: "";
     in property <bool> cat-visible-0: true;
@@ -1064,13 +1147,13 @@ export component PageSettings inherits Rectangle {
                     Text {
                         text: "\u{E8B8}";
                         font-family: "Material Icons";
-                        font-size: 17px;
+                        font-size: 17px * Theme.ui-scale;
                         color: Theme.fg-1;
                         vertical-alignment: center;
                     }
                     Text {
                         text: "设置";
-                        font-size: 15px;
+                        font-size: 15px * Theme.ui-scale;
                         font-weight: 700;
                         color: Theme.fg-1;
                         vertical-alignment: center;
@@ -1167,7 +1250,12 @@ export component PageSettings inherits Rectangle {
                     : root.current-cat == 4 ? root.cat-visible-4
                     : root.current-cat == 6 ? root.cat-visible-6
                     : root.cat-visible-5;
-                animate y { duration: AnimationSettings.slide(); easing: ease-out; }
+                // 滑动指示条：空间运动 → 弹簧（跟手；连点切换时保留速度不重启）
+                animate y {
+                    duration: AnimationSettings.enter-container();
+                    easing: AnimationSettings.s-soft();
+                    enabled: AnimationSettings.enabled;
+                }
             }
         }
 
@@ -1197,22 +1285,22 @@ HorizontalLayout {
                             : root.current-cat == 5 ? "关于"
                             : root.current-cat == 6 ? "云同步"
                             : "快捷键";
-                        font-size: 17px;
+                        font-size: 17px * Theme.ui-scale;
                         font-weight: 700;
                         color: Theme.fg-1;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
                     }
                     // 只有 Rust 侧有还原分支的三页才有按钮（terminal / appearance / transfer）。
-                    if root.current-cat == 0 : ResetButton {
+                    if root.cat-shown == 0 : ResetButton {
                         page: "appearance";
                         reset(p) => { root.reset-page(p); }
                     }
-                    if root.current-cat == 1 : ResetButton {
+                    if root.cat-shown == 1 : ResetButton {
                         page: "terminal";
                         reset(p) => { root.reset-page(p); }
                     }
-                    if root.current-cat == 2 : ResetButton {
+                    if root.cat-shown == 2 : ResetButton {
                         page: "transfer";
                         reset(p) => { root.reset-page(p); }
                     }
@@ -1225,6 +1313,9 @@ HorizontalLayout {
 
                 flick := Flickable {
                     vertical-stretch: 1;
+                    // ⚠ content-height 自动推导走子元素 layout info —— Rectangle 包装层
+                    // 不传播（= 视口高，滚轮失灵），必须显式绑内层布局的内容高。
+                    content-height: flick-inner.preferred-height;
                     // 拖滑杆期间页面被抢 → 钉回拖动开始的位置（页面不再被整页拖走），
                     // 并弹出接力层接管拖动（接力层在 Flickable 之外，不会再被抢）。
                     changed content-y => {
@@ -1240,18 +1331,29 @@ HorizontalLayout {
                     // 同 content-rect：百分比是不会自指的写法（`parent.width` 会与本列互相依赖），
                     // 量出来的结果是从 405 变成整宽 —— 上面那处注释有完整的实测数据。
                     width: 100%;
-                    flick-col := VerticalLayout {
-                        // 高度取首选：Flickable 的子元素默认按视口高布局，卡片会被拉伸。
-                        width: 100%;
-                        height: self.preferred-height;
+                    flick-col := Rectangle {
+                        // ⚠ Flickable 会把**未钉位**的子元素按视口垂直居中（实测 y =
+                        // (视口高 − 内容高)/2，整页下坠）—— 子元素必须显式 x/y = 0 钉住。
                         x: 0;
                         y: 0;
-                        padding-top: 8px + root.top-inset;
-                        spacing: 0;
+                        width: 100%;
+                        // ⚠ Rectangle **不向父级传播**子布局的 layout info（实测 preferred
+                        // = 0，内容整体下坠）—— 高度必须显式绑内层布局的首选高。
+                        height: flick-inner.preferred-height;
+                        // 淡出/淡入的载体（VerticalLayout 没有 opacity）
+                        opacity: root.cat-opacity;
+                        flick-inner := VerticalLayout {
+                            // 高度取首选：Flickable 的子元素默认按视口高布局，卡片会被拉伸。
+                            width: 100%;
+                            height: self.preferred-height;
+                            x: 0;
+                            y: 0;
+                            padding-top: 8px + root.top-inset;
+                            spacing: 0;
 
                         // ═══ 基础 ═══
-                        if root.current-cat == 0 : VerticalLayout {
-                            spacing: 4px;
+                        if root.cat-shown == 0 : CatFade {
+                            cat-spacing: 4px;
                             SectionTitle { text: root.lang-en ? "Language & theme" : "语言与主题"; }
                             Card {
                                 OptionRow {
@@ -1272,7 +1374,7 @@ HorizontalLayout {
                                                 alignment: center;
                                                 Text {
                                                     text: "中文";
-                                                    font-size: 11px;
+                                                    font-size: 11px * Theme.ui-scale;
                                                     color: !root.lang-en ? white : Theme.fg-2;
                                                     vertical-alignment: center;
                                                 }
@@ -1293,7 +1395,7 @@ HorizontalLayout {
                                                 alignment: center;
                                                 Text {
                                                     text: "English";
-                                                    font-size: 11px;
+                                                    font-size: 11px * Theme.ui-scale;
                                                     color: root.lang-en ? white : Theme.fg-2;
                                                     vertical-alignment: center;
                                                 }
@@ -1340,7 +1442,9 @@ AccentPicker {
                                             ? root.wallpaper-labels[root.wallpaper-index]
                                             : (root.lang-en ? "Default" : "默认");
                                         clicked => {
+                                            root.wp-appear = 0;   // 复位（此刻弹层未显示，动画不可见）
                                             wp-popup.show();
+                                            root.wp-appear = 1;   // show 之后置 1 → 淡入
                                         }
                                     }
                                     UploadButton {
@@ -1348,13 +1452,14 @@ AccentPicker {
                                     }
                                     }
 
-                                    wp-popup := PopupWindow {
-                                        Rectangle {
+                                    wp-popup := PopupWindow {                                        Rectangle {
                                             width: 260px;
                                             border-radius: 8px;
                                             border-width: 1px;
                                             border-color: Theme.line;
                                             background: Theme.sur-1;
+                                            // 展开淡入：appear 由 changed is-open 驱动
+                                            opacity: root.wp-appear;
 
                                             VerticalLayout {
                                                 spacing: 0;
@@ -1372,7 +1477,7 @@ AccentPicker {
 
                                                         Text {
                                                             text: wlab;
-                                                            font-size: 12px;
+                                                            font-size: 12px * Theme.ui-scale;
                                                             color: root.wallpaper-index == i ? Theme.accent : Theme.fg-1;
                                                             vertical-alignment: center;
                                                         }
@@ -1381,6 +1486,7 @@ AccentPicker {
                                                     wp-ta := TouchArea {
                                                         clicked => {
                                                             root.set-wallpaper-label(wlab);
+                                                            root.wp-appear = 0;   // 复位（弹层随即消失）
                                                             wp-popup.close();
                                                         }
                                                     }
@@ -1418,7 +1524,7 @@ AccentPicker {
                                         }
                                         Text {
                                             text: "\{round((1.0 - Theme.panel-alpha) * 100)}%";
-                                            font-size: 12px;
+                                            font-size: 12px * Theme.ui-scale;
                                             color: Theme.fg-2;
                                             vertical-alignment: center;
                                             width: 34px;
@@ -1437,142 +1543,136 @@ AccentPicker {
                                         spacing: 4px;
                                         alignment: start;
 
-                                        SelectBox {
-  // 全宽（字体下拉铺满内容列）
-                                            horizontal-stretch: 1;
-                                            text: root.ui-fonts.length > 0 && root.ui-font-index < root.ui-fonts.length
-                                                ? root.ui-fonts[root.ui-font-index]
-                                                : (root.lang-en ? "Auto" : "自动");
-                                            clicked => { font-popup.show(); }
-                                        UploadButton {
-                                            clicked => { root.upload-ui-font(); }
-                                        }
-                                        }
-
-                                        font-popup := PopupWindow {
-    Rectangle {
-                                            width: 240px;
-                                            border-radius: 8px;
-                                            border-width: 1px;
-                                            border-color: Theme.line;
-                                            background: Theme.sur-1;
-
-                                            VerticalLayout {
-                                                spacing: 0;
-                                                alignment: start;
-
-                                                for lbl[i] in root.ui-fonts : Rectangle {
-                                                    height: 30px;
-                                                    background: root.ui-font-index == i
-                                                        ? Theme.rail-item-active
-                                                        : (f-ta.has-hover ? Theme.rail-item-hover : transparent);
-
-                                                    HorizontalLayout {
-                                                        padding-left: 10px;
-                                                        padding-right: 10px;
-                                                        alignment: start;
-
-                                                        Text {
-                                                            text: lbl;
-                                                            font-size: 12px;
-                                                            color: root.ui-font-index == i ? Theme.accent : Theme.fg-1;
-                                                            vertical-alignment: center;
-                                                        }
-                                                    }
-
-                                                    f-ta := TouchArea {
-                                                        clicked => {
-                                                            root.term-ui-font(lbl);
-                                                            font-popup.close();
-                                                        }
-                                                    }
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            SelectBox {
+                                                horizontal-stretch: 1;
+                                                text: root.ui-fonts.length > 0 && root.ui-font-index < root.ui-fonts.length
+                                                    ? root.ui-fonts[root.ui-font-index]
+                                                    : (root.lang-en ? "Auto" : "自动");
+                                                clicked => {
+                                                    root.font-appear = 0;   // 复位（此刻弹层未显示，动画不可见）
+                                                    font-popup.show();
+                                                    root.font-appear = 1;   // show 之后置 1 → 淡入
                                                 }
+                                            }
+                                            UploadButton {
+                                                clicked => { root.upload-ui-font(); }
+                                            }
+                                        }
 
-                                                Rectangle {
-                                                    height: 1px;
-                                                    background: Theme.line;
-                                                }
-                                                Rectangle {
-                                                    height: 30px;
-                                                    background: imp-ta.has-hover ? Theme.rail-item-hover : transparent;
+                                        font-popup := PopupWindow {                                            Rectangle {
+                                                width: 240px;
+                                                border-radius: 8px;
+                                                border-width: 1px;
+                                                border-color: Theme.line;
+                                                background: Theme.sur-1;
+                                                // 展开淡入：appear 由 changed is-open 驱动
+                                                opacity: root.font-appear;
 
-                                                    HorizontalLayout {
-                                                        padding-left: 10px;
-                                                        alignment: start;
+                                                VerticalLayout {
+                                                    spacing: 0;
+                                                    alignment: start;
 
-                                                        Text {
-                                                            text: "\u{E2C6}"; // import
-                                                            font-family: "Material Icons";
-                                                            font-size: 13px;
-                                                            color: Theme.fg-2;
-                                                            vertical-alignment: center;
-                                                        }
-                                                        Text {
-                                                            text: root.lang-en ? "Import External Font…" : "导入外部字体…";
-                                                            font-size: 12px;
-                                                            color: Theme.fg-1;
-                                                            vertical-alignment: center;
+                                                    // 列表限高 + ScrollView：滚轮可滚，弹窗不再顶出屏幕
+                                                    ScrollView {
+                                                        height: 300px;
+
+                                                        VerticalLayout {
+                                                            spacing: 0;
+
+                                                            for lbl[i] in root.ui-fonts : Rectangle {
+                                                                height: 30px;
+                                                                background: root.ui-font-index == i
+                                                                    ? Theme.rail-item-active
+                                                                    : (f-ta.has-hover ? Theme.rail-item-hover : transparent);
+
+                                                                HorizontalLayout {
+                                                                    padding-left: 10px;
+                                                                    padding-right: 10px;
+                                                                    alignment: start;
+
+                                                                    Text {
+                                                                        text: lbl;
+                                                                        font-size: 12px * Theme.ui-scale;
+                                                                        color: root.ui-font-index == i ? Theme.accent : Theme.fg-1;
+                                                                        vertical-alignment: center;
+                                                                    }
+                                                                }
+
+                                                                f-ta := TouchArea {
+                                                                    clicked => {
+                                                                        root.pick-ui-font(lbl, i);
+                                                                        root.font-appear = 0;   // 复位（弹层随即消失）
+                                                                        font-popup.close();
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
 
-                                                    imp-ta := TouchArea {
-                                                        clicked => {
-                                                            root.upload-ui-font();
-                                                            font-popup.close();
+                                                    Rectangle {
+                                                        height: 1px;
+                                                        background: Theme.line;
+                                                    }
+                                                    Rectangle {
+                                                        height: 30px;
+                                                        background: imp-ta.has-hover ? Theme.rail-item-hover : transparent;
+
+                                                        HorizontalLayout {
+                                                            padding-left: 10px;
+                                                            alignment: start;
+
+                                                            Text {
+                                                                text: "\u{E2C6}"; // import
+                                                                font-family: "Material Icons";
+                                                                font-size: 13px * Theme.ui-scale;
+                                                                color: Theme.fg-2;
+                                                                vertical-alignment: center;
+                                                            }
+                                                            Text {
+                                                                text: root.lang-en ? "Import External Font…" : "导入外部字体…";
+                                                                font-size: 12px * Theme.ui-scale;
+                                                                color: Theme.fg-1;
+                                                                vertical-alignment: center;
+                                                            }
+                                                        }
+
+                                                        imp-ta := TouchArea {
+                                                            clicked => {
+                                                                root.upload-ui-font();
+                                                                root.font-appear = 0;   // 复位（弹层随即消失）
+                                                                font-popup.close();
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                    
-    }
-    }
-                                    }
-                                }
-                                FieldBlock {
-                                    title: root.lang-en ? "UI Scale" : "界面缩放";
-                                    desc: root.lang-en ? "Scales fonts and controls (80% – 200%)" : "整体缩放界面字体与控件（80% – 200%）";
-                            
-                                    HorizontalLayout {
-                                        spacing: 8px;
-
-Stepper {
-                                    value: round(Theme.ui-scale * 100);
-                                    minimum: 80;
-                                    maximum: 200;
-                                    step: 10;
-                                    unit: "%";
-                                    changed(v) => { root.set-ui-scale(v); }
-                                }
-                                OptionRow {
-                                    label: root.lang-en ? "Settings font size" : "设置面板字体大小";
-                                    desc: root.lang-en ? "Enlarges this settings panel (font + window)." : "放大本设置面板的字体与窗口。";
-
-                                    Stepper {
-                                        value: round(Theme.panel-font * 100);
-                                        minimum: 80;
-                                        maximum: 160;
-                                        step: 10;
-                                        unit: "%";
-                                        changed(v) => { root.set-panel-font(v); }
-                                    }
-                                }
-                                ToggleRow {
-                                    label: root.lang-en ? "Animations" : "界面动画";
-                                    desc: root.lang-en ? "Sidebar and panel transition animations" : "侧栏与面板的过渡动画开关";
-                                    on: AnimationSettings.enabled;
-                                    toggled => {
-                                        root.set-animations-enabled(!AnimationSettings.enabled);
-                                    }
-                                }
-                                        Text {
-                                            text: "\{round(Theme.ui-scale * 100)}%";
-                                            font-size: 11px;
-                                            color: Theme.fg-2;
-                                            vertical-alignment: center;
-                                            width: 40px;
                                         }
                                     }
                                 }
+                                OptionRow {
+    label: root.lang-en ? "UI Scale" : "界面缩放";
+    desc: root.lang-en ? "Scales fonts and controls (80% – 200%)" : "整体缩放界面字体与控件（80% – 200%）";
+
+    Stepper {
+        value: round(Theme.ui-scale * 100);
+        minimum: 80;
+        maximum: 200;
+        step: 10;
+        unit: "%";
+        changed(v) => { root.set-ui-scale(v); }
+    }
+}
+
+ToggleRow {
+    label: root.lang-en ? "Animations" : "界面动画";
+    desc: root.lang-en ? "Hover states, sliding indicator and wallpaper crossfade" : "悬停态、滑动指示条与壁纸淡化的过渡动画开关";
+    on: AnimationSettings.enabled;
+    toggled => {
+        root.set-animations-enabled(!AnimationSettings.enabled);
+    }
+}
                             }
                             SectionTitle { text: root.lang-en ? "Rendering" : "渲染"; }
                             Card {
@@ -1590,8 +1690,6 @@ Stepper {
                                         picked(v) => { root.set-renderer-mode(v); }
                                     }
                                 }
-                                // ── 界面缩放（v0.8.0 设置窗迁移）────────────────────────────────
-                                // ── 更新渠道（v0.8.0 设置窗迁移）────────────────────────────────
                             }
                             SectionTitle { text: root.lang-en ? "Updates" : "更新"; }
                             Card {
@@ -1639,7 +1737,7 @@ Stepper {
                                                 alignment: center;
                                                 ftext := Text {
                                                     text: fl;
-                                                    font-size: 11px;
+                                                    font-size: 11px * Theme.ui-scale;
                                                     color: root.update-freq-index == i ? Theme.accent : Theme.fg-2;
                                                     vertical-alignment: center;
                                                 }
@@ -1671,7 +1769,7 @@ Stepper {
                                             width: 100%;
                                             height: 100%;
                                             text: root.lang-en ? "Check now" : "立即检查";
-                                            font-size: 11px;
+                                            font-size: 11px * Theme.ui-scale;
                                             color: Theme.fg-1;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
@@ -1682,8 +1780,8 @@ Stepper {
                         }
 
                         // ═══ 终端 ═══
-                        if root.current-cat == 1 : VerticalLayout {
-                            spacing: 4px;
+                        if root.cat-shown == 1 : CatFade {
+                            cat-spacing: 4px;
 
                             SectionTitle { text: root.lang-en ? "Font & display" : "字体与显示"; }
                             Card {
@@ -1703,7 +1801,11 @@ Stepper {
                                                 text: root.term-fonts.length > 0 && root.term-font-index < root.term-fonts.length
                                                     ? root.term-fonts[root.term-font-index]
                                                     : Theme.term-font-family;
-                                                clicked => { tfont-popup.show(); }
+                                                clicked => {
+                                                    root.tfont-appear = 0;   // 复位（此刻弹层未显示，动画不可见）
+                                                    tfont-popup.show();
+                                                    root.tfont-appear = 1;   // show 之后置 1 → 淡入
+                                                }
                                                                               UploadButton {
                                                                                   clicked => { root.upload-ui-font(); }
                                                                               }
@@ -1716,54 +1818,63 @@ Stepper {
                                             }
                                             Text {
                                                 text: root.lang-en ? "Bold" : "粗体";
-                                                font-size: 11px;
+                                                font-size: 11px * Theme.ui-scale;
                                                 color: Theme.fg-3;
                                                 vertical-alignment: center;
                                             }
                                         }
 
-                                        tfont-popup := PopupWindow {
-    Rectangle {
-                                            width: 240px;
-                                            border-radius: 8px;
-                                            border-width: 1px;
-                                            border-color: Theme.line;
-                                            background: Theme.sur-1;
+                                        tfont-popup := PopupWindow {                                            Rectangle {
+                                                width: 240px;
+                                                border-radius: 8px;
+                                                border-width: 1px;
+                                                border-color: Theme.line;
+                                                background: Theme.sur-1;
+                                                // 展开淡入：appear 由 changed is-open 驱动
+                                                opacity: root.tfont-appear;
 
-                                            VerticalLayout {
-                                                spacing: 0;
-                                                alignment: start;
+                                                VerticalLayout {
+                                                    spacing: 0;
+                                                    alignment: start;
 
-                                                for lbl[i] in root.term-fonts : Rectangle {
-                                                    height: 30px;
-                                                    background: root.term-font-index == i
-                                                        ? Theme.rail-item-active
-                                                        : (tf-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                                    ScrollView {
+                                                        height: 300px;
 
-                                                    HorizontalLayout {
-                                                        padding-left: 10px;
-                                                        padding-right: 10px;
-                                                        alignment: start;
+                                                        VerticalLayout {
+                                                            spacing: 0;
 
-                                                        Text {
-                                                            text: lbl;
-                                                            font-size: 12px;
-                                                            color: root.term-font-index == i ? Theme.accent : Theme.fg-1;
-                                                            vertical-alignment: center;
-                                                        }
-                                                    }
+                                                            for lbl[i] in root.term-fonts : Rectangle {
+                                                                height: 30px;
+                                                                background: root.term-font-index == i
+                                                                    ? Theme.rail-item-active
+                                                                    : (tf-ta.has-hover ? Theme.rail-item-hover : transparent);
 
-                                                    tf-ta := TouchArea {
-                                                        clicked => {
-                                                            root.term-font(lbl);
-                                                            tfont-popup.close();
+                                                                HorizontalLayout {
+                                                                    padding-left: 10px;
+                                                                    padding-right: 10px;
+                                                                    alignment: start;
+
+                                                                    Text {
+                                                                        text: lbl;
+                                                                        font-size: 12px * Theme.ui-scale;
+                                                                        color: root.term-font-index == i ? Theme.accent : Theme.fg-1;
+                                                                        vertical-alignment: center;
+                                                                    }
+                                                                }
+
+                                                                tf-ta := TouchArea {
+                                                                    clicked => {
+                                                                        root.term-font(lbl, i);
+                                                                        root.tfont-appear = 0;   // 复位（弹层随即消失）
+                                                                        tfont-popup.close();
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                    
-    }
-    }
+                                        }
                                     }
                                 }
                                 OptionRow {
@@ -1788,7 +1899,7 @@ Rectangle {
         Text {
             horizontal-stretch: 1;
             text: root.lang-en ? "Font preview" : "字体预览";
-            font-size: 11px;
+            font-size: 11px * Theme.ui-scale;
             color: Theme.fg-3;
         }
     }
@@ -1842,7 +1953,7 @@ Rectangle {
             ? (root.lang-en ? "Up to 1,000,000 lines (large buffer enabled)." : "上限 100 万行（已开启大缓冲区）。")
             : (root.lang-en ? "Up to 100,000 lines. Enable the large buffer below to go higher." : "上限 10 万行；需要更多请开启下方的「大容量滚回模式」。"))
         : (root.lang-en ? "Out of range — the value was not applied." : "超出范围，未应用。");
-    font-size: 11px;
+    font-size: 11px * Theme.ui-scale;
     color: root.scrollback-valid ? Theme.fg-3 : Theme.danger;
     wrap: word-wrap;
     line-height-factor: 1.3;
@@ -1971,17 +2082,17 @@ Rectangle {
         spacing: 5px;
         if root.output-highlight-preset == "builtin" : VerticalLayout {
             spacing: 5px;
-            Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-            Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-            Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+            Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
+            Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
+            Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
         }
         if root.output-highlight-preset != "builtin" : VerticalLayout {
             spacing: 5px;
-            Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-            Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-            Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-            Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-            if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+            Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
+            Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
+            Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
+            Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
+            if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
         }
     }
 }
@@ -1991,7 +2102,7 @@ Rectangle {
 
                                 if root.output-highlight-rule-status != "" : Text {
                                     text: root.output-highlight-rule-status;
-                                    font-size: 10px;
+                                    font-size: 10px * Theme.ui-scale;
                                     color: Theme.danger;
                                     wrap: word-wrap;
                                 }
@@ -2039,7 +2150,7 @@ Rectangle {
                                         Switch { on: root.new-rule-case; toggled => { root.new-rule-case = !root.new-rule-case; } }
                                         Text {
                                             text: root.lang-en ? "Case sensitive" : "区分大小写";
-                                            font-size: 11px;
+                                            font-size: 11px * Theme.ui-scale;
                                             color: Theme.fg-2;
                                             vertical-alignment: center;
                                         }
@@ -2049,7 +2160,7 @@ Rectangle {
                                         Switch { on: root.new-rule-whole; toggled => { root.new-rule-whole = !root.new-rule-whole; } }
                                         Text {
                                             text: root.lang-en ? "Whole line" : "仅整行";
-                                            font-size: 11px;
+                                            font-size: 11px * Theme.ui-scale;
                                             color: Theme.fg-2;
                                             vertical-alignment: center;
                                         }
@@ -2064,7 +2175,7 @@ Rectangle {
 
                                         Text {
                                             text: root.lang-en ? "Add Rule" : "添加规则";
-                                            font-size: 11px;
+                                            font-size: 11px * Theme.ui-scale;
                                             font-weight: 600;
                                             color: root.new-rule-pattern == "" ? Theme.fg-3 : Theme.bg-root;
                                             horizontal-alignment: center;
@@ -2124,7 +2235,7 @@ Rectangle {
                                                         + (rule.case-sensitive ? " · Aa" : "")
                                                         + (rule.whole-line ? (root.lang-en ? " · whole line" : " · 整行") : "");
                                                     color: Theme.fg-3;
-                                                    font-size: 10px;
+                                                    font-size: 10px * Theme.ui-scale;
                                                 }
                                             }
                                             Switch {
@@ -2144,7 +2255,7 @@ Rectangle {
                                                 Text {
                                                     text: "\u{E872}";
                                                     font-family: "Material Icons";
-                                                    font-size: 15px;
+                                                    font-size: 15px * Theme.ui-scale;
                                                     color: Theme.fg-3;
                                                     horizontal-alignment: center;
                                                     vertical-alignment: center;
@@ -2164,8 +2275,8 @@ Rectangle {
                         }
 
                         // ═══ 文件 ═══
-                        if root.current-cat == 2 : VerticalLayout {
-                            spacing: 4px;
+                        if root.cat-shown == 2 : CatFade {
+                            cat-spacing: 4px;
 
                             SectionTitle { text: root.lang-en ? "Transfers" : "传输行为"; }
                             Card {
@@ -2231,13 +2342,13 @@ Rectangle {
                         }
 
                         // ═══ 快捷键 ═══
-                        if root.current-cat == 4 : VerticalLayout {
-                            spacing: 5px;
-                            padding-top: 12px;
+                        if root.cat-shown == 4 : CatFade {
+                            cat-spacing: 5px;
+                            cat-padding-top: 12px;
 
                             SectionTitle {
                                 text: root.lang-en ? "Tabs" : "标签页";
-                                font-size: 10px;
+                                font-size: 10px * Theme.ui-scale;
                                 color: Theme.fg-3;
                             }
                             Card {
@@ -2252,7 +2363,7 @@ Rectangle {
                             }
                             SectionTitle {
                                 text: root.lang-en ? "Terminal" : "终端";
-                                font-size: 10px;
+                                font-size: 10px * Theme.ui-scale;
                                 color: Theme.fg-3;
                             }
                             Card {
@@ -2283,7 +2394,7 @@ Rectangle {
                             }
                             SectionTitle {
                                 text: root.lang-en ? "Command Box" : "命令输入框";
-                                font-size: 10px;
+                                font-size: 10px * Theme.ui-scale;
                                 color: Theme.fg-3;
                             }
                             Card {
@@ -2323,8 +2434,8 @@ Rectangle {
                         }
 
   // ═══ 云同步═══
-                        if root.current-cat == 6 : VerticalLayout {
-                            spacing: 4px;
+                        if root.cat-shown == 6 : CatFade {
+                            cat-spacing: 4px;
 
                             SectionTitle { text: root.lang-en ? "Sync target" : "同步目标"; }
                             Card {
@@ -2418,14 +2529,14 @@ Rectangle {
                                                 height: 100%;
                                                 background: sv-ta.pressed ? #000000 : #ffffff;
                                                 opacity: sv-ta.pressed ? 0.14 : (sv-ta.has-hover ? 0.10 : 0);
-                                                animate opacity { duration: AnimationSettings.fast(); }
+                                                animate opacity { duration: AnimationSettings.short2(); }
                                             }
 
                                             HorizontalLayout {
                                                 alignment: center;
                                                 Text {
                                                     text: root.lang-en ? "Save" : "保存配置";
-                                                    font-size: 12px;
+                                                    font-size: 12px * Theme.ui-scale;
                                                     color: white;
                                                     vertical-alignment: center;
                                                 }
@@ -2445,14 +2556,14 @@ Rectangle {
                                             border-width: 1px;
                                             border-color: up-ta.has-hover ? Theme.accent-ring : Theme.line;
                                             background: up-ta.pressed ? Theme.accent-press : (up-ta.has-hover ? Theme.sur-3 : Theme.sur-2);
-                                            animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
-                                            animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+                                            animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+                                            animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
                                             HorizontalLayout {
                                                 alignment: center;
                                                 Text {
                                                     text: root.lang-en ? "Upload" : "上传备份";
-                                                    font-size: 12px;
+                                                    font-size: 12px * Theme.ui-scale;
                                                     color: Theme.fg-1;
                                                     vertical-alignment: center;
                                                 }
@@ -2470,14 +2581,14 @@ Rectangle {
                                             border-width: 1px;
                                             border-color: dl-ta.has-hover ? Theme.accent-ring : Theme.line;
                                             background: dl-ta.pressed ? Theme.accent-press : (dl-ta.has-hover ? Theme.sur-3 : Theme.sur-2);
-                                            animate background { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
-                                            animate border-color { duration: AnimationSettings.fast(); easing: AnimationSettings.color(); }
+                                            animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+                                            animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
                                             HorizontalLayout {
                                                 alignment: center;
                                                 Text {
                                                     text: root.lang-en ? "Restore" : "下载恢复";
-                                                    font-size: 12px;
+                                                    font-size: 12px * Theme.ui-scale;
                                                     color: Theme.fg-1;
                                                     vertical-alignment: center;
                                                 }
@@ -2494,9 +2605,9 @@ Rectangle {
                         }
 
                         // ═══ 关于 ═══
-                        if root.current-cat == 5 : VerticalLayout {
-                            spacing: 12px;
-                            padding-top: 8px;
+                        if root.cat-shown == 5 : CatFade {
+                            cat-spacing: 12px;
+                            cat-padding-top: 8px;
 
                             Rectangle {
                                 border-radius: 10px;
@@ -2519,7 +2630,7 @@ Rectangle {
                                             width: 100%;
                                             height: 100%;
                                             text: "R";
-                                            font-size: 20px;
+                                            font-size: 20px * Theme.ui-scale;
                                             font-weight: 800;
                                             color: Theme.accent;
                                             horizontal-alignment: center;
@@ -2532,24 +2643,24 @@ Rectangle {
 
                                         Text {
                                             text: "Rudder";
-                                            font-size: 15px;
+                                            font-size: 15px * Theme.ui-scale;
                                             font-weight: 700;
                                             color: Theme.fg-1;
                                         }
                             SectionTitle { text: root.lang-en ? "Application" : "应用"; }
                                         Text {
                                             text: root.lang-en ? "Version v\{root.app-version}" : "当前版本 v\{root.app-version}";
-                                            font-size: 11px;
+                                            font-size: 11px * Theme.ui-scale;
                                             color: Theme.fg-3;
                                         }
                                         Text {
                                             text: root.lang-en ? "A lightweight Rust + Slint SSH client · Forked from yituorou/meatshell" : "轻量的 Rust + Slint SSH 客户端 · Forked from yituorou/meatshell";
-                                            font-size: 11px;
+                                            font-size: 11px * Theme.ui-scale;
                                             color: Theme.fg-3;
                                         }
                                         Text {
                                             text: "MIT / Apache-2.0 · github.com/SZhenY/Rudder";
-                                            font-size: 11px;
+                                            font-size: 11px * Theme.ui-scale;
                                             color: Theme.fg-3;
                                         }
                                     }
@@ -2576,13 +2687,13 @@ Rectangle {
                             SectionTitle { text: root.lang-en ? "Diagnostics" : "诊断"; }
                                         Text {
                                             text: root.lang-en ? "Logs & Diagnostics" : "日志与诊断";
-                                            font-size: 13px;
+                                            font-size: 13px * Theme.ui-scale;
                                             font-weight: 600;
                                             color: Theme.fg-1;
                                         }
                                         Text {
                                             text: "排查问题时把日志目录整个发给我们（运行日志与错误都写在这里）";
-                                            font-size: 11px;
+                                            font-size: 11px * Theme.ui-scale;
                                             color: Theme.fg-3;
                                         }
                                     }
@@ -2598,7 +2709,7 @@ Rectangle {
                                             alignment: center;
                                             Text {
                                                 text: root.lang-en ? "Open Log Folder" : "打开日志目录";
-                                                font-size: 12px;
+                                                font-size: 12px * Theme.ui-scale;
                                                 color: Theme.fg-1;
                                                 vertical-alignment: center;
                                             }
@@ -2626,18 +2737,18 @@ Rectangle {
                             SectionTitle { text: root.lang-en ? "Open source" : "开源组件"; }
                                     Text {
                                         text: "开源组件";
-                                        font-size: 13px;
+                                        font-size: 13px * Theme.ui-scale;
                                         font-weight: 600;
                                         color: Theme.fg-1;
                                     }
                                     Text {
                                         text: root.lang-en ? "Open-source libraries (injected by Rust at runtime)" : "本应用依赖以下开源库（运行时由 Rust 注入清单）";
-                                        font-size: 11px;
+                                        font-size: 11px * Theme.ui-scale;
                                         color: Theme.fg-3;
                                     }
                                     for lib in root.about-libs : Text {
                                         text: lib;
-                                        font-size: 11px;
+                                        font-size: 11px * Theme.ui-scale;
                                         color: Theme.fg-2;
                                     }
                                 }
@@ -2645,13 +2756,14 @@ Rectangle {
 
                             Text {
                                 text: "Rudder — a lightweight Rust + Slint SSH client";
-                                font-size: 11px;
+                                font-size: 11px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 horizontal-alignment: center;
                             }
                         }
                     }
                 }
+                    }
             }
         }
     }

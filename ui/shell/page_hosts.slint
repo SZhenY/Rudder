@@ -26,13 +26,13 @@ component MenuRow inherits Rectangle {
         Text {
             text: root.glyph;
             font-family: "Material Icons";
-            font-size: 14px;
+            font-size: 14px * Theme.ui-scale;
             color: root.danger ? Theme.danger : Theme.fg-3;
             vertical-alignment: center;
         }
         Text {
             text: root.label;
-            font-size: 12px;
+            font-size: 12px * Theme.ui-scale;
             color: root.danger ? Theme.danger : Theme.fg-1;
             vertical-alignment: center;
             horizontal-stretch: 1;
@@ -100,7 +100,7 @@ component HostCard inherits Rectangle {
                 Text {
                     text: "\u{EB8E}"; // terminal
                     font-family: "Material Icons";
-                    font-size: 20px;
+                    font-size: 20px * Theme.ui-scale;
                     color: Theme.fg-2;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -117,7 +117,7 @@ component HostCard inherits Rectangle {
 
                     Text {
                         text: root.session.name;
-                        font-size: 14px;
+                        font-size: 14px * Theme.ui-scale;
                         font-weight: 600;
                         color: Theme.fg-1;
                         vertical-alignment: center;
@@ -131,7 +131,7 @@ component HostCard inherits Rectangle {
 
                         Text {
                             text: "SSH";
-                            font-size: 9px;
+                            font-size: 9px * Theme.ui-scale;
                             color: Theme.fg-3;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -140,7 +140,7 @@ component HostCard inherits Rectangle {
                 }
                 Text {
                     text: root.session.user != "" ? "\{root.session.user}@\{root.session.host}:\{root.session.port}" : "\{root.session.host}:\{root.session.port}";
-                    font-size: 11px;
+                    font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-3;
                 }
             }
@@ -160,7 +160,7 @@ component HostCard inherits Rectangle {
                     text: root.session.group == ""
                         ? (root.lang-en ? "Default" : "默认分组")
                         : root.session.group;
-                    font-size: 10px;
+                    font-size: 10px * Theme.ui-scale;
                     color: Theme.fg-2;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -174,13 +174,13 @@ component HostCard inherits Rectangle {
                 text: root.session.note == ""
                     ? (root.lang-en ? "No note" : "暂无备注")
                     : root.session.note;
-                font-size: 10px;
+                font-size: 10px * Theme.ui-scale;
                 color: Theme.fg-3;
                 overflow: elide;
             }
             Text {
                 text: root.lang-en ? "No tags" : "无标签";
-                font-size: 10px;
+                font-size: 10px * Theme.ui-scale;
                 color: Theme.fg-3;
             }
         }
@@ -194,7 +194,7 @@ component HostCard inherits Rectangle {
 
             Text {
                 text: root.lang-en ? "Quick Connect" : "快速连接";
-                font-size: 12px;
+                font-size: 12px * Theme.ui-scale;
                 color: (card-ta.has-hover || quick-ta.has-hover) ? Theme.accent : Theme.fg-2;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -229,7 +229,7 @@ component HostCard inherits Rectangle {
         Text {
             text: "\u{E5D3}"; // more_horiz
             font-family: "Material Icons";
-            font-size: 15px;
+            font-size: 15px * Theme.ui-scale;
             color: Theme.fg-2;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -289,9 +289,13 @@ export component PageHosts inherits Rectangle {
     }
 
     HorizontalLayout {
+        // ⚠ spacing 必须显式归零：样式默认布局间距（~11px）会在导航列/分隔线/内容
+        // 之间留缝 —— 缝里是全透明的 bg-root（悬崖公式），半透明壁纸上就是一道
+        // "空白缝"（分隔线两侧断开）。列间分隔由 1px 分隔线承担。
+        spacing: 0px;
         // ── 第二列：分组导航 ────────────────────────────────────────────
         // 面板底色（sur-1）：与内容区（sur-0）拉开层次，右侧另有一条分隔线。
-        Rectangle {
+        nav-col := Rectangle {
             width: 190px;
             background: Theme.sur-1;
 
@@ -307,7 +311,7 @@ export component PageHosts inherits Rectangle {
 
                 Text {
                     text: root.lang-en ? "Groups" : "分组导航";
-                    font-size: 12px;
+                    font-size: 12px * Theme.ui-scale;
                     color: Theme.fg-3;
                 }
 
@@ -325,13 +329,13 @@ export component PageHosts inherits Rectangle {
                             width: 18px;
                             text: "\u{E2C8}"; // list_alt
                             font-family: "Material Icons";
-                            font-size: 15px;
+                            font-size: 15px * Theme.ui-scale;
                             color: Theme.accent;
                             vertical-alignment: center;
                         }
                         Text {
                             text: root.lang-en ? "All Hosts" : "全部主机";
-                            font-size: 13px;
+                            font-size: 13px * Theme.ui-scale;
                             font-weight: 600;
                             color: Theme.accent;
                             vertical-alignment: center;
@@ -354,13 +358,13 @@ export component PageHosts inherits Rectangle {
 
                         Text {
                             text: root.lang-en ? "Default Group" : "默认分组";
-                            font-size: 12px;
+                            font-size: 12px * Theme.ui-scale;
                             color: Theme.fg-2;
                             vertical-alignment: center;
                         }
                         Text {
                             text: "0";
-                            font-size: 11px;
+                            font-size: 11px * Theme.ui-scale;
                             color: Theme.fg-3;
                             vertical-alignment: center;
                         }
@@ -375,7 +379,7 @@ export component PageHosts inherits Rectangle {
 
                 Text {
                     text: root.lang-en ? "Tag Filters" : "标签筛选";
-                    font-size: 12px;
+                    font-size: 12px * Theme.ui-scale;
                     color: Theme.fg-3;
                 }
                 HorizontalLayout {
@@ -396,7 +400,7 @@ export component PageHosts inherits Rectangle {
 
                         Text {
                             text: chip.label;
-                            font-size: 10px;
+                            font-size: 10px * Theme.ui-scale;
                             color: chip.c;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -411,7 +415,7 @@ export component PageHosts inherits Rectangle {
 
                     Text {
                         text: root.lang-en ? "Manage Groups & Tags" : "管理分组 & 标签";
-                        font-size: 12px;
+                        font-size: 12px * Theme.ui-scale;
                         color: Theme.fg-2;
                         horizontal-alignment: center;
                         vertical-alignment: center;
@@ -421,17 +425,17 @@ export component PageHosts inherits Rectangle {
         }
 
         // 分隔线
-        Rectangle {
+        div-col := Rectangle {
             width: 1px;
             background: Theme.line;
         }
 
         // ── 主内容：顶栏 + 卡片 ──────────────────────────────────────────
-        VerticalLayout {
+        content-col := VerticalLayout {
             horizontal-stretch: 1;
             spacing: 0px;
 
-            Rectangle {
+            hdr := Rectangle {
                 // 顶栏往上顶到窗口最顶（顶掉那一圈空背景），内容用 top-inset 让开红绿灯。
                 height: 52px + root.top-inset;
                 background: Theme.sur-1;
@@ -445,7 +449,7 @@ export component PageHosts inherits Rectangle {
 
                     Text {
                         text: root.lang-en ? "Host Management" : "主机管理";
-                        font-size: 15px;
+                        font-size: 15px * Theme.ui-scale;
                         color: Theme.fg-1;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
@@ -470,7 +474,7 @@ export component PageHosts inherits Rectangle {
                                 x: 14px;
                                 width: parent.width - 28px;
                                 text: root.lang-en ? "+ New Host" : "+ 新建主机";
-                                font-size: 12px;
+                                font-size: 12px * Theme.ui-scale;
                                 color: #ffffff;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
@@ -494,7 +498,7 @@ export component PageHosts inherits Rectangle {
 
             if root.sessions.length == 0 : Text {
                 text: root.lang-en ? "No hosts yet — click \u{201c}New Host\u{201d} top-right, or import / cloud-sync" : "还没有主机 —— 点右上角「新建主机」，或用导入 / 云同步带入";
-                font-size: 13px;
+                font-size: 13px * Theme.ui-scale;
                 color: Theme.fg-3;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -634,4 +638,15 @@ export component PageHosts inherits Rectangle {
             root.pending-remove-name = "";
         }
     }
+    // ── 临时诊断（量完即删）──
+    Timer {
+        running: true;
+        interval: 1s;
+        triggered => {
+            debug("PROBE nav.x=", nav-col.x, " nav.w=", nav-col.width,
+                  " div.x=", div-col.x, " content.x=", content-col.x,
+                  " hdr.x=", hdr.x, " hdr.w=", hdr.width, " page.w=", root.width);
+        }
+    }
+
 }

@@ -35,7 +35,7 @@ export component PageSnippets inherits Rectangle {
 
                 Text {
                     text: "指令集";
-                    font-size: 16px;
+                    font-size: 16px * Theme.ui-scale;
                     color: Theme.fg-1;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
@@ -49,7 +49,7 @@ export component PageSnippets inherits Rectangle {
 
                     Text {
                         text: "管理指令";
-                        font-size: 12px;
+                        font-size: 12px * Theme.ui-scale;
                         color: Theme.fg-1;
                         horizontal-alignment: center;
                         vertical-alignment: center;
@@ -66,7 +66,7 @@ export component PageSnippets inherits Rectangle {
 
         if root.quick-commands.length == 0 : Text {
             text: "还没有指令 —— 点右上角「管理指令」添加";
-            font-size: 13px;
+            font-size: 13px * Theme.ui-scale;
             color: Theme.fg-3;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -90,7 +90,7 @@ export component PageSnippets inherits Rectangle {
                     // 组头（与旧列表同一约定：group-header 非空表示这是组的第一行）
                     if c.group-header != "" : Text {
                         text: c.group-header;
-                        font-size: 12px;
+                        font-size: 12px * Theme.ui-scale;
                         color: Theme.fg-2;
                     }
 
@@ -108,7 +108,7 @@ export component PageSnippets inherits Rectangle {
                             Text {
                                 width: 140px;
                                 text: c.name;
-                                font-size: 13px;
+                                font-size: 13px * Theme.ui-scale;
                                 color: Theme.fg-1;
                                 vertical-alignment: center;
                                 overflow: elide;
@@ -116,7 +116,7 @@ export component PageSnippets inherits Rectangle {
                             Text {
                                 horizontal-stretch: 1;
                                 text: c.command-preview;
-                                font-size: 12px;
+                                font-size: 12px * Theme.ui-scale;
                                 color: Theme.fg-3;
                                 vertical-alignment: center;
                                 overflow: elide;
@@ -129,7 +129,7 @@ export component PageSnippets inherits Rectangle {
 
                                 Text {
                                     text: "运行";
-                                    font-size: 12px;
+                                    font-size: 12px * Theme.ui-scale;
                                     color: Theme.fg-1;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
