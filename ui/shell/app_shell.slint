@@ -1094,6 +1094,8 @@ export component AppWindow inherits Window {
         // 舞台宽度变化会走 `content-resized`，Rust 据此重算分屏几何。
         // 用户拖拽出来的面板宽度（会话内记忆；默认 = 出厂 340px）
         property <length> panel-user-w: 340px;
+        // 正在拖拽面板左缘调宽（此时让位宽度必须跟手，`panel-w` 的动画要禁用）
+        property <bool> panel-resizing: false;
         property <length> panel-w:
             root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open
                 ? (root.panel-collapsed ? 22px : root.panel-user-w) : 0px;
@@ -1102,7 +1104,9 @@ export component AppWindow inherits Window {
         animate panel-w {
             duration: root.panel-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
             easing: root.panel-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
-            enabled: AnimationSettings.enabled;
+            // ⚠ 拖拽过程中必须**禁用**动画：`panel-w` 是终端让位宽度，动画化会让它
+            // 慢半拍地追上面板宽度，中间露出身后的空白（一闪而过）。拖拽要"跟手"。
+            enabled: AnimationSettings.enabled && !root.panel-resizing;
         }
         // 面板本体的横坐标：收起时**滑出到窗口右缘之外**（位移滑出），展开时贴住
         // 右缘。面板宽度恒为 `panel-user-w`，移动全程内容不会被挤压变形 —— 这正是
@@ -1602,7 +1606,11 @@ export component AppWindow inherits Window {
           cores-right: root.cores-right;
           proc-top: root.proc-top;
           y: root.shell-top;
-          width: root.panel-w;
+          // ⚠ 这里曾经是 `width: root.panel-w` —— 那是**终端让位宽度**（收起 22 /
+          // 展开 340，带动画），它会覆盖组件内部的 `width: expanded-w`，于是面板
+          // 宽度跟着让位动画从 22 长到 340：观感就是"两侧向中间收缩一下再展开"。
+          // 面板自身宽度必须恒为 `panel-user-w`；`panel-w` 只用于终端舞台让位。
+          width: root.panel-user-w;
           height: root.height - root.shell-top - 28px;
           lang-en: root.lang-en;
           transfers: root.transfers;
@@ -1683,10 +1691,15 @@ export component AppWindow inherits Window {
                     self.drag-w0 = root.panel-user-w;
                     self.drag-x0 = self.mouse-x;
                 }
-                root.panel-user-w = clamp(self.drag-w0 + (self.mouse-x - self.drag-x0),
+                // ⚠ 负号不能少：把手在面板**左缘**，鼠标向左移动 = 左缘向左拖 =
+                // 面板变**宽**。原来的 `absolute-position.x` 反推公式方向天然正确，
+                // 换成增量公式时若写成加号，左右就会完全反过来。
+                root.panel-user-w = clamp(self.drag-w0 - (self.mouse-x - self.drag-x0),
                                           280px, 560px);
+                root.panel-resizing = true;
             } else {
                 self.drag-w0 = 0px;   // 松手后复位，下次按下重新记起点
+                root.panel-resizing = false;
             }
         }
     }
