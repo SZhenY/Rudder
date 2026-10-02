@@ -350,13 +350,76 @@ pub(super) fn apply_custom_output_rules(
 /// 提前置 false —— 把进行中的淡化硬切掉，于是又闪一次。
 static WALLPAPER_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// 交叉淡化的**中点**：派生色（面板底色 / 文字色 / 强调色）在此刻一次性切换。
-/// = 30ms（等首帧）+ 400ms 的一半。选���点的理由：此时图像正好 50% 混合、最接近
-/// 中灰，人眼对配色跳变最不敏感；改在 t=0 跳变则与图像渐变不同步，观感是"闪一下"。
-const FADE_MID_MS: u64 = 230;
+/// 交叉淡化的起点与时长：Slint 侧 prev 图在 30ms（等首帧）后开始淡出、400ms 淡完。
+/// 派生色的插值必须落在**同一区间**且按**真实时间**推进（不是计步），这样即使
+/// 定时器有抖动，背景层与壁纸图像也严格同步演化 —— 全程没有跳变。
+const FADE_START_MS: f32 = 30.0;
+const FADE_LEN_MS: f32 = 400.0;
 
-/// 把壁纸派生的配色写进主题：accent / tint / base（面板底色的来源）+ 亮暗档。
-/// 参数全是 Copy，便于在中点定时器里直接调用。
+/// 两个颜色之间线性插值。图像淡化的曲线实测就是线性（`e-standard-decelerate`
+/// = `cubic-bezier(0, 0, 0, 1)`，其 x(t) 与 y(t) 相等），所以这里也用线性 ——
+/// 背景层与图像才会同步演化。
+fn lerp_color(a: slint::Color, b: slint::Color, t: f32) -> slint::Color {
+    // `Color::red()/green()/blue()` 返回 u8（0–255），在 u8 空间插值再回填。
+    let m = |x: u8, y: u8| -> u8 {
+        (x as f32 + (y as f32 - x as f32) * t).round().clamp(0.0, 255.0) as u8
+    };
+    slint::Color::from_rgb_u8(
+        m(a.red(), b.red()),
+        m(a.green(), b.green()),
+        m(a.blue(), b.blue()),
+    )
+}
+
+/// 派生色渐变的推进状态。用**递归 `Timer::single_shot`** 而非 `Timer::start`：
+/// `single_shot` 是关联函数，不需要持有 `Timer` 实例，因此没有"定时器必须活得
+/// 比回调久"的束缚（`Timer` 在 1.18 也没有 `as_weak()`）。
+struct PaletteFade {
+    weak: slint::Weak<AppWindow>,
+    bufs: TermBuffers,
+    apply_builtin_theme: bool,
+    /// (accent, tint, base) 的起点 —— 换壁纸前主题里的旧值。
+    from: (slint::Color, slint::Color, slint::Color),
+    /// (accent, tint, base) 的终点 —— 新壁纸取色算出的值。
+    to: (slint::Color, slint::Color, slint::Color),
+    is_dark: bool,
+    seq: u64,
+    t0: std::time::Instant,
+}
+
+impl PaletteFade {
+    fn spawn(self) {
+        slint::Timer::single_shot(std::time::Duration::from_millis(16), move || {
+            self.step();
+        });
+    }
+
+    fn step(self) {
+        let Some(w) = self.weak.upgrade() else { return };
+        // generation 变了 = 用户又切了壁纸，本次插值作废
+        if WALLPAPER_SEQ.load(std::sync::atomic::Ordering::SeqCst) != self.seq {
+            return;
+        }
+        // 进度按**真实时间**算（不是计步）：定时器抖动也不会让背景层与图像脱节。
+        // 区间与 Slint 侧淡出完全一致（30ms 起、400ms 走完）。
+        let elapsed = self.t0.elapsed().as_secs_f32() * 1000.0;
+        let t01 = ((elapsed - FADE_START_MS) / FADE_LEN_MS).clamp(0.0, 1.0);
+        let g = w.global::<Theme>();
+        g.set_wp_accent(lerp_color(self.from.0, self.to.0, t01));
+        g.set_wp_tint(lerp_color(self.from.1, self.to.1, t01));
+        g.set_wp_base(lerp_color(self.from.2, self.to.2, t01));
+        if t01 < 1.0 {
+            self.spawn();
+        } else if self.apply_builtin_theme {
+            // 亮暗档是 bool、驱动整个 Palette 的两档文字/边框色，无法插值。
+            // 放在插值末点切：此时背景色已到位，两档跳变的观感最小。
+            apply_dark_mode(&w, &self.bufs, self.is_dark);
+        }
+    }
+}
+
+/// 把壁纸派生的配色**一次性**写进主题（无过渡路径用：首帧 / 动画关闭 / 关壁纸）。
+/// 交叉淡化路径不走这里 —— 它让派生色随图像渐变，见 `lerp_color` 上方的说明。
 #[allow(clippy::too_many_arguments)]
 fn paint_wallpaper_palette(
     w: &AppWindow,
@@ -395,20 +458,20 @@ pub(super) fn apply_wallpaper(
     match crate::wallpaper::load(id) {
         Some(wp) => {
             // ==============================================================
-            // 换壁纸 = 400ms 交叉淡化 + 派生色**中点切换**
+            // 换壁纸 = 400ms 交叉淡化 + 派生色**同轴渐变**
             //
             // 此前的问题：壁纸图像渐变 400ms，而叠在它之上的那层背景
-            // （`bg-root` / `bg-panel` / `term-bg` —— 全部由 `wp_base`、`wp_tint`、
-            // `dark` 派生，见 theme.slint 的 `frost()`）却在**同一 tick 瞬变**：
+            // （`bg-root` / `bg-panel` / `term-bg` —— 全部由 `wp_base`、`wp_tint`
+            // 派生，见 theme.slint 的 `frost()`）却在**同一 tick 瞬变**：
             // 图像在渐变、背景层在跳变，两者不同步。浅色↔深色切换时对比最强，
-            // 表现为"内容后面的背景闪一下"。
+            // 表现为这一层"闪一下"。
             //
-            // 现在：派生色与亮暗档挪到淡化的**中点**一次性切换。
-            //
+            // 中点切换只是把跳变挪了位置、跳变本身还在，所以改为**同轴渐变**：
+            // 派生色按与图像相同的进度插值，全程无跳变。
             // 时序（Slint 侧 400ms 自 t=30ms 起，`e-standard-decelerate` 实为线性）：
             //   t=0     新壁纸图像就位（下层）；旧图存入 prev 盖在上层 opacity=1
             //   t=30ms  prev opacity→0，启动交叉淡化
-            //   t=230ms 派生色 + 亮暗档切换（= 中点，图像 50% 混合）
+            //   t=30~430ms 派生色随图像进度插值（末点切换亮暗档）
             //   t=480ms 撤掉 prev 层
             //
             // 尊重「界面动画」开关；启动首帧（此前无壁纸）无旧图可交叉，直接应用。
@@ -423,13 +486,6 @@ pub(super) fn apply_wallpaper(
             let is_dark = wp.palette.is_dark;
 
             if cross_fade {
-                // `bufs: &TermBuffers` 是借用，而 `Timer` 要求 `'static` 闭包 ——
-                // move 闭包一旦捕获这个引用，闭包就带上函数体生命周期而不满足 'static。
-                // 所以在**闭包外**克隆出 Arc 句柄（TermBuffers = Arc<Mutex<..>>），
-                // 显式 `(*bufs).clone()`：写 `bufs.clone()` 会被解析成 `Clone for &T`，
-                // 仍返回借用，等于没克隆。
-                let owned = (*bufs).clone();
-
                 let prev = window.global::<Theme>().get_wallpaper();
                 window.global::<Theme>().set_wallpaper_prev(prev);
                 window.global::<Theme>().set_wallpaper_fading(true);
@@ -444,21 +500,29 @@ pub(super) fn apply_wallpaper(
                     }
                 });
 
-                // 派生色与亮暗档在中点切换（与图像渐变同轴，消除"闪一下"）
-                let weak = window.as_weak();
-                slint::Timer::single_shot(
-                    std::time::Duration::from_millis(FADE_MID_MS),
-                    move || {
-                        if let Some(w) = weak.upgrade()
-                            && WALLPAPER_SEQ.load(std::sync::atomic::Ordering::SeqCst) == seq
-                        {
-                            paint_wallpaper_palette(
-                                &w, &owned, apply_builtin_theme, (ar, ag, ab), (tr, tg, tb),
-                                (br, bg, bb), is_dark,
-                            );
-                        }
-                    },
-                );
+                // ── 派生色与图像**同轴渐变** ─────────────────────────────────
+                // 面板底色（内容区 / 侧栏 / 终端底的半透明层）全部由 `wp_base`、
+                // `wp_tint` 派生。让它们跟着图像的淡化进度一起插值，这一层就不再
+                // 跳变 —— 之前"闪一下"就是图像渐变、背景层瞬变两条时间轴脱节。
+                PaletteFade {
+                    weak: window.as_weak(),
+                    bufs: (*bufs).clone(),
+                    apply_builtin_theme,
+                    from: (
+                        window.global::<Theme>().get_wp_accent(),
+                        window.global::<Theme>().get_wp_tint(),
+                        window.global::<Theme>().get_wp_base(),
+                    ),
+                    to: (
+                        slint::Color::from_rgb_u8(ar, ag, ab),
+                        slint::Color::from_rgb_u8(tr, tg, tb),
+                        slint::Color::from_rgb_u8(br, bg, bb),
+                    ),
+                    is_dark,
+                    seq,
+                    t0: std::time::Instant::now(),
+                }
+                .spawn();
 
                 // 撤 prev 层的时刻必须**晚于**淡出动画结束（400ms）：早撤会把还没淡完
                 // 的旧图硬切掉。480ms = 400ms 动画 + 80ms 余量。
