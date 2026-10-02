@@ -1674,7 +1674,7 @@ export component AppWindow inherits Window {
       }
     // 面板左缘的拖拽把手：左右拉伸手柄，280-560px 之间自由调宽（会话内记忆；
     // 重启恢复出厂 340px）。声明在面板之后 = 盖在面板左缘上。
-    TouchArea {
+    panel-drag := TouchArea {
         x: root.width - root.panel-w - 3px;
         y: root.shell-top;
         width: 6px;
@@ -1686,41 +1686,52 @@ export component AppWindow inherits Window {
         // 面板变宽 → 把手左移 → 反推出的宽度更大 → 更宽……实测打开面板时
         // 宽度被从 14px 一路放大到 342px（看起来就是"两侧向中间收缩再展开"）。
         // 正确做法：按下时记下起点，之后只按**鼠标位移增量**调整。
-        // 拖拽起点（`drag-w0 == 0` 表示"当前没在拖"，兼作哨兵）
-        property <length> drag-w0: 0px;
-        property <length> drag-x0: 0px;
-        // 上次真正应用到面板的宽度（1px 死区用）
-        property <length> drag-applied: 0px;
+        // ── 拖拽：时间节流（不是每像素都改宽度）─────────────────────────
+        // 实测（探针）：拖一次有 152 次宽度变化 → 152 次整树重排（RightPanel 的
+        // 几十个卡片 + 终端舞台里所有终端文本重绘）；Rust 侧 `refresh_panes` 每次
+        // 只花 5–136 微秒（总计约 6ms）—— **瓶颈是重排/重绘的次数，不是单次耗时**。
+        // 所以 `moved` 只**累积位移**（廉价），由下面的定时器每 33ms 批量应用一次，
+        // 重排次数降到 1/3，且每帧都留得出绘制预算 → 跟手且不闪。
+        property <length> drag-w0: 0px;      // 0 = 当前没在拖（哨兵）
+        property <length> drag-x0: 0px;      // 上次采样时的鼠标 x
+        property <length> drag-applied: 340px; // 已应用到面板的宽度
+        property <length> drag-pending: 0px;   // 待应用位移
+        Timer {
+            running: panel-drag.pressed;
+            interval: 33ms;
+            triggered => {
+                // Timer 是 builtin 组件（root 指向自己），要访问外层 TouchArea
+                // 的属性必须走 id。
+                if (panel-drag.drag-pending != 0px) {
+                    root.panel-user-w = clamp(panel-drag.drag-applied + panel-drag.drag-pending,
+                                              280px, 560px);
+                    panel-drag.drag-applied = root.panel-user-w;
+                    panel-drag.drag-pending = 0px;
+                }
+            }
+        }
         moved => {
             if (self.pressed) {
-                // 按下的第一帧记起点：宽度 + 鼠标位置
-                if (self.drag-w0 == 0px) {
-                    self.drag-w0 = root.panel-user-w;
-                    self.drag-x0 = self.mouse-x;
-                }
-                // ⚠ 负号不能少：把手在面板**左缘**，鼠标向左移动 = 左缘向左拖 =
-                // 面板变**宽**。原来的 `absolute-position.x` 反推公式方向天然正确，
-                // 换成增量公式时若写成加号，左右就会完全反过来。
-                // 让位宽度的动画**先**禁用掉，再改宽度。顺序反了的话第一帧仍带
-                // 250ms 动画，舞台慢半拍 → 面板与舞台错位一下（"横跳"）。
+                // 让位宽度的动画先禁用掉，再改宽度（顺序反了第一帧仍带 250ms
+                // 动画，舞台慢半拍 → 面板与舞台错位一下）。
                 root.panel-resizing = true;
-
-                // 按下的第一帧只记起点、不动宽度：此刻 mouse-x 可能已挪了几像素，
-                // 直接算会把面板"弹"一下。
                 if (self.drag-w0 == 0px) {
                     self.drag-w0 = root.panel-user-w;
+                    self.drag-applied = root.panel-user-w;
                     self.drag-x0 = self.mouse-x;
                 } else {
-                    // 1px 死区：宽度每次变化都会让终端舞台重算并触发 Rust 的
-                    // `content-resized`（重排分屏几何），逐像素更新会明显闪烁。
-                    let next = clamp(self.drag-w0 - (self.mouse-x - self.drag-x0), 280px, 560px);
-                    if (abs(next - self.drag-applied) >= 1px) {
-                        root.panel-user-w = next;
-                        self.drag-applied = next;
-                    }
+                    // ⚠ 负号不能少：把手在面板**左缘**，鼠标向左 = 左缘向左拖 = 变宽。
+                    self.drag-pending = self.drag-pending - (self.mouse-x - self.drag-x0);
+                    self.drag-x0 = self.mouse-x;
                 }
             } else {
-                self.drag-w0 = 0px;   // 松手后复位，下次按下重新记起点
+                // 松手：把剩余位移一次性应用掉，否则最后一段会"丢"一截
+                if (self.drag-pending != 0px) {
+                    root.panel-user-w = clamp(self.drag-applied + self.drag-pending,
+                                              280px, 560px);
+                    self.drag-pending = 0px;
+                }
+                self.drag-w0 = 0px;
                 root.panel-resizing = false;
             }
         }
