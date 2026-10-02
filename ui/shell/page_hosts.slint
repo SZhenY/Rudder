@@ -295,7 +295,7 @@ export component PageHosts inherits Rectangle {
         spacing: 0px;
         // ── 第二列：分组导航 ────────────────────────────────────────────
         // 面板底色（sur-1）：与内容区（sur-0）拉开层次，右侧另有一条分隔线。
-        nav-col := Rectangle {
+        Rectangle {
             width: 190px;
             background: Theme.sur-1;
 
@@ -425,17 +425,17 @@ export component PageHosts inherits Rectangle {
         }
 
         // 分隔线
-        div-col := Rectangle {
+        Rectangle {
             width: 1px;
             background: Theme.line;
         }
 
         // ── 主内容：顶栏 + 卡片 ──────────────────────────────────────────
-        content-col := VerticalLayout {
+        VerticalLayout {
             horizontal-stretch: 1;
             spacing: 0px;
 
-            hdr := Rectangle {
+            Rectangle {
                 // 顶栏往上顶到窗口最顶（顶掉那一圈空背景），内容用 top-inset 让开红绿灯。
                 height: 52px + root.top-inset;
                 background: Theme.sur-1;
@@ -638,15 +638,4 @@ export component PageHosts inherits Rectangle {
             root.pending-remove-name = "";
         }
     }
-    // ── 临时诊断（量完即删）──
-    Timer {
-        running: true;
-        interval: 1s;
-        triggered => {
-            debug("PROBE nav.x=", nav-col.x, " nav.w=", nav-col.width,
-                  " div.x=", div-col.x, " content.x=", content-col.x,
-                  " hdr.x=", hdr.x, " hdr.w=", hdr.width, " page.w=", root.width);
-        }
-    }
-
 }
