@@ -1667,9 +1667,15 @@ ToggleRow {
                                     desc: root.lang-en ? "Software rendering is the most compatible; takes effect after restart" : "软件渲染兼容性最好；切换后重启生效";
                             
                                     CapsuleRow {
+                                        // 三档语义值（auto / wgpu / software），与
+                                        // `ConfigStore::renderer_mode_choice` 一一对应。
+                                        // ⚠ 这里**不能**写后端名（`femtovg-wgpu`）：胶囊按
+                                        // 字符串精确匹配下标高亮，而后端名三平台各不相同
+                                        // （macOS 归一化成 femtovg-wgpu、Windows 认 wgpu），
+                                        // 写后端名会导致切换不生效、且没有高亮。
                                         opts: [
-                                            // 老设置窗的两档制：GPU = femtovg-wgpu（配置值），旧 femtovg/skia 已归一化
-                                            {value: "femtovg-wgpu", label: "GPU"},
+                                            {value: "auto", label: root.lang-en ? "Auto" : "自动"},
+                                            {value: "wgpu", label: "GPU"},
                                             {value: "software", label: root.lang-en ? "Software" : "软件渲染"},
                                         ];
                                         value: root.renderer-mode;

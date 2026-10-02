@@ -145,7 +145,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_output_highlight_rules(output_highlight_rule_model(&s));
         window.set_json_format_output(s.json_format_output());
         window.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0); // global UI zoom (#100)
-        window.set_renderer_mode(s.renderer_mode().into());
+        // 同上：三档语义值，否则胶囊匹配不上、没有高亮
+        window.set_renderer_mode(s.renderer_mode_choice().into());
         // v0.8.0 设置窗迁移项：新设置页需要回显当前值。
         window.set_collapse_sftp_default(s.collapse_sftp_default());
     }

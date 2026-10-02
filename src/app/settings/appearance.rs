@@ -57,8 +57,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         // so persist it now and apply it on the next launch (#280).
         let store = store.clone();
         window.on_set_renderer_mode(move |mode: SharedString| {
+            // 归一化后再落盘：设置页给的是 auto/wgpu/software 三个语义值，转成
+            // 各平台 `renderer_mode()` 认得的写法，避免把后端名写进配置。
             persist(&store, |s| {
-                s.set_renderer_mode(mode.to_string());
+                s.set_renderer_mode_choice(mode.as_ref());
             });
         });
     }
@@ -672,7 +674,8 @@ pub(crate) fn reset(
     w.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
     w.set_ui_font_index(fonts.ui_index(&ui_stored));
     w.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0);
-    w.set_renderer_mode(s.renderer_mode().into());
+    // 播种给设置页的是**三档语义值**，不是平台后端名（胶囊按字符串匹配高亮）
+    w.set_renderer_mode(s.renderer_mode_choice().into());
     w.global::<Theme>().set_panel_alpha(s.wallpaper_overlay());
     // 动画开关此前是 Slint-only 全局、从不持久化；现在与其它偏好一样由 config 驱动。
     // （原先播种在「布局」页的 apply_layout_prefs 里 —— 那页已随旧外壳删除，挪到外观域。）

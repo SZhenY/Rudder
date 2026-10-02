@@ -1562,6 +1562,37 @@ impl ConfigStore {
         }
     }
 
+    /// 设置页用的**三档语义值**（`auto` / `wgpu` / `software`），不分平台。
+    ///
+    /// 为什么需要它：各平台的 [`Self::renderer_mode`] 返回的是"喂给 Slint 的后端名"，
+    /// 三平台并不一致（Windows 是 `auto`/`wgpu`/`software`，macOS 把非软件档一律
+    /// 归一化成 `femtovg-wgpu`）。而设置页的胶囊按钮是**精确字符串匹配**下标高亮的
+    /// （`on: value == o.value`），拿平台后端名去比语义档位会一个都匹配不上 ——
+    /// 表现为"切换没反应、也没有高亮"。所以播种与写入都走这个统一语义值。
+    pub fn renderer_mode_choice(&self) -> &str {
+        match self.cache.appearance.renderer_mode.as_str() {
+            "software" => "software",
+            // 旧值与后端名都归到 GPU 档：OpenGL 版 `gpu`、已下架的 `skia*`，
+            // 以及 macOS 那侧写进配置的 `femtovg-wgpu`（它就是 GPU 档本身）。
+            "wgpu" | "gpu" | "skia" | "skia-vulkan" | "femtovg" | "femtovg-wgpu" => "wgpu",
+            // 空串（出厂默认）与一切认不出的值都回到"自动"，由启动探测决定。
+            _ => "auto",
+        }
+    }
+
+    /// 把设置页传来的三档语义值写进配置。
+    ///
+    /// ⚠ 这里**直写 cache、不走** [`Self::set_renderer_mode`]：后者是分平台的，
+    /// macOS 那版只认 `software`、把其余一切（含 `auto`）都压成 `femtovg-wgpu`
+    /// —— 那样"自动"这一档在 macOS 上永远存不下来，胶囊会自己跳回 GPU。
+    pub fn set_renderer_mode_choice(&mut self, choice: &str) {
+        self.cache.appearance.renderer_mode = match choice {
+            "software" => "software".into(),
+            "wgpu" => "wgpu".into(),
+            _ => "auto".into(),
+        };
+    }
+
     /// **默认 `auto`**：首次启动探测一次（这台机器有没有真 GPU、femtovg-wgpu 能不能真渲染
     /// 出一帧），有 GPU 就存 `wgpu`、没有就存 `software`，之后启动直接读配置。
     ///
@@ -2834,6 +2865,36 @@ mod tests {
 
         store.cache = serde_json::from_str("{}").expect("legacy config must deserialize");
         assert_eq!(store.terminal_cursor_style(), "bar");
+    }
+
+    /// 设置页三档语义值（不分平台）：旧值 / 后端名一律归到 GPU 档，认不出的回自动。
+    /// 这条契约被 `page_settings.slint` 的胶囊按钮依赖 —— 精确字符串匹配下标高亮，
+    /// 两边必须说同一套词。
+    #[test]
+    fn renderer_mode_choice_normalizes_legacy_and_backend_names() {
+        let mut store = temp_store();
+        // 出厂默认是空串 → 自动
+        assert_eq!(store.renderer_mode_choice(), "auto");
+
+        store.set_renderer_mode_choice("software");
+        assert_eq!(store.renderer_mode_choice(), "software");
+        store.set_renderer_mode_choice("wgpu");
+        assert_eq!(store.renderer_mode_choice(), "wgpu");
+        store.set_renderer_mode_choice("auto");
+        assert_eq!(store.renderer_mode_choice(), "auto");
+
+        // 旧配置里可能存着这些：都要归到 GPU 档，不能变成"自动"
+        for legacy in ["gpu", "skia", "skia-vulkan", "femtovg", "femtovg-wgpu"] {
+            store.set_renderer_mode(legacy.into());
+            assert_eq!(store.renderer_mode_choice(), "wgpu", "{legacy} 应归到 GPU 档");
+        }
+
+        // 写入端只认三档：后端名会被当成"自动"（不会被写进配置当 GPU 档用）
+        store.set_renderer_mode_choice("femtovg-wgpu");
+        assert_eq!(store.renderer_mode_choice(), "auto");
+        // 往返：写入 auto 后读回仍是 auto（macOS 上尤其关键，见 set_renderer_mode_choice）
+        store.set_renderer_mode_choice("auto");
+        assert_eq!(store.renderer_mode_choice(), "auto");
     }
 
     #[test]
