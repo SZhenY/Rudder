@@ -1101,72 +1101,52 @@ export component AppWindow inherits Window {
         property <bool> panel-resizing: false;
         // 拖拽更新间隔（毫秒），由 Rust 按实际屏幕刷新率注入
         in-out property <int> drag-frame-ms: 16;
-        // 让位宽度**跟着滑出进度走**：22px（收起把手位）→ panel-user-w（展开）。
-        // ⚠ 之前只用 `panel-collapsed ? 22 : panel-user-w` 做两端取值，结果滑出
-        // 过程中舞台**不让位**：面板左缘已从窗口右缘滑进来，舞台右缘却还停在
-        // 展开位 → 两者之间露出窗口底色（展开时的空白）。拖拽时同样错位 →
-        // 面板与舞台互相"横跳"。用 openness 插值让两者逐帧同步。
-        property <length> panel-w:
-            root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open
-                ? (22px + (root.panel-user-w - 22px) * root.panel-openness) : 0px;
-        // 终端让位宽度也走动画：舞台平滑变宽 / 变窄（宽度变化会触发
-        // `content-resized`，Rust 据此重算分屏几何）。
-        animate panel-w {
-            duration: root.panel-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
-            easing: root.panel-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
-            // ⚠ 拖拽过程中必须**禁用**动画：`panel-w` 是终端让位宽度，动画化会让它
-            // 慢半拍地追上面板宽度，中间露出身后的空白（一闪而过）。拖拽要"跟手"。
+        // ── 面板几何：只动画化「进度」，所有长度由进度直接算出 ──────────────
+        //
+        // 两个**正交**进度（此前只有一个 `panel-openness` 由 `panel-collapsed` 驱动，
+        // 于是「关闭工具栏」这条路径根本没有进度可用，只能靠 `if` 销毁面板）：
+        //   panel-openness 关闭(0) ↔ 打开(1)  —— 驱动位移、淡出、让位归零
+        //   panel-expand   折叠(0) ↔ 展开(1)  —— 驱动 22px 把手位 ↔ 340px 面板
+        property <float> panel-openness: root.right-panel-open ? 1 : 0;
+        animate panel-openness {
+            duration: root.right-panel-open ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
+            easing: root.right-panel-open ? AnimationSettings.s-soft() : AnimationSettings.e-exit();
+            // 拖拽期间必须禁用：进度一变，面板位置与让位宽度会同时跳变。
             enabled: AnimationSettings.enabled && !root.panel-resizing;
         }
-        // 面板本体的横坐标：收起时**滑出到窗口右缘之外**（位移滑出），展开时贴住
-        // 右缘。面板宽度恒为 `panel-user-w`，移动全程内容不会被挤压变形 —— 这正是
-        // 早先"宽度动画"观感诡异的原因（内容被逐帧压扁）。
-        // 面板的「展开度」0..1 —— 位移与淡出**共用**这一个进度，因此两者严格同步：
-        // 1 = 完全展开（贴住窗口右缘）；0 = 完全收起（滑出到窗口右缘之外并淡出）。
-        property <float> panel-openness: root.panel-collapsed ? 0 : 1;
-        animate panel-openness {
+        property <float> panel-expand: root.panel-collapsed ? 0 : 1;
+        animate panel-expand {
             duration: root.panel-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
             easing: root.panel-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
-            enabled: AnimationSettings.enabled;
+            enabled: AnimationSettings.enabled && !root.panel-resizing;
         }
-        property <length> panel-x: root.width - root.panel-user-w
-            + (1 - root.panel-openness) * root.panel-user-w;
+
+        // 让位宽度：先按展开度在 22px（把手位）↔ panel-user-w 之间取值，再乘打开度
+        // （关闭时整体归零，终端铺满）。
+        //
+        // ⚠ 这里**绝不能**再给 `panel-w` 加 `animate`。它的目标值依赖同样在动画的
+        // `panel-expand`/`panel-openness`，一旦自己也开动画就成了**双重平滑**：
+        // `panel-w` 慢半拍地追一个还在动的目标，面板与舞台之间就露出窗口底色
+        // （收起方向差得多 → 大片空白；展开方向差得少 → 只有些微错位）。
+        // 只动画化进度、长度直接由进度算出，两者天然同帧。
+        property <length> panel-w:
+            root.shell-page == 1 && root.terminals.length > 0
+                ? (22px + (root.panel-user-w - 22px) * root.panel-expand)
+                    * root.panel-openness : 0px;
+
+        // 面板本体的横坐标：**恒等于**「窗口宽 − 让位宽度」——也就是面板左缘永远
+        // 贴在终端让位的右缘上，中间不可能有缝。
+        //
+        // 这一条等式是全部修复的关键。之前面板走 `width - panel-user-w +
+        // (1 - openness) * panel-user-w`（位移 340px），而让位宽度走
+        // `22px + (panel-user-w - 22px) * openness`（收缩 318px）—— 两个不同的
+        // 插值区间，终点还不一致，展开途中必然错位。
+        //
+        // 写成同一个表达式的两种形式后，**弹簧过冲也不再有害**：过冲会让两者同时
+        // 越过目标（面板短暂压住终端一点），但恒等式仍然成立，不会露底。
+        property <length> panel-x: root.width - root.panel-w;
 
 
-        // ── 右侧面板收起后的 22px 把手 ──────────────────────────────────
-        // 面板本体收起时整体滑出窗口，所以把手**不能**画在面板里（会跟着一起跑掉），
-        // 必须独立于面板、固定贴在窗口右缘 —— 那 22px 正是终端舞台让出来的位置。
-        if root.page-shown == 1 && root.terminals.length > 0
-            && root.right-panel-open && root.panel-collapsed : Rectangle {
-            x: root.width - 22px;
-            width: 22px;
-            height: root.height;
-            background: Theme.term-bg;
-
-            Rectangle {
-                x: 1px;
-                width: 20px;
-                height: 20px;
-                y: (parent.height - 20px) / 2;
-                border-radius: 5px;
-                background: rp-ta.has-hover ? Theme.sur-3 : transparent;
-
-                Text {
-                    text: "\u{E8B3}";
-                    font-family: "Material Icons";
-                    font-size: 12px * Theme.ui-scale;
-                    color: Theme.fg-3;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                rp-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.panel-collapsed = false;
-                    }
-                }
-            }
-        }
 
         Rail {
             x: 0;
@@ -1590,11 +1570,15 @@ export component AppWindow inherits Window {
       // ⚠ 这里**刻意不带 `page-shown == 1`**：带上的话，切走终端页时面板被销毁、
       // 切回来时重建 —— 重建会重播入场动画、并从上次的残留位置起步，表现为
       // 「切页时面板突然收缩一下」。改为始终存在，用 opacity 控制可见性。
-      if root.terminals.length > 0 && root.right-panel-open : RightPanel {
-          // 非终端页淡出（不销毁，展开度与内容全部保留）。
-          // 乘上 `page-opacity`：换页时它与终端页**共用同一条淡出进度** ——
-          // 整个终端区（含这条工具栏）作为一个整体淡出淡入，而不是各淡各的。
-          opacity: root.page-shown == 1 ? root.panel-openness * root.page-opacity : 0;
+      if root.terminals.length > 0 : RightPanel {
+          // 淡出 = 两个进度的**乘积**：
+          //   panel-openness 关闭 → 滑出窗口右缘并淡出
+          //   panel-expand   折叠 → 向右收起并淡出（此前漏了它，折叠时是"瞬间让位"
+          //                    而面板不透明，看起来像被裁掉而不是收起）
+          //   page-opacity   切页 → 与终端区整体淡出
+          // 三者相乘，任一路径都保留淡出动画，且滑出方向统一为**从左向右**。
+          opacity: root.page-shown == 1
+              ? root.panel-openness * root.panel-expand * root.page-opacity : 0;
           // 舞台按 `panel-w` 让出宽度；面板本体按 `panel-x` 位移滑出。
           x: root.panel-x;
           expanded-w: root.panel-user-w;
@@ -1678,6 +1662,53 @@ export component AppWindow inherits Window {
           sftp-sort-request(key) => { root.sftp-sort-request(root.active-tab-id, key); }
           close-panel() => { root.right-panel-open = false; }
       }
+
+        // 把手必须声明在面板**之后**（z 序更高）：面板改为常驻后，折叠态它虽
+        // 已淡出，但仍占据右缘那 22px 并拦截点击 —— 声明在前面就点不动了。
+        // ── 右侧面板收起后的 22px 把手 ──────────────────────────────────
+        // 面板本体收起时整体滑出窗口，所以把手**不能**画在面板里（会跟着一起跑掉），
+        // 必须独立于面板、固定贴在窗口右缘 —— 那 22px 正是终端舞台让出来的位置。
+        //
+        // 可见性跟着 `panel-openness` **淡出**，而不是用 `right-panel-open` 直接
+        // 销毁：后者会让把手在关闭动画刚开始时就没了，而终端让位还要走完一圈，
+        // 看上去就是"手柄凭空消失 + 留一片空白"。
+        if root.page-shown == 1 && root.terminals.length > 0
+            && root.panel-collapsed : Rectangle {
+            x: root.width - 22px;
+            width: 22px;
+            height: root.height;
+            background: Theme.term-bg;
+            opacity: root.panel-openness;
+            animate opacity {
+                duration: AnimationSettings.exit-container();
+                easing: AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+
+            Rectangle {
+                x: 1px;
+                width: 20px;
+                height: 20px;
+                y: (parent.height - 20px) / 2;
+                border-radius: 5px;
+                background: rp-ta.has-hover ? Theme.sur-3 : transparent;
+
+                Text {
+                    text: "\u{E8B3}";
+                    font-family: "Material Icons";
+                    font-size: 12px * Theme.ui-scale;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                rp-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.panel-collapsed = false;
+                    }
+                }
+            }
+        }
     // 面板左缘的拖拽把手：左右拉伸手柄，280-560px 之间自由调宽（会话内记忆；
     // 重启恢复出厂 340px）。声明在面板之后 = 盖在面板左缘上。
     panel-drag := TouchArea {
