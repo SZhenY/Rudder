@@ -1557,6 +1557,9 @@ AccentPicker {
                                                     root.font-appear = 1;   // show 之后置 1 → 淡入
                                                 }
                                             }
+                                            UploadButton {
+                                                clicked => { root.upload-ui-font(); }
+                                            }
                                         }
 
                                         font-popup := PopupWindow {                                            Rectangle {
@@ -1615,42 +1618,6 @@ AccentPicker {
                                                         }
                                                     }
 
-                                                    Rectangle {
-                                                        height: 1px;
-                                                        background: Theme.line;
-                                                    }
-                                                    Rectangle {
-                                                        height: 30px;
-                                                        border-radius: 8px;
-                                                        background: imp-ta.has-hover ? Theme.rail-item-hover : transparent;
-
-                                                        HorizontalLayout {
-                                                            padding-left: 10px;
-                                                            alignment: start;
-
-                                                            Text {
-                                                                text: "\u{E2C6}"; // import
-                                                                font-family: "Material Icons";
-                                                                font-size: 13px * Theme.ui-scale;
-                                                                color: Theme.fg-2;
-                                                                vertical-alignment: center;
-                                                            }
-                                                            Text {
-                                                                text: root.lang-en ? "Import External Font…" : "导入外部字体…";
-                                                                font-size: 12px * Theme.ui-scale;
-                                                                color: Theme.fg-1;
-                                                                vertical-alignment: center;
-                                                            }
-                                                        }
-
-                                                        imp-ta := TouchArea {
-                                                            clicked => {
-                                                                root.upload-ui-font();
-                                                                root.font-appear = 0;   // 复位（弹层随即消失）
-                                                                font-popup.close();
-                                                            }
-                                                        }
-                                                    }
                                                 }
                                             }
                                         }
@@ -1811,6 +1778,9 @@ ToggleRow {
                                                     tfont-popup.show();
                                                     root.tfont-appear = 1;   // show 之后置 1 → 淡入
                                                 }
+                                            }
+                                            UploadButton {
+                                                clicked => { root.upload-ui-font(); }
                                             }
                                             Switch {
                                                 on: Theme.term-font-bold;

@@ -115,6 +115,7 @@ export component Rail inherits Rectangle {
 
     // 行宽：显式跟随侧栏宽度（= 宽度减去左右 padding）。**不能依赖布局分配** ——
     // 父级宽度动画期间布局会滞后，导致"侧栏先折叠、选中高亮才慢慢收缩"。
+    property <length> rail-w: root.width;
     property <length> row-w: root.width - Theme.sp-2 * 2;
 
     width: root.collapsed ? 56px : 180px;
