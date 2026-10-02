@@ -16,9 +16,16 @@ component MenuRow inherits Rectangle {
 
     height: 30px;
     border-radius: 6px;
-    background: ta.has-hover ? (root.danger ? Theme.danger.with-alpha(0.14) : Theme.sur-3) : transparent;
-    // hover 底色过渡：与项目其它按钮（RailButton / IconButton）同一档，否则菜单
-    // 行的底色是瞬时跳变、没有渐入感。
+    // 三态：常态透明 / 悬浮主色淡底 / 按下更浓。⚠ 不能用 `sur-3` 或
+    // `rail-item-hover` —— 它们在浅色主题下只有 7% 黑（#00000012），肉眼几乎看不出
+    // "悬浮高亮"。主色淡底在明暗两套主题下都清晰。
+    background: ta.pressed
+        ? (root.danger ? Theme.danger.with-alpha(0.22) : Theme.accent.with-alpha(0.20))
+        : (ta.has-hover
+        ? (root.danger ? Theme.danger.with-alpha(0.14) : Theme.accent.with-alpha(0.10))
+        : transparent);
+    // 悬浮/按下底色的过渡：与项目其它按钮（RailButton / IconButton）同一档，
+    // 否则菜单行的底色是瞬时跳变、没有渐入感。
     animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
     HorizontalLayout {
@@ -601,6 +608,19 @@ export component PageHosts inherits Rectangle {
             background: Theme.sur-1;
             drop-shadow-blur: Theme.shadow-popup-blur;
             drop-shadow-color: Theme.shadow-popup-color;
+
+            // 弹出淡入 + 4px 上浮：`init` 里改值会触发动画（实测），所以这个
+            // `if menu-id != ""` 每次新建的浮层都有入场动画，不需要额外状态机。
+            property <float> appear: 0;
+            animate appear {
+                duration: AnimationSettings.short3();
+                easing: AnimationSettings.e-standard-decelerate();
+                enabled: AnimationSettings.enabled;
+            }
+            init => {
+                self.appear = 1;
+            }
+            opacity: self.appear;
 
             VerticalLayout {
                 padding: 4px;
