@@ -1096,9 +1096,14 @@ export component AppWindow inherits Window {
         property <length> panel-user-w: 340px;
         // 正在拖拽面板左缘调宽（此时让位宽度必须跟手，`panel-w` 的动画要禁用）
         property <bool> panel-resizing: false;
+        // 让位宽度**跟着滑出进度走**：22px（收起把手位）→ panel-user-w（展开）。
+        // ⚠ 之前只用 `panel-collapsed ? 22 : panel-user-w` 做两端取值，结果滑出
+        // 过程中舞台**不让位**：面板左缘已从窗口右缘滑进来，舞台右缘却还停在
+        // 展开位 → 两者之间露出窗口底色（展开时的空白）。拖拽时同样错位 →
+        // 面板与舞台互相"横跳"。用 openness 插值让两者逐帧同步。
         property <length> panel-w:
             root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open
-                ? (root.panel-collapsed ? 22px : root.panel-user-w) : 0px;
+                ? (22px + (root.panel-user-w - 22px) * root.panel-openness) : 0px;
         // 终端让位宽度也走动画：舞台平滑变宽 / 变窄（宽度变化会触发
         // `content-resized`，Rust 据此重算分屏几何）。
         animate panel-w {
@@ -1684,6 +1689,8 @@ export component AppWindow inherits Window {
         // 拖拽起点（`drag-w0 == 0` 表示"当前没在拖"，兼作哨兵）
         property <length> drag-w0: 0px;
         property <length> drag-x0: 0px;
+        // 上次真正应用到面板的宽度（1px 死区用）
+        property <length> drag-applied: 0px;
         moved => {
             if (self.pressed) {
                 // 按下的第一帧记起点：宽度 + 鼠标位置
@@ -1694,9 +1701,24 @@ export component AppWindow inherits Window {
                 // ⚠ 负号不能少：把手在面板**左缘**，鼠标向左移动 = 左缘向左拖 =
                 // 面板变**宽**。原来的 `absolute-position.x` 反推公式方向天然正确，
                 // 换成增量公式时若写成加号，左右就会完全反过来。
-                root.panel-user-w = clamp(self.drag-w0 - (self.mouse-x - self.drag-x0),
-                                          280px, 560px);
+                // 让位宽度的动画**先**禁用掉，再改宽度。顺序反了的话第一帧仍带
+                // 250ms 动画，舞台慢半拍 → 面板与舞台错位一下（"横跳"）。
                 root.panel-resizing = true;
+
+                // 按下的第一帧只记起点、不动宽度：此刻 mouse-x 可能已挪了几像素，
+                // 直接算会把面板"弹"一下。
+                if (self.drag-w0 == 0px) {
+                    self.drag-w0 = root.panel-user-w;
+                    self.drag-x0 = self.mouse-x;
+                } else {
+                    // 1px 死区：宽度每次变化都会让终端舞台重算并触发 Rust 的
+                    // `content-resized`（重排分屏几何），逐像素更新会明显闪烁。
+                    let next = clamp(self.drag-w0 - (self.mouse-x - self.drag-x0), 280px, 560px);
+                    if (abs(next - self.drag-applied) >= 1px) {
+                        root.panel-user-w = next;
+                        self.drag-applied = next;
+                    }
+                }
             } else {
                 self.drag-w0 = 0px;   // 松手后复位，下次按下重新记起点
                 root.panel-resizing = false;
