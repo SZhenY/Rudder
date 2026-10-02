@@ -1187,6 +1187,30 @@ export component AppWindow inherits Window {
       // 声明在页面之前 = 主机 / 指令集 / Docker / 设置页画在它上面；终端页
       // 空布局时由 PageTerminal 空状态（声明在后）盖住。常驻、不随切页销毁 ——
       // 与旧外壳一致：切页不重建 TerminalView（保住滚动/悬停/查找条状态与键盘焦点）。
+      // 终端区背景：铺满 rail 右缘 → 窗口右缘，**不参与 panel-w 让位**。
+      //
+      // 为什么单独一层：舞台宽度要让位 panel-w（否则终端字符被面板盖住），
+      // 而宽度一变就触发 content-resized → Rust 重算分屏几何 → 写回 panes，
+      // 这条链有 1~2 帧延迟。那几帧背景已收窄、pane 还是旧宽度，缝里露的
+      // 就是窗口底色。背景铺满全程托底，pane 的滞后就被完全吸收。
+      Rectangle {
+          x: root.rail-w;
+          y: root.shell-top;
+          width: root.width - root.rail-w;
+          height: root.height - root.shell-top - 28px;
+          background: Theme.term-bg;
+          // ⚠ 可视性必须与下面的 TerminalStage **完全一致**（那边是 `visible`
+          // + 淡入淡出）。少了这一步，非终端页 / 没有会话时舞台整体不画，而这层
+          // 背景却还在 —— 终端区会凭空多出一片 term-bg。
+          visible: root.page-shown == 1 && root.terminals.length > 0;
+          opacity: root.page-shown == 1 && root.terminals.length > 0 ? 1 : 0;
+          animate opacity {
+              duration: AnimationSettings.enter-screen();
+              easing: AnimationSettings.e-enter();
+              enabled: AnimationSettings.enabled;
+          }
+      }
+
       TerminalStage {
           // 只在终端页、且**还有会话**时显示：各页面底色是"壁纸磨砂"（半透明），
           // 常驻的终端画面会透到别的页面上（用户最初报的 bug）；而关掉最后一个会话后
@@ -1209,6 +1233,9 @@ export component AppWindow inherits Window {
           // 让开右侧工具面板（panel-w）与底部状态栏
           width: root.width - root.rail-w - root.panel-w;
           height: root.height - root.shell-top - 28px;
+          // 背景交给上面那层铺满的 Rectangle：`term-bg` 是 `frost()` 半透明，
+          // 两层叠加会让终端区整体变深，接缝处还会出现色带。
+          background: transparent;
           panes: root.panes;
           terminals: root.terminals;
           splitters: root.splitters;
@@ -1674,14 +1701,27 @@ export component AppWindow inherits Window {
         // 看上去就是"手柄凭空消失 + 留一片空白"。
         if root.page-shown == 1 && root.terminals.length > 0
             && root.panel-collapsed : Rectangle {
-            x: root.width - 22px;
+            // 位置也跟随 `panel-openness`（此前固定在 `width - 22px`，只是原地
+            // 淡入、没有位移）：打开工具栏时把手从**窗口右缘之外向左滑入**，终点
+            // 恰好贴住终端让位的右缘 —— 两者同源同帧，不会分先后。
+            x: root.width - 22px * root.panel-openness;
             width: 22px;
             height: root.height;
             background: Theme.term-bg;
+            // 「从模糊到明显」：Slint 没有真正的模糊（femtovg 无 blur 原语），
+            // 用「淡入 + 轻微放大」逼近；缩放中心放在左缘（靠终端那侧），把手像是
+            // 从终端旁边聚焦出来，而不是整条淡入。
             opacity: root.panel-openness;
+            transform-origin: { x: 0px, y: self.height / 2 };
+            transform-scale: 0.86 + 0.14 * root.panel-openness;
             animate opacity {
-                duration: AnimationSettings.exit-container();
-                easing: AnimationSettings.e-exit();
+                duration: AnimationSettings.enter-container();
+                easing: AnimationSettings.e-enter();
+                enabled: AnimationSettings.enabled;
+            }
+            animate transform-scale {
+                duration: AnimationSettings.enter-container();
+                easing: AnimationSettings.e-enter();
                 enabled: AnimationSettings.enabled;
             }
 
