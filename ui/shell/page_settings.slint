@@ -1679,7 +1679,10 @@ ToggleRow {
                                             {value: "software", label: root.lang-en ? "Software" : "软件渲染"},
                                         ];
                                         value: root.renderer-mode;
-                                        picked(v) => { root.set-renderer-mode(v); }
+                                        picked(v) => {
+                                            debug("RENDERER-MODE picked=", v);
+                                            root.set-renderer-mode(v);
+                                        }
                                     }
                                 }
                             }

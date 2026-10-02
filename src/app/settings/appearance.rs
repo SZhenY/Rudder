@@ -56,12 +56,25 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         // Renderer selection is consumed before the first native window exists,
         // so persist it now and apply it on the next launch (#280).
         let store = store.clone();
+        let weak = window.as_weak();
         window.on_set_renderer_mode(move |mode: SharedString| {
             // 归一化后再落盘：设置页给的是 auto/wgpu/software 三个语义值，转成
             // 各平台 `renderer_mode()` 认得的写法，避免把后端名写进配置。
             persist(&store, |s| {
                 s.set_renderer_mode_choice(mode.as_ref());
             });
+
+            // ⚠ 必须回写窗口属性：胶囊高亮绑的是 `renderer-mode`，只落盘不回写的话
+            // 它永远停在旧值 —— 用户点任何一档都不动，看起来就是"无法点击/切换"。
+            // （与外观域其它偏好同一个毛病，见 on_set_collapse_sftp_default。）
+            let choice = match mode.as_str() {
+                "software" => "software",
+                "wgpu" => "wgpu",
+                _ => "auto",
+            };
+            if let Some(w) = weak.upgrade() {
+                w.set_renderer_mode(choice.into());
+            }
         });
     }
 
@@ -674,7 +687,8 @@ pub(crate) fn reset(
     w.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
     w.set_ui_font_index(fonts.ui_index(&ui_stored));
     w.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0);
-    // 播种给设置页的是**三档语义值**，不是平台后端名（胶囊按字符串匹配高亮）
+    // 播种给设置页的是**三档语义值**，不是平台后端名（胶囊按字符串匹配高亮）。
+    // 恢复默认后配置回到空串 = 「自动」，所以这里读回来的也是 auto。
     w.set_renderer_mode(s.renderer_mode_choice().into());
     w.global::<Theme>().set_panel_alpha(s.wallpaper_overlay());
     // 动画开关此前是 Slint-only 全局、从不持久化；现在与其它偏好一样由 config 驱动。
