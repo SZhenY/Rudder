@@ -1107,14 +1107,16 @@ export component AppWindow inherits Window {
         // 面板本体的横坐标：收起时**滑出到窗口右缘之外**（位移滑出），展开时贴住
         // 右缘。面板宽度恒为 `panel-user-w`，移动全程内容不会被挤压变形 —— 这正是
         // 早先"宽度动画"观感诡异的原因（内容被逐帧压扁）。
-        property <length> panel-x: root.panel-collapsed
-            ? root.width
-            : root.width - root.panel-user-w;
-        animate panel-x {
+        // 面板的「展开度」0..1 —— 位移与淡出**共用**这一个进度，因此两者严格同步：
+        // 1 = 完全展开（贴住窗口右缘）；0 = 完全收起（滑出到窗口右缘之外并淡出）。
+        property <float> panel-openness: root.panel-collapsed ? 0 : 1;
+        animate panel-openness {
             duration: root.panel-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
             easing: root.panel-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
             enabled: AnimationSettings.enabled;
         }
+        property <length> panel-x: root.width - root.panel-user-w
+            + (1 - root.panel-openness) * root.panel-user-w;
 
         // ── 右侧面板收起后的 22px 把手 ──────────────────────────────────
         // 面板本体收起时整体滑出窗口，所以把手**不能**画在面板里（会跟着一起跑掉），
@@ -1570,7 +1572,12 @@ export component AppWindow inherits Window {
       }
 
       // 右侧工具面板（会话中；AI 暂不做）
-      if root.page-shown == 1 && root.terminals.length > 0 && root.right-panel-open : RightPanel {
+      // ⚠ 这里**刻意不带 `page-shown == 1`**：带上的话，切走终端页时面板被销毁、
+      // 切回来时重建 —— 重建会重播入场动画、并从上次的残留位置起步，表现为
+      // 「切页时面板突然收缩一下」。改为始终存在，用 opacity 控制可见性。
+      if root.terminals.length > 0 && root.right-panel-open : RightPanel {
+          // 非终端页淡出（不销毁，展开度与内容全部保留）
+          opacity: root.page-shown == 1 ? root.panel-openness : 0;
           // 舞台按 `panel-w` 让出宽度；面板本体按 `panel-x` 位移滑出。
           x: root.panel-x;
           expanded-w: root.panel-user-w;
