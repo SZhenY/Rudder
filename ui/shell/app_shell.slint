@@ -1071,7 +1071,16 @@ export component AppWindow inherits Window {
         // 先只加这两块：左侧栏常驻，选中「主机」时用新的主机页盖住内容区，选中
         // 「终端」时露出原有界面（所以终端功能一步都没动）。指令集 / Docker / 设置
         // 的页面后续逐个替换。
+        // ⚠ 这条宽度是侧栏与内容区的**唯一**宽度源：实例处 `Rail { width: root.rail-w; }`
+        // 会覆盖 Rail 组件内部的 width + animate，所以动画必须加在这里 —— 否则
+        // 侧栏是瞬时跳变（内容区生硬压缩、选中高亮与侧栏"错位"）。
+        // 非对称：展开 300ms 弹簧落位（比收起 250ms 长，新内容有时间呈现）。
         property <length> rail-w: root.rail-collapsed ? 64px : 180px;
+        animate rail-w {
+            duration: root.rail-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
+            easing: root.rail-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
+            enabled: AnimationSettings.enabled;
+        }
         // 新标题栏：Windows/Linux 自绘一条 38px 的沉浸式栏（AppTitleBar，见组件末尾）；
         // macOS 不画 —— 红绿灯与顶部拖拽都由系统负责（titlebar-inset 由 Rust 给）。
         property <length> bar-h: 38px;

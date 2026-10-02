@@ -20,24 +20,30 @@ component RailButton inherits Rectangle {
     // 收起时把超宽内容（标签）裁掉，而不是让它压扁
     clip: true;
 
-    // 交互态底色：画成**显式宽度**的子元素（width 绑 `row-w`），与侧栏动画同轴。
-    // 交互态三件套：hover = 主题色细环 @40%（中性底不变）；按下 = 主题色 @12%
-    // 确认底；选中 = accent 淡底药丸（accent-soft）+ 主色文字，环让位给选中底。
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: root.row-w;
-        height: parent.height;
-        border-radius: Theme.radius-md;
-        border-width: 1px;
-        border-color: !root.active && ta.has-hover ? Theme.accent-ring : transparent;
-        background: root.active
-            ? Theme.accent-soft
-            : (ta.pressed ? Theme.accent-press
-            : (ta.has-hover ? Theme.sur-3 : transparent));
-        animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
-        animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
-    }
+        // 交互态底色：画成**显式宽度**的子元素（width 绑 `row-w`），与侧栏动画同轴。
+        // 交互态三件套：hover = 主题色细环 @40%（中性底不变）；按下 = 主题色 @12%
+        // 确认底；选中 = accent 淡底药丸（accent-soft）+ 主色文字，环让位给选中底。
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: root.row-w;
+            height: parent.height;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: !root.active && ta.has-hover ? Theme.accent-ring : transparent;
+            background: root.active
+                ? Theme.accent-soft
+                : (ta.pressed ? Theme.accent-press
+                : (ta.has-hover ? Theme.sur-3 : transparent));
+            // 时长跟着侧栏折叠/展开那一档（enter/exit-container）—— 若用更短的
+            // 交互反馈档，宽度收缩期间底色过渡会落在后面，看着像"没同步"。
+            animate background {
+                duration: root.collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
+                easing: root.collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
+                enabled: AnimationSettings.enabled;
+            }
+            animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+        }
 
     HorizontalLayout {
         // ⚠ 收起时**不要**切换 alignment / padding：它们在宽度动画启动的同一帧就
@@ -118,14 +124,8 @@ export component Rail inherits Rectangle {
     property <length> rail-w: root.width;
     property <length> row-w: root.width - Theme.sp-2 * 2;
 
-    width: root.collapsed ? 56px : 180px;
-    // 非对称 + 弹簧：展开 300ms 弹簧落位（新内容有时间呈现），
-    // 收起 200ms 加速让位。此前只动了工具条偏移量，侧栏本身纹丝不动。
-    animate width {
-        duration: root.collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
-        easing: root.collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
-        enabled: AnimationSettings.enabled;
-    }
+    // 宽度由实例处传入（`width: root.rail-w`），那边才有动画（见 app_shell 的
+    // `animate rail-w`）—— 组件内再写 width + animate 会被实例覆盖，是死代码。
     // L1 层：比二级侧栏（sur-1 = wp-base）更沉一档（深色壁纸 −8%），两级侧栏由此区分。
     background: Theme.rail-bg;
     // 宽度动画期间把超出窄栏的行内容裁掉（与 RailButton 内的标签退场同步）
