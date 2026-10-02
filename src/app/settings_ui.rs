@@ -151,6 +151,13 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_collapse_sftp_default(s.collapse_sftp_default());
     }
 
+    // 右侧面板拖拽的更新间隔 = **实际屏幕刷新率的帧间隔**（60Hz→16ms、
+    // 120Hz→8ms）。写死 33ms 等于把拖拽锁在 30fps：高刷屏上白丢一半刷新率，
+    // 低刷屏上又做无用功。探测不出来时退回 16ms。
+    if let Some(iv) = super::render_tickets::query_frame_interval(window) {
+        window.set_drag_frame_ms((iv.as_millis() as i32).clamp(4, 33));
+    }
+
     // 设置页导航搜索：按关键词过滤分类（中/英文标签 + 副标题都参与匹配）。
     // contains 无法在 Slint 里表达，过滤在 Rust 做完回写六个可见性。
     {

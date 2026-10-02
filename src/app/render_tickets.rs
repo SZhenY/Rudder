@@ -125,7 +125,7 @@ fn frame_interval(win: &AppWindow) -> std::time::Duration {
     })
 }
 
-fn query_frame_interval(win: &AppWindow) -> Option<std::time::Duration> {
+pub(crate) fn query_frame_interval(win: &AppWindow) -> Option<std::time::Duration> {
     // 两层 Option：外层是"窗口是否还活着"，内层是 winit 的"显示器是否报了刷新率"。
     let mhz = win.window().with_winit_window(|ww| {
         ww.current_monitor()
@@ -143,7 +143,7 @@ fn query_frame_interval(win: &AppWindow) -> Option<std::time::Duration> {
 /// 拿不到显示器信息时按 60Hz 兜底。
 const FALLBACK_FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_micros(16_667);
 /// 上界：240Hz（再快没有意义）。下界沿用旧的"firehose 保护" 30Hz。
-const MIN_FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_micros(4_167);
+pub(crate) const MIN_FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_micros(4_167);
 const MAX_FRAME_INTERVAL: std::time::Duration = RENDER_MIN_INTERVAL;
 /// 提交链路的提前量（见 `run_coalesced_tab_render` 里的注释）。
 const FRAME_SLACK: std::time::Duration = std::time::Duration::from_micros(1_500);

@@ -1096,6 +1096,8 @@ export component AppWindow inherits Window {
         property <length> panel-user-w: 340px;
         // 正在拖拽面板左缘调宽（此时让位宽度必须跟手，`panel-w` 的动画要禁用）
         property <bool> panel-resizing: false;
+        // 拖拽更新间隔（毫秒），由 Rust 按实际屏幕刷新率注入
+        in-out property <int> drag-frame-ms: 16;
         // 让位宽度**跟着滑出进度走**：22px（收起把手位）→ panel-user-w（展开）。
         // ⚠ 之前只用 `panel-collapsed ? 22 : panel-user-w` 做两端取值，结果滑出
         // 过程中舞台**不让位**：面板左缘已从窗口右缘滑进来，舞台右缘却还停在
@@ -1697,7 +1699,10 @@ export component AppWindow inherits Window {
         property <length> drag-pending: 0px;   // 待应用位移
         Timer {
             running: panel-drag.pressed;
-            interval: 33ms;
+            // 拖拽更新率跟随屏幕刷新率：Rust 启动时探测实际刷新率并注入
+            // `drag-frame-ms`（60Hz→16ms、120Hz→8ms）。写死 33ms 会在高刷屏上
+            // 白丢一半刷新率（= 30fps 上限），低刷屏上又做无用功。
+            interval: root.drag-frame-ms * 1ms;
             triggered => {
                 // Timer 是 builtin 组件（root 指向自己），要访问外层 TouchArea
                 // 的属性必须走 id。
