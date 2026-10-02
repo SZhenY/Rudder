@@ -963,6 +963,7 @@ export component RightPanel inherits Rectangle {
   // 设计的面板本身就很宽 —— 加宽到 340px（app_shell 的 panel-w 同步）。
     // 恒为展开宽度：位移滑出时面板整体平移，内容不会被挤变形。
     width: root.expanded-w;
+
     // 与终端同一块"磨砂玻璃"：都用 `term-bg` —— 它跟着「外观 ▸ 遮罩」的
     // 壁纸遮罩透明度（0–70%）一起变，面板与终端因此始终同色同透，没有生硬的
     // 分隔线；卡片靠 sur-2 自己浮出来。

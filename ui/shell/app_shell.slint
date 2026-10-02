@@ -1118,6 +1118,7 @@ export component AppWindow inherits Window {
         property <length> panel-x: root.width - root.panel-user-w
             + (1 - root.panel-openness) * root.panel-user-w;
 
+
         // ── 右侧面板收起后的 22px 把手 ──────────────────────────────────
         // 面板本体收起时整体滑出窗口，所以把手**不能**画在面板里（会跟着一起跑掉），
         // 必须独立于面板、固定贴在窗口右缘 —— 那 22px 正是终端舞台让出来的位置。
@@ -1667,10 +1668,25 @@ export component AppWindow inherits Window {
         height: root.height - root.shell-top - 28px;
         mouse-cursor: ew-resize;
 
+        // ⚠ 拖拽宽度**不能**用 `self.absolute-position.x` 反推：把手 x 绑定
+        // `panel-w`，而 `panel-w` 又绑定 `panel-user-w` —— 那是**正反馈**：
+        // 面板变宽 → 把手左移 → 反推出的宽度更大 → 更宽……实测打开面板时
+        // 宽度被从 14px 一路放大到 342px（看起来就是"两侧向中间收缩再展开"）。
+        // 正确做法：按下时记下起点，之后只按**鼠标位移增量**调整。
+        // 拖拽起点（`drag-w0 == 0` 表示"当前没在拖"，兼作哨兵）
+        property <length> drag-w0: 0px;
+        property <length> drag-x0: 0px;
         moved => {
             if (self.pressed) {
-                root.panel-user-w = clamp(root.width - (self.absolute-position.x + self.mouse-x),
+                // 按下的第一帧记起点：宽度 + 鼠标位置
+                if (self.drag-w0 == 0px) {
+                    self.drag-w0 = root.panel-user-w;
+                    self.drag-x0 = self.mouse-x;
+                }
+                root.panel-user-w = clamp(self.drag-w0 + (self.mouse-x - self.drag-x0),
                                           280px, 560px);
+            } else {
+                self.drag-w0 = 0px;   // 松手后复位，下次按下重新记起点
             }
         }
     }
