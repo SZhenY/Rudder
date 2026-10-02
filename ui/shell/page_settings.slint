@@ -1464,12 +1464,10 @@ AccentPicker {
                                             VerticalLayout {
                                                 spacing: 0;
                                                 alignment: start;
-                                                // 列表缩进 4px：选中项高亮不贴边，弹层圆角才露得出来
-                                                // （高亮是直角矩形，贴边会把圆角盖成直角）。
-                                                padding: 4px;
 
                                                 for wlab[i] in root.wallpaper-labels : Rectangle {
                                                     height: 30px;
+                                                    border-radius: 8px;
                                                     background: root.wallpaper-index == i
                                                         ? Theme.rail-item-active
                                                         : (wp-ta.has-hover ? Theme.rail-item-hover : transparent);
@@ -1576,9 +1574,6 @@ AccentPicker {
                                                 VerticalLayout {
                                                     spacing: 0;
                                                     alignment: start;
-                                                    // 列表缩进 4px：选中项高亮不贴边，弹层圆角才露得出来
-                                                    // （高亮是直角矩形，贴边会把圆角盖成直角）。
-                                                    padding: 4px;
 
                                                     // 列表限高 + ScrollView：滚轮可滚，弹窗不再顶出屏幕
                                                     ScrollView {
@@ -1589,6 +1584,7 @@ AccentPicker {
 
                                                             for lbl[i] in root.ui-fonts : Rectangle {
                                                                 height: 30px;
+                                                                border-radius: 8px;
                                                                 background: root.ui-font-index == i
                                                                     ? Theme.rail-item-active
                                                                     : (f-ta.has-hover ? Theme.rail-item-hover : transparent);
@@ -1623,6 +1619,7 @@ AccentPicker {
                                                     }
                                                     Rectangle {
                                                         height: 30px;
+                                                        border-radius: 8px;
                                                         background: imp-ta.has-hover ? Theme.rail-item-hover : transparent;
 
                                                         HorizontalLayout {
@@ -1842,9 +1839,6 @@ ToggleRow {
                                                 VerticalLayout {
                                                     spacing: 0;
                                                     alignment: start;
-                                                    // 列表缩进 4px：选中项高亮不贴边，弹层圆角才露得出来
-                                                    // （高亮是直角矩形，贴边会把圆角盖成直角）。
-                                                    padding: 4px;
 
                                                     ScrollView {
                                                         height: 240px;
@@ -1854,6 +1848,7 @@ ToggleRow {
 
                                                             for lbl[i] in root.term-fonts : Rectangle {
                                                                 height: 30px;
+                                                                border-radius: 8px;
                                                                 background: root.term-font-index == i
                                                                     ? Theme.rail-item-active
                                                                     : (tf-ta.has-hover ? Theme.rail-item-hover : transparent);

@@ -128,17 +128,9 @@ export component Rail inherits Rectangle {
         alignment: start;
 
         // 顶部：展开态是「搜索框 + 折叠」；收起态只留展开按钮（否则窄宽度下会被裁掉）
-        // 展开态（搜索框 + 折叠按钮）：不再 `if` 销毁 —— 瞬间替换就是
-        // 用户说的「没同步」。改为淡出，与展开按钮交叉过渡。
-        HorizontalLayout {
+        if !root.collapsed : HorizontalLayout {
             height: 34px;
             spacing: Theme.sp-1;
-            opacity: root.collapsed ? 0 : 1;
-            animate opacity {
-                duration: AnimationSettings.short2();
-                easing: AnimationSettings.e-standard-accelerate();
-                enabled: AnimationSettings.enabled;
-            }
 
             Rectangle {
                 horizontal-stretch: 1;
@@ -218,6 +210,45 @@ export component Rail inherits Rectangle {
             }
         }
 
+        if root.collapsed : Rectangle {
+            height: 34px;
+            border-radius: Theme.radius-md;
+            background: expand-ta.has-hover ? Theme.sur-3 : transparent;
+
+            Text {
+                text: "\u{E5CC}"; // chevron_right
+                font-family: "Material Icons";
+                font-size: 18px * Theme.ui-scale;
+                color: Theme.fg-2;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            expand-ta := TouchArea {
+                clicked => {
+                    root.collapsed = false;
+                }
+            }
+        }
+
+        RailButton {
+            glyph: "\u{E875}"; // dns
+            label: root.lang-en ? "Hosts" : "主机";
+            active: root.current-page == 0;
+            collapsed: root.collapsed;
+            clicked => {
+                root.page-changed(0);
+            }
+        }
+        RailButton {
+            glyph: "\u{EB8E}"; // terminal
+            label: root.lang-en ? "Terminal" : "终端";
+            active: root.current-page == 1;
+            collapsed: root.collapsed;
+            clicked => {
+                root.page-changed(1);
+            }
+        }
         RailButton {
             glyph: "\u{E86F}"; // code
             label: root.lang-en ? "Snippets" : "指令集";
@@ -278,55 +309,4 @@ export component Rail inherits Rectangle {
         // 底部原有一块「用户卡片」（头像首字母 + 登录名 + 本地账户）—— 按需求删除：
         // 不显示任何用户相关的东西（Rust 侧也不再从环境取登录名）。
     }
-    // ── 收起态的展开按钮（chevron_right）────────────────────────
-    // 移出 VerticalLayout（绝对定位才不占布局）：展开态搜索框淡出时下方
-    // 不会留 34px 空白 —— 两态靠 opacity 交叉淡化。
-    Rectangle {
-        x: Theme.sp-2;
-        y: root.top-inset + Theme.sp-2;
-        width: 34px;
-        height: 34px;
-        border-radius: Theme.radius-md;
-        background: expand-ta.has-hover ? Theme.sur-3 : transparent;
-        opacity: root.collapsed ? 1 : 0;
-        animate opacity {
-            duration: AnimationSettings.short2();
-            easing: AnimationSettings.e-standard-decelerate();
-            enabled: AnimationSettings.enabled;
-        }
-        Text {
-            text: "\u{E5CC}"; // chevron_right
-            font-family: "Material Icons";
-            font-size: 18px * Theme.ui-scale;
-            color: Theme.fg-2;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
-
-        expand-ta := TouchArea {
-            clicked => {
-                root.collapsed = false;
-            }
-        }
-    }
-
-    RailButton {
-        glyph: "\u{E875}"; // dns
-        label: root.lang-en ? "Hosts" : "主机";
-        active: root.current-page == 0;
-        collapsed: root.collapsed;
-        clicked => {
-            root.page-changed(0);
-        }
-    }
-    RailButton {
-        glyph: "\u{EB8E}"; // terminal
-        label: root.lang-en ? "Terminal" : "终端";
-        active: root.current-page == 1;
-        collapsed: root.collapsed;
-        clicked => {
-            root.page-changed(1);
-        }
-    }
-
 }
