@@ -1576,8 +1576,10 @@ export component AppWindow inherits Window {
       // 切回来时重建 —— 重建会重播入场动画、并从上次的残留位置起步，表现为
       // 「切页时面板突然收缩一下」。改为始终存在，用 opacity 控制可见性。
       if root.terminals.length > 0 && root.right-panel-open : RightPanel {
-          // 非终端页淡出（不销毁，展开度与内容全部保留）
-          opacity: root.page-shown == 1 ? root.panel-openness : 0;
+          // 非终端页淡出（不销毁，展开度与内容全部保留）。
+          // 乘上 `page-opacity`：换页时它与终端页**共用同一条淡出进度** ——
+          // 整个终端区（含这条工具栏）作为一个整体淡出淡入，而不是各淡各的。
+          opacity: root.page-shown == 1 ? root.panel-openness * root.page-opacity : 0;
           // 舞台按 `panel-w` 让出宽度；面板本体按 `panel-x` 位移滑出。
           x: root.panel-x;
           expanded-w: root.panel-user-w;
