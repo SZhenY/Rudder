@@ -1557,9 +1557,6 @@ AccentPicker {
                                                     root.font-appear = 1;   // show 之后置 1 → 淡入
                                                 }
                                             }
-                                            UploadButton {
-                                                clicked => { root.upload-ui-font(); }
-                                            }
                                         }
 
                                         font-popup := PopupWindow {                                            Rectangle {
@@ -1602,8 +1599,13 @@ AccentPicker {
                                                                     }
                                                                 }
 
+                                                                // 分组标题（`▍` 前缀）**不可选**：它只是分类标签，
+                                                                // 选中也应用不出字体。Rust 侧回退逻辑也刻意避开它。
                                                                 f-ta := TouchArea {
                                                                     clicked => {
+                                                                        if lbl.starts-with("\u{258D}") {
+                                                                            return;
+                                                                        }
                                                                         root.pick-ui-font(lbl, i);
                                                                         root.font-appear = 0;   // 复位（弹层随即消失）
                                                                         font-popup.close();
@@ -1809,9 +1811,6 @@ ToggleRow {
                                                     tfont-popup.show();
                                                     root.tfont-appear = 1;   // show 之后置 1 → 淡入
                                                 }
-                                                                              UploadButton {
-                                                                                  clicked => { root.upload-ui-font(); }
-                                                                              }
                                             }
                                             Switch {
                                                 on: Theme.term-font-bold;
@@ -1866,8 +1865,12 @@ ToggleRow {
                                                                     }
                                                                 }
 
+                                                                // 同上：分组标题不可选
                                                                 tf-ta := TouchArea {
                                                                     clicked => {
+                                                                        if lbl.starts-with("\u{258D}") {
+                                                                            return;
+                                                                        }
                                                                         root.term-font(lbl, i);
                                                                         root.tfont-appear = 0;   // 复位（弹层随即消失）
                                                                         tfont-popup.close();

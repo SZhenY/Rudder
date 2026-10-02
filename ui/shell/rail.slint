@@ -11,22 +11,33 @@ component RailButton inherits Rectangle {
     in property <string> label;
     in property <bool> active: false;
     in property <bool> collapsed: false;
+    // 行宽由 Rail 显式传入（跟着侧栏宽度动画走）。**不能靠布局分配** ——
+    // 父级宽度动画期间布局重算滞后，高亮会等侧栏折完才开始收缩。
+    in property <length> row-w: 164px;
     callback clicked();
 
     height: 38px;
-    border-radius: Theme.radius-md;
-    // 交互态三件套：hover = 主题色细环 @40%（中性底不变）；按下 = 主题色 @12% 确认底；
-    // 选中 = accent 淡底药丸（accent-soft）+ 主色文字，环让位给选中底。
-    border-width: 1px;
     // 收起时把超宽内容（标签）裁掉，而不是让它压扁
     clip: true;
-    border-color: !root.active && ta.has-hover ? Theme.accent-ring : transparent;
-    background: root.active
-        ? Theme.accent-soft
-        : (ta.pressed ? Theme.accent-press
-        : (ta.has-hover ? Theme.sur-3 : transparent));
-    animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
-    animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+
+    // 交互态底色：画成**显式宽度**的子元素（width 绑 `row-w`），与侧栏动画同轴。
+    // 交互态三件套：hover = 主题色细环 @40%（中性底不变）；按下 = 主题色 @12%
+    // 确认底；选中 = accent 淡底药丸（accent-soft）+ 主色文字，环让位给选中底。
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.row-w;
+        height: parent.height;
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: !root.active && ta.has-hover ? Theme.accent-ring : transparent;
+        background: root.active
+            ? Theme.accent-soft
+            : (ta.pressed ? Theme.accent-press
+            : (ta.has-hover ? Theme.sur-3 : transparent));
+        animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+        animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+    }
 
     HorizontalLayout {
         // ⚠ 收起时**不要**切换 alignment / padding：它们在宽度动画启动的同一帧就
@@ -101,6 +112,10 @@ export component Rail inherits Rectangle {
     in property <bool> lang-en: false;
     callback page-changed(int);
     callback search-requested();
+
+    // 行宽：显式跟随侧栏宽度（= 宽度减去左右 padding）。**不能依赖布局分配** ——
+    // 父级宽度动画期间布局会滞后，导致"侧栏先折叠、选中高亮才慢慢收缩"。
+    property <length> row-w: root.width - Theme.sp-2 * 2;
 
     width: root.collapsed ? 56px : 180px;
     // 非对称 + 弹簧：展开 300ms 弹簧落位（新内容有时间呈现），
@@ -211,6 +226,8 @@ export component Rail inherits Rectangle {
         }
 
         if root.collapsed : Rectangle {
+            // 不设 width：VerticalLayout 会分配满行宽（56 − 8 − 8 = 40px），
+            // 与下方页面按钮同宽 → 折叠/收起按钮与其它按钮横向对齐。
             height: 34px;
             border-radius: Theme.radius-md;
             background: expand-ta.has-hover ? Theme.sur-3 : transparent;
@@ -232,6 +249,7 @@ export component Rail inherits Rectangle {
         }
 
         RailButton {
+            row-w: root.row-w;
             glyph: "\u{E875}"; // dns
             label: root.lang-en ? "Hosts" : "主机";
             active: root.current-page == 0;
@@ -241,6 +259,7 @@ export component Rail inherits Rectangle {
             }
         }
         RailButton {
+            row-w: root.row-w;
             glyph: "\u{EB8E}"; // terminal
             label: root.lang-en ? "Terminal" : "终端";
             active: root.current-page == 1;
@@ -250,6 +269,7 @@ export component Rail inherits Rectangle {
             }
         }
         RailButton {
+            row-w: root.row-w;
             glyph: "\u{E86F}"; // code
             label: root.lang-en ? "Snippets" : "指令集";
             active: root.current-page == 2;
@@ -259,6 +279,7 @@ export component Rail inherits Rectangle {
             }
         }
         RailButton {
+            row-w: root.row-w;
             glyph: "\u{E30C}"; // computer
             label: "Docker";
             active: root.current-page == 3;
@@ -268,6 +289,7 @@ export component Rail inherits Rectangle {
             }
         }
         RailButton {
+            row-w: root.row-w;
             glyph: "\u{E873}"; // description
             label: root.lang-en ? "Notes" : "笔记随笔";
             active: root.current-page == 5;
@@ -277,6 +299,7 @@ export component Rail inherits Rectangle {
             }
         }
         RailButton {
+            row-w: root.row-w;
             glyph: "\u{E65F}"; // auto_awesome
             label: root.lang-en ? "AI Assistant" : "AI 助手";
             active: root.current-page == 6;
@@ -297,6 +320,7 @@ export component Rail inherits Rectangle {
         }
 
         RailButton {
+            row-w: root.row-w;
             glyph: "\u{E8B8}"; // settings
             label: root.lang-en ? "Settings" : "设置";
             active: root.current-page == 4;
