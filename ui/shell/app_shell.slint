@@ -1483,6 +1483,10 @@ export component AppWindow inherits Window {
               wallpaper-index: root.wallpaper-index;
               update-freq-labels: root.update-freq-labels;
               update-freq-index: root.update-freq-index;
+              // 检查的实时状态（旧设置窗 UpdatePage 就有）：驱动「上次检查时间」那行
+              // 的说明位与「立即检查」按钮的检查中形态。updater.rs 在检查过程中写它。
+              update-check-status: root.update-check-status;
+              update-checking: root.update-checking;
               mount-filter-text <=> root.mount-filter;
               set-update-freq(i) => { root.set-update-freq(i); }
               set-mount-filter-text(v) => { root.set-mount-filter(v); }

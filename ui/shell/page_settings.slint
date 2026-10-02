@@ -961,6 +961,11 @@ export component PageSettings inherits Rectangle {
     in property <string> accent-name;
     /// 上次检查时间（Rust 侧已本地化；空串 = 还没查过）。
     in property <string> update-last-check;
+    // 检查的**实时状态**（旧设置窗 UpdatePage 就有，新设置页漏了）：
+    // 空串 = 空闲；非空 = 「正在检查…」/「已是最新版本」/「发现新版本 vX」等。
+    // 「上次检查时间」行的说明位优先显示它，没有才退回静态时间。
+    in property <string> update-check-status;
+    in property <bool> update-checking;
     in property <[string]> wallpaper-labels;
     // 磨砂透明度：直接读写主题全局 `panel-alpha`。
     // ⚠ 不能用 `property <=> Theme.xxx` 双向绑 —— 对 global 的双向绑定是**只读**的，
@@ -1747,25 +1752,36 @@ ToggleRow {
                                 }
                                 OptionRow {
                                     label: root.lang-en ? "Last checked" : "上次检查时间";
-                                    desc: root.update-last-check;
+                                    // 实时状态优先（检查中 / 已是最新 / 发现新版本），
+                                    // 没有结果才退回静态的上次检查时间。
+                                    desc: root.update-check-status != ""
+                                        ? root.update-check-status
+                                        : root.update-last-check;
 
                                     Rectangle {
-                                        width: 80px;
+                                        // 检查中按钮变宽（放得下「检查中…」），与旧设置窗一致
+                                        width: root.update-checking ? 92px : 80px;
                                         height: 28px;
                                         border-radius: Theme.radius-btn;
-                                        background: upd-ck-ta.has-hover ? Theme.rail-item-hover : Theme.sur-2;
+                                        background: upd-ck-ta.has-hover && !root.update-checking
+                                            ? Theme.rail-item-hover
+                                            : Theme.sur-2;
                                         border-width: 1px;
                                         border-color: Theme.line;
                                         upd-ck-ta := TouchArea {
-                                            mouse-cursor: pointer;
+                                            // 检查中禁用：避免连点起多个后台检查线程
+                                            enabled: !root.update-checking;
+                                            mouse-cursor: root.update-checking ? default : pointer;
                                             clicked => { root.check-update-now(); }
                                         }
                                         Text {
                                             width: 100%;
                                             height: 100%;
-                                            text: root.lang-en ? "Check now" : "立即检查";
+                                            text: root.update-checking
+                                                ? (root.lang-en ? "Checking…" : "检查中…")
+                                                : (root.lang-en ? "Check now" : "立即检查");
                                             font-size: 11px * Theme.ui-scale;
-                                            color: Theme.fg-1;
+                                            color: root.update-checking ? Theme.fg-3 : Theme.fg-1;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
                                         }

@@ -752,6 +752,16 @@ mod wiring_tests {
 
     /// 本页显示、但**有意不还原**的项 —— B 类用户数据。
     const NOT_RESET_BY_DESIGN: &[(&str, &str)] = &[
+        // 更新检查的**实时状态**：由 `updater.rs` 在后台线程里写（检查中 / 已是最新 /
+        // 发现新版本），不是用户可编辑的偏好，还原它没有意义（点「立即检查」就会刷新）。
+        (
+            "update-check-status",
+            "更新检查的实时状态由 updater 写入，不是可还原的偏好",
+        ),
+        (
+            "update-checking",
+            "同上：检查进行中的标志，由 updater 写入",
+        ),
         (
             "mount-filter",
             "挂载点过滤是用户自定义数据（B 类），与自定义高亮规则一样只保留不还原",
