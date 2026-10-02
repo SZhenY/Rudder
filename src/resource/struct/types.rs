@@ -60,6 +60,11 @@ pub(crate) struct TabStatus {
     /// CPU 使用率环形缓冲（0..1），供工具面板的「CPU 负载趋势」用 —— 与 `net_hist`
     /// 同一套 push_ring/normalize。只有远端会话有；本机标签走本地快照。
     pub(crate) cpu_hist: Vec<f32>,
+    /// 「CPU 负载趋势」曲线的指数移动平均状态（`None` = 尚未采到第一拍）。
+    ///
+    /// 只有**曲线**用平滑值，`st.cpu` 那个数字仍显示原始读数 —— 趋势图要协调、
+    /// 实时读数要诚实，这是任务管理器那类系统监视器的通行做法。
+    pub(crate) cpu_ema: Option<f32>,
     pub(crate) disks: Vec<(String, u64, u64)>,
     pub(crate) procs: Vec<ProcInfo>,
     /// CPU 明细（0..1，与 cpu 同一差分间隔）：用户态(+nice)/内核态(+irq+softirq)/IO 等待

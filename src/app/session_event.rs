@@ -188,13 +188,25 @@ pub(super) fn apply_session_event_to_window<'a>(
                 push_ring(&mut st.net_hist, (rx + tx) as f32);
                 // 同一份样本也喂给 CPU 趋势（工具面板的「CPU 负载趋势」）。
                 //
-                // 无条件入环。CPU 百分比是「本拍 − 上一拍」算出来的，首拍没有上一拍
-                // 只能是 0；但 `push_ring` 会把环初始化成 899 个 0，所以首拍那个 0 与
-                // 填充值无法区分，**不需要**（也不能）为此加"首拍跳过"判断 ——
-                // `cpu_hist` 初始是 `Vec::new()`，而 `push_ring` 是唯一能让它变非空的
-                // 途径，用 `!is_empty()` 当前提会自锁：永远为空 → 环形缓冲永不填充
-                // → 趋势图模型 0 行 → 整块不渲染（表现为"一直无数据"）。
-                push_ring(&mut st.cpu_hist, cpu_percent);
+                // 入环的是 **EMA 平滑值**而不是原始值。理由：负载突增/突减时原始
+                // 序列是折线拐点，而组件的曲线**必经过每个数据点**（数据点当贝塞尔
+                // 控制点），所以几何平滑只能让线"看起来圆滑"、压不掉斜率突变 ——
+                // 观感就是用户报的"突然变陡"。要协调必须在**数据层**把跳变摊开
+                // （官方趋势图通行做法：Grafana rolling average、任务管理器曲线同理）。
+                //
+                // `None` = 还没采到第一拍：直接取原值，**不让 EMA 从 0 爬升** ——
+                // 否则刚连上时曲线会假装"负载从 0 慢慢涨起来"。
+                let ema = match st.cpu_ema {
+                    Some(prev) => prev + (cpu_percent - prev) * CPU_TREND_EMA_ALPHA,
+                    None => cpu_percent,
+                };
+                st.cpu_ema = Some(ema);
+                //
+                // 无条件入环。`cpu_hist` 初始是 `Vec::new()`，而 `push_ring` 是唯一
+                // 能让它变非空的途径 —— 曾用 `!is_empty()` 当前提来"跳过首拍"，那会
+                // **自锁**：条件永远为假 → 缓冲永不填充 → 趋势图模型 0 行 →
+                // `if values.length > 0 : Path` 整块不渲染（表现为"一直无数据"）。
+                push_ring(&mut st.cpu_hist, ema);
             }
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses, local, local_net_hist);
