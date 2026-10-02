@@ -1877,50 +1877,38 @@ ToggleRow {
                                         }
                                     }
                                 }
-                                OptionRow {
-                                    label: root.lang-en ? "Font Size" : "字号";
-                                    desc: root.lang-en ? "8–32px, default 13" : "8–32px，默认 13";
+                                    OptionRow {
+                                        label: root.lang-en ? "Font Size" : "字号";
+                                        desc: root.lang-en ? "8–32px, default 13" : "8–32px，默认 13";
 
-                                    Stepper {
-                                        value: round(Theme.term-font-size / 1px);
-                                        minimum: 8;
-                                        maximum: 32;
-                                        unit: "px";
-                                        changed(v) => { root.term-font-size(v); }
+                                        Stepper {
+                                            value: round(Theme.term-font-size / 1px);
+                                            minimum: 8;
+                                            maximum: 32;
+                                            unit: "px";
+                                            changed(v) => { root.term-font-size(v); }
+                                        }
                                     }
-                                }
 
-// 字体预览：与终端同色同字体，改字号 / 字体 / 粗体立刻可见。
-Rectangle {
-    background: Theme.sur-2;
-    HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
-        Text {
-            horizontal-stretch: 1;
-            text: root.lang-en ? "Font preview" : "字体预览";
-            font-size: 11px * Theme.ui-scale;
-            color: Theme.fg-3;
-        }
-    }
-}
-Rectangle {
-    height: 52px;
-    background: Theme.term-bg;
-    border-radius: Theme.radius-btn;
-    border-width: 1px;
-    border-color: Theme.line;
-    Text {
-        x: 12px;
-        text: "Rudder ~$ echo preview 0123";
-        font-family: Theme.term-font-family;
-        font-size: Theme.term-font-size;
-        font-weight: Theme.term-font-bold ? 700 : 400;
-        color: Theme.term-fg;
-        vertical-alignment: center;
-        height: parent.height;
-    }
-}
+                                    // 字体预览：与终端同字体 / 同字号 / 同粗体 / 同前景色，改设置立刻可见。
+                                    Rectangle {
+                                        height: 52px;
+                                        background: Theme.term-bg;
+                                        border-radius: Theme.radius-btn;
+                                        border-width: 1px;
+                                        border-color: Theme.line;
+
+                                        Text {
+                                            x: 12px;
+                                            text: "Rudder ~$ echo preview 0123";
+                                            font-family: Theme.term-font-family;
+                                            font-size: Theme.term-font-size;
+                                            font-weight: Theme.term-font-bold ? 700 : 400;
+                                            color: Theme.term-fg;
+                                            vertical-alignment: center;
+                                            height: parent.height;
+                                        }
+                                    }
                             }
                             SectionTitle { text: root.lang-en ? "Scrollback & clipboard" : "滚回与剪贴板"; }
                             Card {
@@ -1939,15 +1927,15 @@ Rectangle {
                                         }
                                     }
                                 }
-Rectangle {
-    background: Theme.sur-2;
-    HorizontalLayout {
-    padding-left: 12px;
-    padding-right: 12px;
-    padding-top: 2px;
-    padding-bottom: 8px;
-    Text {
-    horizontal-stretch: 1;
+                                Rectangle {
+                                    background: Theme.sur-2;
+                                    HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        padding-top: 2px;
+                                        padding-bottom: 8px;
+                                        Text {
+                                            horizontal-stretch: 1;
     text: root.scrollback-valid
         ? (root.large-scrollback
             ? (root.lang-en ? "Up to 1,000,000 lines (large buffer enabled)." : "上限 100 万行（已开启大缓冲区）。")
@@ -2072,7 +2060,10 @@ Rectangle {
 
 // 高亮预览：按当前预设给样例上色，开关关闭时回到终端原色。
 Rectangle {
-    height: root.output-highlight-preset == "builtin" ? 116px : 92px;
+// 预览行由**多个片段**拼成 —— 片段颜色即高亮规则的真实着色：级别词、
+    // URL、IP:端口、路径各走各自的语义色；「输出高亮」关掉时全部退回终
+    // 端前景色（所见即所得，而不是另画一套示意图）。
+    height: root.output-highlight-preset == "devops" ? 116px : 92px;
     background: Theme.term-bg;
     border-radius: Theme.radius-btn;
     border-width: 1px;
@@ -2080,19 +2071,134 @@ Rectangle {
     VerticalLayout {
         padding: 12px;
         spacing: 5px;
-        if root.output-highlight-preset == "builtin" : VerticalLayout {
-            spacing: 5px;
-            Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
-            Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
-            Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
+        HorizontalLayout {
+            spacing: 0;
+            Text {
+                text: "16:30:00 ";
+                color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "INFO ";
+                color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "listening on ";
+                color: Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "0.0.0.0:8080";
+                color: root.output-highlight-enabled ? Theme.success : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
         }
-        if root.output-highlight-preset != "builtin" : VerticalLayout {
-            spacing: 5px;
-            Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
-            Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
-            Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
-            Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
-            if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale; }
+        HorizontalLayout {
+            spacing: 0;
+            Text {
+                text: "16:30:01 ";
+                color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "DEBUG ";
+                color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "cache miss ";
+                color: Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "http://api.dev:8080/v1?id=42";
+                color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            spacing: 0;
+            Text {
+                text: "16:30:02 ";
+                color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "WARN ";
+                color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "disk nearly full ";
+                color: Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "/var/log";
+                color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            spacing: 0;
+            Text {
+                text: "16:30:03 ";
+                color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "ERROR ";
+                color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "connection failed ";
+                color: Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "192.168.1.100";
+                color: root.output-highlight-enabled ? Theme.success : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+        }
+        if root.output-highlight-preset == "devops" : HorizontalLayout {
+            spacing: 0;
+            Text {
+                text: "16:30:04 ";
+                color: root.output-highlight-enabled ? Theme.fg-3 : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "SUCCESS ";
+                color: root.output-highlight-enabled ? Theme.success : Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "deployment completed";
+                color: Theme.term-fg;
+                font-family: Theme.term-font-family; font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+            }
         }
     }
 }
