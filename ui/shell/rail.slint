@@ -18,6 +18,8 @@ component RailButton inherits Rectangle {
     // 交互态三件套：hover = 主题色细环 @40%（中性底不变）；按下 = 主题色 @12% 确认底；
     // 选中 = accent 淡底药丸（accent-soft）+ 主色文字，环让位给选中底。
     border-width: 1px;
+    // 收起时把超宽内容（标签）裁掉，而不是让它压扁
+    clip: true;
     border-color: !root.active && ta.has-hover ? Theme.accent-ring : transparent;
     background: root.active
         ? Theme.accent-soft
@@ -46,22 +48,40 @@ component RailButton inherits Rectangle {
             vertical-alignment: center;
         }
 
-        if !root.collapsed : Text {
+        // 标签：不再用 `if !collapsed` 销毁 —— 瞬间消失就是"闪一下"。
+        // `horizontal-stretch: 0` 让它保持完整字形、**不被侧栏收缩压扁**（压扁
+        // 的观感很糟）；收起时由父级 `clip` 裁掉，并淡出。opacity 为 0 后仍不占
+        // 布局空间（stretch:0），所以不必再 `visible` 切换。
+        Text {
+            horizontal-stretch: 0;
             text: root.label;
             font-size: 13px * Theme.ui-scale;
             color: root.active ? Theme.accent : Theme.fg-1;
             font-weight: root.active ? 600 : 400;
             vertical-alignment: center;
             overflow: elide;
+            opacity: root.collapsed ? 0 : 1;
+            animate opacity {
+                duration: AnimationSettings.short2();
+                easing: AnimationSettings.e-standard-accelerate();
+                enabled: AnimationSettings.enabled;
+            }
         }
 
-  // 选中项右侧的小圆点
-        if !root.collapsed && root.active : Rectangle {
+  // 选中项右侧的小圆点（同样不销毁：淡出而非瞬间消失）
+        Rectangle {
+            horizontal-stretch: 0;
             width: 5px;
             height: 5px;
             border-radius: 2.5px;
             background: Theme.accent;
+            opacity: (root.collapsed || !root.active) ? 0 : 1;
             y: (parent.height - self.height) / 2;
+            animate opacity {
+                duration: AnimationSettings.short2();
+                easing: AnimationSettings.e-standard-accelerate();
+                enabled: AnimationSettings.enabled;
+            }
         }
     }
 
@@ -92,6 +112,8 @@ export component Rail inherits Rectangle {
     }
     // L1 层：比二级侧栏（sur-1 = wp-base）更沉一档（深色壁纸 −8%），两级侧栏由此区分。
     background: Theme.rail-bg;
+    // 宽度动画期间把超出窄栏的行内容裁掉（与 RailButton 内的标签退场同步）
+    clip: true;
 
     VerticalLayout {
         // ⚠ 普通（Rectangle）父级里的 Layout 按**首选尺寸**布局，必须显式铺满 ——

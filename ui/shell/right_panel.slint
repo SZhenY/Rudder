@@ -909,6 +909,10 @@ export component RightPanel inherits Rectangle {
     in property <[SysNetRow]> net-rows;
   // 折叠成 22px 窄条（「收起 SFTP 侧边栏」）：状态在窗口级，终端舞台按它让位。
     in-out property <bool> collapsed: false;
+    // 展开基准宽度（= 窗口级 `panel-user-w`，用户拖拽出来的会话内记忆值）。
+    // 面板本体**恒为这个宽度**、不再在 22↔340 之间变化 —— 宽度动画会把内容逐帧
+    // 挤压重排，观感很糟。折叠改为整体**位移滑出**（见 app_shell 的 `panel-x`）。
+    in property <length> expanded-w: 340px;
     // footer 徽标（Rust 数出来的当前目录统计）
     in property <int> sftp-dir-count;
     in property <int> sftp-file-count;
@@ -957,7 +961,8 @@ export component RightPanel inherits Rectangle {
   // 展开 340px / 收起 22px 窄条（「收起 SFTP 侧边栏」）。
     // 240px 那版 7 个标签挤在一起、指标卡里的详情文字也被压到换行（用户截图），
   // 设计的面板本身就很宽 —— 加宽到 340px（app_shell 的 panel-w 同步）。
-    width: root.collapsed ? 22px : 340px;
+    // 恒为展开宽度：位移滑出时面板整体平移，内容不会被挤变形。
+    width: root.expanded-w;
     // 与终端同一块"磨砂玻璃"：都用 `term-bg` —— 它跟着「外观 ▸ 遮罩」的
     // 壁纸遮罩透明度（0–70%）一起变，面板与终端因此始终同色同透，没有生硬的
     // 分隔线；卡片靠 sur-2 自己浮出来。
@@ -965,36 +970,13 @@ export component RightPanel inherits Rectangle {
     background: Theme.term-bg;
     clip: true;
 
-    // ── 收起态：一条窄条 + 一个展开按钮（图标与标签条的「工具」同一个）──────
-    if root.collapsed : Rectangle {
-        width: parent.width;
-        height: parent.height;
+    // ── 收起态的 22px 把手 ──────────────────────────────────────────
+    // ⚠ 不能画在面板里：面板收起时整体滑出窗口，画在这里会跟着一起跑掉。
+    // 它已移到 app_shell（固定贴在窗口右缘，见「右侧面板收起后的 22px 把手」）。
 
-        Rectangle {
-            width: 20px;
-            height: 20px;
-            y: (parent.height - 20px) / 2;
-            border-radius: 5px;
-            background: ex-ta.has-hover ? Theme.sur-3 : transparent;
-
-            Text {
-                text: "\u{E8B3}";
-                font-family: "Material Icons";
-                font-size: 12px * Theme.ui-scale;
-                color: Theme.fg-3;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            ex-ta := TouchArea {
-                mouse-cursor: pointer;
-                clicked => {
-                    root.collapsed = false;
-                }
-            }
-        }
-    }
-
-    if !root.collapsed : VerticalLayout {
+    // 内容**始终存在**（不再用 `if !collapsed` 销毁）：销毁就没有退出动画，收起会
+    // 变成瞬间消失。收起时它随面板本体一起滑出窗口右缘。
+    VerticalLayout {
         // ── 面板头：工具 + 收起 + 关闭 ──────────────────────────────────
         // 上下 padding 各 6px：行内高度正好 20px，固定 20px 的按钮因此在行内居中
         // （HorizontalLayout 的交叉轴默认是拉伸，靠子项自身高度定死才不跑偏）。

@@ -1088,6 +1088,59 @@ export component AppWindow inherits Window {
         property <length> panel-w:
             root.shell-page == 1 && root.terminals.length > 0 && root.right-panel-open
                 ? (root.panel-collapsed ? 22px : root.panel-user-w) : 0px;
+        // 终端让位宽度也走动画：舞台平滑变宽 / 变窄（宽度变化会触发
+        // `content-resized`，Rust 据此重算分屏几何）。
+        animate panel-w {
+            duration: root.panel-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
+            easing: root.panel-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
+            enabled: AnimationSettings.enabled;
+        }
+        // 面板本体的横坐标：收起时**滑出到窗口右缘之外**（位移滑出），展开时贴住
+        // 右缘。面板宽度恒为 `panel-user-w`，移动全程内容不会被挤压变形 —— 这正是
+        // 早先"宽度动画"观感诡异的原因（内容被逐帧压扁）。
+        property <length> panel-x: root.panel-collapsed
+            ? root.width
+            : root.width - root.panel-user-w;
+        animate panel-x {
+            duration: root.panel-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
+            easing: root.panel-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
+            enabled: AnimationSettings.enabled;
+        }
+
+        // ── 右侧面板收起后的 22px 把手 ──────────────────────────────────
+        // 面板本体收起时整体滑出窗口，所以把手**不能**画在面板里（会跟着一起跑掉），
+        // 必须独立于面板、固定贴在窗口右缘 —— 那 22px 正是终端舞台让出来的位置。
+        if root.page-shown == 1 && root.terminals.length > 0
+            && root.right-panel-open && root.panel-collapsed : Rectangle {
+            x: root.width - 22px;
+            width: 22px;
+            height: root.height;
+            background: Theme.term-bg;
+
+            Rectangle {
+                x: 1px;
+                width: 20px;
+                height: 20px;
+                y: (parent.height - 20px) / 2;
+                border-radius: 5px;
+                background: rp-ta.has-hover ? Theme.sur-3 : transparent;
+
+                Text {
+                    text: "\u{E8B3}";
+                    font-family: "Material Icons";
+                    font-size: 12px * Theme.ui-scale;
+                    color: Theme.fg-3;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                rp-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.panel-collapsed = false;
+                    }
+                }
+            }
+        }
 
         Rail {
             x: 0;
@@ -1505,8 +1558,9 @@ export component AppWindow inherits Window {
 
       // 右侧工具面板（会话中；AI 暂不做）
       if root.page-shown == 1 && root.terminals.length > 0 && root.right-panel-open : RightPanel {
-          // 与 `panel-w` 同一条件：舞台已让出这块宽度，面板只负责画。
-          x: root.width - root.panel-w;
+          // 舞台按 `panel-w` 让出宽度；面板本体按 `panel-x` 位移滑出。
+          x: root.panel-x;
+          expanded-w: root.panel-user-w;
           panel-host: root.panel-host;
           panel-ip: root.panel-ip;
           panel-os: root.panel-os;
