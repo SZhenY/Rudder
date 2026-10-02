@@ -60,6 +60,12 @@ pub(crate) struct TabStatus {
     /// CPU 使用率环形缓冲（0..1），供工具面板的「CPU 负载趋势」用 —— 与 `net_hist`
     /// 同一套 push_ring/normalize。只有远端会话有；本机标签走本地快照。
     pub(crate) cpu_hist: Vec<f32>,
+    /// 与 `cpu_hist` **逐拍严格同步**的采样时刻：**本地时间**的「当天秒数」(0..86399)。
+    ///
+    /// 存秒-of-day 而非 Unix 秒 —— Slint 侧没有时区支持，格式化 Unix 秒只能显示
+    /// UTC。Rust 侧（chrono）把时区解析完，Slint 侧只需除法取模。跨天时数值会
+    /// 回绕，但气泡只按索引取值、不做时间运算，所以单调性无关紧要。
+    pub(crate) cpu_hist_t: Vec<i32>,
     /// 「CPU 负载趋势」曲线的指数移动平均状态（`None` = 尚未采到第一拍）。
     ///
     /// 只有**曲线**用平滑值，`st.cpu` 那个数字仍显示原始读数 —— 趋势图要协调、

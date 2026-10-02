@@ -79,6 +79,11 @@ pub(super) fn refresh_sidebar(
         if win.get_cpu_history().row_count() > 0 {
             win.set_cpu_history(ModelRc::from(Rc::new(VecModel::<f32>::default())));
         }
+        // 时间戳表必须**跟着一起清**：否则从远端切回本机时，曲线虽然空了，但气泡
+        // 仍能读到上一台机器的时刻（两个模型各自独立，不会互相牵连）。
+        if win.get_cpu_history_times().row_count() > 0 {
+            win.set_cpu_history_times(ModelRc::from(Rc::new(VecModel::<i32>::default())));
+        }
         let top = win.get_net_top_history();
         write_model(stats, &top, &scaled, || graph_model(&scaled), |m| {
             win.set_net_top_history(m)
@@ -412,6 +417,18 @@ pub(super) fn refresh_sidebar(
                 &cpu_hist,
                 || graph_model(&cpu_hist),
                 |m| win.set_cpu_history(m),
+            );
+            // 采样时刻（与 cpu_hist 逐拍同步入环）。送整表而不是"当前时刻"，
+            // 才能让悬停气泡显示**那个点**的绝对时刻 —— 而不只是"现在几点"。
+            // 走同一条增量写路径：每拍只有末尾一行变化，等于零成本。
+            let cpu_times: Vec<i32> = st.cpu_hist_t.clone();
+            let times_model = win.get_cpu_history_times();
+            write_model(
+                &mut stats,
+                &times_model,
+                &cpu_times,
+                || graph_model(&cpu_times),
+                |m| win.set_cpu_history_times(m),
             );
             win.set_net_show_selector(!st.net.is_empty());
             win.set_net_selected(name.into());

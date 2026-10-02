@@ -83,6 +83,25 @@ component LineChart inherits Rectangle {
     // 展示窗口：0 = 全部；>0 = 只画**最后 N 个采样**（1/5/15 分钟 = 60/300/900，
     // 历史环现在是 900 个点，窗口切换靠它，不需要重建模型）。
     in property <int> window: 0;
+    // ── 悬停交互（默认关；只有需要「绝对时刻」的图才开，见 TrendCard 透传）────
+    in property <bool> interactive: false;
+    // 与 `values` **等长**的采样时刻：本地时间「当天秒数」(0..86399)。
+    // Rust 侧（chrono）已把时区解析完 —— Slint 没有时区支持，存 Unix 秒只能显示 UTC。
+    in property <[int]> times: [];
+    in property <string> value-suffix: "%";
+
+    // MouseArea 写入的鼠标横坐标（-1 = 不在图内）。
+    //
+    // ⚠ 走 property 中转而不是让气泡直接绑 `ta.mouse-x`：`TouchArea` 必须在**最上层**
+    // 才能收到 hover（否则被下面的气泡挡住鼠标），而气泡又要读 hover 状态 ——
+    // 直接绑定会形成"气泡依赖 TouchArea 的 id" + "TouchArea 在气泡之后"的循环依赖。
+    // 解耦成 `hover-px`（TouchArea 单向写入 → 气泡单向读取）就没有环。
+    property <length> hover-px: -1px;
+    // 悬停落在哪个**绘图点**。用绘图点（而不是样本）索引，与曲线同源 —— 曲线就是
+    // 由 `vx(k)` / `values[idx(k)]` 画的，所以游标与线天然像素对齐。
+    property <int> hover-k: root.hover-px < 0 || root.width <= 0 ? -1
+        : Math.clamp(Math.round(root.hover-px / root.width * (root.npts * 1.0 - 1.0)),
+                     0.0, root.npts * 1.0 - 1.0);
     // 展开写死的采样点数（见下面 Path 里的说明）
     property <int> npts: 61;
     // 不变量：QuadraticTo 段数 == npts - 2，索引 k = 1..npts-2。改 npts 必须
@@ -118,6 +137,39 @@ component LineChart inherits Rectangle {
     }
     pure function my(k: int) -> float {
         return (root.vy(root.values[root.idx(k)]) + root.vy(root.values[root.idx(k + 1)])) / 2;
+    }
+    // ── 悬停读数（idx 越界/缓冲未填满时给占位符，绝不显示错的数）──────────────
+    //
+    // ⚠ 这个 Slint 版本**不支持 `var` 局部变量**（`var` 会被当成 property 名，
+    // 解析器接着期待 `=>`）也不支持 `if` 表达式 —— 所以一律用「小纯函数 + 三元」
+    // 写。副作用是 `idx(k)` 会被重复求值，纯函数无副作用故无代价。
+    pure function hok(k: int) -> bool {
+        return root.idx(k) >= 0 && root.idx(k) < root.values.length;
+    }
+    pure function hval(k: int) -> float {
+        return root.hok(k) ? root.values[root.idx(k)] : 0.0;
+    }
+    // `round` 返回 float；直接拼进 string 会带小数尾巴，故先 `int()`。
+    pure function hpct(k: int) -> string {
+        return root.hok(k)
+            ? Math.round(root.values[root.idx(k)] * 100.0) + root.value-suffix : "--";
+    }
+    // 该绘图点的采样时刻（秒-of-day）；-1 = 无效或环形缓冲尚未真正采到（预填 0）。
+    pure function hsec(k: int) -> int {
+        return root.idx(k) < 0 || root.idx(k) >= root.times.length ? -1
+            : root.times[root.idx(k)];
+    }
+    pure function pad2(v: float) -> string {
+        return (v < 10.0 ? "0" : "") + Math.round(v);
+    }
+    pure function htime(k: int) -> string {
+        // ⚠ 取模必须用 `Math.mod(x, y)` —— Slint 里的 `%` 是"百分号单位"（100%）
+        // 而不是取模运算符。`int(...)` 是为了截断成整数（`/` 的返回类型随版本
+        // 而异，显式转换最稳）。
+        return root.hsec(k) <= 0 ? "--:--:--"
+            : root.pad2(root.hsec(k) / 3600.0) + ":"
+              + root.pad2(Math.mod(root.hsec(k) / 60.0, 60.0)) + ":"
+              + root.pad2(Math.mod(root.hsec(k) * 1.0, 60.0));
     }
 
     // 高度可伸缩：综合页里随趋势卡拉伸（填满底部空白），其它页按 min-height 兜底
@@ -563,6 +615,98 @@ component LineChart inherits Rectangle {
         MoveTo { x: 99.99; y: 100.0; }
         LineTo { x: 100.0; y: 100.0; }
     }
+
+    // ── 悬停游标 + 气泡 ─────────────────────────────────────────────
+    // 刻意**不用 `if` 包裹**：销毁/重建没有过渡，鼠标扫过一格时气泡会闪。
+    // 常驻 + opacity 淡入淡出才连贯（`hover-k` 只在 -1 ↔ >=0 之间切换时才启动
+    // 动画，图内移动不会重启动画）。
+    Rectangle {
+        // 垂直游标线。不用虚线 —— femtovg 虚线要额外 dash 数组，而 34px 高的图里
+        // 虚线与实线几乎看不出区别。
+        x: root.hover-k >= 0 ? root.vx(root.hover-k) / 100 * root.width : 0;
+        width: 1px;
+        height: root.height;
+        background: root.line-color.with-alpha(0.35);
+        opacity: root.hover-k >= 0 ? 1 : 0;
+        animate opacity {
+            duration: AnimationSettings.short2();
+            easing: AnimationSettings.e-standard-accelerate();
+            enabled: AnimationSettings.enabled;
+        }
+    }
+    // 数据点圆点：线色填充 + 卡片底色描边（压在任何背景/曲线上都看得见）
+    Rectangle {
+        x: root.hover-k >= 0
+            ? root.vx(root.hover-k) / 100 * root.width - self.width / 2 : 0;
+        y: root.hover-k >= 0
+            ? root.vy(root.hval(root.hover-k)) / 100 * root.height - self.height / 2 : 0;
+        width: 7px;
+        height: 7px;
+        border-radius: 3.5px;
+        background: root.line-color;
+        border-width: 2px;
+        border-color: Theme.sur-2;
+        opacity: root.hover-k >= 0 ? 1 : 0;
+        animate opacity {
+            duration: AnimationSettings.short2();
+            easing: AnimationSettings.e-standard-accelerate();
+            enabled: AnimationSettings.enabled;
+        }
+    }
+    // 气泡：**吸附到数据点**，不跟随鼠标 —— 60 个点挤在约 200px 宽的卡里、每点
+    // 才 3.3px，跟鼠标会与曲线错位半三个点，百分比对不上"那根线的那个位置"。
+    // 水平按左右半区翻转并夹在图内；垂直优先放点上方，放不下翻到下方。
+    Rectangle {
+        x: max(0, min(root.width - self.width,
+            root.hover-k >= 0
+                ? root.vx(root.hover-k) / 100 * root.width
+                  + (root.vx(root.hover-k) > 50 ? -self.width - 10px : 10px) : 0));
+        y: root.hover-k >= 0
+            ? (root.vy(root.hval(root.hover-k)) / 100 * root.height - self.height - 8px < 0
+                ? root.vy(root.hval(root.hover-k)) / 100 * root.height + 8px
+                : root.vy(root.hval(root.hover-k)) / 100 * root.height - self.height - 8px) : 0;
+        // 宽度**固定**：跟着文本宽度走的话，"5%" → "100%" 会让气泡每拍抖一下。
+        // 超长时 elide 兜底（`ui-scale` 同比例放大，所以任何缩放下都够宽）。
+        width: 112px * Theme.ui-scale;
+        height: 20px * Theme.ui-scale;
+        border-radius: Theme.radius-md;
+        background: Theme.bg-elevated;
+        border-width: 1px;
+        border-color: root.line-color.with-alpha(0.35);
+        opacity: root.hover-k >= 0 ? 1 : 0;
+        animate opacity {
+            duration: AnimationSettings.short2();
+            easing: AnimationSettings.e-standard-accelerate();
+            enabled: AnimationSettings.enabled;
+        }
+        tip := Text {
+            width: 100%;
+            height: 100%;
+            text: root.hover-k >= 0
+                ? root.htime(root.hover-k) + "   " + root.hpct(root.hover-k) : "";
+            font-size: 10px * Theme.ui-scale;
+            color: Theme.fg-1;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+    // 指针捕获：**必须最后声明**（= 最上层）才能收到 hover，也保证气泡不会挡住
+    // 鼠标。用 `if` 包裹：非交互的图（网络趋势）连它都不创建。
+    //
+    // ⚠ 用内置 `TouchArea` 而不是 `MouseArea` —— 后者在 Slint 1.18 **已被移除**
+    //（编译器报 Unknown element）。`TouchArea` 同样提供 `has-hover` + `mouse-x`。
+    if root.interactive : TouchArea {
+        // ⚠ `changed x => {}` 而不是 `x => {}` —— 后者只对 **callback** 有效，
+        // 而 `mouse-x` / `has-hover` 是 `out property`（编译器会明确报
+        // "'mouse-x' is not a callback"）。
+        changed mouse-x => {
+            if self.has-hover { root.hover-px = self.mouse-x; }
+        }
+        changed has-hover => {
+            if !self.has-hover { root.hover-px = -1px; }
+        }
+    }
 }
 
 component Switch inherits Rectangle {
@@ -1002,6 +1146,10 @@ component TrendCard inherits Rectangle {
     in property <length> chart-h: 34px;             // 图的最小高度（卡被拉伸时图会更高）
     in property <string> value: "";                 // 标题行右侧当前值（如 2%）
     in property <color> tone: Theme.accent;         // 线色
+    // 悬停读数（默认关）：开启后 LineChart 画游标线 + 数据点 + 气泡。
+    // 只在需要「绝对时刻」的图上开（目前只有 CPU 负载趋势）。
+    in property <bool> interactive: false;
+    in property <[int]> times: [];        // 与 values 等长的采样时刻（本地秒-of-day）
 
     border-radius: Theme.radius-md;
     background: Theme.sur-2;
@@ -1043,6 +1191,8 @@ component TrendCard inherits Rectangle {
             window: root.window;
             chart-h: root.chart-h;
             line-color: root.tone;
+            interactive: root.interactive;
+            times: root.times;
         }
         // 时间轴：历史是 1 Hz 采样，展示窗口就是秒数（左端 = N 秒前）
         if root.values.length > 0 : HorizontalLayout {
@@ -1119,6 +1269,8 @@ export component RightPanel inherits Rectangle {
     in property <string> net-down;
     // 历史曲线（0..1 归一化）：CPU 趋势、当前会话网卡、本机网卡
     in property <[float]> cpu-history;
+    // 与 cpu-history 等长的采样时刻（本地「当天秒数」），供悬停气泡显示绝对时钟。
+    in property <[int]> cpu-history-times;
     in property <[float]> net-history;
     in property <[float]> net-history-bot;
     // 逐网卡速率（远端 = 会话自己的网卡表，本机 = 一行本地总速率）
@@ -1569,6 +1721,9 @@ export component RightPanel inherits Rectangle {
                     title: root.lang-en ? "CPU load trend" : "CPU 负载趋势";
                     lang-en: root.lang-en;
                     values: root.cpu-history;
+                    // 悬停读数：游标 + 数据点 + 气泡（绝对时刻 + 该点负载）
+                    interactive: true;
+                    times: root.cpu-history-times;
                     window <=> root.cpu-window;
                     value: "\{round(root.cpu-percent * 100)}%";
                     chart-h: 34px;
@@ -2049,6 +2204,9 @@ export component RightPanel inherits Rectangle {
                     title: root.lang-en ? "Load history" : "负载历史";
                     lang-en: root.lang-en;
                     values: root.cpu-history;
+                    // 悬停读数：游标 + 数据点 + 气泡（绝对时刻 + 该点负载）
+                    interactive: true;
+                    times: root.cpu-history-times;
                     window <=> root.cpu-window;
                     chart-h: 120px;
                 }

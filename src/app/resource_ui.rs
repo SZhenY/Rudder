@@ -1,9 +1,13 @@
 use super::*;
 use crate::ui::{ Theme };
 
-pub(super) fn push_ring(buf: &mut Vec<f32>, val: f32) {
+/// 环形缓冲：满则左移一格再追加（固定长度，历史序列因此永远是等间隔的）。
+///
+/// 泛型化是为了复用给**时间戳**缓冲（`Vec<i32>` 的「当天秒数」）——它必须与
+/// 数值缓冲**逐拍严格同步**，共用同一个函数才不会漏 push 或错位。
+pub(super) fn push_ring<T: Clone + Default>(buf: &mut Vec<T>, val: T) {
     if buf.len() != NET_HISTORY_LEN {
-        *buf = vec![0.0; NET_HISTORY_LEN];
+        *buf = vec![T::default(); NET_HISTORY_LEN];
     }
     buf.remove(0);
     buf.push(val);
@@ -30,7 +34,9 @@ pub(super) fn normalize(buf: &[f32]) -> Vec<f32> {
 
 /// 归一化结果对应的**新**模型 —— 只在第一次（或模型被别人换过）时用一次。
 /// （名字里的 graph 是为了避开 `history_model`：那是命令历史用的，glob 导入后会歧义。）
-pub(super) fn graph_model(scaled: &[f32]) -> ModelRc<f32> {
+/// 曲线/表格的整表模型。泛型化是为了复用给时间戳这类**非 f32** 的等长序列
+/// （`ModelRc<i32>`），逻辑与 f32 版完全一致。
+pub(super) fn graph_model<T: Clone + 'static>(scaled: &[T]) -> ModelRc<T> {
     ModelRc::from(Rc::new(VecModel::from(scaled.to_vec())))
 }
 

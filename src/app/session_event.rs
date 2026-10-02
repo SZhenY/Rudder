@@ -1,6 +1,7 @@
 use super::render_tickets::request_tab_render_from_ui;
 use super::*;
 use crate::ssh::{file_type_label, format_permissions};
+use chrono::Timelike;
 
 pub(crate) struct SessionResources<'a> {
     pub(crate) bufs: &'a TermBuffers,
@@ -201,6 +202,14 @@ pub(super) fn apply_session_event_to_window<'a>(
                     None => cpu_percent,
                 };
                 st.cpu_ema = Some(ema);
+                //
+                // 时间戳与数值**同一拍**入环（共用 `push_ring`，保证等长、不错位）。
+                // 记「本地当天秒数」：Slint 侧无法自己处理时区，只能由这里解析好。
+                // `hour/minute/second` 返回 u32，转 i32 再存（缓冲是 `Vec<i32>`）。
+                let now = chrono::Local::now();
+                let sec_of_day =
+                    now.hour() as i32 * 3600 + now.minute() as i32 * 60 + now.second() as i32;
+                push_ring(&mut st.cpu_hist_t, sec_of_day);
                 //
                 // 无条件入环。`cpu_hist` 初始是 `Vec::new()`，而 `push_ring` 是唯一
                 // 能让它变非空的途径 —— 曾用 `!is_empty()` 当前提来"跳过首拍"，那会
