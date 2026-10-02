@@ -85,6 +85,10 @@ component LineChart inherits Rectangle {
     in property <int> window: 0;
     // 展开写死的采样点数（见下面 Path 里的说明）
     property <int> npts: 61;
+    // 不变量：QuadraticTo 段数 == npts - 2，索引 k = 1..npts-2。改 npts 必须
+    // 同步重生成那些展开写死的段，否则会出现两种坏结果：
+    //   ① 重复索引 → 曲线自我重绘成锯齿（曾发生过：改 30→60 时旧的段没删）；
+    //   ② mx(npts-1) 越界 → 读 vx(npts)=101.67，超出隐形锚点钉住的 0..100 包围盒。
     // 第 k 个绘图点取哪个样本（数据长度可变 → 均匀取样）
     pure function wlen() -> int {
         return root.window > 0 ? min(root.window, root.values.length) : root.values.length;
@@ -166,7 +170,7 @@ component LineChart inherits Rectangle {
     }
 
     // ⚠ Path **不支持** `for`（Slint #754："Path elements are not supported with
-    // `for`-`in` syntax, yet"），所以下面 32 个采样点是**展开写死**的（脚本生成，
+    // `for`-`in` syntax, yet"），所以下面 61 个采样点是**展开写死**的（脚本生成，
     // 别手改）：第 k 个点取 `idx(k)` 处的数据 —— 数据长度可变，这里均匀取样，
     // 于是同一个组件能吃任意长度的历史序列。
     // 曲线走**中点二次贝塞尔**：节点取相邻采样点的中点、数据点只做控制点 ——
@@ -192,180 +196,6 @@ component LineChart inherits Rectangle {
         MoveTo { x: 0.0; y: 0.0; }
         LineTo { x: 0.01; y: 0.0; }
         MoveTo { x: root.mx(0); y: root.my(0); }
-        QuadraticTo {
-            control-x: root.vx(1);
-            control-y: root.vy(root.values[root.idx(1)]);
-            x: root.mx(1);
-            y: root.my(1);
-        }
-        QuadraticTo {
-            control-x: root.vx(2);
-            control-y: root.vy(root.values[root.idx(2)]);
-            x: root.mx(2);
-            y: root.my(2);
-        }
-        QuadraticTo {
-            control-x: root.vx(3);
-            control-y: root.vy(root.values[root.idx(3)]);
-            x: root.mx(3);
-            y: root.my(3);
-        }
-        QuadraticTo {
-            control-x: root.vx(4);
-            control-y: root.vy(root.values[root.idx(4)]);
-            x: root.mx(4);
-            y: root.my(4);
-        }
-        QuadraticTo {
-            control-x: root.vx(5);
-            control-y: root.vy(root.values[root.idx(5)]);
-            x: root.mx(5);
-            y: root.my(5);
-        }
-        QuadraticTo {
-            control-x: root.vx(6);
-            control-y: root.vy(root.values[root.idx(6)]);
-            x: root.mx(6);
-            y: root.my(6);
-        }
-        QuadraticTo {
-            control-x: root.vx(7);
-            control-y: root.vy(root.values[root.idx(7)]);
-            x: root.mx(7);
-            y: root.my(7);
-        }
-        QuadraticTo {
-            control-x: root.vx(8);
-            control-y: root.vy(root.values[root.idx(8)]);
-            x: root.mx(8);
-            y: root.my(8);
-        }
-        QuadraticTo {
-            control-x: root.vx(9);
-            control-y: root.vy(root.values[root.idx(9)]);
-            x: root.mx(9);
-            y: root.my(9);
-        }
-        QuadraticTo {
-            control-x: root.vx(10);
-            control-y: root.vy(root.values[root.idx(10)]);
-            x: root.mx(10);
-            y: root.my(10);
-        }
-        QuadraticTo {
-            control-x: root.vx(11);
-            control-y: root.vy(root.values[root.idx(11)]);
-            x: root.mx(11);
-            y: root.my(11);
-        }
-        QuadraticTo {
-            control-x: root.vx(12);
-            control-y: root.vy(root.values[root.idx(12)]);
-            x: root.mx(12);
-            y: root.my(12);
-        }
-        QuadraticTo {
-            control-x: root.vx(13);
-            control-y: root.vy(root.values[root.idx(13)]);
-            x: root.mx(13);
-            y: root.my(13);
-        }
-        QuadraticTo {
-            control-x: root.vx(14);
-            control-y: root.vy(root.values[root.idx(14)]);
-            x: root.mx(14);
-            y: root.my(14);
-        }
-        QuadraticTo {
-            control-x: root.vx(15);
-            control-y: root.vy(root.values[root.idx(15)]);
-            x: root.mx(15);
-            y: root.my(15);
-        }
-        QuadraticTo {
-            control-x: root.vx(16);
-            control-y: root.vy(root.values[root.idx(16)]);
-            x: root.mx(16);
-            y: root.my(16);
-        }
-        QuadraticTo {
-            control-x: root.vx(17);
-            control-y: root.vy(root.values[root.idx(17)]);
-            x: root.mx(17);
-            y: root.my(17);
-        }
-        QuadraticTo {
-            control-x: root.vx(18);
-            control-y: root.vy(root.values[root.idx(18)]);
-            x: root.mx(18);
-            y: root.my(18);
-        }
-        QuadraticTo {
-            control-x: root.vx(19);
-            control-y: root.vy(root.values[root.idx(19)]);
-            x: root.mx(19);
-            y: root.my(19);
-        }
-        QuadraticTo {
-            control-x: root.vx(20);
-            control-y: root.vy(root.values[root.idx(20)]);
-            x: root.mx(20);
-            y: root.my(20);
-        }
-        QuadraticTo {
-            control-x: root.vx(21);
-            control-y: root.vy(root.values[root.idx(21)]);
-            x: root.mx(21);
-            y: root.my(21);
-        }
-        QuadraticTo {
-            control-x: root.vx(22);
-            control-y: root.vy(root.values[root.idx(22)]);
-            x: root.mx(22);
-            y: root.my(22);
-        }
-        QuadraticTo {
-            control-x: root.vx(23);
-            control-y: root.vy(root.values[root.idx(23)]);
-            x: root.mx(23);
-            y: root.my(23);
-        }
-        QuadraticTo {
-            control-x: root.vx(24);
-            control-y: root.vy(root.values[root.idx(24)]);
-            x: root.mx(24);
-            y: root.my(24);
-        }
-        QuadraticTo {
-            control-x: root.vx(25);
-            control-y: root.vy(root.values[root.idx(25)]);
-            x: root.mx(25);
-            y: root.my(25);
-        }
-        QuadraticTo {
-            control-x: root.vx(26);
-            control-y: root.vy(root.values[root.idx(26)]);
-            x: root.mx(26);
-            y: root.my(26);
-        }
-        QuadraticTo {
-            control-x: root.vx(27);
-            control-y: root.vy(root.values[root.idx(27)]);
-            x: root.mx(27);
-            y: root.my(27);
-        }
-        QuadraticTo {
-            control-x: root.vx(28);
-            control-y: root.vy(root.values[root.idx(28)]);
-            x: root.mx(28);
-            y: root.my(28);
-        }
-        QuadraticTo {
-            control-x: root.vx(29);
-            control-y: root.vy(root.values[root.idx(29)]);
-            x: root.mx(29);
-            y: root.my(29);
-        }
         QuadraticTo {
             control-x: root.vx(1);
             control-y: root.vy(root.values[root.idx(1)]);
@@ -720,13 +550,12 @@ component LineChart inherits Rectangle {
             x: root.mx(59);
             y: root.my(59);
         }
-        QuadraticTo {
-            control-x: root.vx(60);
-            control-y: root.vy(root.values[root.idx(60)]);
-            x: root.mx(60);
-            y: root.my(60);
+        // 收口到**最后一个采样点**。用 npts 推导而不是写死数字：写死过一次
+        // （npts 从 32 改到 61 后忘了同步），曲线末端会悄悄跳回中间某个样本。
+        LineTo {
+            x: root.vx(root.npts - 1);
+            y: root.vy(root.values[root.idx(root.npts - 1)]);
         }
-        LineTo { x: root.vx(31); y: root.vy(root.values[root.idx(31)]); }
         // 收口到基线（让 fill 成为面积图）
         LineTo { x: 100.0; y: 100.0; }
         LineTo { x: 0.0; y: 100.0; }

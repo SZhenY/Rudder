@@ -188,13 +188,13 @@ pub(super) fn apply_session_event_to_window<'a>(
                 push_ring(&mut st.net_hist, (rx + tx) as f32);
                 // 同一份样本也喂给 CPU 趋势（工具面板的「CPU 负载趋势」）。
                 //
-                // 首拍**不入环**：CPU 百分比是「本拍 − 上一拍」算出来的，没有上一拍
-                // 就只能是 0。那个 0 是**假数据**，入环后趋势图会如实画成"负载从 0
-                // 爬升"，看着像刚连上时机器突然满载。跳过首拍后，下一拍入环时
-                // `push_ring` 会把环初始化成 899 个 0 + 1 个真实值，起点依旧干净。
-                if !st.cpu_hist.is_empty() {
-                    push_ring(&mut st.cpu_hist, cpu_percent);
-                }
+                // 无条件入环。CPU 百分比是「本拍 − 上一拍」算出来的，首拍没有上一拍
+                // 只能是 0；但 `push_ring` 会把环初始化成 899 个 0，所以首拍那个 0 与
+                // 填充值无法区分，**不需要**（也不能）为此加"首拍跳过"判断 ——
+                // `cpu_hist` 初始是 `Vec::new()`，而 `push_ring` 是唯一能让它变非空的
+                // 途径，用 `!is_empty()` 当前提会自锁：永远为空 → 环形缓冲永不填充
+                // → 趋势图模型 0 行 → 整块不渲染（表现为"一直无数据"）。
+                push_ring(&mut st.cpu_hist, cpu_percent);
             }
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses, local, local_net_hist);
