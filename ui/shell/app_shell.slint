@@ -1693,7 +1693,6 @@ export component AppWindow inherits Window {
         // 所以 `moved` 只**累积位移**（廉价），由下面的定时器每 33ms 批量应用一次，
         // 重排次数降到 1/3，且每帧都留得出绘制预算 → 跟手且不闪。
         property <length> drag-w0: 0px;      // 0 = 当前没在拖（哨兵）
-        property <length> drag-x0: 0px;      // 上次采样时的鼠标 x
         property <length> drag-applied: 340px; // 已应用到面板的宽度
         property <length> drag-pending: 0px;   // 待应用位移
         Timer {
@@ -1718,12 +1717,20 @@ export component AppWindow inherits Window {
                 if (self.drag-w0 == 0px) {
                     self.drag-w0 = root.panel-user-w;
                     self.drag-applied = root.panel-user-w;
-                    self.drag-x0 = self.mouse-x;
-                } else {
-                    // ⚠ 负号不能少：把手在面板**左缘**，鼠标向左 = 左缘向左拖 = 变宽。
-                    self.drag-pending = self.drag-pending - (self.mouse-x - self.drag-x0);
-                    self.drag-x0 = self.mouse-x;
                 }
+                // ⚠⚠ 这里**必须**用鼠标的**绝对**位置（把手绝对 x + 把手内相对 x），
+                // 不能用增量 `mouse-x - drag_x0`：
+                //
+                //   `mouse-x` 是鼠标相对**把手**的位置，而把手 x 绑定 `panel-w`、
+                //   `panel-w` 又绑定 `panel-user-w` —— 面板一动把手的 `mouse-x`
+                //   就跟着变。于是即便鼠标纹丝不动，算出来的宽度也在变 → 面板
+                //   左右横跳（实测：改成增量后立刻出现抖动，之前的绝对公式没有）。
+                //
+                //   绝对位置与面板运动无关，因此天然稳定；宽度 = 窗口宽 − 鼠标绝对 x
+                //   （把手就贴在面板左缘）。
+                let target = clamp(root.width - (self.absolute-position.x + self.mouse-x),
+                                  280px, 560px);
+                self.drag-pending = target - self.drag-applied;
             } else {
                 // 松手：把剩余位移一次性应用掉，否则最后一段会"丢"一截
                 if (self.drag-pending != 0px) {
