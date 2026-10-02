@@ -289,12 +289,12 @@ export component PageHosts inherits Rectangle {
     }
 
     HorizontalLayout {
-        // ⚠ spacing 必须显式归零：样式默认布局间距（~11px）会在导航列/分隔线/内容
-        // 之间留缝 —— 缝里是全透明的 bg-root（悬崖公式），半透明壁纸上就是一道
-        // "空白缝"（分隔线两侧断开）。列间分隔由 1px 分隔线承担。
+        // ⚠ spacing 必须显式归零：样式默认布局间距（~11px）会在导航列与内容列之间
+        // 留缝 —— 缝里是全透明的 bg-root（悬崖公式），半透明壁纸上就是一道"空白缝"。
+        // 导航列与顶栏同为 sur-1 且直接相接，不另加分隔线。
         spacing: 0px;
         // ── 第二列：分组导航 ────────────────────────────────────────────
-        // 面板底色（sur-1）：与内容区（sur-0）拉开层次，右侧另有一条分隔线。
+        // 面板底色（sur-1）：与内容区（sur-0）拉开层次。
         Rectangle {
             width: 190px;
             background: Theme.sur-1;
@@ -422,12 +422,6 @@ export component PageHosts inherits Rectangle {
                     }
                 }
             }
-        }
-
-        // 分隔线
-        Rectangle {
-            width: 1px;
-            background: Theme.line;
         }
 
         // ── 主内容：顶栏 + 卡片 ──────────────────────────────────────────
