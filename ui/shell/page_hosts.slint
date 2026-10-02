@@ -3,7 +3,7 @@
 // 三栏：左侧栏（外壳提供）→ 本页的「分组导航」列 → 主内容（顶栏 + 主机卡片）。
 // 数据仍走 AppWindow 既有的 sessions 模型与 connect-session 回调，Rust 零改动。
 
-import { Theme } from "../theme.slint";
+import { AnimationSettings, Theme } from "../theme.slint";
 import { SessionInfo } from "../session_types.slint";
 import { ConfirmDialog } from "../confirm_dialog.slint";
 
@@ -17,6 +17,9 @@ component MenuRow inherits Rectangle {
     height: 30px;
     border-radius: 6px;
     background: ta.has-hover ? (root.danger ? Theme.danger.with-alpha(0.14) : Theme.sur-3) : transparent;
+    // hover 底色过渡：与项目其它按钮（RailButton / IconButton）同一档，否则菜单
+    // 行的底色是瞬时跳变、没有渐入感。
+    animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
     HorizontalLayout {
         padding-left: 8px;
@@ -266,6 +269,10 @@ export component PageHosts inherits Rectangle {
     property <string> pending-remove-id;
     property <string> pending-remove-name;
     // 选中的卡片（点卡片选中，只有「快速连接」才连终端）；点页面空白处清空。
+    // 分组导航选中项：0 = 全部主机，1..n = 各分组。此前「全部主机」是写死高亮
+    // （背景恒为 accent-soft）且点击区是空的 `TouchArea {}` —— 整个分组导航其实
+    // 是个死壳。现在高亮跟着真实选中项走。
+    property <int> group-sel: 0;
     property <string> selected-id;
     // 卡片「⋯」菜单：非空 = 菜单打开；坐标是窗口坐标（渲染时再减去本页偏移）。
     property <string> menu-id;
@@ -318,7 +325,11 @@ export component PageHosts inherits Rectangle {
                 Rectangle {
                     height: 34px;
                     border-radius: Theme.radius-md;
-                    background: all-ta.has-hover ? Theme.sur-3 : Theme.accent-soft;
+                    // 选中时才高亮；未选中时只有 hover 反馈
+                    background: root.group-sel == 0
+                        ? Theme.accent-soft
+                        : (all-ta.has-hover ? Theme.sur-3 : transparent);
+                    animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
                     HorizontalLayout {
                         padding-left: Theme.sp-2;
@@ -330,25 +341,34 @@ export component PageHosts inherits Rectangle {
                             text: "\u{E2C8}"; // list_alt
                             font-family: "Material Icons";
                             font-size: 15px * Theme.ui-scale;
-                            color: Theme.accent;
+                            color: root.group-sel == 0 ? Theme.accent : Theme.fg-3;
                             vertical-alignment: center;
                         }
                         Text {
                             text: root.lang-en ? "All Hosts" : "全部主机";
                             font-size: 13px * Theme.ui-scale;
-                            font-weight: 600;
-                            color: Theme.accent;
+                            // 选中才用主色 + 加粗，未选中是普通文字
+                            font-weight: root.group-sel == 0 ? 600 : 400;
+                            color: root.group-sel == 0 ? Theme.accent : Theme.fg-2;
                             vertical-alignment: center;
                         }
                     }
 
-                    all-ta := TouchArea {}
+                    all-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.group-sel = 0;
+                        }
+                    }
                 }
 
                 Rectangle {
                     height: 30px;
                     border-radius: Theme.radius-md;
-                    background: grp-ta.has-hover ? Theme.sur-3 : transparent;
+                    background: root.group-sel == 1
+                        ? Theme.accent-soft
+                        : (grp-ta.has-hover ? Theme.sur-3 : transparent);
+                    animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
                     HorizontalLayout {
                         padding-left: Theme.sp-2;
@@ -359,7 +379,7 @@ export component PageHosts inherits Rectangle {
                         Text {
                             text: root.lang-en ? "Default Group" : "默认分组";
                             font-size: 12px * Theme.ui-scale;
-                            color: Theme.fg-2;
+                            color: root.group-sel == 1 ? Theme.accent : Theme.fg-2;
                             vertical-alignment: center;
                         }
                         Text {
@@ -370,7 +390,12 @@ export component PageHosts inherits Rectangle {
                         }
                     }
 
-                    grp-ta := TouchArea {}
+                    grp-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.group-sel = 1;
+                        }
+                    }
                 }
 
                 Rectangle {

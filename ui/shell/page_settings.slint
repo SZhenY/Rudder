@@ -1576,8 +1576,22 @@ AccentPicker {
                                                     alignment: start;
 
                                                     // 列表限高 + ScrollView：滚轮可滚，弹窗不再顶出屏幕
-                                                    ScrollView {
+                                                    font-sv := ScrollView {
                                                         height: 240px;
+
+                                                        // 弹层内滚轮兜底：显式驱动 viewport-y。ScrollView 继承自 Flickable
+                                                        // 且 `viewport-height <=> content-height` 是双向绑定，放进 PopupWindow
+                                                        // 后内置滚轮经常收不到事件，表现为「滚不动」—— 这里自己接管滚轮量。
+                                                        // TouchArea 的 scroll-event 会**消费**滚轮事件，因此不会出现「内置滚轮 +
+                                                            // 手动处理」双倍滚动；它声明在列表之前，层级在下，列表项照常点得到。
+                                                            wheel-ta := TouchArea {
+                                                                scroll-event(e) => {
+                                                                font-sv.content-y = max(0px,
+                                                                    min(font-sv.content-y + e.delta-y,
+                                                                        font-sv.content-height - 240px));
+                                                                        return EventResult.accept;
+                                                            }
+                                                        }
 
                                                         VerticalLayout {
                                                             spacing: 0;
@@ -1809,8 +1823,22 @@ ToggleRow {
                                                     spacing: 0;
                                                     alignment: start;
 
-                                                    ScrollView {
+                                                    tfont-sv := ScrollView {
                                                         height: 240px;
+
+                                                        // 弹层内滚轮兜底：显式驱动 viewport-y。ScrollView 继承自 Flickable
+                                                        // 且 `viewport-height <=> content-height` 是双向绑定，放进 PopupWindow
+                                                        // 后内置滚轮经常收不到事件，表现为「滚不动」—— 这里自己接管滚轮量。
+                                                        // TouchArea 的 scroll-event 会**消费**滚轮事件，因此不会出现「内置滚轮 +
+                                                            // 手动处理」双倍滚动；它声明在列表之前，层级在下，列表项照常点得到。
+                                                            tfont-wheel-ta := TouchArea {
+                                                                scroll-event(e) => {
+                                                                tfont-sv.content-y = max(0px,
+                                                                    min(tfont-sv.content-y + e.delta-y,
+                                                                        tfont-sv.content-height - 240px));
+                                                                        return EventResult.accept;
+                                                            }
+                                                        }
 
                                                         VerticalLayout {
                                                             spacing: 0;
