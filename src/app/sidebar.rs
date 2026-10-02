@@ -393,8 +393,18 @@ pub(super) fn refresh_sidebar(
             write_model(&mut stats, &top, &hist, || graph_model(&hist), |m| {
                 win.set_net_top_history(m)
             });
-            // CPU 负载趋势（工具面板「综合 / 处理器」用）：同一套归一化 + 就地写。
-            let cpu_hist = normalize(&st.cpu_hist);
+            // CPU 负载趋势（工具面板「综合 / 处理器」用）：**不做峰值归一化**。
+            //
+            // `normalize()` 把整条曲线除以「窗口内的历史峰值」，对 CPU 这种本来就是
+            // 0–100% 的量是错的：
+            //   ① 一次尖峰会把随后整条曲线压到贴地 60 拍 —— 用户最早报的"突然显示
+            //      一段异常负载，然后跳回正常"就是它（不是采样异常，是分母突变）；
+            //   ② 同一个 20% 负载在空闲机 / 繁忙机上画出的高度完全不同，读数不可信；
+            //   ③ 组件里的 25/50/75/100% 刻度线形同虚设 —— 数据根本不在那个量程上。
+            //
+            // 网络图（net_hist / net_top_history）**继续**归一化：那里单位是
+            // 字节/秒、量程不确定，按窗口峰值缩放才是对的。
+            let cpu_hist = st.cpu_hist.clone();
             let cpu_model = win.get_cpu_history();
             write_model(
                 &mut stats,
