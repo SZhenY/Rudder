@@ -2884,8 +2884,18 @@ mod tests {
         assert_eq!(store.renderer_mode_choice(), "auto");
 
         // 旧配置里可能存着这些：都要归到 GPU 档，不能变成"自动"
+        //
+        // ⚠ 前置条件必须**直写 cache**，不能走 `set_renderer_mode` —— 那是**分平台**
+        // 的写入端：macOS 把一切非 `software` 压成 `femtovg-wgpu`，Linux 只认
+        // `wgpu`/`software`/`gpu`/`skia-vulkan`，Windows 只认 `auto`/`wgpu`/
+        // `software`/`gpu`。拿它构造前置条件，这个测试就变成"只在 macOS 上成立"，
+        // 进 CI 的 Linux 作业必红（`skia` 在 Linux 上被写成 `auto`）。
+        //
+        // 本测试要验的是**读取端** `renderer_mode_choice` 的归一化契约，而它
+        // 是不分平台的（配置可以跨平台同步，macOS 写下的 `femtovg-wgpu` 在
+        // Linux 上也必须读成 GPU 档）—— 前置条件也必须与之一致。
         for legacy in ["gpu", "skia", "skia-vulkan", "femtovg", "femtovg-wgpu"] {
-            store.set_renderer_mode(legacy.into());
+            store.cache.appearance.renderer_mode = legacy.into();
             assert_eq!(store.renderer_mode_choice(), "wgpu", "{legacy} 应归到 GPU 档");
         }
 
