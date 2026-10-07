@@ -17,4 +17,9 @@ export struct DiskInfo {
     used: string,     // 已用（工具面板四卡底部行左侧）
     total: string,    // 总量（工具面板四卡底部行右侧）
     percent: float,   // used fraction 0.0..1.0
+    /// 复选框勾选态（工具面板「磁盘分区」里勾 = 置顶这一条）。
+    ///
+    /// ⚠ 勾选态放在**行数据**里而不是界面侧的 `[string]` 名单：Slint 的数组没有
+    /// `contains`，放名单里就得在表达式里循环查；跟着行走则是一次读取。
+    picked: bool,
 }

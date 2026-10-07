@@ -94,6 +94,7 @@ pub(super) fn disk_rows(
     disks: &[(String, u64, u64)],
     mount_filter: &str,
     hide_special: bool,
+    picked: Option<&[String]>,
 ) -> Vec<DiskInfo> {
     let filters: Vec<&str> = if mount_filter.is_empty() {
         vec![]
@@ -131,6 +132,12 @@ pub(super) fn disk_rows(
                 used: format_size(used).into(),
                 total: format_size(*total).into(),
                 percent,
+                // 复选框勾选态跟着行走（界面读 d.picked，不做数组成员查找）。
+                // `None` = 全选 → 每一行都勾着。
+                picked: match picked {
+                    None => true,
+                    Some(names) => names.iter().any(|p| p == mount),
+                },
             }
         })
         .collect()
@@ -140,11 +147,13 @@ pub(super) fn disk_model(
     disks: &[(String, u64, u64)],
     mount_filter: &str,
     hide_special: bool,
+    picked: Option<&[String]>,
 ) -> ModelRc<DiskInfo> {
     ModelRc::from(Rc::new(VecModel::from(disk_rows(
         disks,
         mount_filter,
         hide_special,
+        picked,
     ))))
 }
 
@@ -202,12 +211,17 @@ pub(super) fn metric_rows(
     ]
 }
 
-pub(super) fn net_rows(net: &[(String, u64, u64)]) -> Vec<SysNetRow> {
+pub(super) fn net_rows(net: &[(String, u64, u64)], picked: Option<&[String]>) -> Vec<SysNetRow> {
     net.iter()
         .map(|(name, rx, tx)| SysNetRow {
             name: name.clone().into(),
             up: format_bytes_per_sec(*tx).into(),
             down: format_bytes_per_sec(*rx).into(),
+            // 复选框勾选态（界面读 n.picked）。`None` = 全选 → 每一行都勾着。
+            picked: match picked {
+                None => true,
+                Some(names) => names.iter().any(|p| p == name),
+            },
         })
         .collect()
 }
@@ -529,7 +543,7 @@ mod tests {
 
     #[test]
     fn disk_rows_computes_usage_and_detail() {
-        let rows = disk_rows(&disks(), "", false);
+        let rows = disk_rows(&disks(), "", false, None);
         assert_eq!(rows.len(), 3, "空过滤 = 全部");
         assert_eq!(rows[0].path.as_str(), "/");
         assert_eq!(rows[0].percent, 0.5);
@@ -544,21 +558,21 @@ mod tests {
     /// `total == 0` 不能做除数（伪文件系统就长这样）→ percent 取 0。
     #[test]
     fn disk_rows_handles_zero_total() {
-        let rows = disk_rows(&[("/proc".to_string(), 0, 0)], "", false);
+        let rows = disk_rows(&[("/proc".to_string(), 0, 0)], "", false, None);
         assert_eq!(rows[0].percent, 0.0);
     }
 
     /// 过滤串是手输的：按空格 / 逗号 / 分号切，空段忽略。
     #[test]
     fn disk_rows_splits_the_mount_filter() {
-        let rows = disk_rows(&disks(), " /data ,  ; ", false);
+        let rows = disk_rows(&disks(), " /data ,  ; ", false, None);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].path.as_str(), "/data");
     }
 
     #[test]
     fn disk_rows_hides_special_partitions_when_asked() {
-        let rows = disk_rows(&disks(), "", true);
+        let rows = disk_rows(&disks(), "", true, None);
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.path.as_str() != "/proc"));
     }
@@ -607,8 +621,19 @@ mod tests {
 
     /// **上下行不能接反**：`up` 取 tx、`down` 取 rx。
     #[test]
+    fn disk_rows_marks_picked_mounts() {
+        let d = vec![
+            ("/".to_string(), 1u64, 2u64),
+            ("/vol1".to_string(), 1, 2),
+        ];
+        let rows = disk_rows(&d, "", false, Some(&["/vol1".to_string()]));
+        assert!(!rows[0].picked, "/ 未勾选");
+        assert!(rows[1].picked, "/vol1 已勾选");
+    }
+
+    #[test]
     fn net_rows_maps_tx_to_up_and_rx_to_down() {
-        let rows = net_rows(&[("eth0".to_string(), 1024, 2048)]);
+        let rows = net_rows(&[("eth0".to_string(), 1024, 2048)], None);
         assert_eq!(rows[0].name.as_str(), "eth0");
         assert_eq!(rows[0].up.as_str(), format_bytes_per_sec(2048));
         assert_eq!(rows[0].down.as_str(), format_bytes_per_sec(1024));

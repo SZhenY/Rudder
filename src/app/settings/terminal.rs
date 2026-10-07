@@ -8,6 +8,7 @@
 
 use slint::{ComponentHandle, SharedString};
 
+
 use crate::app::fonts_ui::{family_from_label, term_font_covers_cjk};
 use crate::app::terminal_ui::{
     apply_custom_output_rules, apply_output_highlight, for_each_buffer, hex_from_rgb,
@@ -140,6 +141,14 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             }
         });
     }
+
+    // 调色盘输入框回车 → 解析 hex 回填给界面，好让 SV 面板与色相条跳到那个颜色。
+    // 解析必须在 Rust 侧：Slint 没有字符串取字符的能力（无 `substring`/`chars`），
+    // 界面侧拆不开 `#RRGGBB`。主题色与光标颜色两个调色盘共用这一个回调。
+    window.on_resolve_hex(move |value: SharedString| {
+        // 非法 hex → 全透明（`a == 0`），界面侧据此判定"解析失败"并不动 HSV。
+        parse_hex_color(value.as_str()).unwrap_or_else(|| slint::Color::from_argb_u8(0, 0, 0, 0))
+    });
 
     {
         let weak = window.as_weak();

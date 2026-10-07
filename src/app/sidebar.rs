@@ -32,13 +32,85 @@ fn write_model<T: Clone + PartialEq + 'static>(
 
 /// 磁盘列表：能就地写就就地写 —— 磁盘 10 秒才真刷新一次，中间那些 tick 内容没变，
 /// 一次通知都不该发（原来每秒整张重建 + 换模型，列表里每一行都跟着重建）。
-fn write_disks(stats: &mut SidebarStats, win: &AppWindow, disks: &[(String, u64, u64)]) {
-    let rows = disk_rows(disks, &mount_filter(), hide_special_partitions());
+/// 本机「系统信息」页的条目。
+///
+/// 之前本机走 `SystemDetails::default()`（全空），所以那一页对本地会话什么都没有；
+/// 远端则由 `SYS_CMD` 解析 OS / KERNEL / HOSTNAME / UPTIME。这里用 sysinfo 的对应
+/// 接口补齐，字段与远端一致。
+///
+/// 空值一律跳过（不塞空串）—— 面板会把每一对都显示成一行，塞空串只会得到一行空白。
+fn local_system_details(snap: &SystemSnapshot) -> SystemDetails {
+    let mut overview: Vec<(String, String)> = Vec::new();
+    if !snap.os_version.is_empty() {
+        overview.push((t("操作系统", "OS").to_string(), snap.os_version.clone()));
+    }
+    if !snap.host_name.is_empty() {
+        overview.push((t("主机名", "Hostname").to_string(), snap.host_name.clone()));
+    }
+    if !snap.kernel_version.is_empty() {
+        overview.push((
+            t("内核", "Kernel").to_string(),
+            snap.kernel_version.clone(),
+        ));
+    }
+    overview.push((
+        t("核心数", "Cores").to_string(),
+        snap.core_usages.len().to_string(),
+    ));
+    if snap.uptime_secs > 0 {
+        overview.push((
+            t("开机时长", "Uptime").to_string(),
+            format_uptime(snap.uptime_secs),
+        ));
+    }
+    // CPU 明细页的 cpu_info 对本机保持空：品牌 / 频率在 sysinfo 0.38 里要额外引
+    // trait 才能拿到，而这一页对本地不是关键信息，不值得为它加依赖面。
+    SystemDetails {
+        overview,
+        ..Default::default()
+    }
+}
+
+/// 秒 → "3 天 4 小时" / "5 小时 12 分" / "12 分"。
+fn format_uptime(secs: u64) -> String {
+    let d = secs / 86400;
+    let h = (secs % 86400) / 3600;
+    let m = (secs % 3600) / 60;
+    if d > 0 {
+        format!("{} {} {}", d, t("天", "d"), h)
+    } else if h > 0 {
+        format!("{} {} {} {}", h, t("小时", "h"), m, t("分", "m"))
+    } else {
+        format!("{} {}", m, t("分", "m"))
+    }
+}
+
+fn write_disks(
+    stats: &mut SidebarStats,
+    win: &AppWindow,
+    disks: &[(String, u64, u64)],
+    picked: Option<&[String]>,
+) {
+    let filter = mount_filter();
+    let hide_special = hide_special_partitions();
+    // ① 弹层的**选择列表**：未置顶的完整集合 + 每行勾选态（`all-disks`）。必须与
+    //    下面的展示列表分开 —— 否则"取消全选"之后弹层里一行都不剩，用户再也勾不
+    //    回单个（死路）。
+    write_model(
+        stats,
+        &win.get_all_disks(),
+        &disk_rows(disks, &filter, hide_special, picked),
+        || disk_model(disks, &filter, hide_special, picked),
+        |m| win.set_all_disks(m),
+    );
+    // ② 展示列表：按勾选名单**筛选**（全选时是全部，取消全选时一行不剩）。
+    let shown = filter_picked(disks, picked, |e| e.0.as_str());
+    let rows = disk_rows(&shown, &filter, hide_special, picked);
     write_model(
         stats,
         &win.get_disks(),
         &rows,
-        || disk_model(disks, &mount_filter(), hide_special_partitions()),
+        || disk_model(&shown, &filter, hide_special, picked),
         |m| win.set_disks(m),
     );
 }
@@ -71,7 +143,7 @@ pub(super) fn refresh_sidebar(
         win.set_net_bot_history(m)
     });
 
-    let set_top_local = |win: &AppWindow, stats: &mut SidebarStats| {
+    let set_top_local = |win: &AppWindow, stats: &mut SidebarStats, pd: Option<&[String]>| {
         win.set_net_top_up(format_bytes_per_sec(snap.net_tx_per_sec).into());
         win.set_net_top_down(format_bytes_per_sec(snap.net_rx_per_sec).into());
         // 本机 / 未连接 / 已断开：没有远端 CPU 样本，趋势图清空（只在非空时清一次，
@@ -94,8 +166,12 @@ pub(super) fn refresh_sidebar(
         if win.get_net_ifaces().row_count() > 0 {
             win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
         }
+        // 弹层那张网卡选择列表也要一起清，否则会留着上一台远端机器的网卡。
+        if win.get_all_ifs().row_count() > 0 {
+            win.set_all_ifs(ModelRc::from(Rc::new(VecModel::<SysNetRow>::default())));
+        }
         // Non-connected tabs show the local machine's filesystems.
-        write_disks(stats, win, &snap.disks);
+        write_disks(stats, win, &snap.disks, pd);
     };
     let show_local_res = |win: &AppWindow| {
         win.set_resource_title(t("本机资源", "Local resources").into());
@@ -275,8 +351,10 @@ pub(super) fn refresh_sidebar(
                 name: t("本机", "Local").into(),
                 up: format_bytes_per_sec(snap.net_tx_per_sec).into(),
                 down: format_bytes_per_sec(snap.net_rx_per_sec).into(),
+                // 本机只有一行总速率，没有"选哪块网卡"的余地。
+                picked: false,
             }],
-            SystemDetails::default(),
+            local_system_details(&snap),
             "",
         );
         // 本机数据即时可用：不做「等待监控数据」加载态
@@ -315,6 +393,43 @@ pub(super) fn refresh_sidebar(
     } else {
         statuses.lock().ok().and_then(|s| s.get(&active).cloned())
     };
+    // 勾选集合镜像回界面：按钮上的「已选 N」要用长度。
+    //（逐行的勾选态在行数据里 —— DiskInfo.picked / SysNetRow.picked）
+    //
+    // ⚠ `None`（全选）与 `Some(vec![])`（一个都不选）**名单都是空的**，光看数组
+    // 分不出来，所以额外导出一个 `*-picked-all` bool 给「全部」那个复选框用。
+    let (picked_ifs, ifs_all): (Vec<SharedString>, bool) = status
+        .as_ref()
+        .map(|st| match st.picked_ifaces.as_deref() {
+            None => (Vec::new(), true),
+            Some(v) => (v.iter().map(SharedString::from).collect(), false),
+        })
+        .unwrap_or((Vec::new(), true));
+    let (picked_dks, disks_all): (Vec<SharedString>, bool) = status
+        .as_ref()
+        .map(|st| match st.picked_disks.as_deref() {
+            None => (Vec::new(), true),
+            Some(v) => (v.iter().map(SharedString::from).collect(), false),
+        })
+        .unwrap_or((Vec::new(), true));
+    // 每次都写（不再比长度）：这两个模型只被按钮文案和「全部」复选框读，列表读的是
+    // all-ifs / all-disks，换身份不会触发任何列表重建；而"换成另一个名字"（长度相同）
+    // 这种旧逻辑会漏掉的情况必须能更新。
+    win.set_net_picked(ModelRc::from(Rc::new(VecModel::from(picked_ifs))));
+    win.set_disk_picked(ModelRc::from(Rc::new(VecModel::from(picked_dks))));
+    win.set_net_picked_all(ifs_all);
+    win.set_disk_picked_all(disks_all);
+
+    // 「当前标签页是否已有会话」→ 右侧工具栏显不显示。
+    //
+    // ⚠ 不能拿"终端行数 > 0"当判据：终端页点「+」新建会话时会先建出一个空标签页
+    // 并弹出「创建你的第一个终端会话」卡片，那一刻已经有行了，但一个会话都没开，
+    // 工具栏却会弹出来显示本机 CPU / 内存 / 磁盘。
+    //
+    // 判据取"状态表里有没有该 tab 的条目"：条目只在**会话真正开始**时才插入
+    // （session_callbacks：连接中 state=0 那次），所以 pending 的新建会话页没有
+    // 条目 → 工具栏不显示；本机 / 远端会话一开始就绪条目就在 → 照常显示。
+    win.set_has_session(status.is_some());
 
     match status {
         // A local-shell tab (WSL / cmd / PowerShell) also reaches the connected
@@ -325,8 +440,48 @@ pub(super) fn refresh_sidebar(
             win.set_connection_state(connection_label(st.state, &st.host).into());
             win.set_conn_host(conn_ip(&st.host).into());
             show_local_res(win);
-            set_top_local(win, &mut stats);
+            set_top_local(win, &mut stats, st.picked_disks.as_deref());
             show_local_system_models(win);
+            // 每核占用（面板 CPU 页「核心详情」）：与远端同一套 odd/even 分列。
+            // 本机走 sysinfo 的 cpus()，之前这里恒空 → 显示"暂无数据"。
+            let core_rows = |pick: fn(usize) -> bool| -> Vec<CoreLoad> {
+                snap.core_usages
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| pick(*i))
+                    .map(|(i, v)| CoreLoad {
+                        idx: i as i32,
+                        load: *v,
+                    })
+                    .collect()
+            };
+            let left = core_rows(|i| i % 2 == 0);
+            let right = core_rows(|i| i % 2 == 1);
+            write_model(
+                &mut stats,
+                &win.get_core_cpus(),
+                &snap.core_usages,
+                || {
+                    ModelRc::from(Rc::new(VecModel::from(
+                        snap.core_usages.to_vec(),
+                    )))
+                },
+                |m| win.set_core_cpus(m),
+            );
+            write_model(
+                &mut stats,
+                &win.get_cores_left(),
+                &left,
+                || ModelRc::from(Rc::new(VecModel::from(core_rows(|i| i % 2 == 0)))),
+                |m| win.set_cores_left(m),
+            );
+            write_model(
+                &mut stats,
+                &win.get_cores_right(),
+                &right,
+                || ModelRc::from(Rc::new(VecModel::from(core_rows(|i| i % 2 == 1)))),
+                |m| win.set_cores_right(m),
+            );
         }
         // A live session tab → remote resources + remote NIC on top.
         Some(st) if st.state == 1 => {
@@ -442,7 +597,19 @@ pub(super) fn refresh_sidebar(
                 || ModelRc::from(Rc::new(VecModel::from(ifaces.clone()))),
                 |m| win.set_net_ifaces(m),
             );
-            write_disks(&mut stats, win, &st.disks);
+            let if_sel = st.picked_ifaces.as_deref();
+            // 弹层的**网卡选择列表**（未置顶、顺序稳定）+ 每行勾选态；下面 set_
+            // system_models 里那个置顶列表只负责展示。分开是必须的：否则"取消全选"
+            // 之后弹层里一行都不剩，用户没法再勾回单个（死路）。
+            let if_choices = net_rows(&st.net, if_sel);
+            write_model(
+                &mut stats,
+                &win.get_all_ifs(),
+                &if_choices,
+                || ModelRc::from(Rc::new(VecModel::from(if_choices.clone()))),
+                |m| win.set_all_ifs(m),
+            );
+            write_disks(&mut stats, win, &st.disks, st.picked_disks.as_deref());
             win.set_proc_available(true);
             win.set_system_info_available(true);
             set_procs(win, &st.procs, &st.user, &active);
@@ -453,7 +620,7 @@ pub(super) fn refresh_sidebar(
                 pct(st.swap_used_kib, st.swap_total_kib),
                 format_mem(st.mem_used_kib / 1024, st.mem_total_kib / 1024).into(),
                 format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
-                net_rows(&st.net),
+                net_rows(&filter_picked(&st.net, if_sel, |e| e.0.as_str()), if_sel),
                 st.sys.clone(),
                 &st.host,
             );
@@ -465,7 +632,7 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_top_local(win, &mut stats);
+            set_top_local(win, &mut stats, None);
             set_system_models(
                 win,
                 0.0,
@@ -485,7 +652,7 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_top_local(win, &mut stats);
+            set_top_local(win, &mut stats, None);
             set_system_models(
                 win,
                 0.0,
@@ -504,7 +671,7 @@ pub(super) fn refresh_sidebar(
             win.set_connection_state(t("未连接", "Not connected").into());
             win.set_conn_host("".into());
             show_local_res(win);
-            set_top_local(win, &mut stats);
+            set_top_local(win, &mut stats, None);
             show_local_system_models(win);
         }
     }

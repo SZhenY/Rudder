@@ -4,6 +4,7 @@
 import { Theme, AnimationSettings } from "../theme.slint";
 import { OutputRuleItem, AccentPreset } from "../settings/types.slint";
 import { LineEdit, Slider, ScrollView } from "std-widgets.slint";
+import { FontPickerPopup, ColorPalettePopup, ColorSwatchRow } from "../pickers.slint";
 
 struct CapsuleOpt {
     value: string,
@@ -350,6 +351,7 @@ component ResetButton inherits Rectangle {
 
 // 版式里的"设置行"：左侧标签/说明，右侧控件槽（@children），整行铺满内容宽。
 // 用于胶囊组、开关、语言 pill 等紧凑控件；大输入块仍走 FieldBlock（控件在下方铺满）。
+
 // 主题色选择器：预设色块 + 当前配色名 + 「自定义…」（点开 HSV 调色盘）。
 //
 // 色表由 Rust 提供（已按当前深浅档解析好），界面不存第二份色表；
@@ -364,43 +366,27 @@ component AccentPicker inherits Rectangle {
     callback pick-preset(string);
     callback apply-color(string) -> bool;
     callback apply-color-rgb(int, int, int) -> bool;
+    /// 把 hex 解析成颜色（供调色盘输入框回车时同步 HSV），委托给窗口级回调。
+    callback resolve-hex(string) -> color;
 
-    property <float> hue: 0;
-    property <float> sat: 1;
-    property <float> val: 1;
-    property <bool> valid: true;
 
-    pure function live-color() -> color { return hsv(root.hue, root.sat, root.val); }
-    pure function clamp01(v: float) -> float { return max(0.0, min(1.0, v)); }
 
-    function set-sv(x: length, y: length, w: length, h: length) {
-        root.sat = root.clamp01(x / w);
-        root.val = root.clamp01(1.0 - y / h);
-    }
 
-    /// 色相条位置 → 色相（上界 359.9，免得正好回到 0 时指示圈弹到最左）。
-    pure function hue-from(x: length, w: length) -> float {
-        return max(0.0, min(359.9, (x / w) * 360.0));
-    }
 
-    function sync-from-color() {
-        let c = root.preview-color.to-hsv();
-        root.hue = c.hue;
-        root.sat = c.saturation;
-        root.val = c.value;
-    }
 
-    function commit() {
-        let c = root.live-color();
-        root.valid = root.apply-color-rgb(c.red, c.green, c.blue);
-    }
 
-    init => { root.sync-from-color(); }
-    changed preview-color => { root.sync-from-color(); }
+
 
     HorizontalLayout {
         spacing: 6px;
-        alignment: start;
+        // ⚠ `alignment` 管的是**主轴**（水平），垂直方向必须用 `cross-axis-alignment`
+        // —— 上一版误以为 `alignment: center` 能让元素垂直居中，其实它只管水平。
+        // 这一行三种控件高度不同：预设色圆 24px、当前配色名（12px 字号）、
+        // 自定义按钮 26px，不做交叉轴居中就会顶边齐平、底边参差（用户截图圈的就是这个）。
+        cross-axis-alignment: center;
+        // 主轴：色圆靠左、当前配色名占中间、按钮靠右（名字有 horizontal-stretch，
+        // 会吃掉剩余宽度）。取 center 而非 start 是为了让名字真正居中在中间。
+        alignment: center;
 
         for p in root.presets : Rectangle {
             width: 24px;
@@ -423,9 +409,15 @@ component AccentPicker inherits Rectangle {
             horizontal-stretch: 1;
             overflow: elide;
         }
-        // 自定义：当前色块 + 点开调色盘
+        // 自定义：当前色块 + HEX 回显 + 点开调色盘
         Rectangle {
-            width: 84px;
+            // 宽度跟着文本走：HEX 固定 7 个字符，但 `ui-scale` 会放大字号，
+            // 写死 84px 在大字号下会被截断（`#E8834A` → `#E8834A…`）。
+            // 32px = 色块 14 + 间距 6 + 左右 padding 各 6。
+            //
+            // ⚠ 这个版本的 Text **没有 `implicit-width`**，1.18 用 `preferred-width`
+            // （且它已经是 length，不能再 `* 1px` —— 那会变成 px²）。
+            width: max(78px, hex-text.preferred-width + 32px);
             height: 26px;
             border-radius: Theme.radius-btn;
             border-width: 1px;
@@ -435,6 +427,8 @@ component AccentPicker inherits Rectangle {
                 padding-left: 6px;
                 padding-right: 6px;
                 spacing: 6px;
+                // 垂直居中同样要 cross-axis-alignment；`alignment: center` 只管水平。
+                cross-axis-alignment: center;
                 alignment: center;
                 Rectangle {
                     width: 14px;
@@ -444,164 +438,81 @@ component AccentPicker inherits Rectangle {
                     border-color: Theme.line;
                     background: root.preview-color;
                 }
-                Text {
-                    text: root.lang-en ? "Custom…" : "自定义…";
+                hex-text := Text {
+                    // 直接显示当前生效色的 HEX，而不是"自定义…"：这一格本身就是
+                    // 打开调色盘的入口，写着占位文字等于没告诉用户当前是什么色。
+                    text: root.value;
                     font-size: 11px * Theme.ui-scale;
                     color: Theme.fg-1;
                     vertical-alignment: center;
                 }
             }
+            // 悬停提示：HEX 本身不会告诉用户"这一格可以点"，补一个气泡。
+            // 模式照抄 `widgets.slint` 里 IconBtn 的 tooltip（项目没有
+            // TooltipWindow 这个组件，是内联实现的）。
+            if custom-ta.has-hover : Rectangle {
+                y: parent.height + 5px;
+                x: parent.width - self.width;   // 右边缘与按钮对齐
+                width: hint-txt.preferred-width + 16px;
+                height: 22px;
+                background: Theme.bg-elevated;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                drop-shadow-blur: 8px;
+                drop-shadow-color: #00000070;
+                hint-txt := Text {
+                    text: root.lang-en ? "Pick a custom color" : "点此挑自定义颜色";
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-xs;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
             custom-ta := TouchArea {
                 mouse-cursor: pointer;
-                clicked => { palette.show(); }
+                clicked => { palette.open(); }
             }
         }
     }
 
-    palette := PopupWindow {
-        x: parent.width - self.width;
-        y: parent.height + 6px;
-        width: 248px;
-        // ⚠ 默认是 CloseOnClick（点任何地方都关）；这里要"点外面才关"。
-        close-policy: close-on-click-outside;
-        Rectangle {
-            background: Theme.sur-1;
-            border-radius: Theme.radius-lg;
-            border-width: 1px;
-            border-color: Theme.line;
-            drop-shadow-blur: Theme.shadow-popup-blur;
-            drop-shadow-color: Theme.shadow-popup-color;
-            VerticalLayout {
-                padding: 12px;
-                spacing: 10px;
 
-                // 饱和度（横）/ 明度（纵）
-                sv-square := Rectangle {
-                    height: 140px;
-                    width: 100%;
-                    border-radius: Theme.radius-btn;
-                    clip: true;
-                    background: @linear-gradient(90deg, #ffffff 0%, hsv(root.hue, 1.0, 1.0) 100%);
-                    Rectangle {
-                        width: 100%;
-                        height: 100%;
-                        background: @linear-gradient(180deg, transparent 0%, #000000 100%);
-                    }
-                    sv-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        moved => {
-                            if (sv-ta.pressed) {
-                                root.set-sv(sv-ta.mouse-x, sv-ta.mouse-y, sv-square.width, sv-square.height);
-                            }
-                        }
-                        pointer-event(ev) => {
-                            if (ev.kind == PointerEventKind.down) {
-                                root.set-sv(sv-ta.mouse-x, sv-ta.mouse-y, sv-square.width, sv-square.height);
-                            }
-                            if (ev.kind == PointerEventKind.up) { root.commit(); }
-                        }
-                    }
-                    Rectangle {
-                        x: root.sat * (parent.width - self.width);
-                        y: (1.0 - root.val) * (parent.height - self.height);
-                        width: 14px;
-                        height: 14px;
-                        border-radius: Theme.radius-btn;
-                        border-width: 2px;
-                        border-color: #ffffff;
-                        background: transparent;
-                        drop-shadow-blur: 3px;
-                        drop-shadow-color: #000000a0;
-                    }
-                }
+    // 当前生效色的 HEX 回显（调色盘按钮上那一格）。
+    //
+    // 为什么不用 `accent-name`：那个字段是**显示名** —— 命中预设时给预设名、
+    // 自定义时才给 hex；而这一格要回答"现在到底是哪个色"，必须从**颜色本身**
+    // 反推，且与来源无关（预设 / 自定义 / 壁纸派生都对）。
+    //
+    // ⚠ 写法受三个限制约束：这个 Slint 版本**没有类型转换函数**（无 `int()`）、
+    //   **没有 `substring`**、且 `%` 是百分号单位（取模得用返回 float 的
+    //   `Math.mod`，接不进整数运算），所以低半字节用「减去整数倍」代替取模。
+    //   调色盘那条提交路径走 RGB 回调，不依赖这里的换算。
+    //
+    // ⚠ 参数必须是 int：写成 float 就变成浮点除法（`1.0/16.0 = 0.0625`），
+    //   低位会被截成 0，`1` 会输出成 `00`。
+    pure function hex-ch(v: int) -> string {
+        return v < 10 ? "" + v
+            : v < 11 ? "A" : v < 12 ? "B" : v < 13 ? "C"
+            : v < 14 ? "D" : v < 15 ? "E" : "F";
+    }
+    pure function hex-pair(v: int) -> string {
+        return root.hex-ch(v / 16) + root.hex-ch(v - (v / 16) * 16);
+    }
+    /// `red`/`green`/`blue` 在 Slint 里是**属性访问**（编译器注册为 field_access），
+    /// 不是方法 —— 写成 `c.red()` 会报 "not a function"。这点和 Rust 侧相反。
+    pure function color-to-hex(c: color) -> string {
+        return "#" + root.hex-pair(c.red) + root.hex-pair(c.green) + root.hex-pair(c.blue);
+    }
 
-                // 色相条 + 实时预览
-                HorizontalLayout {
-                    spacing: 10px;
-                    hue-bar := Rectangle {
-                        height: 34px;
-                        horizontal-stretch: 1;
-                        Rectangle {
-                            y: 11px;
-                            height: 12px;
-                            width: 100%;
-                            border-radius: Theme.radius-btn;
-                            background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%);
-                        }
-                        hue-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            moved => {
-                                if (hue-ta.pressed) { root.hue = root.hue-from(hue-ta.mouse-x, hue-ta.width); }
-                            }
-                            pointer-event(ev) => {
-                                if (ev.kind == PointerEventKind.down) { root.hue = root.hue-from(hue-ta.mouse-x, hue-ta.width); }
-                                if (ev.kind == PointerEventKind.up) { root.commit(); }
-                            }
-                        }
-                        Rectangle {
-                            x: (root.hue / 360.0) * (parent.width - self.width);
-                            y: (parent.height - self.height) / 2;
-                            width: 16px;
-                            height: 16px;
-                            border-radius: 8px;
-                            border-width: 2px;
-                            border-color: #ffffff;
-                            background: transparent;
-                            drop-shadow-blur: 3px;
-                            drop-shadow-color: #000000a0;
-                        }
-                    }
-                    Rectangle {
-                        width: 34px;
-                        height: 34px;
-                        border-radius: 17px;
-                        border-width: 1px;
-                        border-color: Theme.line;
-                        background: root.live-color();
-                    }
-                }
-
-                // HEX 输入
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: start;
-                    LineEdit {
-                        width: 120px;
-                        text: root.value;
-                        accepted(t) => { root.valid = root.apply-color(t); }
-                    }
-                    Text {
-                        text: "HEX";
-                        color: Theme.fg-3;
-                        font-size: 11px * Theme.ui-scale;
-                        vertical-alignment: center;
-                    }
-                }
-
-                Text {
-                    text: root.lang-en ? "Drag to preview; release to apply." : "拖动实时预览，松手即应用。";
-                    color: Theme.fg-3;
-                    font-size: 11px * Theme.ui-scale;
-                    wrap: word-wrap;
-                }
-                Rectangle {
-                    height: 28px;
-                    border-radius: Theme.radius-btn;
-                    background: Theme.accent;
-                    Text {
-                        text: root.lang-en ? "Done" : "完成";
-                        color: white;
-                        font-size: 12px * Theme.ui-scale;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                    done-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { palette.close(); }
-                    }
-                }
-            }
-        }
+    palette := ColorPalettePopup {
+        current: root.preview-color;
+        hex <=> root.value;
+        lang-en: root.lang-en;
+        apply-color(t) => { return root.apply-color(t); }
+        resolve-hex(t) => { return root.resolve-hex(t); }
+        apply-rgb(r, g, b) => { return root.apply-color-rgb(r, g, b); }
     }
 }
 
@@ -936,6 +847,12 @@ export component PageSettings inherits Rectangle {
     in property <string> term-cursor-style: "block";  // block / bar / underline
     in property <string> term-cursor-choice: "";      // "" = 跟随主题
     in property <string> term-cursor-color-hex: "";
+    /// 光标当前**精确色值**（Rust 侧 `set_term_cursor_color` 写入）。
+    ///
+    /// 与 `term-cursor-color-hex` 的分工：那个是给输入框回显用的字符串，这个给
+    /// 色块 / 调色盘画色块用 —— 界面侧没有可靠的 hex 解析（见 AccentPicker 的
+    /// 换算注释），拿字符串画色块不准。
+    in property <color> term-cursor-color: Theme.term-fg;
     in property <bool> sync-upload-enabled: false;
     callback set-animations-enabled(bool);
     callback set-ui-scale(int);
@@ -943,6 +860,8 @@ export component PageSettings inherits Rectangle {
     callback set-term-cursor-style(string);
     callback set-term-cursor-preset(string);
     callback set-term-cursor-color(string);
+    callback set-term-cursor-color-rgb(int, int, int) -> bool;
+    callback resolve-hex(string) -> color;
     callback set-update-channel(string);
     callback set-sync-upload-enabled(bool);
     in property <[string]> ui-fonts;
@@ -1109,15 +1028,6 @@ export component PageSettings inherits Rectangle {
         }
     }
 
-    // 导航搜索：Rust 按关键词过滤分类（contains 无法在 Slint 里表达）
-    in-out property <string> nav-search: "";
-    in property <bool> cat-visible-0: true;
-    in property <bool> cat-visible-1: true;
-    in property <bool> cat-visible-2: true;
-    in property <bool> cat-visible-4: true;
-    in property <bool> cat-visible-6: true;
-    in property <bool> cat-visible-5: true;
-    callback nav-search-changed(string);
     // 系统标题栏让位高度（macOS 红绿灯；自绘标题栏的平台传 0）。
     in property <length> top-inset: 0px;
 
@@ -1157,25 +1067,15 @@ export component PageSettings inherits Rectangle {
                         vertical-alignment: center;
                     }
                     Text {
-                        text: "设置";
+                        text: root.lang-en ? "Settings" : "设置";
                         font-size: 15px * Theme.ui-scale;
                         font-weight: 700;
                         color: Theme.fg-1;
                         vertical-alignment: center;
                     }
                 }
-                LineEdit {
-                    placeholder-text: root.lang-en ? "Search settings..." : "搜索设置…";
-                    text <=> root.nav-search;
-                    edited(t) => { root.nav-search-changed(t); }
-                }
-
-                Rectangle {
-                    height: 10px;
-                }
 
                 it0 := CategoryItem {
-                    visible: root.cat-visible-0;
                     glyph: "\u{E8B8}";
                     label: root.lang-en ? "General" : "基础";
                     sub: root.lang-en ? "Language, theme, updates" : "语言、主题、更新与功能入口";
@@ -1185,7 +1085,6 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 it1 := CategoryItem {
-                    visible: root.cat-visible-1;
                     glyph: "\u{EB8E}";
                     label: root.lang-en ? "Terminal" : "终端";
                     sub: root.lang-en ? "Fonts, cursor and scrollback" : "终端、字体与渲染";
@@ -1195,7 +1094,6 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 it2 := CategoryItem {
-                    visible: root.cat-visible-2;
                     glyph: "\u{E2C7}";
                     label: root.lang-en ? "Files" : "文件";
                     sub: root.lang-en ? "SFTP, partitions and transfers" : "SFTP、分区与传输行为";
@@ -1205,7 +1103,6 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 it3 := CategoryItem {
-                    visible: root.cat-visible-4;
                     glyph: "\u{E312}";
                     label: root.lang-en ? "Shortcuts" : "快捷键";
                     sub: root.lang-en ? "Global and terminal shortcuts" : "全局快捷键与终端快捷键";
@@ -1215,7 +1112,6 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 it4 := CategoryItem {
-                    visible: root.cat-visible-6;
                     glyph: "\u{E2EB}"; // cloud
                     label: root.lang-en ? "Cloud Sync" : "云同步";
                     sub: root.lang-en ? "WebDAV backup and restore" : "官方云 · WebDAV、加密与恢复";
@@ -1225,7 +1121,6 @@ export component PageSettings inherits Rectangle {
                     }
                 }
                 it5 := CategoryItem {
-                    visible: root.cat-visible-5;
                     glyph: "\u{E88E}";
                     label: root.lang-en ? "About" : "关于";
                     sub: root.lang-en ? "Version, logs and feedback" : "版本、日志与反馈";
@@ -1249,12 +1144,6 @@ export component PageSettings inherits Rectangle {
                     : root.current-cat == 4 ? it3.y
                     : root.current-cat == 6 ? it4.y
                     : it5.y);
-                visible: root.current-cat == 0 ? root.cat-visible-0
-                    : root.current-cat == 1 ? root.cat-visible-1
-                    : root.current-cat == 2 ? root.cat-visible-2
-                    : root.current-cat == 4 ? root.cat-visible-4
-                    : root.current-cat == 6 ? root.cat-visible-6
-                    : root.cat-visible-5;
                 // 滑动指示条：空间运动 → 弹簧（跟手；连点切换时保留速度不重启）
                 animate y {
                     duration: AnimationSettings.enter-container();
@@ -1457,7 +1346,8 @@ AccentPicker {
                                     }
                                     }
 
-                                    wp-popup := PopupWindow {                                        Rectangle {
+                                    wp-popup := PopupWindow {
+                                        Rectangle {
                                             width: 260px;
                                             border-radius: 8px;
                                             border-width: 1px;
@@ -1557,9 +1447,7 @@ AccentPicker {
                                                     ? root.ui-fonts[root.ui-font-index]
                                                     : (root.lang-en ? "Auto" : "自动");
                                                 clicked => {
-                                                    root.font-appear = 0;   // 复位（此刻弹层未显示，动画不可见）
-                                                    font-popup.show();
-                                                    root.font-appear = 1;   // show 之后置 1 → 淡入
+                                                    font-popup.open();
                                                 }
                                             }
                                             UploadButton {
@@ -1567,78 +1455,13 @@ AccentPicker {
                                             }
                                         }
 
-                                        font-popup := PopupWindow {                                            Rectangle {
-                                                width: 240px;
-                                                border-radius: 8px;
-                                                border-width: 1px;
-                                                border-color: Theme.line;
-                                                background: Theme.sur-1;
-                                                // 展开淡入：appear 由 changed is-open 驱动
-                                                opacity: root.font-appear;
-
-                                                VerticalLayout {
-                                                    spacing: 0;
-                                                    alignment: start;
-
-                                                    // 列表限高 + ScrollView：滚轮可滚，弹窗不再顶出屏幕
-                                                    font-sv := ScrollView {
-                                                        height: 240px;
-
-                                                        // 弹层内滚轮兜底：显式驱动 viewport-y。ScrollView 继承自 Flickable
-                                                        // 且 `viewport-height <=> content-height` 是双向绑定，放进 PopupWindow
-                                                        // 后内置滚轮经常收不到事件，表现为「滚不动」—— 这里自己接管滚轮量。
-                                                        // TouchArea 的 scroll-event 会**消费**滚轮事件，因此不会出现「内置滚轮 +
-                                                            // 手动处理」双倍滚动；它声明在列表之前，层级在下，列表项照常点得到。
-                                                            wheel-ta := TouchArea {
-                                                                scroll-event(e) => {
-                                                                font-sv.content-y = max(0px,
-                                                                    min(font-sv.content-y + e.delta-y,
-                                                                        font-sv.content-height - 240px));
-                                                                        return EventResult.accept;
-                                                            }
-                                                        }
-
-                                                        VerticalLayout {
-                                                            spacing: 0;
-
-                                                            for lbl[i] in root.ui-fonts : Rectangle {
-                                                                height: 30px;
-                                                                border-radius: 8px;
-                                                                background: root.ui-font-index == i
-                                                                    ? Theme.rail-item-active
-                                                                    : (f-ta.has-hover ? Theme.rail-item-hover : transparent);
-
-                                                                HorizontalLayout {
-                                                                    padding-left: 10px;
-                                                                    padding-right: 10px;
-                                                                    alignment: start;
-
-                                                                    Text {
-                                                                        text: lbl;
-                                                                        font-size: 12px * Theme.ui-scale;
-                                                                        color: root.ui-font-index == i ? Theme.accent : Theme.fg-1;
-                                                                        vertical-alignment: center;
-                                                                    }
-                                                                }
-
-                                                                // 分组标题（`▍` 前缀）**不可选**：它只是分类标签，
-                                                                // 选中也应用不出字体。Rust 侧回退逻辑也刻意避开它。
-                                                                f-ta := TouchArea {
-                                                                    clicked => {
-                                                                        if lbl.starts-with("\u{258D}") {
-                                                                            return;
-                                                                        }
-                                                                        root.pick-ui-font(lbl, i);
-                                                                        root.font-appear = 0;   // 复位（弹层随即消失）
-                                                                        font-popup.close();
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                }
-                                            }
+                                        // 内联实现已提取为共享组件 FontPickerPopup（ui/pickers.slint）：
+                                        // 原先界面字体 / 终端字体各有一份，逐行 diff 有 70% 重复。
+                                        // 淡入淡出也收进了组件（open / dismiss），调用方只需这三行。
+                                        font-popup := FontPickerPopup {
+                                            fonts: root.ui-fonts;
+                                            current-index: root.ui-font-index;
+                                            pick(label, i) => { root.pick-ui-font(label, i); }
                                         }
                                     }
                                 }
@@ -1813,9 +1636,7 @@ ToggleRow {
                                                     ? root.term-fonts[root.term-font-index]
                                                     : Theme.term-font-family;
                                                 clicked => {
-                                                    root.tfont-appear = 0;   // 复位（此刻弹层未显示，动画不可见）
-                                                    tfont-popup.show();
-                                                    root.tfont-appear = 1;   // show 之后置 1 → 淡入
+                                                    tfont-popup.open();
                                                 }
                                             }
                                             UploadButton {
@@ -1835,75 +1656,13 @@ ToggleRow {
                                             }
                                         }
 
-                                        tfont-popup := PopupWindow {                                            Rectangle {
-                                                width: 240px;
-                                                border-radius: 8px;
-                                                border-width: 1px;
-                                                border-color: Theme.line;
-                                                background: Theme.sur-1;
-                                                // 展开淡入：appear 由 changed is-open 驱动
-                                                opacity: root.tfont-appear;
-
-                                                VerticalLayout {
-                                                    spacing: 0;
-                                                    alignment: start;
-
-                                                    tfont-sv := ScrollView {
-                                                        height: 240px;
-
-                                                        // 弹层内滚轮兜底：显式驱动 viewport-y。ScrollView 继承自 Flickable
-                                                        // 且 `viewport-height <=> content-height` 是双向绑定，放进 PopupWindow
-                                                        // 后内置滚轮经常收不到事件，表现为「滚不动」—— 这里自己接管滚轮量。
-                                                        // TouchArea 的 scroll-event 会**消费**滚轮事件，因此不会出现「内置滚轮 +
-                                                            // 手动处理」双倍滚动；它声明在列表之前，层级在下，列表项照常点得到。
-                                                            tfont-wheel-ta := TouchArea {
-                                                                scroll-event(e) => {
-                                                                tfont-sv.content-y = max(0px,
-                                                                    min(tfont-sv.content-y + e.delta-y,
-                                                                        tfont-sv.content-height - 240px));
-                                                                        return EventResult.accept;
-                                                            }
-                                                        }
-
-                                                        VerticalLayout {
-                                                            spacing: 0;
-
-                                                            for lbl[i] in root.term-fonts : Rectangle {
-                                                                height: 30px;
-                                                                border-radius: 8px;
-                                                                background: root.term-font-index == i
-                                                                    ? Theme.rail-item-active
-                                                                    : (tf-ta.has-hover ? Theme.rail-item-hover : transparent);
-
-                                                                HorizontalLayout {
-                                                                    padding-left: 10px;
-                                                                    padding-right: 10px;
-                                                                    alignment: start;
-
-                                                                    Text {
-                                                                        text: lbl;
-                                                                        font-size: 12px * Theme.ui-scale;
-                                                                        color: root.term-font-index == i ? Theme.accent : Theme.fg-1;
-                                                                        vertical-alignment: center;
-                                                                    }
-                                                                }
-
-                                                                // 同上：分组标题不可选
-                                                                tf-ta := TouchArea {
-                                                                    clicked => {
-                                                                        if lbl.starts-with("\u{258D}") {
-                                                                            return;
-                                                                        }
-                                                                        root.term-font(lbl, i);
-                                                                        root.tfont-appear = 0;   // 复位（弹层随即消失）
-                                                                        tfont-popup.close();
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                        // 内联实现已提取为共享组件 FontPickerPopup（ui/pickers.slint）：
+                                        // 原先界面字体 / 终端字体各有一份，逐行 diff 有 70% 重复。
+                                        // 淡入淡出也收进了组件（open / dismiss），调用方只需这三行。
+                                        tfont-popup := FontPickerPopup {
+                                            fonts: root.term-fonts;
+                                            current-index: root.term-font-index;
+                                            pick(label, i) => { root.term-font(label, i); }
                                         }
                                     }
                                 }
@@ -2029,36 +1788,37 @@ ToggleRow {
                             OptionRow {
                                 label: root.lang-en ? "Cursor Color" : "光标颜色";
                                 desc: root.lang-en ? "Pick a preset or type a hex color; empty = follow the theme" : "选预设色块或输入十六进制色值；留空跟随主题";
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    alignment: start;
-
-                                    for c in [
-                                        {hex: "", sw: Theme.term-fg},
-                                        {hex: "#D4D4D4", sw: #D4D4D4},
-                                        {hex: "#FF5252", sw: #FF5252},
-                                        {hex: "#69F0AE", sw: #69F0AE},
-                                        {hex: "#40C4FF", sw: #40C4FF},
-                                    ] : Rectangle {
-                                        property <bool> on: root.term-cursor-choice == c.hex;
-                                        width: 22px;
-                                        height: 22px;
-                                        border-radius: 11px;
-                                        background: c.sw;
-                                        border-width: 2px;
-                                        border-color: on ? Theme.accent : Theme.line;
-
-                                        ta := TouchArea {
-                                            mouse-cursor: pointer;
-                                            clicked => { root.set-term-cursor-preset(c.hex); }
-                                        }
-                                    }
-                                    LineEdit {
-                                        width: 110px;
-                                        placeholder-text: "#RRGGBB";
-                                        text: root.term-cursor-color-hex;
-                                        accepted(t) => { root.set-term-cursor-color(t); }
-                                    }
+                                // 预设圆 + HEX 输入 + 调色盘入口 → 共享组件 ColorSwatchRow
+                                // （ui/pickers.slint）。原先这三样是手写在这里的，改样式要动两处。
+                                cursor-row := ColorSwatchRow {
+                                    presets: [
+                                        // ⚠ 第一项是「跟随主题」：色块必须画**跟随后会变成的
+                                        // 那个色**，而不是某个"看起来像默认值"的颜色。跟随时
+                                        // 光标色 = 强调色（Rust `get_accent_solid()`，见
+                                        // settings/terminal.rs），所以这里用 `accent-solid`；
+                                        // 之前错填 `term-fg`，深色主题下是浅灰，跟实际
+                                        // 生效的强调色对不上（用户截图：第一个圆是红的）。
+                                        { hex: "", swatch: Theme.accent-solid },
+                                        { hex: "#D4D4D4", swatch: #D4D4D4 },
+                                        { hex: "#FF5252", swatch: #FF5252 },
+                                        { hex: "#69F0AE", swatch: #69F0AE },
+                                        { hex: "#40C4FF", swatch: #40C4FF },
+                                    ];
+                                    current: root.term-cursor-choice;
+                                    current-color: root.term-cursor-color;
+                                    hex: root.term-cursor-color-hex;
+                                    lang-en: root.lang-en;
+                                    pick(h) => { root.set-term-cursor-preset(h); }
+                                    request-palette() => { cursor-palette.open(); }
+                                }
+                                // 光标颜色的 HSV 调色盘：与主题色共用同一个组件。
+                                cursor-palette := ColorPalettePopup {
+                                    current: root.term-cursor-color;
+                                    hex: root.term-cursor-color-hex;
+                                    lang-en: root.lang-en;
+                                    apply-color(t) => { root.set-term-cursor-color(t); return true; }
+                                    resolve-hex(t) => { return root.resolve-hex(t); }
+                                    apply-rgb(r, g, b) => { return root.set-term-cursor-color-rgb(r, g, b); }
                                 }
                             }
 

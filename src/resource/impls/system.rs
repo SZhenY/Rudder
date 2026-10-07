@@ -98,6 +98,38 @@ impl SystemSampler {
         self.disk_tick = (self.disk_tick + 1) % DISK_REFRESH_EVERY;
         let disks = self.cached_disks.clone();
 
+        // 每核占用：面板 CPU 页的「核心详情」。本机没有 /proc/stat 之外的第二条
+        // 路，之前这里是空的（"暂无数据"）。
+        //
+        // ⚠ sysinfo 的 `cpu_usage()` 是**两次 refresh 之间**的差值，所以第一拍
+        // （以及任何采样间隔不足 MINIMUM_CPU_UPDATE_INTERVAL 的情况）会返回 0，
+        // 这是正常的：第二拍起就有数了。
+        let core_usages: Arc<[f32]> = Arc::from(
+            self.sys
+                .cpus()
+                .iter()
+                .map(|c| (c.cpu_usage() / 100.0).clamp(0.0, 1.0))
+                .collect::<Vec<f32>>(),
+        );
+
+        // 系统信息：操作系统 / 主机名 / 内核 / 开机时长。三个版本号接口在
+        // 不同平台覆盖度不同（Windows 没有 kernel_version、嵌入式系统可能
+        // 没有 os_version），所以逐级兜底成空串。
+        let os_version = System::long_os_version()
+            .or_else(System::os_version)
+            .or_else(System::name)
+            .unwrap_or_default();
+        let host_name = System::host_name().unwrap_or_default();
+        let kernel_version = System::kernel_version().unwrap_or_default();
+        let boot = System::boot_time();
+        let uptime_secs = boot
+            .checked_sub(0)
+            .map(|b| std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH + std::time::Duration::from_secs(b))
+                .map(|d| d.as_secs())
+                .unwrap_or(0))
+            .unwrap_or(0);
+
         SystemSnapshot {
             cpu_percent,
             mem_percent,
@@ -110,6 +142,11 @@ impl SystemSampler {
             net_rx_per_sec,
             net_tx_per_sec,
             disks,
+            core_usages,
+            os_version,
+            host_name,
+            kernel_version,
+            uptime_secs,
         }
     }
 }

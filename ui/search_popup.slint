@@ -1,0 +1,153 @@
+import { SearchHit } from "pickers.slint";
+import { Theme, AnimationSettings } from "theme.slint";
+
+// ── 全局搜索结果浮层 ──────────────────────────────────────────────────────
+//
+// 挂在 Rail 的搜索框下方：输入即过滤（Rust 侧做 contains），↑↓ 移动、Enter
+// 跳转、Esc 关闭。结果项点击与键盘走同一个 `choose()`，避免两条路走偏。
+//
+// 它是**普通元素**而不是 `PopupWindow`：后者在 1.18 没有焦点控制项，一 show
+// 就把键盘焦点抢走，搜索框立刻打不了字。
+export component SearchResultsPopup inherits Rectangle {
+    /// 过滤好的结果（Rust 已排好序：页面 → 分类 → 主机，同名优先）。
+    in property <[SearchHit]> hits;
+    /// 当前键盘选中项的下标。
+    in-out property <int> cursor: 0;
+    in property <bool> lang-en: false;
+    /// 选中第 i 项（页面跳转 + 高亮由调用方决定怎么表现）。
+    callback choose(int);
+
+    // ── 定位 ────────────────────────────────────────────────────────────
+    //
+    // ⚠ 这里**不能**用 `PopupWindow`：Slint 1.18 的 PopupWindow 只有
+    // width / height / close-policy / is-open / show() / close()，**没有任何焦点
+    // 控制项**，而它 show() 时会作为新的原生窗口抢走键盘焦点 —— 搜索框一弹列表就
+    // 失焦，"点了却打不了字"（用户反馈）。改成挂在宿主根矩形上的普通元素：坐标
+    // 相对宿主 Rail（Rail 根没有 clip，300px 宽的浮层能画出侧栏），焦点永远留在
+    // 输入框，淡入淡出直接用 opacity，不必再和 show()/close() 的时序绕圈子。
+    x: Theme.sp-2;
+    // 贴在顶区**下方**：顶区高度两态不同（展开 1 行 34px / 折叠 2 行 68px）。
+    y: root.list-y + Theme.sp-1;
+    // 宽度跟随宿主侧栏（`host-w` 由 rail.slint 传 `rail-w` 进来）。早先写死
+    // 300px，而侧栏展开只有 200px → 浮层右侧**画到主机列表上**（用户报"溢出"）。
+    width: Math.max(120px, root.host-w - 2 * Theme.sp-2);
+    // 每条结果 38px + 上下各 4px 内边距；无结果时给"没有匹配项"留一行。
+    // ⚠ 上限 8 条：命中更多时内部 Flickable 滚动，而不是把浮层撑出窗口底部。
+    property <int> n-rows: Math.max(root.hits.length, 1);
+    height: 8px + 38px * Math.min(root.n-rows, 8);
+    // 淡入淡出。`vis` 本身已经是动画量，这里**不要**再 animate opacity ——
+    // 叠加就是双重平滑（右侧面板那次踩过的坑）。
+    opacity: root.vis;
+    // 淡出归零后才停止命中测试：`opacity: 0` 的元素**仍然吃点击**，不关掉会挡住
+    // 下面一整条侧栏。
+    visible: root.vis > 0.001;
+    // 兜底：内容一律不得画出浮层（尺寸算错时表现为被裁，而不是漏一块到侧栏外）。
+    clip: true;
+    background: Theme.sur-1;
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.line;
+    drop-shadow-blur: Theme.shadow-popup-blur;
+    drop-shadow-color: Theme.shadow-popup-color;
+
+    public function open() {
+        root.cursor = 0;
+        root.want-open = true;
+    }
+
+    /// 收起（淡出到 0 后自动 `visible: false`，不再吃点击）。
+    public function dismiss() { root.want-open = false; }
+
+    /// 打开时把游标复位，否则上次的下标会越界。
+    /// 贴在宿主（Rail）顶区下方：展开态顶区 1 行 = 34px，折叠态 2 行 = 68px。
+    /// 宿主（Rail）宽度：浮层宽度要跟着它，不能写死（见下面 width 的注释）。
+    in property <length> host-w: 200px;
+
+    in property <length> list-y: 0;
+
+    /// 外部意图：要不要显示。`vis` 是它的动画化投影（0..1）。
+    ///
+    /// 调用方只改这一个意图位：`open()` 置 true → vis 动画到 1；`dismiss()` 置
+    /// false → vis 淡到 0 → `visible` 变 false（此时才停止吃点击）。
+    property <bool> want-open: false;
+    property <float> vis: root.want-open ? 1 : 0;
+    animate vis {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+    // 结果多于 8 条时可滚动。
+    Flickable {
+        width: 100%;
+        height: 100%;
+        VerticalLayout {
+            spacing: 0;
+            // 内容高度用 preferred-height，Flickable 才知道滚动范围。
+            height: self.preferred-height;
+            padding: 4px;
+
+            if root.hits.length == 0 : Text {
+                text: root.lang-en ? "No matches" : "没有匹配项";
+                color: Theme.fg-3;
+                font-size: 12px * Theme.ui-scale;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+                height: 32px;
+            }
+
+            for hit[i] in root.hits : Rectangle {
+                height: 38px;
+                border-radius: Theme.radius-md;
+                // 选中项：主题色淡底 + 左侧主题色竖条（与 Rail 选中态同一套语言）。
+                background: i == root.cursor
+                    ? Theme.accent-soft
+                    : (hit-ta.has-hover ? Theme.rail-item-hover : transparent);
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    if i == root.cursor : Rectangle {
+                        width: 3px;
+                        height: 20px;
+                        border-radius: 1.5px;
+                        background: Theme.accent;
+                    }
+                    // 命中类型用不同图标区分（页面 / 分类 / 主机）。
+                    Text {
+                        text: hit.kind == 0 ? "\u{E8EF}"
+                            : hit.kind == 1 ? "\u{E8B8}"
+                            : "\u{E7F4}"; // tab / settings / computer
+                        font-family: "Material Icons";
+                        font-size: 14px * Theme.ui-scale;
+                        color: Theme.fg-3;
+                        vertical-alignment: center;
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 0;
+                        cross-axis-alignment: center;
+                        Text {
+                            text: hit.title;
+                            font-size: 12px * Theme.ui-scale;
+                            color: Theme.fg-1;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: hit.subtitle;
+                            font-size: 10px * Theme.ui-scale;
+                            color: Theme.fg-3;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+                hit-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.choose(i); }
+                }
+            }
+        }
+    }
+}

@@ -172,9 +172,16 @@ component LineChart inherits Rectangle {
               + root.pad2(Math.mod(root.hsec(k) * 1.0, 60.0));
     }
 
-    // 高度可伸缩：综合页里随趋势卡拉伸（填满底部空白），其它页按 min-height 兜底
+    // 高度**定值**（chart-h + 1px 的刻度线），不随面板富余空间伸缩。
+    //
+    // ⚠ 曾经是 `vertical-stretch: 1`（综合页里随趋势卡拉伸、填满底部空白）——
+    // 那样图高就取决于这台主机**其它内容**的多少（磁盘分区 / 网络端口行数）：
+    // 分区少的机器图能吃到几十像素富余，分区多的机器（NAS 常见）内容几乎占满、
+    // 图被压回最小高度。同一张图在不同主机上高矮不一，曲线的斜率观感也对不上。
+    // 改成定值后所有主机一致；富余空间变成面板底部的留白，内容超长时由
+    // Flickable 滚动（而不是把图压瘪）。
     min-height: root.chart-h + 1px;
-    vertical-stretch: 1;
+    vertical-stretch: 0;
     background: transparent;
 
     // ── 刻度线：数据现在是**绝对 0–100%**，所以这些线是真的读数辅助 ──────────
@@ -1092,9 +1099,51 @@ component NetIfaceRow inherits Rectangle {
 }
 
 // 空数据提示（不放假数字：没样本就说没样本）。
+// 弹层里的复选框：14px 方框，勾上时画一个对勾。纯视觉，状态由调用方给。
+component CheckMark inherits Rectangle {
+    in property <bool> on: false;
+    /// **部分选中**（复选框组的第三态）：勾了一些但没全选 → 画一条横线而不是对勾。
+    /// 「全部」那一项靠它表达"选中了一部分"：只显示未勾选会让人以为筛选没生效
+    /// （用户反馈"操作不符合直觉"）。优先级低于 `on`。
+    in property <bool> partial: false;
+    width: 14px;
+    height: 14px;
+    // ⚠ 用到本组件的每个弹层行都**必须**在 CheckMark 上写
+    // `cross-axis-self-alignment: center;`（逐项属性，只能写在布局的直接子元素上，
+    // 组件内部写会报 "used outside of a ...Layout"）。14px 的方框放在 28px 的行里，
+    // 跨轴默认 `auto` → `stretch` → 贴顶，复选框就与右侧文字对不齐。
+    border-radius: 3px;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : Theme.line-strong;
+    background: root.on || root.partial
+        ? Theme.accent.with-alpha(0.18) : transparent;
+    // 半选横线：绝对定位在 14px 盒子正中（CheckMark 不是布局，靠 x/y 居中）。
+    Rectangle {
+        visible: root.partial && !root.on;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: 8px;
+        height: 2px;
+        border-radius: 1px;
+        background: Theme.accent;
+    }
+    Text {
+        text: "\u{E5CA}";   // check
+        font-family: "Material Icons";
+        font-size: 10px * Theme.ui-scale;
+        color: Theme.accent;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        opacity: root.on ? 1 : 0;
+    }
+}
+
 component EmptyHint inherits Text {
     in property <bool> lang-en: false;
-    text: root.lang-en ? "No data yet" : "暂无数据";
+    /// 非空则覆盖默认文案（"筛空"和"没数据"是两件事，不能共用一句话）。
+    in property <string> alt-text: "";
+    text: root.alt-text != "" ? root.alt-text
+        : (root.lang-en ? "No data yet" : "暂无数据");
     font-size: 10px * Theme.ui-scale;
     color: Theme.fg-3;
 }
@@ -1133,8 +1182,9 @@ component StatChip inherits Rectangle {
 }
 
 // 趋势卡（综合页 / CPU 页共用）：sur-2 圆角卡 = 标题行（图标 + 标题 + 可选当前值 +
-// 1/5/15 分钟窗口切换）+ 面积折线 + 时间轴。vertical-stretch 在使用处给（综合页 1、
-// CPU 页 0）；LineChart 自带 vertical-stretch —— 卡片被拉高时折线跟着长。
+// 1/5/15 分钟窗口切换）+ 面积折线 + 时间轴。图高 = chart-h **定值**：不要让折线
+// 随卡片拉伸（综合页曾经这么干来"填满底部"，结果图高跟着各主机的磁盘分区 /
+// 网络端口行数走，同一张图在不同主机上高矮不一 —— 用户截图对比）。
 component TrendCard inherits Rectangle {
     in property <string> title;
     // ⚠ 别用 E9E2（monitoring）—— 那是 Material **Symbols** 的码位，经典
@@ -1143,7 +1193,7 @@ component TrendCard inherits Rectangle {
     in property <bool> lang-en: false;
     in property <[float]> values;
     in-out property <int> window: 60;
-    in property <length> chart-h: 34px;             // 图的最小高度（卡被拉伸时图会更高）
+    in property <length> chart-h: 34px;            // 图的高度（**定值**，不随卡片拉伸）
     in property <string> value: "";                 // 标题行右侧当前值（如 2%）
     in property <color> tone: Theme.accent;         // 线色
     // 悬停读数（默认关）：开启后 LineChart 画游标线 + 数据点 + 气泡。
@@ -1212,7 +1262,63 @@ component TrendCard inherits Rectangle {
 }
 
 
+// ── 工具页共用的细滚动条 ────────────────────────────────────────────────
+//
+// ⚠ `Flickable` 只负责滚、**不画滚动条**。内容超出面板时用户根本看不出下面还有
+// 东西 —— 分区多的机器（如 ARM NAS）实际上已经静默截掉一截了。
+//
+// 这里按 Flickable 的 `content-y` / `content-height` 画一条 4px 细滑块：
+//   · 内容不超长 → 整条淡出（不占位、也不抢点击）；
+//   · 滑块长度 = 可视/内容 的比例，位置 = 已滚比例，内容变化自动跟随；
+//   · 不画轨道 —— 深色面板里一条常驻轨道太抢眼（macOS overlay 风格也是这样）。
+//
+// 只做**指示**，不接拖动：滚轮 / 触控板已经能滚，加拖动要自己算指针增量，
+// 收益不大而边界情况多（拖到两端、内容变化时的夹取）。
+component PanelScrollBar inherits Rectangle {
+    in property <length> view-h: 0px;      // 可视高度（= Flickable 高度）
+    in property <length> content-h: 0px;   // 内容总高（未设时由 Flickable 自动推导）
+    in property <length> offset-y: 0px;    // 已滚距离（Flickable 的 content-y，通常为负）
+
+    property <bool> needed: root.content-h > root.view-h + 1px;
+    property <length> track-len: root.height;
+    // 滑块最短 28px：内容很长时滑块不至于细到看不见、也还好点。
+    property <length> thumb-len: root.content-h <= 0px ? 0px
+        : max(28px, root.track-len * root.view-h / root.content-h);
+    property <length> thumb-y: !root.needed ? 0px
+        : max(0px, min(root.track-len - root.thumb-len,
+            (root.track-len - root.thumb-len) * (-root.offset-y)
+                / (root.content-h - root.view-h)));
+
+    width: 4px;
+    background: transparent;
+
+    Rectangle {
+        x: 0;
+        y: root.thumb-y;
+        width: parent.width;
+        height: root.thumb-len;
+        border-radius: 2px;
+        background: Theme.fg-3.with-alpha(0.45);
+        opacity: root.needed ? 1 : 0;
+        animate opacity {
+            duration: AnimationSettings.short2();
+            easing: AnimationSettings.e-standard-accelerate();
+            enabled: AnimationSettings.enabled;
+        }
+    }
+}
+
+
 export component RightPanel inherits Rectangle {
+    /// 筛选弹层内容四周的内边距。
+    ///
+    /// ⚠ 这条是"弹层圆角不被悬停高亮盖成直角"的**唯一解**：高亮项是**不透明**的
+    /// Rectangle，而 `clip: true` 在这个渲染器上对圆角不可靠 —— 所以只能靠**留白**
+    /// 让高亮项压根不碰到圆角那一圈（旧代码没有它，磁盘/网络两个筛选菜单的顶/底
+    /// 圆角都会被高亮盖成直角，边缘能看见方形色块）。
+    private property <length> POPUP_PAD: 4px;
+    /// 弹层内高亮项自己的圆角：小于弹层圆角，看起来是"内容块"而不是贴边的方条。
+    private property <length> POPUP_ITEM_RADIUS: 6px;
     in property <bool> lang-en: false;
     // 服务器信息头卡的四个字段（Rust 按标签从 overview 里挑好）
     in property <string> panel-host;
@@ -1238,15 +1344,65 @@ export component RightPanel inherits Rectangle {
     in property <[CoreLoad]> cores-right;
     in property <[ProcRow]> proc-top;
     property <int> head-tab: 0;
-    property <string> net-filter: "";
+    /// 勾选的网卡 / 挂载点（Rust 镜像；只用于「已选 N」文案与「全部」项的勾选态，
+    /// 逐行勾选态在 `SysNetRow.picked` / `DiskInfo.picked`）。
+    ///
+    /// 勾选 = **筛选**（只显示勾选的行；「全部」= 全显示，取消「全部」= 一行不剩）。
+    /// 过滤由 Rust 侧不把行放进模型实现 —— 界面层用 `visible` 隐藏不行：Slint 里
+    /// 布局子项 `visible: false` **仍然占位**，列表会留下一堆空格（用户反馈"太难看"）。
+    /// 弹层遍历的是 `all-disks` / `all-ifs`（**未筛选**的完整列表），所以筛空之后
+    /// 依然能重新勾选。
+    in property <[string]> net-picked: [];
+    in property <[string]> disk-picked: [];
+    /// 「全部」那个复选框的勾选态（`net-picked` 为空时分不出"全选"和"全不选"）。
+    in-out property <bool> net-picked-all: true;
+    in-out property <bool> disk-picked-all: true;
+    /// 勾选 / 取消勾选（复选框）。弹层**不自动关闭** —— 多选要在同一个弹层里连点。
+    callback toggle-net-pick(string);
+    callback toggle-disk-pick(string);
+    // 按钮文案：0 = 全部，1 = 就那个名字，≥2 = 已选 N
+    pure function net-pick-label() -> string {
+        // 三态：全选 / 全不选 / 部分。名单为空时靠 `net-picked-all` 区分前两者 ——
+        // 早先一律当"全部"，于是"取消全选"之后按钮文案毫无变化。
+        if (root.net-picked-all && root.net-picked.length == 0) {
+            return root.lang-en ? "All" : "全部网口";
+        }
+        if (root.net-picked.length == 0) {
+            return root.lang-en ? "None" : "未选";
+        }
+        // ⚠ Slint 的字符串插值必须写成 `\{expr}`（**一个**反斜杠 + 花括号），项目里
+        // 到处都是这个写法。写成 `\\{expr}` 会变成"转义反斜杠 + 字面花括号"，写成
+        // 零反斜杠的 `{expr}` 则整段是字面量 —— 两种都会让按钮显示出无关参数。
+        return root.net-picked.length == 1 ? root.net-picked[0]
+            : "\{root.net-picked.length} " + (root.lang-en ? "picked" : "已选");
+    }
+    pure function disk-pick-label() -> string {
+        if (root.disk-picked-all && root.disk-picked.length == 0) {
+            return root.lang-en ? "All" : "全部磁盘";
+        }
+        if (root.disk-picked.length == 0) {
+            return root.lang-en ? "None" : "未选";
+        }
+        // 插值必须是 `\{...}`，见 net-pick-label 的注释。
+        return root.disk-picked.length == 1 ? root.disk-picked[0]
+            : "\{root.disk-picked.length} " + (root.lang-en ? "picked" : "已选");
+    }
     // 负载历史的展示窗口（秒）：1/5/15 分钟 = 60/300/900；综合页与 CPU 页各自记忆
     property <int> cpu-window: 60;
-    // 网口筛选弹窗的锚点（窗口坐标）：show 前按触发按钮的 absolute-position 算好，
-    // 向上展开、右对齐 —— 综合页的网络端口卡贴着面板底部，默认向下弹会溢出（用户截图）。
-    property <length> net-popup-x: 0;
-    property <length> net-popup-y: 0;
     pure function net-popup-h() -> length {
-        return min(280px, 28px * (root.net-rows.length + 1));
+        // +8px：弹层内容上下各 4px 内边距（POPUP_PAD）—— 高亮项不贴边，圆角才露得出来。
+        // ⚠ 必须用 `all-ifs`（弹层真正遍历的那份**完整**列表），不能用筛选后的
+        // `net-rows`：否则取消全选后高度塌成只剩「全部」一行、其它选项被裁掉
+        // 点不到（用户反馈"只能再次点击全选才能选择其他选项"），而且每次勾选都会
+        // 让菜单长度跳一下。行数多时靠内部 Flickable 滚动。
+        return min(280px, 28px * (root.all-ifs.length + 1) + POPUP_PAD * 2);
+    }
+    // ── 磁盘分区筛选（照网络端口那套：标题行右侧一个下拉按钮 + 弹层）──────────
+    // ── 磁盘分区筛选（勾选置顶，见 disk-picked）───────────────────────────
+    pure function disk-popup-h() -> length {
+        // 「全部磁盘」占一行；+ 上下内边距。同 net-popup-h：按 `all-disks`
+        // （完整列表）算，高度才恒定。
+        return min(280px, 28px * (root.all-disks.length + 1) + POPUP_PAD * 2);
     }
     // 所有内容页（Flickable 内容列）的统一内边距 —— 单一处管理，改这里全页生效。
     // 5px = 顶部切换条的按钮边距（两边对齐；用户定值）。
@@ -1265,6 +1421,8 @@ export component RightPanel inherits Rectangle {
     in property <float> swap-percent;
     in property <string> swap-detail;
     in property <[DiskInfo]> disks;
+    /// 弹层的完整选择列表（未置顶）—— 与展示用的 `disks` 分开。
+    in property <[DiskInfo]> all-disks;
     in property <string> net-up;
     in property <string> net-down;
     // 历史曲线（0..1 归一化）：CPU 趋势、当前会话网卡、本机网卡
@@ -1275,6 +1433,8 @@ export component RightPanel inherits Rectangle {
     in property <[float]> net-history-bot;
     // 逐网卡速率（远端 = 会话自己的网卡表，本机 = 一行本地总速率）
     in property <[SysNetRow]> net-rows;
+    /// 弹层的完整网卡选择列表（未置顶）。
+    in property <[SysNetRow]> all-ifs;
   // 折叠成 22px 窄条（「收起 SFTP 侧边栏」）：状态在窗口级，终端舞台按它让位。
     in-out property <bool> collapsed: false;
     // 展开基准宽度（= 窗口级 `panel-user-w`，用户拖拽出来的会话内记忆值）。
@@ -1308,6 +1468,21 @@ export component RightPanel inherits Rectangle {
     callback search-changed(string);
 
     property <int> current-tab: 0; // 0 综合 · 1 CPU · 2 内存 · 3 磁盘 · 4 网络 · 5 传输 · 6 文件
+    // CPU 负载趋势图的高度：综合页与 CPU 页**同一个值**（用户要求两页一致）。
+    //
+    // ⚠ 抽成单一常量而不是两边各写一个数字 —— 分开写迟早会悄悄跑偏，然后又变成
+    // "同一张图在不同地方高矮不一"。网络那两张趋势图是 40px，量级不同，不共用。
+    //
+    // ⚠ 写成「120px 封顶 + 面板高度比例兜底」而不是写死 120px：
+    // 窗口的**逻辑**高度会随分辨率 / 缩放变化（高 DPI 下逻辑像素变少），而面板
+    // 高度 = 窗口高 − 顶部 − 底部。写死 120px 的话，在小窗口或高缩放档里这张图
+    // 会占掉面板大半、其余内容全靠滚动；大屏上又显得偏小。
+    // 现在：常规尺寸仍取 120px（观感不变），面板偏矮时按比例收到最低 72px。
+    //
+    // ⚠ 比例基准必须是 `root.height`（面板自身高度，app_shell 里显式给的：
+    // `height: root.height - root.shell-top - 28px`，**与内容无关**）—— 不能用
+    // Flickable 的高度，它会被内容顶动，而图表本身就是内容的一部分，会成环。
+    property <length> cpu-trend-h: min(120px, max(72px, root.height * 0.22));
     property <string> file-path-label: !root.sftp-available
         ? (root.lang-en ? "SFTP unavailable for this session" : "此会话不支持 SFTP")
         : (root.sftp-path == "" ? "/" : root.sftp-path);
@@ -1562,13 +1737,18 @@ export component RightPanel inherits Rectangle {
         }
 
 
-        if root.head-tab == 0 && root.current-tab == 0 && root.panel-ready : Flickable {
+if root.head-tab == 0 && root.current-tab == 0 && root.panel-ready : Rectangle {
+            vertical-stretch: 1;
+            flick0 := Flickable {
+                width: 100%;
+                height: 100%;
             vertical-stretch: 1;
 
             VerticalLayout {
-                // 内容列**撑满面板**：底部不再留白（用户要求填满）。为了不让所有卡片
-                // 被一起摊高，只有 CPU 趋势卡 `vertical-stretch: 1`（图表吃掉多余高度），
-                // 其余卡片都是 `vertical-stretch: 0` 保持紧凑。
+                // 内容列随 Flickable 撑满/滚动。各卡片都是自然高度（`vertical-stretch: 0`）：
+                // ⚠ 不要把富余高度交给 CPU 趋势卡（曾经这么做来"填满底部"）—— 那会让
+                // 图高取决于这台主机其它内容的多少（磁盘分区 / 网络端口行数），同一张图
+                // 在不同主机上高矮不一。宁可底部留白，图高必须一致。
                 x: 0;
                 y: 0;
                 padding: root.content-pad;
@@ -1717,7 +1897,10 @@ export component RightPanel inherits Rectangle {
 
   // 综合页的每个区块都是一张卡（标题 + 内容），不再是裸标题。
                 TrendCard {
-                    vertical-stretch: 1;   // 趋势卡吸收面板的多余高度（填满底部空白）
+                    // 图高**定值**（与 CPU 页同一个 cpu-trend-h），不吸收面板富余 —— 否则图高跟着这台主机的
+                    // 磁盘分区 / 网络端口行数走（分区少的机器图很高、多的被压到最小），
+                    // 同一条曲线在不同主机上斜率观感都不一样。富余变成底部留白。
+                    vertical-stretch: 0;
                     title: root.lang-en ? "CPU load trend" : "CPU 负载趋势";
                     lang-en: root.lang-en;
                     values: root.cpu-history;
@@ -1726,7 +1909,7 @@ export component RightPanel inherits Rectangle {
                     times: root.cpu-history-times;
                     window <=> root.cpu-window;
                     value: "\{round(root.cpu-percent * 100)}%";
-                    chart-h: 34px;
+                    chart-h: root.cpu-trend-h;
                 }
 
                 Rectangle {
@@ -1756,12 +1939,152 @@ export component RightPanel inherits Rectangle {
                                 horizontal-alignment: left;
                                 horizontal-stretch: 1;
                             }
+
+                            // 挂载点筛选按钮（照网络端口那套：点开一个下拉列表）
+                            disk-btn := Rectangle {
+                                // ⚠ 宽度**不能**写成 `dsk-btn.preferred-width + 16px`：那是按钮宽度反过来依赖
+                                // 自己内部 Text 的 preferred-width，而这个 Text 在横向布局里会被 clamp 到
+                                // "剩余可用宽度" —— 于是形成自指循环：文案越短宽度越窄，而那点余量（16px）
+                                // 根本放不下"左内边距 6 + 间距 2 + 箭头 10 + 右内边距 3"，箭头被挤到边缘
+                                // 甚至溢出按钮（用户截图：筛成 `/` 时箭头炸出来）。
+                                //
+                                // 改成**固定宽度 + 文字 stretch + elide**：宽度与文案无关、恒定不跳
+                                // （长度不跳也是用户明确要求的直觉），超长的挂载点名直接省略。
+                                width: 96px;
+                                height: 20px;
+                                border-radius: 4px;
+                                border-width: 1px;
+                                border-color: Theme.line;
+                                background: dsk-ta.has-hover ? Theme.sur-3 : Theme.sur-2;
+                                clip: true;
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 4px;
+                                    spacing: 2px;
+                                    dsk-btn := Text {
+                                        text: root.disk-pick-label();
+                                        font-size: 10px * Theme.ui-scale;
+                                        color: Theme.fg-2;
+                                        vertical-alignment: center;
+                                        // 吃掉按钮剩余宽度；超长（长挂载点名）省略，不挤箭头。
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: "\u{E5CE}";
+                                        font-family: "Material Icons";
+                                        font-size: 10px * Theme.ui-scale;
+                                        color: Theme.fg-3;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                dsk-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        // 位置由弹层自己算（卡片内相对坐标，见 disk-popup）。
+                                        // ⚠ 别再用 `absolute-position`：那是**窗口**坐标，而
+                                        // PopupWindow 的 x/y 走**父元素**坐标，混用会双重偏移
+                                        // （曾把弹层甩到面板左下角）。
+                                        disk-popup.show();
+                                    }
+                                }
+                            }
                         }
-                        if root.disks.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                        if root.disks.length == 0 : EmptyHint {
+                            lang-en: root.lang-en;
+                            alt-text: root.all-disks.length == 0 ? ""
+                                : (root.lang-en ? "Nothing selected" : "未选择任何项");
+                        }
                         for d in root.disks : MetricRow {
                             label: d.path;
                             value: d.detail;
                             percent: d.percent;
+                        }
+
+                        // 挂载点筛选弹层
+                    }
+
+                    disk-popup := PopupWindow {
+                        // 右对齐到卡片内容右缘（卡片 padding 8px）。
+                        // 落在标题行下方一点。
+                        x: parent.width - 198px;
+                        y: 30px;
+                        Rectangle {
+                            width: 190px;
+                            height: root.disk-popup-h();
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: Theme.line;
+                            background: Theme.sur-1;
+                            VerticalLayout {
+                                spacing: 0;
+                                alignment: start;
+                                // 见 net-popup 的注释：内边距是"圆角不被高亮盖成
+                                // 直角"的唯一解。
+                                padding: root.POPUP_PAD;
+                                Rectangle {
+                                    height: 28px;
+                                    border-radius: root.POPUP_ITEM_RADIUS;
+                                    background: root.disk-picked-all ? Theme.rail-item-active
+                                        : (dall-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        spacing: 8px;
+                                        dall-box := CheckMark {
+                                            // 14px 方框在 28px 行里默认贴顶 → 显式垂直居中
+                                            cross-axis-self-alignment: center;
+                                            on: root.disk-picked-all;
+                                            // 部分选中：勾了一些但没全选（复选框组第三态）。
+                                            partial: !root.disk-picked-all
+                                                && root.disk-picked.length > 0
+                                                && root.disk-picked.length < root.all-disks.length;
+                                        }
+                                        Text {
+                                            text: root.lang-en ? "All disks" : "全部磁盘";
+                                            font-size: 11px * Theme.ui-scale;
+                                            color: root.disk-picked-all ? Theme.accent : Theme.fg-1;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                        }
+                                    }
+                                    dall-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.toggle-disk-pick(""); }
+                                    }
+                                }
+                                Flickable {
+                                    VerticalLayout {
+                                        height: self.preferred-height;
+                                        for d in root.all-disks : Rectangle {
+                                            height: 28px;
+                                            border-radius: root.POPUP_ITEM_RADIUS;
+                                            background: d.picked ? Theme.rail-item-active
+                                                : (drow-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                            HorizontalLayout {
+                                                padding-left: 8px;
+                                                spacing: 8px;
+                                                drow-box := CheckMark {
+                                                    // 14px 方框在 28px 行里默认贴顶 → 显式垂直居中
+                                                    cross-axis-self-alignment: center;
+                                                    on: d.picked;
+                                                }
+                                                Text {
+                                                    text: d.path;
+                                                    font-size: 11px * Theme.ui-scale;
+                                                    color: d.picked ? Theme.accent : Theme.fg-1;
+                                                    vertical-alignment: center;
+                                                    overflow: elide;
+                                                    horizontal-stretch: 1;
+                                                }
+                                            }
+                                            drow-ta := TouchArea {
+                                                mouse-cursor: pointer;
+                                                clicked => { root.toggle-disk-pick(d.path); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1794,7 +2117,15 @@ export component RightPanel inherits Rectangle {
                                 horizontal-stretch: 1;
                             }
                             net-btn := Rectangle {
-                                width: nic-btn.preferred-width + 16px;
+                                // ⚠ 宽度**不能**写成 `nic-btn.preferred-width + 16px`：那是按钮宽度反过来依赖
+                                // 自己内部 Text 的 preferred-width，而这个 Text 在横向布局里会被 clamp 到
+                                // "剩余可用宽度" —— 于是形成自指循环：文案越短宽度越窄，而那点余量（16px）
+                                // 根本放不下"左内边距 6 + 间距 2 + 箭头 10 + 右内边距 3"，箭头被挤到边缘
+                                // 甚至溢出按钮（用户截图：筛成 `/` 时箭头炸出来）。
+                                //
+                                // 改成**固定宽度 + 文字 stretch + elide**：宽度与文案无关、恒定不跳
+                                // （长度不跳也是用户明确要求的直觉），超长的挂载点名直接省略。
+                                width: 96px;
                                 height: 20px;
                                 border-radius: 4px;
                                 border-width: 1px;
@@ -1803,15 +2134,15 @@ export component RightPanel inherits Rectangle {
                                 clip: true;
                                 HorizontalLayout {
                                     padding-left: 6px;
-                                    padding-right: 3px;
+                                    padding-right: 4px;
                                     spacing: 2px;
                                     nic-btn := Text {
-                                        text: root.net-filter == ""
-                                            ? (root.lang-en ? "All" : "全部网口")
-                                            : root.net-filter;
+                                        text: root.net-pick-label();
                                         font-size: 10px * Theme.ui-scale;
                                         color: Theme.fg-2;
                                         vertical-alignment: center;
+                                        // 吃掉按钮剩余宽度；超长（长挂载点名）省略，不挤箭头。
+                                        horizontal-stretch: 1;
                                         overflow: elide;
                                     }
                                     Text {
@@ -1825,77 +2156,110 @@ export component RightPanel inherits Rectangle {
                                 nic-ta := TouchArea {
                                     mouse-cursor: pointer;
                                     clicked => {
-                                        // 右对齐到按钮、弹窗底缘在按钮上方 6px
-                                        root.net-popup-x = max(8px, net-btn.absolute-position.x + net-btn.width - 190px);
-                                        root.net-popup-y = max(8px, net-btn.absolute-position.y - root.net-popup-h() - 6px);
+                                        // 位置由弹层自己算（卡片内相对坐标，朝上弹）。
                                         net-popup.show();
                                     }
                                 }
                             }
                         }
-                        if root.net-rows.length == 0 : EmptyHint { lang-en: root.lang-en; }
+                        if root.net-rows.length == 0 : EmptyHint {
+                            lang-en: root.lang-en;
+                            alt-text: root.all-ifs.length == 0 ? ""
+                                : (root.lang-en ? "Nothing selected" : "未选择任何项");
+                        }
+                        // 不按勾选过滤（`visible` 过滤在布局里仍占位 → 留空隙）：
+                        // 勾选的行由 Rust 置顶，其余照常显示。
                         for n in root.net-rows : NetIfaceRow {
-                            visible: root.net-filter == "" || root.net-filter == n.name;
                             name: n.name;
                             down: n.down;
                             up: n.up;
                         }
 
-                        net-popup := PopupWindow {
-                            x: root.net-popup-x;
-                            y: root.net-popup-y;
-                            Rectangle {
-                                width: 190px;
-                                height: root.net-popup-h();
-                                border-radius: 8px;
-                                border-width: 1px;
-                                border-color: Theme.line;
-                                background: Theme.sur-1;
-                                VerticalLayout {
-                                    spacing: 0;
-                                    alignment: start;
-                                    Rectangle {
-                                        height: 28px;
-                                        background: root.net-filter == "" ? Theme.rail-item-active
-                                            : (nall-ta.has-hover ? Theme.rail-item-hover : transparent);
-                                        HorizontalLayout {
-                                            padding-left: 10px;
-                                            Text {
-                                                text: root.lang-en ? "All interfaces" : "全部网口";
-                                                font-size: 11px * Theme.ui-scale;
-                                                color: root.net-filter == "" ? Theme.accent : Theme.fg-1;
-                                                vertical-alignment: center;
-                                            }
+                    }
+
+                    net-popup := PopupWindow {
+                        // 右对齐到卡片内容右缘（卡片 padding 8px）。
+                        // ⚠ 弹层声明在卡片内容布局**之外**，所以 y 为负 = 弹到卡片
+                        // 上方（这张卡贴着面板底部，往下弹会出界）。
+                        x: parent.width - 198px;
+                        y: -(root.net-popup-h() + 6px);
+                        Rectangle {
+                            width: 190px;
+                            height: root.net-popup-h();
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: Theme.line;
+                            background: Theme.sur-1;
+                            VerticalLayout {
+                                spacing: 0;
+                                alignment: start;
+                                // ⚠ 上下左右都留内边距：不留的话「全部网口」那一项
+                                // 会**贴住弹层顶边**，悬停时它不透明的方形底色直接盖住
+                                // 圆角 → 弹层顶部看起来是直角（用户反馈）。
+                                // `clip: true` 对圆角不可靠，只能靠留白。
+                                padding: root.POPUP_PAD;
+                                Rectangle {
+                                    height: 28px;
+                                    border-radius: root.POPUP_ITEM_RADIUS;
+                                    background: root.net-picked-all ? Theme.rail-item-active
+                                        : (nall-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        spacing: 8px;
+                                        nall-box := CheckMark {
+                                            // 14px 方框在 28px 行里默认贴顶 → 显式垂直居中
+                                            cross-axis-self-alignment: center;
+                                            on: root.net-picked-all;
+                                            // 部分选中：勾了一些但没全选（复选框组第三态）。
+                                            partial: !root.net-picked-all
+                                                && root.net-picked.length > 0
+                                                && root.net-picked.length < root.all-ifs.length;
                                         }
-                                        nall-ta := TouchArea {
-                                            mouse-cursor: pointer;
-                                            clicked => { root.net-filter = ""; net-popup.close(); }
+                                        Text {
+                                            text: root.lang-en ? "All interfaces" : "全部网口";
+                                            font-size: 11px * Theme.ui-scale;
+                                            color: root.net-picked-all ? Theme.accent : Theme.fg-1;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
                                         }
                                     }
-                                    Flickable {
-                                    VerticalLayout {
-                                        height: self.preferred-height;
-                                    for n in root.net-rows : Rectangle {
-                                        height: 28px;
-                                        background: root.net-filter == n.name ? Theme.rail-item-active
-                                            : (nrow-ta.has-hover ? Theme.rail-item-hover : transparent);
-                                        HorizontalLayout {
-                                            padding-left: 10px;
-                                            Text {
-                                                text: n.name;
-                                                font-size: 11px * Theme.ui-scale;
-                                                color: root.net-filter == n.name ? Theme.accent : Theme.fg-1;
-                                                vertical-alignment: center;
-                                                overflow: elide;
-                                            }
-                                        }
-                                        nrow-ta := TouchArea {
-                                            mouse-cursor: pointer;
-                                            clicked => { root.net-filter = n.name; net-popup.close(); }
-                                        }
+                                    nall-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.toggle-net-pick(""); }
                                     }
                                 }
+                                Flickable {
+                                VerticalLayout {
+                                    height: self.preferred-height;
+                                for n in root.all-ifs : Rectangle {
+                                    height: 28px;
+                                    border-radius: root.POPUP_ITEM_RADIUS;
+                                    background: n.picked ? Theme.rail-item-active
+                                        : (nrow-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        spacing: 8px;
+                                        nrow-box := CheckMark {
+                                            // 14px 方框在 28px 行里默认贴顶 → 显式垂直居中
+                                            cross-axis-self-alignment: center;
+                                            on: n.picked;
+                                        }
+                                        Text {
+                                            text: n.name;
+                                            font-size: 11px * Theme.ui-scale;
+                                            color: n.picked ? Theme.accent : Theme.fg-1;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                            horizontal-stretch: 1;
+                                        }
                                     }
+                                    nrow-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        // 不关弹层：多选要能连点好几项
+                                        clicked => { root.toggle-net-pick(n.name); }
+                                    }
+                                }
+                            }
                                 }
                             }
                         }
@@ -1904,8 +2268,22 @@ export component RightPanel inherits Rectangle {
             }
         }
 
+            PanelScrollBar {
+                x: parent.width - 6px;
+                y: 0;
+                height: parent.height;
+                view-h: flick0.height;
+                content-h: flick0.content-height;
+                offset-y: flick0.content-y;
+            }
+        }
+
         // ── 处理器：CPU 数值 + 趋势（放大版）────────────────────────────
-        if root.head-tab == 0 && root.current-tab == 1 && root.panel-ready : Flickable {
+if root.head-tab == 0 && root.current-tab == 1 && root.panel-ready : Rectangle {
+            vertical-stretch: 1;
+            flick1 := Flickable {
+                width: 100%;
+                height: 100%;
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -2130,6 +2508,18 @@ export component RightPanel inherits Rectangle {
                     }
                 }
 
+                // 负载历史：综合页同款 TrendCard（本页内容长，图高固定、整页滚动）
+                TrendCard {
+                    title: root.lang-en ? "Load history" : "负载历史";
+                    lang-en: root.lang-en;
+                    values: root.cpu-history;
+                    // 悬停读数：游标 + 数据点 + 气泡（绝对时刻 + 该点负载）
+                    interactive: true;
+                    times: root.cpu-history-times;
+                    window <=> root.cpu-window;
+                    chart-h: root.cpu-trend-h;
+                }
+
                 // 进程 CPU 占用排行：PROC_CMD 已 --sort=-pcpu，取前 20 行，2s 一拍。
                 // vertical-stretch: 1 吸收页面剩余高度（底部空白 —— 用户截图）；
                 // 行列表套自己的 Flickable，行数超出可视高度时鼠标滚轮内滚动。
@@ -2198,23 +2588,25 @@ export component RightPanel inherits Rectangle {
                             }
                     }
                 }
+            }
+        }
 
-                // 负载历史：综合页同款 TrendCard（本页内容长，图高固定、整页滚动）
-                TrendCard {
-                    title: root.lang-en ? "Load history" : "负载历史";
-                    lang-en: root.lang-en;
-                    values: root.cpu-history;
-                    // 悬停读数：游标 + 数据点 + 气泡（绝对时刻 + 该点负载）
-                    interactive: true;
-                    times: root.cpu-history-times;
-                    window <=> root.cpu-window;
-                    chart-h: 120px;
-                }
+            PanelScrollBar {
+                x: parent.width - 6px;
+                y: 0;
+                height: parent.height;
+                view-h: flick1.height;
+                content-h: flick1.content-height;
+                offset-y: flick1.content-y;
             }
         }
 
   // ── 内存：内存 + 交换──
-        if root.head-tab == 0 && root.current-tab == 2 && root.panel-ready : Flickable {
+if root.head-tab == 0 && root.current-tab == 2 && root.panel-ready : Rectangle {
+            vertical-stretch: 1;
+            flick2 := Flickable {
+                width: 100%;
+                height: 100%;
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -2242,8 +2634,22 @@ export component RightPanel inherits Rectangle {
             }
         }
 
+            PanelScrollBar {
+                x: parent.width - 6px;
+                y: 0;
+                height: parent.height;
+                view-h: flick2.height;
+                content-h: flick2.content-height;
+                offset-y: flick2.content-y;
+            }
+        }
+
         // ── 磁盘：全部分区 ─────────────────────────────────────────────
-        if root.head-tab == 0 && root.current-tab == 3 && root.panel-ready : Flickable {
+if root.head-tab == 0 && root.current-tab == 3 && root.panel-ready : Rectangle {
+            vertical-stretch: 1;
+            flick3 := Flickable {
+                width: 100%;
+                height: 100%;
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -2266,8 +2672,22 @@ export component RightPanel inherits Rectangle {
             }
         }
 
+            PanelScrollBar {
+                x: parent.width - 6px;
+                y: 0;
+                height: parent.height;
+                view-h: flick3.height;
+                content-h: flick3.content-height;
+                offset-y: flick3.content-y;
+            }
+        }
+
         // ── 网络：端口表 + 上下行趋势 ───────────────────────────────────
-        if root.head-tab == 0 && root.current-tab == 4 && root.panel-ready : Flickable {
+if root.head-tab == 0 && root.current-tab == 4 && root.panel-ready : Rectangle {
+            vertical-stretch: 1;
+            flick4 := Flickable {
+                width: 100%;
+                height: 100%;
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -2304,8 +2724,22 @@ export component RightPanel inherits Rectangle {
             }
         }
 
+            PanelScrollBar {
+                x: parent.width - 6px;
+                y: 0;
+                height: parent.height;
+                view-h: flick4.height;
+                content-h: flick4.content-height;
+                offset-y: flick4.content-y;
+            }
+        }
+
         // ── 传输（真数据；条目多时由内部滚动承担）───────────────────────
-        if root.current-tab == 5 : Flickable {
+if root.current-tab == 5 : Rectangle {
+            vertical-stretch: 1;
+            flick5 := Flickable {
+                width: 100%;
+                height: 100%;
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -2400,7 +2834,21 @@ export component RightPanel inherits Rectangle {
         // 下面的列表区就撑不开了。默认 stretch + 单个 `vertical-stretch: 1` 的
         // 列表容器 = 上面的行保持原高、剩余高度全给列表（同 page_hosts 的写法）。
             }
-        if root.current-tab == 6 : Flickable {
+
+            PanelScrollBar {
+                x: parent.width - 6px;
+                y: 0;
+                height: parent.height;
+                view-h: flick5.height;
+                content-h: flick5.content-height;
+                offset-y: flick5.content-y;
+            }
+        }
+if root.current-tab == 6 : Rectangle {
+            vertical-stretch: 1;
+            flick6 := Flickable {
+                width: 100%;
+                height: 100%;
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -2828,6 +3276,16 @@ export component RightPanel inherits Rectangle {
         }
 
             }
+
+            PanelScrollBar {
+                x: parent.width - 6px;
+                y: 0;
+                height: parent.height;
+                view-h: flick6.height;
+                content-h: flick6.content-height;
+                offset-y: flick6.content-y;
+            }
+        }
         // ── footer：打开文件视图的圆按钮 + PATH / DIR / FILE / TOTAL ────
   // 设计里那个圆按钮就是"展开 SFTP 文件目录"的入口；计数由 Rust 数好传进来。
         HorizontalLayout {

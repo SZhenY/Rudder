@@ -12,6 +12,63 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 
+/// 复选框的三态切换（见 `TabStatus::picked_ifaces`）。
+///
+/// * `name` **非空** = 切换单个；当前是"全选"时点单个 → 变成"只勾这一个"
+///   （标准复选框语义）。
+/// * `name` **为空** = 弹层里「全部网口」/「全部磁盘」那一项 → 在**全选**与
+///   **全不选**之间来回切。这正是用户要的"「全部」也要能取消勾选"，早先这里只是
+///   清空名单（而空名单本来就等于全选），所以点了看起来毫无反应。
+///
+/// 存**名字**而不是索引：网卡 / 挂载点的顺序会变（重连、挂载变化），名字稳定。
+fn toggle_pick(slot: &mut Option<Vec<String>>, name: &str) {
+    if name.is_empty() {
+        *slot = if slot.is_none() { Some(Vec::new()) } else { None };
+        return;
+    }
+    let mut names = slot.take().unwrap_or_default();
+    match names.iter().position(|x| x == name) {
+        Some(i) => {
+            names.remove(i);
+        }
+        None => names.push(name.to_string()),
+    }
+    *slot = Some(names);
+}
+
+#[cfg(test)]
+mod pick_tests {
+    use super::*;
+
+    /// 「全部」项传空名字 → 在"全选"与"全不选"之间来回切，且不会凭空多出空名字项。
+    #[test]
+    fn toggle_pick_with_empty_name_toggles_all() {
+        let mut slot: Option<Vec<String>> = None; // 默认全选
+        toggle_pick(&mut slot, "");
+        assert_eq!(slot, Some(Vec::new()), "取消全选 = 一个都不选");
+        toggle_pick(&mut slot, "");
+        assert_eq!(slot, None, "再点一次回到全选");
+    }
+
+    /// 全选态下点单个 → 只剩这一个（而不是"在全部之上再加一个"）。
+    #[test]
+    fn toggle_pick_single_from_all_selects_only_it() {
+        let mut slot: Option<Vec<String>> = None;
+        toggle_pick(&mut slot, "eth0");
+        assert_eq!(slot, Some(vec!["eth0".to_string()]));
+    }
+
+    #[test]
+    fn toggle_pick_adds_then_removes() {
+        let mut slot: Option<Vec<String>> = Some(Vec::new());
+        toggle_pick(&mut slot, "eth0");
+        toggle_pick(&mut slot, "eth1");
+        assert_eq!(slot, Some(vec!["eth0".to_string(), "eth1".to_string()]));
+        toggle_pick(&mut slot, "eth0");
+        assert_eq!(slot, Some(vec!["eth1".to_string()]));
+    }
+}
+
 /// Max bytes merged into one Output event before starting a fresh chunk (#209).
 /// Keeps a single UI callback from spending hundreds of ms in vt100 ingest.
 const OUTPUT_MERGE_BYTE_CAP: usize = 64 * 1024;
@@ -209,6 +266,8 @@ mod fonts_ui;
 mod updater;
 mod sampler;
 mod settings;
+mod search_index;
+mod search_ui;
 mod settings_ui;
 mod window_chrome;
 use window_chrome::wire_window_chrome;
@@ -842,6 +901,45 @@ pub fn run() -> Result<()> {
         });
     }
 
+    // 勾选网卡 / 挂载点（面板里的复选框，可多选）。
+    //
+    // 状态存在 TabStatus 上而不是只在界面里：采样线程也要用（把选中网卡的速率喂进
+    // 顶部 sparkline），那里拿不到界面属性。语义是「置顶关注」—— 勾选的项排到列表
+    // 最前面，其余项仍然全部显示（不用 `visible` 隐藏：Slint 里布局子项
+    // `visible: false` 仍然占位，列表会留下一堆空格）。
+    {
+        let weak = window.as_weak();
+        let statuses = tab_statuses.clone();
+        let local = local_snap.clone();
+        let net = local_net_hist.clone();
+        window.on_toggle_net_pick(move |iface: SharedString| {
+            let Some(w) = weak.upgrade() else { return };
+            let active = w.get_active_tab_id().to_string();
+            if let Some(st) = statuses.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&active)
+            {
+                toggle_pick(&mut st.picked_ifaces, iface.as_str());
+                st.net_hist = vec![0.0; NET_HISTORY_LEN];
+            }
+            refresh_sidebar(&w, &statuses, &local, &net);
+        });
+    }
+
+    {
+        let weak = window.as_weak();
+        let statuses = tab_statuses.clone();
+        let local = local_snap.clone();
+        let net = local_net_hist.clone();
+        window.on_toggle_disk_pick(move |mount: SharedString| {
+            let Some(w) = weak.upgrade() else { return };
+            let active = w.get_active_tab_id().to_string();
+            if let Some(st) = statuses.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&active)
+            {
+                toggle_pick(&mut st.picked_disks, mount.as_str());
+            }
+            refresh_sidebar(&w, &statuses, &local, &net);
+        });
+    }
+
     // Settings: preset download directory (load + pick + open).
     // Default to the user's Downloads folder so files land somewhere sensible
     // without a prompt; only fall back to "ask every time" if we can't locate it
@@ -1345,6 +1443,17 @@ fn is_special_partition(mount: &str) -> bool {
         || mount == "/tmp"
         || mount.starts_with("/snap/")
         || mount.starts_with("/var/snap/")
+        // ── macOS：APFS 合成卷 ──────────────────────────────────────────
+        // `/System/Volumes/*`（Data / VM / Preboot / Update / xarts …）与 `/` 是
+        // **同一块物理盘**：APFS 的 firmlink 让「数据」看起来挂在 `/`，实际同一份
+        // 块设备又挂在 `/System/Volumes/Data`。`df` 和 sysinfo 都会各列一条，于是
+        // 面板上出现两条容量完全相同的"分区"（用户截图：`/` 与 `/System/Volumes/Data`
+        // 都是 468.4 GB，且各占一行、重复计入占用）。
+        //
+        // 真正的外置盘 / 网络盘挂在 `/Volumes/*`，不受影响，所以整段前缀过滤即可。
+        || mount.starts_with("/System/Volumes/")
+        // macOS 旧版（10.15 之前）的交换分区占位点。
+        || mount.starts_with("/private/var/vm")
 }
 
 #[cfg(test)]
@@ -1921,6 +2030,20 @@ mod key_tests {
         assert!(!is_special_partition("/home"));
         assert!(!is_special_partition("/mnt/data"));
         assert!(!is_special_partition("/Users/zheny"));
+    }
+
+    #[test]
+    fn is_special_partition_filters_macos_synthetic_volumes() {
+        // APFS firmlink：与 `/` 同一块物理盘，列出来就是重复的"分区"。
+        assert!(is_special_partition("/System/Volumes/Data"));
+        assert!(is_special_partition("/System/Volumes/VM"));
+        assert!(is_special_partition("/System/Volumes/Preboot"));
+        assert!(is_special_partition("/System/Volumes/Update/xarts"));
+        assert!(is_special_partition("/private/var/vm"));
+        // 系统盘本体与外置盘 / 网络盘必须保留。
+        assert!(!is_special_partition("/"));
+        assert!(!is_special_partition("/Volumes/Backup"));
+        assert!(!is_special_partition("/Volumes/nas/share"));
     }
 }
 

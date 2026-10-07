@@ -45,6 +45,7 @@ import { SessionInfo } from "../session_types.slint";
 // 新外壳（A 路线）：组件名 `AppWindow` 与它全部的属性 / 回调接口都保持不变，
 // 所以 Rust 侧的接线一行都不用改 —— 只是把布局逐步换成「左侧栏 + 页面」。
 import { Rail } from "rail.slint";
+import { SearchHit } from "../pickers.slint";
 import { PageHosts } from "page_hosts.slint";
 import { PageSnippets } from "page_snippets.slint";
 // 终端舞台的类型（②-1 从本文件搬走）：import 之后再 export，Rust 生成类型不变。
@@ -190,8 +191,22 @@ export component AppWindow inherits Window {
     in property <string> net-selected;      // currently selected NIC
     in property <bool> net-show-selector;   // only on a live session tab
     in property <[DiskInfo]> disks;         // active tab's filesystem usage
+    /// 筛选弹层的**完整选择列表**（未筛选、未置顶，顺序稳定）。与 `disks` 分开：
+    /// 否则"取消全选"之后弹层里一行都不剩，用户没法再勾回单个（死路）。
+    in property <[DiskInfo]> all-disks;
     in property <string> app-version;       // from Rust: env!("CARGO_PKG_VERSION")
     callback select-net-iface(string);
+    /// 勾选集合（复选框，可多选）—— 只用来显示「已选 N」和「全部」项的勾选态；
+    /// 逐行的勾选态在行数据里（`SysNetRow.picked` / `DiskInfo.picked`）。
+    in property <[string]> net-picked: [];
+    in property <[string]> disk-picked: [];
+    /// 「全部」那个复选框的勾选态。必须单独一个 bool：`net-picked` 为空既可能是
+    /// "全选"也可能是"一个都不选"，光看数组分不出来（Rust 侧是 `Option<Vec<_>>`）。
+    in-out property <bool> net-picked-all: true;
+    in-out property <bool> disk-picked-all: true;
+    /// 勾选 / 取消勾选一个网卡 / 挂载点（面板里的复选框）。
+    callback toggle-net-pick(string);
+    callback toggle-disk-pick(string);
 
     // --- Top-right popups --------------------------------------------------
     in-out property <bool> download-open: false;  // download manager popup
@@ -307,6 +322,8 @@ export component AppWindow inherits Window {
     in property <bool> system-info-available; // connected Linux session only (#268)
     in property <[SysMetricRow]> sys-metrics;
     in property <[SysNetRow]> sys-net-rows;
+    /// 筛选弹层的完整网卡选择列表（同 `all-disks`）。
+    in property <[SysNetRow]> all-ifs;
     in property <[SysInfoRow]> sys-overview-rows;
     // 工具面板头卡（按标签从 overview 里挑出来的四个字段）
     in property <string> panel-host;
@@ -456,6 +473,10 @@ export component AppWindow inherits Window {
     callback set-term-cursor-color(string) -> bool;// validate + persist cursor colour (#275)
     callback set-term-cursor-preset(string);       // 推荐色块点击（绕过「回声」判定）
     callback set-term-cursor-color-rgb(int, int, int) -> bool;   // 调色盘提交（Slint 无 hex 格式化）
+    /// 把调色盘输入框里的 hex 解析成 RGB，好让 SV 面板与色相条跳到那个颜色。
+    /// 解析放在 Rust 侧：Slint 没有字符串取字符的能力（无 `substring`/`chars`）。
+    /// 主题色与光标颜色两个调色盘共用这一个。
+    callback resolve-hex(string) -> color;
     callback set-output-highlight(bool, string);   // enable + built-in preset
     callback set-json-format-output(bool);         // pretty-print + colour JSON lines (#338)
     callback set-scrollback-lines(string) -> bool;  // persist terminal history lines
@@ -488,6 +509,28 @@ export component AppWindow inherits Window {
     in property <[AccentPreset]> accent-presets;
     in-out property <string> accent-hex: "";
     in property <string> accent-name: "";          // 当前配色的显示名（默认蓝 / 预设 / hex）
+
+    // ── 全局搜索（左侧边栏）────────────────────────────────────────────
+    // 状态放在窗口级而不是 Rail 组件内：Rail 是**普通元素**（非 global），
+    // Rust 侧拿不到它的属性/回调，只能 `window.on_xxx` 挂在 global 上。
+    in-out property <string> search-query: "";
+    /// 过滤结果（Rust 侧排好序：页面 → 设置分类 → 主机，同名优先）。
+    in property <[SearchHit]> search-hits: [];
+    /// 键盘游标（↑↓ 会绕回）。
+    in-out property <int> search-cursor: 0;
+    /// 结果浮层是否展开。PopupWindow 没有 `visible`，只能 show()/close()，
+    /// 所以用这个 bool 让 Rail 内部 `changed` 去调。
+    in-out property <bool> search-open: false;
+    /// 被搜索命中的主机 **id**（空串 = 无高亮；2.4 秒后自动清空）。
+    /// 用 id 而非下标：主机网格按 `sessions[r * cols + c]` 排，下标会随
+    /// 分组展开/折叠而变，id 不会。
+    in property <string> host-highlight: "";
+    callback search-changed(string);
+    callback open-search();
+    callback search-key(int, string);
+    callback choose-hit(int);
+    /// Rail 侧关闭了浮层（Esc / 点外面），窗口级要把 search-open 清掉。
+    callback search-dismissed();
     callback set-accent(string) -> bool;           // 预设 id / "#RRGGBB" / ""；非法返回 false
     callback set-accent-rgb(int, int, int) -> bool;// 调色盘提交（Slint 无 hex 格式化）
     // SFTP follows the terminal's cd; opt out in Interface settings.
@@ -537,13 +580,6 @@ export component AppWindow inherits Window {
     in-out property <bool> collapse-sftp-default: false;
     callback set-collapse-sftp-default(bool);      // apply + persist
     // 设置页导航搜索：Rust 过滤后回写六个分类的可见性
-    in property <bool> cat-visible-0: true;
-    in property <bool> cat-visible-1: true;
-    in property <bool> cat-visible-2: true;
-    in property <bool> cat-visible-4: true;
-    in property <bool> cat-visible-6: true;
-    in property <bool> cat-visible-5: true;
-    callback nav-search-changed(string);
     in-out property <bool> sftp-collapsed: false;       // (legacy global; per-tab now)
     // Per-session SFTP state: persist the collapse + sizes into that tab's
     // TerminalState so split panes / other tabs keep their own (#v0.5).
@@ -1078,7 +1114,7 @@ export component AppWindow inherits Window {
         // 会覆盖 Rail 组件内部的 width + animate，所以动画必须加在这里 —— 否则
         // 侧栏是瞬时跳变（内容区生硬压缩、选中高亮与侧栏"错位"）。
         // 非对称：展开 300ms 弹簧落位（比收起 250ms 长，新内容有时间呈现）。
-        property <length> rail-w: root.rail-collapsed ? 64px : 180px;
+        property <length> rail-w: root.rail-collapsed ? 64px : 200px;
         animate rail-w {
             duration: root.rail-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
             easing: root.rail-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
@@ -1091,7 +1127,17 @@ export component AppWindow inherits Window {
         property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
   // 右侧「工具」面板：展开 240px，折叠成窄条（「收起 SFTP 侧边栏」）时 22px。
         // 状态提升到窗口级 —— 舞台的占位宽度（panel-w）要跟着它变。
-        in-out property <bool> panel-collapsed: false;
+            in-out property <bool> panel-collapsed: false;
+
+            /// 当前标签页**是否已有会话**（新建会话的空界面还没有，Rust 侧按状态表里
+            /// 有没有该 tab 的条目来置位）。
+            ///
+            /// ⚠ 不能拿 `terminals.length > 0` 当"有会话"：在终端页点「+」新建会话时，
+            /// 会先建出一个**空标签页**并弹出「创建你的第一个终端会话」卡片，那一刻
+            /// terminals 里已经有行了，但**一个会话都还没开** —— 于是右侧工具栏会弹出
+            /// 来显示本机的 CPU / 内存 / 磁盘，看着像"已经有会话了"，其实没有。
+            /// 终端舞台的可见性仍然用 `terminals.length`（空状态界面就画在舞台里）。
+            in property <bool> has-session: true;
         // 面板占位宽度：面板打开时终端舞台整体让开它，而不是被它盖住 —— 否则舞台里的
         // 底部命令栏（… 所有会话 / 发送）右端会被面板压住（用户截图里红框那处）。
         // 舞台宽度变化会走 `content-resized`，Rust 据此重算分屏几何。
@@ -1130,7 +1176,7 @@ export component AppWindow inherits Window {
         // （收起方向差得多 → 大片空白；展开方向差得少 → 只有些微错位）。
         // 只动画化进度、长度直接由进度算出，两者天然同帧。
         property <length> panel-w:
-            root.shell-page == 1 && root.terminals.length > 0
+            root.shell-page == 1 && root.terminals.length > 0 && root.has-session
                 ? (22px + (root.panel-user-w - 22px) * root.panel-expand)
                     * root.panel-openness : 0px;
 
@@ -1161,6 +1207,16 @@ export component AppWindow inherits Window {
             // 必须双向：Rail 内部的折叠按钮写的是它自己的 collapsed，单向绑定时
             // 那个赋值传不回来，收起/展开看起来就是"点了没反应"。
             collapsed <=> root.rail-collapsed;
+            // 搜索：状态在窗口级（Rail 是普通元素，Rust 侧只能挂 global 回调）
+            search-query <=> root.search-query;
+            search-hits: root.search-hits;
+            search-cursor <=> root.search-cursor;
+            search-open: root.search-open;
+            search-changed(q) => { root.search-changed(q); }
+            open-search() => { root.open-search(); }
+            search-key(d, k) => { root.search-key(d, k); }
+            search-dismissed() => { root.search-open = false; }
+            choose-hit(i) => { root.choose-hit(i); }
               page-changed(p) => {
                   root.shell-page = p;
                   // 舞台在别的页面里是隐藏的，键盘焦点会掉 —— 切回终端页时补一次
@@ -1367,6 +1423,7 @@ export component AppWindow inherits Window {
 
             PageHosts {
                 width: 100%;
+                host-highlight: root.host-highlight;
                 height: 100%;
                 lang-en: root.lang-en;
               sessions: root.sessions;
@@ -1476,6 +1533,8 @@ export component AppWindow inherits Window {
           height: root.height - root.shell-top;
 
           PageSettings {
+          resolve-hex(v) => { return root.resolve-hex(v); }
+          term-cursor-color: root.term-cursor-color;
               width: 100%;
               height: 100%;
               lang-en: root.lang-en;
@@ -1543,13 +1602,6 @@ export component AppWindow inherits Window {
               set-flag-always-ask(v) => { root.set-download-always-ask(v); }
               set-flag-follow-cd(v) => { root.set-sftp-follow-cd(v); }
               set-flag-collapse-sftp(v) => { root.set-collapse-sftp-default(v); }
-              cat-visible-0: root.cat-visible-0;
-              cat-visible-1: root.cat-visible-1;
-              cat-visible-2: root.cat-visible-2;
-              cat-visible-4: root.cat-visible-4;
-              cat-visible-6: root.cat-visible-6;
-              cat-visible-5: root.cat-visible-5;
-              nav-search-changed(v) => { root.nav-search-changed(v); }
               // ── v0.8.0 设置窗迁移项的转发 ─────────────────────────────
               renderer-mode: root.renderer-mode;
               update-channel: root.update-channel;
@@ -1563,6 +1615,7 @@ export component AppWindow inherits Window {
               set-term-cursor-style(v) => { root.set-term-cursor-style(v); }
               set-term-cursor-preset(v) => { root.set-term-cursor-preset(v); }
               set-term-cursor-color(v) => { root.set-term-cursor-color(v); }
+              set-term-cursor-color-rgb(r, g, b) => { return root.set-term-cursor-color-rgb(r, g, b); }
               set-update-channel(v) => { root.set-update-channel(v); }
               set-sync-upload-enabled(v) => { root.set-sync-upload-enabled(v); }
               // 输出高亮（v0.8.0 终端设置页迁移）
@@ -1597,7 +1650,7 @@ export component AppWindow inherits Window {
       // ⚠ 这里**刻意不带 `page-shown == 1`**：带上的话，切走终端页时面板被销毁、
       // 切回来时重建 —— 重建会重播入场动画、并从上次的残留位置起步，表现为
       // 「切页时面板突然收缩一下」。改为始终存在，用 opacity 控制可见性。
-      if root.terminals.length > 0 : RightPanel {
+      if root.terminals.length > 0 && root.has-session : RightPanel {
           // 淡出 = 两个进度的**乘积**：
           //   panel-openness 关闭 → 滑出窗口右缘并淡出
           //   panel-expand   折叠 → 向右收起并淡出（此前漏了它，折叠时是"瞬间让位"
@@ -1647,6 +1700,12 @@ export component AppWindow inherits Window {
           mem-percent: root.mem-percent;
           mem-detail: root.mem-detail;
           disks: root.disks;
+          all-disks: root.all-disks;
+          all-ifs: root.all-ifs;
+          net-picked: root.net-picked;
+          disk-picked: root.disk-picked;
+          net-picked-all: root.net-picked-all;
+          disk-picked-all: root.disk-picked-all;
           net-up: root.net-top-up;
           net-down: root.net-top-down;
           net-history: root.net-top-history;
@@ -1688,6 +1747,9 @@ export component AppWindow inherits Window {
           }
           sftp-sort-request(key) => { root.sftp-sort-request(root.active-tab-id, key); }
           close-panel() => { root.right-panel-open = false; }
+          // 只传名字：Rust 侧取活动标签（面板回调不带 tab-id，与 close-panel 同惯例）
+          toggle-net-pick(name) => { root.toggle-net-pick(name); }
+          toggle-disk-pick(name) => { root.toggle-disk-pick(name); }
       }
 
         // 把手必须声明在面板**之后**（z 序更高）：面板改为常驻后，折叠态它虽
@@ -1699,7 +1761,9 @@ export component AppWindow inherits Window {
         // 可见性跟着 `panel-openness` **淡出**，而不是用 `right-panel-open` 直接
         // 销毁：后者会让把手在关闭动画刚开始时就没了，而终端让位还要走完一圈，
         // 看上去就是"手柄凭空消失 + 留一片空白"。
-        if root.page-shown == 1 && root.terminals.length > 0
+        // ⚠ 同样要求 `has-session`：没有会话时工具栏整体不画，右缘也不该留一条
+        // 22px 的空把手条（那会让终端区看起来被莫名让出 22px）。
+        if root.page-shown == 1 && root.terminals.length > 0 && root.has-session
             && root.panel-collapsed : Rectangle {
             // 位置也跟随 `panel-openness`（此前固定在 `width - 22px`，只是原地
             // 淡入、没有位移）：打开工具栏时把手从**窗口右缘之外向左滑入**，终点

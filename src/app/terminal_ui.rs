@@ -570,13 +570,75 @@ pub(super) fn apply_wallpaper(
     }
 }
 
+/// 勾选网卡集合 → (显示名, rx, tx)。
+///
+/// - 一个都没勾：退回第一个网卡（保持旧行为）；
+/// - 勾了一个：就是它；
+/// - 勾了多个：**速率求和**（用户勾选的意思是"这几块一起盯"），显示名给
+///   "eth0,eth1" 这样的紧凑形式（面板窄，最多列 3 个再加 `+N`）。
+///
+/// 旧版是"单选 iface"，现在多选；`st.selected_iface` 仍保留给**网络页趋势图**
+/// （那条曲线一次只能画一条）。
 pub(super) fn selected_iface(st: &TabStatus) -> (String, u64, u64) {
+    let sel = st.picked_ifaces.as_deref();
+    let picked: Vec<&(String, u64, u64)> = st
+        .net
+        .iter()
+        .filter(|(name, _, _)| match sel {
+            None => true,
+            Some(names) => names.iter().any(|p| p == name),
+        })
+        .collect();
+    if !picked.is_empty() {
+        let rx = picked.iter().map(|e| e.1).sum();
+        let tx = picked.iter().map(|e| e.2).sum();
+        let names = picked
+            .iter()
+            .take(3)
+            .map(|(n, _, _)| n.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        let name = if picked.len() > 3 {
+            format!("{names}+{}", picked.len() - 3)
+        } else {
+            names
+        };
+        return (name, rx, tx);
+    }
     if !st.selected_iface.is_empty()
         && let Some(e) = st.net.iter().find(|e| e.0 == st.selected_iface)
     {
         return e.clone();
     }
     st.net.first().cloned().unwrap_or_default()
+}
+
+/// 稳定置顶：勾选的项按原相对顺序排前面，其余保持原顺序在后。
+///
+/// 面板里**不用 `visible` 过滤**未勾选的项 —— Slint 的布局子项 `visible: false`
+/// 仍然占位（这仓库里已经踩过：`if` vs `visible` 的注释），列表会留下空格。
+/// 所以"筛选"实现成重排，既没有空隙、也保留了完整列表。
+/// 按勾选名单**筛选**行，组内保持原相对顺序。
+///
+/// * `None`         = 全选 → 原序全返回。
+/// * `Some(names)`  = 只留勾选的（`Some(&[])` → 一行不剩，可以"筛空"）。
+///
+/// ⚠ 早先这里是"只把勾选的**置顶**、其余行照常显示"，于是复选框勾了等于没勾 ——
+/// 用户反馈"全部选项要求能够复选框取消选择啊，要不然无法筛选"。真正的过滤放在
+/// Rust 侧做（不把这些行放进模型），**不要**在界面层用 `visible` 隐藏：Slint 里
+/// 布局子项 `visible: false` 仍然占位，列表会留下一堆空格。
+pub(super) fn filter_picked<T: Clone, F>(items: &[T], picked: Option<&[String]>, key: F) -> Vec<T>
+where
+    F: Fn(&T) -> &str,
+{
+    match picked {
+        None => items.to_vec(),
+        Some(names) => items
+            .iter()
+            .filter(|it| names.iter().any(|x| x == key(it)))
+            .cloned()
+            .collect(),
+    }
 }
 
 pub(super) fn conn_ip(host: &str) -> String {
@@ -589,6 +651,52 @@ mod tests {
 
     fn lines(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn filter_picked_keeps_relative_order_of_selection() {
+        let items = vec![
+            ("a".to_string(), 1u64),
+            ("b".to_string(), 2),
+            ("c".to_string(), 3),
+            ("d".to_string(), 4),
+        ];
+        // 勾 b 与 d → 置顶且**保持彼此原相对顺序**（b 在 d 前）
+        let out =
+            filter_picked(&items, Some(&["d".to_string(), "b".to_string()]), |e| e.0.as_str());
+        let names: Vec<&str> = out.iter().map(|e| e.0.as_str()).collect();
+        assert_eq!(names, vec!["b", "d"], "只留勾选的，且按源列表原相对顺序");
+    }
+
+    #[test]
+    fn filter_picked_all_versus_none() {
+        let items = vec![("a".to_string(), 1u64), ("b".to_string(), 2)];
+        // `None` = 全选 → 原序全返回。
+        let out = filter_picked(&items, None, |e| e.0.as_str());
+        let names: Vec<&str> = out.iter().map(|e| e.0.as_str()).collect();
+        assert_eq!(names, vec!["a", "b"]);
+        // `Some(&[])` = 一个都不选（用户取消「全部」）→ 一行都不剩。
+        let out = filter_picked(&items, Some(&[]), |e| e.0.as_str());
+        assert!(out.is_empty(), "取消全选之后不应剩下任何行");
+    }
+
+    #[test]
+    fn selected_iface_sums_multiple_picked_nics() {
+        let net = vec![
+            ("eth0".to_string(), 100u64, 10u64),
+            ("eth1".to_string(), 200, 20),
+            ("eth2".to_string(), 400, 40),
+        ];
+        let mut st = TabStatus { net, ..Default::default() };
+        // 勾两个 → 速率求和
+        st.picked_ifaces = Some(vec!["eth0".to_string(), "eth2".to_string()]);
+        let (name, rx, tx) = selected_iface(&st);
+        assert_eq!((rx, tx), (500, 50));
+        assert_eq!(name, "eth0,eth2");
+        // 一个都不选（取消「全部」的三态）→ 没有命中，退回第一个
+        st.picked_ifaces = Some(Vec::new());
+        let (_, rx, tx) = selected_iface(&st);
+        assert_eq!((rx, tx), (100, 10));
     }
 
     // ---------- compute_find_matches ----------

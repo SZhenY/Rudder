@@ -642,6 +642,12 @@ pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
     w.set_accent_presets(accent_presets_model(dark));
     let name = if choice.is_empty() && theme.get_wallpaper_active() {
         t("跟随壁纸", "Follow wallpaper").into()
+    } else if choice.trim().starts_with('#') {
+        // 自定义色：**这一格留空**。色号已经显示在右侧的调色盘按钮上了（色块 + HEX），
+        // 这里再显示一遍就是同一个值出现两次（用户截图）。预设仍显示预设名 ——
+        // 那个信息按钮上是没有的。
+        // `name` 的类型是 `SharedString`（由 `set_accent_name` 推断），不是 `String`。
+        SharedString::default()
     } else {
         accent_display_name(choice)
     };

@@ -1,105 +1,114 @@
 // 左侧栏（按界面稿的版式：大图标 + 选中药丸 + 底部设置入口）。
 //
-// 展开 180px（图标 + 文字）· 收起 56px（只留图标，顶部只留展开按钮）。
+// 展开 200px（图标 + 文字）· 收起 64px（只留图标，顶部只留展开按钮）。
 // 选中项做成"加粗填充药丸"（accent 淡底 + 主色文字），与整体设计一致；
 // 图标用项目里既有的 Material Icons 字体。
 
+import { SearchResultsPopup } from "../search_popup.slint";
+import { SearchHit } from "../pickers.slint";
 import { Theme, AnimationSettings } from "../theme.slint";
 
 component RailButton inherits Rectangle {
     in property <string> glyph;
     in property <string> label;
     in property <bool> active: false;
+    // 折叠时底色的动画方向（时长档位靠它选 enter / exit）。
     in property <bool> collapsed: false;
+    // 折叠进度 0..1（0=展开，1=折叠）：**标签位移与淡出的唯一来源**。
+    //
+    // ⚠ 不要用 `collapsed ? 0 : 1` 直接算淡出：那样只有 0/1 两档，标签会在
+    // 侧栏还在收缩时就消失，剩下图标"干漂"半程 —— 观感就是生硬。
+    // `progress` 由 Rail 用与 `app_shell` 里 `animate rail-w` **完全相同**的
+    // 时长与缓动驱动，所以宽度和内容退场在同一条时间轴上。
+    in property <float> progress: 0;
     // 行宽由 Rail 显式传入（跟着侧栏宽度动画走）。**不能靠布局分配** ——
     // 父级宽度动画期间布局重算滞后，高亮会等侧栏折完才开始收缩。
-    in property <length> row-w: 164px;
+    in property <length> row-w: 184px;
     callback clicked();
+
+    // 标签静止起点 = 图标右侧，与原布局一致（padding sp-3 + 图标 20px + 间距 sp-3）。
+    property <length> label-x: Theme.sp-3 + 20px + Theme.sp-3;
+    // 滑出距离：只滑 12px，让标签左缘最终与图标右缘**齐平**。
+    // ⚠ 不能滑到 x=0（那会压到图标上，中途出现文字叠图标）；也不必滑更远，
+    // 因为折叠后行宽只有 48px，标签（≈56px）本来就装不下，剩下的交给淡出 + clip。
+    property <length> label-slide: Theme.sp-3;
 
     height: 38px;
     // 收起时把超宽内容（标签）裁掉，而不是让它压扁
     clip: true;
 
-        // 交互态底色：画成**显式宽度**的子元素（width 绑 `row-w`），与侧栏动画同轴。
-        // 交互态三件套：hover = 主题色细环 @40%（中性底不变）；按下 = 主题色 @12%
-        // 确认底；选中 = accent 淡底药丸（accent-soft）+ 主色文字，环让位给选中底。
-        Rectangle {
-            x: 0;
-            y: 0;
-            width: root.row-w;
-            height: parent.height;
-            border-radius: Theme.radius-md;
-            border-width: 1px;
-            border-color: !root.active && ta.has-hover ? Theme.accent-ring : transparent;
-            background: root.active
-                ? Theme.accent-soft
-                : (ta.pressed ? Theme.accent-press
-                : (ta.has-hover ? Theme.sur-3 : transparent));
-            // 时长跟着侧栏折叠/展开那一档（enter/exit-container）—— 若用更短的
-            // 交互反馈档，宽度收缩期间底色过渡会落在后面，看着像"没同步"。
-            animate background {
-                duration: root.collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
-                easing: root.collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
-                enabled: AnimationSettings.enabled;
-            }
-            animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+    // 交互态底色：画成**显式宽度**的子元素（width 绑 `row-w`），与侧栏动画同轴。
+    // 交互态三件套：hover = 主题色细环 @40%（中性底不变）；按下 = 主题色 @12%
+    // 确认底；选中 = accent 淡底药丸（accent-soft）+ 主色文字，环让位给选中底。
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.row-w;
+        height: parent.height;
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: !root.active && ta.has-hover ? Theme.accent-ring : transparent;
+        background: root.active
+            ? Theme.accent-soft
+            : (ta.pressed ? Theme.accent-press
+            : (ta.has-hover ? Theme.sur-3 : transparent));
+        // 时长跟着侧栏折叠/展开那一档（enter/exit-container）—— 若用更短的
+        // 交互反馈档，宽度收缩期间底色过渡会落在后面，看着像"没同步"。
+        animate background {
+            duration: root.collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
+            easing: root.collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
+            enabled: AnimationSettings.enabled;
         }
+        animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+    }
 
-    HorizontalLayout {
-        // ⚠ 收起时**不要**切换 alignment / padding：它们在宽度动画启动的同一帧就
-        // 跳变 —— 图标先"瞬移"到中心、再随侧栏宽度收缩漂移，两段位移叠在一起就是
-        // 用户看到的"弹一下"。现在图标位置只由侧栏宽度动画驱动（alignment 恒为
-        // start、padding 恒定），收起后图标自然落在窄栏中间（40px 行宽 - 20px 图标）。
-        padding-left: Theme.sp-3;
-        padding-right: Theme.sp-2;
-        spacing: Theme.sp-3;
-        alignment: start;
+    // 图标：绝对定位在 sp-3 处。**位置不随 progress 变** —— 折叠后行宽 48px，
+    // 图标占 12..32 天然落在中间，一处到位。
+    //
+    // ⚠ 收起时**不要**切换 alignment / padding：它们在宽度动画启动的同一帧就跳变
+    // —— 图标先"瞬移"到中心、再随侧栏宽度收缩漂移，两段位移叠在一起就是用户
+    // 看到的"弹一下"。
+    Text {
+        x: Theme.sp-3;
+        width: 20px;
+        height: parent.height;
+        text: root.glyph;
+        font-family: "Material Icons";
+        font-size: 18px * Theme.ui-scale;
+        color: root.active ? Theme.accent : Theme.fg-2;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
 
-        Text {
-            width: 20px;
-            text: root.glyph;
-            font-family: "Material Icons";
-            font-size: 18px * Theme.ui-scale;
-            color: root.active ? Theme.accent : Theme.fg-2;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
+    // 标签：**绝对定位**（不进布局）+ 向左滑出 + 淡出。
+    //
+    // ⚠ 为什么不能继续当布局子项：宽度动画期间布局逐帧收窄它，Text 随即 `elide`
+    // 逐字裁剪 —— 这就是"标签被挤压"的来源；而且布局位置会**覆盖**显式 x，
+    // 位移根本写不上。绝对定位后字形保持完整，只做整体位移。
+    //
+    // 宽度留出右侧圆点 + 间距的位置，语义与原布局一致（原来圆点也是布局兄弟）。
+    Text {
+        x: root.label-x - root.progress * root.label-slide;
+        width: parent.width - self.x - Theme.sp-3 - 5px - Theme.sp-2;
+        height: parent.height;
+        text: root.label;
+        font-size: 13px * Theme.ui-scale;
+        color: root.active ? Theme.accent : Theme.fg-1;
+        font-weight: root.active ? 600 : 400;
+        vertical-alignment: center;
+        overflow: elide;
+        opacity: 1 - root.progress;
+    }
 
-        // 标签：不再用 `if !collapsed` 销毁 —— 瞬间消失就是"闪一下"。
-        // `horizontal-stretch: 0` 让它保持完整字形、**不被侧栏收缩压扁**（压扁
-        // 的观感很糟）；收起时由父级 `clip` 裁掉，并淡出。opacity 为 0 后仍不占
-        // 布局空间（stretch:0），所以不必再 `visible` 切换。
-        Text {
-            horizontal-stretch: 0;
-            text: root.label;
-            font-size: 13px * Theme.ui-scale;
-            color: root.active ? Theme.accent : Theme.fg-1;
-            font-weight: root.active ? 600 : 400;
-            vertical-alignment: center;
-            overflow: elide;
-            opacity: root.collapsed ? 0 : 1;
-            animate opacity {
-                duration: AnimationSettings.short2();
-                easing: AnimationSettings.e-standard-accelerate();
-                enabled: AnimationSettings.enabled;
-            }
-        }
-
-  // 选中项右侧的小圆点（同样不销毁：淡出而非瞬间消失）
-        Rectangle {
-            horizontal-stretch: 0;
-            width: 5px;
-            height: 5px;
-            border-radius: 2.5px;
-            background: Theme.accent;
-            opacity: (root.collapsed || !root.active) ? 0 : 1;
-            y: (parent.height - self.height) / 2;
-            animate opacity {
-                duration: AnimationSettings.short2();
-                easing: AnimationSettings.e-standard-accelerate();
-                enabled: AnimationSettings.enabled;
-            }
-        }
+    // 选中项右侧的小圆点：同样绝对定位 + 随进度淡出（未选中时直接不画，省一次混合）。
+    Rectangle {
+        x: parent.width - 5px - Theme.sp-2;
+        y: (parent.height - self.height) / 2;
+        width: 5px;
+        height: 5px;
+        border-radius: 2.5px;
+        background: Theme.accent;
+        opacity: root.active ? 1 - root.progress : 0;
     }
 
     ta := TouchArea {
@@ -118,11 +127,48 @@ export component Rail inherits Rectangle {
     in property <bool> lang-en: false;
     callback page-changed(int);
     callback search-requested();
+    /// 搜索框内容（输入即过滤）。
+    in-out property <string> search-query: "";
+    /// 过滤结果（Rust 侧排好序）。
+    in property <[SearchHit]> search-hits: [];
+    /// 键盘游标（由浮层与键盘事件共同维护）。
+    in-out property <int> search-cursor: 0;
+    /// 结果浮层是否展开（外部驱动：Rust 在有输入时置 true）。
+    in property <bool> search-open: false;
+    /// 浮层被关掉时通知外部把 `search-open` 清零。
+    callback search-dismissed();
+    /// 打开搜索浮层。
+    callback open-search();
+    /// 选中第 i 项：跳页 + 高亮 + 收起浮层。
+    callback choose-hit(int);
+    /// 关键词变化（Rust 侧做 contains 过滤后回写 `search-hits`）。
+    callback search-changed(string);
+    /// 键盘：↑↓ / Enter / Esc。
+    callback search-key(int, string);
 
     // 行宽：显式跟随侧栏宽度（= 宽度减去左右 padding）。**不能依赖布局分配** ——
     // 父级宽度动画期间布局会滞后，导致"侧栏先折叠、选中高亮才慢慢收缩"。
     property <length> rail-w: root.width;
     property <length> row-w: root.width - Theme.sp-2 * 2;
+    // 折叠进度：0 = 展开，1 = 折叠。**整个侧栏唯一的动画进度源**。
+    //
+    // 与 app_shell 里 `animate rail-w` 用**完全相同**的时长与缓动，所以侧栏
+    // 宽度和内部所有退场（标签滑出、圆点淡出、顶区交叉淡化）在同一条时间轴上。
+    // 各自单独 animate 会因为时长档位不同而错开——曾用 short2(100ms) 的淡去
+    // 对上 enter-container(300ms) 的收缩，标签提前 200ms 就消失，只剩图标干漂。
+    // 折叠/展开按钮的**固定宽度，两态一致**。
+    //
+    // 48px = 折叠态侧栏行宽（64 − sp-2×2），所以折叠态它正好填满整行、与下方
+    // 页面按钮对齐；展开态用同一个值，就不会被搜索框挤成一条窄缝（之前写成
+    // `width: 100%`，与搜索框在同一行里抢宽度，两态看着不一样大）。
+    // ⚠ 改侧栏折叠宽度（app_shell 的 `rail-collapsed ? 64px : …`）时同步改这里。
+    property <length> chev-w: 48px;
+    property <float> rail-progress: root.collapsed ? 1 : 0;
+    animate rail-progress {
+        duration: root.collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
+        easing: root.collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
+        enabled: AnimationSettings.enabled;
+    }
 
     // 宽度由实例处传入（`width: root.rail-w`），那边才有动画（见 app_shell 的
     // `animate rail-w`）—— 组件内再写 width + animate 会被实例覆盖，是死代码。
@@ -143,74 +189,175 @@ export component Rail inherits Rectangle {
         spacing: Theme.sp-1;
         alignment: start;
 
-        // 顶部：展开态是「搜索框 + 折叠」；收起态只留展开按钮（否则窄宽度下会被裁掉）
-        if !root.collapsed : HorizontalLayout {
-            height: 34px;
-            spacing: Theme.sp-1;
+        // ── 顶区：展开 1 行（搜索框 + 折叠按钮），折叠 2 行（折叠按钮 + 放大镜）──
+        //
+        // 行数按状态不同，所以**槽位高度必须跟着进度连续变化**（34 ↔ 68）。
+        // 否则折叠时凭空多出的 34px 会把下面 6 个页面图标整体瞬移下去 —— 那是
+        // 销毁/重建的瞬时跳变，**和宽度动画无关，给它加缓动也救不了**；唯一
+        // 有效的办法就是让高度本身成为进度的函数。
+        //
+        // 三块内容**都常驻**（不用 `if`），靠 opacity 交叉淡化：销毁没有过渡，
+        // 而且 `if` 会让 `search-input` 在折叠态不可见，展开后就没法 focus 它。
+        // 不可见的那块用 TouchArea 上的 `visible` 关掉 —— 只有 `visible: false`
+        // 才停止命中测试，`opacity: 0` 仍然会吃掉点击。
+        Rectangle {
+            // ⚠ 不要给这个 height 加 animate：它已经是进度的函数，再叠一层
+            // 就是双重平滑（右侧面板那次踩过的坑）。
+            height: 34px + 34px * root.rail-progress;
 
-            Rectangle {
-                horizontal-stretch: 1;
-                border-radius: Theme.radius-md;
-                background: Theme.sur-3;
+            // 展开态那一行。y=0，与折叠态第 1 行同位，交叉淡化时不会错位。
+            HorizontalLayout {
+                x: 0;
+                y: 0;
+                width: 100%;
+                height: 34px;
+                spacing: Theme.sp-1;
+                opacity: 1 - root.rail-progress;
+                Rectangle {
+                    horizontal-stretch: 1;
+                    border-radius: Theme.radius-md;
+                    background: Theme.sur-3;
 
-                HorizontalLayout {
-                    padding-left: Theme.sp-2;
-                    padding-right: Theme.sp-2;
-                    spacing: Theme.sp-2;
-                    alignment: center;
+                    HorizontalLayout {
+                        padding-left: Theme.sp-2;
+                        padding-right: Theme.sp-2;
+                        spacing: Theme.sp-2;
+                        alignment: center;
+
+                        Text {
+                            width: 16px;
+                            text: "\u{E8B6}"; // search
+                            font-family: "Material Icons";
+                            font-size: 15px * Theme.ui-scale;
+                            color: Theme.fg-3;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 18px;
+                            // ⚠ 必须显式 `cross-axis-self-alignment: center`。
+                            //
+                            // 上一级 `HorizontalLayout` 有显式 `height: 34px`，而这一项固定
+                            // 18px，于是它比可用高度小。Slint 的跨轴定位规则（i-slint-core
+                            // layout.rs）：
+                            //     Auto | Stretch | Start => 顶部
+                            //     End                      => 底部
+                            //     Center                   => 居中
+                            // 容器 `cross-axis-alignment` 与本项 `cross-axis-self-alignment`
+                            // 的默认值都是 `auto`，`auto` 又解析成 `stretch` —— **小元素一律
+                            // 贴顶**。症状就是占位提示「置顶」：它在 18px 里确实是居中的，
+                            // 但这 18px 整条带子浮在 34px 搜索框的顶部。
+                            //
+                            // 不能靠删掉 `height: 18px` 来解决：那会让输入框长到 34px，字贴着
+                            // 框沿；而 `TextInput` 的行盒本就该是 18px。
+                            cross-axis-self-alignment: center;
+
+
+                            Text {
+                                visible: search-input.text == "";
+                                width: 100%;
+                                height: 100%;
+                                text: root.lang-en ? "Search hosts & settings…" : "搜索主机、设置…";
+                                font-size: 12px * Theme.ui-scale;
+                                color: Theme.fg-3;
+                                // 水平**左对齐**，和真正输入后的文字同一列起点。显式写出来而不是
+                                // 靠默认：默认是 left，但这里一旦有人加 center 会让空态与输入态
+                                // 错开半列，一眼看去像两套排版。
+                                horizontal-alignment: left;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+
+                            search-input := TextInput {
+                                width: 100%;
+                                height: 100%;
+                                font-size: 12px * Theme.ui-scale;
+                                color: Theme.fg-1;
+                                single-line: true;
+                                // 输入即过滤：回写结果后浮层自动更新（无结果也显示"没有匹配项"）。
+                                // ⚠ `edited` 回调**没有参数**（Slint 1.18 的 TextInput 定义），
+                                // 文本要从 `search-input.text` 读。
+                                edited => { root.search-changed(search-input.text); }
+                                // 回车 = 选中当前项。
+                                accepted => {
+                                    if root.search-hits.length > 0 {
+                                        root.choose-hit(root.search-cursor);
+                                    }
+                                }
+                                // 方向键 / Esc 交给上层处理（键盘导航要跨结果项，
+                                // 单行输入框自己管不了上下移动）。
+                                key-pressed(ev) => {
+                                    if ev.text == "\u{10002}" || ev.text == "\u{10001}" {
+                                        root.search-key(ev.text == "\u{10001}" ? 1 : -1, "");
+                                        return accept;
+                                    }
+                                    if ev.text == "\u{1000C}" {   // Esc
+                                        root.search-key(0, "esc");
+                                        return accept;
+                                    }
+                                    reject;
+                                }
+                            }
+                        }
+                    }
+
+                    // ⚠ 这个 TouchArea 声明在 `search-input` **之后**，z 序更高，点击全被它
+                    // 吃掉 —— 而 `TextInput` 的 `focus-on-click` 只在点击真的落到它身上
+                    // 时才生效（`FocusScope` 文档：clicked 时把自己置为焦点元素）。
+                    // 于是"点搜索框打不了字"：事件被这个空 TouchArea 吞掉，输入框永远拿不到
+                    // 焦点，键盘事件自然也到不了它。
+                    //
+                    // 修法：保留这个 TouchArea（它负责"点图标/点框体空白也能进入搜索"），
+                    // 但在点击里**手动**把焦点交给输入框。不要试图把它挪到 TextInput 之前
+                    // —— 那样它会被下面的布局整块盖住、一次也收不到点击。
+                    search-ta := TouchArea {
+                        visible: !root.collapsed;
+                        clicked => {
+                            root.open-search();
+                            search-input.focus();
+                        }
+                    }
+                }
+                Rectangle {
+                    width: root.chev-w;
+                    border-radius: Theme.radius-md;
+                    background: collapse-ta.has-hover ? Theme.sur-3 : transparent;
 
                     Text {
-                        width: 16px;
-                        text: "\u{E8B6}"; // search
+                        text: "\u{E5CB}"; // chevron_left
                         font-family: "Material Icons";
-                        font-size: 15px * Theme.ui-scale;
-                        color: Theme.fg-3;
+                        font-size: 18px * Theme.ui-scale;
+                        color: Theme.fg-2;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
 
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        height: 18px;
-
-                        Text {
-                            visible: search-input.text == "";
-                            width: 100%;
-                            height: 100%;
-                            text: root.lang-en ? "Search hosts, settings…" : "搜索主机、设置…";
-                            font-size: 12px * Theme.ui-scale;
-                            color: Theme.fg-3;
-                            vertical-alignment: center;
-                            overflow: elide;
+                    collapse-ta := TouchArea {
+                        // 只在本态吃点击（它没视觉，关掉纯粹是为了不抢）
+                        visible: !root.collapsed;
+                        clicked => {
+                            root.collapsed = true;
+                            search-input.clear-focus();
+                            root.search-dismissed();
                         }
-
-                        search-input := TextInput {
-                            width: 100%;
-                            height: 100%;
-                            font-size: 12px * Theme.ui-scale;
-                            color: Theme.fg-1;
-                            single-line: true;
-                            accepted => {
-                                root.search-requested();
-                            }
-                        }
-                    }
-                }
-
-                search-ta := TouchArea {
-                    clicked => {
-                        root.search-requested();
                     }
                 }
             }
 
+            // 折叠态第 1 行：展开按钮（宽度与展开态的折叠按钮同一个值）
             Rectangle {
-                width: 26px;
+                x: 0;
+                y: 0;
+                opacity: root.rail-progress;
+                height: 34px;
+                width: root.chev-w;
                 border-radius: Theme.radius-md;
-                background: collapse-ta.has-hover ? Theme.sur-3 : transparent;
+                background: expand-ta.has-hover ? Theme.sur-3 : transparent;
 
                 Text {
-                    text: "\u{E5CB}"; // chevron_left
+                    text: "\u{E5CC}"; // chevron_right
                     font-family: "Material Icons";
                     font-size: 18px * Theme.ui-scale;
                     color: Theme.fg-2;
@@ -218,33 +365,47 @@ export component Rail inherits Rectangle {
                     vertical-alignment: center;
                 }
 
-                collapse-ta := TouchArea {
+                expand-ta := TouchArea {
+                    visible: root.collapsed;
                     clicked => {
-                        root.collapsed = true;
+                        root.collapsed = false;
                     }
                 }
             }
-        }
 
-        if root.collapsed : Rectangle {
-            // 不设 width：VerticalLayout 会分配满行宽（56 − 8 − 8 = 40px），
-            // 与下方页面按钮同宽 → 折叠/收起按钮与其它按钮横向对齐。
-            height: 34px;
-            border-radius: Theme.radius-md;
-            background: expand-ta.has-hover ? Theme.sur-3 : transparent;
+            // 折叠态第 2 行：放大镜。点击 = 列出全部可跳转项，不展开侧栏。
+            Rectangle {
+                x: 0;
+                y: 34px;
+                opacity: root.rail-progress;
+                height: 34px;
+                border-radius: Theme.radius-md;
+                background: mag-ta.has-hover ? Theme.sur-3 : transparent;
+                // 与展开态的搜索框**交叉淡化**：两态都有入口，但不会同时出现。
 
-            Text {
-                text: "\u{E5CC}"; // chevron_right
-                font-family: "Material Icons";
-                font-size: 18px * Theme.ui-scale;
-                color: Theme.fg-2;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-
-            expand-ta := TouchArea {
-                clicked => {
-                    root.collapsed = false;
+                Text {
+                    text: "\u{E8B6}"; // search
+                    font-family: "Material Icons";
+                    font-size: 18px * Theme.ui-scale;
+                    color: Theme.fg-2;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                mag-ta := TouchArea {
+                    visible: root.collapsed;
+                    mouse-cursor: pointer;
+                    clicked => {
+                        // 折叠态点放大镜 = **展开侧栏 + 立刻聚焦输入框**，一步到位。
+                        //
+                        // ⚠ 之前这里只有 `open-search()`，既不展开侧栏也不给焦点 ——
+                        // 它只是个往上抛的 callback（Rust 侧只重跑过滤 + 置 search-open）。
+                        // 焦点必须在这里给：输入框是两态**常驻**的同一个实例（折叠态只是
+                        // opacity 0 交叉淡化），所以展开前 focus 也能生效，展开动画一结束
+                        // 用户就能看到自己打的字。
+                        root.collapsed = false;
+                        root.open-search();
+                        search-input.focus();
+                    }
                 }
             }
         }
@@ -255,6 +416,7 @@ export component Rail inherits Rectangle {
             label: root.lang-en ? "Hosts" : "主机";
             active: root.current-page == 0;
             collapsed: root.collapsed;
+            progress: root.rail-progress;
             clicked => {
                 root.page-changed(0);
             }
@@ -265,6 +427,7 @@ export component Rail inherits Rectangle {
             label: root.lang-en ? "Terminal" : "终端";
             active: root.current-page == 1;
             collapsed: root.collapsed;
+            progress: root.rail-progress;
             clicked => {
                 root.page-changed(1);
             }
@@ -275,6 +438,7 @@ export component Rail inherits Rectangle {
             label: root.lang-en ? "Snippets" : "指令集";
             active: root.current-page == 2;
             collapsed: root.collapsed;
+            progress: root.rail-progress;
             clicked => {
                 root.page-changed(2);
             }
@@ -285,6 +449,7 @@ export component Rail inherits Rectangle {
             label: "Docker";
             active: root.current-page == 3;
             collapsed: root.collapsed;
+            progress: root.rail-progress;
             clicked => {
                 root.page-changed(3);
             }
@@ -295,6 +460,7 @@ export component Rail inherits Rectangle {
             label: root.lang-en ? "Notes" : "笔记随笔";
             active: root.current-page == 5;
             collapsed: root.collapsed;
+            progress: root.rail-progress;
             clicked => {
                 root.page-changed(5);
             }
@@ -305,6 +471,7 @@ export component Rail inherits Rectangle {
             label: root.lang-en ? "AI Assistant" : "AI 助手";
             active: root.current-page == 6;
             collapsed: root.collapsed;
+            progress: root.rail-progress;
             clicked => {
                 root.page-changed(6);
             }
@@ -326,6 +493,7 @@ export component Rail inherits Rectangle {
             label: root.lang-en ? "Settings" : "设置";
             active: root.current-page == 4;
             collapsed: root.collapsed;
+            progress: root.rail-progress;
             clicked => {
                 root.page-changed(4);
             }
@@ -333,5 +501,61 @@ export component Rail inherits Rectangle {
 
         // 底部原有一块「用户卡片」（头像首字母 + 登录名 + 本地账户）—— 按需求删除：
         // 不显示任何用户相关的东西（Rust 侧也不再从环境取登录名）。
+    }
+
+
+    // 浮层显隐：`search-open` 由外部（Rust：查询非空时置位）驱动，选中 / Esc 清零。
+    /// 浮层显隐。搜索框在两态都点它（展开态点框、折叠态点放大镜），统一走
+    /// `open-search()` → **只聚焦，不弹列表**；输入非空才弹（`search-open` 由
+    /// Rust 按查询非空置位）。早先空查询也列出全部可跳转项，点一下框就凭空冒出一
+    /// 列表，既突兀又抢走输入框焦点（用户反馈"点击后自动出现"）。
+    ///
+    /// ⚠ 必须在**两个**变化源上都同步：
+    ///   · `changed search-open` 只在布尔翻转时触发，而打字只改 `search-hits`
+    ///     （列表要从「没有匹配项」变成有结果）；
+    ///   · 点浮层外面会直接关掉 PopupWindow，**不会**回头改 `search-open`
+    ///     （Slint 1.18 的 PopupWindow 没有 closed 回调），所以下一次输入也得
+    ///     重新同步一次，否则再也弹不出来。
+    public function sync-popup() {
+        // ⚠ 只看 `search-open`，**不**要求 hits 非空：`search-open` 已由 Rust 按
+        // "查询非空"置位，所以"点了搜索框就弹一整列可跳转项"不会发生；而"输入了
+        // 但没有匹配项"要能弹出来提示"没有匹配项"（旧条件把它一起挡掉了）。
+        if root.search-open {
+            search-popup.open();
+        } else {
+            search-popup.dismiss();
+        }
+    }
+
+    changed search-open => { root.sync-popup(); }
+    changed search-hits => { root.sync-popup(); }
+    // 搜索结果浮层：挂在 Rail **根矩形**上（不是根布局里！）
+    //
+    // ⚠ 之前它声明在根 `VerticalLayout` 里 → 被布局当普通子项定位，落在六个
+    // 页面按钮**下面**（截图里浮层跑到侧栏中下部），而它的 `list-y` 只算了顶区
+    // 高度。移出来变成根矩形的直接子元素（且放在最后 = z 序最高），坐标才相对
+    // 整个侧栏，`list-y` 也才对得上。尺寸改由组件自己算（见 search_popup.slint）。
+    search-popup := SearchResultsPopup {
+        hits: root.search-hits;
+        cursor <=> root.search-cursor;
+        lang-en: root.lang-en;
+        // 浮层宽度跟着侧栏走：写死 300px 时它会画到侧栏外的主机上（用户反馈"溢出"）。
+        host-w: root.rail-w;
+        // 顶区两态高度不同（展开 1 行 / 折叠 2 行），浮层要挂在它**下方**：
+        // 折叠态若挂在 y: 0 会盖住那两个按钮。
+        list-y: root.collapsed ? 68px : 34px;
+        choose(i) => { root.choose-hit(i); }
+    }
+
+    // 点浮层/侧栏别处都会让输入框失焦 —— 那就收起浮层。用 has-focus 判定，
+    // 不用再摆一块全屏遮罩（遮罩会盖掉搜索框本身，点不到它）。
+    //
+    // ⚠ `changed` 只接受**属性名**，不接受 `search-input.has-focus` 这种路径
+    // 表达式（编译报 "expected '=>'"），所以先中转一个 bool。
+    property <bool> search-box-focused: search-input.has-focus;
+    changed search-box-focused => {
+        if (!search-input.has-focus && root.search-open) {
+            root.search-dismissed();
+        }
     }
 }

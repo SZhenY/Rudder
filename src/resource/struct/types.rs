@@ -24,6 +24,18 @@ pub(crate) struct SystemSnapshot {
     /// `Vec` 版本每次都要把每个挂载点的字符串深拷贝一遍 —— 而磁盘数据本来就只在
     /// `DISK_REFRESH_EVERY` 那一轮才变，那份深拷贝纯属白做。
     pub disks: Arc<[(String, u64, u64)]>,
+    /// 每核占用（0..1）。远端走 `/proc/stat` 的 `cpuN` 行，不经过这里；本机只有
+    /// sysinfo 这一条路 —— 之前本机没有这个字段，面板 CPU 页的「核心详情」恒为空
+    /// （显示"暂无数据"）。
+    pub core_usages: Arc<[f32]>,
+    /// 操作系统名（`long_os_version` → `os_version` → `name` 依次兜底）。
+    pub os_version: String,
+    /// 本机主机名（Windows 上通常是 `DESKTOP-XXXX`，Linux 是短主机名）。
+    pub host_name: String,
+    /// 内核版本（macOS 是 Darwin 版本号，Windows 是 NT 版本号）。
+    pub kernel_version: String,
+    /// 开机时长（秒）。远端来自 `uptime -p`，本机自己算。
+    pub uptime_secs: u64,
 }
 
 /// Stateful sampler. Construct once per process and poll via [`Self::sample`].
@@ -56,6 +68,26 @@ pub(crate) struct TabStatus {
     pub(crate) swap_total_kib: u64,
     pub(crate) net: Vec<(String, u64, u64)>,
     pub(crate) selected_iface: String,
+    /// 勾选的网卡集合（工具面板「网络端口」里的复选框，可多选）。
+    ///
+    /// 存在**状态表**而不是只在界面上：采样线程也要用（`session_event` 把选中网卡
+    /// 的速率喂进顶部 sparkline），那里拿不到界面属性。
+    ///
+    /// 语义 = **筛选**：只显示勾选的行（全选 = 全部，取消全选 = 一行不剩）。
+    /// 过滤在 Rust 侧做（不把这些行放进模型）—— 早先在界面层用 `visible` 隐藏
+    /// 未勾选的行，而 Slint 里布局子项 `visible: false` **仍然占位**，列表留下一堆
+    /// 空格（用户反馈"太难看"）；改成"只置顶不隐藏"，复选框又勾了等于没勾
+    /// （"要不然无法筛选"）。弹层另有一份**未筛选**的完整列表供选择，两者别混用。
+    ///
+    /// **三态**用 `Option` 表达 —— 早先只有"空集合 = 全部"两态，于是弹层里
+    /// 「全部网口」/「全部磁盘」那个复选框点了等于清空、勾选态毫无变化，用户
+    /// 没法"取消全选"来筛出空集（反馈：全部选项要求能够复选框取消选择）：
+    /// * `None`         = **全选**（默认）
+    /// * `Some(vec![])` = **一个都不选**（"筛空"，用户主动取消「全部」）
+    /// * `Some(names)`  = 只勾这些
+    pub(crate) picked_ifaces: Option<Vec<String>>,
+    /// 勾选的挂载点集合（同上，磁盘分区用）。
+    pub(crate) picked_disks: Option<Vec<String>>,
     pub(crate) net_hist: Vec<f32>,
     /// CPU 使用率环形缓冲（0..1），供工具面板的「CPU 负载趋势」用 —— 与 `net_hist`
     /// 同一套 push_ring/normalize。只有远端会话有；本机标签走本地快照。

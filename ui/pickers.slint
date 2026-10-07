@@ -1,0 +1,482 @@
+// 可复用的「选择器」类组件（设置页 / 未来的对话框都能用）。
+//
+// 背景：原先这些控件都是 `shell/page_settings.slint` 里的内联实现，于是
+//   · 字体下拉弹层在「界面字体」和「终端字体」两处各写了一份 —— 逐行 diff
+//     有 70% 是重复（只有数据源 / 选中索引 / 回调三处不同）；
+//   · HSV 调色盘只长在主题色那一处，光标颜色想用就得再抄一遍。
+// 抽出来之后，新增取色入口只需传数据 + 接一个回调。
+//
+// 只放**跨页复用**的那几件；设置页私有的组件仍留在 page_settings.slint，
+// 避免那个文件继续膨胀。
+
+import { Theme, AnimationSettings } from "theme.slint";
+import { LineEdit, ScrollView, Slider } from "std-widgets.slint";
+
+// ── 字体下拉弹层（界面字体 / 终端字体共用）────────────────────────────────
+//
+// 与原先两处的差异只有三处，全部做成了属性：数据源 `fonts`、选中项
+// `current-index`、选中回调 `pick`。
+//
+// ⚠ 为什么外壳是 `Rectangle` 而不是 `inherits PopupWindow`：Slint 有一条检查
+// 「PopupWindow 不能直接重复或条件化」，而本组件会在 `OptionRow` 这类容器
+// 内部被实例化 —— 直接继承 PopupWindow 会被判成"直接条件化"而编译失败
+// （`PopupWindow cannot be directly repeated or conditional`）。改成矩形壳 +
+// 内部持有真正的 PopupWindow 就绕开了；对调用方而言接口不变（open / dismiss）。
+export component FontPickerPopup inherits Rectangle {
+    /// 字体列表。带 `▍` 前缀的是**分组标题**，只作分类标签、不可选。
+    in property <[string]> fonts;
+    in property <int> current-index: -1;
+    /// 展开淡入进度（0 关闭 / 1 完全展开）。in-out 是为了让 open/dismiss 能改它。
+    in-out property <float> appear: 0;
+    /// 选中一项。`label` 已剔除分组标题（组件内部挡掉了）。
+    callback pick(string, int);
+
+    // 壳不占布局（真正的弹层是内部那个浮动的 PopupWindow）。
+    width: 0px;
+    height: 0px;
+
+    animate appear {
+        duration: AnimationSettings.enter-container();
+        easing: AnimationSettings.e-enter();
+        enabled: AnimationSettings.enabled;
+    }
+
+    /// 打开：先归零 → show → 再置 1。
+    ///
+    /// 为什么不能直接 `show()`：appear 停在 0 时弹层是全透明的，直接 show
+    /// 会看到"什么都没出现"。这与原实现里那三行的写法一致，只是收进了组件。
+    public function open() {
+        root.appear = 0;
+        pw.show();
+        root.appear = 1;
+    }
+
+    /// 关闭：置 0 触发淡出再 close（淡出实际不可见，与原行为一致）。
+    public function dismiss() {
+        root.appear = 0;
+        pw.close();
+    }
+
+    pw := PopupWindow {
+        // ⚠ PopupWindow 自身**不支持** border-*/background/border-radius（编译器报
+        // Unknown property）—— 这些必须挂在内层 Rectangle 上，与原实现一致。
+        Rectangle {
+            width: 240px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.sur-1;
+            opacity: root.appear;
+
+            VerticalLayout {
+                spacing: 0;
+                alignment: start;
+
+                // 列表限高 + ScrollView：滚轮可滚，弹窗不再顶出屏幕。
+                sv := ScrollView {
+                    height: 240px;
+
+                    // 弹层内滚轮兜底：显式驱动 viewport-y。ScrollView 继承自
+                    // Flickable 且 `viewport-height <=> content-height` 是双向绑定，
+                    // 放进 PopupWindow 后内置滚轮经常收不到事件，表现为「滚不动」
+                    // —— 这里自己接管滚轮量。TouchArea 的 scroll-event 会**消费**
+                    // 滚轮事件，因此不会出现「内置滚轮 + 手动处理」双倍滚动；
+                    // 它声明在列表之前，层级在下，列表项照常点得到。
+                    wheel-ta := TouchArea {
+                        scroll-event(e) => {
+                            sv.content-y = max(0px,
+                                min(sv.content-y + e.delta-y,
+                                    sv.content-height - 240px));
+                            return EventResult.accept;
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 0;
+
+                        for lbl[i] in root.fonts : Rectangle {
+                            height: 30px;
+                            border-radius: 8px;
+                            background: root.current-index == i
+                                ? Theme.rail-item-active
+                                : (f-ta.has-hover ? Theme.rail-item-hover : transparent);
+
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                alignment: start;
+
+                                Text {
+                                    text: lbl;
+                                    font-size: 12px * Theme.ui-scale;
+                                    color: root.current-index == i ? Theme.accent : Theme.fg-1;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // 分组标题（`▍` 前缀）**不可选**：它只是分类标签，选中也
+                            // 应用不出字体。Rust 侧回退逻辑也刻意避开它。
+                            f-ta := TouchArea {
+                                clicked => {
+                                    if lbl.starts-with("\u{258D}") {
+                                        return;
+                                    }
+                                    root.pick(lbl, i);
+                                    root.dismiss();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── HSV 调色盘弹层（主题色 / 光标颜色 / 任何"挑一个颜色"的入口）──────────
+//
+// 状态（hue / sat / val）刻意**关在组件内部**：调用方只给"当前色"和两个提交
+// 回调，不需要知道 HSV 是什么。原来这套状态住在 AccentPicker 里，光标颜色那边
+// 想用就得连状态带函数一起抄一遍。
+//
+// 交互约定：拖动过程中**只预览**（改内部 HSV，实时更新 SV 面板与色相条），松手
+// 才通过 `apply-rgb` 提交一次 —— 与磨砂滑杆同一套路，避免每帧写盘。
+export component ColorPalettePopup inherits Rectangle {
+    /// 打开时用来同步初始色相/饱和度/明度。
+    in property <color> current;
+    /// HEX 输入框内容。in-out：外部可回填（Rust 校验失败会改回来）。
+    in-out property <string> hex;
+    in property <bool> lang-en: false;
+    /// 弹层锚点（相对组件壳）。壳在调用方那行里通常是 0×0 的末尾元素，
+    /// 所以默认"右缘对齐壳、往下 6px"就是原先的效果。
+    in property <length> anchor-x: 0px;
+    in property <length> anchor-y: 6px;
+
+    /// HEX 回车提交。返回 false = 非法值（调用方据此回滚 hex）。
+    callback apply-color(string) -> bool;
+    /// 松手提交 RGB。返回 false = 未生效。
+    callback apply-rgb(int, int, int) -> bool;
+    /// 把输入框里的 hex 解析成颜色，好让 SV 面板与色相条**跳到那个颜色**。
+    /// 非法值返回 `transparent` 作为失败信号。
+    ///
+    /// 解析放在 Rust 侧：Slint 没有字符串取字符的能力（无 `substring`/`chars`），
+    /// 界面侧拆不开 `#RRGGBB`。
+    callback resolve-hex(string) -> color;
+
+    width: 0px;
+    height: 0px;
+
+    // HSV 三元组，刻意不对外暴露。
+    property <float> hue: 0;
+    property <float> sat: 1;
+    property <float> val: 1;
+    /// 最近一次提交是否有效（false = 调用方拒绝了，hex 会被回滚）。
+    property <bool> valid: true;
+
+    pure function live-color() -> color { return hsv(root.hue, root.sat, root.val); }
+    pure function clamp01(v: float) -> float { return max(0.0, min(1.0, v)); }
+
+    function set-sv(x: length, y: length, w: length, h: length) {
+        root.sat = root.clamp01(x / w);
+        root.val = root.clamp01(1.0 - y / h);
+    }
+
+    /// 色相条位置 → 色相（上界 359.9，免得正好回到 0 时指示圈弹到最左）。
+    pure function hue-from(x: length, w: length) -> float {
+        return max(0.0, min(359.9, (x / w) * 360.0));
+    }
+
+    function sync-from-color() {
+        let c = root.current.to-hsv();
+        root.hue = c.hue;
+        root.sat = c.saturation;
+        root.val = c.value;
+    }
+
+    function commit() {
+        root.valid = root.apply-rgb(root.live-color().red, root.live-color().green, root.live-color().blue);
+    }
+
+    /// 输入框回车：先解析 hex 并把 HSV 三元组同步过去（否则输入框变了、SV 面板
+    /// 还停在旧颜色，看着像"没反应"），再照常提交。
+    // 解析结果暂存：Slint 没有局部变量（`var`/`let` 都不支持），用 property 中转。
+    property <color> resolved-c: transparent;
+
+    function apply-typed-hex(t: string) {
+        root.resolved-c = root.resolve-hex(t);
+        // 解析失败时 Rust 返回 `transparent`，这时不动 HSV，只把原文交给
+        // apply-color 让它按既有路径报错 / 回滚。（hex 解析不出全透明色，
+        // 所以拿 `transparent` 当失败哨兵是安全的；注意 color 没有 `.a` 字段。）
+        if root.resolved-c != transparent {
+            root.hue = root.resolved-c.to-hsv().hue;
+            root.sat = root.resolved-c.to-hsv().saturation;
+            root.val = root.resolved-c.to-hsv().value;
+        }
+        root.valid = root.apply-color(t);
+    }
+
+    /// 打开：先按当前色同步一次 HSV —— 否则上次用过的色相会带进来。
+    public function open() {
+        root.sync-from-color();
+        root.valid = true;
+        pw.show();
+    }
+
+    public function dismiss() { pw.close(); }
+
+    init => { root.sync-from-color(); }
+    changed current => { root.sync-from-color(); }
+
+    pw := PopupWindow {
+        // 右缘对齐锚点（`self.width` = 下面那个 248px）。
+        x: root.anchor-x - self.width;
+        y: root.anchor-y;
+        width: 248px;
+        // ⚠ 默认是 CloseOnClick（点任何地方都关）；这里要"点外面才关"。
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.sur-1;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.line;
+            drop-shadow-blur: Theme.shadow-popup-blur;
+            drop-shadow-color: Theme.shadow-popup-color;
+            VerticalLayout {
+                padding: 12px;
+                spacing: 10px;
+                // 饱和度（横）/ 明度（纵）
+                sv-square := Rectangle {
+                    height: 140px;
+                    width: 100%;
+                    border-radius: Theme.radius-btn;
+                    clip: true;
+                    background: @linear-gradient(90deg, #ffffff 0%, hsv(root.hue, 1.0, 1.0) 100%);
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        background: @linear-gradient(180deg, transparent 0%, #000000 100%);
+                    }
+                    sv-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        moved => {
+                            if (sv-ta.pressed) {
+                                root.set-sv(sv-ta.mouse-x, sv-ta.mouse-y, sv-square.width, sv-square.height);
+                            }
+                        }
+                        pointer-event(ev) => {
+                            if (ev.kind == PointerEventKind.down) {
+                                root.set-sv(sv-ta.mouse-x, sv-ta.mouse-y, sv-square.width, sv-square.height);
+                            }
+                            if (ev.kind == PointerEventKind.up) { root.commit(); }
+                        }
+                    }
+                    Rectangle {
+                        x: root.sat * (parent.width - self.width);
+                        y: (1.0 - root.val) * (parent.height - self.height);
+                        width: 14px;
+                        height: 14px;
+                        border-radius: Theme.radius-btn;
+                        border-width: 2px;
+                        border-color: #ffffff;
+                        background: transparent;
+                        drop-shadow-blur: 3px;
+                        drop-shadow-color: #000000a0;
+                    }
+                }
+                // 色相条 + 实时预览
+                HorizontalLayout {
+                    spacing: 10px;
+                    hue-bar := Rectangle {
+                        height: 34px;
+                        horizontal-stretch: 1;
+                        Rectangle {
+                            y: 11px;
+                            height: 12px;
+                            width: 100%;
+                            border-radius: Theme.radius-btn;
+                            background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%);
+                        }
+                        hue-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            moved => {
+                                if (hue-ta.pressed) { root.hue = root.hue-from(hue-ta.mouse-x, hue-ta.width); }
+                            }
+                            pointer-event(ev) => {
+                                if (ev.kind == PointerEventKind.down) { root.hue = root.hue-from(hue-ta.mouse-x, hue-ta.width); }
+                                if (ev.kind == PointerEventKind.up) { root.commit(); }
+                            }
+                        }
+                        Rectangle {
+                            x: (root.hue / 360.0) * (parent.width - self.width);
+                            y: (parent.height - self.height) / 2;
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 8px;
+                            border-width: 2px;
+                            border-color: #ffffff;
+                            background: transparent;
+                            drop-shadow-blur: 3px;
+                            drop-shadow-color: #000000a0;
+                        }
+                    }
+                    Rectangle {
+                        width: 34px;
+                        height: 34px;
+                        border-radius: 17px;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        background: root.live-color();
+                    }
+                }
+                // HEX 输入
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    hex-edit := LineEdit {
+                        width: 120px;
+                        text: root.hex;
+                        accepted(t) => { root.apply-typed-hex(t); }
+                    }
+                    Text {
+                        text: "HEX";
+                        color: Theme.fg-3;
+                        font-size: 11px * Theme.ui-scale;
+                        vertical-alignment: center;
+                    }
+                }
+                Text {
+                    text: root.lang-en ? "Drag to preview; release to apply." : "拖动实时预览，松手即应用。";
+                    color: Theme.fg-3;
+                    font-size: 11px * Theme.ui-scale;
+                    wrap: word-wrap;
+                }
+                // 「完成」放在 HEX 输入**下方**，且横向**撑满**与调色盘同宽。
+                //
+                // `horizontal-stretch: 1` 必须显式写：默认值在 Slint 里不是"撑满"，
+                // 一旦被父级布局当成 preferred size 处理，按钮就会缩成内容宽度并
+                // 居中（用户截图：按钮居中且盖住 SV 面板）。
+                Rectangle {
+                    height: 28px;
+                    horizontal-stretch: 1;
+                    border-radius: Theme.radius-btn;
+                    background: Theme.accent;
+                    Text {
+                        text: root.lang-en ? "Done" : "完成";
+                        color: white;
+                        font-size: 12px * Theme.ui-scale;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    done-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { pw.close(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── 颜色行：预设色圆 + HEX 输入 + 调色盘入口 ────────────────────────────
+//
+// 主题色与光标颜色都是同一套结构：几个预设圆 + 一个 hex 输入框 + 一个能开
+// HSV 调色盘的入口。之前光标颜色那边是把这三样**手写**的（预设还是硬编码在
+// .slint 里的），改一次样式要动两处。
+export struct ColorSwatch {
+    hex: string,      // 传回给 pick 的值；空串表示"跟随主题/自动"
+    swatch: color,    // 圆点显示的颜色
+}
+
+export component ColorSwatchRow inherits Rectangle {
+    /// 预设色（点一下即选中）。
+    in property <[ColorSwatch]> presets;
+    /// 当前生效的值（与 presets 里某项的 hex 或调色盘选出的值相等）。
+    in property <string> current;
+    /// 当前生效色（色块与"调色盘…"入口的色块都画它）。
+    ///
+    /// 由调用方给而不是组件自己解析 hex：Slint 侧没有容错的颜色解析函数
+    /// （`#275` 的合法性校验一直在 Rust），字符串切片取值既脆弱又难 review。
+    in property <color> current-color: Theme.term-fg;
+    /// 当前生效色的 HEX。in-out：外部可回填（Rust 校验失败会改回来），
+    /// 同时也是「色块 + HEX」按钮上的文字。
+    in-out property <string> hex;
+    /// `hex` 为空时的占位文字（跟随主题 / 还没选色）。
+    in property <string> hex-field-placeholder: "——";
+    in property <bool> lang-en: false;
+
+    /// 点了某个预设（值可能是空串 = 跟随）。
+    callback pick(string);
+    /// 请求打开 HSV 调色盘（由调用方决定弹层锚在哪）。
+    callback request-palette();
+
+    height: 26px;
+
+    HorizontalLayout {
+        spacing: 6px;
+        cross-axis-alignment: center;
+        // 主轴靠左：预设圆从左排起，右边留出空隙（`hex` 有 stretch 会吃掉剩余）。
+        alignment: start;
+
+        for p[i] in root.presets : Rectangle {
+            width: 22px;
+            height: 22px;
+            border-radius: 11px;
+            background: p.swatch;
+            // 选中态：加粗描边 + 外圈高亮，和主题色那行一致。
+            border-width: 2px;
+            border-color: root.current == p.hex ? Theme.accent : Theme.line;
+            sw-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.pick(p.hex); }
+            }
+        }
+
+
+        // 调色盘入口：色块 + "调色板…" —— 点开完整 HSV 面板。
+        Rectangle {
+            width: max(76px, pal-txt.preferred-width + 32px);
+            height: 26px;
+            border-radius: Theme.radius-btn;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.sur-2;
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 6px;
+                cross-axis-alignment: center;
+                Rectangle {
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 3px;
+                    border-width: 1px;
+                    border-color: Theme.line;
+                    background: root.current-color;
+                }
+                pal-txt := Text {
+                    // 直接显示当前生效色的 HEX —— 这一格本身就是打开调色盘的
+                    // 入口，写着"调色板…"等于没告诉用户当前是什么色（与主题色
+                    // 那一行同构）。
+                    text: root.hex != "" ? root.hex : root.hex-field-placeholder;
+                    font-size: 11px * Theme.ui-scale;
+                    color: Theme.fg-1;
+                    vertical-alignment: center;
+                }
+            }
+            pal-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.request-palette(); }
+            }
+        }
+    }
+}
+
+/// 一条搜索结果。`kind`：0 = 页面 / 1 = 设置分类 / 2 = 主机；
+/// `index` 是分类 id 或主机在 `sessions` 里的下标；`page` 是目标 `shell-page`。
+export struct SearchHit {
+    kind: int,
+    index: int,
+    page: int,
+    title: string,
+    subtitle: string,
+}

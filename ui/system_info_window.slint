@@ -16,6 +16,9 @@ export struct SysNetRow {
     name: string,
     up: string,
     down: string,
+    /// 复选框勾选态（工具面板「网络端口」里勾 = 置顶这一条）。同 DiskInfo.picked：
+    /// 放在行数据里，界面一次读取即可，Slint 侧不做数组成员查找。
+    picked: bool,
 }
 
 export struct SysInfoRow {

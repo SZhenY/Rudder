@@ -62,6 +62,9 @@ component HostCard inherits Rectangle {
     in property <bool> lang-en: false;
     // 选中态（页面级单选）：卡片四周画一圈主题色高光
     in property <bool> selected: false;
+    /// 搜索命中高亮（2.4 秒后由 Rust 清回 false）。与 `selected` 分开：
+    /// 选中是持久状态，高亮是瞬时提示，两者同框时以高亮优先（更粗 + 光晕）。
+    in property <bool> highlight: false;
     // 整卡点击 = 选中（不再是直接连终端）；只有「快速连接」才发起连接。
     callback select();
     callback connect();
@@ -77,10 +80,14 @@ component HostCard inherits Rectangle {
     height: 168px;
     border-radius: Theme.radius-lg;
   // 选中态：一圈主题色高光（「选中卡片」）—— 边框加粗到 2px + accent 色。
-    border-width: root.selected ? 2px : 1px;
-    border-color: root.selected ? Theme.accent : Theme.line;
+    border-width: root.highlight ? 3px : (root.selected ? 2px : 1px);
+    border-color: (root.highlight || root.selected) ? Theme.accent : Theme.line;
+    // 高亮时加一圈同色光晕，隔着整页也能一眼看到是哪张卡（2.4 秒后自动消失）。
+    drop-shadow-blur: root.highlight ? 14px : 0px;
+    drop-shadow-color: root.highlight ? Theme.accent.with-alpha(0.55) : transparent;
     // 悬停在卡片或右上角「⋯」上都算"卡片悬停"（否则鼠标移到按钮上时底色会闪）。
-    background: (card-ta.has-hover || menu-ta.has-hover) ? Theme.sur-3 : Theme.sur-2;
+    background: root.highlight ? Theme.accent-soft
+        : ((card-ta.has-hover || menu-ta.has-hover) ? Theme.sur-3 : Theme.sur-2);
     clip: true;
 
     // 整卡点击 = **选中**（要连终端请点「快速连接」）。**先声明 = 画在下层**：
@@ -261,7 +268,10 @@ export component PageHosts inherits Rectangle {
     property <length> card-min-w: 260px;
     property <length> grid-gap: Theme.sp-3;
 
-    in property <bool> lang-en: false;
+        /// 搜索命中的主机 id（空串 = 无高亮）。用 id 而不是下标：网格按
+    /// `sessions[r * cols + c]` 排，下标会随分组/折叠变化，id 不会。
+    in property <string> host-highlight: "";
+in property <bool> lang-en: false;
     in property <[SessionInfo]> sessions;
     // 系统标题栏让位高度（macOS 红绿灯；自绘标题栏的平台传 0）。
     in property <length> top-inset: 0px;
@@ -562,6 +572,8 @@ export component PageHosts inherits Rectangle {
                             session: root.sessions[r * grid.cols + c];
                             lang-en: root.lang-en;
                             selected: root.selected-id == root.sessions[r * grid.cols + c].id;
+                            highlight: root.host-highlight != ""
+                                && root.host-highlight == root.sessions[r * grid.cols + c].id;
                             menu-open: root.menu-id == root.sessions[r * grid.cols + c].id;
                             select() => {
                                 root.selected-id = root.sessions[r * grid.cols + c].id;
