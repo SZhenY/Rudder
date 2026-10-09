@@ -51,6 +51,50 @@ fn install_panic_hook() {
 
 fn main() -> anyhow::Result<()> {
     install_panic_hook();
+    prefer_platform_gpu_backends();
+
+/// 图形后端优先级：**Windows = DX12 → OpenGL，Linux = Vulkan → OpenGL，
+/// macOS = Metal → OpenGL**。
+///
+/// 为什么要显式写：wgpu 30 的后端只有 Vulkan / Metal / DX12 / GLES（**没有 DX11**），
+/// 而且它的**枚举顺序是编译期 `#[cfg]` 固定的** —— wgpu-core `Instance::new` 依次注册
+/// vulkan → metal → dx12 → gles，`enumerate_adapters` 按注册序返回。于是 wgpu 在
+/// Windows 上的默认顺序是 **Vulkan → DX12 → GLES**，Vulkan 抢在 DX12 前面，与我们要的
+/// "DX12 优先" 相反。Linux / macOS 的默认顺序（Vulkan→GLES、Metal→GLES）本来就对。
+///
+/// 手段只有一个：`Backends` 是位集合，只能**启用/禁用**、不能排序，所以把 Vulkan
+/// 从集合里去掉。Slint 侧读同一个环境变量（`i-slint-core/graphics/wgpu_30.rs`：
+/// `Backends::from_env().unwrap_or_default()`），因此这一行同时管住"启动探测有没有
+/// GPU"和"实际用哪个后端渲染"—— 探测子进程（`--probe-renderer=`）也走 `main`，
+/// 自动继承。
+///
+/// ⚠ Slint 默认把 GL 放进 `backends_to_avoid`，但 `mask_backends` 在"减完为空"时
+/// 会保留原集合，所以显式写 `gl` 依然生效（Slint 自己的注释也这么写）。
+///
+/// 代价与逃生口：Windows 上这等于**彻底不用 Vulkan**（个别驱动异常的老机器会失去
+/// 这条路）。设了 `WGPU_BACKEND` 的用户/运维不受影响 —— 这里不覆盖，也不参与探测。
+fn prefer_platform_gpu_backends() {
+    if std::env::var_os("WGPU_BACKEND").is_some() {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    const WANT: &str = "dx12,gl";
+    #[cfg(target_os = "linux")]
+    const WANT: &str = "vulkan,gl";
+    #[cfg(target_os = "macos")]
+    const WANT: &str = "metal,gl";
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    const WANT: &str = "";
+
+    if WANT.is_empty() {
+        return;
+    }
+    // SAFETY: 在 `main` 的启动阶段、任何线程创建之前调用 —— 此时改进程环境没有并发
+    // 读者，Rust 2024 要求的 unsafe 在这里成立。
+    unsafe { std::env::set_var("WGPU_BACKEND", WANT) };
+}
+
+
 
     if std::env::args().any(|arg| arg == "--version" || arg == "-V") {
         println!("rudder {}", env!("CARGO_PKG_VERSION"));

@@ -1347,6 +1347,10 @@ AccentPicker {
                                     }
 
                                     wp-popup := PopupWindow {
+                                        // ⚠ 同 FontPickerPopup：默认值 `close-on-click`
+                                        // 会让点列表项时弹层先消失、clicked 不触发，
+                                        // 表现为「只有特定位置才选得中」。
+                                        close-policy: close-on-click-outside;
                                         Rectangle {
                                             width: 260px;
                                             border-radius: 8px;
@@ -1361,33 +1365,32 @@ AccentPicker {
                                                 alignment: start;
 
                                                 for wlab[i] in root.wallpaper-labels : Rectangle {
-                                                    height: 30px;
-                                                    border-radius: 8px;
-                                                    background: root.wallpaper-index == i
-                                                        ? Theme.rail-item-active
-                                                        : (wp-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                                height: 30px;
+                                                border-radius: 8px;
+                                                background: root.wallpaper-index == i
+                                                    ? Theme.rail-item-active
+                                                    : (wp-ta.has-hover ? Theme.rail-item-hover : transparent);
 
-                                                    HorizontalLayout {
-                                                        padding-left: 10px;
-                                                        alignment: start;
+                                                HorizontalLayout {
+                                                    padding-left: 10px;
+                                                    alignment: start;
 
-                                                        Text {
-                                                            text: wlab;
-                                                            font-size: 12px * Theme.ui-scale;
-                                                            color: root.wallpaper-index == i ? Theme.accent : Theme.fg-1;
-                                                            vertical-alignment: center;
-                                                        }
-                                                    }
-
-                                                    wp-ta := TouchArea {
-                                                        clicked => {
-                                                            root.set-wallpaper-label(wlab);
-                                                            root.wp-appear = 0;   // 复位（弹层随即消失）
-                                                            wp-popup.close();
-                                                        }
+                                                    Text {
+                                                        text: wlab;
+                                                        font-size: 12px * Theme.ui-scale;
+                                                        color: root.wallpaper-index == i ? Theme.accent : Theme.fg-1;
+                                                        vertical-alignment: center;
                                                     }
                                                 }
 
+                                                wp-ta := TouchArea {
+                                                    clicked => {
+                                                        root.set-wallpaper-label(wlab);
+                                                        root.wp-appear = 0;   // 复位（弹层随即消失）
+                                                        wp-popup.close();
+                                                    }
+                                                }
+                                            }
                                             }
                                         }
                                     }

@@ -837,6 +837,11 @@ export component AppWindow inherits Window {
     in property <[string]> jump-choices;
     in property <[string]> jump-ids;
     in-out property <int> dialog-jump-index: 0;
+    /// 新建会话对话框的类型预选（"ssh" / "serial" / "telnet"）。界面侧在
+    /// 调 `new-session-clicked()` 之前设好，Rust 侧读它 —— 这样卡片上
+    /// 「选择主机并创建」与「串口」两个入口能各自落到对的类型上。
+    in-out property <string> new-session-kind: "ssh";
+
     in-out property <string> dialog-kind: "ssh";
     in-out property <string> dialog-serial-port;
     in-out property <string> dialog-baud: "115200";
@@ -1304,6 +1309,7 @@ export component AppWindow inherits Window {
               root.connect-session("system:shell");
           }
           custom-session() => { root.new-session-clicked(); }
+          browse-hosts() => { root.shell-page = 0; }
           connect-session(id) => {
               root.shell-page = 1;
               root.connect-session(id);
@@ -1944,10 +1950,28 @@ export component AppWindow inherits Window {
 
           width: root.width - root.rail-w;
 
-          height: root.height - root.shell-top;
+          // ⚠ 要减去底部状态栏（28px）：此前按整个终端区高度铺，卡片下沿压住状态栏。
+          height: root.height - root.shell-top - 28px;
           background: Theme.bg-root;
 
           PageTerminal {
+              // 只有欢迎标签（还没连过任何主机）才叫「创建你的第一个会话」；
+              // 用户点过 `+` 之后再说「第一个」就不对了。
+              first-run: root.tabs.length == 0
+                  || (root.tabs.length == 1
+                      && root.tabs[0].kind == "welcome");
+              // 「选择主机并创建会话」= 直接打开新建主机对话框，一步到位。
+              // 原来只把页面跳到主机管理页：用户落地后还得自己再找一次
+              // 「新建主机」，两步、且看不出下一步该点哪。
+              // 「选择主机」= 去主机管理页挑一台已保存的（那边列表更全，还能
+              // 改端口 / 密钥）；真要新建走旁边的「创建会话」。
+              browse-hosts() => {
+                  root.shell-page = 0;
+              }
+              pick-host() => {
+                  root.new-session-kind = "ssh";
+                  root.new-session-clicked();
+              }
               width: 100%;
               height: 100%;
               lang-en: root.lang-en;
@@ -1959,14 +1983,11 @@ export component AppWindow inherits Window {
                   root.shell-page = 1;
                   root.connect-session("system:shell");
               }
-              custom-session() => {
-                  // 串口这类要挑参数的，仍然走「新建主机」对话框。
-                  root.new-session-clicked();
-              }
               connect-session(id) => {
+                  // 空串 = "新建一台主机"（不再跳主机管理页）。卡片里那个按钮已经
+                  // 直接走 pick-host() 了，这里只作兜底，语义保持一致。
                   if (id == "") {
-                      // 「远程 / 串口会话」卡片：去主机管理页新建
-                      root.shell-page = 0;
+                      root.new-session-clicked();
                   } else {
                       root.connect-session(id);
                   }

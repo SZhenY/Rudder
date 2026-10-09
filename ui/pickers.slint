@@ -58,6 +58,10 @@ export component FontPickerPopup inherits Rectangle {
     }
 
     pw := PopupWindow {
+        // ⚠ 必须显式声明。Slint 的默认值是 `close-on-click`（点弹层**内部**任何地方
+        // 都关），于是点列表项时弹层先消失、`clicked` 根本不触发，表现为「只有按住
+        // 某个位置才选得中」。调色盘那边早就修过同一个坑。
+        close-policy: close-on-click-outside;
         // ⚠ PopupWindow 自身**不支持** border-*/background/border-radius（编译器报
         // Unknown property）—— 这些必须挂在内层 Rectangle 上，与原实现一致。
         Rectangle {
@@ -73,23 +77,14 @@ export component FontPickerPopup inherits Rectangle {
                 alignment: start;
 
                 // 列表限高 + ScrollView：滚轮可滚，弹窗不再顶出屏幕。
+                //
+                // ⚠ 这里**只留一个子元素**（列表）。此前还塞过一个手写滚轮兜底的
+                // TouchArea，但它是 ScrollView 的子元素、也就是**内容流里的一行**
+                // （高度 0），鼠标命中的是后声明的列表项而不是它 → scroll-event 永不
+                // 触发；它还把内容结构搞成两个子项，连内置滚轮也一起失效，表现为
+                // 「滚轮和触控板都滚不动」。滚轮交给 Flickable 自带处理即可。
                 sv := ScrollView {
                     height: 240px;
-
-                    // 弹层内滚轮兜底：显式驱动 viewport-y。ScrollView 继承自
-                    // Flickable 且 `viewport-height <=> content-height` 是双向绑定，
-                    // 放进 PopupWindow 后内置滚轮经常收不到事件，表现为「滚不动」
-                    // —— 这里自己接管滚轮量。TouchArea 的 scroll-event 会**消费**
-                    // 滚轮事件，因此不会出现「内置滚轮 + 手动处理」双倍滚动；
-                    // 它声明在列表之前，层级在下，列表项照常点得到。
-                    wheel-ta := TouchArea {
-                        scroll-event(e) => {
-                            sv.content-y = max(0px,
-                                min(sv.content-y + e.delta-y,
-                                    sv.content-height - 240px));
-                            return EventResult.accept;
-                        }
-                    }
 
                     VerticalLayout {
                         spacing: 0;

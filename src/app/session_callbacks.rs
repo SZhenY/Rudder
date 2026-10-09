@@ -121,7 +121,12 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
             w.set_dialog_proxy_type("none".into());
             w.set_dialog_proxy_hostport("".into());
             w.set_dialog_group("".into());
-            w.set_dialog_kind("ssh".into());
+            // 类型预选：界面侧在调本回调前设好 `new-session-kind`（"ssh" /
+            // "serial" / "telnet"）。空状态卡片上「选择主机并创建」与「串口」
+            // 两个按钮开的是同一个对话框，此前都硬编码落在 SSH 上 —— 点了
+            // "串口"却不是串口，不符合直觉。
+            let kind = w.get_new_session_kind().to_string();
+            w.set_dialog_kind(if kind.is_empty() { "ssh".into() } else { kind.into() });
             w.set_dialog_serial_port("".into());
             w.set_dialog_baud("115200".into());
             w.set_dialog_data_bits("8".into());

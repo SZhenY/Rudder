@@ -99,6 +99,8 @@ export component TerminalStage inherits Rectangle {
     // 欢迎标签页里的三个入口（与终端页空态同一套，窗口侧同样接法）
     callback new-local-session();
     callback custom-session();
+    /// 「选择主机」= 跳到主机管理页（上面窗口级那一层没有对应按钮可复用）。
+    callback browse-hosts();
     callback connect-session(string /* id */);
     callback cycle-tab(bool);
     callback splitter-drag(int, length, bool);
@@ -230,7 +232,12 @@ export component TerminalStage inherits Rectangle {
                         height: 100%;
                         lang-en: root.lang-en;
                         sessions: root.sessions;
+                        // 欢迎标签能出现，说明标签栏里已经有它了 —— 不是
+                        // 「创建你的第一个会话」。
+                        first-run: false;
                         new-local-session() => { root.new-local-session(); }
+                        // 「选择主机」去主机管理页挑已保存的。
+                        browse-hosts() => { root.browse-hosts(); }
                         custom-session() => { root.custom-session(); }
                         connect-session(id) => { root.connect-session(id); }
                     }
