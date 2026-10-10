@@ -22,6 +22,56 @@ use crate::ui::{AppWindow, TerminalState};
 /// Center the window on the primary monitor's work area (Windows).
 #[cfg(windows)]
 pub(crate) fn center_window(win: &AppWindow) {
+    let size = win.window().size(); // physical pixels
+    center_window_sized(win, size.width, size.height);
+}
+
+#[cfg(not(windows))]
+pub(crate) fn center_window(_win: &AppWindow) {}
+
+/// 首次显示（`Window::run()`）之前的居中预设。
+///
+/// 此时窗口多半还没创建，Slint 记录的“物理尺寸”是用**尚未就绪的 scale** 算出的
+/// （偏小，125% 屏上应得 1396×833，记录值只有 1117×666），拿它居中会偏：出生位置
+/// 偏右下约 (140, 84)px，30ms 兜底居中再拉回中间，表现为可见的跳动。所以这里由
+/// 调用方传入**逻辑尺寸**，用系统 DPI 换算出物理尺寸再算居中点；窗口未创建时
+/// `set_position` 会写进窗口创建属性，出生即居中。
+#[cfg(windows)]
+pub(crate) fn center_window_before_show(win: &AppWindow, logical_w: f32, logical_h: f32) {
+    use std::ffi::c_void;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetDC(hwnd: *mut c_void) -> *mut c_void;
+        fn ReleaseDC(hwnd: *mut c_void, hdc: *mut c_void) -> i32;
+    }
+    #[link(name = "gdi32")]
+    unsafe extern "system" {
+        fn GetDeviceCaps(hdc: *mut c_void, index: i32) -> i32;
+    }
+    const LOGPIXELSX: i32 = 88;
+
+    // 屏幕 DC 的 LOGPIXELSX = 主显示器有效 DPI（PerMonitorV2 进程下与 GetDpiForSystem
+    // 同值）。选它而不是 GetDpiForSystem（Win10 1607+）是为了不抬高最低系统要求。
+    let hdc = unsafe { GetDC(std::ptr::null_mut()) };
+    let dpi = if hdc.is_null() {
+        96
+    } else {
+        let dpi = unsafe { GetDeviceCaps(hdc, LOGPIXELSX) };
+        let _ = unsafe { ReleaseDC(std::ptr::null_mut(), hdc) };
+        if dpi > 0 { dpi } else { 96 }
+    };
+    let scale = dpi as f32 / 96.0;
+    let w = (logical_w * scale).round().max(1.0) as u32;
+    let h = (logical_h * scale).round().max(1.0) as u32;
+    center_window_sized(win, w, h);
+}
+
+#[cfg(not(windows))]
+pub(crate) fn center_window_before_show(_win: &AppWindow, _logical_w: f32, _logical_h: f32) {}
+
+#[cfg(windows)]
+fn center_window_sized(win: &AppWindow, width: u32, height: u32) {
     #[repr(C)]
     struct Rect {
         left: i32,
@@ -36,7 +86,6 @@ pub(crate) fn center_window(win: &AppWindow) {
     }
     const SPI_GETWORKAREA: u32 = 0x0030;
 
-    let size = win.window().size(); // physical pixels
     let mut wa = Rect {
         left: 0,
         top: 0,
@@ -49,14 +98,22 @@ pub(crate) fn center_window(win: &AppWindow) {
     }
     let area_w = (wa.right - wa.left).max(0) as u32;
     let area_h = (wa.bottom - wa.top).max(0) as u32;
-    let x = wa.left + ((area_w.saturating_sub(size.width)) / 2) as i32;
-    let y = wa.top + ((area_h.saturating_sub(size.height)) / 2) as i32;
+    let x = wa.left + ((area_w.saturating_sub(width)) / 2) as i32;
+    let y = wa.top + ((area_h.saturating_sub(height)) / 2) as i32;
+    tracing::debug!(
+        "[CENTER] window={}x{} work={}x{} at({},{}) -> ({},{})",
+        width,
+        height,
+        area_w,
+        area_h,
+        wa.left,
+        wa.top,
+        x,
+        y
+    );
     win.window()
         .set_position(slint::PhysicalPosition::new(x, y));
 }
-
-#[cfg(not(windows))]
-pub(crate) fn center_window(_win: &AppWindow) {}
 
 /// The active terminal tab's current SFTP directory ("" if unknown).
 pub(crate) fn active_sftp_path(win: &AppWindow, tab_id: &str) -> String {

@@ -121,8 +121,10 @@ pub(crate) fn wire_window_chrome(
         });
     }
 
-    // Center the window on the primary monitor once it's shown (size is only
-    // known after the first frame, so defer via a single-shot timer).
+    // 兜底居中：常规启动路径（`app::run` 的尺寸/位置预设）已在窗口**显示前**落位
+    // 居中；这条 30ms 定时器保留两个用途 —— 首次启动没有保存尺寸、预设算不出位置时
+    // 靠它居中；首帧后拿到真实窗口尺寸再校正一次（幂等：位置已正确时算出的坐标
+    // 相同，无视觉变化）。
     {
         let weak = window.as_weak();
         slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {

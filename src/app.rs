@@ -277,7 +277,7 @@ pub(crate) use pane_layout::{
     refresh_panes, save_layout, update_terminal_row,
 };
 pub(crate) use window_geometry::{
-    center_window, handle_file_drop, handle_macos_terminal_wheel,
+    center_window, center_window_before_show, handle_file_drop, handle_macos_terminal_wheel,
 };
 
 mod render_tickets;
@@ -1375,6 +1375,30 @@ pub fn run() -> Result<()> {
     }
 
     wire_window_chrome(&window, &handles, &store, &exit_confirmed);
+
+    // 启动首帧尺寸预设：`window.run()` 首次 show 时若窗口从未显式设过尺寸，Slint 的
+    // winit 后端会先按 UI 的 preferred（1440×900）把窗口拉大再显示，随后事件循环里的
+    // pending 恢复再缩回保存尺寸 —— 两帧不同尺寸就是可见的「大→小」跳变（GPU 档因
+    // swapchain 重建、首帧呈现慢而明显；软件档渲染路径短，几乎不可感知）。这里在 show
+    // 前按保存尺寸调一次 `set_size`：置位后端的 `has_explicit_size`，激活流程不再用
+    // preferred 覆盖，窗口创建时即带上该尺寸。显示器裁剪复用
+    // `clamp_window_size_to_monitor`（show 前无 current monitor 时回退主屏 #278；
+    // Wayland 返回 None 交合成器 #286）。pending 恢复保持原样兜底，尺寸有偏差时
+    // （如换过显示器）仍会校正一次。
+    if let Some((w, h)) = pending_window_size_restore.get() {
+        let (w, h) = clamp_window_size_to_monitor(window.window(), Some((w, h))).unwrap_or((w, h));
+        window
+            .window()
+            .set_size(slint::WindowSize::Logical(slint::LogicalSize::new(w, h)));
+        // 位置同样要在 show 前落位：否则窗口先以系统默认位置出现，`wire_window_chrome`
+        // 里延迟 30ms 的居中再把它挪到屏幕中间 —— 又是一次可见的跳动。
+        // 注意不能用 `center_window`：它读 Slint 记录的物理尺寸，而此刻 scale 尚未
+        // 就绪（记录的是逻辑值当物理值，偏小），居中会偏；`center_window_before_show`
+        // 按系统 DPI 换算物理尺寸后再算居中点。窗口未创建时 set_position 会写进
+        // 窗口创建属性，出生即居中。（30ms 的定时器保留兜底：没有保存尺寸的首次
+        // 启动走不到这里。）
+        center_window_before_show(&window, w, h);
+    }
 
     window.run().context("event loop exited with error")?;
     // 同上：退出前把防抖窗口内未落盘的设置改动写出去。

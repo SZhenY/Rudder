@@ -244,17 +244,25 @@ export component ColorPalettePopup inherits Rectangle {
             VerticalLayout {
                 padding: 12px;
                 spacing: 10px;
-                // 饱和度（横）/ 明度（纵）
+                // 饱和度（横）/ 明度（纵）。渐变两层**单独包进一个圆角 clip 容器**：
+                // femtoVG 下「圆角 + clip」走离屏层且内容变化即失效；clip 挂在
+                // sv-square 上时，拖手柄（每帧 move）会让整块层的缓存每帧重算。
+                // 收窄到只包渐变层后，拖 sv 手柄不再动用层缓存（手柄在层外）；
+                // 顺带修正：手柄拖到角部不再被圆角裁缺一块。
                 sv-square := Rectangle {
                     height: 140px;
                     width: 100%;
-                    border-radius: Theme.radius-btn;
-                    clip: true;
-                    background: @linear-gradient(90deg, #ffffff 0%, hsv(root.hue, 1.0, 1.0) 100%);
                     Rectangle {
                         width: 100%;
                         height: 100%;
-                        background: @linear-gradient(180deg, transparent 0%, #000000 100%);
+                        border-radius: Theme.radius-btn;
+                        clip: true;
+                        background: @linear-gradient(90deg, #ffffff 0%, hsv(root.hue, 1.0, 1.0) 100%);
+                        Rectangle {
+                            width: 100%;
+                            height: 100%;
+                            background: @linear-gradient(180deg, transparent 0%, #000000 100%);
+                        }
                     }
                     sv-ta := TouchArea {
                         mouse-cursor: pointer;

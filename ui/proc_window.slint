@@ -228,7 +228,11 @@ export component ProcWindow inherits Window {
                     for p in root.proc-list : Rectangle {
                         height: 20px;
                         border-radius: 2px;
-                        clip: true;
+                        // 原先带 `clip: true`（把行内 CPU 条裁出 2px 圆角）——femtoVG 下
+                        // 「圆角 + clip」会走离屏层，而本表每 2 秒整体刷新，每行都会
+                        // 重建一次层。CPU 条宽度本就不越界（≤ 行宽），2px 圆角裁切在
+                        // 20px 行上看不出，去掉省掉全部层重建；border-radius 保留：
+                        // 以后给行加底色时背景仍是圆角。
 
                         row-touch := TouchArea {
                             pointer-event(e) => {

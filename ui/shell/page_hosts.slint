@@ -88,7 +88,9 @@ component HostCard inherits Rectangle {
     // 悬停在卡片或右上角「⋯」上都算"卡片悬停"（否则鼠标移到按钮上时底色会闪）。
     background: root.highlight ? Theme.accent-soft
         : ((card-ta.has-hover || menu-ta.has-hover) ? Theme.sur-3 : Theme.sur-2);
-    clip: true;
+    // 原先带 `clip: true`：femtoVG 下「圆角 + clip」走离屏层，主机列表滚动时
+    // 每张可见卡片的层都要随位置重建。卡内内容全在 12px 内边距里、画不到圆角上，
+    // 去掉省掉整套滚动期重建；右上角「⋯」也就不再被父级圆角蹭掉一个角。
 
     // 整卡点击 = **选中**（要连终端请点「快速连接」）。**先声明 = 画在下层**：
     // 行内按钮声明在后面才点得到（同 pane_tabs 里关闭钮的教训）。
