@@ -58,6 +58,11 @@ export component FontPickerPopup inherits Rectangle {
     }
 
     pw := PopupWindow {
+        // ⚠ 必须显式声明 width：命中判定用的是"弹层根项几何"（i-slint-core/window.rs 的
+        // process_mouse_input），而缺省时根宽由 layout_info 聚合算错（Windows 实测 50px
+        // vs 内容 240px）→ 只剩视觉中央一条窄竖条可交互、其余点击穿透下层或直接把弹层
+        // 关掉。调色盘弹层（下方 ColorPalettePopup）写了 width: 248px 才一直无恙。
+        width: 240px;
         // ⚠ 必须显式声明。Slint 的默认值是 `close-on-click`（点弹层**内部**任何地方
         // 都关），于是点列表项时弹层先消失、`clicked` 根本不触发，表现为「只有按住
         // 某个位置才选得中」。调色盘那边早就修过同一个坑。

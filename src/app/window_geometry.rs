@@ -274,11 +274,12 @@ pub(crate) fn cursor_pos() -> Option<(i32, i32)> {
 /// `hovered_pos` 是最后一次已知的指针位置（**逻辑客户区坐标**）。Windows 忽略它 ——
 /// OLE 拖放会抑制 `WM_MOUSEMOVE`，传进来的位置是过期的 —— 改问系统拿；其它平台没有
 /// 别的办法知道落点，只能靠它（上游 0aeba62：此前非 Windows 是空实现，拖放完全无效）。
+/// 参数名带下划线：仅 Windows 编译时它被有意闲置（`_hovered_pos` 仍可在非 Windows 分支使用）。
 pub(crate) fn handle_file_drop(
     win: &AppWindow,
     sftp_handles: &SftpHandles,
     path: std::path::PathBuf,
-    hovered_pos: Option<(f32, f32)>,
+    _hovered_pos: Option<(f32, f32)>,
 ) {
     #[cfg(windows)]
     let point = {
@@ -296,7 +297,7 @@ pub(crate) fn handle_file_drop(
             })
     };
     #[cfg(not(windows))]
-    let point = hovered_pos;
+    let point = _hovered_pos;
 
     let Some((client_x, client_y)) = point else {
         return;

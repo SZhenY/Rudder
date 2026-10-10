@@ -224,8 +224,6 @@ use crate::ssh::{
     ProcInfo, SessionCommand, SessionEvent, SessionHandle, SystemDetails, format_mtime,
     format_size, spawn_session,
 };
-#[cfg(windows)]
-use crate::terminal::c0_letter_key_down;
 #[cfg(test)]
 use crate::terminal::{
     encode_command_bar_input, encode_pasted_text, key_to_pty_bytes, paste_requires_large_review,
@@ -978,11 +976,17 @@ pub fn run() -> Result<()> {
             if dir.is_empty() {
                 return;
             }
+            // 三分支（与 window_chrome.rs 的"打开日志目录"一致）：macOS 没有
+            // xdg-open，必须用 open；此前 not(windows) 全走 xdg-open，Mac 上静默失效。
+            #[cfg(target_os = "macos")]
+            {
+                let _ = std::process::Command::new("open").arg(&dir).spawn();
+            }
             #[cfg(windows)]
             {
                 let _ = std::process::Command::new("explorer").arg(&dir).spawn();
             }
-            #[cfg(not(windows))]
+            #[cfg(all(unix, not(target_os = "macos")))]
             {
                 let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
             }

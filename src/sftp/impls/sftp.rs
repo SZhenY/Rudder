@@ -1569,8 +1569,8 @@ fn parent_dir(path: &str) -> String {
 /// containing shell metacharacters (`&` `|` `>` `<` `^` …) — e.g. `foo&calc.exe`
 /// — could inject and run arbitrary commands when the user opened it.  We call
 /// `ShellExecuteW` directly instead: it treats the path as one opaque string, so
-/// no shell parsing happens.  (`xdg-open` on Unix already takes a single argv
-/// argument and never invokes a shell.)
+/// no shell parsing happens.  (`open` on macOS / `xdg-open` on Linux also take a
+/// single argv argument and never invoke a shell.)
 #[cfg(windows)]
 fn open_with_os(path: &str) {
     use std::ffi::OsStr;
@@ -1606,7 +1606,12 @@ fn open_with_os(path: &str) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn open_with_os(path: &str) {
+    let _ = std::process::Command::new("open").arg(path).spawn();
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
 fn open_with_os(path: &str) {
     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
 }

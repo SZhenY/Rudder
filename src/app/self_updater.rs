@@ -35,7 +35,15 @@ pub(crate) struct UpdateCandidate {
 /// 对应 `.github/workflows/release.yml` 的 `matrix.name`。
 fn asset_keywords() -> &'static [&'static str] {
     if cfg!(target_os = "macos") {
-        &["macos-14", "macos"]
+        // macOS 的两个发布包都含 "macos" 字样，但架构不同（-macos-aarch64 /
+        // -macos-x86_64）。必须像 Windows 一样按架构选关键字——否则 Intel/ARM
+        // Mac 会互相拿到错误架构的包，替换后无法启动。这里**故意不放**裸
+        // "macos" 兜底：宁可提示"无更新"，也不能装错架构。
+        if cfg!(target_arch = "aarch64") {
+            &["macos-aarch64"]
+        } else {
+            &["macos-x86_64"]
+        }
     } else if cfg!(target_os = "windows") {
         // Windows on ARM64 ships its own asset; the x86_64 keywords must not
         // match there or an ARM64 user would be handed the emulated build.

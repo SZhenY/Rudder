@@ -111,14 +111,9 @@ component Card inherits Rectangle {
         @children
     }
 
-    // 玻璃顶缘高光：顶部 3px 白@5% 渐隐，模拟玻璃厚度（clip 已开，圆角内裁剪）。
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: 100%;
-        height: Theme.spec-glow-height;
-        background: Theme.spec-glow;
-    }
+    // 注：这里原有「玻璃顶缘高光」（顶部 3px 白@5% 渐隐）。深色壁纸下它会被看成
+    // 卡片顶部的一根直线（2026-10-10 用户反馈），已移除；若要恢复玻璃质感，
+    // 找回 Theme 的 spec-glow / spec-glow-height 两个令牌重画即可。
 }
 
 // [- value +] 步进器（的字号 / 缩放都是这个控件）。
@@ -1114,7 +1109,7 @@ export component PageSettings inherits Rectangle {
                 it4 := CategoryItem {
                     glyph: "\u{E2EB}"; // cloud
                     label: root.lang-en ? "Cloud Sync" : "云同步";
-                    sub: root.lang-en ? "WebDAV backup and restore" : "官方云 · WebDAV、加密与恢复";
+                    sub: root.lang-en ? "WebDAV backup and restore" : "WebDAV、加密与恢复";
                     active: root.current-cat == 6;
                     clicked => {
                         root.current-cat = 6;
@@ -1344,9 +1339,18 @@ AccentPicker {
                                     UploadButton {
                                         clicked => { root.pick-wallpaper(); }
                                     }
-                                    }
 
+                                    // ⚠ 弹层锚点 = 所在容器的原点（核心用父项几何定位）。
+                                    // 此前它挂在 FieldBlock 尾部，锚点 = 整块顶部（标题之上）——
+                                    // 内容区滚到顶时弹层会从隐藏区再往上伸、盖住分区标题
+                                    // （2026-10-10 无头实测：锚点落在卡片顶）。移进字段行内 +
+                                    // y = 行高 30 + 2 → 恒从字段行正下方弹出。
                                     wp-popup := PopupWindow {
+                                        // ⚠ 必须显式声明 width（同 FontPickerPopup）：命中区 =
+                                        // 弹层根项几何，缺省时宽度被 layout_info 算错（实测 0px
+                                        // vs 内容 260px）→ 只剩一条窄竖条可交互（2026-10-10 无头实证）。
+                                        width: 260px;
+                                        y: 32px;
                                         // ⚠ 同 FontPickerPopup：默认值 `close-on-click`
                                         // 会让点列表项时弹层先消失、clicked 不触发，
                                         // 表现为「只有特定位置才选得中」。
@@ -1364,35 +1368,47 @@ AccentPicker {
                                                 spacing: 0;
                                                 alignment: start;
 
-                                                for wlab[i] in root.wallpaper-labels : Rectangle {
-                                                height: 30px;
-                                                border-radius: 8px;
-                                                background: root.wallpaper-index == i
-                                                    ? Theme.rail-item-active
-                                                    : (wp-ta.has-hover ? Theme.rail-item-hover : transparent);
+                                                // 限高（与字体下拉同上限 240px）：长清单可滚动、
+                                                // 弹层不再顶出设置界面。高度按行数算 —— 别绑
+                                                // content-height（fluent ScrollView 会成绑定循环）。
+                                                wp-sv := ScrollView {
+                                                    height: min(240px, root.wallpaper-labels.length * 30px);
 
-                                                HorizontalLayout {
-                                                    padding-left: 10px;
-                                                    alignment: start;
+                                                    VerticalLayout {
+                                                        spacing: 0;
 
-                                                    Text {
-                                                        text: wlab;
-                                                        font-size: 12px * Theme.ui-scale;
-                                                        color: root.wallpaper-index == i ? Theme.accent : Theme.fg-1;
-                                                        vertical-alignment: center;
+                                                        for wlab[i] in root.wallpaper-labels : Rectangle {
+                                                            height: 30px;
+                                                            border-radius: 8px;
+                                                            background: root.wallpaper-index == i
+                                                                ? Theme.rail-item-active
+                                                                : (wp-ta.has-hover ? Theme.rail-item-hover : transparent);
+
+                                                            HorizontalLayout {
+                                                                padding-left: 10px;
+                                                                alignment: start;
+
+                                                                Text {
+                                                                    text: wlab;
+                                                                    font-size: 12px * Theme.ui-scale;
+                                                                    color: root.wallpaper-index == i ? Theme.accent : Theme.fg-1;
+                                                                    vertical-alignment: center;
+                                                                }
+                                                            }
+
+                                                            wp-ta := TouchArea {
+                                                                clicked => {
+                                                                    root.set-wallpaper-label(wlab);
+                                                                    root.wp-appear = 0;   // 复位（弹层随即消失）
+                                                                    wp-popup.close();
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
-
-                                                wp-ta := TouchArea {
-                                                    clicked => {
-                                                        root.set-wallpaper-label(wlab);
-                                                        root.wp-appear = 0;   // 复位（弹层随即消失）
-                                                        wp-popup.close();
-                                                    }
-                                                }
-                                            }
                                             }
                                         }
+                                    }
                                     }
                                 }
                                 FieldBlock {
@@ -1554,8 +1570,17 @@ ToggleRow {
                                             height: 26px;
                                             border-radius: Theme.radius-btn;
                                             border-width: 1px;
-                                            border-color: root.update-freq-index == i ? Theme.accent : Theme.line;
-                                            background: root.update-freq-index == i ? Theme.rail-item-active : Theme.sur-2;
+                                            // 悬停高亮与 CapsuleRow（更新渠道）同一套：描边 accent-ring、
+                                            // 底 sur-3；此前漏了 has-hover，鼠标移上去毫无反馈。
+                                            border-color: root.update-freq-index == i
+                                                ? Theme.accent
+                                                : (ff-ta.has-hover ? Theme.accent-ring : Theme.line);
+                                            background: root.update-freq-index == i
+                                                ? Theme.rail-item-active
+                                                : (ff-ta.pressed ? Theme.accent-press
+                                                : (ff-ta.has-hover ? Theme.sur-3 : Theme.sur-2));
+                                            animate background { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
+                                            animate border-color { duration: AnimationSettings.short2(); easing: AnimationSettings.e-standard-decelerate(); }
 
                                             HorizontalLayout {
                                                 padding-left: 10px;
@@ -1568,7 +1593,8 @@ ToggleRow {
                                                     vertical-alignment: center;
                                                 }
                                             }
-                                            TouchArea {
+                                            ff-ta := TouchArea {
+                                                mouse-cursor: pointer;
                                                 clicked => {
                                                     root.set-update-freq(i);
                                                 }
@@ -2252,11 +2278,11 @@ Rectangle {
                             }
                             Card {
                                 KeyRow {
-                                    keys: "Ctrl+Tab";
+                                    keys: Theme.is-mac ? "⌃Tab" : "Ctrl+Tab";
                                     desc: root.lang-en ? "Next tab" : "下一个标签页";
                                 }
                                 KeyRow {
-                                    keys: "Ctrl+Shift+Tab";
+                                    keys: Theme.is-mac ? "⌃⇧Tab" : "Ctrl+Shift+Tab";
                                     desc: root.lang-en ? "Previous tab" : "上一个标签页";
                                 }
                             }
@@ -2267,19 +2293,21 @@ Rectangle {
                             }
                             Card {
                                 KeyRow {
-                                    keys: "Ctrl+Shift+C";
+                                    keys: Theme.is-mac ? "⌘C" : "Ctrl+Shift+C";
                                     desc: root.lang-en ? "Copy selection" : "复制选中内容";
                                 }
                                 KeyRow {
-                                    keys: "Ctrl+V";
+                                    // 本地粘贴在 Windows/Linux 实为 Ctrl+Shift+V（裸 Ctrl+V
+                                    // 在备用屏放行给远端，交给 vim/tmux 处理）。
+                                    keys: Theme.is-mac ? "⌘V" : "Ctrl+Shift+V";
                                     desc: root.lang-en ? "Paste" : "粘贴";
                                 }
                                 KeyRow {
-                                    keys: "Ctrl+F";
+                                    keys: Theme.is-mac ? "⌘F" : "Ctrl+F";
                                     desc: root.lang-en ? "Find in terminal" : "查找";
                                 }
                                 KeyRow {
-                                    keys: "Ctrl+Shift+R";
+                                    keys: Theme.is-mac ? "⌘⇧R" : "Ctrl+Shift+R";
                                     desc: root.lang-en ? "Jump to history search" : "跳到命令历史搜索";
                                 }
                                 KeyRow {
@@ -2306,7 +2334,7 @@ Rectangle {
                                     desc: root.lang-en ? "Previous / next in history" : "上一条 / 下一条历史";
                                 }
                                 KeyRow {
-                                    keys: "Ctrl+R";
+                                    keys: Theme.is-mac ? "⌃R" : "Ctrl+R";
                                     desc: root.lang-en ? "Search history (↑↓ select, Enter run, Esc close)" : "搜索命令历史（↑↓ 选择，回车执行，Esc 关闭）";
                                 }
                                 KeyRow {
@@ -2314,19 +2342,19 @@ Rectangle {
                                     desc: root.lang-en ? "Close history / focus terminal" : "关闭历史 / 聚焦终端";
                                 }
                                 KeyRow {
-                                    keys: "Ctrl+A";
+                                    keys: Theme.is-mac ? "⌃A" : "Ctrl+A";
                                     desc: root.lang-en ? "Move to start of line" : "移到行首";
                                 }
                                 KeyRow {
-                                    keys: "Ctrl+E";
+                                    keys: Theme.is-mac ? "⌃E" : "Ctrl+E";
                                     desc: root.lang-en ? "Move to end of line" : "移到行尾";
                                 }
                                 KeyRow {
-                                    keys: "Ctrl+K";
+                                    keys: Theme.is-mac ? "⌃K" : "Ctrl+K";
                                     desc: root.lang-en ? "Delete to end of line" : "删除到行尾";
                                 }
                                 KeyRow {
-                                    keys: "Ctrl+U";
+                                    keys: Theme.is-mac ? "⌃U" : "Ctrl+U";
                                     desc: root.lang-en ? "Delete to start of line" : "删除到行首";
                                 }
                             }
