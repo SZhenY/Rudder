@@ -256,6 +256,21 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - 主题色行垂直居中、HEX 不再重复显示；调色盘输入 HEX 时跳转到对应颜色。
 - macOS 的 `/System/Volumes` 合成卷不再出现在磁盘列表里。
 
+### 已知问题 / Known Issues
+
+- **严重**：打开任意 SSH 会话后（会话即使完全空闲），在设置页 / 主机页等非终端页
+  用触摸板滚动会出现周期性卡顿（滚动断流、一顿一顿）；关闭全部会话立即恢复。
+  回归自新界面外壳重写。已实证排除 UI 线程阻塞、元素树规模、底栏每秒写入、渲染
+  后端等因素；剩余嫌疑集中在会话线程与主事件循环的交互。完整排查过程与结论见
+  `docs/known-issues/scroll-jank-with-ssh-session.md`，计划后续重构解决。
+- **Severe**: with any SSH session open (even a fully idle one), trackpad scrolling on
+  non-terminal pages (settings / hosts) stutters periodically — the scroll event stream
+  breaks up; closing all sessions restores smoothness immediately. Regression introduced
+  with the new shell rewrite. UI-thread blocking, element-tree size, status-bar writes
+  and the renderer backend are all ruled out by experiments; remaining suspicion is the
+  session-thread interaction with the main event loop. Full investigation notes in
+  `docs/known-issues/scroll-jank-with-ssh-session.md`; a follow-up refactor is planned.
+
 
 ## [0.8.0] - 2026-09-26
 
