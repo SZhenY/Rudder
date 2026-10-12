@@ -190,6 +190,159 @@ AppTitleBar ≈ 10 个元素；主题的 `wp-*` 是 Rust 算好 set 进来的 in
 参与。单窗口内在保持设计的前提下无法复现这个隔离（一个 Slint 窗口 = 一个
 surface），可行方向只剩「无边框贴靠窗口」这类形态妥协，或转向帧调度层深挖。
 
+## 方案 A 执行手册（施工级）
+
+> 面向实施者：每阶段给出**文件级改动、代码骨架、验收清单**。几何一律用 logical
+> 坐标（slint 内部处理 DPI）；主窗口侧栏宽度 `rail-w` 与内容区顶 `shell-top` 需要
+> 从 `app_shell.slint` 的私有 property 提升为 in-out（否则 Rust 读不到）。
+
+### Phase 1：贴靠版验证窗口
+
+**1.1 `ui/settings_probe.slint`**（在现有验证版上改）：
+
+```slint
+export component SettingsProbeWindow inherits Window {
+    no-frame: true;                      // 无标题栏/边框/阴影，外观与主窗口内容区一致
+    background: Theme.window-base;       // 主窗口内容区同色；用户有壁纸时与壁纸衔接
+    default-font-family: Theme.ui-font-family;
+    // 尺寸/位置由 Rust set（要跟随主窗口），slint 侧不绑死
+    PageSettings { width: 100%; height: 100%; }
+}
+```
+
+**1.2 `app_shell.slint`**：`rail-w` / `shell-top` 提升为 in-out（供 Rust 读几何）；
+`changed shell-page` 的 page 4 拦截已就位（验证版）。
+
+**1.3 `src/app.rs`**：贴靠同步 + 显示管理：
+
+```rust
+// 内容区几何：侧栏右缘 → 窗口右缘，标题栏下沿 → 窗口底（底栏只在终端页显示，
+// 与贴靠窗口不同时出现，所以直接算到窗口底）。
+fn content_rect(m: &AppWindow) -> (slint::LogicalPosition, slint::LogicalSize) {
+    let wp = m.window().position();          // 主窗口屏幕位置（logical）
+    let ws = m.window().size();              // 主窗口尺寸（logical）
+    let rail = m.get_rail_w();               // in-out 化后才能读
+    let top = m.get_shell_top();
+    (
+        slint::LogicalPosition::new(wp.x + rail, wp.y + top),
+        slint::LogicalSize::new(ws.width - rail, ws.height - top),
+    )
+}
+
+// 16ms 轮询跟随（slint 的 &Window 不暴露 move/resize 事件，只能轮询；
+// 只比对、变了才 set，成本可忽略；16ms 迟滞不可感）。
+let probe_timer = slint::Timer::default();
+{
+    let mw = window.as_weak();
+    let pw = probe_win.as_weak();
+    let mut last: Option<(slint::LogicalPosition, slint::LogicalSize)> = None;
+    probe_timer.start(std::time::Duration::from_millis(16), move || {
+        let (Some(m), Some(p)) = (mw.upgrade(), pw.upgrade()) else { return };
+        if !p.is_visible() { return; }
+        let rect = content_rect(&m);
+        if last != Some(rect) {
+            last = Some(rect);
+            p.set_position(rect.0);
+            p.set_size(slint::WindowSize::Logical(rect.1));
+        }
+    });
+}
+
+// 点「设置」：同步几何 → show → 请求首帧（macOS 第二个窗口不主动请求就白屏，
+// proc 窗口已验证 0/50ms 两次请求的必要性）。
+window.on_open_settings_probe(move || {
+    let Some(w) = probe_weak.upgrade() else { return };
+    if let Some(m) = win_weak.upgrade() {
+        let rect = content_rect(&m);
+        w.set_position(rect.0);
+        w.set_size(rect.1);
+    }
+    let _ = w.show();
+    request_first_frame(w.window());
+    let f1 = w.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+        if let Some(w) = f1.upgrade() { request_first_frame(w.window()); }
+    });
+});
+```
+
+**验收清单**：
+- [ ] 点「设置」→ 无边框窗口**精确贴合**内容区（无 1px 缝隙/重叠，侧栏分界线对齐）
+- [ ] 拖动 / 缩放主窗口 → 贴靠窗口跟随，无可感迟滞
+- [ ] 窗口内滚动流畅（= 独立实验的手感）
+- [ ] 侧栏照常可点：点「终端」→ 贴靠窗口隐藏、主窗口回终端页
+- [ ] 最小化主窗口 → 贴靠窗口不留在屏幕上（轮询里加 `m.is_minimized()` 判断一并隐藏）
+- [ ] 关贴靠窗口 → 隐藏不销毁；重点「设置」→ 重新出现且内容保留
+
+### Phase 2：主机页进同一窗口
+
+- `settings_probe.slint` 加 `in property <int> probe-page`，内部
+  `if probe-page == 0 { PageHosts {} } else { PageSettings {} }`；
+- `changed shell-page` 把 page 0（主机）与 page 4（设置）都拦截，分别设
+  `probe-page` 后 show；
+- 启动流程：原本启动即主机页（page 0），改为启动后直接显示贴靠主机窗口
+  （`on_open_hosts_probe` 的同一路径）；
+- **注意**：主机页是启动落点，Phase 1 期间主窗口可**先保留内嵌主机页**（无会话
+  时树轻、不卡），Phase 2 再切换——降低单次改动风险。
+
+### Phase 3：完整数据同步 + 清理
+
+**3.1 同步清单的来源**：`page_settings.slint` 的全部 in 属性（约 30 个：scrollback /
+flag-osc / update-check / large-scrollback / convert-eol / json-format-output /
+hide-partitions / always-ask / follow-cd / collapse-sftp / output-highlight-* 等）
++ `page_hosts.slint` 的主机列表模型。
+
+**3.2 两个方向**：
+
+```rust
+// A. 显示前全量复制（主窗口 → 贴靠窗口）：旧外壳 settings_window.rs 的
+//    sync_settings_reflected 现成可抄。模型直接 ModelRc::clone（身份不变）。
+fn sync_probe_from_main(m: &AppWindow, p: &SettingsProbeWindow) {
+    p.set_scrollback(m.get_scrollback());
+    p.set_flag_osc(m.get_flag_osc());
+    // …逐项
+}
+
+// B. 改动时双写（贴靠窗口的 callback）：主窗口属性是唯一真源。
+probe_win.on_scrollback_changed(move |v: SharedString| {
+    if let (Some(m), Some(p)) = (main_weak.upgrade(), probe_weak.upgrade()) {
+        p.set_scrollback(v.clone());   // 贴靠窗口自身：界面立竿见影
+        m.set_scrollback(v);           // 主窗口：终端/面板/状态栏都读它
+    }
+});
+```
+
+**3.3 清理**：主窗口移除 `PageSettings` / `PageHosts` 实例（贴靠窗口承载），
+`page-shown` 的 0/4 分支随之删除；`app_shell.slint` 里 `page-shown == 0` /
+`== 4` 的容器块一并移除。
+
+**验收**：每个设置项在贴靠窗口改 → 主窗口侧立即生效（终端字号、滚回长度等可见
+项逐抽查）；主窗口侧重载配置 → 贴靠窗口下次显示拿到新值；全局无 `page_settings`
+死代码。
+
+### Phase 4：打磨
+
+- **滑入动效**：Rust 定时器分 6~8 步 `set_position`（从内容区右缘外 → 目标位），
+  收起反向；不做透明度（slint Window 无 opacity 属性）；
+- **Esc 关闭**：贴靠窗口内 `FocusScope` + `keys` 处理，或窗口级快捷键；
+- **失焦样式（已知小瑕疵）**：贴靠窗口获焦时主窗口 `Theme.window-focused` 变 false，
+  侧栏会显示失焦变暗——**实际可点**（点侧栏激活主窗口并收起贴靠窗口）。若介意，
+  可在轮询里检测贴靠窗口可见时强制主窗口 `window-focused` 绑定为 true（需要把
+  `window-focused` 也提升为 Rust 可写）。
+
+### 全局注意事项
+
+- **主题**：全局单例，两边自动一致，**无需任何同步代码**；
+- **壁纸衔接**：贴靠窗口背景用 `Theme.window-base`；用户启用壁纸时，主窗口内容区
+  也是同一底色 + 壁纸透出——若出现接缝，把壁纸也画进贴靠窗口（`Theme.wallpaper`）；
+- **多显示器**：跟随主窗口同一 screen 的 logical 坐标，screen 参数变化时轮询自然
+  会重新对齐；
+- **性能红线**：贴靠窗口里**不要**放任何 1Hz/750ms 更新的元素（状态栏类），它
+  的树必须保持“纯静态 + 滚动”才能继承独立窗口的收益；
+- **逃生舱**：若 slint 的 logical 坐标在多显示器 / DPI 场景下不够用，
+  `place_process_window`（`resource_ui.rs:398`）示范了 `window().with_winit_window(...)`
+  直接操作 winit 窗口（物理坐标）的备选路径。
+
 ## 现场保留
 
 - 备份分支 `backup/perf-investigation-20261011`：包含全部实验修复（网格 / 面板
