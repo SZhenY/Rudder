@@ -67,3 +67,57 @@
   # 283e58c CPU 卡片数值改到进度条位置（功能需求）
   # d197424 自更新测试样例与 release.yml 对齐（测试修复）
   ```
+
+## 2026-10-12 补充：源码级架构对比 → 根因收敛与修复方向
+
+### 架构对比：0.8.0（旧外壳）vs 新外壳 —— Rust 侧唤醒链完全相同
+对 `6abd873`（旧外壳，好）与 `7349e3b`（新外壳，坏）逐行比对「会话 → UI」链路，
+结论：**新外壳没有新增任何 Rust 侧高频/持续唤醒源**，以下各项新旧一致：
+
+| 唤醒源                                   | 频率        | 旧外壳 | 新外壳 |
+| ---------------------------------------- | ----------- | ------ | ------ |
+| 远端辅助通道采样（CPU/内存/网络/磁盘）    | 750ms       | 有     | 有（ssh.rs:365-367 同码）|
+| 远端进程采样                             | 1500ms      | 有     | 有     |
+| 远端系统信息                             | 2500ms      | 有     | 有     |
+| 本机 system sampler                      | 1Hz         | 有     | 有（sampler.rs）|
+| 每 SSH 会话 Connected 即预开独立 SFTP 连接 + pump 线程 | 常驻 | 有 | 有 |
+| shell/SFTP 双 pump（blocking_recv + sweep 合并 + `invoke_from_event_loop` 批量投递）| 事件驱动 | 有 | 有 |
+| 终端 render gate 节流                    | 仅在有 Output 时 | 有 | 有 |
+
+- `6abd873:src/app/session_runtime.rs` 与当前逐行几乎一致（连行号都对得上）。
+- 静态排除：新外壳无新增高频 Timer（`app_shell.slint` 的 `page-swap-timer` 切页跑
+  一次即停；动画全是有界过渡，无 infinite）；`render_tickets`/`render_gate` 仅在
+  终端有 Output 时激活（idle 会话不触发）。
+- 结论：差异 100% 落在 UI 层（.slint 外壳重写 + 采样数据消费面扩大）。这也解释了
+  为何「关 buffer_mouse_move / 按页面过滤 / 网格与右面板条件化 / 禁底栏写入」均无效
+  —— 动的都不是这条链。
+
+### 根因（最可能，待动态确认）
+新外壳把采样数据消费面大幅铺开：`active_state.rs`（新增）把活动标签的
+tunnels/SFTP/统计提升成一大票窗口级属性，新增右面板 `right_panel.slint`，CPU 趋势 /
+sparkline / 状态栏大量新绑定。于是每次 1Hz / 750ms 采样唤醒都触发**实质重绘**，把主
+循环从 macOS `nextEvent` 长等中周期性拽出 → AppKit 的 NSEvent coalescing 窗口被切成
+≤ 采样间隔 → 触摸板高频 move 无法合并、逐个投递 → 事件量 2×、滚动相位切断。与三条实测
+事实（UI 60 tick/s、main 90% 空等 `mach_msg2_trap`、事件量 2×）自洽。
+
+旧外壳静止时无持续帧请求，低频采样唤醒被 Slint 的 Wait 模式「吸收」（唤醒 → 单帧 →
+回长等），合并窗口保持长 → 不卡。
+
+### 为什么仅 macOS 复现（Windows 无恙）
+Rudder 无任何自建消息循环 / 输入合并（无 `NSEvent` / `objc2` / `WindowProc` /
+`GetMessage` / `RegisterRawInput`），输入全走 Slint/winit 默认路径，
+`invoke_from_event_loop` 三平台一致。差异纯在 OS 输入架构：
+- **macOS**：高频触摸板 move 的合并在**应用事件循环层**（AppKit
+  `nextEventMatchingMask` 的 coalescing，依赖主循环长等），且触摸板滚动 = 连续
+  NSEventPhase + momentum 流 → 采样唤醒切碎合并窗口即断流。
+- **Windows**：鼠标/滚轮合并在**驱动/HID 层**（或离散入队），滚动 = 离散 WM_MOUSEWHEEL /
+  OS 合成后的 WM_POINTER；应用消息循环没有「可被破坏的合并窗口」，唤醒只是多空转几圈，
+  输入流不受影响。
+
+### 修复方向（待 A/B 验证后实施）
+1. 给远端辅助通道采样加**页面/焦点感知的 back off**（本机 sampler 已有 Hidden /
+   Background 降频，远端采样 750/1500/2500ms 无条件跑 —— 具体不对称点）。
+2. 右面板 / 图表 / 窗口级镜像改**脏标记 + 合帧**，非终端页时 `refresh_sidebar` /
+   `refresh_active_term` 跳过图表刷新。
+3. A/B 验证：在 `backup/perf-investigation-20261011` 上让非终端页跳过上述刷新，测事件量
+   是否 2× → 1×；并用 Instruments Time Profiler 确认 60 tick/s 的帧驱动来源。
