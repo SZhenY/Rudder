@@ -1,0 +1,30 @@
+import { Theme } from "theme.slint";
+import { PageSettings } from "shell/page_settings.slint";
+
+// 【卡顿验证·临时】独立设置窗口 —— 把**真实的** PageSettings 原样装进独立 root
+// 窗口，验证「主窗口不参与设置页滚动的每一帧」能否消除「开着 SSH 会话时别的页面
+// 滚动一顿一顿」（详见 docs/known-issues/scroll-jack-with-ssh-session.md）。
+//
+// 背景：单窗口内的元素级优化已全部穷尽且无效（网格/右面板内容/TerminalStage/
+// StatusBar 全部条件化、采样唤醒拦截、写入按需化）。剩下的架构差异只有一个：
+// 0.8.0 主线的设置页是**独立 root 窗口**（SettingsWindow::new()，与 ProcWindow /
+// SystemInfoWindow 同套路），滚动时主窗口根本不渲染；而新外壳把设置页做成主窗口
+// 的内嵌页面，滚动的每一帧都要为主窗口整棵树付脏区计算 + 布局 + 呈现成本。
+//
+// 验证后的处置：
+//   * 独立窗口不卡 → 根因 = 渲染上下文共享 → 按主线的 SettingsWindow 套路做完整
+//     迁移（本文件即迁移的起点）；
+//   * 独立窗口仍卡 → 根因在更深层（winit event loop / macOS 合成），删除本文件，
+//     排查方向转向 DisplayLink / vsync / 事件合并的更深机制。
+//
+// 属性全部用 PageSettings 的默认值（验证流畅度，不验证功能）；callback 未连接，
+// 按钮点击无响应 —— 这是验证版的预期，不是 bug。
+export component SettingsProbeWindow inherits Window {
+    title: "设置";
+    width: 960px;
+    height: 700px;
+    background: Theme.window-base;
+    default-font-family: Theme.ui-font-family;
+
+    PageSettings { }
+}

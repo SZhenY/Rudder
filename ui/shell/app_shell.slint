@@ -85,6 +85,9 @@ import { ShortcutsDialog } from "../shortcuts_dialog.slint";
 import { AppTitleBar, AppTitleBarSystem } from "titlebar.slint";
 import { PageTerminal } from "page_terminal.slint";
 import { StatusBar } from "status_bar.slint";
+// 【卡顿验证·临时】独立设置窗口（见 settings_probe.slint 顶部的完整说明）。
+import { SettingsProbeWindow } from "../settings_probe.slint";
+export { SettingsProbeWindow }
 import { RightPanel } from "right_panel.slint";
 import { PageSettings } from "page_settings.slint";
 import { RenameDialog } from "../rename_dialog.slint";
@@ -760,6 +763,13 @@ export component AppWindow inherits Window {
         triggered => { self.running = false; root.page-booted = true; }
     }
     changed shell-page => {
+        if (root.shell-page == 4) {
+            // 【卡顿验证·临时】设置改走独立窗口，主窗口拉回终端页 —— 让终端会话
+            // 那棵重树完全不参与设置界面的滚动每一帧（见 settings_probe.slint）。
+            root.open-settings-probe();
+            root.shell-page = 1;
+            return;
+        }
         if (root.shell-page != root.page-shown) {
             if (!root.page-booted) {
                 // 启动期（600ms 内）的同步：直接就位零动画。
@@ -782,6 +792,8 @@ export component AppWindow inherits Window {
             root.page-out = 0;
         }
     }
+    // 【卡顿验证·临时】设置走独立窗口：Rust 侧创建/显示（见 settings_probe.slint）。
+    callback open-settings-probe;
     in-out property <bool> rail-collapsed: false;
     in-out property <string> host-search-query;
     callback host-search-changed(string);
