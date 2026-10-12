@@ -403,7 +403,10 @@ mod tests {
         // 资产关键字必须能命中 release.yml 里各平台的资产名。
         let kw = asset_keywords();
         let names = [
-            "rudder-0.7.2-macos-14.zip",
+            // macOS 自打 0.8.0-ui-beta1 起按架构分包（release.yml 的 macos-aarch64 /
+            // macos-x86_64 两个构建），旧样例名 macos-14.zip 已不存在。
+            "rudder-0.7.2-macos-aarch64.zip",
+            "rudder-0.7.2-macos-x86_64.zip",
             "rudder-0.7.2-windows-x86_64.zip",
             "rudder-0.7.3-windows-aarch64.zip",
             "rudder-0.7.2-linux-x86_64.tar.gz",

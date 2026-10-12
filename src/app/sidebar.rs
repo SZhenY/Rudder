@@ -131,8 +131,20 @@ pub(super) fn refresh_sidebar(
     };
 
     // --- Bottom network graph: always the local machine --------------------
-    win.set_net_bot_up(format_bytes_per_sec(snap.net_tx_per_sec).into());
-    win.set_net_bot_down(format_bytes_per_sec(snap.net_rx_per_sec).into());
+    // ⚠ 按需写：本函数每 1 Hz 跑一次。这两个字符串属性此前无条件写 —— Slint 的属性
+    // 写入不比较值，直接往属性树里打脏标记，于是每次采样唤醒都逼出底栏文本/图表重
+    // 算与重绘，把主循环从 macOS nextEvent 长等中周期拽出、切碎 AppKit 的 NSEvent
+    // 合并窗口（「开着 SSH 会话时别的页面滚动一顿一顿」的成因之一，详见
+    // docs/known-issues/scroll-jack-with-ssh-session.md）。网络空闲时上下行都是
+    // 0 B/s，值没变就不写。
+    let bot_up = format_bytes_per_sec(snap.net_tx_per_sec);
+    let bot_down = format_bytes_per_sec(snap.net_rx_per_sec);
+    if win.get_net_bot_up().as_str() != bot_up.as_str() {
+        win.set_net_bot_up(bot_up.into());
+    }
+    if win.get_net_bot_down().as_str() != bot_down.as_str() {
+        win.set_net_bot_down(bot_down.into());
+    }
     // 先取历史（锁内只做纯计算），**出锁之后**才碰 Slint 属性 —— 写属性可能重入 UI 代码。
     // 归一化只算一次：上下两个图共用同一个环形缓冲。
     let Ok(scaled) = local_net_hist.lock().map(|h| normalize(&h)) else {
@@ -431,6 +443,14 @@ pub(super) fn refresh_sidebar(
     // 条目 → 工具栏不显示；本机 / 远端会话一开始就绪条目就在 → 照常显示。
     win.set_has_session(status.is_some());
 
+    // 面板/顶栏那一大套窗口级模型只服务于**终端页**的右工具面板（监控 / 文件 /
+    // 传输等视图）。非终端页整段跳过：否则每 1 Hz tick 都在为看不见的面板元素做
+    // 全量模型重建与属性写入（write_model 即使内容不变也要走「比较 → 绑定重算」
+    // 路径），把主循环从 macOS nextEvent 长等中周期拽出 —— 与 active_state 的按需
+    // 写同属一个成因，详见 docs/known-issues/scroll-jack-with-ssh-session.md。
+    // `stats` 少累加一些只影响 sampler 的 tracing 观测，无功能影响；切回终端页时
+    // 下一 tick 照常全量刷新。
+    if win.get_shell_page() == 1 {
     match status {
         // A local-shell tab (WSL / cmd / PowerShell) also reaches the connected
         // state but never reports remote resources, so keep the connection line
@@ -674,6 +694,7 @@ pub(super) fn refresh_sidebar(
             set_top_local(win, &mut stats, None);
             show_local_system_models(win);
         }
+    }
     }
     // per-tab 状态搬家①：这一趟也把活动标签的隧道 / SFTP 状态镜像到窗口级，
     // 新外壳右面板读的是窗口属性。放在末尾 —— 上面几个 helper 会写 Slint 属性，

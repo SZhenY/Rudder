@@ -580,6 +580,31 @@ pub fn run() -> Result<()> {
     window.set_sys_network_rows(ModelRc::from(sys_network_model.clone()));
     window.set_sys_filesystem_rows(ModelRc::from(sys_filesystem_model.clone()));
     let proc_win = ProcWindow::new().context("failed to build process window")?;
+    // 【卡顿验证·临时】独立设置窗口（见 ui/settings_probe.slint 顶部的说明）。与
+    // proc_win 同套路：run() 作用域内保活；侧栏点「设置」时 show，关闭时隐藏不销毁。
+    let probe_win =
+        SettingsProbeWindow::new().context("failed to build settings probe window")?;
+    probe_win
+        .window()
+        .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
+    {
+        let probe_weak = probe_win.as_weak();
+        window.on_open_settings_probe(move || {
+            let Some(w) = probe_weak.upgrade() else {
+                return;
+            };
+            let _ = w.show();
+            // 与 proc 窗口同一处注释：macOS 上新映射的第二个窗口不会自动产生首次
+            // 渲染事件，必须主动请求首帧（0 / 50ms 两次，首批可能被 winit 丢弃）。
+            request_first_frame(w.window());
+            let f1 = w.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+                if let Some(w) = f1.upgrade() {
+                    request_first_frame(w.window());
+                }
+            });
+        });
+    }
     proc_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
     proc_win.set_proc_list(ModelRc::from(proc_rows_model.clone()));
     let sys_win = SystemInfoWindow::new().context("failed to build system info window")?;

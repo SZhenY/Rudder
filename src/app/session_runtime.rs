@@ -135,6 +135,17 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                 // Run CwdChanged side-effects here (off the UI thread), drop the
                 // swallowed ones, and concatenate runs of Output into a single chunk
                 // so the UI parses + renders the whole burst once.
+                // ⚠ 非终端页时把纯采样批次拦在 pump 线程（见下面 `other` 分支）：
+                // 就地更新 statuses 表、不发 invoke_from_event_loop。每 750ms/1.5s
+                // 一次的 invoke 会把主循环从 macOS nextEvent 长等中拽出、重置 AppKit
+                // 的 NSEvent 合并窗口 —— 「开着 SSH 会话时别的页面滚动一顿一顿、
+                // 事件量 2×」的根因（详见 docs/known-issues/
+                // scroll-jank-with-ssh-session.md）。每批读一次；窗口已销毁时
+                // 保守放行（照常投递，由 UI 侧的 upgrade 失败兜底）。
+                let on_terminal_page = weak_inner
+                    .upgrade()
+                    .map(|w| w.get_shell_page() == 1)
+                    .unwrap_or(true);
                 let mut ui_batch: Vec<SessionEvent> = Vec::with_capacity(drained.len());
                 for evt in drained.drain(..) {
                     match evt {
@@ -257,7 +268,23 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                                 }
                             }
                         }
-                        other => ui_only.push(other),
+                        other => {
+                            if !on_terminal_page
+                                && matches!(
+                                    other,
+                                    SessionEvent::ResourceStats { .. }
+                                        | SessionEvent::ProcessStats { .. }
+                                )
+                            {
+                                crate::app::session_event::ingest_sampling_event(
+                                    &statuses_pump,
+                                    &tab_id_pump,
+                                    other,
+                                );
+                            } else {
+                                ui_only.push(other);
+                            }
+                        }
                     }
                 }
 

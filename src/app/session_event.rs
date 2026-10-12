@@ -11,6 +11,99 @@ pub(crate) struct SessionResources<'a> {
     pub(crate) local_net_hist: &'a NetHist,
 }
 
+/// 采样类事件（ResourceStats / ProcessStats）的**数据部分**：只更新 `statuses` 表，
+/// 不碰任何 Slint 属性、不刷 UI。供两处调用：
+///
+/// * `apply_session_event_to_window`（UI 线程，正常事件路径 —— 更新完再由调用方按
+///   「活动标签」决定是否 `refresh_sidebar`）；
+/// * shell pump 线程在**非终端页**时离线消化（`session_runtime.rs`）：把纯采样批次
+///   拦在 pump 线程、不发 `invoke_from_event_loop`。否则每 750ms / 1.5s 一次的唤醒
+///   会把主循环从 macOS `nextEvent` 长等中拽出、重置 AppKit 的 NSEvent 合并窗口，
+///   触摸板高频 move 被切成小批 —— 表现为「开着 SSH 会话时，设置页/主机页滚动
+///   一顿一顿、事件量 2×」（详见 docs/known-issues/scroll-jank-with-ssh-session.md）。
+///   数据不丢：表照常更新，切回终端页后 sampler 的 1Hz tick 与下一拍采样读到的
+///   都是最新值。
+pub(super) fn ingest_sampling_event(statuses: &TabStatuses, tab_id: &str, event: SessionEvent) {
+    match event {
+        SessionEvent::ResourceStats {
+            cpu_percent,
+            cpu_user,
+            cpu_system,
+            cpu_iowait,
+            core_cpus,
+            mem_used_kib,
+            mem_total_kib,
+            swap_used_kib,
+            swap_total_kib,
+            net,
+            disks,
+            sys,
+        } => {
+            if let Ok(mut s) = statuses.lock()
+                && let Some(st) = s.get_mut(tab_id)
+            {
+                st.cpu = cpu_percent;
+                st.cpu_user = cpu_user;
+                st.cpu_system = cpu_system;
+                st.cpu_iowait = cpu_iowait;
+                st.core_cpus = core_cpus;
+                st.mem_used_kib = mem_used_kib;
+                st.mem_total_kib = mem_total_kib;
+                st.swap_used_kib = swap_used_kib;
+                st.swap_total_kib = swap_total_kib;
+                st.net = net;
+                st.disks = disks;
+                if let Some(sys) = *sys {
+                    st.sys = sys;
+                }
+                // A sample means the channel is alive → treat as connected.
+                if st.state != 1 {
+                    st.state = 1;
+                }
+                // Append the selected interface's total rate to its sparkline.
+                let (_, rx, tx) = selected_iface(st);
+                push_ring(&mut st.net_hist, (rx + tx) as f32);
+                // 同一份样本也喂给 CPU 趋势（工具面板的「CPU 负载趋势」）。
+                // 入环的是 **EMA 平滑值**而不是原始值：负载突增突减时原始序列是折线
+                // 拐点，而组件的曲线必经过每个数据点（数据点当贝塞尔控制点），几何平滑
+                // 压不掉斜率突变。要协调必须在数据层把跳变摊开（Grafana rolling
+                // average、任务管理器曲线同理）。
+                // `None` = 还没采到第一拍：直接取原值，不让 EMA 从 0 爬升。
+                let ema = match st.cpu_ema {
+                    Some(prev) => prev + (cpu_percent - prev) * CPU_TREND_EMA_ALPHA,
+                    None => cpu_percent,
+                };
+                st.cpu_ema = Some(ema);
+                // 时间戳与数值同一拍入环（共用 `push_ring`，保证等长、不错位）。
+                // 记「本地当天秒数」：Slint 侧无法自己处理时区，只能由这里解析好。
+                let now = chrono::Local::now();
+                let sec_of_day =
+                    now.hour() as i32 * 3600 + now.minute() as i32 * 60 + now.second() as i32;
+                push_ring(&mut st.cpu_hist_t, sec_of_day);
+                // 无条件入环。`cpu_hist` 初始是 `Vec::new()`，而 `push_ring` 是唯一
+                // 能让它变非空的途径 —— 曾用 `!is_empty()` 当前提来"跳过首拍"，那会
+                // **自锁**：条件永远为假 → 缓冲永不填充 → 趋势图模型 0 行 →
+                // `if values.length > 0 : Path` 整块不渲染（表现为"一直无数据"）。
+                push_ring(&mut st.cpu_hist, ema);
+            }
+        }
+        SessionEvent::ProcessStats {
+            current_user,
+            procs,
+        } => {
+            if let Ok(mut s) = statuses.lock()
+                && let Some(st) = s.get_mut(tab_id)
+            {
+                if !current_user.is_empty() {
+                    st.user = current_user;
+                }
+                st.procs = procs;
+            }
+        }
+        _ => {}
+    }
+}
+
 pub(super) fn apply_session_event_to_window<'a>(
     win: &AppWindow,
     tab_id: &str,
@@ -24,6 +117,19 @@ pub(super) fn apply_session_event_to_window<'a>(
         local,
         local_net_hist,
     } = res;
+    // 采样类事件（ResourceStats / ProcessStats）的数据部分提前抽走 —— 与 pump 线程
+    // 在非终端页的离线消化走同一个 `ingest_sampling_event`，两条路径严格一致。
+    // 采样事件不碰 tabs/terminals 模型，放在模型 downcast 之前还能少做两次无用功。
+    if matches!(
+        event,
+        SessionEvent::ResourceStats { .. } | SessionEvent::ProcessStats { .. }
+    ) {
+        ingest_sampling_event(statuses, tab_id, event);
+        if win.get_active_tab_id().as_str() == tab_id {
+            refresh_sidebar(win, statuses, local, local_net_hist);
+        }
+        return;
+    }
     let tabs_rc = win.get_tabs();
     let terminals_rc = win.get_terminals();
     // `ModelRc::as_any` lets us downcast to the concrete `VecModel<T>`.
@@ -89,6 +195,9 @@ pub(super) fn apply_session_event_to_window<'a>(
     };
 
     match event {
+        // 采样类事件在函数开头已整体拦截并 return（见 `ingest_sampling_event`），
+        // 这两个 arm 永不到达，仅为满足匹配穷尽性。
+        SessionEvent::ResourceStats { .. } | SessionEvent::ProcessStats { .. } => {}
         SessionEvent::Status(status) => {
             update_terminal(&|t| t.status = status.clone().into());
         }
@@ -145,94 +254,6 @@ pub(super) fn apply_session_event_to_window<'a>(
             // 注意：意外断线（网络 / 远端挂掉）**保留**回滚历史 —— 用户正要看断线前发生了什么，
             // 此时清掉是最不该做的事。释放只发生在用户**主动关标签页**时
             // （`tab_callbacks.rs` 的 pane-tab-closed）。
-            if win.get_active_tab_id().as_str() == tab_id {
-                refresh_sidebar(win, statuses, local, local_net_hist);
-            }
-        }
-        SessionEvent::ResourceStats {
-            cpu_percent,
-            cpu_user,
-            cpu_system,
-            cpu_iowait,
-            core_cpus,
-            mem_used_kib,
-            mem_total_kib,
-            swap_used_kib,
-            swap_total_kib,
-            net,
-            disks,
-            sys,
-        } => {
-            if let Ok(mut s) = statuses.lock()
-                && let Some(st) = s.get_mut(tab_id)
-            {
-                st.cpu = cpu_percent;
-                st.cpu_user = cpu_user;
-                st.cpu_system = cpu_system;
-                st.cpu_iowait = cpu_iowait;
-                st.core_cpus = core_cpus;
-                st.mem_used_kib = mem_used_kib;
-                st.mem_total_kib = mem_total_kib;
-                st.swap_used_kib = swap_used_kib;
-                st.swap_total_kib = swap_total_kib;
-                st.net = net;
-                st.disks = disks;
-                if let Some(sys) = *sys {
-                    st.sys = sys;
-                }
-                // A sample means the channel is alive → treat as connected.
-                if st.state != 1 {
-                    st.state = 1;
-                }
-                // Append the selected interface's total rate to its sparkline.
-                let (_, rx, tx) = selected_iface(st);
-                push_ring(&mut st.net_hist, (rx + tx) as f32);
-                // 同一份样本也喂给 CPU 趋势（工具面板的「CPU 负载趋势」）。
-                //
-                // 入环的是 **EMA 平滑值**而不是原始值。理由：负载突增/突减时原始
-                // 序列是折线拐点，而组件的曲线**必经过每个数据点**（数据点当贝塞尔
-                // 控制点），所以几何平滑只能让线"看起来圆滑"、压不掉斜率突变 ——
-                // 观感就是用户报的"突然变陡"。要协调必须在**数据层**把跳变摊开
-                // （官方趋势图通行做法：Grafana rolling average、任务管理器曲线同理）。
-                //
-                // `None` = 还没采到第一拍：直接取原值，**不让 EMA 从 0 爬升** ——
-                // 否则刚连上时曲线会假装"负载从 0 慢慢涨起来"。
-                let ema = match st.cpu_ema {
-                    Some(prev) => prev + (cpu_percent - prev) * CPU_TREND_EMA_ALPHA,
-                    None => cpu_percent,
-                };
-                st.cpu_ema = Some(ema);
-                //
-                // 时间戳与数值**同一拍**入环（共用 `push_ring`，保证等长、不错位）。
-                // 记「本地当天秒数」：Slint 侧无法自己处理时区，只能由这里解析好。
-                // `hour/minute/second` 返回 u32，转 i32 再存（缓冲是 `Vec<i32>`）。
-                let now = chrono::Local::now();
-                let sec_of_day =
-                    now.hour() as i32 * 3600 + now.minute() as i32 * 60 + now.second() as i32;
-                push_ring(&mut st.cpu_hist_t, sec_of_day);
-                //
-                // 无条件入环。`cpu_hist` 初始是 `Vec::new()`，而 `push_ring` 是唯一
-                // 能让它变非空的途径 —— 曾用 `!is_empty()` 当前提来"跳过首拍"，那会
-                // **自锁**：条件永远为假 → 缓冲永不填充 → 趋势图模型 0 行 →
-                // `if values.length > 0 : Path` 整块不渲染（表现为"一直无数据"）。
-                push_ring(&mut st.cpu_hist, ema);
-            }
-            if win.get_active_tab_id().as_str() == tab_id {
-                refresh_sidebar(win, statuses, local, local_net_hist);
-            }
-        }
-        SessionEvent::ProcessStats {
-            current_user,
-            procs,
-        } => {
-            if let Ok(mut s) = statuses.lock()
-                && let Some(st) = s.get_mut(tab_id)
-            {
-                if !current_user.is_empty() {
-                    st.user = current_user;
-                }
-                st.procs = procs;
-            }
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses, local, local_net_hist);
             }

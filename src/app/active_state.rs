@@ -45,25 +45,68 @@ pub(crate) fn refresh_active_term(win: &AppWindow) {
 
     match row {
         Some(row) => {
-            win.set_active_tunnels(row.tunnels.clone());
-            win.set_active_sftp_path(row.sftp_path.clone());
+            // ⚠⚠ 全部按需写。本函数每 1 Hz 被 `refresh_sidebar` 调一次；此前是无条件
+            // 15+ 次 `set_*`，其中 `active_sftp_crumbs` 每 tick 都新建 VecModel
+            // （模型身份必变 → 绑定它的 Repeater 整棵重建）。于是每次采样唤醒都产生
+            // 实质重绘，把主循环从 macOS `nextEvent` 长等中周期拽出、切碎 AppKit 的
+            // NSEvent 合并窗口 —— 表现为「开着 SSH 会话时，设置页/主机页的触摸板滚动
+            // 一顿一顿」（空闲会话也卡：镜像与会话是否在输出无关，只与"有会话行"有关；
+            // 关掉会话 → 找不到行 → 落入 None 分支 → 零写入 → 不卡）。
+            // 详见 docs/known-issues/scroll-jack-with-ssh-session.md。
+            //
+            // 值/内容没变就不写，让空闲的采样唤醒不产生任何一帧。
+
+            // 模型类先比身份：row 取自 terminals 模型，数据没变时 clone 出的
+            // ModelRc 与已写进窗口属性的是同一个 Rc（ModelRc 的 PartialEq 就是
+            // 指针比较，一次 `!=` 即可挡掉身份抖动）。
+            if win.get_active_tunnels() != row.tunnels {
+                win.set_active_tunnels(row.tunnels.clone());
+            }
+            if win.get_active_sftp_path() != row.sftp_path {
+                win.set_active_sftp_path(row.sftp_path.clone());
+            }
             // 搜索过滤：面板把查询串写进窗口属性，这里按它过滤后再镜像。
             let query = win.get_sftp_search_query().to_lowercase();
-            win.set_active_sftp_entries(filter_entries(&row, &query));
-            win.set_active_sftp_status(row.sftp_status.clone());
-            win.set_active_sftp_loading(row.sftp_loading);
-            win.set_active_sftp_available(row.sftp_available);
+            let entries = filter_entries(&row, &query);
+            // 非空查询每 tick 都过滤出新模型（身份必变），只能逐项比内容。
+            if !entries_same(&win.get_active_sftp_entries(), &entries) {
+                win.set_active_sftp_entries(entries);
+            }
+            if win.get_active_sftp_status() != row.sftp_status {
+                win.set_active_sftp_status(row.sftp_status.clone());
+            }
+            if win.get_active_sftp_loading() != row.sftp_loading {
+                win.set_active_sftp_loading(row.sftp_loading);
+            }
+            if win.get_active_sftp_available() != row.sftp_available {
+                win.set_active_sftp_available(row.sftp_available);
+            }
             // 列头要显示排序方向（key + dir 都在行里）。
-            win.set_active_sftp_sort_key(row.sftp_sort_key.clone());
-            win.set_active_sftp_sort_dir(row.sftp_sort_dir);
-            // 面包屑（按 `/` 切好；Slint 没有 split）。
+            if win.get_active_sftp_sort_key() != row.sftp_sort_key {
+                win.set_active_sftp_sort_key(row.sftp_sort_key.clone());
+            }
+            if win.get_active_sftp_sort_dir() != row.sftp_sort_dir {
+                win.set_active_sftp_sort_dir(row.sftp_sort_dir);
+            }
+            // 面包屑（按 `/` 切好；Slint 没有 split）。此前每 tick 新建 VecModel、
+            // 身份必变 —— 这是「采样唤醒 → 实质重绘」的最大单一来源。
             let crumbs = sftp_crumbs(row.sftp_path.as_str());
-            win.set_active_sftp_crumbs(ModelRc::from(std::rc::Rc::new(VecModel::from(crumbs))));
+            if !crumbs_same(&win.get_active_sftp_crumbs(), &crumbs) {
+                win.set_active_sftp_crumbs(ModelRc::from(std::rc::Rc::new(
+                    VecModel::from(crumbs),
+                )));
+            }
             // 右面板 footer 的 PATH / DIR / FILE / TOTAL 统计（真数据，不靠 UI 数）。
             let (dirs, files, total) = sftp_stats(&row);
-            win.set_active_sftp_dir_count(dirs);
-            win.set_active_sftp_file_count(files);
-            win.set_active_sftp_total(total.into());
+            if win.get_active_sftp_dir_count() != dirs {
+                win.set_active_sftp_dir_count(dirs);
+            }
+            if win.get_active_sftp_file_count() != files {
+                win.set_active_sftp_file_count(files);
+            }
+            if win.get_active_sftp_total().as_str() != total.as_str() {
+                win.set_active_sftp_total(total.into());
+            }
         }
         None => {
             let stale = !win.get_active_sftp_path().is_empty()
@@ -91,6 +134,57 @@ pub(crate) fn refresh_active_term(win: &AppWindow) {
             }
         }
     }
+}
+
+/// 两条 SFTP 条目模型的内容是否一致（逐项比全部字段；float 按位比，NaN 安全）。
+/// 非空搜索查询下 `filter_entries` 每 tick 都产出新模型（身份必变），只能比内容；
+/// 空查询时上游会原样返回行内模型（身份不变），走 `a == b` 快路即可。
+fn entries_same(a: &ModelRc<SftpEntry>, b: &ModelRc<SftpEntry>) -> bool {
+    if a == b {
+        return true; // 同一个 Rc
+    }
+    let (Some(av), Some(bv)) = (
+        a.as_any().downcast_ref::<VecModel<SftpEntry>>(),
+        b.as_any().downcast_ref::<VecModel<SftpEntry>>(),
+    ) else {
+        return false;
+    };
+    if av.row_count() != bv.row_count() {
+        return false;
+    }
+    (0..av.row_count()).all(|i| match (av.row_data(i), bv.row_data(i)) {
+        (Some(x), Some(y)) => {
+            x.name == y.name
+                && x.full_path == y.full_path
+                && x.is_dir == y.is_dir
+                && x.size == y.size
+                && x.size_bytes.to_bits() == y.size_bytes.to_bits()
+                && x.modified == y.modified
+                && x.modified_ts.to_bits() == y.modified_ts.to_bits()
+                && x.mode == y.mode
+                && x.entry_type == y.entry_type
+                && x.permissions == y.permissions
+                && x.selected == y.selected
+        }
+        _ => false,
+    })
+}
+
+/// 面包屑模型内容是否与即将写入的列表一致（逐段比 name + path）。此前每 tick
+/// 新建 VecModel 导致身份必变，用这个函数把「没变」的 tick 挡掉。
+fn crumbs_same(model: &ModelRc<SftpCrumb>, crumbs: &[SftpCrumb]) -> bool {
+    let Some(vm) = model.as_any().downcast_ref::<VecModel<SftpCrumb>>() else {
+        return crumbs.is_empty();
+    };
+    if vm.row_count() != crumbs.len() {
+        return false;
+    }
+    (0..vm.row_count()).all(|i| match vm.row_data(i) {
+        Some(r) => crumbs
+            .get(i)
+            .is_some_and(|c| c.name == r.name && c.path == r.path),
+        None => false,
+    })
 }
 
 /// 按查询串过滤条目：大小写不敏感的子串匹配（Slint 的字符串只有 starts-with /
