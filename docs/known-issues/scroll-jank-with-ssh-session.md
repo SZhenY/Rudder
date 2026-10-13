@@ -266,6 +266,43 @@ invoke、模型写入全部排在同一个窗口的呈现队列里）。
 - **C-3**：打磨（出现/收起动效、焦点管理、Esc/快捷键归属）；
 - **C-4**：主窗口清理——page-shown 的终端分支移除，`page_terminal.slint` 退役。
 
+### C-1 实施记录（2026-10-13）
+
+**已落地**（门禁全绿：clippy 0 / 499 测试 / 冒烟无 panic）：
+
+- `ui/terminal_window.slint`（新文件）：`no-frame` + 透明背景的无边框窗口，承载
+  完整 TerminalStage。34 个属性 + 67 个回调从 TerminalStage 接口**自动生成**
+  （生成脚本：属性/回调声明、回调转发绑定），避免手工搬迁遗漏；
+- `ui/shell/app_shell.slint`：内嵌 TerminalStage **整体移除**（137 行）——终端页
+  改走贴靠窗口；`changed shell-page` 拦截 page 1（`open-terminal-window`）；
+  `rail-w` / `shell-top` / `terminal-focus-sequence` 提升为 in-out（Rust 读几何
+  与焦点序列用）；
+- `src/app.rs`：
+  - `term_win` 创建 / run() 作用域保活 / 关闭时 `HideWindow`（不销毁，重开恢复）；
+  - `content_rect()`：内容区几何 = 侧栏右缘 → 窗口右缘、标题栏下沿 → 窗口底；
+  - **16ms 轮询贴靠同步**（slint 的 &Window 不暴露 move/resize 事件，只比对变了
+    才 set，成本可忽略）；
+  - **1Hz 标量同步**（低频属性）；**模型类属性传共享 ModelRc**（panes/terminals/
+    tabs/… Rust 侧行操作自动反映到终端窗口，零持续同步）；
+  - `pane-tab-selected` 桥接里**立即镜像 active-tab-id**（不等 1Hz，切 tab 零延迟）；
+  - 62 个同名回调 `invoke` 桥接到主窗口的同一套 Rust 逻辑 + 5 个 TerminalStage
+    独有回调特殊处理（browse-hosts / custom-session / new-local-session /
+    toggle-right-panel / toggle-history 内联翻转）；
+  - 首帧处理（`request_first_frame` + 50ms 二次请求，proc 窗口同款——macOS 上
+    第二个窗口不主动请求就白屏）。
+
+**验收清单**（待用户实测）：
+- [ ] 点「终端」/ 开会话 → 贴靠窗口出现（无边框、贴合内容区、首帧不白屏）
+- [ ] 终端功能：输入 / 输出 / 滚动 / 切 tab / 右键菜单 / 查找 / 分屏
+- [ ] 切主机 / 设置页 → 触摸板滚动流畅（= 独立窗口实验的手感）
+- [ ] 切回「终端」→ 终端窗口恢复、内容连续
+
+**C-1a 已知限制**（C-2 补）：
+- in-out 类属性（history-open / sftp-prompt-\* / confirm-delete-\* / qcm-\* /
+  qcg-\*）是**终端窗口的内部状态**，未与主窗口双向同步 —— 依赖这些属性的浮层
+  功能（SFTP 重命名 / 删除确认 / 快捷命令管理）可能不完整；
+- 终端窗口关闭 = 隐藏不销毁（重开恢复）。
+
 ## 修复方案 A（保底）：无边框贴靠窗口 —— 详细设计
 
 ### 一句话（通俗版）

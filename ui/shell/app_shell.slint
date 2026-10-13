@@ -85,6 +85,10 @@ import { ShortcutsDialog } from "../shortcuts_dialog.slint";
 import { AppTitleBar, AppTitleBarSystem } from "titlebar.slint";
 import { PageTerminal } from "page_terminal.slint";
 import { StatusBar } from "status_bar.slint";
+// 【方案 C-1】终端贴靠窗口：终端舞台搬进独立无边框窗口（见 terminal_window.slint
+// 顶部注释与 known-issues 文档方案 C）。
+import { TerminalProbeWindow } from "../terminal_window.slint";
+export { TerminalProbeWindow }
 // 【卡顿验证·临时】独立设置窗口（见 settings_probe.slint 顶部的完整说明）。
 import { SettingsProbeWindow } from "../settings_probe.slint";
 export { SettingsProbeWindow }
@@ -763,6 +767,12 @@ export component AppWindow inherits Window {
         triggered => { self.running = false; root.page-booted = true; }
     }
     changed shell-page => {
+        if (root.shell-page == 1 && root.terminals.length > 0) {
+            // 【方案 C-1】终端走贴靠窗口：Rust 侧 show（主窗口内容区留空，终端窗口
+            // 盖在上面）。没有会话时不拦（走下面的空态卡片）。
+            root.open-terminal-window();
+            return;
+        }
         if (root.shell-page == 4) {
             // 【卡顿验证·临时】设置改走独立窗口，主窗口拉回终端页 —— 让终端会话
             // 那棵重树完全不参与设置界面的滚动每一帧（见 settings_probe.slint）。
@@ -794,6 +804,8 @@ export component AppWindow inherits Window {
     }
     // 【卡顿验证·临时】设置走独立窗口：Rust 侧创建/显示（见 settings_probe.slint）。
     callback open-settings-probe;
+    // 【方案 C-1】终端页走贴靠窗口：Rust 侧创建/显示（见 terminal_window.slint）。
+    callback open-terminal-window;
     in-out property <bool> rail-collapsed: false;
     in-out property <string> host-search-query;
     callback host-search-changed(string);
@@ -894,7 +906,7 @@ export component AppWindow inherits Window {
     // 粘贴确认框（确认或取消）关闭后，把键盘焦点还给终端。单调自增；TerminalView
     // 监听它并走自己的 `focus-pending` 延迟取焦。对话框里的 FocusScope 会抢走焦点，
     // 而关闭路径没有别的机会还回去（上游 f435e15）。
-    property <int> terminal-focus-sequence: 0;
+    in-out property <int> terminal-focus-sequence: 0;
     callback connect-session(string /* session-id */);
     callback edit-session(string /* session-id */);
     callback duplicate-session(string /* session-id */);
@@ -1131,7 +1143,7 @@ export component AppWindow inherits Window {
         // 会覆盖 Rail 组件内部的 width + animate，所以动画必须加在这里 —— 否则
         // 侧栏是瞬时跳变（内容区生硬压缩、选中高亮与侧栏"错位"）。
         // 非对称：展开 300ms 弹簧落位（比收起 250ms 长，新内容有时间呈现）。
-        property <length> rail-w: root.rail-collapsed ? 64px : 200px;
+        in-out property <length> rail-w: root.rail-collapsed ? 64px : 200px;
         animate rail-w {
             duration: root.rail-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
             easing: root.rail-collapsed ? AnimationSettings.e-exit() : AnimationSettings.s-soft();
@@ -1141,7 +1153,7 @@ export component AppWindow inherits Window {
         // macOS 不画 —— 红绿灯与顶部拖拽都由系统负责（titlebar-inset 由 Rust 给）。
         property <length> bar-h: 38px;
         // 侧栏与页面内容的整体下移量：自绘栏平台是栏高，macOS 是红绿灯让位高度。
-        property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
+        in-out property <length> shell-top: root.custom-titlebar ? root.bar-h : root.titlebar-inset;
   // 右侧「工具」面板：展开 240px，折叠成窄条（「收起 SFTP 侧边栏」）时 22px。
         // 状态提升到窗口级 —— 舞台的占位宽度（panel-w）要跟着它变。
             in-out property <bool> panel-collapsed: false;
@@ -1284,144 +1296,6 @@ export component AppWindow inherits Window {
           }
       }
 
-      TerminalStage {
-          // 只在终端页、且**还有会话**时显示：各页面底色是"壁纸磨砂"（半透明），
-          // 常驻的终端画面会透到别的页面上（用户最初报的 bug）；而关掉最后一个会话后
-          // Rust 会留一个空 pane，舞台那层"从左侧主机里选一个"的提示也会透过空态卡片
-          // —— 干脆在没有会话时整个舞台都不画。隐藏只是 visible 切换，TerminalView
-          // 实例仍在（滚动 / 查找条 / 会话状态不丢）。
-          // ⚠ 绑 page-shown（而非 shell-page）：与页面内容同一时机（换页瞬间）切换，
-          // 否则点击瞬间就出现、压在正在淡出的旧页上 = 硬切。常驻 + visible 切换，
-          // TerminalView 状态不受影响。
-          visible: root.page-shown == 1 && root.terminals.length > 0;
-          // 会话异步恢复（length 0→N）时 visible 翻转 → 透明度淡入，替代硬切。
-          opacity: (root.page-shown == 1 && root.terminals.length > 0) ? 1 : 0;
-          animate opacity {
-              duration: AnimationSettings.enter-screen();
-              easing: AnimationSettings.e-enter();
-              enabled: AnimationSettings.enabled;
-          }
-          x: root.rail-w;
-          y: root.shell-top;
-          // 让开右侧工具面板（panel-w）与底部状态栏
-          width: root.width - root.rail-w - root.panel-w;
-          height: root.height - root.shell-top - 28px;
-          // 背景交给上面那层铺满的 Rectangle：`term-bg` 是 `frost()` 半透明，
-          // 两层叠加会让终端区整体变深，接缝处还会出现色带。
-          background: transparent;
-          panes: root.panes;
-          terminals: root.terminals;
-          splitters: root.splitters;
-          tabs: root.tabs;
-          active-tab-id: root.active-tab-id;
-          lang-en: root.lang-en;
-          sessions: root.sessions;
-          new-local-session() => {
-              root.shell-page = 1;
-              root.connect-session("system:shell");
-          }
-          custom-session() => { root.new-session-clicked(); }
-          browse-hosts() => { root.shell-page = 0; }
-          connect-session(id) => {
-              root.shell-page = 1;
-              root.connect-session(id);
-          }
-          // 顶栏「工具」按钮的常亮状态
-          right-panel-open: root.right-panel-open;
-          terminal-focus-sequence: root.terminal-focus-sequence;
-          term-cursor-style: root.term-cursor-style;
-          term-cursor-color: root.term-cursor-color;
-          terminal-restore-cover: root.terminal-restore-cover;
-          command-history: root.command-history;
-          history-view: root.history-view;
-          history-preview: root.history-preview;
-          quick-commands: root.quick-commands;
-          // 历史命令浮层：舞台渲染、状态栏 / 快捷键开合（双向）
-          history-open <=> root.history-panel-open;
-          // 会话内共享状态 / 对话框状态：双向，舞台上会就地改
-          sftp-prompt-open <=> root.sftp-prompt-open;
-          sftp-prompt-kind <=> root.sftp-prompt-kind;
-          sftp-prompt-tab <=> root.sftp-prompt-tab;
-          sftp-prompt-target <=> root.sftp-prompt-target;
-          sftp-prompt-value <=> root.sftp-prompt-value;
-          confirm-delete-open <=> root.confirm-delete-open;
-          confirm-delete-batch <=> root.confirm-delete-batch;
-          confirm-delete-tab <=> root.confirm-delete-tab;
-          confirm-delete-path <=> root.confirm-delete-path;
-          quick-cmd-manage-open <=> root.quick-cmd-manage-open;
-          qcm-name <=> root.qcm-name;
-          qcm-command <=> root.qcm-command;
-          qcm-group <=> root.qcm-group;
-          qcm-edit-index <=> root.qcm-edit-index;
-          qcg-open <=> root.qcg-open;
-          qcg-name <=> root.qcg-name;
-          qcg-orig <=> root.qcg-orig;
-          // 回调：舞台已经把 per-tab 的 id 补进参数，这里直接透传给 Rust
-          content-resized(w, h) => { root.content-resized(w, h); }
-          pane-tab-selected(pane, id) => { root.pane-tab-selected(pane, id); }
-          pane-tab-closed(pane, id) => { root.pane-tab-closed(pane, id); }
-          tab-rename-request(id) => { root.tab-rename-request(id); }
-          pane-new-tab(pane) => { root.pane-new-tab(pane); }
-          pane-split(pane, id, dir) => { root.pane-split(pane, id, dir); }
-          toggle-zen-key() => { root.toggle-zen-key(); }
-          toggle-right-panel() => { root.right-panel-open = !root.right-panel-open; }
-          cycle-tab(reverse) => { root.cycle-tab(reverse); }
-          splitter-drag(id, pos, vertical) => { root.splitter-drag(id, pos, vertical); }
-          send-key(tab, key, ctrl, alt, shift) => { root.send-key(tab, key, ctrl, alt, shift); }
-          terminal-resize(tab, w, h) => { root.terminal-resize(tab, w, h); }
-          terminal-mouse(tab, kind, button, col, row) => { root.terminal-mouse(tab, kind, button, col, row); }
-          terminal-wheel(tab, d, c, r) => { root.terminal-wheel(tab, d, c, r); }
-          terminal-scroll(tab, d) => { root.terminal-scroll(tab, d); }
-          terminal-scroll-to(tab, o) => { root.terminal-scroll-to(tab, o); }
-          terminal-scrollback-key(tab, key) => { root.terminal-scrollback-key(tab, key); }
-          term-select-start(tab, r, c, lh, ctrl, shift) => { root.term-select-start(tab, r, c, lh, ctrl, shift); }
-          term-select-update(tab, r, c, lh) => { root.term-select-update(tab, r, c, lh); }
-          term-select-end(tab) => { root.term-select-end(tab); }
-          term-select-word(tab, r, c) => { root.term-select-word(tab, r, c); }
-          term-select-line(tab, r, c) => { root.term-select-line(tab, r, c); }
-          term-select-autoscroll(tab, dir) => { root.term-select-autoscroll(tab, dir); }
-          paste-from-clipboard(tab) => { root.paste-from-clipboard(tab); }
-          copy-terminal-text(tab) => { root.copy-terminal-text(tab); }
-          clear-terminal(tab) => { root.clear-terminal(tab); }
-          find-query-changed(tab, q) => { root.find-query-changed(tab, q); }
-          find-next(tab) => { root.find-next(tab); }
-          find-prev(tab) => { root.find-prev(tab); }
-          run-command(tab, cmd, all) => { root.run-command(tab, cmd, all); }
-          copy-text(t) => { root.copy-text(t); }
-          delete-history(i) => { root.delete-history(i); }
-          delete-history-cmd(c) => { root.delete-history-cmd(c); }
-          search-history(q) => { root.search-history(q); }
-          toggle-quick-group(g) => { root.toggle-quick-group(g); }
-          edit-quick-command(i) => { root.edit-quick-command(i); }
-          duplicate-quick-command(i) => { root.duplicate-quick-command(i); }
-          delete-quick-command(i) => { root.delete-quick-command(i); }
-          move-quick-command(i, g) => { root.move-quick-command(i, g); }
-          delete-quick-group(g) => { root.delete-quick-group(g); }
-          sftp-navigate(tab, p) => { root.sftp-navigate(tab, p); }
-          sftp-download(tab, p) => { root.sftp-download(tab, p); }
-          sftp-upload-clicked(tab, dir, folder) => { root.sftp-upload-clicked(tab, dir, folder); }
-          sftp-refresh(tab, p) => { root.sftp-refresh(tab, p); }
-          sftp-tree-expand(tab, p) => { root.sftp-tree-expand(tab, p); }
-          sftp-toggle-select(tab, i) => { root.sftp-toggle-select(tab, i); }
-          sftp-download-selected(tab) => { root.sftp-download-selected(tab); }
-          sftp-copy-to-target(tab, path, target) => { root.sftp-copy-to-target(tab, path, target); }
-          sftp-copy-selected-to-target(tab, target) => { root.sftp-copy-selected-to-target(tab, target); }
-          sftp-view(tab, p) => { root.sftp-view(tab, p); }
-          sftp-edit(tab, p) => { root.sftp-edit(tab, p); }
-          sftp-open-external(tab, p) => { root.sftp-open-external(tab, p); }
-          sftp-edit-external(tab, p) => { root.sftp-edit-external(tab, p); }
-          sftp-sort-request(tab, key) => { root.sftp-sort-request(tab, key); }
-          sftp-clear-sort(tab) => { root.sftp-clear-sort(tab); }
-          sftp-copy-path(p) => { root.sftp-copy-path(p); }
-          sftp-chmod-open(tab, path, name, mode) => { root.sftp-chmod-open(tab, path, name, mode); }
-          set-pane-sftp-height(tab, v) => { root.set-pane-sftp-height(tab, v); }
-          set-pane-sftp-width(tab, v) => { root.set-pane-sftp-width(tab, v); }
-          set-pane-sftp-collapsed(tab, v) => { root.set-pane-sftp-collapsed(tab, v); }
-          tunnel-add(tab, name, kind, bind, bind-port, host, host-port) => {
-              root.tunnel-add(tab, name, kind, bind, bind-port, host, host-port);
-          }
-          tunnel-stop(tab, id) => { root.tunnel-stop(tab, id); }
-      }
         if root.page-shown == 0 : PageFade {
             fade: root.page-opacity;
             instant: !root.page-booted;

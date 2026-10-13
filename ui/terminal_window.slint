@@ -1,0 +1,229 @@
+import { Theme } from "theme.slint";
+import { TerminalStage } from "shell/terminal_stage.slint";
+import { PaneInfo, SplitterInfo, TerminalState } from "shell/stage_types.slint";
+import { SessionInfo } from "session_types.slint";
+import { QuickCmd } from "terminal_view.slint";
+import { TabInfo } from "tabs.slint";
+
+// 【方案 C-1】终端贴靠窗口 —— 把终端舞台（唯一重的、有持续数据流的拼图）
+// 搬进独立无边框窗口：主窗口只留 chrome + 轻页面（主机/设置/指令集），
+// 终端会话的全部活动（采样流 / render gate / pump invoke / 模型写入）落在
+// 自己的 surface 上，不再与别的页面的滚动帧挤同一个呈现队列。
+// 完整设计见 docs/known-issues/scroll-jack-with-ssh-session.md 的方案 C。
+export component TerminalProbeWindow inherits Window {
+    no-frame: true;
+    background: transparent;   // 透出主窗口内容区的 term-bg 层，无缝衔接
+    default-font-family: Theme.ui-font-family;
+
+    // ── 属性：与 TerminalStage 同款，由 Rust 从主窗口同步（高频 7 个镜像 + 1Hz 全量） ──
+    in property <[PaneInfo]> panes;
+    in property <[TerminalState]> terminals;
+    in property <[SplitterInfo]> splitters;
+    in property <[TabInfo]> tabs;                 // SFTP 跨标签传输目标
+    in property <[SessionInfo]> sessions;
+    in property <string> active-tab-id;
+    in property <bool> lang-en: false;
+    in property <bool> right-panel-open: false;
+    in-out property <bool> history-open: false;
+    in property <int> terminal-focus-sequence: 0;
+    in property <string> term-cursor-style: "block";
+    in property <color> term-cursor-color;
+    in property <bool> terminal-restore-cover: false;
+    in property <[string]> command-history;
+    in property <[string]> history-view;
+    in property <[string]> history-preview;
+    in property <[QuickCmd]> quick-commands;
+    in-out property <bool> sftp-prompt-open: false;
+    in-out property <string> sftp-prompt-kind;    // "rename"|"chmod"|"mkdir"|"touch"
+    in-out property <string> sftp-prompt-tab;
+    in-out property <string> sftp-prompt-target;
+    in-out property <string> sftp-prompt-value;
+    in-out property <bool> confirm-delete-open: false;
+    in-out property <bool> confirm-delete-batch: false;
+    in-out property <string> confirm-delete-tab;
+    in-out property <string> confirm-delete-path;
+    in-out property <bool> quick-cmd-manage-open: false;
+    in-out property <string> qcm-name;
+    in-out property <string> qcm-command;
+    in-out property <string> qcm-group;
+    in-out property <int> qcm-edit-index: -1;
+    in-out property <bool> qcg-open: false;
+    in-out property <string> qcg-name;
+    in-out property <string> qcg-orig;
+
+    // ── 回调：与 TerminalStage 同款，由 Rust 桥接到主窗口的同一套逻辑 ──
+    callback content-resized(a0: length, a1: length);
+    callback pane-tab-selected(a0: int, a1: string);
+    callback pane-tab-closed(a0: int, a1: string);
+    callback tab-rename-request(a0: string);
+    callback pane-new-tab(a0: int);
+    callback pane-split(a0: int, a1: string, a2: int);
+    callback toggle-zen-key();
+    callback toggle-right-panel();
+    callback toggle-history();
+    callback new-local-session();
+    callback custom-session();
+    callback browse-hosts();
+    callback connect-session(a0: string /* id */);
+    callback cycle-tab(a0: bool);
+    callback splitter-drag(a0: int, a1: length, a2: bool);
+    callback send-key(a0: string, a1: string, a2: bool, a3: bool, a4: bool);
+    callback terminal-resize(a0: string, a1: int, a2: int);
+    callback terminal-mouse(a0: string, a1: int, a2: int, a3: int, a4: int) -> bool;
+    callback terminal-wheel(a0: string, a1: int, a2: int, a3: int);
+    callback terminal-scroll(a0: string, a1: int);
+    callback terminal-scroll-to(a0: string, a1: int);
+    callback terminal-scrollback-key(a0: string, a1: string) -> bool;
+    callback term-select-start(a0: string, a1: int, a2: int, a3: bool, a4: bool, a5: bool);
+    callback term-select-update(a0: string, a1: int, a2: int, a3: bool);
+    callback term-select-end(a0: string);
+    callback term-select-word(a0: string, a1: int, a2: int);
+    callback term-select-line(a0: string, a1: int, a2: int);
+    callback term-select-autoscroll(a0: string, a1: int);
+    callback paste-from-clipboard(a0: string);
+    callback copy-terminal-text(a0: string);
+    callback clear-terminal(a0: string);
+    callback find-query-changed(a0: string, a1: string);
+    callback find-next(a0: string);
+    callback find-prev(a0: string);
+    callback run-command(a0: string, a1: string, a2: bool);
+    callback copy-text(a0: string);
+    callback delete-history(a0: int);
+    callback delete-history-cmd(a0: string);
+    callback search-history(a0: string);
+    callback toggle-quick-group(a0: string);
+    callback edit-quick-command(a0: int);
+    callback duplicate-quick-command(a0: int);
+    callback delete-quick-command(a0: int);
+    callback move-quick-command(a0: int, a1: string);
+    callback delete-quick-group(a0: string);
+    callback sftp-navigate(a0: string, a1: string);
+    callback sftp-download(a0: string, a1: string);
+    callback sftp-upload-clicked(a0: string, a1: string, a2: bool);
+    callback sftp-refresh(a0: string, a1: string);
+    callback sftp-tree-expand(a0: string, a1: string);
+    callback sftp-toggle-select(a0: string, a1: int);
+    callback sftp-download-selected(a0: string);
+    callback sftp-copy-to-target(a0: string, a1: string, a2: string);
+    callback sftp-copy-selected-to-target(a0: string, a1: string);
+    callback sftp-view(a0: string, a1: string);
+    callback sftp-edit(a0: string, a1: string);
+    callback sftp-open-external(a0: string, a1: string);
+    callback sftp-edit-external(a0: string, a1: string);
+    callback sftp-sort-request(a0: string, a1: string);
+    callback sftp-clear-sort(a0: string);
+    callback sftp-copy-path(a0: string);
+    callback sftp-chmod-open(a0: string, a1: string, a2: string, a3: int);
+    callback set-pane-sftp-height(a0: string, a1: length);
+    callback set-pane-sftp-width(a0: string, a1: length);
+    callback set-pane-sftp-collapsed(a0: string, a1: bool);
+    callback tunnel-add(a0: string, a1: string, a2: string, a3: string, a4: string, a5: string, a6: string);
+    callback tunnel-stop(a0: string, a1: string);
+
+    TerminalStage {
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        panes: root.panes;
+        terminals: root.terminals;
+        splitters: root.splitters;
+        tabs: root.tabs;
+        sessions: root.sessions;
+        active-tab-id: root.active-tab-id;
+        lang-en: root.lang-en;
+        right-panel-open: root.right-panel-open;
+        history-open: root.history-open;
+        terminal-focus-sequence: root.terminal-focus-sequence;
+        term-cursor-style: root.term-cursor-style;
+        term-cursor-color: root.term-cursor-color;
+        terminal-restore-cover: root.terminal-restore-cover;
+        command-history: root.command-history;
+        history-view: root.history-view;
+        history-preview: root.history-preview;
+        quick-commands: root.quick-commands;
+        sftp-prompt-open: root.sftp-prompt-open;
+        sftp-prompt-kind: root.sftp-prompt-kind;
+        sftp-prompt-tab: root.sftp-prompt-tab;
+        sftp-prompt-target: root.sftp-prompt-target;
+        sftp-prompt-value: root.sftp-prompt-value;
+        confirm-delete-open: root.confirm-delete-open;
+        confirm-delete-batch: root.confirm-delete-batch;
+        confirm-delete-tab: root.confirm-delete-tab;
+        confirm-delete-path: root.confirm-delete-path;
+        quick-cmd-manage-open: root.quick-cmd-manage-open;
+        qcm-name: root.qcm-name;
+        qcm-command: root.qcm-command;
+        qcm-group: root.qcm-group;
+        qcm-edit-index: root.qcm-edit-index;
+        qcg-open: root.qcg-open;
+        qcg-name: root.qcg-name;
+        qcg-orig: root.qcg-orig;
+        content-resized(a0, a1) => { root.content-resized(a0, a1); }
+        pane-tab-selected(a0, a1) => { root.pane-tab-selected(a0, a1); }
+        pane-tab-closed(a0, a1) => { root.pane-tab-closed(a0, a1); }
+        tab-rename-request(a0) => { root.tab-rename-request(a0); }
+        pane-new-tab(a0) => { root.pane-new-tab(a0); }
+        pane-split(a0, a1, a2) => { root.pane-split(a0, a1, a2); }
+        toggle-zen-key() => { root.toggle-zen-key(); }
+        toggle-right-panel() => { root.toggle-right-panel(); }
+        toggle-history() => { root.history-open = !root.history-open; }
+        new-local-session() => { root.new-local-session(); }
+        custom-session() => { root.custom-session(); }
+        browse-hosts() => { root.browse-hosts(); }
+        connect-session(a0) => { root.connect-session(a0); }
+        cycle-tab(a0) => { root.cycle-tab(a0); }
+        splitter-drag(a0, a1, a2) => { root.splitter-drag(a0, a1, a2); }
+        send-key(a0, a1, a2, a3, a4) => { root.send-key(a0, a1, a2, a3, a4); }
+        terminal-resize(a0, a1, a2) => { root.terminal-resize(a0, a1, a2); }
+        terminal-mouse(a0, a1, a2, a3, a4) => { return root.terminal-mouse(a0, a1, a2, a3, a4); }
+        terminal-wheel(a0, a1, a2, a3) => { root.terminal-wheel(a0, a1, a2, a3); }
+        terminal-scroll(a0, a1) => { root.terminal-scroll(a0, a1); }
+        terminal-scroll-to(a0, a1) => { root.terminal-scroll-to(a0, a1); }
+        terminal-scrollback-key(a0, a1) => { return root.terminal-scrollback-key(a0, a1); }
+        term-select-start(a0, a1, a2, a3, a4, a5) => { root.term-select-start(a0, a1, a2, a3, a4, a5); }
+        term-select-update(a0, a1, a2, a3) => { root.term-select-update(a0, a1, a2, a3); }
+        term-select-end(a0) => { root.term-select-end(a0); }
+        term-select-word(a0, a1, a2) => { root.term-select-word(a0, a1, a2); }
+        term-select-line(a0, a1, a2) => { root.term-select-line(a0, a1, a2); }
+        term-select-autoscroll(a0, a1) => { root.term-select-autoscroll(a0, a1); }
+        paste-from-clipboard(a0) => { root.paste-from-clipboard(a0); }
+        copy-terminal-text(a0) => { root.copy-terminal-text(a0); }
+        clear-terminal(a0) => { root.clear-terminal(a0); }
+        find-query-changed(a0, a1) => { root.find-query-changed(a0, a1); }
+        find-next(a0) => { root.find-next(a0); }
+        find-prev(a0) => { root.find-prev(a0); }
+        run-command(a0, a1, a2) => { root.run-command(a0, a1, a2); }
+        copy-text(a0) => { root.copy-text(a0); }
+        delete-history(a0) => { root.delete-history(a0); }
+        delete-history-cmd(a0) => { root.delete-history-cmd(a0); }
+        search-history(a0) => { root.search-history(a0); }
+        toggle-quick-group(a0) => { root.toggle-quick-group(a0); }
+        edit-quick-command(a0) => { root.edit-quick-command(a0); }
+        duplicate-quick-command(a0) => { root.duplicate-quick-command(a0); }
+        delete-quick-command(a0) => { root.delete-quick-command(a0); }
+        move-quick-command(a0, a1) => { root.move-quick-command(a0, a1); }
+        delete-quick-group(a0) => { root.delete-quick-group(a0); }
+        sftp-navigate(a0, a1) => { root.sftp-navigate(a0, a1); }
+        sftp-download(a0, a1) => { root.sftp-download(a0, a1); }
+        sftp-upload-clicked(a0, a1, a2) => { root.sftp-upload-clicked(a0, a1, a2); }
+        sftp-refresh(a0, a1) => { root.sftp-refresh(a0, a1); }
+        sftp-tree-expand(a0, a1) => { root.sftp-tree-expand(a0, a1); }
+        sftp-toggle-select(a0, a1) => { root.sftp-toggle-select(a0, a1); }
+        sftp-download-selected(a0) => { root.sftp-download-selected(a0); }
+        sftp-copy-to-target(a0, a1, a2) => { root.sftp-copy-to-target(a0, a1, a2); }
+        sftp-copy-selected-to-target(a0, a1) => { root.sftp-copy-selected-to-target(a0, a1); }
+        sftp-view(a0, a1) => { root.sftp-view(a0, a1); }
+        sftp-edit(a0, a1) => { root.sftp-edit(a0, a1); }
+        sftp-open-external(a0, a1) => { root.sftp-open-external(a0, a1); }
+        sftp-edit-external(a0, a1) => { root.sftp-edit-external(a0, a1); }
+        sftp-sort-request(a0, a1) => { root.sftp-sort-request(a0, a1); }
+        sftp-clear-sort(a0) => { root.sftp-clear-sort(a0); }
+        sftp-copy-path(a0) => { root.sftp-copy-path(a0); }
+        sftp-chmod-open(a0, a1, a2, a3) => { root.sftp-chmod-open(a0, a1, a2, a3); }
+        set-pane-sftp-height(a0, a1) => { root.set-pane-sftp-height(a0, a1); }
+        set-pane-sftp-width(a0, a1) => { root.set-pane-sftp-width(a0, a1); }
+        set-pane-sftp-collapsed(a0, a1) => { root.set-pane-sftp-collapsed(a0, a1); }
+        tunnel-add(a0, a1, a2, a3, a4, a5, a6) => { root.tunnel-add(a0, a1, a2, a3, a4, a5, a6); }
+        tunnel-stop(a0, a1) => { root.tunnel-stop(a0, a1); }
+    }
+}
