@@ -121,6 +121,21 @@ pub(super) fn refresh_sidebar(
     local: &LocalSnap,
     local_net_hist: &NetHist,
 ) -> SidebarStats {
+    // ⚠⚠ 非终端页时整个函数直接返回：让主窗口**零属性写入 → 零 redraw**。
+    //
+    // 根因假设（2026-10-13 Phase 0 实证后收敛）：卡顿与窗口大小 / 壁纸 / 元素树
+    // 规模都无关 —— 独立设置窗口拉到全屏、带壁纸也照样流畅；主窗口缩到 960×700、
+    // 关掉壁纸也照样卡。唯一剩下的差异是**同一个窗口的呈现队列**：主窗口上周期性
+    // 的无关于滚动的 redraw（1Hz 采样写入 → Slint 内部 request_redraw）与滚动产生
+    // 的 redraw 在同一队列里交织，部分 vsync 周期的帧被跳过 / 延迟（16ms 变
+    // 33ms），主观即「滑一下停一两下」；独立窗口有自己独立的呈现队列，互不干扰。
+    //
+    // 非终端页时面板内容本就不渲染（page-shown 条件化）、底栏也不在树里，
+    // 这些写入没有任何消费者 —— 纯粹是逼出无用帧。切回终端页后 sampler 的下一
+    // tick（<1s）照常全量刷新，数据不停摆。
+    if win.get_shell_page() != 1 {
+        return SidebarStats::default();
+    }
     let mut stats = SidebarStats::default();
     let pct = |used: u64, total: u64| usage_pct(used, total);
     // A poisoned lock must not take the client down — release builds use
