@@ -375,9 +375,11 @@ pub(super) fn apply_wallpaper(
         Some(wp) => {
             let (ar, ag, ab) = wp.palette.accent;
             let (tr, tg, tb) = wp.palette.tint;
+            let (br, bg, bb) = wp.palette.base;
             window.global::<Theme>().set_wallpaper(wp.image);
             window.global::<Theme>().set_wp_accent(slint::Color::from_rgb_u8(ar, ag, ab));
             window.global::<Theme>().set_wp_tint(slint::Color::from_rgb_u8(tr, tg, tb));
+            window.global::<Theme>().set_wp_base(slint::Color::from_rgb_u8(br, bg, bb));
             // Only the built-ins (designed as a light/dark pair) auto-set the
             // theme. A custom photo keeps the user's light/dark choice so the
             // theme toggle still governs text contrast — a light/white wallpaper
