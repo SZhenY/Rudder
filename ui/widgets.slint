@@ -160,9 +160,9 @@ export component GhostButton inherits Rectangle {
     border-color: Theme.border-subtle;
     background: Theme.bg-panel;
     states [
-        pressed when touch.pressed : { background: Theme.bg-active; }
+        pressed when touch.pressed : { background: Theme.accent-press; }
         hovered when touch.has-hover : {
-            border-color: Theme.border-strong;
+            border-color: Theme.accent-ring;
             background: Theme.bg-hover;
         }
     ]
