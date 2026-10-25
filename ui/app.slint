@@ -611,6 +611,8 @@ export component AppWindow inherits Window {
     // Settings → 手动检查更新 button (#self-update): independent of the
     // startup check toggle, result is shown inline in the settings row.
     in property <string> update-check-status: "";
+    // 失败时的错误链（等宽小字显示在状态行下面）—— 平时为空串，界面上不占位。
+    in property <string> update-check-error: "";
     in property <bool> update-checking: false;
     // 更新通道（stable / beta / all）与检查频率、上次检查时间（见 settings/pages/update.slint）。
     in property <string> update-channel: "stable";

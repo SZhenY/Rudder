@@ -62,6 +62,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> update-check-enabled;
     // Manual "check now" button next to the startup toggle (#self-update).
     in property <string> update-check-status;
+    in property <string> update-check-error;
     in property <bool> update-checking;
     in property <string> update-channel: "stable";
     in property <[string]> update-freq-labels;
@@ -366,6 +367,7 @@ export component InterfacePanel inherits Rectangle {
                             lang-en: root.lang-en;
                             update-check-enabled <=> root.update-check-enabled;
                             update-check-status: root.update-check-status;
+                            update-check-error: root.update-check-error;
                             update-checking: root.update-checking;
                             update-channel: root.update-channel;
                             update-freq-labels: root.update-freq-labels;

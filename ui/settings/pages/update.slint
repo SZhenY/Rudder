@@ -52,6 +52,8 @@ export component UpdatePage inherits VerticalLayout {
     in property <bool> lang-en;
     in-out property <bool> update-check-enabled;
     in property <string> update-check-status;
+    /// 检查失败时的错误链；空串 = 没出错，界面上不占位。
+    in property <string> update-check-error;
     in property <bool> update-checking;
     /// `stable` / `beta` / `all`
     in property <string> update-channel;
@@ -150,5 +152,14 @@ export component UpdatePage inherits VerticalLayout {
                 }
             }
         }
+    }
+
+    // 失败原因单独一行：状态行只说"稍后重试"，这里给出真正的原因（证书 / 代理 / 限流等），
+    // 用户报障时截图就能定位。
+    if root.update-check-error != "" : Text {
+        text: root.update-check-error;
+        color: Theme.text-muted;
+        font-size: 11px * Theme.panel-font;
+        wrap: word-wrap;
     }
 }

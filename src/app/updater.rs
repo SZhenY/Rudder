@@ -314,6 +314,8 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                         if let Some(w) = weak.upgrade() {
                             w.set_update_checking(checking);
                             w.set_update_check_status(status.into());
+                            // 每次更新状态都先清掉上一次的失败原因。
+                            w.set_update_check_error("".into());
                             if let Some((v, badge, notes, is_switch)) = found {
                                 w.set_update_version(v.into());
                                 w.set_update_badge(badge.into());
@@ -328,7 +330,11 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                         }
                     });
                 };
-                set(true, String::new(), None);
+                set(
+                    true,
+                    crate::i18n::t("正在检查更新…", "Checking for updates…").to_string(),
+                    None,
+                );
                 let current =
                     crate::app::parse_version(env!("CARGO_PKG_VERSION")).unwrap_or((0, 0, 0, 0, 0));
                 match crate::app::self_updater::latest_update(current, &check_channel) {
@@ -361,12 +367,21 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                         // 界面上只给一句本地化的话 —— 此前直接把 `{e:#}` 抛到那行说明位上，
                         // 于是中文界面里冒出一串 "query GitHub releases: …"。
                         tracing::warn!("manual update check failed: {e:#}");
+                        let detail = format!("{e:#}");
                         set(
                             false,
                             crate::i18n::t("检查失败，请稍后重试", "Check failed — try again later")
                                 .to_string(),
                             None,
                         );
+                        // 错误链单独送到设置页那行小字：普通用户只看上面那句，
+                        // 要报障时能直接看到到底卡在哪（代理 / 证书 / 限流）。
+                        let weak = weak.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = weak.upgrade() {
+                                w.set_update_check_error(detail.into());
+                            }
+                        });
                     }
                 }
             });

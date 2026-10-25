@@ -165,6 +165,7 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     // 异步状态（上传 / 下载 / 更新检查 / 输出高亮规则校验）
     sw.set_webdav_status(m.get_webdav_status());
     sw.set_update_check_status(m.get_update_check_status());
+    sw.set_update_check_error(m.get_update_check_error());
     sw.set_update_checking(m.get_update_checking());
     sw.set_update_last_check(m.get_update_last_check());
     sw.set_output_highlight_rule_status(m.get_output_highlight_rule_status());
@@ -265,6 +266,7 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_ui_fonts(m.get_ui_fonts());
     sw.set_update_check_enabled(m.get_update_check_enabled());
     sw.set_update_check_status(m.get_update_check_status());
+    sw.set_update_check_error(m.get_update_check_error());
     sw.set_update_checking(m.get_update_checking());
     sw.set_update_channel(m.get_update_channel());
     sw.set_update_freq_labels(m.get_update_freq_labels());

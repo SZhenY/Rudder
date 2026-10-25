@@ -61,10 +61,8 @@ import { ConfirmOverlays } from "confirm_overlays.slint";
 import { ShortcutsDialog } from "shortcuts_dialog.slint";
 
 export component SettingsWindow inherits Window {
-    // 真·独立窗口：`no-frame` 留默认（false）→ 各平台的原生标题栏 —— macOS 的
-    // 红黄绿按钮、原生拖动、原生缩放全都由系统提供，一行代码都不用写。
-    // （项目里 `ProcWindow` / `SystemInfoWindow` 也是这么做的：
-    //  `set_custom_titlebar(cfg!(not(target_os = "macos")))`，macOS 走原生。）
+    // Windows / Linux 自绘标题栏（Rust 设 `custom-titlebar = true`），macOS 保留原生
+    // 标题栏与红黄绿按钮 —— 与 `ProcWindow` / `SystemInfoWindow` 同一套判据。
     title: lang-en ? "Settings" : "设置";
     // ⚠ **独立 root 窗口**：不在主窗口的组件树里 → 有两件事必须自己接（都有现成先例）：
     //
@@ -82,6 +80,9 @@ export component SettingsWindow inherits Window {
     // 不透明底（壁纸层与磨砂面板都盖在它上面）—— 与主窗口 / `ProcWindow` 同一套合成。
     background: Theme.window-base;
     default-font-family: Theme.ui-font-family;
+    // 自绘标题栏（Rust 按平台设置；macOS 走原生）。
+    in property <bool> custom-titlebar;
+    no-frame: root.custom-titlebar;
 
     // ── 与主窗口的 `Theme` 同步（Rust 侧 `sync_settings_theme` 写入）───────────
     // 双向绑到本窗口自己的 `Theme` 实例：值一变，整套调色板 / 字体 / 圆角跟着变。
@@ -154,6 +155,7 @@ export component SettingsWindow inherits Window {
     in property <[string]> ui-fonts;
     in-out property <bool> update-check-enabled:true;
     in property <string> update-check-status:"";
+    in property <string> update-check-error:"";
     in property <bool> update-checking:false;
     in property <string> update-channel: "stable";
     in property <[string]> update-freq-labels;
@@ -172,6 +174,8 @@ export component SettingsWindow inherits Window {
 
     // ── 动作（41 个，全部由调用点转发，实现仍在 Rust）────────────
     callback close-requested();
+    callback win-drag();          // start an OS window-move from the self-drawn titlebar
+    callback win-resize-se();     // start an OS resize from the bottom-right grip
     callback add-output-highlight-rule(string, bool, bool, bool, string) -> bool;
     callback add-wsl-profile(string, string, string);
     callback check-update-now();
@@ -259,10 +263,19 @@ export component SettingsWindow inherits Window {
         VerticalLayout {
         width: 100%;
         height: 100%;
+            // 自绘标题栏（Windows / Linux）：标题 + 拖动 + ✕。
+            if root.custom-titlebar : WindowTitleBar {
+                title: root.lang-en ? "Settings" : "设置";
+                bar-height: 36px;
+                bg: Theme.bg-elevated;
+                icon-size: 16px;
+                close() => { root.close-requested(); }
+                drag() => { root.win-drag(); }
+            }
             // macOS 的窗口是「全尺寸内容视图 + 透明标题栏」→ 原生交通灯会**浮在内容之上**，
             // 顶部必须留出 25px（与主窗口 `titlebar-inset`、`ProcWindow` 同一取值）。
-            // 其它平台的标题栏在内容之外，不用让位（`is-mac` 已从主窗口同步过来）。
-            padding-top: root.is-mac ? 25px : 0px;
+            // 自绘标题栏的平台标题栏在内容之上，不用让位。
+            padding-top: (root.is-mac && !root.custom-titlebar) ? 25px : 0px;
             // 自写的 44px 标题栏（标题 + 拖动 + ✕）与它下面的 Divider 都退休了：
             // 标题、拖动、关闭按钮现在由 macOS 窗口标题栏提供，少两层图元，
             // 也少一块 44px 高的重绘面积。
@@ -312,6 +325,7 @@ export component SettingsWindow inherits Window {
                 quick-commands-as-sidebar <=> quick-commands-as-sidebar;
                 update-check-enabled <=> update-check-enabled;
                 update-check-status: update-check-status;
+                update-check-error: update-check-error;
                 update-checking: update-checking;
                 update-channel: update-channel;
                 update-freq-labels: update-freq-labels;
@@ -398,7 +412,26 @@ export component SettingsWindow inherits Window {
                 preview-wallpaper-overlay(v) => { root.preview-wallpaper-overlay(v); }
             }
         }
-        // 关闭按钮由原生标题栏提供（macOS 的红点 / Windows-Linux 的 ✕），
-        // 这里不再自绘 —— 系统的关闭请求会触发本组件的 `close-requested`。
+        // 关闭按钮由标题栏提供（自绘的 ✕ 或 macOS 的红点），这里不重复画；
+        // 两者都走本组件的 `close-requested`。
+    }
+
+    // 无边框平台上系统不再提供缩放边缘 → 右下角留一个 16px 的抓手。
+    if root.custom-titlebar : Rectangle {
+        width: 16px;
+        height: 16px;
+        x: root.width - self.width;
+        y: root.height - self.height;
+        TouchArea {
+            mouse-cursor: nwse-resize;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                    root.win-resize-se();
+                }
+            }
+        }
+        Rectangle { x: parent.width - 5px;  y: parent.height - 5px;  width: 2px; height: 2px; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 9px;  y: parent.height - 5px;  width: 2px; height: 2px; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 5px;  y: parent.height - 9px;  width: 2px; height: 2px; background: Theme.text-muted; }
     }
 }

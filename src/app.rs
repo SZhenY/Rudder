@@ -525,9 +525,11 @@ pub fn run() -> Result<()> {
     window.set_sys_filesystem_rows(ModelRc::from(sys_filesystem_model.clone()));
     let proc_win = ProcWindow::new().context("failed to build process window")?;
     proc_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
+    apply_chrome_on_first_frame(&proc_win);
     proc_win.set_proc_list(ModelRc::from(proc_rows_model.clone()));
     let sys_win = SystemInfoWindow::new().context("failed to build system info window")?;
     sys_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
+    apply_chrome_on_first_frame(&sys_win);
     sys_win.set_metrics(ModelRc::from(sys_metrics_model.clone()));
     sys_win.set_nets(ModelRc::from(sys_net_rows_model.clone()));
     sys_win.set_overview_rows(ModelRc::from(sys_overview_model.clone()));
@@ -696,6 +698,33 @@ pub fn run() -> Result<()> {
     // `settings_window` 模块里处理了：`Theme` 逐项同步 + macOS 首帧补救。
     let settings_win = SettingsWindow::new().context("failed to build settings window")?;
     settings_window::wire_settings_window(&window.as_weak(), &settings_win);
+    // Windows / Linux 自绘标题栏（macOS 保留原生红黄绿），与进程窗口 / 系统信息窗口一致。
+    settings_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
+    apply_chrome_on_first_frame(&settings_win);
+    {
+        // 自绘标题栏的拖动。
+        let sw = settings_win.as_weak();
+        settings_win.on_win_drag(move || {
+            if let Some(w) = sw.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_window();
+                });
+            }
+        });
+    }
+    {
+        // 右下角缩放抓手（无边框窗口没有系统缩放边缘）。
+        use i_slint_backend_winit::winit::window::ResizeDirection;
+        let sw = settings_win.as_weak();
+        settings_win.on_win_resize_se(move || {
+            if let Some(w) = sw.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_resize_window(ResizeDirection::SouthEast);
+                });
+                schedule_slint_pointer_ungrab(sw.clone());
+            }
+        });
+    }
     {
         // 关闭：原生 ✕ 与窗口内的 Esc 都走这里（Esc 由 Slint 侧 `close-requested` 上抛）。
         let sw = settings_win.as_weak();
@@ -2501,6 +2530,23 @@ mod font_choice_tests {
     }
 }
 
+
+/// 无边框子窗口也要 Win11 的圆角与阴影：和主窗口同一套时机 —— 等第一个 winit 窗口事件
+/// 再套（那时 HWND 才可靠存在）。非 Windows 平台上 `apply_window_chrome` 是空实现。
+fn apply_chrome_on_first_frame<T>(handle: &T)
+where
+    T: slint::ComponentHandle + 'static,
+{
+    use i_slint_backend_winit::EventResult;
+    let done = Rc::new(Cell::new(false));
+    handle.window().on_winit_window_event(move |win, _event| {
+        if !done.get() {
+            done.set(true);
+            apply_window_chrome(win);
+        }
+        EventResult::Propagate
+    });
+}
 
 #[cfg(test)]
 mod renderer_fallback_tests {

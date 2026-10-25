@@ -21,6 +21,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - 工具栏：亮暗切换按钮改为套用内置壁纸；新增快捷命令侧栏开关，与设置里的开关双向同步。
 - 渲染器三平台统一：启动期用 `WGPU_BACKEND` 定死后端优先级（Windows dx12、Linux vulkan、
   macOS metal），macOS 纳入「自动」探测，设置页改为「自动 / GPU / 软件」三档。
+- 无边框子窗口（设置 / 进程 / 系统信息）在 Windows 11 上也套用圆角与阴影，与主窗口一致。
 
 ### 修复 / Fixed
 
@@ -30,6 +31,10 @@ All notable changes are documented here. 本文件记录所有重要变更。
 - 设置-外观的主题色首格与下方调色盘颜色不一致（回显用了未归一化的值）。
 - SFTP 文件行的图标与文字配色不一致。
 - 渲染失败（首帧起不来 / 运行中设备丢失）现在自动降级到软件渲染并重启，不再只剩一个空窗口。
+- 设置窗口在 Windows / Linux 上没有沉浸式标题栏（一直用系统原生标题栏）：现在和其它两个子窗口
+  一样自绘（标题 + 拖动 + ✕ + 右下角缩放抓手），macOS 仍保留原生红黄绿。
+- 检查更新点下去没有任何反馈，且失败时只有一句「请稍后重试」：现在会显示「正在检查更新…」，
+  失败时在下面多一行给出真实原因（代理 / 证书 / 限流），便于报障。
 
 ### 变更 / Changed
 
@@ -43,7 +48,9 @@ complementary colour, added a toolbar quick-command sidebar toggle, and unified 
 three-platform renderer (backend priority via `WGPU_BACKEND`, macOS auto-probe, three-step
 picker). **Fixed**: the quick-command panel squeezing the welcome page, settings-window colour
 lag, the accent swatch mismatch, SFTP icon colours, and renderer failures now fall back to
-software rendering automatically. **Changed**: removed the tab-strip "all tabs" button.
+software rendering automatically. **Changed**: removed the tab-strip "all tabs" button. The
+settings window now draws its own titlebar on Windows/Linux (with Win11 rounding and shadow on all
+frameless sub-windows), and the update check shows a "checking…" state plus the real failure reason.
 
 ## [0.8.0] - 2026-09-26
 
