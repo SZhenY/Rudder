@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.8.0-beta1] - 2026-10-25
+
 ### 新增 / Added
 
 - 从 0.8.0-ui-beta1 移植动效体系：时长档位（short/medium/long）、进入退出曲线、弹簧参数；
