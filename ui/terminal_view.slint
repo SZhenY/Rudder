@@ -1135,10 +1135,11 @@ export component TerminalView inherits Rectangle {
                         ? Theme.text-secondary
                         : (Theme.is-mac ? #ffffff55 : Theme.border-strong);
                     border-radius: 3px;
-                    animate background { duration: 100ms;
-            easing: AnimationSettings.color();
-            enabled: AnimationSettings.enabled;
-        }
+                    animate background {
+                        duration: (track-ta.has-hover || track-ta.pressed) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: (track-ta.has-hover || track-ta.pressed) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                 }
             }
 

@@ -100,8 +100,8 @@ export component SettingSwitch inherits SettingRow {
         border-color: root.checked ? Theme.accent : Theme.border-strong;
         background: root.checked ? Theme.accent : Theme.bg-hover;
         animate background {
-            duration: 120ms;
-            easing: AnimationSettings.color();
+            duration: root.checked ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+            easing: root.checked ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
             enabled: AnimationSettings.enabled;
         }
 
@@ -113,8 +113,8 @@ export component SettingSwitch inherits SettingRow {
             border-radius: 8px;
             background: root.checked ? #ffffff : Theme.text-secondary;
             animate x {
-                duration: 120ms;
-                easing: AnimationSettings.layout();
+                duration: AnimationSettings.short4();
+                easing: AnimationSettings.s-bouncy();
                 enabled: AnimationSettings.enabled;
             }
         }

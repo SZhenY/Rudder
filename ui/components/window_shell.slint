@@ -21,8 +21,8 @@ component WinBtn inherits Rectangle {
         }
     ]
     animate background {
-        duration: 90ms;
-        easing: AnimationSettings.color();
+        duration: ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
         enabled: AnimationSettings.enabled;
     }
 

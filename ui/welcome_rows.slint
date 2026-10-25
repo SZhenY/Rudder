@@ -248,8 +248,9 @@ export component SessionRow inherits Rectangle {
             : (touch.has-hover ? Theme.bg-hover : transparent);
         drop-shadow-blur: root.drag-target ? 14px : 0px;
         drop-shadow-color: root.drag-target ? #00000060 : transparent;
-        animate background { duration: 120ms;
-            easing: AnimationSettings.color();
+        animate background {
+            duration: (root.drag-target || touch.has-hover) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+            easing: (root.drag-target || touch.has-hover) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
             enabled: AnimationSettings.enabled;
         }
         animate drop-shadow-blur { duration: 120ms;

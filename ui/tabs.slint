@@ -41,10 +41,11 @@ component SingleTab inherits Rectangle {
     background: dragging ? Theme.bg-active
         : (active ? Theme.tab-active-bg
         : (touch.has-hover ? Theme.bg-hover : transparent));
-    animate background { duration: 120ms;
-            easing: AnimationSettings.color();
-            enabled: AnimationSettings.enabled;
-        }
+    animate background {
+        duration: (dragging || active || touch.has-hover) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: (dragging || active || touch.has-hover) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
 
     // Declared FIRST so the HorizontalLayout's children (close button) are at
     // a higher z-order and receive their own click events.
