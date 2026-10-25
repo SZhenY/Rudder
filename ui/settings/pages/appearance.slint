@@ -73,8 +73,8 @@ export component AppearancePage inherits VerticalLayout {
     // ── 渲染档位（实验支线矩阵）────────────────────────────────────────────
     // 显示名与"配置里存的值"分两套：名字可按语言变，值必须是稳定的标识符。
     // 两个纯函数互为反函数，选项列表、回填、选中三处都从这里取，免得各写一份而漂移。
-    // 三平台**只提供两档**：GPU / 软件。`femtovg-wgpu` 只是配置里的取值，不作为名字出现 ——
-    // 用户关心的是"用不用 GPU"，不是用哪个库画。
+    // 值用**三档语义**（auto / wgpu / software），与 `ConfigStore::renderer_mode_choice`
+    // 一一对应：后端名三平台不一致（macOS 是 `femtovg-wgpu`），拿来比会一个都匹配不上。
     property <string> lbl-auto: root.lang-en ? "Automatic" : "自动";
     property <string> lbl-soft: root.lang-en ? "Software" : "软件";
     property <string> lbl-gpu: "GPU";
@@ -83,19 +83,18 @@ export component AppearancePage inherits VerticalLayout {
     pure function mode-of(label: string) -> string {
         if (label == root.lbl-auto) { return "auto"; }
         if (label == root.lbl-soft) { return "software"; }
-        if (label == root.lbl-gpu) { return "femtovg-wgpu"; }
+        if (label == root.lbl-gpu) { return "wgpu"; }
         return root.renderer-mode;      // 认不出来就保持原样
     }
 
-    /// 配置取值 → 显示名。
+    /// 语义值 → 显示名。
     ///
-    /// `auto` **不在选项列表里**（它是 Windows / Linux 的默认策略，启动时会被探测固化成
-    /// `femtovg-wgpu` 或 `software`），但它的显示名保留着：设了 `SLINT_BACKEND` 时探测会跳过，
-    /// 配置里可能真的还留着 `auto` —— 那时如实显示"自动"比假装成某一档好。
+    /// `auto` 是三平台的默认档：启动时探测一次并固化成具体档位。设了 `SLINT_BACKEND` 时
+    /// 探测会跳过，配置里会真的留着 `auto`，这时如实显示"自动"。
     pure function label-of(mode: string) -> string {
         if (mode == "auto") { return root.lbl-auto; }
         if (mode == "software") { return root.lbl-soft; }
-        // GPU 档 = `femtovg-wgpu`；旧值（`femtovg` / `skia` 等）已在 config 里归一化。
+        // GPU 档；旧后端名（`femtovg-wgpu` / `femtovg` / `skia` 等）已在 config 里归一化。
         return root.lbl-gpu;
     }
 
@@ -283,19 +282,15 @@ export component AppearancePage inherits VerticalLayout {
         title-height: 24px;
         SettingRow {
             label: root.lang-en ? "Renderer" : "渲染器";
-            desc: Theme.is-mac
-                ? (root.lang-en
-                    ? "GPU (Metal) is the default; switch to software if rendering looks wrong."
-                    : "默认 GPU（走 Metal）；渲染异常时可改用软件渲染。")
-                : (root.lang-en
-                    ? "GPU is the default; a one-time probe falls back to software when no GPU is usable."
-                    : "默认 GPU：首次启动探测一次，没有可用 GPU 时自动改用软件渲染。");
+            desc: root.lang-en
+                ? "Automatic probes once on first launch and falls back to software when no GPU is usable."
+                : "默认自动：首次启动探测一次，没有可用 GPU 时自动改用软件渲染。";
             show-divider: false;
             ComboBox {
                 width: 150px;
-                // 三平台同一份列表，只有两档。"自动"不占列表位 —— 它是 Windows / Linux 的
-                // 默认**策略**（首次启动探测一次并写回具体取值），见 config.rs 与 app/window.rs。
-                model: [root.lbl-gpu, root.lbl-soft];
+                // 三平台同一份列表、三档。"自动"是默认档：首次启动探测一次并把结论写回配置
+                // （见 config.rs 的 renderer_mode_choice 与 app/window.rs）。
+                model: [root.lbl-auto, root.lbl-gpu, root.lbl-soft];
                 current-value: root.label-of(root.renderer-mode);
                 selected(v) => {
                     // 映射只有一处（`mode-of`），比较与写回都用它 —— 三处各写一份就成了前几版那种漂移源。
@@ -316,12 +311,8 @@ export component AppearancePage inherits VerticalLayout {
                         ? "Restart Rudder to apply the renderer change."
                         : "重启 Rudder 后渲染器设置才会生效。")
                     : (root.lang-en
-                        ? (Theme.is-mac
-                            ? "GPU remains the default renderer on macOS."
-                            : "Installations that never changed this setting probe once on the next launch.")
-                        : (Theme.is-mac
-                            ? "macOS 默认继续使用 GPU 渲染器。"
-                            : "从未改过此项的安装，下次启动会探测一次并把结论写进配置。"));
+                        ? "Installations that never changed this setting probe once on the next launch."
+                        : "从未改过此项的安装，下次启动会探测一次并把结论写进配置。");
                 color: root.renderer-restart-required ? Theme.accent : Theme.text-muted;
                 font-size: 11px * Theme.panel-font;
                 wrap: word-wrap;

@@ -34,10 +34,24 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         // Renderer selection is consumed before the first native window exists,
         // so persist it now and apply it on the next launch (#280).
         let store = store.clone();
+        let weak = window.as_weak();
         window.on_set_renderer_mode(move |mode: SharedString| {
+            // 设置页给的是三档语义值（auto / wgpu / software），归一化后再落盘 ——
+            // 直接把后端名写进配置会让各平台的 `renderer_mode()` 认不出来。
             persist(&store, |s| {
-                s.set_renderer_mode(mode.to_string());
+                s.set_renderer_mode_choice(mode.as_str());
             });
+
+            // 必须回写窗口属性：下拉框的高亮绑的是 `renderer-mode`，只落盘不回写的话
+            // 它永远停在旧值 —— 用户点哪一档都不动。
+            let choice = match mode.as_str() {
+                "software" => "software",
+                "wgpu" => "wgpu",
+                _ => "auto",
+            };
+            if let Some(w) = weak.upgrade() {
+                w.set_renderer_mode(choice.into());
+            }
         });
     }
 
@@ -789,7 +803,7 @@ pub(crate) fn reset(
     w.set_ui_font_index(fonts.ui_index(&ui_stored));
     w.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0);
     w.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0);
-    w.set_renderer_mode(s.renderer_mode().into());
+    w.set_renderer_mode(s.renderer_mode_choice().into());
     w.global::<Theme>().set_panel_alpha(s.wallpaper_overlay());
     w.set_hide_special_partitions(s.hide_special_partitions());
     drop(s);

@@ -49,8 +49,46 @@ fn install_panic_hook() {
     }));
 }
 
+/// 图形后端优先级：Windows = DX12 → OpenGL，Linux = Vulkan → OpenGL，
+/// macOS = Metal → OpenGL。
+///
+/// 为什么要显式写：wgpu 30 的后端枚举顺序是编译期 `#[cfg]` 固定的
+/// （vulkan → metal → dx12 → gles），Windows 上默认 Vulkan 抢在 DX12 前面，与我们要的
+/// 顺序相反；而 `Backends` 是位集合，只能启用/禁用、不能排序，所以只能把 Vulkan 从集合里
+/// 去掉。Slint 侧读同一个环境变量（`i-slint-core/graphics/wgpu_30.rs` 的
+/// `Backends::from_env().unwrap_or_default()`），因此这一处同时管住"启动探测有没有 GPU"
+/// 和"实际用哪个后端渲染"；探测子进程（`--probe-renderer=`）也走 `main`，自动继承。
+///
+/// `gl` 显式写进来依然有效：Slint 默认把 GL 放进 `backends_to_avoid`，但 `mask_backends`
+/// 在"减完为空"时会保留原集合（Slint 自己的注释也这么写）。
+///
+/// 逃生口：用户/运维显式设了 `WGPU_BACKEND` 就不覆盖、也不参与探测。Windows 上这等于
+/// 彻底不用 Vulkan，个别只有 Vulkan 可用的老驱动靠这条逃生口。
+fn prefer_platform_gpu_backends() {
+    if std::env::var_os("WGPU_BACKEND").is_some() {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    const WANT: &str = "dx12,gl";
+    #[cfg(target_os = "linux")]
+    const WANT: &str = "vulkan,gl";
+    #[cfg(target_os = "macos")]
+    const WANT: &str = "metal,gl";
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    const WANT: &str = "";
+
+    if WANT.is_empty() {
+        return;
+    }
+    // SAFETY: 在 `main` 的启动阶段、任何线程创建之前调用 —— 此时没有并发的环境读取者。
+    unsafe { std::env::set_var("WGPU_BACKEND", WANT) };
+}
+
 fn main() -> anyhow::Result<()> {
     install_panic_hook();
+    // 必须早于下面的 `--probe-renderer=` 分派：子进程继承同一组后端，探测到的适配器
+    // 才和实际渲染一致。
+    prefer_platform_gpu_backends();
 
     if std::env::args().any(|arg| arg == "--version" || arg == "-V") {
         println!("rudder {}", env!("CARGO_PKG_VERSION"));

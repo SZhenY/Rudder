@@ -26,6 +26,12 @@ rust-version = "1.96"
 #   **不再包含 OpenGL 版 FemtoVG**；我们不依赖那条链 —— Windows / Linux 的「自动」由
 #   启动时的子进程探测固化成具体取值（见 src/app/window.rs），macOS 默认即 GPU 档。
 #
+# 后端优先级由 `WGPU_BACKEND` 在 main 启动期定死（见 src/main.rs 的
+#   `prefer_platform_gpu_backends`）：Windows=DX12→OpenGL、Linux=Vulkan→OpenGL、
+#   macOS=Metal→OpenGL。wgpu 30 没有 DX11 后端，且它的枚举顺序编译期固定（Windows 上
+#   默认 Vulkan 排在 DX12 前），所以 DX12 优先只能靠"把 Vulkan 排除"实现 —— 代价与
+#   逃生口见那处注释。
+#
 # ⚠️ 这里**刻意**关掉 Slint 的默认特性：默认集里的 `renderer-femtovg` 就是 OpenGL 版
 #   FemtoVG，而本项目已不再使用 OpenGL（GPU 路径一律走 wgpu）。下面这份清单 = Slint 1.18
 #   的默认集**减掉** `renderer-femtovg`、**再减掉 `system-tray`**（全项目零调用），逐项照抄

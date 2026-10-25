@@ -60,31 +60,38 @@ pub(super) fn apply_window_chrome(_window: &slint::Window) {}
 /// `auto` 的探测结果 → 配置里要写的具体取值。
 ///
 /// 抽成纯函数是为了能测：真正的探测要起子进程，但"结果怎么落库"这条契约不该靠人肉观察。
-// Windows 与 Linux 的启动路径用得到它（外加测试）；别的平台别让它变成 dead_code。
-#[cfg(any(windows, target_os = "linux", test))]
+/// 三平台的启动路径都用得到它（外加测试）；别的平台别让它变成 dead_code。
+///
+/// macOS 写后端名 `femtovg-wgpu`（Slint 在 mac 上不认 `wgpu` 这个写法），其余平台写 `wgpu`。
+#[cfg(any(windows, target_os = "linux", target_os = "macos", test))]
 pub(super) const fn auto_renderer_for(probe_ok: bool) -> &'static str {
-    if probe_ok {
-        "wgpu"
+    if !probe_ok {
+        return "software";
+    }
+    if cfg!(target_os = "macos") {
+        "femtovg-wgpu"
     } else {
-        "software"
+        "wgpu"
     }
 }
 
-/// Windows / Linux 的"自动"：探测一次，把结论**固化进配置**，之后启动不再探测。
+/// 三平台的"自动"：探测一次，把结论**固化进配置**，之后启动不再探测。
 ///
 /// 探测看两件事：适配器里**有没有真 GPU**（`report_probe_adapters` 排掉 WARP / lavapipe
 /// 这类 CPU 适配器），以及 femtovg-wgpu **能不能真渲染出一帧**（子进程退出码）。
 ///
 /// 探测要花约一秒（子进程真渲染一帧），所以只在用户选"自动"之后的**第一次启动**发生；
-/// 写完配置后存的就是 `wgpu` / `software`，后续启动直接用它。想重新探测（比如换了机器
-/// 或者装上了显卡驱动）就再选一次"自动"。
+/// 写完配置后存的就是具体档位（`wgpu` / `femtovg-wgpu` / `software`），后续启动直接用它。
+/// 想重新探测（比如换了机器或者装上了显卡驱动）就再选一次"自动"。
 ///
 /// 显式设了 `SLINT_BACKEND` 时不动配置 —— 那个环境变量优先级最高，探测没有意义。
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 pub(super) fn resolve_auto_renderer_mode(
     mut config: crate::config::ConfigStore,
 ) -> crate::config::ConfigStore {
-    if config.renderer_mode() != "auto" {
+    // 用语义值判断，不能用 `renderer_mode()`：macOS 那版把 `auto` 归一化成
+    // `femtovg-wgpu`，拿它比较会永远提前返回，探测根本跑不到。
+    if config.renderer_mode_choice() != "auto" {
         return config;
     }
     if std::env::var_os("SLINT_BACKEND").is_some() {
@@ -110,7 +117,7 @@ pub(super) fn resolve_auto_renderer_mode(
 /// 根本跑不到，"自动"的表现就是窗口打不开。这里用子进程实测，它无法作弊。
 ///
 /// 探测进程用 `--probe-renderer=wgpu` 启动，而 `wgpu` 这条取值不会再探测，所以不会递归。
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 fn gpu_renderer_probe_passes() -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
@@ -140,7 +147,7 @@ fn gpu_renderer_probe_passes() -> bool {
 /// 抽成纯函数是为了能测：真正的探测要起子进程 + 枚举显卡，但"怎么下结论"这条契约不该靠
 /// 人肉观察。缺 `probe-adapter-kind=` 那行时（旧版探测进程 / 输出被裁掉）按"是 GPU"处理 ——
 /// 退出码已经是足够强的证据，只有**明确看到** CPU 适配器才降级到软件渲染。
-#[cfg(any(windows, target_os = "linux", test))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos", test))]
 fn probe_conclusion(success: bool, stdout: &str) -> bool {
     if !success {
         return false;
@@ -578,7 +585,13 @@ mod auto_renderer_tests {
     /// 探测一次、结论落进配置文件，之后启动不再探测）。
     #[test]
     fn probe_result_maps_to_a_concrete_config_value() {
-        assert_eq!(auto_renderer_for(true), "wgpu");
+        // macOS 的 GPU 档后端名是 `femtovg-wgpu`，其余平台是 `wgpu`。
+        let gpu = if cfg!(target_os = "macos") {
+            "femtovg-wgpu"
+        } else {
+            "wgpu"
+        };
+        assert_eq!(auto_renderer_for(true), gpu);
         assert_eq!(auto_renderer_for(false), "software");
     }
 
