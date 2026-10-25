@@ -161,6 +161,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
                 crate::app::settings_window::resync_if_open(&w);
             }
+            schedule_post_fade_sync(&w, &store, &proc_weak);
         });
     }
 
@@ -199,6 +200,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                     // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
                     crate::app::settings_window::resync_if_open(&w);
                 }
+                schedule_post_fade_sync(&w, &store, &proc_weak);
             } else {
                 persist(&store, |s| {
                     s.set_wallpaper(id.clone());
@@ -271,18 +273,17 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             };
             // 「回声」判定：输入框里显示的本来就是**当前生效色**（预设与出厂色也填具体
             // 色号），那次程序化回显会走到这里 —— 若当成用户改动，预设就被固化成自定义色了。
-            if is_accent_echo(&normalized, store.borrow().accent()) {
+            let Some(w) = weak.upgrade() else { return false };
+            if is_accent_echo(&normalized, store.borrow().accent(), wallpaper_accent_hex(&w).as_deref()) {
                 return true;
             }
             persist(&store, |s| {
                 s.set_accent(normalized.clone());
             });
-            if let Some(w) = weak.upgrade() {
-                apply_accent(&w, &normalized);
-                // 主题色变了 → 光标若在「跟随」应同步到新主题色（显式选过的保持不变）。
-                let cursor = store.borrow().terminal_cursor_color().to_string();
-                super::terminal::apply_cursor_color(&w, &cursor);
-            }
+            apply_accent(&w, &normalized);
+            // 主题色变了 → 光标若在「跟随」应同步到新主题色（显式选过的保持不变）。
+            let cursor = store.borrow().terminal_cursor_color().to_string();
+            super::terminal::apply_cursor_color(&w, &cursor);
             true
         });
     }
@@ -351,18 +352,17 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 return false;
             };
             // 与 hex 输入同一条「回声」判定：拖到与当前生效色相同的位置时不必变成自定义色。
-            if is_accent_echo(&normalized, store.borrow().accent()) {
+            let Some(w) = weak.upgrade() else { return false };
+            if is_accent_echo(&normalized, store.borrow().accent(), wallpaper_accent_hex(&w).as_deref()) {
                 return true;
             }
             persist(&store, |s| {
                 s.set_accent(normalized.clone());
             });
-            if let Some(w) = weak.upgrade() {
-                apply_accent(&w, &normalized);
-                // 主题色变了 → 光标若在「跟随」应同步到新主题色（显式选过的保持不变）。
-                let cursor = store.borrow().terminal_cursor_color().to_string();
-                super::terminal::apply_cursor_color(&w, &cursor);
-            }
+            apply_accent(&w, &normalized);
+            // 主题色变了 → 光标若在「跟随」应同步到新主题色（显式选过的保持不变）。
+            let cursor = store.borrow().terminal_cursor_color().to_string();
+            super::terminal::apply_cursor_color(&w, &cursor);
             true
         });
     }
@@ -579,6 +579,53 @@ fn reset_cursor_to_follow(w: &AppWindow, store: &Store) {
     super::terminal::apply_cursor_color(w, "");
 }
 
+/// 壁纸交叉淡化结束后再同步一次主题色 / 光标 / 设置窗口。
+///
+/// 淡化期间 `wp-accent` 是按进度插值的旧值；淡化刚开始时应用，取色框、光标、设置页
+/// 都会停在旧色（要再点一次壁纸才更新）。淡化落定（约 480ms）后再刷一次即可对齐。
+fn schedule_post_fade_sync(w: &AppWindow, store: &Store, proc_win: &slint::Weak<ProcWindow>) {
+    PostFadeSync {
+        weak: w.as_weak(),
+        store: store.clone(),
+        proc_weak: proc_win.clone(),
+        ticks: 0,
+    }
+    .spawn();
+}
+
+struct PostFadeSync {
+    weak: slint::Weak<AppWindow>,
+    store: Store,
+    proc_weak: slint::Weak<ProcWindow>,
+    ticks: u32,
+}
+
+impl PostFadeSync {
+    fn spawn(self) {
+        slint::Timer::single_shot(std::time::Duration::from_millis(16), move || self.step());
+    }
+
+    fn step(self) {
+        let Self { weak, store, proc_weak, ticks } = self;
+        let Some(w) = weak.upgrade() else { return };
+        // 淡化进行中：逐帧把主窗口的壁纸派生色推给设置窗口，两边同步变化。
+        crate::app::settings_window::sync_wallpaper_ramp(&w);
+        if let Some(p) = proc_weak.upgrade() {
+            sync_proc_theme(&w, &p);
+        }
+        // 约 512ms（32 帧）淡化结束，再补一次完整同步（hex / 名称 / 光标）。
+        if ticks < 32 {
+            PostFadeSync { weak, store, proc_weak, ticks: ticks + 1 }.spawn();
+        } else {
+            let accent = store.borrow().accent().to_string();
+            apply_accent(&w, &accent);
+            let cursor = store.borrow().terminal_cursor_color().to_string();
+            super::terminal::apply_cursor_color(&w, &cursor);
+            crate::app::settings_window::resync_if_open(&w);
+        }
+    }
+}
+
 /// 把「壁纸」下拉的内容与选中项推给界面（内容 = 三个主题 + 上传的图片）。
 pub(crate) fn publish_wallpaper_choices(w: &AppWindow, store: &Store) {
     let choices = wallpaper_choices();
@@ -600,10 +647,20 @@ pub(crate) fn effective_accent_hex(choice: &str, dark: bool) -> String {
     }
 }
 
-/// 是不是"回填造成的回声"。两档都认 —— 理由同 `terminal::is_follow_echo`：设置页是打开
-/// 面板时才创建的，`changed` 可能**晚于**回填执行，期间深浅档可能已经翻过一轮。
-fn is_accent_echo(v: &str, stored: &str) -> bool {
-    v == effective_accent_hex(stored, true) || v == effective_accent_hex(stored, false)
+/// 「跟随」且开壁纸时实际生效的主题色 = 壁纸互补色（wp-accent）。
+fn wallpaper_accent_hex(w: &AppWindow) -> Option<String> {
+    if !w.global::<Theme>().get_wallpaper_active() {
+        return None;
+    }
+    let c = w.global::<Theme>().get_wp_accent();
+    Some(hex_from_rgb(c.red() as i32, c.green() as i32, c.blue() as i32))
+}
+
+/// 是不是"回填造成的回声"。两档都认；跟随壁纸互补色时，该互补色也算回填值。
+fn is_accent_echo(v: &str, stored: &str, wp_hex: Option<&str>) -> bool {
+    v == effective_accent_hex(stored, true)
+        || v == effective_accent_hex(stored, false)
+        || (stored.trim().is_empty() && wp_hex.is_some_and(|h| v.eq_ignore_ascii_case(h)))
 }
 
 /// 界面上「当前配色」显示的名字：预设名 / 自定义色原样 / 壁纸互补色 / 默认蓝。
@@ -634,6 +691,34 @@ pub(crate) fn reset_accent_to_follow(w: &AppWindow, store: &Store) {
     apply_accent(w, "");
 }
 
+/// 工具栏切换亮暗：等同于在「壁纸」里点「深色 / 浅色」——套用内置壁纸（覆盖自定义），
+/// 主题色与光标跟着切到新壁纸的互补色。
+pub(crate) fn apply_builtin_theme(
+    w: &AppWindow,
+    store: &Store,
+    bufs: &TermBuffers,
+    proc_win: &slint::Weak<ProcWindow>,
+    dark: bool,
+) {
+    let theme = if dark { "dark" } else { "light" };
+    let wallpaper_id = builtin_wallpaper_for(theme, dark);
+    apply_dark_mode(w, bufs, dark);
+    apply_wallpaper(w, &store.borrow(), bufs, wallpaper_id, false);
+    persist(store, |s| {
+        s.set_theme_pref(theme.to_string());
+        s.set_wallpaper(wallpaper_id.to_string());
+    });
+    reset_accent_to_follow(w, store);
+    reset_cursor_to_follow(w, store);
+    w.set_accent_mode(theme.into());
+    publish_wallpaper_choices(w, store);
+    if let Some(p) = proc_win.upgrade() {
+        sync_proc_theme(w, &p);
+        crate::app::settings_window::resync_if_open(w);
+    }
+    schedule_post_fade_sync(w, store, proc_win);
+}
+
 /// 把配置里的主题色套到界面上。
 ///
 /// ⚠️ 换深浅档后**必须再调一次**：预设的两档本来就是两个颜色，自定义色在浅色档还要压深。
@@ -652,7 +737,13 @@ pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
     // 输入框回显**当前生效的颜色**（预设 / 出厂色也给具体色号）—— 用户一眼能看到实际值。
     // 这次回显会触发输入框的 `changed text` → `on_set_accent`，那里的"回声判定"会把它
     // 当成无操作，不会把预设变成自定义色。
-    w.set_accent_hex(effective_accent_hex(choice, dark).into());
+    // 跟随且开壁纸时显示互补色（与首格一致），否则显示配色取值。
+    let hex_shown = if choice.trim().is_empty() {
+        wallpaper_accent_hex(w).unwrap_or_else(|| effective_accent_hex(choice, dark))
+    } else {
+        effective_accent_hex(choice, dark)
+    };
+    w.set_accent_hex(hex_shown.into());
     w.set_accent_presets(accent_presets_model(dark));
     w.set_accent_name(accent_display_name(choice, w.global::<Theme>().get_wallpaper_active()));
 }
@@ -822,10 +913,13 @@ mod tests {
     /// 固化成自定义色；用户真的选了别的颜色则照常写入。
     #[test]
     fn accent_echo_ignores_both_modes() {
-        assert!(is_accent_echo("#22A2C9", "azure"));
-        assert!(is_accent_echo("#0D7F9E", "azure"));
-        assert!(is_accent_echo("#4A90E2", ""));
-        assert!(!is_accent_echo("#FF0000", "azure"));
+        assert!(is_accent_echo("#22A2C9", "azure", None));
+        assert!(is_accent_echo("#0D7F9E", "azure", None));
+        assert!(is_accent_echo("#4A90E2", "", None));
+        assert!(!is_accent_echo("#FF0000", "azure", None));
+        // 跟随壁纸互补色：该互补色是回填值，别的不是。
+        assert!(is_accent_echo("#FF8800", "", Some("#ff8800")));
+        assert!(!is_accent_echo("#FF8800", "", Some("#123456")));
     }
 
     /// 「自定义颜色」输入框显示的是**当前生效色**（预设与出厂色也给具体色号）——

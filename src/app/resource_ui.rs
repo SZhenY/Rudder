@@ -293,6 +293,7 @@ pub(super) fn sync_proc_theme(main: &AppWindow, proc: &ProcWindow) {
     proc.set_wallpaper_active(main.global::<Theme>().get_wallpaper_active());
     proc.set_wp_accent(main.global::<Theme>().get_wp_accent());
     proc.set_wp_tint(main.global::<Theme>().get_wp_tint());
+    proc.set_wp_base(main.global::<Theme>().get_wp_base());
 }
 
 pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
@@ -303,6 +304,7 @@ pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
     sys.set_wallpaper_active(main.global::<Theme>().get_wallpaper_active());
     sys.set_wp_accent(main.global::<Theme>().get_wp_accent());
     sys.set_wp_tint(main.global::<Theme>().get_wp_tint());
+    sys.set_wp_base(main.global::<Theme>().get_wp_base());
 }
 
 /// 让子窗口真正画出第一帧。

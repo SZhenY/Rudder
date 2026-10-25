@@ -805,13 +805,13 @@ export component SftpPanel inherits Rectangle {
                                         spacing: 4px;
                                         IconText {
                                             text: entry.is-dir ? "\u{E2C7}" : "\u{E24D}"; // folder / insert_drive_file
-                                            color: entry.is-dir ? Theme.accent : Theme.text-secondary;
+                                            color: Theme.accent;
                                             font-size: Theme.fs-sm;
                                             vertical-alignment: center;
                                         }
                                         Text {
                                             text: entry.name;
-                                            color: entry.is-dir ? Theme.accent : Theme.text-primary;
+                                            color: Theme.accent;
                                             font-size: Theme.fs-sm;
                                             horizontal-stretch: 1;
                                             overflow: elide;

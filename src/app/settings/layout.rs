@@ -87,6 +87,25 @@ pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     }
 }
 
+/// 开关快捷命令侧栏：持久化、同步主窗口、开合面板、刷新设置窗口。
+/// 设置页和工具栏按钮都走这里，状态才不会各说各话。
+pub(crate) fn apply_quick_commands_as_sidebar(w: &AppWindow, store: &Store, v: bool) {
+    persist(store, |s| {
+        s.set_quick_commands_as_sidebar(v);
+        s.set_quick_panel_open(v);
+    });
+    w.set_quick_commands_as_sidebar(v);
+    if v {
+        // 打开时先以折叠条出现，用户再展开。
+        w.set_quick_panel_collapsed(true);
+        w.set_quick_panel_open(true);
+    } else {
+        w.set_quick_panel_open(false);
+        w.set_quick_panel_collapsed(false);
+    }
+    crate::app::settings_window::resync_if_open(w);
+}
+
 /// 播种 + 注册持久化回调。
 ///
 /// `handles` 用于侧栏折叠时暂停/恢复各会话的资源监控（上游 b17da25）；
@@ -147,11 +166,12 @@ pub(crate) fn bind(
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_quick_commands_as_sidebar(move |v| {
-            persist(&store, |s| {
-                s.set_quick_commands_as_sidebar(v);
-            });
+            if let Some(w) = weak.upgrade() {
+                apply_quick_commands_as_sidebar(&w, &store, v);
+            }
         });
     }
 

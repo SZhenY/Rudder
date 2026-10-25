@@ -816,28 +816,25 @@ pub fn run() -> Result<()> {
         window.on_toggle_theme(move || {
             let Some(w) = weak.upgrade() else { return };
             let next_dark = !w.global::<Theme>().get_dark();
-            // Flip theme + every terminal buffer + re-render (shared with wallpaper).
-            apply_dark_mode(&w, &bufs_theme, next_dark);
-            // 深浅档变了 → 主题色要按新档位重新解析（预设两档是两个颜色，自定义色在
-            // 浅色档要压深）。
-            let accent_choice = store.borrow().accent().to_string();
-            crate::app::settings::appearance::apply_accent(&w, &accent_choice);
-            // 光标色同理："跟随主题"（配置留空）时深色档取亮色 / 浅色档取暗色。
-            let cursor = store.borrow().terminal_cursor_color().to_string();
-            crate::app::settings::terminal::apply_cursor_color(&w, &cursor);
-            // Mirror the flip onto the detached process window (its Theme global
-            // is a separate instance) so an open process window follows.
-            if let Some(p) = proc_weak.upgrade() {
-                sync_proc_theme(&w, &p);
-                // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-                crate::app::settings_window::resync_if_open(&w);
-            }
-            let pref = if next_dark { "dark" } else { "light" };
-            // 下拉框要跟着走：手动切档后 preference 不再是 system。
-            w.set_accent_mode(pref.into());
-            let mut s = store.borrow_mut();
-            s.set_theme_pref(pref.to_string());
-            s.save_logging();
+            // 等同于在「壁纸」里选「深色 / 浅色」：自定义壁纸也会被内置图覆盖，
+            // 主题色与光标跟着切到新壁纸的互补色。
+            crate::app::settings::appearance::apply_builtin_theme(
+                &w,
+                &store,
+                &bufs_theme,
+                &proc_weak,
+                next_dark,
+            );
+        });
+    }
+
+    {
+        let weak = window.as_weak();
+        let store = store.clone();
+        window.on_toggle_quick_sidebar(move || {
+            let Some(w) = weak.upgrade() else { return };
+            let next = !store.borrow().quick_commands_as_sidebar();
+            crate::app::settings::layout::apply_quick_commands_as_sidebar(&w, &store, next);
         });
     }
 

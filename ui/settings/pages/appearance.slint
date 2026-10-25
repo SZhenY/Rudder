@@ -185,7 +185,7 @@ export component AppearancePage inherits VerticalLayout {
                 // 自定义取色盘并入本行（原独立「自定义颜色」行已删除）。
                 CursorColorInput {
                     value <=> root.accent-hex;
-                    preview-color: Theme.accent-seed;
+                    preview-color: Theme.accent-solid;
                     apply-color(v) => { return root.set-accent(v); }
                     apply-color-rgb(r, g, b) => { return root.set-accent-rgb(r, g, b); }
                 }

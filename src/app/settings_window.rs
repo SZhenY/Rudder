@@ -29,11 +29,28 @@ thread_local! {
 /// 为什么需要：设置窗口是独立窗口，用户完全可能开着它去点主窗口的深浅开关（或等
 /// "跟随系统"每 5 秒自动跟随）—— 那条路径不经过设置窗口的回调，不回灌就会看到
 /// "主窗口已经变浅、设置窗口还黑着"。调用点都是本来就在同步 `ProcWindow` 主题的地方。
+/// 壁纸淡化期间只推壁纸派生色（wp-accent / wp-tint / wp-base），
+/// 让设置窗口和主窗口一起变，而不是等主窗口淡完再跳一次。
+pub(super) fn sync_wallpaper_ramp(main: &AppWindow) {
+    SETTINGS_WEAK.with(|s| {
+        let weak = s.borrow().clone();
+        if let Some(sw) = weak.and_then(|w| w.upgrade()) {
+            let t = main.global::<Theme>();
+            sw.set_wp_accent(t.get_wp_accent());
+            sw.set_wp_tint(t.get_wp_tint());
+            sw.set_wp_base(t.get_wp_base());
+        }
+    });
+}
+
 pub(super) fn resync_if_open(main: &AppWindow) {
     SETTINGS_WEAK.with(|s| {
         let weak = s.borrow().clone();
         if let Some(sw) = weak.and_then(|w| w.upgrade()) {
             sync_settings_theme(main, &sw);
+            // 主题全局同步后，回显类属性（光标色、主题色 hex/名称/预设）也要跟着刷 ——
+            // 否则换壁纸后设置页的光标框、主题色行仍停在旧值。
+            sync_settings_reflected(main, &sw);
         }
     });
 }
@@ -53,6 +70,7 @@ pub(super) fn sync_settings_theme(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_wallpaper_active(t.get_wallpaper_active());
     sw.set_wp_accent(t.get_wp_accent());
     sw.set_wp_tint(t.get_wp_tint());
+    sw.set_wp_base(t.get_wp_base());
     sw.set_accent_overridden(t.get_accent_overridden());
     sw.set_accent_seed(t.get_accent_seed());
     sw.set_panel_alpha(t.get_panel_alpha());
@@ -138,6 +156,10 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_current_wallpaper(m.get_current_wallpaper());
     sw.set_custom_wallpaper_name(m.get_custom_wallpaper_name());
     sw.set_wallpaper_index(m.get_wallpaper_index());
+    // 快捷命令侧栏（工具栏按钮也能切换，设置页开关要跟着变）
+    sw.set_quick_commands_as_sidebar(m.get_quick_commands_as_sidebar());
+    sw.set_quick_panel_open(m.get_quick_panel_open());
+    sw.set_quick_panel_collapsed(m.get_quick_panel_collapsed());
     sw.set_wallpaper_labels(m.get_wallpaper_labels());
     sw.set_renderer_mode(m.get_renderer_mode());
     // 异步状态（上传 / 下载 / 更新检查 / 输出高亮规则校验）

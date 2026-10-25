@@ -270,12 +270,15 @@ export component AppWindow inherits Window {
             || (root.sidebar-collapsed && root.sidebar-dock == edge);
     }
 
+    // 快捷面板只有真的占位时（有会话 + 未折叠）才把工具栏图标推开；新标签页
+    // 上它不显示也不占位，这里跟着不偏移，否则右上角会空出一条竖带。
     property <length> toolbar-x-off:
         side-taken(true, root.sidebar-dock, "right",
             root.sidebar-collapsed ? 36px : root.sidebar-width + 4px)
         + side-taken(root.welcome-as-sidebar, root.welcome-sidebar-dock, "right",
             root.welcome-sidebar-taken)
-        + side-taken(root.quick-panel-open, root.quick-panel-dock, "right",
+        + side-taken(root.quick-panel-open && root.quick-has-session,
+            root.quick-panel-dock, "right",
             root.quick-panel-collapsed
                 ? (collapsed-bar-taken("right") ? 0px : 36px)
                 : root.quick-panel-width + 4px);
@@ -284,7 +287,8 @@ export component AppWindow inherits Window {
             root.sidebar-collapsed ? 36px : root.sidebar-height + 4px)
         + side-taken(root.welcome-as-sidebar, root.welcome-sidebar-dock, "top",
             root.welcome-sidebar-taken)
-        + side-taken(root.quick-panel-open, root.quick-panel-dock, "top",
+        + side-taken(root.quick-panel-open && root.quick-has-session,
+            root.quick-panel-dock, "top",
             root.quick-panel-collapsed
                 ? (collapsed-bar-taken("top") ? 0px : 36px)
                 : root.quick-panel-height + 4px);
@@ -318,6 +322,9 @@ export component AppWindow inherits Window {
     callback set-quick-commands-as-sidebar(bool);
     in-out property <bool> quick-panel-open: false;
     in-out property <bool> quick-panel-collapsed: false;
+    // 当前活动标签是不是真实会话：新标签页的 id 是 "welcome"，布局为空时也可能是空串。
+    property <bool> quick-has-session:
+        root.active-tab-id != "welcome" && root.active-tab-id != "";
     in-out property <length> quick-panel-width: 260px;
     in-out property <length> quick-panel-height: 220px;
     in-out property <string> quick-panel-dock: "right";
@@ -560,6 +567,7 @@ export component AppWindow inherits Window {
     callback delete-group(string /* name */);
     callback submit-group(string /* orig */, string /* name */) -> string;
     callback toggle-theme();               // flip dark ↔ light
+    callback toggle-quick-sidebar();        // show/hide the quick-command sidebar
     // Session sync / broadcast input (#78 pt.4): mirror keystrokes to every
     // online session. Default off (it types into ALL sessions at once).
     in-out property <bool> sync-input: false;
@@ -967,16 +975,18 @@ export component AppWindow inherits Window {
         // A collapsed quick-command sidebar joins an existing collapsed strip
         // on the same edge. Only when no such strip exists does it reserve its
         // own outermost 36px slot (#215).
+        // 无会话时快捷面板整体不显示，也不该并进别的折叠条（否则折叠条上会多出
+        // 一个点了没反应的快捷命令图标）。
         property <bool> quick-merge-welcome:
-            root.quick-panel-open && root.quick-panel-collapsed
+            root.quick-panel-open && root.quick-panel-collapsed && root.quick-has-session
             && root.welcome-as-sidebar && root.welcome-collapsed
             && root.quick-panel-dock == root.welcome-sidebar-dock;
         property <bool> quick-merge-sidebar:
-            root.quick-panel-open && root.quick-panel-collapsed
+            root.quick-panel-open && root.quick-panel-collapsed && root.quick-has-session
             && !dock-area.quick-merge-welcome && root.sidebar-collapsed
             && root.quick-panel-dock == root.sidebar-dock;
         property <length> quick-outer-strip:
-            root.quick-panel-open && root.quick-panel-collapsed
+            root.quick-panel-open && root.quick-panel-collapsed && root.quick-has-session
                 && !dock-area.quick-merge-welcome && !dock-area.quick-merge-sidebar
                 ? 36px : 0px;
         property <bool> quick-outer-horizontal:
@@ -1431,21 +1441,30 @@ export component AppWindow inherits Window {
             clip: true;
             property <bool> quick-horizontal:
                 root.quick-panel-dock == "left" || root.quick-panel-dock == "right";
-            property <length> quick-w:
-                root.quick-panel-open && !root.quick-panel-collapsed ? root.quick-panel-width : 0px;
-            property <length> quick-h:
-                root.quick-panel-open && !root.quick-panel-collapsed ? root.quick-panel-height : 0px;
-            property <length> quick-sp:
-                root.quick-panel-open && !root.quick-panel-collapsed ? 4px : 0px;
+            // 开关打开、未折叠，且当前活动标签是真实会话时才显示并占位。
+            // 新标签页即使开关是开的也不显示，避免挤压欢迎页。
+            property <bool> quick-shown:
+                root.quick-panel-open && !root.quick-panel-collapsed && root.quick-has-session;
+            property <length> quick-w: quick-shown ? root.quick-panel-width : 0px;
+            property <length> quick-h: quick-shown ? root.quick-panel-height : 0px;
+            animate quick-w {
+                duration: quick-shown ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
+                easing: AnimationSettings.s-soft();
+                enabled: AnimationSettings.enabled;
+            }
+            animate quick-h {
+                duration: quick-shown ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
+                easing: AnimationSettings.s-soft();
+                enabled: AnimationSettings.enabled;
+            }
+            property <length> quick-sp: quick-shown ? 4px : 0px;
 
             central := Rectangle {
-            x: root.quick-panel-open && !root.quick-panel-collapsed && root.quick-panel-dock == "left"
-                ? parent.quick-w + parent.quick-sp : 0px;
-            y: root.quick-panel-open && !root.quick-panel-collapsed && root.quick-panel-dock == "top"
-                ? parent.quick-h + parent.quick-sp : 0px;
-            width: root.quick-panel-open && !root.quick-panel-collapsed && parent.quick-horizontal
+            x: parent.quick-shown && root.quick-panel-dock == "left" ? parent.quick-w + parent.quick-sp : 0px;
+            y: parent.quick-shown && root.quick-panel-dock == "top" ? parent.quick-h + parent.quick-sp : 0px;
+            width: parent.quick-shown && parent.quick-horizontal
                 ? parent.width - parent.quick-w - parent.quick-sp : parent.width;
-            height: root.quick-panel-open && !root.quick-panel-collapsed && !parent.quick-horizontal
+            height: parent.quick-shown && !parent.quick-horizontal
                 ? parent.height - parent.quick-h - parent.quick-sp : parent.height;
             clip: true;
             // Split-pane area (v0.5): panes tile this rect; each pane has its own
@@ -1773,7 +1792,14 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.quick-panel-open && !root.quick-panel-collapsed : QuickDockPanel {
+        if root.quick-panel-open : QuickDockPanel {
+            // 切到欢迎页时不要瞬间消失：保持元素，靠 quick-w 收窄 + 这里淡出。
+            opacity: parent.quick-shown ? 1.0 : 0.0;
+            animate opacity {
+                duration: parent.quick-shown ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
+                easing: AnimationSettings.e-standard-decelerate();
+                enabled: AnimationSettings.enabled;
+            }
             x: root.quick-panel-dock == "right" ? parent.width - parent.quick-w : 0px;
             y: root.quick-panel-dock == "bottom" ? parent.height - parent.quick-h : 0px;
             width: parent.quick-horizontal ? parent.quick-w : parent.width;
@@ -1926,6 +1952,18 @@ export component AppWindow inherits Window {
             fg: Theme.dark ? #f5c542 : #5856d6;
             tooltip: root.lang-en ? "Toggle theme" : "切换主题";
             clicked => { root.toggle-theme(); }
+        }
+        IconButton {
+            size: 26px;
+            font-family: "Material Icons";
+            tint-on-hover: false;
+            glyph: "\u{E25D}";   // quick commands
+            fg: root.quick-commands-as-sidebar ? Theme.accent : Theme.text-secondary;
+            active: root.quick-commands-as-sidebar;
+            tooltip: root.lang-en
+                ? (root.quick-commands-as-sidebar ? "Hide quick-command sidebar" : "Show quick-command sidebar")
+                : (root.quick-commands-as-sidebar ? "隐藏快捷命令侧栏" : "显示快捷命令侧栏");
+            clicked => { root.toggle-quick-sidebar(); }
         }
         IconButton {
             size: 26px;

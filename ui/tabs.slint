@@ -244,23 +244,6 @@ export component TabBar inherits Rectangle {
             }
         }
 
-        // A stable right-edge entry point for finding any open session when
-        // the tab strip is crowded (#340). E5C5 is a Material Icons codepoint
-        // (view_list) — without the icon font it renders as a tofu box.
-        // 8 px separator on the left keeps it from visually merging with the
-        // last tab, and the IconButton is centred inside its 28 px box so the
-        // glyph itself sits in the middle of the available vertical strip.
-        // 分组留白（原为空 `Rectangle` 占位）：标签条与「所有标签」按钮的间隔 2+8+2=12px → 2+8=10px（−2px）
-        HorizontalLayout {
-            padding-left: Theme.gap-sm;
-            all-tabs-btn := IconButton {
-                glyph: "\u{E5C5}";
-                font-family: "Material Icons";
-                size: 28px;
-                clicked => { all-tabs-menu.show(); }
-            }
-        }
-
     }
 
     // Scroll arrows are absolute overlays so toggling them can't
@@ -279,7 +262,7 @@ export component TabBar inherits Rectangle {
     if root.tab-overflow : Rectangle {
         // 贴在标签条右端、即"所有标签"按钮的左侧（旧写法是 `- 59px` 魔数）。
         // 覆盖层不参与布局，读布局算出的 x 不会造成回环。
-        x: all-tabs-btn.x - self.width;
+        x: parent.width - self.width - 4px;
         y: (parent.height - self.height) / 2;
         width: 26px; height: 26px;
         background: Theme.bg-panel-alt;
@@ -287,39 +270,6 @@ export component TabBar inherits Rectangle {
             glyph: ">"; size: 24px;
             clicked => {
                 flick.content-x = max(flick.width - flick.content-width, flick.content-x - 120px);
-            }
-        }
-    }
-
-    all-tabs-menu := PopupWindow {
-        x: max(4px, root.width - root.reserve-right - self.width - 4px);
-        y: root.height;
-        width: 230px;
-        height: min(308px, root.tabs.length * 29px + 8px);
-        Rectangle {
-            background: Theme.bg-panel;
-            border-radius: Theme.radius-sm;
-            border-width: 1px;
-            border-color: Theme.border-strong;
-            drop-shadow-blur: Theme.shadow-popup-blur;
-            drop-shadow-color: Theme.shadow-popup-color;
-            clip: true;
-            Flickable {
-                x: 4px; y: 4px;
-                width: parent.width - 8px;
-                height: parent.height - 8px;
-                content-width: self.width;
-                content-height: max(self.height, all-tabs-list.preferred-height);
-                all-tabs-list := VerticalLayout {
-                    spacing: 1px;
-                    for tab in root.tabs : TabMenuItem {
-                        label: (tab.id == root.active-id ? "●  " : "    ") + tab.title;
-                        clicked => {
-                            root.tab-selected(tab.id);
-                            all-tabs-menu.close();
-                        }
-                    }
-                }
             }
         }
     }
