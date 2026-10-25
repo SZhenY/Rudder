@@ -38,10 +38,11 @@ export component IconButton inherits Rectangle {
             background: root.active ? Theme.accent-tint : Theme.bg-hover;
         }
     ]
-    animate background { duration: 120ms;
-            easing: AnimationSettings.color();
-            enabled: AnimationSettings.enabled;
-        }
+    animate background {
+        duration: (touch.has-hover || root.active) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: (touch.has-hover || root.active) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
 
     // 脉冲层（移植自 app.slint 的本地 IconBtn）。⚠️ 必须用 `visible` + `opacity` 翻转，
     // **不能**写成 `if root.breathe { … }`：Slint 的 animate 只在**已存在**元素的属性变化时
@@ -54,7 +55,7 @@ export component IconButton inherits Rectangle {
         visible: root.breathe;
         opacity: root.breathe ? 0.55 : 0;
         animate opacity {
-            duration: 1400ms;
+            duration: AnimationSettings.ambient();
             iteration-count: -1;
             direction: alternate;
             easing: AnimationSettings.breathing();
@@ -121,10 +122,11 @@ export component PrimaryButton inherits Rectangle {
         pressed when touch.pressed : { background: Theme.accent-pressed; }
         hovered when touch.has-hover : { background: Theme.accent-hover; }
     ]
-    animate background { duration: 120ms;
-            easing: AnimationSettings.color();
-            enabled: AnimationSettings.enabled;
-        }
+    animate background {
+        duration: (touch.has-hover || touch.pressed) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: (touch.has-hover || touch.pressed) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
 
     HorizontalLayout {
         padding-left: 14px;
@@ -164,10 +166,11 @@ export component GhostButton inherits Rectangle {
             background: Theme.bg-hover;
         }
     ]
-    animate background, border-color { duration: 120ms;
-            easing: AnimationSettings.color();
-            enabled: AnimationSettings.enabled;
-        }
+    animate background, border-color {
+        duration: (touch.has-hover || touch.pressed) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: (touch.has-hover || touch.pressed) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
 
     HorizontalLayout {
         padding-left: 14px;
