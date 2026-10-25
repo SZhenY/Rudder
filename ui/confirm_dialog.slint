@@ -69,8 +69,8 @@ export component ConfirmDialog inherits Rectangle {
     visible: self.opacity > 0.001;
     opacity: (root.is-open && !root.covered) ? 1 : 0;
     animate opacity {
-        duration: 180ms;
-        easing: AnimationSettings.color();
+        duration: (root.is-open && !root.covered) ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
+        easing: (root.is-open && !root.covered) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
         enabled: AnimationSettings.enabled;
     }
     background: #000000aa;
@@ -112,8 +112,8 @@ export component ConfirmDialog inherits Rectangle {
         y: (parent.height - self.height) / 2
             + (root.is-open && !root.covered ? 0px : 12px);
         animate y {
-            duration: 200ms;
-            easing: AnimationSettings.spring-settle();
+            duration: (root.is-open && !root.covered) ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
+            easing: (root.is-open && !root.covered) ? AnimationSettings.s-default() : AnimationSettings.e-exit();
             enabled: AnimationSettings.enabled;
         }
         background: Theme.bg-panel;

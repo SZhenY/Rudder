@@ -62,8 +62,8 @@ export component AboutDialog inherits Rectangle {
     visible: self.opacity > 0.001;
     opacity: about-open ? 1 : 0;
     animate opacity {
-        duration: 180ms;
-        easing: AnimationSettings.color();
+        duration: about-open ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
+        easing: about-open ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
         enabled: AnimationSettings.enabled;
     }
     background: #00000080;            // dim backdrop
@@ -85,8 +85,8 @@ export component AboutDialog inherits Rectangle {
         drop-shadow-blur: Theme.card-shadow-blur;
         drop-shadow-color: Theme.card-shadow-color;
         animate y {
-            duration: 200ms;
-            easing: AnimationSettings.spring-settle();
+            duration: about-open ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
+            easing: about-open ? AnimationSettings.s-default() : AnimationSettings.e-exit();
             enabled: AnimationSettings.enabled;
         }
 
