@@ -5,6 +5,44 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- 从 0.8.0-ui-beta1 移植动效体系：时长档位（short/medium/long）、进入退出曲线、弹簧参数；
+  模态对话框、共享控件、设置页各分区、侧栏折叠与淡入全部改用令牌，由界面动画开关统一门控。
+- 壁纸取色重写：8192 桶直方图取主导色，按面积最大簇定底色、分裂互补生成强调色，主色真正
+  消费取色结果（此前壁纸只染面板，不影响主色）。
+- 换壁纸时旧图交叉淡化 400ms，淡化期间逐帧把派生色同步到主窗口与设置 / 进程 / 系统信息窗口。
+- 视觉规范补齐：派生阴影、半透明描边、`accent-ring` / `accent-press` 交互态、圆角档位；
+  GhostButton 接入这套交互态。
+- 主题色与光标统一由当前壁纸的互补色驱动：换壁纸自动切回互补色，主题色行首格即互补色，
+  自定义色并入同一行。
+- 工具栏：亮暗切换按钮改为套用内置壁纸；新增快捷命令侧栏开关，与设置里的开关双向同步。
+- 渲染器三平台统一：启动期用 `WGPU_BACKEND` 定死后端优先级（Windows dx12、Linux vulkan、
+  macOS metal），macOS 纳入「自动」探测，设置页改为「自动 / GPU / 软件」三档。
+
+### 修复 / Fixed
+
+- 快捷命令面板在无会话时仍然挤压欢迎页：改为只在活动标签是真实会话时显示并占位，切页时
+  收窄 + 淡出，工具栏图标也不再为它偏移。
+- 换壁纸后设置窗口颜色慢半拍、光标颜色不跟随。
+- 设置-外观的主题色首格与下方调色盘颜色不一致（回显用了未归一化的值）。
+- SFTP 文件行的图标与文字配色不一致。
+- 渲染失败（首帧起不来 / 运行中设备丢失）现在自动降级到软件渲染并重启，不再只剩一个空窗口。
+
+### 变更 / Changed
+
+- 标签栏删掉「所有标签 / 目录」按钮及其菜单。
+- 设置-外观-渲染的渲染器档位从两档改为三档，描述文案不再区分平台。
+
+**Added**: ported the M3 motion token system, rewrote wallpaper palette extraction (histogram
+dominant + split-complementary accent) so it actually drives the accent colour, added wallpaper
+cross-fade with per-frame derived-colour sync, unified the accent and cursor to the wallpaper's
+complementary colour, added a toolbar quick-command sidebar toggle, and unified the
+three-platform renderer (backend priority via `WGPU_BACKEND`, macOS auto-probe, three-step
+picker). **Fixed**: the quick-command panel squeezing the welcome page, settings-window colour
+lag, the accent swatch mismatch, SFTP icon colours, and renderer failures now fall back to
+software rendering automatically. **Changed**: removed the tab-strip "all tabs" button.
+
 ## [0.8.0] - 2026-09-26
 
 ### 修复 / Fixed
