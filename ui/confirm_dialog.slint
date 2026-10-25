@@ -16,10 +16,11 @@ component DangerButton inherits Rectangle {
         held when touch.pressed : { background: #c44a4a; }
         hovered when touch.has-hover : { background: #ec6a6a; }
     ]
-    animate background { duration: 120ms;
-            easing: AnimationSettings.color();
-            enabled: AnimationSettings.enabled;
-        }
+    animate background {
+        duration: (touch.has-hover || touch.pressed) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: (touch.has-hover || touch.pressed) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
     HorizontalLayout {
         padding-left: 14px;
         padding-right: 14px;
