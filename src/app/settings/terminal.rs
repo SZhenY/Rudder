@@ -20,34 +20,34 @@ use super::{FontCatalog, Store};
 use crate::terminal::TermBuffers;
 use crate::ui::{ AppWindow, Theme };
 
-/// 光标色的解析结果：空串（跟随主题）时按深浅档取 —— **深色档亮色 / 浅色档暗色**。
-///
-/// 两个取值沿用 `Theme.term-fg`（终端正文色）：光标与正文同色系，深浅两档都读得清。
-/// 用户显式挑过就用那个值（不随主题变）。
-pub(crate) fn resolve_cursor_color(dark: bool, stored: &str) -> String {
+/// 光标色的解析结果：`stored` 为空（跟随主题）时用 `follow_hex`（= 当前主题色，有壁纸时
+/// 即壁纸互补色）；用户显式挑过就用那个值（不随主题变）。
+pub(crate) fn resolve_cursor_color(follow_hex: &str, stored: &str) -> String {
     if stored.is_empty() {
-        return (if dark { "#D4D4D4" } else { "#2D2D2F" }).to_string();
+        follow_hex.to_string()
+    } else {
+        stored.to_string()
     }
-    stored.to_string()
 }
 
-/// 是不是"回填造成的回声"。
-///
-/// 输入框里显示的是我们**回填**的解析结果，而 Slint 的 `changed` 可能**晚于**回填执行 ——
-/// 设置页是在打开面板时才创建的，那时深浅档可能已经翻过一轮。所以两档的取值都认；另外
+/// 「跟随主题」时光标该用的颜色：当前主题色（有壁纸 = 壁纸互补色）。
+fn follow_cursor_hex(w: &AppWindow) -> String {
+    let c = w.global::<Theme>().get_accent_solid();
+    hex_from_rgb(c.red() as i32, c.green() as i32, c.blue() as i32)
+}
+
+/// 是不是"回填造成的回声"：输入框显示的是我们回填的「跟随」值（= 当前主题色）。
 /// `stored` 非空（用户显式选过颜色）时不存在"跟随"，直接不算回声。
-fn is_follow_echo(v: &str, stored: &str) -> bool {
-    stored.is_empty()
-        && (v.eq_ignore_ascii_case(&resolve_cursor_color(true, ""))
-            || v.eq_ignore_ascii_case(&resolve_cursor_color(false, "")))
+fn is_follow_echo(v: &str, stored: &str, follow_hex: &str) -> bool {
+    stored.is_empty() && v.eq_ignore_ascii_case(follow_hex)
 }
 
 /// 把光标色写到窗口 —— 并在"跟随主题"时按**当前深浅档**解析。
 ///
 /// ⚠️ 换深浅档后**必须再调一次**，与「配色」分区的主题色是同一个道理。
 pub(crate) fn apply_cursor_color(w: &AppWindow, stored: &str) {
-    let dark = w.global::<Theme>().get_dark();
-    let effective = resolve_cursor_color(dark, stored);
+    let follow = follow_cursor_hex(w);
+    let effective = resolve_cursor_color(&follow, stored);
     // 输入框回填**当前生效的颜色**（跟随主题时就是解析出来的那个色号）—— 用户因此始终
     // 看得到真实值。这次程序化回填会触发输入框的 `changed text` → `on_set_term_cursor_color`，
     // 那里的「回声」判定把它当无操作，不会把"跟随主题"写死成具体颜色。
@@ -100,11 +100,11 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             if !v.is_empty() && parse_hex_color(v).is_none() {
                 return false;
             }
-            // 「回声」判定：输入框里显示的本来就是当前生效色（跟随主题时是解析结果），
-            // 那次程序化回填会走到这里 —— 当成改动的话，"跟随主题"就被写死成具体颜色了。
+            let Some(w) = weak.upgrade() else { return false };
+            // 「回声」判定：跟随光标显示的就是当前主题色，回填触发时不算用户改动。
             {
                 let stored = store.borrow().terminal_cursor_color().to_string();
-                if !v.is_empty() && is_follow_echo(v, &stored) {
+                if !v.is_empty() && is_follow_echo(v, &stored, &follow_cursor_hex(&w)) {
                     return true;
                 }
             }
@@ -119,10 +119,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                     s.save_logging();
                 }
             }
-            if let Some(w) = weak.upgrade() {
-                let stored = store.borrow().terminal_cursor_color().to_string();
-                apply_cursor_color(&w, &stored);
-            }
+            let stored = store.borrow().terminal_cursor_color().to_string();
+            apply_cursor_color(&w, &stored);
             true
         });
     }
@@ -133,10 +131,11 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
         let store = store.clone();
         window.on_set_term_cursor_color_rgb(move |red: i32, green: i32, blue: i32| {
             let hex = hex_from_rgb(red, green, blue);
-            // 与 hex 输入同一条「回声」判定：拖到与当前生效色相同的位置时保持"跟随主题"。
+            let Some(w) = weak.upgrade() else { return false };
+            // 与 hex 输入同一条「回声」判定：拖到与当前主题色相同的位置时保持"跟随"。
             {
                 let stored = store.borrow().terminal_cursor_color().to_string();
-                if is_follow_echo(&hex, &stored) {
+                if is_follow_echo(&hex, &stored, &follow_cursor_hex(&w)) {
                     return true;
                 }
             }
@@ -147,10 +146,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                 }
                 s.save_logging();
             }
-            if let Some(w) = weak.upgrade() {
-                let stored = store.borrow().terminal_cursor_color().to_string();
-                apply_cursor_color(&w, &stored);
-            }
+            let stored = store.borrow().terminal_cursor_color().to_string();
+            apply_cursor_color(&w, &stored);
             true
         });
     }
@@ -491,25 +488,23 @@ fn parse_scrollback(raw: &str, max: usize) -> Option<usize> {
 mod tests {
     use super::*;
 
-    /// 「回声」判定（光标色）：跟随主题时，两档的解析结果都不该被当成用户改动
-    /// （设置页是打开面板时才创建的，`changed` 可能晚于回填、期间深浅档已翻过一轮）。
+    /// 「回声」判定（光标色）：跟随值时不该被当成用户改动（大小写不敏感）。
     #[test]
     fn follow_echo_ignores_both_modes() {
-        assert!(is_follow_echo("#D4D4D4", ""));
-        assert!(is_follow_echo("#2d2d2f", "")); // 大小写不敏感
-        assert!(!is_follow_echo("#FF8800", ""));
+        assert!(is_follow_echo("#FF8800", "", "#ff8800"));
+        assert!(!is_follow_echo("#D4D4D4", "", "#FF8800"));
         // 用户显式选过颜色 → 没有"跟随"这回事。
-        assert!(!is_follow_echo("#D4D4D4", "#FF8800"));
+        assert!(!is_follow_echo("#FF8800", "#FF8800", "#FF8800"));
     }
 
-    /// 光标色按深浅档解析：**深色档亮 / 浅色档暗**；用户显式挑过则以显式值为准。
+    /// 光标色跟随主题色；用户显式挑过则以显式值为准。
     #[test]
     fn cursor_color_follows_theme_until_set_explicitly() {
-        assert_eq!(resolve_cursor_color(true, ""), "#D4D4D4");
-        assert_eq!(resolve_cursor_color(false, ""), "#2D2D2F");
+        // 跟随：用传进来的 follow（= 当前主题色 / 壁纸互补色）。
+        assert_eq!(resolve_cursor_color("#FF8800", ""), "#FF8800");
         // 显式值不随主题变。
-        assert_eq!(resolve_cursor_color(true, "#FF8800"), "#FF8800");
-        assert_eq!(resolve_cursor_color(false, "#FF8800"), "#FF8800");
+        assert_eq!(resolve_cursor_color("#FF8800", "#123456"), "#123456");
+        assert_eq!(resolve_cursor_color("#000000", "#123456"), "#123456");
     }
 
     #[test]

@@ -151,40 +151,44 @@ export component AppearancePage inherits VerticalLayout {
         SettingRow {
             label: root.lang-en ? "Accent colour" : "主题色";
             desc: root.lang-en
-                ? "Buttons, tabs, selections and highlights follow this colour."
-                : "按钮、标签页、选中态与高亮都跟随这个颜色。";
-            HorizontalLayout {
-                spacing: 8px;
-                alignment: start;
-                // 色表由 Rust 提供，**第一条就是「默认蓝」**（id 为空串 = 配置未选，即 Rudder
-                // 一直以来的默认蓝）；自定义色在最右边的输入框里。
-                for p in root.accent-presets : CursorPaletteSwatch {
-                    hex: p.id;
-                    swatch-color: p.color;
-                    selected: root.accent-choice == p.id;
-                    chosen(id) => { root.set-accent(id); }
+                ? "Follows the wallpaper's complementary colour by default; pick a preset or custom colour to override."
+                : "默认跟随壁纸的互补色;也可以点预设或自定义颜色覆盖。";
+            VerticalLayout {
+                spacing: 7px;
+                alignment: center;
+                HorizontalLayout {
+                    spacing: 6px;
+                    // 首格 = 当前壁纸互补色（跟随）：壁纸在 → wp-accent；无壁纸 → 默认蓝。
+                    CursorPaletteSwatch {
+                        hex: "";
+                        swatch-color: Theme.wallpaper-active ? Theme.wp-accent
+                            : (Theme.dark ? #4a90e2 : #0071e3);
+                        selected: root.accent-choice == "";
+                        chosen(id) => { root.set-accent(id); }
+                    }
+                    // 其后是预设（Rust 色表，已不含 id="" 的默认蓝 —— 首格取代它）。
+                    for p in root.accent-presets : CursorPaletteSwatch {
+                        hex: p.id;
+                        swatch-color: p.color;
+                        selected: root.accent-choice == p.id;
+                        chosen(id) => { root.set-accent(id); }
+                    }
+                    Text {
+                        text: root.accent-name;
+                        color: Theme.text-secondary;
+                        font-size: 12px * Theme.panel-font;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
                 }
-                Text {
-                    text: root.accent-name;
-                    color: Theme.text-secondary;
-                    font-size: 12px * Theme.panel-font;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                    overflow: elide;
+                // 自定义取色盘并入本行（原独立「自定义颜色」行已删除）。
+                CursorColorInput {
+                    value <=> root.accent-hex;
+                    preview-color: Theme.accent-seed;
+                    apply-color(v) => { return root.set-accent(v); }
+                    apply-color-rgb(r, g, b) => { return root.set-accent-rgb(r, g, b); }
                 }
-            }
-        }
-        SettingRow {
-            label: root.lang-en ? "Custom colour" : "自定义颜色";
-            desc: root.lang-en
-                ? "Any #RRGGBB value; darkened a little in light mode so it stays legible."
-                : "任意 #RRGGBB 颜色;浅色模式下会自动压深以保证可读。";
-            show-divider: false;
-            CursorColorInput {
-                value <=> root.accent-hex;
-                preview-color: Theme.accent-seed;
-                apply-color(v) => { return root.set-accent(v); }
-                apply-color-rgb(r, g, b) => { return root.set-accent-rgb(r, g, b); }
             }
         }
 

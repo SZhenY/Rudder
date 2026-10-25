@@ -154,8 +154,8 @@ export component TerminalPage inherits VerticalLayout {
         SettingRow {
             label: root.lang-en ? "Cursor color" : "光标颜色";
             desc: root.lang-en
-                ? "Pick a preset, type a hexadecimal RGB color, or leave it empty to follow the theme (light on dark, dark on light)."
-                : "点一个预设、或输入十六进制 RGB 颜色;留空则跟随主题(深色档亮色 / 浅色档暗色)。";
+                ? "Pick a preset, type a hexadecimal RGB color, or leave it empty to follow the accent colour (the wallpaper's complementary colour)."
+                : "点一个预设、或输入十六进制 RGB 颜色;留空则跟随主题色(壁纸互补色)。";
             VerticalLayout {
                 spacing: 7px;
                 alignment: center;

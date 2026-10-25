@@ -149,16 +149,11 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 }
                 s.set_wallpaper(wallpaper_id.clone());
             });
-            // 深浅档可能刚变 → 主题色与光标色都要按新档位重新解析（两档下本来就是不同的值），
-            // 下拉也要回到配置里那一项。
-            let choice = store.borrow().accent().to_string();
-            apply_accent(&w, &choice);
-            // 自定义壁纸（上传的图片）另给光标一个默认值：照片上的"跟随主题"不成立。
-            if theme.is_empty() {
-                default_cursor_for_custom_wallpaper(&w, &store);
-            }
-            let cursor = store.borrow().terminal_cursor_color().to_string();
-            super::terminal::apply_cursor_color(&w, &cursor);
+            // 换壁纸 = 重新定主题色：清掉之前的预设/自定义，回到「跟随」→ 新壁纸的互补色
+            //（修复"有自定义颜色时互补色不生效"）；深浅档若刚变也一并按新档解析。
+            reset_accent_to_follow(&w, &store);
+            // 换壁纸 = 光标回到「跟随」→ 新壁纸的互补色。
+            reset_cursor_to_follow(&w, &store);
             w.set_accent_mode(store.borrow().theme_pref().into());
             publish_wallpaper_choices(&w, &store);
             if let Some(p) = proc_weak.upgrade() {
@@ -190,8 +185,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             if let Some(w) = weak.upgrade() {
                 // 上传的图片只换图：深浅档保持用户当前的选择（与主题项不同）。
                 apply_wallpaper(&w, &store.borrow(), &bufs_wp, &id, false);
-                // 自定义壁纸：光标给个稳妥的默认值（未挑过时才动）。
-                default_cursor_for_custom_wallpaper(&w, &store);
+                // 换壁纸 = 主题色回到「跟随」→ 新壁纸的互补色。
+                reset_accent_to_follow(&w, &store);
+                // 换壁纸 = 光标回到「跟随」→ 新壁纸的互补色。
+                reset_cursor_to_follow(&w, &store);
                 persist(&store, |s| {
                     s.set_wallpaper(id.clone());
                 });
@@ -282,6 +279,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             });
             if let Some(w) = weak.upgrade() {
                 apply_accent(&w, &normalized);
+                // 主题色变了 → 光标若在「跟随」应同步到新主题色（显式选过的保持不变）。
+                let cursor = store.borrow().terminal_cursor_color().to_string();
+                super::terminal::apply_cursor_color(&w, &cursor);
             }
             true
         });
@@ -359,6 +359,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             });
             if let Some(w) = weak.upgrade() {
                 apply_accent(&w, &normalized);
+                // 主题色变了 → 光标若在「跟随」应同步到新主题色（显式选过的保持不变）。
+                let cursor = store.borrow().terminal_cursor_color().to_string();
+                super::terminal::apply_cursor_color(&w, &cursor);
             }
             true
         });
@@ -456,6 +459,9 @@ fn resolve_accent(choice: &str, dark: bool) -> Option<Color> {
 fn accent_presets_model(dark: bool) -> ModelRc<AccentPreset> {
     let rows: Vec<AccentPreset> = ACCENT_PRESETS
         .iter()
+        // 首格「跟随 / 壁纸互补色」由 Slint 侧实时绘制（需绑定 wp-accent，Rust 只能给静态色），
+        // 这里不再输出 id="" 的默认蓝，避免界面上出现两个"跟随"格。
+        .filter(|(id, ..)| !id.is_empty())
         .map(|(id, dark_hex, light_hex, zh, en)| AccentPreset {
             id: (*id).into(),
             name: t(zh, en).into(),
@@ -565,22 +571,12 @@ fn wallpaper_choice_of_label(label: &str) -> (String, String) {
         .unwrap_or_else(|| ("system".to_string(), String::new()))
 }
 
-/// 选**自定义**壁纸（上传的图片）时，给光标一个稳妥的默认值。
-///
-/// 取的是"浅色档的暗色"（`resolve_cursor_color(false, "")`）—— 照片的明暗不可预知，
-/// "跟随主题"那套（浅底暗光标 / 深底亮光标）在照片上不成立，暗色在任何底图上都还算看得见。
-///
-/// ⚠️ 只在用户**还没自己挑过**光标色（配置为空 = 跟随主题）时才动，免得覆盖他的选择。
-fn default_cursor_for_custom_wallpaper(w: &AppWindow, store: &Store) {
-    if !store.borrow().terminal_cursor_color().is_empty() {
-        return;
-    }
-    let fallback = super::terminal::resolve_cursor_color(false, "");
+/// 换壁纸后把光标重置为「跟随」—— 新壁纸的互补色（覆盖之前的自定义）。
+fn reset_cursor_to_follow(w: &AppWindow, store: &Store) {
     persist(store, |s| {
-        s.set_terminal_cursor_color(&fallback);
+        s.set_terminal_cursor_color("");
     });
-    let stored = store.borrow().terminal_cursor_color().to_string();
-    super::terminal::apply_cursor_color(w, &stored);
+    super::terminal::apply_cursor_color(w, "");
 }
 
 /// 把「壁纸」下拉的内容与选中项推给界面（内容 = 三个主题 + 上传的图片）。
@@ -610,10 +606,15 @@ fn is_accent_echo(v: &str, stored: &str) -> bool {
     v == effective_accent_hex(stored, true) || v == effective_accent_hex(stored, false)
 }
 
-/// 界面上「当前配色」显示的名字：预设名 / 自定义色原样 / 默认蓝。
-fn accent_display_name(choice: &str) -> SharedString {
+/// 界面上「当前配色」显示的名字：预设名 / 自定义色原样 / 壁纸互补色 / 默认蓝。
+fn accent_display_name(choice: &str, wallpaper_active: bool) -> SharedString {
     if choice.is_empty() {
-        return t("默认蓝", "Default Blue").into();
+        return if wallpaper_active {
+            t("壁纸互补色", "Wallpaper complement")
+        } else {
+            t("默认蓝", "Default Blue")
+        }
+        .into();
     }
     if choice.starts_with('#') {
         return choice.into();
@@ -623,6 +624,14 @@ fn accent_display_name(choice: &str) -> SharedString {
         .find(|p| p.0 == choice)
         .map(|p| SharedString::from(t(p.3, p.4)))
         .unwrap_or_else(|| choice.into())
+}
+
+/// 换壁纸后把主题色重置为「跟随」—— 新壁纸的互补色（覆盖之前的预设/自定义）。
+pub(crate) fn reset_accent_to_follow(w: &AppWindow, store: &Store) {
+    persist(store, |s| {
+        s.set_accent(String::new());
+    });
+    apply_accent(w, "");
 }
 
 /// 把配置里的主题色套到界面上。
@@ -645,7 +654,7 @@ pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
     // 当成无操作，不会把预设变成自定义色。
     w.set_accent_hex(effective_accent_hex(choice, dark).into());
     w.set_accent_presets(accent_presets_model(dark));
-    w.set_accent_name(accent_display_name(choice));
+    w.set_accent_name(accent_display_name(choice, w.global::<Theme>().get_wallpaper_active()));
 }
 
 /// 「还原本页默认」：替换外观域为出厂默认，再走与 `bind` 相同的落点。
