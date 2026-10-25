@@ -1,5 +1,6 @@
 use super::*;
 use crate::ui::Theme;
+use crate::ui::AnimationSettings;
 
 pub(crate) fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
     let rows: Vec<SharedString> = store
@@ -357,6 +358,90 @@ pub(super) fn apply_custom_output_rules(
     for_each_buffer(window, bufs, |b| b.custom_highlight_rules = compiled.clone());
 }
 
+/// 换壁纸代际计数：只有最新一次切换的定时器/插值才允许改状态，快速连切时作废在途动画。
+static WALLPAPER_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 交叉淡化的起点与时长：Slint 侧 prev 图在 30ms（等首帧）后开始淡出、400ms 淡完。
+/// 派生色的插值落在**同一区间**、按**真实时间**推进（不是计步），定时器抖动也不脱节。
+const FADE_START_MS: f32 = 30.0;
+const FADE_LEN_MS: f32 = 400.0;
+
+/// 两个颜色之间线性插值。图像淡化的曲线实测就是线性（`e-standard-decelerate`
+/// = `cubic-bezier(0, 0, 0, 1)`，其 x(t) 与 y(t) 相等），所以这里也用线性 ——
+/// 背景层与图像才会同步演化。
+fn lerp_color(a: slint::Color, b: slint::Color, t: f32) -> slint::Color {
+    let m = |x: u8, y: u8| -> u8 {
+        (x as f32 + (y as f32 - x as f32) * t).round().clamp(0.0, 255.0) as u8
+    };
+    slint::Color::from_rgb_u8(m(a.red(), b.red()), m(a.green(), b.green()), m(a.blue(), b.blue()))
+}
+
+/// 派生色渐变的推进状态。用**递归 `Timer::single_shot`** 而非 `Timer::start`：
+/// `single_shot` 是关联函数，不需要持有 `Timer` 实例（`Timer` 也没有 `as_weak()`）。
+struct PaletteFade {
+    weak: slint::Weak<AppWindow>,
+    bufs: TermBuffers,
+    /// 末点是否切亮暗档（旧外壳语义：仅内置壁纸自动定档）。
+    auto_dark: bool,
+    /// (accent, tint, base) 起点 = 换壁纸前主题里的旧值。
+    from: (slint::Color, slint::Color, slint::Color),
+    /// (accent, tint, base) 终点 = 新壁纸取色算出的值。
+    to: (slint::Color, slint::Color, slint::Color),
+    is_dark: bool,
+    seq: u64,
+    t0: std::time::Instant,
+}
+
+impl PaletteFade {
+    fn spawn(self) {
+        slint::Timer::single_shot(std::time::Duration::from_millis(16), move || {
+            self.step();
+        });
+    }
+
+    fn step(self) {
+        let Some(w) = self.weak.upgrade() else { return };
+        // generation 变了 = 用户又切了壁纸，本次插值作废
+        if WALLPAPER_SEQ.load(std::sync::atomic::Ordering::SeqCst) != self.seq {
+            return;
+        }
+        // 进度按真实时间算：定时器抖动也不会让背景层与图像脱节。
+        let elapsed = self.t0.elapsed().as_secs_f32() * 1000.0;
+        let t01 = ((elapsed - FADE_START_MS) / FADE_LEN_MS).clamp(0.0, 1.0);
+        let g = w.global::<Theme>();
+        g.set_wp_accent(lerp_color(self.from.0, self.to.0, t01));
+        g.set_wp_tint(lerp_color(self.from.1, self.to.1, t01));
+        g.set_wp_base(lerp_color(self.from.2, self.to.2, t01));
+        if t01 < 1.0 {
+            self.spawn();
+        } else if self.auto_dark {
+            // 亮暗档是 bool、驱动整个 Palette 的两档文字/边框色，无法插值；放在插值
+            // 末点切：此时背景色已到位，两档跳变的观感最小。
+            apply_dark_mode(&w, &self.bufs, self.is_dark);
+        }
+    }
+}
+
+/// 把壁纸派生的配色**一次性**写进主题（无过渡路径用：首帧 / 动画关闭）。
+#[allow(clippy::too_many_arguments)]
+fn paint_wallpaper_palette(
+    w: &AppWindow,
+    bufs: &TermBuffers,
+    auto_dark: bool,
+    accent: (u8, u8, u8),
+    tint: (u8, u8, u8),
+    base: (u8, u8, u8),
+    is_dark: bool,
+) {
+    let g = w.global::<Theme>();
+    g.set_wp_accent(slint::Color::from_rgb_u8(accent.0, accent.1, accent.2));
+    g.set_wp_tint(slint::Color::from_rgb_u8(tint.0, tint.1, tint.2));
+    g.set_wp_base(slint::Color::from_rgb_u8(base.0, base.1, base.2));
+    if auto_dark {
+        apply_dark_mode(w, bufs, is_dark);
+    }
+}
+
 pub(super) fn apply_wallpaper(
     window: &AppWindow,
     store: &ConfigStore,
@@ -364,29 +449,93 @@ pub(super) fn apply_wallpaper(
     id: &str,
     apply_builtin_theme: bool,
 ) {
-    // 壁纸分区暂时关闭时（见 `WALLPAPER_UI_ENABLED`）整体按"没有壁纸"处理：只藏界面不够
-    // ——配置里默认的 `builtin:dark` 会继续压在 `window-base` 上，浅色主题只剩面板是浅的。
+    // 壁纸分区暂时关闭时（见 `WALLPAPER_UI_ENABLED`）整体按"没有壁纸"处理。
     let id = if crate::app::settings::appearance::WALLPAPER_UI_ENABLED {
         id
     } else {
         ""
     };
+    // 旧外壳语义：仅内置壁纸（明暗一对）自动定档；自定义图片保留用户的深浅选择。
+    let auto_dark = apply_builtin_theme && crate::wallpaper::is_builtin(id);
     match crate::wallpaper::load(id) {
         Some(wp) => {
+            // ==============================================================
+            // 换壁纸 = 400ms 交叉淡化 + 派生色**同轴渐变**
+            //   t=0     新壁纸图像就位（下层）；旧图存入 prev 盖在上层 opacity=1
+            //   t=30ms  prev opacity→0，启动交叉淡化
+            //   t=30~430ms 派生色随图像进度插值（末点切换亮暗档）
+            //   t=480ms 撤掉 prev 层
+            // 尊重「界面动画」开关；启动首帧（此前无壁纸）无旧图可交叉，直接应用。
+            // ==============================================================
+            let cross_fade = window.global::<Theme>().get_wallpaper_active()
+                && window.global::<AnimationSettings>().get_enabled();
+
+            let seq = WALLPAPER_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
             let (ar, ag, ab) = wp.palette.accent;
             let (tr, tg, tb) = wp.palette.tint;
             let (br, bg, bb) = wp.palette.base;
+            let is_dark = wp.palette.is_dark;
+
+            if cross_fade {
+                let prev = window.global::<Theme>().get_wallpaper();
+                window.global::<Theme>().set_wallpaper_prev(prev);
+                window.global::<Theme>().set_wallpaper_fading(true);
+                window.global::<Theme>().set_wallpaper_fade_opacity(1.0);
+
+                let weak = window.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
+                    if let Some(w) = weak.upgrade()
+                        && WALLPAPER_SEQ.load(std::sync::atomic::Ordering::SeqCst) == seq
+                    {
+                        w.global::<Theme>().set_wallpaper_fade_opacity(0.0);
+                    }
+                });
+
+                // 派生色与图像同轴渐变：面板/终端底由 wp_base/wp_tint 派生，跟着图像
+                // 淡化进度一起插值，这一层就不再跳变。
+                PaletteFade {
+                    weak: window.as_weak(),
+                    bufs: (*bufs).clone(),
+                    auto_dark,
+                    from: (
+                        window.global::<Theme>().get_wp_accent(),
+                        window.global::<Theme>().get_wp_tint(),
+                        window.global::<Theme>().get_wp_base(),
+                    ),
+                    to: (
+                        slint::Color::from_rgb_u8(ar, ag, ab),
+                        slint::Color::from_rgb_u8(tr, tg, tb),
+                        slint::Color::from_rgb_u8(br, bg, bb),
+                    ),
+                    is_dark,
+                    seq,
+                    t0: std::time::Instant::now(),
+                }
+                .spawn();
+
+                // 撤 prev 层必须晚于淡出结束（400ms）：480ms = 400ms 动画 + 80ms 余量。
+                let weak = window.as_weak();
+                slint::Timer::single_shot(std::time::Duration::from_millis(480), move || {
+                    if let Some(w) = weak.upgrade()
+                        && WALLPAPER_SEQ.load(std::sync::atomic::Ordering::SeqCst) == seq
+                    {
+                        w.global::<Theme>().set_wallpaper_fading(false);
+                    }
+                });
+            }
+
+            // 新壁纸图像立即就位（它是交叉淡化的目标层）。
             window.global::<Theme>().set_wallpaper(wp.image);
-            window.global::<Theme>().set_wp_accent(slint::Color::from_rgb_u8(ar, ag, ab));
-            window.global::<Theme>().set_wp_tint(slint::Color::from_rgb_u8(tr, tg, tb));
-            window.global::<Theme>().set_wp_base(slint::Color::from_rgb_u8(br, bg, bb));
-            // Only the built-ins (designed as a light/dark pair) auto-set the
-            // theme. A custom photo keeps the user's light/dark choice so the
-            // theme toggle still governs text contrast — a light/white wallpaper
-            // reads best in light mode (crisp dark text) rather than being forced
-            // dark and greying the text out (#wallpaper).
-            if apply_builtin_theme && crate::wallpaper::is_builtin(id) {
-                apply_dark_mode(window, bufs, wp.palette.is_dark);
+            if !cross_fade {
+                paint_wallpaper_palette(
+                    window,
+                    bufs,
+                    auto_dark,
+                    (ar, ag, ab),
+                    (tr, tg, tb),
+                    (br, bg, bb),
+                    is_dark,
+                );
             }
             window.global::<Theme>().set_wallpaper_active(true);
             window.set_current_wallpaper(id.into());
@@ -401,6 +550,10 @@ pub(super) fn apply_wallpaper(
             window.set_custom_wallpaper_name(name.into());
         }
         None => {
+            // 关掉壁纸：作废在途的淡化定时器，立即撤 prev 图，恢复主题深浅档。
+            WALLPAPER_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            window.global::<Theme>().set_wallpaper_fading(false);
+            window.global::<Theme>().set_wallpaper_fade_opacity(0.0);
             window.global::<Theme>().set_wallpaper_active(false);
             window.set_current_wallpaper("".into());
             window.set_custom_wallpaper_name("".into());

@@ -889,6 +889,18 @@ export component AppWindow inherits Window {
         source: Theme.wallpaper;
         image-fit: cover;
     }
+    // 交叉淡化：换壁纸时旧图盖在上层，opacity 由 Rust 时序驱动 1→0（400ms）。
+    // 与 Rust 的 FADE_START/LEN(30/400ms)+480ms 撤层成套；「界面动画」关闭时 Rust
+    // 不置 fading，本层不出现。
+    if Theme.wallpaper-fading : Image {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: Theme.wallpaper-prev;
+        image-fit: cover;
+        opacity: Theme.wallpaper-fade-opacity;
+        animate opacity { duration: 400ms; easing: AnimationSettings.e-standard-decelerate(); enabled: AnimationSettings.enabled; }
+    }
 
     VerticalLayout {
         spacing: 0;
