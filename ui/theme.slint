@@ -132,12 +132,16 @@ export global Theme {
     out property <color> accent-default: dark ? #4a90e2 : #0071e3;
     /// 解析后的**纯色**：需要调透明度的地方（选中行底色等）用它 —— `accent` 是 `brush`
     ///（将来可能放渐变），`brush` 上没有 `with-alpha`。
-    out property <color> accent-solid: !root.accent-overridden ? root.accent-default
-        : (root.accent-custom && !dark ? root.accent-seed.darker(0.25) : root.accent-seed);
+    // 壁纸即主题源（对齐新外壳）：有壁纸且用户未显式选色时，主色取壁纸派生强调色
+    //（主导色的分裂互补，由 Rust 写入 wp-accent）；用户显式选过色（accent-overridden）
+    // 或没有壁纸时，沿用「配色」分区的取值。这样 P2 的取色结果才真正驱动主色。
+    out property <color> accent-solid: (wallpaper-active && !root.accent-overridden) ? root.wp-accent
+        : (!root.accent-overridden ? root.accent-default
+            : (root.accent-custom && !dark ? root.accent-seed.darker(0.25) : root.accent-seed));
 
     out property <brush> accent:         root.accent-solid;
-    out property <brush> accent-hover:   root.accent-overridden ? root.accent-solid.brighter(0.12) : (dark ? #5aa0f2 : #0077ed);
-    out property <brush> accent-pressed: root.accent-overridden ? root.accent-solid.darker(0.12)   : (dark ? #3a80d2 : #006adb);
+    out property <brush> accent-hover:   (root.accent-overridden || wallpaper-active) ? root.accent-solid.brighter(0.12) : (dark ? #5aa0f2 : #0077ed);
+    out property <brush> accent-pressed: (root.accent-overridden || wallpaper-active) ? root.accent-solid.darker(0.12)   : (dark ? #3a80d2 : #006adb);
 
     out property <brush> success: dark ? #4ec9b0 : #34c759;
     out property <brush> warning: dark ? #e2a84a : #ff9f0a;
