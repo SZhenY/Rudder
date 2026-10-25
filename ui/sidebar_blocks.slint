@@ -69,8 +69,8 @@ export component StatRow inherits HorizontalLayout {
             background: bar-color;
             border-radius: 2px;
             animate width {
-                duration: 260ms;
-                easing: AnimationSettings.spring-settle();
+                duration: AnimationSettings.medium2();
+                easing: AnimationSettings.e-standard-decelerate();
                 enabled: AnimationSettings.enabled && root.smooth;
             }
         }
