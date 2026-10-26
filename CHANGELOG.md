@@ -5,6 +5,44 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.8.0-beta2] - 2026-10-26
+
+### 修复 / Fixed
+
+- 启动瞬间窗口闪跳：此前先按 preferred 尺寸（1440×900）显示，首帧后才缩回配置尺寸并居中；
+  现在建窗前就把尺寸与位置写进 winit 的 WindowAttributes，窗口第一次出现即最终几何。
+- 首次启动时光标颜色与主题色不同步：光标色在主题色解析之前播种，读到的是出厂蓝。
+- 设置窗口漏同步「自定义主题色」与「面板字号」：浅色档下自定义色偏亮一档，面板字号不生效。
+- 更新检查的异步结果（检查中 / 成功 / 失败原因）不刷新设置窗口，必须重开才更新。
+
+### 变更 / Changed
+
+- 交互状态层统一：新增 `state-hover` / `state-press` / `state-selected` 令牌，全项目 100 余处
+  悬停底色统一为主题色淡底（与上传按钮同色），层级靠透明度拉开
+  （hover 16/20% < press 24/30% < selected 26/34%）。
+- 设置页动效补齐：切页改为「淡出 → 换页 → 淡入」三段式并叠加 1% 收放；导航选中改为整列
+  唯一的滑动指示条（弹簧缓动），选中项文字与图标改主题色并加粗。
+- 自绘胶囊开关抽成独立组件；终端页「自定义规则」行改用主题色开关（此前是官方 Switch，
+  强调色被 fluent 写死）。
+- 悬停过渡补齐到 97 处（此前多数是瞬变），全部走统一的时长与曲线令牌。
+
+### 依赖 / Toolchain
+
+- Rust 1.99.1（本地与 CI 四处固定点统一），Slint 1.18.0 → 1.18.1。
+- 修正锁文件：`gpu-allocator` 的 `windows` 依赖被解析到 0.58（被 pageant 的 `^0.58` 拉过去），
+  与 `wgpu-hal` 的 0.62 冲突导致 dx12 编译失败；改回 0.62.2 让两份并存。
+- 新增主题同步守卫测试：`theme.slint` 的每个 `in-out` 属性必须在设置窗口的同步函数里有对应
+  setter，防止再漏项。
+
+**Fixed**: the window flashing on startup (size and position are now applied before the native
+window exists), the cursor colour resolving to the factory blue on first launch, the settings
+window missing the custom-accent and panel-font sync, and stale update-check status. **Changed**:
+unified interaction-state tokens so every hover uses the theme accent tint, a three-stage settings
+page transition with a 1% scale settle, a single sliding nav indicator with spring easing, a shared
+toggle-switch component, and transitions on 97 previously instant hover states. **Toolchain**:
+Rust 1.99.1 (local and all four CI pins), Slint 1.18.1, plus a lockfile fix that keeps
+`gpu-allocator` on `windows` 0.62 instead of 0.58.
+
 ## [0.8.0-beta1] - 2026-10-25
 
 ### 新增 / Added
