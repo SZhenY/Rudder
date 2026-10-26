@@ -241,7 +241,12 @@ export component Welcome inherits Rectangle {
                                 height: 24px;
                                 y: (parent.height - self.height) / 2;
                                 border-radius: Theme.radius-sm;
-                                background: clear-search.has-hover ? Theme.bg-hover : transparent;
+                                background: clear-search.has-hover ? Theme.state-hover : transparent;
+                                animate background {
+                                    duration: clear-search.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                    easing: clear-search.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                    enabled: AnimationSettings.enabled;
+                                }
                                 accessible-role: button;
                                 accessible-label: @tr("Clear search");
 
@@ -401,7 +406,12 @@ export component Welcome inherits Rectangle {
                                         Rectangle {
                                             height: 28px;
                                             border-radius: Theme.radius-sm;
-                                            background: eg-ta.has-hover ? Theme.bg-hover : transparent;
+                                            background: eg-ta.has-hover ? Theme.state-hover : transparent;
+                                            animate background {
+                                                duration: eg-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                easing: eg-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                enabled: AnimationSettings.enabled;
+                                            }
                                             eg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.edit-group(session.group); } }
                                             HorizontalLayout {
                                                 padding-left: 10px; spacing: 8px;
@@ -414,6 +424,11 @@ export component Welcome inherits Rectangle {
                                             height: 28px;
                                             border-radius: Theme.radius-sm;
                                             background: dg-ta.has-hover ? #cc333320 : transparent;
+                                            animate background {
+                                                duration: dg-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                easing: dg-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                enabled: AnimationSettings.enabled;
+                                            }
                                             dg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-group(session.group); } }
                                             HorizontalLayout {
                                                 padding-left: 10px; spacing: 8px;
@@ -425,7 +440,12 @@ export component Welcome inherits Rectangle {
                                         Rectangle {
                                             height: 28px;
                                             border-radius: Theme.radius-sm;
-                                            background: ng-ta.has-hover ? Theme.bg-hover : transparent;
+                                            background: ng-ta.has-hover ? Theme.state-hover : transparent;
+                                            animate background {
+                                                duration: ng-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                easing: ng-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                enabled: AnimationSettings.enabled;
+                                            }
                                             ng-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-group(); } }
                                             HorizontalLayout {
                                                 padding-left: 10px; spacing: 8px;

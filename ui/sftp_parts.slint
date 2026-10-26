@@ -1,7 +1,7 @@
 //! SFTP 面板的**附属部件**：文件列表右键菜单行。
 //!
 //! 从 `sftp_panel.slint` 拆出（P4），逐字搬运（`component` → `export component`）。
-import { Theme } from "theme.slint";
+import { Theme, AnimationSettings } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { TabInfo } from "tabs.slint";
 import { Divider, VDivider } from "components/surfaces.slint";
@@ -15,7 +15,12 @@ export component SftpMenuItem inherits Rectangle {
     callback clicked();
     height: 26px;
     border-radius: Theme.radius-sm;
-    background: (root.enabled && ta.has-hover) ? Theme.bg-hover : transparent;
+    background: (root.enabled && ta.has-hover) ? Theme.state-hover : transparent;
+    animate background {
+        duration: (root.enabled && ta.has-hover) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: (root.enabled && ta.has-hover) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
     ta := TouchArea {
         mouse-cursor: root.enabled ? pointer : default;
         clicked => { if (root.enabled) { root.clicked(); } }

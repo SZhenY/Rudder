@@ -44,7 +44,7 @@ export component SyncPage inherits VerticalLayout {
             show-divider: false;
 
             checked <=> root.sync-upload-enabled;
-            toggled(v) => { root.set-sync-upload-enabled(root.sync-upload-enabled); }
+            toggled(v) => { root.set-sync-upload-enabled(v); }
 
         }
         // 分组留白（原为空 `Rectangle` 占位）：6px → 8px（+2px）

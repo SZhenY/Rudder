@@ -35,7 +35,7 @@ export component IconButton inherits Rectangle {
         // 常亮（"这个面板正开着"）用主题色淡底，与 hover 的中性灰区分开 —— 这样换「配色」
         // 时"哪个按钮开着"也跟着变。
         lit when touch.has-hover || root.active : {
-            background: root.active ? Theme.accent-tint : Theme.bg-hover;
+            background: root.active ? Theme.state-selected : Theme.state-hover;
         }
     ]
     animate background {
@@ -325,7 +325,12 @@ export component ToolStrip inherits Rectangle {
         x: root.horizontal ? 4px : (parent.width - self.width) / 2;
         y: root.horizontal ? (parent.height - self.height) / 2 : 4px;
         border-radius: Theme.radius-sm;
-          background: root.enabled && ta.has-hover ? Theme.bg-hover : transparent;
+          background: root.enabled && ta.has-hover ? Theme.state-hover : transparent;
+          animate background {
+              duration: root.enabled && ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+              easing: root.enabled && ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+              enabled: AnimationSettings.enabled;
+          }
           IconText {
               centered: true;
               text: root.glyph;
@@ -350,7 +355,12 @@ export component ToolStrip inherits Rectangle {
         x: root.horizontal ? 38px : (parent.width - self.width) / 2;
         y: root.horizontal ? (parent.height - self.height) / 2 : 38px;
         border-radius: Theme.radius-sm;
-        background: ta2.has-hover ? Theme.bg-hover : transparent;
+        background: ta2.has-hover ? Theme.state-hover : transparent;
+        animate background {
+            duration: ta2.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+            easing: ta2.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+            enabled: AnimationSettings.enabled;
+        }
         IconText {
             centered: true;
             text: root.second-glyph;
@@ -370,7 +380,12 @@ export component ToolStrip inherits Rectangle {
         x: root.horizontal ? 72px : (parent.width - self.width) / 2;
         y: root.horizontal ? (parent.height - self.height) / 2 : 72px;
         border-radius: Theme.radius-sm;
-        background: ta3.has-hover ? Theme.bg-hover : transparent;
+        background: ta3.has-hover ? Theme.state-hover : transparent;
+        animate background {
+            duration: ta3.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+            easing: ta3.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+            enabled: AnimationSettings.enabled;
+        }
         IconText {
             centered: true;
             text: root.third-glyph;

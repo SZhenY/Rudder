@@ -1,4 +1,4 @@
-import { Theme } from "theme.slint";
+import { Theme, AnimationSettings } from "theme.slint";
 import { ComboBox } from "std-widgets.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 import { GroupGap } from "components/surfaces.slint";
@@ -372,7 +372,12 @@ export component SessionDialog inherits Rectangle {
                         border-radius: Theme.radius-sm;
                         border-width: 1px;
                         border-color: Theme.border-subtle;
-                        background: browse-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                        background: browse-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
+                        animate background {
+                            duration: browse-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                            easing: browse-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                            enabled: AnimationSettings.enabled;
+                        }
                         Text {
                             text: @tr("Browse…");
                             color: Theme.text-primary;

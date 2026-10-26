@@ -327,6 +327,9 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                                 // 对话框显示在设置面板之上）。
                                 w.set_update_dialog_open(true);
                             }
+                            // 设置窗口是独立窗口，异步结果不会自己流过去：状态行、失败原因、
+                            // 上次检查时间在这里一并向设置窗口回灌。
+                            super::settings_window::resync_if_open(&w);
                         }
                     });
                 };
@@ -380,6 +383,7 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = weak.upgrade() {
                                 w.set_update_check_error(detail.into());
+                                super::settings_window::resync_if_open(&w);
                             }
                         });
                     }

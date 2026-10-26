@@ -183,6 +183,11 @@ export component FileEditor inherits Rectangle {
                             width: 76px; height: 28px;
                             border-radius: Theme.radius-sm;
                             background: ed-save-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                            animate background {
+                                duration: ed-save-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: ed-save-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             ed-save-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => { root.save-file(); }
@@ -228,7 +233,12 @@ export component FileEditor inherits Rectangle {
                         Rectangle {
                             width: 28px;
                             border-radius: Theme.radius-sm;
-                            background: find-prev-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                            background: find-prev-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
+                            animate background {
+                                duration: find-prev-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: find-prev-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             find-prev-ta := TouchArea {
                                 enabled: editor-match-count > 0;
                                 clicked => {
@@ -245,7 +255,12 @@ export component FileEditor inherits Rectangle {
                         Rectangle {
                             width: 28px;
                             border-radius: Theme.radius-sm;
-                            background: find-next-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                            background: find-next-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
+                            animate background {
+                                duration: find-next-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: find-next-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             find-next-ta := TouchArea {
                                 enabled: editor-match-count > 0;
                                 clicked => {
@@ -269,7 +284,12 @@ export component FileEditor inherits Rectangle {
                         Rectangle {
                             width: 88px;
                             border-radius: Theme.radius-sm;
-                            background: replace-all-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                            background: replace-all-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
+                            animate background {
+                                duration: replace-all-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: replace-all-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             replace-all-ta := TouchArea {
                                 enabled: !editor-readonly && editor-find-query != "";
                                 clicked => {
@@ -379,6 +399,11 @@ export component FileEditor inherits Rectangle {
                     width: 3px;
                     height: 3px;
                     background: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
+                    animate background {
+                        duration: ed-resize-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: ed-resize-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                 }
                 Rectangle {
                     x: parent.width - 11px;
@@ -386,6 +411,11 @@ export component FileEditor inherits Rectangle {
                     width: 3px;
                     height: 7px;
                     background: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
+                    animate background {
+                        duration: ed-resize-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: ed-resize-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                 }
                 Rectangle {
                     x: parent.width - 16px;
@@ -393,6 +423,11 @@ export component FileEditor inherits Rectangle {
                     width: 3px;
                     height: 11px;
                     background: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
+                    animate background {
+                        duration: ed-resize-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: ed-resize-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                 }
             }
         }

@@ -106,7 +106,12 @@ Rectangle {
         Rectangle {
             height: 28px;
             border-radius: Theme.radius-sm;
-            background: iface-ta.has-hover ? Theme.bg-hover : transparent;
+            background: iface-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: iface-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: iface-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             iface-ta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => {
@@ -128,7 +133,12 @@ Rectangle {
         Rectangle {
             height: 28px;
             border-radius: Theme.radius-sm;
-            background: export-ta.has-hover ? Theme.bg-hover : transparent;
+            background: export-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: export-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: export-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             export-ta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => {
@@ -150,7 +160,12 @@ Rectangle {
         Rectangle {
             height: 28px;
             border-radius: Theme.radius-sm;
-            background: impconn-ta.has-hover ? Theme.bg-hover : transparent;
+            background: impconn-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: impconn-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: impconn-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             impconn-ta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => {
@@ -172,7 +187,12 @@ Rectangle {
         Rectangle {
             height: 28px;
             border-radius: Theme.radius-sm;
-            background: batchimp-ta.has-hover ? Theme.bg-hover : transparent;
+            background: batchimp-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: batchimp-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: batchimp-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             batchimp-ta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => {
@@ -197,7 +217,12 @@ Rectangle {
         Rectangle {
             height: ssh-import-hint != "" ? 46px : 28px;
             border-radius: Theme.radius-sm;
-            background: import-ta.has-hover ? Theme.bg-hover : transparent;
+            background: import-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: import-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: import-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             import-ta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => { root.import-ssh-config(); }
@@ -224,7 +249,12 @@ Rectangle {
         Rectangle {
             height: 28px;
             border-radius: Theme.radius-sm;
-            background: lang-ta.has-hover ? Theme.bg-hover : transparent;
+            background: lang-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: lang-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: lang-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             lang-ta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => {
@@ -246,7 +276,12 @@ Rectangle {
         Rectangle {
             height: 28px;
             border-radius: Theme.radius-sm;
-            background: keys-ta.has-hover ? Theme.bg-hover : transparent;
+            background: keys-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: keys-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: keys-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             keys-ta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => {
@@ -267,7 +302,12 @@ Rectangle {
         Rectangle {
             height: 28px;
             border-radius: Theme.radius-sm;
-            background: about-ta.has-hover ? Theme.bg-hover : transparent;
+            background: about-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: about-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: about-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             about-ta := TouchArea {
                 mouse-cursor: pointer;
                 clicked => {

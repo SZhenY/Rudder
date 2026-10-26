@@ -1855,6 +1855,11 @@ export component AppWindow inherits Window {
             width: parent.quick-horizontal ? 4px : parent.width;
             height: parent.quick-horizontal ? parent.height : 4px;
             background: quick-split-ta.has-hover ? Theme.accent : Theme.border-subtle;
+            animate background {
+                duration: quick-split-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: quick-split-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             quick-split-ta := TouchArea {
                 x: quick-area.quick-horizontal ? -4px : 0px;
                 y: quick-area.quick-horizontal ? 0px : -4px;

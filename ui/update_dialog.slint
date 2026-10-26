@@ -279,7 +279,12 @@ export component UpdateDialog inherits Rectangle {
                     alignment: start;
                     Rectangle {
                         border-radius: Theme.radius-sm;
-                        background: rel-ta.has-hover ? Theme.bg-hover : transparent;
+                        background: rel-ta.has-hover ? Theme.state-hover : transparent;
+                        animate background {
+                            duration: rel-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                            easing: rel-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                            enabled: AnimationSettings.enabled;
+                        }
                         VerticalLayout {
                             alignment: center;
                             HorizontalLayout {

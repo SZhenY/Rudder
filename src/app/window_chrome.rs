@@ -107,9 +107,13 @@ pub(crate) fn wire_window_chrome(
         });
     }
 
-    // Center the window on the primary monitor once it's shown (size is only
-    // known after the first frame, so defer via a single-shot timer).
-    {
+    // 配置里有尺寸时，位置已经在建窗前定好了（`place_main_window_before_show`），这里再居中
+    // 会多出一次可见位移；只有首次运行（没存过尺寸）才需要这 30ms 的兜底居中。
+    let has_saved_size = {
+        let (w, h) = store.borrow().window_size();
+        w > 0.0 && h > 0.0
+    };
+    if !has_saved_size {
         let weak = window.as_weak();
         slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
             if let Some(w) = weak.upgrade() {

@@ -162,7 +162,12 @@ export component AboutDialog inherits Rectangle {
                         }
                         Rectangle {
                             border-radius: Theme.radius-sm;
-                            background: repo-ta.has-hover ? Theme.bg-hover : transparent;
+                            background: repo-ta.has-hover ? Theme.state-hover : transparent;
+                            animate background {
+                                duration: repo-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: repo-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             HorizontalLayout {
                                 padding-left: 4px; padding-right: 4px;
                                 Text {

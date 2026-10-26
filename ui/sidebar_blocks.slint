@@ -146,7 +146,12 @@ export component NetGraph inherits VerticalLayout {
             width: 64px;
             height: 18px;
             border-radius: 3px;
-            background: sel-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+            background: sel-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
+            animate background {
+                duration: sel-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: sel-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
 
             HorizontalLayout {
                 padding-left: 5px; padding-right: 4px; spacing: 2px;
@@ -187,7 +192,12 @@ export component NetGraph inherits VerticalLayout {
                         for iface in root.ifaces : Rectangle {
                             height: 22px;
                             border-radius: 3px;
-                            background: row-ta.has-hover ? Theme.bg-hover : transparent;
+                            background: row-ta.has-hover ? Theme.state-hover : transparent;
+                            animate background {
+                                duration: row-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: row-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             row-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => { root.iface-selected(iface); }
@@ -269,7 +279,12 @@ export component StatusBlock inherits Rectangle {
                 width: 18px; height: 18px;
                 y: (parent.height - self.height) / 2;
                 border-radius: Theme.radius-sm;
-                background: cl-ta.has-hover ? Theme.bg-hover : transparent;
+                background: cl-ta.has-hover ? Theme.state-hover : transparent;
+                animate background {
+                    duration: cl-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                    easing: cl-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                    enabled: AnimationSettings.enabled;
+                }
                 cl-ta := TouchArea { mouse-cursor: pointer; clicked => { root.collapse(); } }
                 IconText { text: root.collapse-icon;
                        centered: true;
@@ -287,7 +302,12 @@ export component StatusBlock inherits Rectangle {
                 width: ip-txt.preferred-width + (root.conn-host != "" ? 10px : 0px);
                 height: ip-txt.preferred-height + 4px;
                 border-radius: Theme.radius-sm;
-                background: (root.conn-host != "" && ip-ta.has-hover) ? Theme.bg-hover : transparent;
+                background: (root.conn-host != "" && ip-ta.has-hover) ? Theme.state-hover : transparent;
+                animate background {
+                    duration: (root.conn-host != "" && ip-ta.has-hover) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                    easing: (root.conn-host != "" && ip-ta.has-hover) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                    enabled: AnimationSettings.enabled;
+                }
                 ip-txt := Text {
                     x: root.conn-host != "" ? 5px : 0px;
                     y: (parent.height - self.height) / 2;
@@ -338,7 +358,12 @@ export component StatsBlock inherits VerticalLayout {
             height: 20px;
             horizontal-stretch: 1;
             border-radius: Theme.radius-sm;
-            background: root.system-info-available && sys-ta.has-hover ? Theme.bg-hover : transparent;
+            background: root.system-info-available && sys-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: root.system-info-available && sys-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: root.system-info-available && sys-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             sys-ta := TouchArea {
                 enabled: root.system-info-available;
                 mouse-cursor: root.system-info-available ? pointer : default;
@@ -357,7 +382,12 @@ export component StatsBlock inherits VerticalLayout {
         if root.system-info-available : Rectangle {
             width: 22px; height: 20px;
             border-radius: Theme.radius-sm;
-            background: info-ta.has-hover ? Theme.bg-hover : transparent;
+            background: info-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: info-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: info-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             info-ta := TouchArea { mouse-cursor: pointer; clicked => { root.show-system-info(); } }
             IconText {
                 centered: true;
@@ -369,7 +399,12 @@ export component StatsBlock inherits VerticalLayout {
         if root.proc-available : Rectangle {
             width: 52px; height: 20px;
             border-radius: Theme.radius-sm;
-            background: proc-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+            background: proc-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
+            animate background {
+                duration: proc-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: proc-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             proc-ta := TouchArea { mouse-cursor: pointer; clicked => { root.show-processes(); } }
             Text { text: @tr("Processes"); color: Theme.text-secondary; font-size: Theme.fs-xs;
                    horizontal-alignment: center; vertical-alignment: center; }

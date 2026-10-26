@@ -1,0 +1,52 @@
+// 统一的交互状态面：底色 / 按下 / 选中 + 过渡都收在这里。
+//
+// 页面用法：
+//     StateSurface { width: 34px; height: 30px; outlined: true; base: Theme.bg-elevated;
+//                    clicked => { … }
+//         IconText { … } }
+//
+// 状态取色只走 Theme 的 state-* / emphasis-hover 令牌（见 theme.slint），
+// 组件内部不再出现 `has-hover ? Theme.bg-hover : …` 这种散写。
+import { Theme, AnimationSettings } from "../theme.slint";
+
+export component StateSurface inherits Rectangle {
+    /// 静息底色：透明（列表行、图标按钮）或 Theme.bg-elevated（描边按钮）。
+    in property <brush> base: transparent;
+    in property <bool> selected: false;
+    /// 强调型交互：hover / press 走主题色系（上传、主操作），而不是中性灰。
+    in property <bool> emphasized: false;
+    /// 画 1px 描边；hover 时描边加深，选中时用主题色实线。
+    in property <bool> outlined: false;
+    in property <length> radius: Theme.radius-sm;
+    /// 关掉后不接收指针事件，hover/pressed 自然回落（例如"检查中"的按钮）。
+    in property <bool> interactive: true;
+    callback clicked();
+
+    border-radius: root.radius;
+    border-width: root.outlined ? 1px : 0px;
+    border-color: root.selected ? Theme.state-selected-border
+        : (ta.has-hover ? Theme.border-strong : Theme.border-subtle);
+    background: root.selected ? Theme.state-selected
+        : (ta.pressed ? (root.emphasized ? Theme.accent-press : Theme.state-press)
+        : (ta.has-hover ? (root.emphasized ? Theme.emphasis-hover : Theme.state-hover)
+        : root.base));
+
+    animate background {
+        duration: (ta.has-hover || ta.pressed) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: (ta.has-hover || ta.pressed) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-color {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+
+    ta := TouchArea {
+        enabled: root.interactive;
+        mouse-cursor: root.interactive ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+
+    @children
+}

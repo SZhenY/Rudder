@@ -38,9 +38,9 @@ component SingleTab inherits Rectangle {
     border-radius: Theme.radius-sm;
     border-width: active ? 2px : 0px;
     border-color: active ? Theme.accent : transparent;
-    background: dragging ? Theme.bg-active
+    background: dragging ? Theme.state-press
         : (active ? Theme.tab-active-bg
-        : (touch.has-hover ? Theme.bg-hover : transparent));
+        : (touch.has-hover ? Theme.state-hover : transparent));
     animate background {
         duration: (dragging || active || touch.has-hover) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
         easing: (dragging || active || touch.has-hover) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
@@ -146,7 +146,12 @@ component TabMenuItem inherits Rectangle {
     callback clicked();
     height: 28px;
     border-radius: Theme.radius-sm;
-    background: enabled && ta.has-hover ? Theme.bg-hover : transparent;
+    background: enabled && ta.has-hover ? Theme.state-hover : transparent;
+    animate background {
+        duration: enabled && ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: enabled && ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
     HorizontalLayout {
         padding-left: 10px;
         padding-right: 10px;

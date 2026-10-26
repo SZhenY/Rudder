@@ -1,4 +1,4 @@
-﻿import { Theme } from "theme.slint";
+﻿import { Theme, AnimationSettings } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { TabInfo } from "tabs.slint";
 import { Divider, VDivider } from "components/surfaces.slint";
@@ -228,7 +228,12 @@ export component SftpPanel inherits Rectangle {
                     width: root.narrow-toolbar ? 28px : 48px;
                     height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: root.panel-mode == "files" ? Theme.accent : (files-tab-ta.has-hover ? Theme.bg-hover : transparent);
+                    background: root.panel-mode == "files" ? Theme.accent : (files-tab-ta.has-hover ? Theme.state-hover : transparent);
+                    animate background {
+                        duration: root.panel-mode == "files" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: root.panel-mode == "files" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     files-tab-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.panel-mode = "files"; }
@@ -246,7 +251,12 @@ export component SftpPanel inherits Rectangle {
                     width: root.narrow-toolbar ? 28px : 58px;
                     height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: root.panel-mode == "tunnels" ? Theme.accent : (tunnels-tab-ta.has-hover ? Theme.bg-hover : transparent);
+                    background: root.panel-mode == "tunnels" ? Theme.accent : (tunnels-tab-ta.has-hover ? Theme.state-hover : transparent);
+                    animate background {
+                        duration: root.panel-mode == "tunnels" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: root.panel-mode == "tunnels" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     tunnels-tab-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.panel-mode = "tunnels"; }
@@ -296,7 +306,12 @@ export component SftpPanel inherits Rectangle {
                     visible: root.panel-mode == "files" && !root.narrow-toolbar;
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: copy-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: copy-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: copy-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: copy-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     copy-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => {
@@ -316,7 +331,12 @@ export component SftpPanel inherits Rectangle {
                     visible: root.panel-mode == "files" && !root.narrow-toolbar;
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: pj-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: pj-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: pj-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: pj-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     pj-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => {
@@ -338,7 +358,12 @@ export component SftpPanel inherits Rectangle {
                     visible: root.panel-mode == "files";
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: up-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: up-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: up-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: up-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     up-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.navigate(".."); }
@@ -354,6 +379,11 @@ export component SftpPanel inherits Rectangle {
                     width: root.narrow-toolbar ? 24px : 52px; height: 22px;
                     border-radius: Theme.radius-sm;
                     background: ul-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                    animate background {
+                        duration: ul-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: ul-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     ul-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { ul-menu.show(); }
@@ -394,7 +424,12 @@ export component SftpPanel inherits Rectangle {
                     width: 24px;
                     height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: compact-more-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: compact-more-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: compact-more-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: compact-more-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     compact-more-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { compact-more-menu.show(); }
@@ -459,7 +494,12 @@ export component SftpPanel inherits Rectangle {
                 if root.panel-mode == "files" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: dls-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: dls-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: dls-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: dls-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     dls-ta := TouchArea { mouse-cursor: pointer; clicked => { root.download-selected(); } }
                     IconText { text: "\u{E2C4}";color: Theme.text-secondary;
                            centered: true;
@@ -469,6 +509,11 @@ export component SftpPanel inherits Rectangle {
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
                     background: dels-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
+                    animate background {
+                        duration: dels-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: dels-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     dels-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-selected(); } }
                     IconText { text: "\u{E872}";color: Theme.danger;
                            centered: true;
@@ -479,7 +524,12 @@ export component SftpPanel inherits Rectangle {
                     visible: root.panel-mode == "files" && !root.narrow-toolbar;
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: ref-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: ref-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: ref-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: ref-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     ref-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.refresh(root.current-path); }
@@ -494,7 +544,12 @@ export component SftpPanel inherits Rectangle {
                 Rectangle {
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: min-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: min-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: min-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: min-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     min-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.toggle-collapsed(); }
@@ -575,7 +630,7 @@ export component SftpPanel inherits Rectangle {
                         for node[i] in root.tree-nodes : Rectangle {
                             height: 22px;
                             background: node-ta.has-hover
-                                ? Theme.bg-hover
+                                ? Theme.state-hover
                                 : (node.path == root.current-path
                                     ? Theme.accent-solid.with-alpha(0.19)
                                     : (mod(i, 2) == 0 ? transparent : #ffffff08));
@@ -1009,13 +1064,23 @@ export component SftpPanel inherits Rectangle {
                         spacing: 6px;
                         Rectangle {
                             width: 54px; height: 24px; border-radius: Theme.radius-sm;
-                            background: root.tunnel-kind == "local" ? Theme.accent : (tl-ta.has-hover ? Theme.bg-hover : Theme.bg-root);
+                            background: root.tunnel-kind == "local" ? Theme.accent : (tl-ta.has-hover ? Theme.state-hover : Theme.bg-root);
+                            animate background {
+                                duration: root.tunnel-kind == "local" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: root.tunnel-kind == "local" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             tl-ta := TouchArea { mouse-cursor: pointer; clicked => { root.tunnel-kind = "local"; } }
                             Text { text: "-L"; color: root.tunnel-kind == "local" ? #ffffff : Theme.text-primary; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
                         }
                         Rectangle {
                             width: 54px; height: 24px; border-radius: Theme.radius-sm;
-                            background: root.tunnel-kind == "dynamic" ? Theme.accent : (td-ta.has-hover ? Theme.bg-hover : Theme.bg-root);
+                            background: root.tunnel-kind == "dynamic" ? Theme.accent : (td-ta.has-hover ? Theme.state-hover : Theme.bg-root);
+                            animate background {
+                                duration: root.tunnel-kind == "dynamic" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: root.tunnel-kind == "dynamic" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             td-ta := TouchArea { mouse-cursor: pointer; clicked => { root.tunnel-kind = "dynamic"; } }
                             Text { text: "-D"; color: root.tunnel-kind == "dynamic" ? #ffffff : Theme.text-primary; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
                         }
@@ -1023,6 +1088,11 @@ export component SftpPanel inherits Rectangle {
                         Rectangle {
                             width: 72px; height: 24px; border-radius: Theme.radius-sm;
                             background: add-tunnel-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                            animate background {
+                                duration: add-tunnel-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: add-tunnel-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             add-tunnel-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => {
@@ -1078,7 +1148,12 @@ export component SftpPanel inherits Rectangle {
                     for tun in root.tunnels : Rectangle {
                         height: 34px;
                         border-radius: Theme.radius-sm;
-                        background: tunnel-row-ta.has-hover ? Theme.bg-hover : Theme.bg-root.with-alpha(0.42);
+                        background: tunnel-row-ta.has-hover ? Theme.state-hover : Theme.bg-root.with-alpha(0.42);
+                        animate background {
+                            duration: tunnel-row-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                            easing: tunnel-row-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                            enabled: AnimationSettings.enabled;
+                        }
                         tunnel-row-ta := TouchArea {}
                         HorizontalLayout {
                             padding-left: 8px; padding-right: 8px; spacing: 8px;
@@ -1090,6 +1165,11 @@ export component SftpPanel inherits Rectangle {
                             Rectangle {
                                 width: 48px; height: 22px; border-radius: Theme.radius-sm;
                                 background: tun.active ? (stop-ta.has-hover ? Theme.danger.with-alpha(0.24) : transparent) : transparent;
+                                animate background {
+                                    duration: tun.active ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                    easing: tun.active ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                    enabled: AnimationSettings.enabled;
+                                }
                                 stop-ta := TouchArea { mouse-cursor: tun.active ? pointer : default; clicked => { if (tun.active) { root.tunnel-stop(tun.id); } } }
                                 Text { text: @tr("Stop"); color: tun.active ? Theme.danger : Theme.text-muted; font-size: Theme.fs-xs; horizontal-alignment: center; vertical-alignment: center; }
                             }

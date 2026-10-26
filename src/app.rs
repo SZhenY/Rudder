@@ -167,8 +167,6 @@ use crate::ssh::{
     ProcInfo, SessionCommand, SessionEvent, SessionHandle, SystemDetails, format_mtime,
     format_size, spawn_session,
 };
-#[cfg(windows)]
-use crate::terminal::c0_letter_key_down;
 #[cfg(test)]
 use crate::terminal::{
     encode_command_bar_input, encode_pasted_text, key_to_pty_bytes, paste_requires_large_review,
@@ -220,6 +218,7 @@ pub(crate) use pane_layout::{
 };
 pub(crate) use window_geometry::{
     center_window, handle_file_drop, handle_macos_terminal_wheel,
+    place_main_window_before_show,
 };
 
 mod render_tickets;
@@ -473,6 +472,15 @@ pub fn run() -> Result<()> {
     let tabs_model = ctx.tabs_model.clone();
     let local_snap = ctx.local_snap.clone();
     let local_net_hist = ctx.local_net_hist.clone();
+
+    // 建窗（`window.run()` 内）之前先把配置里的尺寸与位置定下来：Slint 会把它们写进 winit
+    // 的 WindowAttributes，窗口第一次出现就是最终几何，不再有"先大后小 + 位移"的跳变。
+    let pre_placed = {
+        let s = store.borrow();
+        let (w, h) = s.window_size();
+        drop(s);
+        (w > 0.0 && h > 0.0).then(|| place_main_window_before_show(&window, (w, h)))
+    };
 
     // --- Build window + models ------------------------------------------
     // Set the Wayland app_id / X11 WM_CLASS *before* the window is created so
@@ -1382,6 +1390,13 @@ pub fn run() -> Result<()> {
     }
 
     wire_window_chrome(&window, &handles, &store, &exit_confirmed);
+
+    // 尺寸已经在建窗前设好，事件驱动的恢复重试不必再跑：留着会在首帧再 request 一次同尺寸，
+    // 多出一次 Resized 与重绘。门在这里直接关掉；只有配置里没有尺寸（首次运行）才留给重试。
+    if pre_placed.is_some() {
+        pending_window_size_restore.set(None);
+        window_size_tracking_ready.set(true);
+    }
 
     let run_result = window.run();
     // 退出前把防抖窗口内未落盘的设置改动写出去：事件循环一停，挂起的改动就没机会落盘了。

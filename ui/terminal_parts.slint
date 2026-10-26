@@ -45,7 +45,12 @@ export component MenuItem inherits Rectangle {
 
     height: 28px;
     border-radius: Theme.radius-sm;
-    background: ta.has-hover ? Theme.bg-hover : transparent;
+    background: ta.has-hover ? Theme.state-hover : transparent;
+    animate background {
+        duration: ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
 
     ta := TouchArea {
         mouse-cursor: pointer;
@@ -123,7 +128,12 @@ export component QuickDockPanel inherits Rectangle {
                 }
                 Rectangle {
                     width: 28px;
-                    background: close-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: close-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: close-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: close-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     border-radius: Theme.radius-sm;
                     close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.close(); } }
                     IconText {
@@ -156,7 +166,12 @@ export component QuickDockPanel inherits Rectangle {
                     if q.group-header != "" : Rectangle {
                         height: 26px;
                         border-radius: Theme.radius-sm;
-                        background: group-ta.has-hover ? Theme.bg-hover : transparent;
+                        background: group-ta.has-hover ? Theme.state-hover : transparent;
+                        animate background {
+                            duration: group-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                            easing: group-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                            enabled: AnimationSettings.enabled;
+                        }
                         group-ta := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.toggle-group(q.group); }
@@ -179,7 +194,12 @@ export component QuickDockPanel inherits Rectangle {
                     if !q.collapsed && q.orig-index >= 0 : Rectangle {
                         height: max(44px, item-col.preferred-height + 8px);
                         border-radius: Theme.radius-sm;
-                        background: item-ta.has-hover ? Theme.bg-hover : transparent;
+                        background: item-ta.has-hover ? Theme.state-hover : transparent;
+                        animate background {
+                            duration: item-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                            easing: item-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                            enabled: AnimationSettings.enabled;
+                        }
                         item-ta := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.activate(q.command, q.send-enter); }
@@ -206,7 +226,12 @@ export component QuickDockPanel inherits Rectangle {
 
         Rectangle {
             height: 32px;
-            background: manage-ta.has-hover ? Theme.bg-hover : Theme.bg-panel-alt;
+            background: manage-ta.has-hover ? Theme.state-hover : Theme.bg-panel-alt;
+            animate background {
+                duration: manage-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: manage-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             manage-ta := TouchArea { mouse-cursor: pointer; clicked => { root.manage(); } }
             Text {
                 text: @tr("Manage…"); color: Theme.accent; font-size: Theme.fs-sm;

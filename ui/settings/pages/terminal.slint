@@ -4,13 +4,13 @@
 // 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
 // 因此可以保持与改造前逐字一致。
 
-import { Theme } from "../../theme.slint";
-import { CursorColorInput, CursorPaletteSwatch, CursorStyleButton, SettingRow, Stepper, SettingSwitch } from "../chrome.slint";
+import { Theme, AnimationSettings } from "../../theme.slint";
+import { CursorColorInput, CursorPaletteSwatch, CursorStyleButton, SettingRow, Stepper, SettingSwitch, ToggleSwitch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
 import { OutputRuleItem } from "../types.slint";
 import { LabeledInput, PrimaryButton } from "../../widgets.slint";
-import { ComboBox, Switch } from "std-widgets.slint";
+import { ComboBox } from "std-widgets.slint";
 import { Divider, GroupGap } from "../../components/surfaces.slint";
 import { IconText } from "../../components/text.slint";
 
@@ -93,8 +93,18 @@ export component TerminalPage inherits VerticalLayout {
                     height: 30px;
                     border-radius: 6px;
                     border-width: 1px;
-                    border-color: Theme.border-subtle;
-                    background: term-font-upload-ta.has-hover ? Theme.accent-tint : Theme.bg-elevated;
+                    border-color: term-font-upload-ta.has-hover ? Theme.border-strong : Theme.border-subtle;
+                    background: term-font-upload-ta.has-hover ? Theme.emphasis-hover : Theme.bg-elevated;
+                    animate background {
+                        duration: term-font-upload-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: term-font-upload-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
+                    animate border-color {
+                        duration: AnimationSettings.short2();
+                        easing: AnimationSettings.e-standard-decelerate();
+                        enabled: AnimationSettings.enabled;
+                    }
                     term-font-upload-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.upload-ui-font(); }
@@ -122,7 +132,7 @@ export component TerminalPage inherits VerticalLayout {
                                : "让普通终端输出使用加粗字重。";
 
             checked <=> root.term-font-bold;
-            toggled(v) => { root.set-term-font-bold(root.term-font-bold); }
+            toggled(v) => { root.set-term-font-bold(v); }
 
         }
         SettingRow {
@@ -277,7 +287,7 @@ export component TerminalPage inherits VerticalLayout {
                     : "粘贴/输入时将 \\n 转为 \\r\\n，兼容需要 Windows 换行符的程序。";
 
                 checked <=> root.convert-eol;
-                toggled(v) => { root.set-convert-eol(root.convert-eol); }
+                toggled(v) => { root.set-convert-eol(v); }
 
             }
         }
@@ -288,7 +298,7 @@ export component TerminalPage inherits VerticalLayout {
                 : "允许远程程序 (zellij、tmux、vim) 通过 OSC 52 写入本地剪贴板。关闭可提高安全性。";
 
             checked <=> root.osc52-clipboard;
-            toggled(v) => { root.set-osc52-clipboard(root.osc52-clipboard); }
+            toggled(v) => { root.set-osc52-clipboard(v); }
 
         }
     }
@@ -544,15 +554,26 @@ export component TerminalPage inherits VerticalLayout {
                         font-size: 10px * Theme.panel-font;
                     }
                 }
-                Switch {
+                // 与设置页其它开关同款：自绘、跟随主题色、有过渡（官方 Switch 的强调色
+                // 是 fluent 派生属性，改不了）。
+                ToggleSwitch {
                     checked: rule.enabled;
-                    toggled => { root.set-output-highlight-rule-enabled(index, !rule.enabled); }
+                    toggled(v) => { root.set-output-highlight-rule-enabled(index, v); }
+                    vertical-stretch: 0;
                 }
                 Rectangle {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 5px;
-                    background: delete-ta.has-hover ? Theme.bg-hover : transparent;
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 4px;
+                    // 与左侧的开关同高并显式不拉伸：行高 43px，拉满会让悬停底色变成一条竖条。
+                    vertical-stretch: 0;
+                    background: delete-ta.pressed ? Theme.state-press
+                        : (delete-ta.has-hover ? Theme.state-hover : transparent);
+                    animate background {
+                        duration: delete-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: delete-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     delete-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.remove-output-highlight-rule(index); }
@@ -561,7 +582,7 @@ export component TerminalPage inherits VerticalLayout {
                         centered: true;
                         text: "\u{E872}";
                         color: Theme.text-muted;
-                        font-size: 15px * Theme.panel-font;
+                        font-size: 14px * Theme.panel-font;
                         width: 100%; height: 100%;
                     }
                 }

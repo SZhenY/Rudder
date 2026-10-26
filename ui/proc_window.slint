@@ -6,7 +6,7 @@
 // titlebar look of AppWindow (drag to move, ✕ to close) and reads its rows from
 // a model shared with the main window, so the table stays live.
 
-import { Theme } from "theme.slint";
+import { Theme, AnimationSettings } from "theme.slint";
 import { LabeledInput, GhostButton } from "widgets.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
 
@@ -28,7 +28,12 @@ component ProcMenuItem inherits Rectangle {
     callback clicked();
     height: 30px;
     border-radius: Theme.radius-sm;
-    background: menu-touch.has-hover ? Theme.bg-hover : transparent;
+    background: menu-touch.has-hover ? Theme.state-hover : transparent;
+    animate background {
+        duration: menu-touch.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: menu-touch.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
     menu-touch := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }

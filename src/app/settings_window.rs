@@ -73,6 +73,9 @@ pub(super) fn sync_settings_theme(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_wp_base(t.get_wp_base());
     sw.set_accent_overridden(t.get_accent_overridden());
     sw.set_accent_seed(t.get_accent_seed());
+    // 自定义色（非预设两档）在浅色档要现算压深（theme.slint 的 accent-solid）；不同步这一位，
+    // 设置窗口的 accent-solid 会比主窗口亮一档。
+    sw.set_accent_custom(t.get_accent_custom());
     sw.set_panel_alpha(t.get_panel_alpha());
     // 设置页里的「终端字体预览」直接读**这个窗口自己的** `Theme` 实例（Slint 的 global
     // 每个窗口一份）—— 不把这三项抄过来，预览永远显示默认的 JetBrains Mono / 13px，
@@ -81,6 +84,9 @@ pub(super) fn sync_settings_theme(m: &AppWindow, sw: &SettingsWindow) {
     swt.set_term_font_family(t.get_term_font_family());
     swt.set_term_font_size(t.get_term_font_size());
     swt.set_term_font_bold(t.get_term_font_bold());
+    // 面板字号：设置窗的窗口尺寸与全部正文都乘它（ui/settings_window.slint:78-79），
+    // 不同步的话用户在设置里调了字号，设置窗自己反而不变。
+    swt.set_panel_font(t.get_panel_font());
 }
 
 /// 只留一个原生关闭按钮：隐藏 macOS 的「最小化(黄)」与「缩放(绿)」，保留「关闭(红)」。
@@ -150,6 +156,8 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_accent_name(m.get_accent_name());
     sw.set_accent_presets(m.get_accent_presets());
     sw.set_accent_mode(m.get_accent_mode());
+    // 更新通道：分段控件按这个值高亮。点击只改主窗口那份属性，不回灌的话设置窗口停在开窗时的旧值。
+    sw.set_update_channel(m.get_update_channel());
     // 字体 / 壁纸 / 渲染器（其余可能被 Rust 侧规范化或回落的值）
     sw.set_term_font_index(m.get_term_font_index());
     sw.set_ui_font_index(m.get_ui_font_index());
@@ -380,4 +388,64 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_welcome_as_sidebar => invoke_set_welcome_as_sidebar, (a0));
     forward!(sw, m, s, on_webdav_download => invoke_webdav_download, ());
     forward!(sw, m, s, on_webdav_upload => invoke_webdav_upload, ());
+}
+
+#[cfg(test)]
+mod sync_guard_tests {
+    /// `Theme` 是**按窗口一份实例**，设置窗口靠 `sync_settings_theme` 逐项拷贝。
+    /// 这份清单漏过两次（`accent-custom`、`panel-font`），所以用测试盯住：
+    /// theme.slint 里每个 `in-out property` 都必须有对应的 setter，或在白名单里说明原因。
+    #[test]
+    fn settings_window_syncs_every_mutable_theme_property() {
+        const ALLOWED_MISSING: &[&str] = &[
+            // 终端专用 / 设置窗不做壁纸交叉淡化 / 阴影与焦点按窗口各自算
+            "term-font-cjk",
+            "wallpaper-prev",
+            "wallpaper-fading",
+            "wallpaper-fade-opacity",
+            "spec-elev-root",
+            "spec-elev-card",
+            "spec-elev-pop",
+            "window-focused",
+        ];
+
+        let src = include_str!("settings_window.rs");
+        let start = src.find("fn sync_settings_theme").expect("sync_settings_theme 不见了");
+        let end = start + src[start..].find("\n}").expect("函数体结束位置找不到");
+        let body = &src[start..end];
+
+        for prop in mutable_theme_props(include_str!("../../ui/theme.slint")) {
+            if ALLOWED_MISSING.contains(&prop.as_str()) {
+                continue;
+            }
+            let setter = setter_name(&prop);
+            assert!(
+                body.contains(&format!("{setter}(")),
+                "Theme 属性 {prop} 没有同步到设置窗口：在 sync_settings_theme 里补 {setter}(..)"
+            );
+        }
+    }
+
+    /// 取 `export global Theme { .. }` 里的 `in-out property` 名（运行期可变的那批）。
+    fn mutable_theme_props(theme: &str) -> Vec<String> {
+        let start = theme.find("export global Theme {").expect("Theme 全局不见了");
+        let end = start + theme[start..].find("\n}").expect("Theme 全局未闭合");
+        theme[start..end]
+            .lines()
+            .filter_map(|line| {
+                let rest = line.trim().strip_prefix("in-out property <")?;
+                let name = rest.split('>').nth(1)?.split([':', ';']).next()?.trim();
+                (!name.is_empty()).then(|| name.to_string())
+            })
+            .collect()
+    }
+
+    /// kebab-case → setter 名；两处根属性与 Theme 里同名属性不同名，单独映射。
+    fn setter_name(prop: &str) -> String {
+        match prop {
+            "dark" => "set_dark_mode".to_string(),
+            "wallpaper" => "set_wallpaper_img".to_string(),
+            _ => format!("set_{}", prop.replace('-', "_")),
+        }
+    }
 }

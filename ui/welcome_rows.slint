@@ -154,7 +154,12 @@ export component SessionRow inherits Rectangle {
                 if !root.system-row : Rectangle {
                     height: 28px;
                     border-radius: Theme.radius-sm;
-                    background: edit-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: edit-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: edit-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: edit-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     edit-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.edit(); }
@@ -171,7 +176,12 @@ export component SessionRow inherits Rectangle {
                 if !root.system-row : Rectangle {
                     height: 28px;
                     border-radius: Theme.radius-sm;
-                    background: dup-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: dup-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: dup-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: dup-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     dup-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.duplicate(); }
@@ -189,6 +199,11 @@ export component SessionRow inherits Rectangle {
                     height: 28px;
                     border-radius: Theme.radius-sm;
                     background: del-ta.has-hover ? #cc333320 : transparent;
+                    animate background {
+                        duration: del-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: del-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     del-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.remove(); }
@@ -221,7 +236,12 @@ export component SessionRow inherits Rectangle {
                         && s.group-header != "system" && s.group-header != root.session.group;
                     height: self.visible ? 28px : 0px;
                     border-radius: Theme.radius-sm;
-                    background: mv-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: mv-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: mv-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: mv-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     mv-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.move-to-group(s.group-header); }
@@ -245,7 +265,7 @@ export component SessionRow inherits Rectangle {
         y: root.drag-target ? root.drag-dy : 0px;
         border-radius: Theme.radius-sm;
         background: root.drag-target ? Theme.bg-elevated
-            : (touch.has-hover ? Theme.bg-hover : transparent);
+            : (touch.has-hover ? Theme.state-hover : transparent);
         drop-shadow-blur: root.drag-target ? 14px : 0px;
         drop-shadow-color: root.drag-target ? #00000060 : transparent;
         animate background {

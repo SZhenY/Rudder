@@ -82,6 +82,12 @@ pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     w.set_update_check_enabled(s.update_check_enabled()); // #184
     // 动画开关此前是 Slint-only 全局、从不持久化；现在与其它偏好一样由 config 驱动。
     w.global::<AnimationSettings>().set_enabled(s.animations_enabled());
+    // 时序验收用的全局倍速：`RUDDER_ANIM_SPEED=2` 全部动效慢一倍，默认 1。
+    if let Ok(v) = std::env::var("RUDDER_ANIM_SPEED")
+        && let Ok(f) = v.trim().parse::<f32>()
+    {
+        w.global::<AnimationSettings>().set_speed(f.clamp(0.1, 10.0));
+    }
     if collapse_sftp {
         w.set_sftp_collapsed(true);
     }

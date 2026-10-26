@@ -14,7 +14,7 @@
 // （旧版那四条 desc 已删）；只有「上次检查时间」那行把**实时状态**放到 desc 位 ——
 // 它本来就是读者想看的那句话，为空时 `SettingRow` 会自动隐藏该行。
 
-import { Theme } from "../../theme.slint";
+import { Theme, AnimationSettings } from "../../theme.slint";
 import { SettingsSection } from "../section.slint";
 import { SettingRow, SettingSwitch } from "../chrome.slint";
 import { ComboBox } from "std-widgets.slint";
@@ -32,8 +32,19 @@ component ChannelSegment inherits Rectangle {
     width: max(64px, seg-label.preferred-width + 24px);
     border-radius: Theme.radius-sm;
     border-width: 1px;
-    border-color: root.selected ? Theme.accent : Theme.border-subtle;
-    background: root.selected ? Theme.bg-active : (seg-ta.has-hover ? Theme.bg-hover : transparent);
+    border-color: root.selected ? Theme.state-selected-border : Theme.border-subtle;
+    background: root.selected ? Theme.state-selected
+        : (seg-ta.has-hover ? Theme.state-hover : transparent);
+    animate background {
+        duration: seg-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: seg-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-color {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
 
     seg-ta := TouchArea {
         mouse-cursor: pointer;
@@ -81,7 +92,7 @@ export component UpdatePage inherits VerticalLayout {
         SettingSwitch {
             label: root.lang-en ? "Check for updates on every launch" : "启动时自动检查更新";
             checked <=> root.update-check-enabled;
-            toggled(v) => { root.set-update-check-enabled(root.update-check-enabled); }
+            toggled(v) => { root.set-update-check-enabled(v); }
         }
         SettingRow {
             label: root.lang-en ? "Check frequency" : "检查频率";
@@ -126,9 +137,21 @@ export component UpdatePage inherits VerticalLayout {
                     width: root.update-checking ? 92px : 80px;
                     height: 28px;
                     border-radius: Theme.radius-sm;
-                    background: upd-ck-ta.has-hover && !root.update-checking ? Theme.bg-hover : Theme.bg-elevated;
+                    background: root.update-checking ? Theme.bg-elevated
+                        : (upd-ck-ta.pressed ? Theme.state-press
+                        : (upd-ck-ta.has-hover ? Theme.state-hover : Theme.bg-elevated));
                     border-width: 1px;
-                    border-color: Theme.border-strong;
+                    border-color: upd-ck-ta.has-hover ? Theme.border-strong : Theme.border-subtle;
+                    animate background {
+                        duration: upd-ck-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: upd-ck-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
+                    animate border-color {
+                        duration: AnimationSettings.short2();
+                        easing: AnimationSettings.e-standard-decelerate();
+                        enabled: AnimationSettings.enabled;
+                    }
                     upd-ck-ta := TouchArea {
                         enabled: !root.update-checking;
                         mouse-cursor: root.update-checking ? default : pointer;

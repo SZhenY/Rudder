@@ -103,11 +103,14 @@ export component SidebarBody inherits Rectangle {
 
     // 常驻、用 opacity 淡入淡出（visible 跟随动画值）。原来外面套着 `if`，
     // 元素随条件生死 —— `animate` 因此永不播放，折叠时还会把整块资源面板销毁重建。
+    //
+    // 时长跟外壳的 `sb-taken`（宽度）**同一档 container**：此前内容用 page 档（250/150），
+    // 比宽度（300/250）先结束，观感是"内容先没了、空壳再收完"。
     Rectangle {
         visible: self.opacity > 0.001;
         animate opacity {
-            duration: (!sidebar-collapsed && !zen-mode) ? AnimationSettings.enter-page() : AnimationSettings.exit-page();
-            easing: (!sidebar-collapsed && !zen-mode) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+            duration: (!sidebar-collapsed && !zen-mode) ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
+            easing: (!sidebar-collapsed && !zen-mode) ? AnimationSettings.s-soft() : AnimationSettings.e-exit();
             enabled: AnimationSettings.enabled;
         }
         opacity: (!sidebar-collapsed && !zen-mode) ? 1.0 : 0.0;

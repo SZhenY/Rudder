@@ -158,6 +158,11 @@ Rectangle {
                     width: 110px; height: 28px;
                     border-radius: Theme.radius-sm;
                     background: pick-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                    animate background {
+                        duration: pick-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: pick-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     pick-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.pick-download-dir(); }
@@ -168,7 +173,12 @@ Rectangle {
                 Rectangle {
                     width: 76px; height: 28px;
                     border-radius: Theme.radius-sm;
-                    background: open-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                    background: open-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
+                    animate background {
+                        duration: open-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: open-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     open-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.open-download-dir(); }
@@ -192,7 +202,12 @@ Rectangle {
                 Rectangle {
                     width: 44px; height: 20px;
                     border-radius: Theme.radius-sm;
-                    background: clr-ta.has-hover ? Theme.bg-hover : transparent;
+                    background: clr-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: clr-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: clr-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     clr-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.clear-transfers(); }

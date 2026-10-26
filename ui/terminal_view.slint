@@ -1267,7 +1267,12 @@ export component TerminalView inherits Rectangle {
                 if !root.quick-panel-docked : Rectangle {
                     width: qc-row.preferred-width + 16px;
                     border-radius: Theme.radius-sm;
-                    background: qc-ta.has-hover || root.quick-open ? Theme.bg-hover : Theme.bg-elevated;
+                    background: qc-ta.has-hover || root.quick-open ? Theme.state-hover : Theme.bg-elevated;
+                    animate background {
+                        duration: qc-ta.has-hover || root.quick-open ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: qc-ta.has-hover || root.quick-open ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     qc-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.history-open = false; root.quick-open = !root.quick-open; }
@@ -1432,7 +1437,12 @@ export component TerminalView inherits Rectangle {
                 Rectangle {
                     width: 28px;
                     border-radius: Theme.radius-sm;
-                    background: hist-ta.has-hover || root.history-open ? Theme.bg-hover : Theme.bg-elevated;
+                    background: hist-ta.has-hover || root.history-open ? Theme.state-hover : Theme.bg-elevated;
+                    animate background {
+                        duration: hist-ta.has-hover || root.history-open ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: hist-ta.has-hover || root.history-open ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     hist-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => {
@@ -1451,7 +1461,7 @@ export component TerminalView inherits Rectangle {
                     width: all-row.preferred-width + 14px;
                     border-radius: Theme.radius-sm;
                     background: root.send-to-all ? Theme.accent
-                              : all-ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+                              : all-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
                     all-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.send-to-all = !root.send-to-all; }
@@ -1469,6 +1479,11 @@ export component TerminalView inherits Rectangle {
                     width: send-row.preferred-width + 18px;
                     border-radius: Theme.radius-sm;
                     background: send-ta.has-hover ? Theme.accent-hover : Theme.accent;
+                    animate background {
+                        duration: send-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: send-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
                     send-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => {
@@ -1556,19 +1571,34 @@ export component TerminalView inherits Rectangle {
                                         VerticalLayout {
                                             padding: 4px; spacing: 1px;
                                             Rectangle { height: 30px; border-radius: Theme.radius-sm;
-                                                background: pg-ren-ta.has-hover ? Theme.bg-hover : transparent;
+                                                background: pg-ren-ta.has-hover ? Theme.state-hover : transparent;
+                                                animate background {
+                                                    duration: pg-ren-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                    easing: pg-ren-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                    enabled: AnimationSettings.enabled;
+                                                }
                                                 pg-ren-ta := TouchArea { mouse-cursor: pointer; clicked => { root.rename-quick-group(q.group); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Rename group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             if q.orig-index == -1 : Rectangle { height: 30px; border-radius: Theme.radius-sm;
                                                 background: pg-del-ta.has-hover ? #cc333320 : transparent;
+                                                animate background {
+                                                    duration: pg-del-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                    easing: pg-del-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                    enabled: AnimationSettings.enabled;
+                                                }
                                                 pg-del-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-group(q.group); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Delete group"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Rectangle { height: 30px; border-radius: Theme.radius-sm;
-                                                background: pg-new-ta.has-hover ? Theme.bg-hover : transparent;
+                                                background: pg-new-ta.has-hover ? Theme.state-hover : transparent;
+                                                animate background {
+                                                    duration: pg-new-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                    easing: pg-new-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                    enabled: AnimationSettings.enabled;
+                                                }
                                                 pg-new-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-quick-group(); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     IconText { text: "\u{E2CC}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
@@ -1580,7 +1610,12 @@ export component TerminalView inherits Rectangle {
                             if !q.collapsed && q.orig-index >= 0 : Rectangle {
                                 height: 30px;
                                 border-radius: Theme.radius-sm;
-                                background: q-item-ta.has-hover ? Theme.bg-hover : transparent;
+                                background: q-item-ta.has-hover ? Theme.state-hover : transparent;
+                                animate background {
+                                    duration: q-item-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                    easing: q-item-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                    enabled: AnimationSettings.enabled;
+                                }
                                 property <length> ctx-x;
                                 property <length> ctx-y;
                                 q-item-ta := TouchArea {
@@ -1626,19 +1661,34 @@ export component TerminalView inherits Rectangle {
                                         qpop-ctx-vl := VerticalLayout {
                                             padding: 4px; spacing: 1px;
                                             Rectangle { height: 28px; border-radius: Theme.radius-sm;
-                                                background: pi-edit-ta.has-hover ? Theme.bg-hover : transparent;
+                                                background: pi-edit-ta.has-hover ? Theme.state-hover : transparent;
+                                                animate background {
+                                                    duration: pi-edit-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                    easing: pi-edit-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                    enabled: AnimationSettings.enabled;
+                                                }
                                                 pi-edit-ta := TouchArea { mouse-cursor: pointer; clicked => { root.quick-open = false; root.edit-quick-command(q.orig-index); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Rectangle { height: 28px; border-radius: Theme.radius-sm;
-                                                background: pi-dup-ta.has-hover ? Theme.bg-hover : transparent;
+                                                background: pi-dup-ta.has-hover ? Theme.state-hover : transparent;
+                                                animate background {
+                                                    duration: pi-dup-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                    easing: pi-dup-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                    enabled: AnimationSettings.enabled;
+                                                }
                                                 pi-dup-ta := TouchArea { mouse-cursor: pointer; clicked => { root.duplicate-quick-command(q.orig-index); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     IconText { text: "\u{E14D}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                     Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                             Rectangle { height: 28px; border-radius: Theme.radius-sm;
                                                 background: pi-del-ta.has-hover ? #cc333320 : transparent;
+                                                animate background {
+                                                    duration: pi-del-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                    easing: pi-del-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                    enabled: AnimationSettings.enabled;
+                                                }
                                                 pi-del-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-command(q.orig-index); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
@@ -1648,7 +1698,12 @@ export component TerminalView inherits Rectangle {
                                                 IconText { text: "\u{E2C7}";color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
                                                 Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; } }
                                             if q.group != "default" : Rectangle { height: 28px; border-radius: Theme.radius-sm;
-                                                background: pi-md-ta.has-hover ? Theme.bg-hover : transparent;
+                                                background: pi-md-ta.has-hover ? Theme.state-hover : transparent;
+                                                animate background {
+                                                    duration: pi-md-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                    easing: pi-md-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                    enabled: AnimationSettings.enabled;
+                                                }
                                                 pi-md-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, "default"); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
@@ -1657,7 +1712,12 @@ export component TerminalView inherits Rectangle {
                                                 visible: s.group-header != "" && s.group != "default" && s.group != q.group;
                                                 height: self.visible ? 28px : 0px;
                                                 border-radius: Theme.radius-sm;
-                                                background: pi-mv-ta.has-hover ? Theme.bg-hover : transparent;
+                                                background: pi-mv-ta.has-hover ? Theme.state-hover : transparent;
+                                                animate background {
+                                                    duration: pi-mv-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                                    easing: pi-mv-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                                    enabled: AnimationSettings.enabled;
+                                                }
                                                 pi-mv-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, s.group); } }
                                                 HorizontalLayout { padding-left: 10px; spacing: 8px;
                                                     IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
@@ -1675,7 +1735,12 @@ export component TerminalView inherits Rectangle {
                                 Rectangle {
                                     horizontal-stretch: 1;
                                     border-radius: Theme.radius-sm;
-                                    background: mng-ta.has-hover ? Theme.bg-hover : transparent;
+                                    background: mng-ta.has-hover ? Theme.state-hover : transparent;
+                                    animate background {
+                                        duration: mng-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: mng-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     mng-ta := TouchArea {
                                         mouse-cursor: pointer;
                                         clicked => { root.quick-open = false; root.manage-quick-commands(); }
@@ -1686,7 +1751,12 @@ export component TerminalView inherits Rectangle {
                                 if root.quick-sidebar-enabled : Rectangle {
                                     width: 34px;
                                     border-radius: Theme.radius-sm;
-                                    background: quick-grip.has-hover ? Theme.bg-hover : transparent;
+                                    background: quick-grip.has-hover ? Theme.state-hover : transparent;
+                                    animate background {
+                                        duration: quick-grip.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: quick-grip.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     quick-grip := TouchArea {
                                         mouse-cursor: grab;
                                         moved => {
@@ -1753,8 +1823,8 @@ export component TerminalView inherits Rectangle {
                         for h[idx] in root.history-view : Rectangle {
                             height: 28px;
                             border-radius: Theme.radius-sm;
-                            background: idx == root.history-selected ? Theme.bg-active
-                                      : (h-item-ta.has-hover ? Theme.bg-hover : transparent);
+                            background: idx == root.history-selected ? Theme.state-selected
+                                      : (h-item-ta.has-hover ? Theme.state-hover : transparent);
                             // Row body click recalls the command into the input box.
                             h-item-ta := TouchArea {
                                 mouse-cursor: pointer;
@@ -1782,6 +1852,11 @@ export component TerminalView inherits Rectangle {
                                     width: 24px; y: (parent.height - self.height) / 2; height: 24px;
                                     border-radius: Theme.radius-sm;
                                     background: hrun.has-hover ? Theme.accent.with-alpha(0.25) : transparent;
+                                    animate background {
+                                        duration: hrun.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: hrun.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     hrun := TouchArea {
                                         mouse-cursor: pointer;
                                         clicked => {
@@ -1800,6 +1875,11 @@ export component TerminalView inherits Rectangle {
                                     width: 24px; y: (parent.height - self.height) / 2; height: 24px;
                                     border-radius: Theme.radius-sm;
                                     background: hcopy.has-hover ? Theme.bg-elevated : transparent;
+                                    animate background {
+                                        duration: hcopy.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: hcopy.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     hcopy := TouchArea {
                                         mouse-cursor: pointer;
                                         clicked => { root.copy-text(h); }
@@ -1814,6 +1894,11 @@ export component TerminalView inherits Rectangle {
                                     width: 24px; y: (parent.height - self.height) / 2; height: 24px;
                                     border-radius: Theme.radius-sm;
                                     background: hdel.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
+                                    animate background {
+                                        duration: hdel.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: hdel.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     hdel := TouchArea {
                                         mouse-cursor: pointer;
                                         clicked => { root.delete-history-cmd(h); }

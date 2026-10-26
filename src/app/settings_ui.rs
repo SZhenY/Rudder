@@ -199,8 +199,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         window.set_scrollback_lines(s.scrollback_lines().to_string().into());
         window.set_large_scrollback(s.large_scrollback());
         window.set_term_cursor_style(s.terminal_cursor_style().into());
-        // 光标色：空串 = 跟随主题 → 按当前（已确定的）深浅档解析。
-        settings::terminal::apply_cursor_color(window, s.terminal_cursor_color());
         window.set_output_highlight_enabled(s.output_highlight_enabled());
         window.set_output_highlight_preset(s.output_highlight_preset().into());
         window.set_output_highlight_rules(output_highlight_rule_model(&s));
@@ -232,6 +230,10 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         };
         settings::appearance::apply_accent(window, &choice);
         window.set_accent_mode(mode.into());
+        // 光标色必须等主题色落定之后才解析：空串 = 跟随主题，取的是 `Theme.accent-solid`，
+        // 而它要等壁纸（wp-accent）与主题色都写进去才成立。早一步算，拿到的是出厂蓝。
+        let cursor = store.borrow().terminal_cursor_color().to_string();
+        settings::terminal::apply_cursor_color(window, &cursor);
     }
 
     start_system_theme_watcher(window, store, bufs);

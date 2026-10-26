@@ -34,7 +34,7 @@ export component TransferPage inherits VerticalLayout {
             show-divider: false;
 
             checked <=> root.sftp-follow-cd;
-            toggled(v) => { root.set-sftp-follow-cd(root.sftp-follow-cd); }
+            toggled(v) => { root.set-sftp-follow-cd(v); }
 
         }
     }
@@ -51,7 +51,7 @@ export component TransferPage inherits VerticalLayout {
             show-divider: false;
 
             checked <=> root.download-always-ask;
-            toggled(v) => { root.set-download-always-ask(root.download-always-ask); }
+            toggled(v) => { root.set-download-always-ask(v); }
 
         }
     }

@@ -6,7 +6,7 @@
 // Typography is fixed (literal px in the chrome) so it stays compact regardless
 // of the global UI scale; only the font-preview reflects the real terminal size.
 
-import { Theme } from "theme.slint";
+import { Theme, AnimationSettings } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset } from "settings/types.slint";
 
@@ -89,6 +89,53 @@ export component InterfacePanel inherits Rectangle {
     in-out property <string> wsl-new-directory: "~";
 
     property <string> ifd-page: "terminal";
+    // 切页过渡：淡出 → 换页 → 淡入。页面是 `if` 条件实例化的，元素随条件生死，
+    // 没法做两页并存的交叉淡化；这里改成让**常驻的滚动容器**淡出，切完再淡入。
+    property <string> pending-page: "terminal";
+    property <float> page-fade: 1.0;
+    /// 切页时的轻微缩放：纯透明度在大块内容上读起来像"闪一下"，加 1% 的收放才有落位感。
+    /// 用 `transform-scale-*`（只影响渲染、不参与布局），不会引起重排。
+    property <percent> page-zoom: 100%;
+    property <bool> page-swapping: false;
+
+    /// 导航高亮跟着**点击**走，不等页面真正切换（切页有 130ms 的淡出等待）。
+    /// 指示器与选中底色都绑这个值，于是点下去就滑，与内容淡出并行。
+    property <string> nav-page: root.page-swapping ? root.pending-page : root.ifd-page;
+
+    function goto-page(p: string) {
+        if (p != root.ifd-page) {
+            root.pending-page = p;
+            root.page-fade = 0.0;
+            root.page-zoom = 99%;
+            root.page-swapping = true;
+        }
+    }
+
+    /// 导航项的下标，用来算滑动指示器的 y。
+    /// 行高 30 + 间距 2，从布局的 10px 内边距起算；WSL 项只在 Windows 存在，
+    /// 非 Windows 上它后面两项各上移一格。
+    pure function nav-index(page: string) -> int {
+        return page == "terminal" ? 0
+            : page == "appearance" ? 1
+            : page == "transfer" ? 2
+            : page == "layout" ? 3
+            : page == "wsl" ? 4
+            : page == "sync" ? (root.is-windows ? 5 : 4)
+            : (root.is-windows ? 6 : 5);
+    }
+
+    // 单次定时器：等淡出快走完再换页，然后淡入。动效关闭时间隔归零，不白等。
+    // `running` 绑在 page-swapping 上，到点置回 false 即停表（Timer 每 interval 都会触发）。
+    swap-timer := Timer {
+        interval: AnimationSettings.enabled ? 130ms : 1ms;
+        running: root.page-swapping;
+        triggered => {
+            root.ifd-page = root.pending-page;
+            root.page-fade = 1.0;
+            root.page-zoom = 100%;
+            root.page-swapping = false;
+        }
+    }
     property <string> new-rule-pattern;
     property <bool> new-rule-regex;
     property <bool> new-rule-case-sensitive;
@@ -173,38 +220,54 @@ export component InterfacePanel inherits Rectangle {
                 alignment: start;
                 NavItem {
                     icon: "\u{E8B9}"; label: root.lang-en ? "Terminal" : "终端";
-                    active: root.ifd-page == "terminal";
-                    clicked => { root.ifd-page = "terminal"; }
+                    active: root.nav-page == "terminal";
+                    clicked => { root.goto-page("terminal"); }
                 }
                 NavItem {
                     icon: "\u{E410}"; label: root.lang-en ? "Appearance" : "外观";
-                    active: root.ifd-page == "appearance";
-                    clicked => { root.ifd-page = "appearance"; }
+                    active: root.nav-page == "appearance";
+                    clicked => { root.goto-page("appearance"); }
                 }
                 NavItem {
                     icon: "\u{E2C7}"; label: root.lang-en ? "Transfer" : "传输";
-                    active: root.ifd-page == "transfer";
-                    clicked => { root.ifd-page = "transfer"; }
+                    active: root.nav-page == "transfer";
+                    clicked => { root.goto-page("transfer"); }
                 }
                 NavItem {
                     icon: "\u{E5CB}"; label: root.lang-en ? "Layout" : "布局";
-                    active: root.ifd-page == "layout";
-                    clicked => { root.ifd-page = "layout"; }
+                    active: root.nav-page == "layout";
+                    clicked => { root.goto-page("layout"); }
                 }
                 if root.is-windows : NavItem {
                     icon: "\u{E30A}"; label: "WSL";
-                    active: root.ifd-page == "wsl";
-                    clicked => { root.ifd-page = "wsl"; }
+                    active: root.nav-page == "wsl";
+                    clicked => { root.goto-page("wsl"); }
                 }
                 NavItem {
                     icon: "\u{E627}"; label: root.lang-en ? "Sync" : "同步";
-                    active: root.ifd-page == "sync";
-                    clicked => { root.ifd-page = "sync"; }
+                    active: root.nav-page == "sync";
+                    clicked => { root.goto-page("sync"); }
                 }
                 NavItem {
                     icon: "\u{E923}"; label: root.lang-en ? "Update check" : "新版本提示";
-                    active: root.ifd-page == "update";
-                    clicked => { root.ifd-page = "update"; }
+                    active: root.nav-page == "update";
+                    clicked => { root.goto-page("update"); }
+                }
+            }
+            // 选中指示器：整列只有这一条，切页时从旧项**滑**到新项（弹簧缓动），
+            // 而不是每项各画一条、各自缩短再各自长出来。
+            // 几何：内边距 10 + 索引 ×（行高 30 + 间距 2）+（30 − 18）/ 2 = 16 + 索引 × 32。
+            Rectangle {
+                x: 13px;
+                y: 16px + root.nav-index(root.nav-page) * 32px;
+                width: 3px;
+                height: 18px;
+                border-radius: 1.5px;
+                background: Theme.accent;
+                animate y {
+                    duration: AnimationSettings.enter-container();
+                    easing: AnimationSettings.s-soft();
+                    enabled: AnimationSettings.enabled;
                 }
             }
         }
@@ -221,6 +284,27 @@ export component InterfacePanel inherits Rectangle {
                 width: 100%;
                 height: 100%;
                 content-width: self.visible-width;
+                // 切页过渡的载体：容器常驻，淡出/淡入不会牵动页面实例的生命周期。
+                // 淡出走 standard-accelerate（"抽走"），淡入走 e-enter（"落位"）；
+                // 缩放用弹簧，收得比透明度慢一拍，最后回弹一点点。
+                opacity: root.page-fade;
+                transform-scale-x: root.page-zoom;
+                transform-scale-y: root.page-zoom;
+                animate opacity {
+                    duration: root.page-fade > 0.5 ? AnimationSettings.enter-page() : AnimationSettings.exit-page();
+                    easing: root.page-fade > 0.5 ? AnimationSettings.e-enter() : AnimationSettings.e-standard-accelerate();
+                    enabled: AnimationSettings.enabled;
+                }
+                animate transform-scale-x {
+                    duration: root.page-zoom > 99.5% ? AnimationSettings.enter-page() : AnimationSettings.short3();
+                    easing: root.page-zoom > 99.5% ? AnimationSettings.s-soft() : AnimationSettings.e-standard-accelerate();
+                    enabled: AnimationSettings.enabled;
+                }
+                animate transform-scale-y {
+                    duration: root.page-zoom > 99.5% ? AnimationSettings.enter-page() : AnimationSettings.short3();
+                    easing: root.page-zoom > 99.5% ? AnimationSettings.s-soft() : AnimationSettings.e-standard-accelerate();
+                    enabled: AnimationSettings.enabled;
+                }
                 // ⚠️ **不要给 `content-height` 赋值**。
                 //
                 // Slint 自己计算的默认值就是精确的内容高度（实测：终端页 1199px

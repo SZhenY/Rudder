@@ -229,7 +229,12 @@ export component QuickCmdManageDialog inherits ModalCard {
                                 padding: 4px; spacing: 1px;
                                 Rectangle {
                                     height: 30px; border-radius: Theme.radius-sm;
-                                    background: qeg-ta.has-hover ? Theme.bg-hover : transparent;
+                                    background: qeg-ta.has-hover ? Theme.state-hover : transparent;
+                                    animate background {
+                                        duration: qeg-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: qeg-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     qeg-ta := TouchArea { mouse-cursor: pointer;
                                         clicked => { root.rename-quick-group(q.group); } }
                                     HorizontalLayout { padding-left: 10px; spacing: 8px;
@@ -239,6 +244,11 @@ export component QuickCmdManageDialog inherits ModalCard {
                                 if q.orig-index == -1 : Rectangle {
                                     height: 30px; border-radius: Theme.radius-sm;
                                     background: qdg-ta.has-hover ? #cc333320 : transparent;
+                                    animate background {
+                                        duration: qdg-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: qdg-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     qdg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-group(q.group); } }
                                     HorizontalLayout { padding-left: 10px; spacing: 8px;
                                         IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
@@ -246,7 +256,12 @@ export component QuickCmdManageDialog inherits ModalCard {
                                 }
                                 Rectangle {
                                     height: 30px; border-radius: Theme.radius-sm;
-                                    background: qng-ta.has-hover ? Theme.bg-hover : transparent;
+                                    background: qng-ta.has-hover ? Theme.state-hover : transparent;
+                                    animate background {
+                                        duration: qng-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: qng-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     qng-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-quick-group(); } }
                                     HorizontalLayout { padding-left: 10px; spacing: 8px;
                                         IconText { text: "\u{E2CC}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
@@ -285,7 +300,12 @@ export component QuickCmdManageDialog inherits ModalCard {
                         Rectangle {
                             width: 24px; height: 28px;
                             border-radius: Theme.radius-sm;
-                            background: up-ta.has-hover ? Theme.bg-hover : transparent;
+                            background: up-ta.has-hover ? Theme.state-hover : transparent;
+                            animate background {
+                                duration: up-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: up-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             up-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => { root.reorder-quick-command(q.orig-index, true); }
@@ -298,7 +318,12 @@ export component QuickCmdManageDialog inherits ModalCard {
                         Rectangle {
                             width: 24px; height: 28px;
                             border-radius: Theme.radius-sm;
-                            background: down-ta.has-hover ? Theme.bg-hover : transparent;
+                            background: down-ta.has-hover ? Theme.state-hover : transparent;
+                            animate background {
+                                duration: down-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: down-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             down-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => { root.reorder-quick-command(q.orig-index, false); }
@@ -314,6 +339,11 @@ export component QuickCmdManageDialog inherits ModalCard {
                             height: 28px;
                             border-radius: Theme.radius-sm;
                             background: del-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
+                            animate background {
+                                duration: del-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                easing: del-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                enabled: AnimationSettings.enabled;
+                            }
                             del-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => { root.delete-quick-command(q.orig-index); }
@@ -334,19 +364,34 @@ export component QuickCmdManageDialog inherits ModalCard {
                             qctx-vl := VerticalLayout {
                                 padding: 4px; spacing: 1px;
                                 Rectangle { height: 28px; border-radius: Theme.radius-sm;
-                                    background: qe-ta.has-hover ? Theme.bg-hover : transparent;
+                                    background: qe-ta.has-hover ? Theme.state-hover : transparent;
+                                    animate background {
+                                        duration: qe-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: qe-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     qe-ta := TouchArea { mouse-cursor: pointer; clicked => { root.edit-quick-command(q.orig-index); } }
                                     HorizontalLayout { padding-left: 10px; spacing: 8px;
                                         IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                         Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                 Rectangle { height: 28px; border-radius: Theme.radius-sm;
-                                    background: qd-ta.has-hover ? Theme.bg-hover : transparent;
+                                    background: qd-ta.has-hover ? Theme.state-hover : transparent;
+                                    animate background {
+                                        duration: qd-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: qd-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     qd-ta := TouchArea { mouse-cursor: pointer; clicked => { root.duplicate-quick-command(q.orig-index); } }
                                     HorizontalLayout { padding-left: 10px; spacing: 8px;
                                         IconText { text: "\u{E14D}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                         Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                 Rectangle { height: 28px; border-radius: Theme.radius-sm;
                                     background: qx-ta.has-hover ? #cc333320 : transparent;
+                                    animate background {
+                                        duration: qx-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: qx-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     qx-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-command(q.orig-index); } }
                                     HorizontalLayout { padding-left: 10px; spacing: 8px;
                                         IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
@@ -356,7 +401,12 @@ export component QuickCmdManageDialog inherits ModalCard {
                                     IconText { text: "\u{E2C7}";color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
                                     Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; } }
                                 if q.group != "default" : Rectangle { height: 28px; border-radius: Theme.radius-sm;
-                                    background: qmd-ta.has-hover ? Theme.bg-hover : transparent;
+                                    background: qmd-ta.has-hover ? Theme.state-hover : transparent;
+                                    animate background {
+                                        duration: qmd-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: qmd-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     qmd-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, "default"); } }
                                     HorizontalLayout { padding-left: 10px; spacing: 8px;
                                         IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
@@ -365,7 +415,12 @@ export component QuickCmdManageDialog inherits ModalCard {
                                     visible: s.group-header != "" && s.group != "default" && s.group != q.group;
                                     height: self.visible ? 28px : 0px;
                                     border-radius: Theme.radius-sm;
-                                    background: qm-ta.has-hover ? Theme.bg-hover : transparent;
+                                    background: qm-ta.has-hover ? Theme.state-hover : transparent;
+                                    animate background {
+                                        duration: qm-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                        easing: qm-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                        enabled: AnimationSettings.enabled;
+                                    }
                                     qm-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, s.group); } }
                                     HorizontalLayout { padding-left: 10px; spacing: 8px;
                                         IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }

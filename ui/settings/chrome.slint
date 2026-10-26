@@ -8,8 +8,15 @@
 import { Theme, AnimationSettings } from "../theme.slint";
 import { Divider, VDivider } from "../components/surfaces.slint";
 import { IconText } from "../components/text.slint";
+import { StateSurface } from "../components/interactive.slint";
 
 // One left-nav row (icon + label).
+//
+// 选中态用**三件套**区分（参照 0.8.0-ui-beta1 的 rail：淡底 + 主色文字 + 加粗）：
+//   ① 底色 state-selected（40/32%，比 hover 的 20/16% 深一档）
+//   ② 文字与图标换成主题色，标签加粗到 600
+//   ③ 1px accent-ring 内描边（未选中时透明，宽度恒定，不产生 1px 位移）
+// 左侧的滑动指示条不在这里 —— 它是整列唯一的一条，见 interface_panel.slint 的 nav-indicator。
 export component NavItem inherits Rectangle {
     in property <string> icon;
     in property <string> label;
@@ -17,12 +24,23 @@ export component NavItem inherits Rectangle {
     callback clicked();
     height: 30px;
     border-radius: 6px;
-    background: transparent;
-    states [
-        // 选中项用**主题色淡底**（跟随「配色」分区），hover 仍是中性灰：hover 不是选中。
-        current when root.active : { background: Theme.accent-tint; }
-        hovered when ta.has-hover : { background: Theme.bg-hover; }
-    ]
+    // 1px 描边常驻（未选中时透明）：换成"选中才 1px"会让整行内容在切换时抖 1px。
+    border-width: 1px;
+    border-color: root.active ? Theme.accent-ring : transparent;
+    background: root.active ? Theme.state-selected : (ta.has-hover ? Theme.state-hover : transparent);
+    // 选中走容器档 + 弹簧（与侧栏展开同一档缓动）；hover 仍是 100/50 的快反馈。
+    animate background {
+        duration: root.active ? AnimationSettings.enter-container()
+            : (ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state());
+        easing: root.active ? AnimationSettings.s-soft()
+            : (ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit());
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-color {
+        duration: root.active ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -31,10 +49,11 @@ export component NavItem inherits Rectangle {
         padding-left: 10px;
         spacing: 9px;
         IconText { text: root.icon;
-               color: root.active ? Theme.text-primary : Theme.text-secondary;
+               color: root.active ? Theme.accent : Theme.text-secondary;
                font-size: 15px * Theme.panel-font; vertical-alignment: center; }
         Text { text: root.label;
-               color: root.active ? Theme.text-primary : Theme.text-secondary;
+               color: root.active ? Theme.accent : Theme.text-secondary;
+               font-weight: root.active ? 600 : 400;
                font-size: 13px * Theme.panel-font; vertical-alignment: center; horizontal-stretch: 1; }
     }
 }
@@ -76,56 +95,68 @@ export component SettingRow inherits Rectangle {
     }
 }
 
-/// 「说明 + 开关」的设置行：此前每个设置页都手写一遍
-/// `SettingRow { label/desc/show-divider + Switch { checked <=> …; toggled => { … } } }`。
+/// 自绘胶囊开关（40×22）：轨道 + 滑块。设置行与「自定义规则」行共用同一份，
+/// 保证主题色与动画节奏一致。
 ///
-/// 组件只是 `SettingRow` 加一个开关（元素落在基类的 `@children` 槽里），
-/// 因此 `label` / `desc` / `show-divider` 的用法与以前完全一样。
-///
-/// 开关由组件自己画（见下面的注释），但**对外语义不变**：`checked` 双向绑定，
-/// 点击后把新值通过 `toggled(v)` 转发出来 —— 调用方写法与官方 Switch 时代一致。
+/// ⚠️ 不用官方 std-widgets 的 `Switch`：fluent 风格里 `Palette.accent-background` 是
+/// **派生属性**（`accentify(#0078D4)`，跟随系统强调色），官方开关的"开"态因此永远是
+/// 自己那套蓝，换「配色」时它是设置页里最扎眼的一处死角。
+export component ToggleSwitch inherits Rectangle {
+    in-out property <bool> checked;
+    callback toggled(bool);
+
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    border-width: 1px;
+    border-color: root.checked ? Theme.accent : Theme.border-strong;
+    background: root.checked ? Theme.accent : Theme.bg-hover;
+    // 胶囊开关比普通交互态慢一档：滑块要跟着走完，100/50 会先到位、
+    // 滑块还在路上，看着像"壳先变、珠后到"。这里取 150/100。
+    animate background {
+        duration: root.checked ? AnimationSettings.short3() : AnimationSettings.short2();
+        easing: root.checked ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-color {
+        duration: root.checked ? AnimationSettings.short3() : AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+
+    knob := Rectangle {
+        x: root.checked ? parent.width - self.width - 3px : 3px;
+        y: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: root.checked ? #ffffff : Theme.text-secondary;
+        // 250ms：比交互态的 100ms 明显慢，又不到容器档的 300ms。
+        animate x {
+            duration: AnimationSettings.medium1();
+            easing: AnimationSettings.s-bouncy();
+            enabled: AnimationSettings.enabled;
+        }
+    }
+
+    switch-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+/// 「说明 + 开关」的设置行：`SettingRow` 加一个开关（元素落在基类的 `@children` 槽里），
+/// `label` / `desc` / `show-divider` 的用法与普通 `SettingRow` 一致。
 export component SettingSwitch inherits SettingRow {
     in-out property <bool> checked;
     callback toggled(bool);
 
-    // ⚠️ 自绘开关（原来是官方 std-widgets 的 `Switch`）。改回来的理由：fluent 风格里
-    // `Palette.accent-background` 是**派生属性**（`accentify(#0078D4)`，跟随系统强调色），
-    // 官方 Switch 的"开"态因此永远是自己那套蓝，换「配色」时它是设置页里最扎眼的一处死角。
-    // 代价：外观与无障碍不再由官方维护 —— 若将来官方开放强调色，可以换回去。
-    Rectangle {
-        width: 40px;
-        height: 22px;
-        border-radius: 11px;
-        border-width: 1px;
-        border-color: root.checked ? Theme.accent : Theme.border-strong;
-        background: root.checked ? Theme.accent : Theme.bg-hover;
-        animate background {
-            duration: root.checked ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-            easing: root.checked ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-            enabled: AnimationSettings.enabled;
-        }
-
-        knob := Rectangle {
-            x: root.checked ? parent.width - self.width - 3px : 3px;
-            y: 3px;
-            width: 16px;
-            height: 16px;
-            border-radius: 8px;
-            background: root.checked ? #ffffff : Theme.text-secondary;
-            animate x {
-                duration: AnimationSettings.short4();
-                easing: AnimationSettings.s-bouncy();
-                enabled: AnimationSettings.enabled;
-            }
-        }
-
-        switch-ta := TouchArea {
-            mouse-cursor: pointer;
-            clicked => {
-                root.checked = !root.checked;
-                root.toggled(root.checked);
-            }
-        }
+    ToggleSwitch {
+        checked <=> root.checked;
+        toggled(v) => { root.toggled(v); }
     }
 }
 
@@ -150,13 +181,10 @@ export component Stepper inherits Rectangle {
     border-color: Theme.border-subtle;
     clip: true;
     HorizontalLayout {
-        Rectangle {
+        StateSurface {
             width: 30px;
-            background: minus-ta.has-hover ? Theme.bg-hover : transparent;
-            minus-ta := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.changed(max(root.minimum, root.value - root.step)); }
-            }
+            radius: 0px;
+            clicked => { root.changed(max(root.minimum, root.value - root.step)); }
             IconText { text: "\u{E15B}";font-size: 14px * Theme.panel-font;
                    centered: true;
                    color: Theme.text-secondary;}
@@ -166,13 +194,10 @@ export component Stepper inherits Rectangle {
                font-size: 12px * Theme.panel-font; color: Theme.text-primary;
                horizontal-alignment: center; vertical-alignment: center; }
         VDivider {}
-        Rectangle {
+        StateSurface {
             width: 30px;
-            background: plus-ta.has-hover ? Theme.bg-hover : transparent;
-            plus-ta := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.changed(min(root.maximum, root.value + root.step)); }
-            }
+            radius: 0px;
+            clicked => { root.changed(min(root.maximum, root.value + root.step)); }
             IconText { text: "\u{E145}";font-size: 14px * Theme.panel-font;
                    centered: true;
                    color: Theme.text-secondary;}
@@ -190,16 +215,20 @@ export component CursorStyleButton inherits Rectangle {
     height: 30px;
     border-radius: 6px;
     border-width: 1px;
-    border-color: Theme.border-subtle;
-    background: Theme.bg-elevated;
-    // 选中态同时改底色与边框色 —— 正是 states 相对三目的优势：一处声明、多属性。
-    states [
-        selected when root.selected : {
-            border-color: Theme.accent;
-            background: Theme.accent-tint;
-        }
-        hovered when cursor-ta.has-hover : { background: Theme.bg-hover; }
-    ]
+    border-color: root.selected ? Theme.state-selected-border
+        : (cursor-ta.has-hover ? Theme.border-strong : Theme.border-subtle);
+    background: root.selected ? Theme.state-selected
+        : (cursor-ta.has-hover ? Theme.state-hover : Theme.bg-elevated);
+    animate background {
+        duration: cursor-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: cursor-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-color {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
     cursor-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -245,8 +274,18 @@ export component CursorPaletteSwatch inherits Rectangle {
     height: 26px;
     border-radius: 5px;
     border-width: root.selected ? 2px : 1px;
-    border-color: root.selected ? Theme.accent : Theme.border-strong;
+    border-color: root.selected ? Theme.state-selected-border : Theme.border-strong;
     background: root.swatch-color;
+    animate border-color {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-width {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
     swatch-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.chosen(root.hex); }
@@ -547,8 +586,18 @@ export component WallpaperSwatch inherits Rectangle {
     height: 74px;
     border-radius: 8px;
     border-width: root.selected ? 3px : 1px;
-    border-color: root.selected ? Theme.accent : Theme.border-strong;
+    border-color: root.selected ? Theme.state-selected-border : Theme.border-strong;
     clip: true;
+    animate border-color {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-width {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
     @children
     if root.selected : Rectangle {
         x: parent.width - self.width - 5px;

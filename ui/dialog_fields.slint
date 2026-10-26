@@ -2,7 +2,7 @@
 //!
 //! 从 `session_dialog.slint` 拆出（P4）：每个都有完整的 `in property` / `callback`
 //! 接口，逐字搬运（`component` → `export component`）。
-import { Theme } from "theme.slint";
+import { Theme, AnimationSettings } from "theme.slint";
 import { ComboBox } from "std-widgets.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 import { GroupGap } from "components/surfaces.slint";
@@ -259,7 +259,12 @@ export component GroupCombo inherits VerticalLayout {
                 width: 28px;
                 height: 28px;
                 border-radius: Theme.radius-sm;
-                background: (drop-ta.has-hover && root.groups.length > 0) ? Theme.bg-hover : transparent;
+                background: (drop-ta.has-hover && root.groups.length > 0) ? Theme.state-hover : transparent;
+                animate background {
+                    duration: (drop-ta.has-hover && root.groups.length > 0) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                    easing: (drop-ta.has-hover && root.groups.length > 0) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                    enabled: AnimationSettings.enabled;
+                }
                 Text {
                     // Plain Unicode caret — the dialog's CJK UI font has this but
                     // not the Material icon range, which would tofu (#179).
@@ -287,7 +292,12 @@ export component GroupCombo inherits VerticalLayout {
                     for g in root.groups : Rectangle {
                         height: 28px;
                         border-radius: Theme.radius-sm;
-                        background: g-ta.has-hover ? Theme.bg-hover : transparent;
+                        background: g-ta.has-hover ? Theme.state-hover : transparent;
+                        animate background {
+                            duration: g-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                            easing: g-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                            enabled: AnimationSettings.enabled;
+                        }
                         g-ta := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.value = g; groups-popup.close(); }
@@ -325,6 +335,11 @@ export component JumpCombo inherits VerticalLayout {
         border-width: 1px;
     border-color: jump-ta.has-hover ? Theme.accent : Theme.border-strong;
     background: Theme.bg-elevated;
+    animate border-color {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
 
         jump-ta := TouchArea {
             mouse-cursor: pointer;
@@ -348,7 +363,12 @@ export component JumpCombo inherits VerticalLayout {
             width: 28px;
             height: 28px;
             border-radius: Theme.radius-sm;
-            background: jump-ta.has-hover ? Theme.bg-hover : transparent;
+            background: jump-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: jump-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: jump-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             Text {
                 text: "▼";
                 color: Theme.text-secondary;
@@ -373,7 +393,12 @@ export component JumpCombo inherits VerticalLayout {
                     for c[idx] in root.choices : Rectangle {
                         height: 28px;
                         border-radius: Theme.radius-sm;
-                        background: c-ta.has-hover ? Theme.bg-hover : transparent;
+                        background: c-ta.has-hover ? Theme.state-hover : transparent;
+                        animate background {
+                            duration: c-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                            easing: c-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                            enabled: AnimationSettings.enabled;
+                        }
                         c-ta := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.selected-index = idx; jump-popup.close(); }

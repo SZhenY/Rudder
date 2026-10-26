@@ -19,9 +19,9 @@ use crate::app::terminal_sftp_paths;
 use super::term_buf;
 use crate::ui::{AppWindow, TerminalState};
 
-/// Center the window on the primary monitor's work area (Windows).
+/// 主屏工作区（物理像素）：左、上、宽、高。取不到返回 `None`。
 #[cfg(windows)]
-pub(crate) fn center_window(win: &AppWindow) {
+fn primary_work_area() -> Option<(i32, i32, u32, u32)> {
     #[repr(C)]
     struct Rect {
         left: i32,
@@ -36,27 +36,87 @@ pub(crate) fn center_window(win: &AppWindow) {
     }
     const SPI_GETWORKAREA: u32 = 0x0030;
 
-    let size = win.window().size(); // physical pixels
     let mut wa = Rect {
         left: 0,
         top: 0,
         right: 0,
         bottom: 0,
     };
-    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa, 0) };
-    if ok == 0 {
-        return;
+    if unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut wa, 0) } == 0 {
+        return None;
     }
-    let area_w = (wa.right - wa.left).max(0) as u32;
-    let area_h = (wa.bottom - wa.top).max(0) as u32;
-    let x = wa.left + ((area_w.saturating_sub(size.width)) / 2) as i32;
-    let y = wa.top + ((area_h.saturating_sub(size.height)) / 2) as i32;
+    Some((
+        wa.left,
+        wa.top,
+        (wa.right - wa.left).max(0) as u32,
+        (wa.bottom - wa.top).max(0) as u32,
+    ))
+}
+
+/// 系统 DPI。建窗之前拿不到窗口自己的 scale factor，物理像素换算只能用它。
+#[cfg(windows)]
+fn system_dpi() -> u32 {
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetDpiForSystem() -> u32;
+    }
+    let dpi = unsafe { GetDpiForSystem() };
+    if dpi == 0 { 96 } else { dpi }
+}
+
+/// Center the window on the primary monitor's work area (Windows).
+#[cfg(windows)]
+pub(crate) fn center_window(win: &AppWindow) {
+    let Some((wa_x, wa_y, area_w, area_h)) = primary_work_area() else {
+        return;
+    };
+    let size = win.window().size(); // physical pixels
+    let x = wa_x + ((area_w.saturating_sub(size.width)) / 2) as i32;
+    let y = wa_y + ((area_h.saturating_sub(size.height)) / 2) as i32;
     win.window()
         .set_position(slint::PhysicalPosition::new(x, y));
 }
 
 #[cfg(not(windows))]
 pub(crate) fn center_window(_win: &AppWindow) {}
+
+/// 建窗之前把主窗口定到配置里的尺寸与位置。
+///
+/// Slint 的 winit 后端在原生窗口还没创建时，会把 `set_size` / `set_position` 记进 winit 的
+/// `WindowAttributes`，建窗那一刻生效（`winitwindowadapter.rs` 的 `WinitWindowOrNone::None`
+/// 分支）；`set_size` 同时置上 `has_explicit_size`，之后 `show` 不再按
+/// `preferred-width/height` 覆盖。于是窗口第一次出现就是最终几何 —— 不会再有"先按
+/// 1440×900 显示、随后缩回配置尺寸并居中"的两段跳。
+#[cfg(windows)]
+pub(crate) fn place_main_window_before_show(win: &AppWindow, size: (f32, f32)) {
+    let window = win.window();
+    let Some((wa_x, wa_y, area_w, area_h)) = primary_work_area() else {
+        window.set_size(slint::LogicalSize::new(size.0, size.1));
+        return;
+    };
+
+    let scale = (system_dpi() as f32 / 96.0).max(0.01);
+    // 与 .slint 的 min-width/min-height 一致；上限留 16px 给屏幕边缘。
+    let max_w = (area_w as f32 / scale - 16.0).max(1.0);
+    let max_h = (area_h as f32 / scale - 16.0).max(1.0);
+    let w = size.0.clamp(960.0_f32.min(max_w), max_w);
+    let h = size.1.clamp(600.0_f32.min(max_h), max_h);
+
+    window.set_size(slint::LogicalSize::new(w, h));
+
+    let phys_w = (w * scale).round() as i32;
+    let phys_h = (h * scale).round() as i32;
+    window.set_position(slint::PhysicalPosition::new(
+        wa_x + (area_w as i32 - phys_w).max(0) / 2,
+        wa_y + (area_h as i32 - phys_h).max(0) / 2,
+    ));
+}
+
+#[cfg(not(windows))]
+pub(crate) fn place_main_window_before_show(win: &AppWindow, size: (f32, f32)) {
+    // 其它平台的位置交给窗口管理器，这里只钉尺寸。
+    win.window().set_size(slint::LogicalSize::new(size.0, size.1));
+}
 
 /// The active terminal tab's current SFTP directory ("" if unknown).
 pub(crate) fn active_sftp_path(win: &AppWindow, tab_id: &str) -> String {
@@ -371,7 +431,7 @@ pub(crate) fn handle_file_drop(
     win: &AppWindow,
     sftp_handles: &SftpHandles,
     path: std::path::PathBuf,
-    hovered_pos: Option<(f32, f32)>,
+    _hovered_pos: Option<(f32, f32)>,
 ) {
     #[cfg(windows)]
     let point = {
@@ -389,7 +449,7 @@ pub(crate) fn handle_file_drop(
             })
     };
     #[cfg(not(windows))]
-    let point = hovered_pos;
+    let point = _hovered_pos;
 
     let Some((client_x, client_y)) = point else {
         return;

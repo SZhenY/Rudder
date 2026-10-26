@@ -3,7 +3,7 @@
 // Opens from the resource summary in the sidebar and shares live resource
 // models with AppWindow, much like ProcWindow shares the process table.
 
-import { Theme } from "theme.slint";
+import { Theme, AnimationSettings } from "theme.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
 
 export struct SysMetricRow {
@@ -165,7 +165,12 @@ component TableCard inherits InfoCard {
         }
         for r in root.rows : Rectangle {
             height: max(34px, c1.preferred-height, c2.preferred-height, c3.preferred-height, c4.preferred-height, c5.preferred-height);
-            background: row-ta.has-hover ? Theme.bg-hover : transparent;
+            background: row-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: row-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: row-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
             Rectangle {
                 width: parent.width;
                 height: 1px;

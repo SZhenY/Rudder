@@ -98,12 +98,25 @@ export global Theme {
     // 活动标签底色：由**主题色**轻微染色（不再是壁纸色 —— 换「配色」时标签条也要跟着变），
     // 与 tabs.slint 那条 2px 的 accent 边框同源。保持很淡：真正标记"当前标签"的是那条边框。
     out property <brush> tab-active-bg: root.accent-solid.mix(dark ? #171a20 : #ffffff, 0.86);
-    // 「这个面板正开着」这类**常亮**态用的主题色淡底。hover 仍用中性灰：hover 不是选中。
+    // 主题色淡底：hover 与「这个面板正开着」这类常亮态共用这一档；选中比它更深
+    //（见下面的 state-* 层）。
     out property <brush> accent-tint: root.accent-solid.with-alpha(dark ? 0.20 : 0.16);
     // hover 细环：主题色 @ 40% 的 1px 描边（比模糊光晕干净，与选中态实线同语言）。
     out property <brush> accent-ring: root.accent-solid.with-alpha(0.40);
     // 按下态：主题色 @ 12% 的确认底（信号强度介于 hover 环与选中淡底之间）。
     out property <brush> accent-press: root.accent-solid.with-alpha(0.12);
+
+    // ── 交互状态层：可点区域的唯一取色入口 ──────────────────────────────
+    // 全部走**主题色系**（与「上传」这类强调按钮同色），不再有"中性灰 hover / 主题色
+    // hover"两套。层级靠透明度拉开，调比例只改这里：
+    //   hover（16/20%） < press（24/30%） < selected（26/34%，另配实线边框）
+    // 组件里不要再写 `Theme.bg-hover` / `Theme.accent-tint`。
+    out property <brush> state-hover:    root.accent-tint;
+    out property <brush> state-press:    root.accent-solid.with-alpha(dark ? 0.30 : 0.24);
+    out property <brush> state-selected: root.accent-solid.with-alpha(dark ? 0.40 : 0.32);
+    out property <color> state-selected-border: root.accent-solid;
+    /// 强调型交互的 hover：与普通 hover 同色（保留这个名字，是为了在调用点表达"这里更强调"）。
+    out property <brush> emphasis-hover: root.state-hover;
 
     // 分隔/描边改半透明：叠在磨砂面上呈玻璃高光缝，跟随壁纸明暗自然适配，不再是固定灰色。
     out property <brush> border-subtle: dark ? #ffffff.with-alpha(0.07) : #000000.with-alpha(0.07);
@@ -253,6 +266,9 @@ export global Theme {
 
 export global AnimationSettings {
     in-out property <bool> enabled: true;
+    /// 全局倍速：1 = 正常；`RUDDER_ANIM_SPEED=2` 让所有时长慢一倍（验收时序用）。
+    /// 只作用在 duration 令牌上 —— 弹簧靠 `spring()` 的回弹量定手感，乘倍速没有意义。
+    in-out property <float> speed: 1.0;
 
     // ══════════════════════════════════════════════════════════════════════
     // 全项目动效令牌（Material Design 3 Expressive 动效体系）
@@ -270,16 +286,16 @@ export global AnimationSettings {
     // ══════════════════════════════════════════════════════════════════════
 
     // ── ① 时长令牌（M3 Expressive 档位，全部受开关门控：关 = 0ms）───────
-    public pure function short1() -> duration { return enabled ? 50ms : 0ms; }
-    public pure function short2() -> duration { return enabled ? 100ms : 0ms; }
-    public pure function short3() -> duration { return enabled ? 150ms : 0ms; }
-    public pure function short4() -> duration { return enabled ? 200ms : 0ms; }
-    public pure function medium1() -> duration { return enabled ? 250ms : 0ms; }
-    public pure function medium2() -> duration { return enabled ? 300ms : 0ms; }
-    public pure function medium3() -> duration { return enabled ? 350ms : 0ms; }
-    public pure function medium4() -> duration { return enabled ? 400ms : 0ms; }
-    public pure function long1() -> duration { return enabled ? 450ms : 0ms; }
-    public pure function long2() -> duration { return enabled ? 500ms : 0ms; }
+    public pure function short1() -> duration { return enabled ? 50ms * speed : 0ms; }
+    public pure function short2() -> duration { return enabled ? 100ms * speed : 0ms; }
+    public pure function short3() -> duration { return enabled ? 150ms * speed : 0ms; }
+    public pure function short4() -> duration { return enabled ? 200ms * speed : 0ms; }
+    public pure function medium1() -> duration { return enabled ? 250ms * speed : 0ms; }
+    public pure function medium2() -> duration { return enabled ? 300ms * speed : 0ms; }
+    public pure function medium3() -> duration { return enabled ? 350ms * speed : 0ms; }
+    public pure function medium4() -> duration { return enabled ? 400ms * speed : 0ms; }
+    public pure function long1() -> duration { return enabled ? 450ms * speed : 0ms; }
+    public pure function long2() -> duration { return enabled ? 500ms * speed : 0ms; }
     /// 常驻循环动画（呼吸灯 / 加载旋转）：不在 M3 时长档位里，单独一档；
     /// 这类动画靠 `animate` 的 `enabled` 门控（duration 归零会让无限循环失去意义）。
     public pure function ambient() -> duration { return 1400ms; }
