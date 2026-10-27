@@ -78,17 +78,19 @@ pub(crate) fn wire_window_chrome(
         window.on_win_drag(move || {
             if let Some(w) = weak.upgrade() {
                 w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_window();
+                    if let Err(e) = ww.drag_window() {
+                        tracing::warn!("drag_window failed: {e}");
+                    }
                 });
                 schedule_slint_pointer_ungrab(weak.clone());
             }
         });
     }
     {
-        use i_slint_backend_winit::winit::window::ResizeDirection;
         let weak = window.as_weak();
         window.on_win_resize(move |dir: i32| {
             if let Some(w) = weak.upgrade() {
+                use i_slint_backend_winit::winit::window::ResizeDirection;
                 let d = match dir {
                     0 => ResizeDirection::North,
                     1 => ResizeDirection::South,
@@ -100,7 +102,9 @@ pub(crate) fn wire_window_chrome(
                     _ => ResizeDirection::SouthWest,
                 };
                 w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_resize_window(d);
+                    if let Err(e) = ww.drag_resize_window(d) {
+                        tracing::warn!("drag_resize_window({d:?}) failed: {e}");
+                    }
                 });
                 schedule_slint_pointer_ungrab(weak.clone());
             }

@@ -156,6 +156,9 @@ dark-light = "1"
 # in-app update check against the GitHub releases API (#48). Runs on a
 # background thread so it never blocks startup; failure is silently ignored.
 ureq = { version = "2", default-features = false, features = ["tls"] }
+# 更新器专用：读系统根证书（解决代理做 TLS 中间人时的证书信任问题）。
+# rustls 本身用 ureq 的 re-export，不单独列依赖。
+rustls-native-certs = "0.8"
 
 # Image decoding: custom wallpapers (PNG/JPEG/WebP/BMP) for the immersive theme,
 # and the embedded PNG window icon on Linux. On Windows the icon comes from the

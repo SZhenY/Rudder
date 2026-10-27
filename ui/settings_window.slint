@@ -75,8 +75,14 @@ export component SettingsWindow inherits Window {
     // 2. macOS 上新映射的第二个窗口**不会自动产生首帧**（表现：只有标题栏、没有内容，
     //    拉伸一下才出来）→ Rust 侧 `show()` 之后要 `request_first_frame()`，照
     //    `app.rs:597` 那套"连续三个 tick 各补一次"的补救来。
-    width: max(720px, 760px * Theme.panel-font);
-    height: max(480px, 560px * Theme.panel-font);
+    // ⚠️ 用 min/preferred，**不要**写 `width:`/`height:`：那样 Slint 推导出的
+    // min == max，`window_is_resizable()` 直接判 false → winit 调
+    // `set_resizable(false)` → 样式里没有 WS_SIZEBOX → 系统的缩放循环不会启动，
+    // 连拖动都会被 winit 的 `dragging` 标志卡死（只有重启程序才恢复）。
+    min-width: 640px;
+    min-height: 460px;
+    preferred-width: max(720px, 760px * Theme.panel-font);
+    preferred-height: max(480px, 560px * Theme.panel-font);
     // 不透明底（壁纸层与磨砂面板都盖在它上面）—— 与主窗口 / `ProcWindow` 同一套合成。
     background: Theme.window-base;
     default-font-family: Theme.ui-font-family;
@@ -164,6 +170,8 @@ export component SettingsWindow inherits Window {
     in property <[string]> update-freq-labels;
     in-out property <int> update-freq-index: 0;
     in property <string> update-last-check: "";
+    in-out property <string> update-proxy;
+    in-out property <bool> update-proxy-enabled: false;
     in-out property <bool> webdav-accept-invalid-certs:false;
     in-out property <bool> webdav-enabled:false;
     in-out property <string> webdav-password;
@@ -225,6 +233,8 @@ export component SettingsWindow inherits Window {
     callback set-update-check-enabled(bool);
     callback set-update-channel(string);
     callback set-update-freq(int);
+    callback set-update-proxy(string);
+    callback set-update-proxy-enabled(bool);
     callback set-wallpaper(string);
     callback set-welcome-as-sidebar(bool);
     callback webdav-download();
@@ -334,6 +344,8 @@ export component SettingsWindow inherits Window {
                 update-freq-labels: update-freq-labels;
                 update-freq-index <=> update-freq-index;
                 update-last-check: update-last-check;
+                update-proxy <=> update-proxy;
+                update-proxy-enabled <=> update-proxy-enabled;
                 accent-mode: accent-mode;
                 accent-choice: accent-choice;
                 accent-presets: accent-presets;
@@ -407,6 +419,8 @@ export component SettingsWindow inherits Window {
                 set-update-check-enabled(v) => { root.set-update-check-enabled(v); }
                 set-update-channel(w0) => { root.set-update-channel(w0); }
                 set-update-freq(w1) => { root.set-update-freq(w1); }
+                set-update-proxy(w2) => { root.set-update-proxy(w2); }
+                set-update-proxy-enabled(w3) => { root.set-update-proxy-enabled(w3); }
                 check-update-now() => { root.check-update-now(); }
                 add-wsl-profile(name, distribution, directory) => { root.add-wsl-profile(name, distribution, directory); }
                 remove-wsl-profile(id) => { root.remove-wsl-profile(id); }

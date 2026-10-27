@@ -2260,6 +2260,24 @@ impl ConfigStore {
         };
     }
 
+    /// 更新流量是否走代理（默认关闭 = 直连）。
+    pub fn update_proxy_enabled(&self) -> bool {
+        self.cache.update.update_proxy_enabled
+    }
+
+    pub fn set_update_proxy_enabled(&mut self, v: bool) {
+        self.cache.update.update_proxy_enabled = v;
+    }
+
+    /// 更新代理地址（空 = 跟随系统）。只作用于更新检查 / 下载。
+    pub fn update_proxy(&self) -> &str {
+        self.cache.update.update_proxy.trim()
+    }
+
+    pub fn set_update_proxy(&mut self, v: String) {
+        self.cache.update.update_proxy = v.trim().to_string();
+    }
+
     pub fn update_last_check(&self) -> i64 {
         self.cache.update.update_last_check_unix
     }

@@ -473,15 +473,16 @@ pub(super) fn refresh_revealed_main_window(weak: slint::Weak<AppWindow>) {
     });
 }
 
-#[cfg(target_os = "linux")]
+/// 系统拖窗 / 拖拽缩放开始后，补几次合成的指针释放。
+///
+/// Linux 的 WM 与 Windows 的模态循环（`SC_MOVE` / `SC_SIZE`）都可能吃掉随后的 up 事件。
+/// Slint 若一直认为左键按着，指针抓取就不会释放 —— 此后整个窗口的点击与拖动全部失效，
+/// 而这份状态是**跟着窗口实例**的（设置窗关掉再开仍卡，只有重启重建窗口才恢复）。
 pub(super) fn schedule_slint_pointer_ungrab<T>(weak: slint::Weak<T>)
 where
     T: slint::ComponentHandle + 'static,
 {
-    // Linux window managers/compositors may consume the release event after a
-    // system move/resize starts. If Slint keeps its press grab, the whole app
-    // can remain stuck in move/resize cursor mode. A few deferred synthetic
-    // releases cover Cinnamon/Mutter/KWin timing differences.
+    // 多个延迟点覆盖不同合成器 / 模态循环的时序差异。
     for delay_ms in [0_u64, 16, 80, 200] {
         let weak2 = weak.clone();
         slint::Timer::single_shot(std::time::Duration::from_millis(delay_ms), move || {
@@ -495,13 +496,6 @@ where
             }
         });
     }
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(super) fn schedule_slint_pointer_ungrab<T>(_weak: slint::Weak<T>)
-where
-    T: slint::ComponentHandle + 'static,
-{
 }
 
 #[cfg(target_os = "macos")]

@@ -4,7 +4,8 @@
 // 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
 // 因此可以保持与改造前逐字一致。
 //
-// 四行：自动检查更新 / 检查频率 / 更新通道 / 上次检查时间。
+// 四行检查项：自动检查更新 / 检查频率 / 更新通道 / 上次检查时间；
+// 末尾另起「更新网络」分区：代理总开关 + 代理地址（只作用于更新检查与下载）。
 // 通道语义见 `self_updater::fetch_channel_release`：`stable` 只提示正式版、
 // `beta` 只提示测试版（`-betaN` / `-alphaN` / `-rcN`）、`all` 两者都收，取版本最高的那个。
 // 排序按 `parse_version`：**同号的测试版比正式版新**（`0.7.9-beta1 > 0.7.9`）—— 测试版是
@@ -17,6 +18,7 @@
 import { Theme, AnimationSettings } from "../../theme.slint";
 import { SettingsSection } from "../section.slint";
 import { SettingRow, SettingSwitch } from "../chrome.slint";
+import { GroupGap } from "../../components/surfaces.slint";
 import { ComboBox } from "std-widgets.slint";
 
 /// 更新通道的一段（正式版 / 测试版 / 全通道最新版）。
@@ -73,10 +75,16 @@ export component UpdatePage inherits VerticalLayout {
     in property <[string]> update-freq-labels;
     /// 上次检查时间（已在 Rust 侧本地化；空串 = 还没查过）
     in property <string> update-last-check;
+    /// 更新流量是否走代理（默认关 = 直连）。
+    in-out property <bool> update-proxy-enabled: false;
+    /// 打开代理后使用的地址；空 = 跟随系统代理。
+    in-out property <string> update-proxy;
     callback check-update-now();
     callback set-update-check-enabled(bool);
     callback set-update-channel(string);
     callback set-update-freq(int);
+    callback set-update-proxy-enabled(bool);
+    callback set-update-proxy(string);
 
     padding-left: 20px;
     padding-right: 20px;
@@ -184,5 +192,77 @@ export component UpdatePage inherits VerticalLayout {
         color: Theme.text-muted;
         font-size: 11px * Theme.panel-font;
         wrap: word-wrap;
+    }
+
+    // 访问 GitHub 的通道：代理开关 + 地址。**只作用于更新检查 / 安装包下载**，
+    // 与 SSH 会话连接无关（那套走 russh，连自己的 WebDAV 也不共用这份配置）。
+    GroupGap {
+        gap: Theme.gap-lg;
+        SettingsSection {
+            section-id: "update.network";
+            lang-en: root.lang-en;
+            title-zh: "更新网络";
+            title-en: "UPDATE NETWORK";
+            title-height: 24px;
+            // 分区说明：这两行只管更新链路，避免被当成会话代理去填。
+            GroupGap {
+                gap: Theme.gap-sm;
+                Text {
+                    text: root.lang-en
+                        ? "Applies to update checks and installer downloads only; session connections are unaffected. System root certificates are always used."
+                        : "仅用于检查新版本与下载安装包，与会话连接无关；更新流量始终使用系统根证书。";
+                    color: Theme.text-muted;
+                    font-size: 11px * Theme.panel-font;
+                    wrap: word-wrap;
+                    line-height-factor: 1.3;
+                }
+            }
+            SettingSwitch {
+                label: root.lang-en ? "Use a proxy for updates" : "启用更新代理";
+                desc: root.lang-en
+                    ? "Off connects directly. On follows the system proxy unless an address is entered below."
+                    : "关闭时直接连接；打开后默认跟随系统代理，也可在下面填写自定义地址。";
+
+                checked <=> root.update-proxy-enabled;
+                toggled(v) => { root.set-update-proxy-enabled(v); }
+            }
+            SettingRow {
+                label: root.lang-en ? "Proxy address" : "代理地址";
+                desc: root.lang-en
+                    ? "Empty follows the system proxy. Accepts host:port or http://user:password@host:port."
+                    : "留空跟随系统代理；可写 主机:端口，或带账号密码的完整地址。";
+                show-divider: false;
+                Rectangle {
+                    width: 208px;
+                    height: 30px;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    // 代理关掉时整行退成"不可用"：底、边框、文字一起暗一档。
+                    border-color: proxy-input.has-focus ? Theme.accent : Theme.border-subtle;
+                    background: root.update-proxy-enabled ? Theme.bg-elevated : transparent;
+                    proxy-input := TextInput {
+                        input-method-hints: Theme.plain-input-hints;
+                        enabled: root.update-proxy-enabled;
+                        x: 6px;
+                        width: parent.width - 12px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        color: root.update-proxy-enabled ? Theme.text-primary : Theme.text-muted;
+                        text <=> root.update-proxy;
+                        // 逐键落库：`persist` 自带写盘防抖，改完直接点「立即检查」也不会用到旧代理。
+                        edited => { root.set-update-proxy(root.update-proxy); }
+                    }
+                    // 空值时给个格式示例 —— `TextInput` 本身没有 placeholder（1.18 起仍无）。
+                    if root.update-proxy == "" : Text {
+                        x: 6px;
+                        height: parent.height;
+                        text: root.update-proxy-enabled ? "127.0.0.1:7890" : (root.lang-en ? "Proxy off" : "代理未启用");
+                        color: Theme.text-muted;
+                        font-size: 12px * Theme.panel-font;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
     }
 }

@@ -176,6 +176,9 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_update_check_error(m.get_update_check_error());
     sw.set_update_checking(m.get_update_checking());
     sw.set_update_last_check(m.get_update_last_check());
+    // 更新器网络：代理开关 / 地址由 Rust 侧规范化后回写，界面跟着刷。
+    sw.set_update_proxy(m.get_update_proxy());
+    sw.set_update_proxy_enabled(m.get_update_proxy_enabled());
     sw.set_output_highlight_rule_status(m.get_output_highlight_rule_status());
     sw.set_output_highlight_rules(m.get_output_highlight_rules());
     sw.set_wsl_profiles(m.get_wsl_profiles());
@@ -280,6 +283,8 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_update_freq_labels(m.get_update_freq_labels());
     sw.set_update_freq_index(m.get_update_freq_index());
     sw.set_update_last_check(m.get_update_last_check());
+    sw.set_update_proxy(m.get_update_proxy());
+    sw.set_update_proxy_enabled(m.get_update_proxy_enabled());
     sw.set_webdav_accept_invalid_certs(m.get_webdav_accept_invalid_certs());
     sw.set_webdav_enabled(m.get_webdav_enabled());
     sw.set_webdav_password(m.get_webdav_password());
@@ -384,6 +389,8 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_update_check_enabled => invoke_set_update_check_enabled, (a0));
     forward!(sw, m, s, on_set_update_channel => invoke_set_update_channel, (a0));
     forward!(sw, m, s, on_set_update_freq => invoke_set_update_freq, (a0));
+    forward!(sw, m, s, on_set_update_proxy => invoke_set_update_proxy, (a0));
+    forward!(sw, m, s, on_set_update_proxy_enabled => invoke_set_update_proxy_enabled, (a0));
     forward!(sw, m, s, on_set_wallpaper => invoke_set_wallpaper, (a0));
     forward!(sw, m, s, on_set_welcome_as_sidebar => invoke_set_welcome_as_sidebar, (a0));
     forward!(sw, m, s, on_webdav_download => invoke_webdav_download, ());

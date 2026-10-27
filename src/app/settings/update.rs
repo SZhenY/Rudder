@@ -1,4 +1,5 @@
-//! 新版本提示页：启动检查开关 + 检查频率 + 更新通道 + 上次检查时间。
+//! 新版本提示页：启动检查开关 + 检查频率 + 更新通道 + 上次检查时间，
+//! 以及「更新网络」分区的代理开关 / 代理地址（写进 `update_net` 的全局快照）。
 //!
 //! 该页**按规格没有「还原本页默认」**（这里都是"行为开关"，没有值得还原的内容），
 //! 因此这里只有 `bind`。`SettingsPage` 枚举里也没有 `Update` 变体 ——
@@ -9,6 +10,7 @@ use std::rc::Rc;
 use slint::{ComponentHandle as _, ModelRc, VecModel};
 
 use super::{Store, persist};
+use crate::app::update_net::{self, NetSettings};
 use crate::app::updater::format_last_check;
 use crate::ui::AppWindow;
 
@@ -25,6 +27,21 @@ fn freq_labels() -> Vec<slint::SharedString> {
         crate::i18n::t("每半年", "Every 6 months").into(),
         crate::i18n::t("每年", "Every year").into(),
     ]
+}
+
+/// 把配置里的代理开关 / 地址推到更新器的全局快照（后台线程读这份），并回写主窗口属性 ——
+/// 设置窗口每次开窗都从主窗口属性播种，不回写的话关掉再开就退回旧值。
+///
+/// `raw_proxy` 把用户正在输入的原文回填界面：配置层存的是 trim 后的值，直接拿库里的值
+/// 回写会在输入过程中吞掉首尾空格、光标跟着跳。
+fn apply_net(w: &AppWindow, store: &Store, raw_proxy: Option<&str>) {
+    let (enabled, proxy) = {
+        let s = store.borrow();
+        (s.update_proxy_enabled(), s.update_proxy().to_string())
+    };
+    w.set_update_proxy_enabled(enabled);
+    w.set_update_proxy(raw_proxy.unwrap_or(&proxy).into());
+    update_net::set_current(NetSettings { enabled, proxy });
 }
 
 /// 播种 + 注册持久化回调。
@@ -48,6 +65,9 @@ pub(crate) fn bind(w: &AppWindow, store: &Store) {
     // 上次检查时间（配置里存 Unix 秒，0 = 还没查过 → 空串）。
     w.set_update_last_check(format_last_check(store.borrow().update_last_check()).into());
 
+    // 更新器网络（代理开关 / 地址）：写全局快照供后台线程使用，同时播种界面。
+    apply_net(w, &store, None);
+
     let store_cb = store.clone();
     w.on_set_update_check_enabled(move |v| {
         persist(&store_cb, |s| s.set_update_check_enabled(v));
@@ -67,6 +87,26 @@ pub(crate) fn bind(w: &AppWindow, store: &Store) {
             if before != after {
                 w.invoke_check_update_now();
             }
+        }
+    });
+
+    // 代理逐键落库：`persist` 自带写盘防抖，落库后立刻刷新全局快照 —— 改完直接点
+    // 「立即检查」用的就是新代理，不需要再多一次"保存"。
+    let store_cb = store.clone();
+    let weak = w.as_weak();
+    w.on_set_update_proxy(move |v: slint::SharedString| {
+        persist(&store_cb, |s| s.set_update_proxy(v.to_string()));
+        if let Some(w) = weak.upgrade() {
+            apply_net(&w, &store_cb, Some(v.as_str()));
+        }
+    });
+
+    let store_cb = store.clone();
+    let weak = w.as_weak();
+    w.on_set_update_proxy_enabled(move |v: bool| {
+        persist(&store_cb, |s| s.set_update_proxy_enabled(v));
+        if let Some(w) = weak.upgrade() {
+            apply_net(&w, &store_cb, None);
         }
     });
 

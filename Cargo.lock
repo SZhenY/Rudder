@@ -5394,6 +5394,7 @@ dependencies = [
  "ring",
  "russh",
  "russh-sftp",
+ "rustls-native-certs",
  "self-replace",
  "self_update",
  "serde",

@@ -497,6 +497,12 @@ export component AppWindow inherits Window {
     callback set-update-check-enabled(bool);       // apply + persist
     callback set-update-channel(string);
     callback set-update-freq(int);
+    // 更新器网络：代理开关（默认关 = 直连）+ 地址（空 = 跟随系统）。只作用于更新检查 / 下载，
+    // 证书链恒用系统根证书、无开关。
+    in-out property <string> update-proxy;
+    in-out property <bool> update-proxy-enabled: false;
+    callback set-update-proxy(string);
+    callback set-update-proxy-enabled(bool);
     // WSL profiles (upstream a64097e): managed in Interface → WSL.
     in property <[WslProfileInfo]> wsl-profiles;
     in-out property <string> wsl-new-directory: "~";

@@ -253,5 +253,11 @@ pub struct UpdateSettings {
     /// 上次**发起**检查的 Unix 秒（0 = 从未）—— 在请求发出前就写入，**失败也算**：
     /// 界面上它就是「上次检查时间」，节流也据此判断（所以一次失败不会让「每天」当天反复重试）。
     pub update_last_check_unix: i64,
+    /// 是否让更新流量走代理。**默认关闭 = 直连**（不读系统代理）。
+    /// 打开后：填了 `update_proxy` 就用它，留空则跟随系统代理。
+    pub update_proxy_enabled: bool,
+    /// 更新代理：空 = 跟随系统（Windows 的 IE 代理 / macOS 的 `scutil --proxy` /
+    /// Linux 的环境变量）。只影响更新检查与下载，不影响 SSH。
+    pub update_proxy: String,
 }
 

@@ -68,6 +68,9 @@ export component InterfacePanel inherits Rectangle {
     in property <[string]> update-freq-labels;
     in-out property <int> update-freq-index: 0;
     in property <string> update-last-check: "";
+    // 更新器网络：代理开关（默认关 = 直连）+ 地址（空 = 跟随系统）；证书链恒用系统根。
+    in-out property <string> update-proxy;
+    in-out property <bool> update-proxy-enabled: false;
     callback check-update-now();
     in-out property <float> wallpaper-overlay;   // frosted-panel opacity 0.30-1.00
     // Active wallpaper id: "" / "builtin:light" / "builtin:dark" / a file path.
@@ -182,6 +185,8 @@ export component InterfacePanel inherits Rectangle {
     callback set-update-check-enabled(bool);   // startup new-version check (#184)
     callback set-update-channel(string);
     callback set-update-freq(int);
+    callback set-update-proxy(string);
+    callback set-update-proxy-enabled(bool);
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
     callback preview-wallpaper-overlay(float);   // live preview while dragging (不写盘)
     callback set-wallpaper(string);    // none / builtin selection
@@ -457,10 +462,14 @@ export component InterfacePanel inherits Rectangle {
                             update-freq-labels: root.update-freq-labels;
                             update-freq-index <=> root.update-freq-index;
                             update-last-check: root.update-last-check;
+                            update-proxy <=> root.update-proxy;
+                            update-proxy-enabled <=> root.update-proxy-enabled;
                             check-update-now() => { root.check-update-now(); }
                             set-update-check-enabled(a0) => { root.set-update-check-enabled(a0); }
                             set-update-channel(b0) => { root.set-update-channel(b0); }
                             set-update-freq(b1) => { root.set-update-freq(b1); }
+                            set-update-proxy(c0) => { root.set-update-proxy(c0); }
+                            set-update-proxy-enabled(c1) => { root.set-update-proxy-enabled(c1); }
                     }
 
                 }

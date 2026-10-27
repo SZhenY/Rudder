@@ -65,6 +65,33 @@ pub(crate) fn current_exe() -> Result<PathBuf> {
     std::env::current_exe().context("resolve current executable")
 }
 
+/// 清理自更新留下的旧可执行文件。
+///
+/// Windows 上 `self_replace` 只能把**正在运行**的 exe 改名
+/// （`.<名字>.<随机串>.__selfdelete__.exe`）—— 改名后仍然删不掉，句柄还开着。
+/// crate 文档把这条列为已知限制，并说临时路径不固定、不建议自动清理；但我们的残留
+/// 永远落在 exe 同目录，条件明确，启动时按标记名删掉即可。
+pub(crate) fn cleanup_leftover_binaries() {
+    let Ok(exe) = current_exe() else { return };
+    let Some(dir) = exe.parent() else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // 只认 updater 生成的标记名；绝不删当前进程自己的 exe。
+        let marked = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.contains("__selfdelete__"));
+        if !marked || path == exe {
+            continue;
+        }
+        match std::fs::remove_file(&path) {
+            Ok(()) => tracing::info!("self-update: removed leftover binary {}", path.display()),
+            Err(e) => tracing::warn!("self-update: cannot remove {}: {e}", path.display()),
+        }
+    }
+}
+
 /// macOS：进程是否跑在 .app 包内；返回包路径。
 fn macos_app_bundle(exe: &Path) -> Option<PathBuf> {
     // …/rudder.app/Contents/MacOS/rudder
@@ -107,11 +134,13 @@ pub(crate) fn fetch_channel_release(channel: &str) -> Result<Option<serde_json::
     } else {
         format!("https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases?per_page=30")
     };
-    let body = ureq::get(&url)
-        .set("User-Agent", "rudder-self-update")
+    let body = super::update_net::current()
+        .agent()
+        .map_err(|e| anyhow!("{e}"))?
+        .get(&url)
         .timeout(std::time::Duration::from_secs(15))
         .call()
-        .context("query GitHub releases")?
+        .map_err(|e| anyhow!("{}", super::update_net::describe(&e)))?
         .into_string()
         .context("read releases response")?;
     let json: serde_json::Value =
@@ -216,11 +245,13 @@ pub(crate) fn download_and_stage(
 
     let archive = stage_dir.join(&cand.asset_name);
     {
-        let resp = ureq::get(&cand.download_url)
-            .set("User-Agent", "rudder-self-update")
+        let resp = super::update_net::current()
+            .agent()
+            .map_err(|e| anyhow!("{e}"))?
+            .get(&cand.download_url)
             .timeout(std::time::Duration::from_secs(60))
             .call()
-            .context("download release asset")?;
+            .map_err(|e| anyhow!("{}", super::update_net::describe(&e)))?;
         let total: u64 = resp
             .header("Content-Length")
             .and_then(|v| v.parse().ok())
@@ -529,15 +560,32 @@ pub(crate) fn changelog_section(md: &str, version: &str) -> Option<String> {
 
 /// 拉某个 tag 的 `CHANGELOG.md`（raw.githubusercontent）。失败返回 `None` ——
 /// 调用方会退回 release 的 `body`，网络不好时不至于没说明可看。
+///
+/// 走与检查 / 下载同一个 Agent：这个域同样可能只有代理能通、同样可能被 TLS 中间人拦，
+/// 用裸 `ureq::get` 会让「检查能出结果、发布说明却是空的」这种半失败很难解释。
 fn fetch_changelog(tag: &str) -> Option<String> {
     let url = format!("https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/{tag}/CHANGELOG.md");
-    ureq::get(&url)
-        .set("User-Agent", "rudder-self-update")
+    let agent = match super::update_net::current().agent() {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::debug!("update notes: {e}");
+            return None;
+        }
+    };
+    match agent
+        .get(&url)
         .timeout(std::time::Duration::from_secs(15))
         .call()
-        .ok()?
-        .into_string()
-        .ok()
+    {
+        Ok(resp) => resp.into_string().ok(),
+        Err(e) => {
+            tracing::debug!(
+                "update notes: fetching CHANGELOG failed: {}",
+                super::update_net::describe(&e)
+            );
+            None
+        }
+    }
 }
 
 /// 「自动更新」对话框里那块发布说明的内容：优先取 **CHANGELOG.md 里该版本的段落**

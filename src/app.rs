@@ -204,6 +204,7 @@ mod session_callbacks;
 mod pane_layout;
 mod fonts_ui;
 mod updater;
+mod update_net;
 mod sampler;
 mod settings;
 mod settings_ui;
@@ -423,10 +424,20 @@ pub fn run_renderer_probe(mode: &str) -> Result<()> {
 }
 
 pub fn run() -> Result<()> {
+    // 自更新留下的旧 exe（Windows 上运行中删不掉，只能改名）在这里清掉。
+    self_updater::cleanup_leftover_binaries();
+
     // Load the renderer preference before creating any Slint window. Reuse the
     // same store for the rest of the app so startup does not read the config
     // twice merely to select a backend (#280).
     let config = ConfigStore::load().context("failed to load config")?;
+
+    // 更新器网络配置（代理开关 / 代理地址）先落一份全局快照：检查更新在后台线程里跑，
+    // 拿 store 不方便，直接读这里。证书链恒用系统根证书，不需要配置。
+    update_net::set_current(update_net::NetSettings {
+        enabled: config.update_proxy_enabled(),
+        proxy: config.update_proxy().to_string(),
+    });
 
     // 三平台的"自动"：探测一次（子进程真渲染一帧，约一秒），把结论**固化进配置** ——
     // 有 GPU 就存 GPU 档（Windows / Linux 是 `wgpu`，macOS 是 `femtovg-wgpu`），没有就存
@@ -715,19 +726,25 @@ pub fn run() -> Result<()> {
         settings_win.on_win_drag(move || {
             if let Some(w) = sw.upgrade() {
                 w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_window();
+                    if let Err(e) = ww.drag_window() {
+                        tracing::warn!("settings drag_window failed: {e}");
+                    }
                 });
+                // 与主窗口一致：系统模态循环会吃掉随后的 up 事件，补合成释放。
+                schedule_slint_pointer_ungrab(sw.clone());
             }
         });
     }
     {
         // 右下角缩放抓手（无边框窗口没有系统缩放边缘）。
-        use i_slint_backend_winit::winit::window::ResizeDirection;
         let sw = settings_win.as_weak();
         settings_win.on_win_resize_se(move || {
             if let Some(w) = sw.upgrade() {
+                use i_slint_backend_winit::winit::window::ResizeDirection;
                 w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_resize_window(ResizeDirection::SouthEast);
+                    if let Err(e) = ww.drag_resize_window(ResizeDirection::SouthEast) {
+                        tracing::warn!("settings drag_resize_window failed: {e}");
+                    }
                 });
                 schedule_slint_pointer_ungrab(sw.clone());
             }
