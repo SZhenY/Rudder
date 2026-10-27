@@ -51,7 +51,7 @@ slint = { version = "1.18", default-features = false, features = [
 ] }
 # 探测进程里把 wgpu 的异步 future（`enumerate_adapters`）跑完用。它本来就在依赖树里
 # （wgpu 自己用的），所以加上它不增加编译量。
-pollster = "0.4"
+pollster = "1"
 # ICU4X (pulled in by Slint's text layout) spams stderr with raw `eprintln!`
 # ("ICU4X data error: No segmentation model for language: ja") because its
 # `log` shim falls back to eprintln when the `logging` feature is off. Turning
@@ -74,9 +74,9 @@ memchr = "2"
 # 100MB —— 读进堆会整份常驻。memmap2 本来就在依赖树里（零编译代价）。
 memmap2 = "0.9"
 anyhow = "1"
-directories = "5"
+directories = "6"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-sysinfo = { version = "0.38", default-features = false, features = ["disk", "network", "system"] }
+sysinfo = { version = "0.39", default-features = false, features = ["disk", "network", "system"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs"] }
 # Pinned to 0.49: RUSTSEC-2026-0154 (an unbounded-allocation DoS in russh's
@@ -84,11 +84,16 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-ut
 # crypto crates (ed25519-dalek 3.0.0-pre, aes-gcm 0.11.0-rc, 鈥?. Rudder never
 # uses the ssh-agent, so the advisory is not reachable here 鈥?see audit.toml.
 # Revisit the upgrade once russh's deps leave the -rc channel (cf. PR #151).
+# 固定在 0.49：0.50~0.60.3 会引入 pageant ^0.2（windows 0.62，能去掉 0.58 副本），
+# 但整条 RustCrypto 新栈是预发布版（aead 0.6-rc、rsa 0.10-rc、ed25519-dalek 3.0-pre、
+# p256 0.14-rc 等 20 个），认证与签名路径不采用 rc。0.61+ 还额外要求 ssh-key 0.7.0-rc。
+# 结论：等 ssh-key 0.7 与这批 RustCrypto 转正后再一次性升级。
 russh = "0.49"
 ssh-key = "0.6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-rand = "0.8"
+# 直接取 OS 随机数：rand 0.10 已移除 OsRng，我们只需要系统熵源。
+getrandom = "0.4"
 async-trait = "0.1"
 futures = "0.3"
 # Full xterm-compatible terminal emulator (replaces vt100): Term + Grid +
@@ -110,14 +115,14 @@ russh-sftp = "2.4"
 ring = "0.17"
 # In-app self-update from GitHub Releases (#self-update).
 # No progress-bar / default features: progress is surfaced in our own UI.
-self_update = { version = "1.3", default-features = false, features = [
-    "github", "rustls", "ureq",
-    "archive-tar", "compression-tar-gz",      # Linux .tar.gz
-    "archive-zip", "compression-zip-deflate", # macOS / Windows .zip
-] }
+# 解压与重启自己实现（原先借 self_update，但它强制要求 HTTP 客户端特性，
+# 会把 reqwest 0.13 + aws-lc-sys 重新拉进来，破坏单份 reqwest 的目标）。
+zip = { version = "9", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
 tempfile = "3"
 self-replace = "1"
-rfd = "0.15"
+rfd = "0.17"
 arboard = "3"
 # Zeroes password buffers on drop so plaintext credentials don't linger in
 # freed heap memory (core dumps / debuggers / /proc/pid/mem).
@@ -125,40 +130,43 @@ zeroize = "1"
 # SOCKS5 proxy tunnelling for SSH/SFTP in network-restricted environments.
 # (HTTP CONNECT proxies are handled in src/proxy.rs without an extra crate.)
 tokio-socks = "0.5"
-base64 = "0.22"
+base64 = "0.23"
 # Native PuTTY PPK v2/v3 private-key loading (#281). Conversion stays entirely
 # in memory: AES-CBC decrypts encrypted key blobs, Argon2 handles PPKv3 key
 # derivation, and HMAC verifies the file before it reaches the SSH parser.
-aes = "0.8"
-argon2 = "0.5"
-cbc = "0.1"
-hmac = "0.12"
-sha1 = "0.10"
-sha2 = "0.10"
+aes = "0.9"
+argon2 = "0.6"
+cbc = "0.2"
+hmac = "0.13"
+sha1 = "0.11"
+sha2 = "0.11"
 # FinalShell connection exports derive a DES key with MD5 using java.util.Random
 # (upstream 8a81341); encoding_rs handles legacy GBK-encoded passwords.
-des = "0.8"
-md5 = "0.7"
+des = "0.9"
+md5 = "0.8"
 encoding_rs = "0.8"
 # Enumerate installed system fonts for the Interface (font) settings picker.
-fontdb = "0.23"
+fontdb = "0.24"
 # Cross-platform serial port access for the Serial session type (#14, #17).
 # Opens COM3 / /dev/ttyUSB0 etc.; on Linux the default `libudev` feature is
 # used for port enumeration (CI installs libudev-dev).
 serialport = "4"
 # ChaCha20-Poly1305 AEAD for encrypting passwords at rest in sessions.json.
-# rand (OsRng) and base64 are already pulled in by other deps above.
-chacha20poly1305 = "0.10"
+# base64 由其它依赖带入；系统熵源见上面的 getrandom。
+chacha20poly1305 = "0.11"
 # Detect whether the OS is running in dark or light mode.
 # Used on startup to honour the system preference before the user overrides it.
-dark-light = "1"
+dark-light = "3"
 # Lightweight synchronous HTTPS client (bundled rustls, no OpenSSL) for the
 # in-app update check against the GitHub releases API (#48). Runs on a
 # background thread so it never blocks startup; failure is silently ignored.
-ureq = { version = "2", default-features = false, features = ["tls"] }
+# 统一 HTTP 栈：blocking + rustls（含平台根证书）+ HTTP/2。
+# WebDAV 的证书指纹固定需要自定义校验器，经 reqwest 的 use_preconfigured_tls 注入。
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12", "logging"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking", "rustls-tls-native-roots", "http2", "gzip",
+] }
 # 更新器专用：读系统根证书（解决代理做 TLS 中间人时的证书信任问题）。
-# rustls 本身用 ureq 的 re-export，不单独列依赖。
-rustls-native-certs = "0.8"
 
 # Image decoding: custom wallpapers (PNG/JPEG/WebP/BMP) for the immersive theme,
 # and the embedded PNG window icon on Linux. On Windows the icon comes from the

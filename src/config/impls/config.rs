@@ -31,10 +31,9 @@ use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chacha20poly1305::{
     ChaCha20Poly1305,
-    aead::{Aead, AeadCore, KeyInit},
+    aead::{Aead, KeyInit},
 };
 use directories::ProjectDirs;
-use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 
 use super::settings::{AppearanceSettings, LayoutSettings, SyncSettings, TerminalSettings, TransferSettings, UpdateSettings};
@@ -169,9 +168,16 @@ fn is_private_dir(dir: &Path) -> bool {
 
 /// 8 字节加密随机数的十六进制串 —— 临时目录名用，别留可预测的名字。
 fn random_suffix() -> String {
-    use rand::RngCore as _;
     let mut bytes = [0u8; 8];
-    OsRng.fill_bytes(&mut bytes);
+    // 拿不到系统熵就退化成时间戳 —— 这个值只用于临时目录名，不需要密码学强度，
+    // 但不能留可预测的固定串。
+    if getrandom::fill(&mut bytes).is_err() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
+        bytes = nanos.to_le_bytes();
+    }
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -1126,7 +1132,12 @@ impl ConfigStore {
     /// 实现逐字相同，只差 key / 前缀 / 错误文案三个参数。
     fn encrypt_with(key: &[u8; 32], prefix: &str, label: &str, plaintext: &str) -> Result<String> {
         let cipher = ChaCha20Poly1305::new(key.into());
-        let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng); // 12 random bytes
+        // aead 0.6 的 `generate_nonce` 要求 infallible 的 CryptoRngCore，而我们只要系统熵源：
+        // 直接取 12 字节，失败必须报错（绝不能退化成固定 nonce）。
+        let mut nonce_bytes = [0u8; 12];
+        getrandom::fill(&mut nonce_bytes)
+            .map_err(|e| anyhow::anyhow!("{label} nonce generation failed: {e}"))?;
+        let nonce = chacha20poly1305::aead::Nonce::<ChaCha20Poly1305>::from(nonce_bytes);
         let ciphertext = cipher
             .encrypt(&nonce, plaintext.as_bytes())
             .map_err(|e| anyhow::anyhow!("{label} encrypt error: {e}"))?;
@@ -1145,8 +1156,11 @@ impl ConfigStore {
         }
         let (nonce_bytes, ciphertext) = blob.split_at(12);
         let cipher = ChaCha20Poly1305::new(key.into());
-        let nonce = chacha20poly1305::Nonce::from_slice(nonce_bytes);
-        let plain = cipher.decrypt(nonce, ciphertext).ok()?;
+        // `Array::from_slice` 在 hybrid-array 0.4 已废弃，拷进定长数组再构造。
+        let mut nonce_arr = [0u8; 12];
+        nonce_arr.copy_from_slice(nonce_bytes);
+        let nonce = chacha20poly1305::aead::Nonce::<ChaCha20Poly1305>::from(nonce_arr);
+        let plain = cipher.decrypt(&nonce, ciphertext).ok()?;
         String::from_utf8(plain).ok()
     }
 
@@ -1170,7 +1184,6 @@ impl ConfigStore {
     /// so other local accounts cannot read it.  On Windows files in `%APPDATA%`
     /// are already restricted to the owning user by default ACLs.
     fn load_or_create_key(config_dir: &Path) -> Result<[u8; 32]> {
-        use rand::RngCore as _;
         let key_path = config_dir.join("secret.key");
 
         if key_path.exists() {
@@ -1205,7 +1218,7 @@ impl ConfigStore {
         }
 
         let mut key = [0u8; 32];
-        OsRng.fill_bytes(&mut key);
+        getrandom::fill(&mut key).map_err(|e| anyhow::anyhow!("OS RNG failed: {e}"))?;
         // 创建时就 0600（老写法是先 `fs::write` 再 `chmod`，中间那段窗口里别的本地
         // 账户就能读走密钥），并且 fsync —— 密钥丢了等于所有已存口令都解不开。
         Self::write_private(&key_path, &key, true)?;

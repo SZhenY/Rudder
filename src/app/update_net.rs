@@ -1,6 +1,6 @@
 //! 更新检查 / 下载用的网络层：代理解析、证书来源、错误翻译。
 //!
-//! 为什么要单独一层：`ureq` **不读系统代理**，默认也用自己内置的 webpki 根证书。
+//! 为什么要单独一层：HTTP 客户端**不读系统代理**。
 //! 桌面环境里代理通常写在系统设置里（macOS 的 ClashX / Surge、Windows 的 IE/WinINET
 //! 代理），不会进 GUI 进程的环境变量 —— 于是浏览器能打开 GitHub，应用却报"网络原因"。
 //! 代理如果做了 TLS 中间人，内置根证书也验不过，同样表现为网络失败。
@@ -10,12 +10,7 @@
 //! * 证书链**恒用系统根证书**，不提供开关：企业网关/加速器的透明中间人不需要配代理，
 //!   按代理开关联动会让这类环境无从修复。
 
-use std::sync::Arc;
 use std::time::Duration;
-
-// rustls 不单独进依赖表：用 ureq 的 re-export，避免两处各锁一个版本导致类型不互通
-// （ureq 的 `tls_config` 要的正是这个 rustls 的 `ClientConfig`）。
-use ureq::rustls;
 
 /// 更新器使用的网络配置：由「设置 → 新版本提示 → 更新网络」写入。
 #[derive(Clone, Debug, Default)]
@@ -49,26 +44,25 @@ impl NetSettings {
     ///
     /// 代理地址非法时返回原因，**不静默退回直连**：静默直连会把"代理填错了"表现成
     /// DNS 解析失败 / 连接被拒，用户按网络故障去排查，方向完全跑偏。
-    pub(crate) fn agent(&self) -> Result<ureq::Agent, String> {
-        let mut builder = ureq::AgentBuilder::new()
+    pub(crate) fn client(&self) -> Result<reqwest::blocking::Client, String> {
+        let mut builder = reqwest::blocking::Client::builder()
             .user_agent("rudder-self-update")
-            .timeout_connect(Duration::from_secs(20));
+            .connect_timeout(Duration::from_secs(20))
+            .timeout(Duration::from_secs(600));
 
         if let Some(proxy) = self.effective_proxy() {
-            // 本 crate 的 ureq 只开了 `tls`、没开 `socks-proxy`：socks 前缀能过
-            // `Proxy::new` 的解析，却会在建连时才失败，报错指向"代理不可用"很容易误导。
+            // reqwest 的 socks 支持是单独特性，本 crate 没开：socks 前缀会在建连时才失败，
+            // 报错指向"代理不可用"很容易误导。
             if proxy.starts_with("socks") {
                 return Err(format!(
                     "暂不支持 socks 代理（{proxy}）：请填 http:// 代理，例如 http://127.0.0.1:7890"
                 ));
             }
-            match ureq::Proxy::new(&proxy) {
+            match reqwest::Proxy::all(&proxy) {
                 Ok(p) => {
                     tracing::info!("update: using proxy {proxy}");
                     builder = builder.proxy(p);
                 }
-                // ureq 2.x 只认 http / socks* 前缀（本 crate 未开 socks feature），
-                // 用户最常见的错是照着浏览器习惯写成 `https://主机:端口`。
                 Err(_) => {
                     return Err(format!(
                         "代理地址不可用（{proxy}）：只接受 http:// 前缀，可带账号密码，\
@@ -78,12 +72,11 @@ impl NetSettings {
             }
         }
 
-        // 证书链恒用系统根证书：设置里不提供开关（见「更新网络」分区说明）。
-        // 拿不到系统证书时 `native_tls_config` 返回 None，自动退回内置根。
-        if let Some(cfg) = native_tls_config() {
-            builder = builder.tls_config(Arc::new(cfg));
-        }
-        Ok(builder.build())
+        // 证书链：`rustls-tls-native-roots` 让 reqwest 直接读平台根证书（Windows 证书存储 /
+        // macOS 钥匙串），不再自己拼 rustls ClientConfig。
+        builder
+            .build()
+            .map_err(|e| format!("HTTP 客户端初始化失败：{e}"))
     }
 
     /// 实际要用的代理；`None` = 直连。
@@ -239,79 +232,48 @@ mod mac {
     }
 }
 
-/// 用系统根证书构造 rustls 配置；拿不到证书时返回 None（调用方保留内置根）。
-fn native_tls_config() -> Option<rustls::ClientConfig> {
-    let result = rustls_native_certs::load_native_certs();
-    if result.certs.is_empty() {
-        tracing::warn!("update: no system root certificates, falling back to bundled roots");
-        return None;
-    }
-    let mut roots = rustls::RootCertStore::empty();
-    for cert in result.certs {
-        let _ = roots.add(cert);
-    }
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
-    rustls::ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-        .ok()?
-        .with_root_certificates(roots)
-        .with_no_client_auth()
-        .into()
-}
-
-/// 把 `ureq` 的错误翻译成用户能据此行动的一句话。
-pub(crate) fn describe(err: &ureq::Error) -> String {
-    use ureq::ErrorKind;
-
-    match err {
-        ureq::Error::Status(code, _) => match *code {
+/// 把 reqwest 的错误翻译成用户能据此行动的一句话。
+pub(crate) fn describe(err: &reqwest::Error) -> String {
+    if let Some(status) = err.status() {
+        let code = status.as_u16();
+        return match code {
             401..=403 => format!(
-                "GitHub 拒绝了请求（HTTP {code}）：多为 API 限流，稍后再试；长期失败可在\
-                 「新版本提示 → 更新网络」里设置代理"
+                "GitHub 拒绝了请求（HTTP {code}）：多为 API 限流，稍后再试；长期失败可在「新版本提示」里设置代理"
             ),
             404 => "找不到发布信息（HTTP 404）：仓库或该版本可能已被删除".to_string(),
             429 => "请求过于频繁（HTTP 429），请稍后再试".to_string(),
             500..=599 => format!("GitHub 服务端错误（HTTP {code}），稍后再试"),
             _ => format!("HTTP {code}"),
-        },
-        ureq::Error::Transport(t) => {
-            let kind = t.kind();
-            match kind {
-                ErrorKind::Dns => {
-                    "域名解析失败：本机 DNS 查不到 api.github.com（检查网络，或设置更新代理）".to_string()
-                }
-                ErrorKind::ProxyConnect => {
-                    "代理连接失败：代理地址/端口不可用，或代理需要账号密码".to_string()
-                }
-                ErrorKind::InvalidProxyUrl => "代理地址格式不正确".to_string(),
-                ErrorKind::ConnectionFailed => {
-                    "连接被拒绝或中断：可能需要代理才能访问 GitHub".to_string()
-                }
-                _ => {
-                    let text = t.to_string();
-                    if looks_like_tls(&text) {
-                        "证书校验失败：网络中间人（公司网关 / 加速器）的根证书不在系统信任库中；\
-                         把它的根证书导入系统证书存储后重试"
-                            .to_string()
-                    } else if looks_like_timeout(&text) {
-                        "连接超时：网络不可达，或代理未生效".to_string()
-                    } else {
-                        format!("网络错误：{text}")
-                    }
-                }
-            }
-        }
+        };
     }
+
+    let text = error_chain(err).to_lowercase();
+    if text.contains("certificate") || text.contains("tls") || text.contains("handshake") {
+        return "证书校验失败：网络中间人（公司网关 / 加速器）的证书不被信任".to_string();
+    }
+    if text.contains("dns") || text.contains("resolve") {
+        return "域名解析失败：本机 DNS 查不到 api.github.com（检查网络，或设置更新代理）"
+            .to_string();
+    }
+    if err.is_timeout() {
+        return "连接超时：网络不可达，或代理未生效".to_string();
+    }
+    if err.is_connect() {
+        return "连接被拒绝或中断：可能需要代理才能访问 GitHub".to_string();
+    }
+    format!("网络错误：{err}")
 }
 
-fn looks_like_tls(text: &str) -> bool {
-    let t = text.to_ascii_lowercase();
-    t.contains("certificate") || t.contains("tls") || t.contains("handshake") || t.contains("invalidcertificate")
-}
-
-fn looks_like_timeout(text: &str) -> bool {
-    let t = text.to_ascii_lowercase();
-    t.contains("timed out") || t.contains("timeout")
+/// 把错误链上的每条消息拼起来，用于关键字判定（reqwest 把底层 io/tls 错误藏在 source 里）。
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut out = err.to_string();
+    let mut source = err.source();
+    while let Some(e) = source {
+        out.push_str(" | ");
+        out.push_str(&e.to_string());
+        source = e.source();
+    }
+    out
 }
 
 #[cfg(test)]
@@ -333,7 +295,7 @@ mod tests {
             proxy: "127.0.0.1:7890".into(),
         };
         assert_eq!(net.effective_proxy(), None);
-        assert!(net.agent().is_ok(), "关掉代理时不该因为残留的地址而报错");
+        assert!(net.client().is_ok(), "关掉代理时不该因为残留的地址而报错");
     }
 
     /// 开关打开 + 有地址 = 用它（缺 scheme 补 http://）；留空交给系统探测。
@@ -344,7 +306,7 @@ mod tests {
             proxy: "127.0.0.1:7890".into(),
         };
         assert_eq!(manual.effective_proxy().as_deref(), Some("http://127.0.0.1:7890"));
-        assert!(manual.agent().is_ok(), "合法代理应当能构造出 Agent");
+        assert!(manual.client().is_ok(), "合法代理应当能构造出 Agent");
 
         // 只验证"空串不会当成代理地址"，系统探测返回什么取决于环境。
         let auto = NetSettings {
@@ -358,18 +320,26 @@ mod tests {
     /// 用 `https://` 前缀作样本：这是照着浏览器习惯填代理时最常见的写法。
     #[test]
     fn malformed_proxy_is_reported_instead_of_silently_going_direct() {
+        // 换成 reqwest 后 `https://` 是合法代理（到代理本身走 TLS），不再算错误；
+        // 这条用例改为验证"解析不了的值必须报错"，不能静默退回直连。
         let net = NetSettings {
             enabled: true,
-            proxy: "https://127.0.0.1:7890".into(),
+            proxy: "http://".into(),
         };
-        let err = match net.agent() {
-            Ok(_) => panic!("https:// 前缀的代理应当被拒绝"),
+        let err = match net.client() {
+            Ok(_) => panic!("非法代理地址应当被拒绝"),
             Err(e) => e,
         };
         assert!(err.contains("代理地址不可用"), "{err}");
-        assert!(
-            err.contains("http://127.0.0.1:7890"),
-            "报错要给出可直接照抄的写法：{err}"
-        );
+    }
+
+    #[test]
+    fn socks_proxy_is_rejected_with_a_hint() {
+        let net = NetSettings {
+            enabled: true,
+            proxy: "socks5://127.0.0.1:1080".into(),
+        };
+        let err = net.client().expect_err("socks 代理应当被拒绝");
+        assert!(err.contains("暂不支持 socks 代理"), "{err}");
     }
 }

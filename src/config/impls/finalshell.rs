@@ -6,7 +6,7 @@
 
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use des::cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit};
+use des::cipher::{Block, BlockCipherDecrypt, KeyInit};
 use des::Des;
 use serde::Deserialize;
 
@@ -144,7 +144,12 @@ fn decode_password(encoded: &str) -> Result<String> {
     // `as_chunks_mut` over `chunks_exact_mut(8)`: same semantics, satisfies
     // clippy::chunks_exact_to_as_chunks (rust-1.98 lint).
     for block in plaintext.as_chunks_mut::<8>().0 {
-        cipher.decrypt_block(GenericArray::from_mut_slice(block));
+        // `Array::from_mut_slice` 在 hybrid-array 0.4 已废弃；手上一个块大小的
+        // 栈上数组再拷回去，代价可忽略（8 字节），且不依赖 TryFrom 的引用形态。
+        let mut buf = Block::<Des>::default();
+        buf.copy_from_slice(block);
+        cipher.decrypt_block(&mut buf);
+        block.copy_from_slice(&buf);
     }
     remove_pkcs5_padding(&mut plaintext)?;
 

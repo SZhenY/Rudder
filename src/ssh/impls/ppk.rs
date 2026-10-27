@@ -8,7 +8,8 @@ use aes::Aes256;
 use anyhow::{Context, Result, anyhow, bail};
 use argon2::{Algorithm as ArgonAlgorithm, Argon2, Params, Version};
 use base64::Engine;
-use cbc::cipher::{BlockDecryptMut, KeyIvInit, block_padding::NoPadding};
+use cbc::cipher::{BlockModeDecrypt, KeyIvInit, block_padding::NoPadding};
+use hmac::KeyInit as _;
 use hmac::{Hmac, Mac};
 use russh::keys::PrivateKey;
 use sha1::{Digest as _, Sha1};
@@ -197,7 +198,7 @@ fn decrypt_private_blob(ppk: &mut Ppk, passphrase: &str) -> Result<()> {
 
     let (mut key, mut iv, _) = derive_keys(ppk, passphrase)?;
     Aes256CbcDec::new((&key).into(), (&iv).into())
-        .decrypt_padded_mut::<NoPadding>(&mut ppk.private)
+        .decrypt_padded::<NoPadding>(&mut ppk.private)
         .map_err(|_| anyhow!("failed to decrypt PPK private data"))?;
     key.zeroize();
     iv.zeroize();

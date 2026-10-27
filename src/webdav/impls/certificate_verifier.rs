@@ -1,14 +1,14 @@
 use super::types::WebDavAcceptAnyCertVerifier;
 
-impl ureq::rustls::client::danger::ServerCertVerifier for WebDavAcceptAnyCertVerifier {
+impl rustls::client::danger::ServerCertVerifier for WebDavAcceptAnyCertVerifier {
     fn verify_server_cert(
         &self,
-        end_entity: &ureq::rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[ureq::rustls::pki_types::CertificateDer<'_>],
-        _server_name: &ureq::rustls::pki_types::ServerName<'_>,
+        end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
-        _now: ureq::rustls::pki_types::UnixTime,
-    ) -> std::result::Result<ureq::rustls::client::danger::ServerCertVerified, ureq::rustls::Error>
+        _now: rustls::pki_types::UnixTime,
+    ) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error>
     {
         // Optional certificate pinning: when a fingerprint is configured,
         // only a matching end-entity cert passes. This keeps the
@@ -31,41 +31,41 @@ impl ureq::rustls::client::danger::ServerCertVerifier for WebDavAcceptAnyCertVer
                 .map(|b| format!("{b:02x}"))
                 .collect();
             if hex == pin {
-                return Ok(ureq::rustls::client::danger::ServerCertVerified::assertion());
+                return Ok(rustls::client::danger::ServerCertVerified::assertion());
             }
-            return Err(ureq::rustls::Error::General(
+            return Err(rustls::Error::General(
                 "server certificate does not match the pinned fingerprint".into(),
             ));
         }
-        Ok(ureq::rustls::client::danger::ServerCertVerified::assertion())
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
 
     fn verify_tls12_signature(
         &self,
         _message: &[u8],
-        _cert: &ureq::rustls::pki_types::CertificateDer<'_>,
-        _dss: &ureq::rustls::DigitallySignedStruct,
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> std::result::Result<
-        ureq::rustls::client::danger::HandshakeSignatureValid,
-        ureq::rustls::Error,
+        rustls::client::danger::HandshakeSignatureValid,
+        rustls::Error,
     > {
-        Ok(ureq::rustls::client::danger::HandshakeSignatureValid::assertion())
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
     fn verify_tls13_signature(
         &self,
         _message: &[u8],
-        _cert: &ureq::rustls::pki_types::CertificateDer<'_>,
-        _dss: &ureq::rustls::DigitallySignedStruct,
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> std::result::Result<
-        ureq::rustls::client::danger::HandshakeSignatureValid,
-        ureq::rustls::Error,
+        rustls::client::danger::HandshakeSignatureValid,
+        rustls::Error,
     > {
-        Ok(ureq::rustls::client::danger::HandshakeSignatureValid::assertion())
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
-    fn supported_verify_schemes(&self) -> Vec<ureq::rustls::SignatureScheme> {
-        use ureq::rustls::SignatureScheme;
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        use rustls::SignatureScheme;
         vec![
             SignatureScheme::ECDSA_NISTP256_SHA256,
             SignatureScheme::ECDSA_NISTP384_SHA384,

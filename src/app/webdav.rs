@@ -82,60 +82,93 @@ pub(super) fn webdav_auth_header(username: &str, password: &str) -> Option<Strin
     ))
 }
 
-pub(super) fn webdav_auth_req(mut req: ureq::Request, auth: Option<&str>) -> ureq::Request {
-    if let Some(auth) = auth {
-        req = req.set("Authorization", auth);
+pub(super) fn webdav_auth(
+    req: reqwest::blocking::RequestBuilder,
+    auth: Option<&str>,
+) -> reqwest::blocking::RequestBuilder {
+    match auth {
+        Some(auth) => req.header("Authorization", auth),
+        None => req,
     }
-    req
 }
 
-pub(super) fn webdav_agent(accept_invalid_certs: bool) -> ureq::Agent {
-    let mut builder = ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(20));
+/// WebDAV 客户端。
+///
+/// 「信任自签名证书」走 `use_preconfigured_tls` + 我们自己的校验器，而不是 reqwest 的
+/// `danger_accept_invalid_certs`：后者会丢掉**证书指纹固定**（配了指纹就只认那一张证书）。
+pub(super) fn webdav_agent(accept_invalid_certs: bool) -> reqwest::blocking::Client {
+    let mut builder = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(20));
     if accept_invalid_certs {
-        let tls_config = ureq::rustls::ClientConfig::builder_with_provider(
-            ureq::rustls::crypto::ring::default_provider().into(),
-        )
-        .with_protocol_versions(&[&ureq::rustls::version::TLS12, &ureq::rustls::version::TLS13])
-        .expect("rustls ring provider supports TLS 1.2 and TLS 1.3")
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(WebDavAcceptAnyCertVerifier::default()))
-        .with_no_client_auth();
-        builder = builder.tls_config(Arc::new(tls_config));
+        if let Some(cfg) = accept_any_tls_config() {
+            builder = builder.use_preconfigured_tls(cfg);
+        } else {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
     }
-    builder.build()
+    builder.build().expect("build WebDAV HTTP client")
 }
 
-pub(super) fn webdav_error(e: ureq::Error) -> anyhow::Error {
-    if let ureq::Error::Status(status, response) = e {
-        let url = response.get_url().to_string();
-        let body = response.into_string().unwrap_or_default();
-        let body = body.trim();
-        let detail = if body.is_empty() {
-            String::new()
-        } else {
-            format!(": {}", body.chars().take(240).collect::<String>())
-        };
-        if status == 400 {
-            return anyhow::anyhow!(
-                "{}: {url}: status code 400{detail}",
-                t(
-                    "请求被 WebDAV 服务拒绝，请检查地址协议/端口是否匹配，以及远端文件所在目录是否已开启 WebDAV 协议访问",
-                    "WebDAV rejected the request; check the URL scheme/port and whether the remote folder allows WebDAV access"
-                )
-            );
-        }
-        if status == 405 {
-            return anyhow::anyhow!(
-                "{}: {url}: status code 405{detail}",
-                t(
-                    "当前 WebDAV 路径不允许上传；飞牛请写入已开启协议访问的共享目录，例如 WebDAV 地址填 https://IP:5006/all/，或远端文件填 all/rudder-connections.json",
-                    "The current WebDAV path does not allow upload; for FnOS, write into a shared folder such as https://IP:5006/all/ or set remote file to all/rudder-connections.json"
-                )
-            );
-        }
-        return anyhow::anyhow!("{url}: status code {status}{detail}");
+/// 接受任意（或仅匹配指纹的）服务端证书的 rustls 配置。
+fn accept_any_tls_config() -> Option<rustls::ClientConfig> {
+    use std::sync::Arc;
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    Some(
+        rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .ok()?
+            // `dangerous()` 必须在 WantsVerifier 阶段调用：自定义校验器取代根证书校验，
+            // 因此这里不建 RootCertStore。
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(WebDavAcceptAnyCertVerifier::default()))
+            .with_no_client_auth(),
+    )
+}
+
+/// 非 2xx 的响应 → 带状态码与响应体片段的错误（400/405 有专门文案）。
+pub(super) fn webdav_status_error(resp: reqwest::blocking::Response) -> anyhow::Error {
+    let status = resp.status().as_u16();
+    let url = resp.url().to_string();
+    let body = resp.text().unwrap_or_default();
+    webdav_status_message(status, &url, body.trim())
+}
+
+fn webdav_status_message(status: u16, url: &str, body: &str) -> anyhow::Error {
+    let detail = if body.is_empty() {
+        String::new()
+    } else {
+        format!(": {}", body.chars().take(240).collect::<String>())
+    };
+    if status == 400 {
+        return anyhow::anyhow!(
+            "{}: {url}: status code 400{detail}",
+            t(
+                "请求被 WebDAV 服务拒绝，请检查地址协议/端口是否匹配，以及远端文件所在目录是否已开启 WebDAV 协议访问",
+                "WebDAV rejected the request; check the URL scheme/port and whether the remote folder allows WebDAV access"
+            )
+        );
     }
-    let msg = e.to_string();
+    if status == 405 {
+        return anyhow::anyhow!(
+            "{}: {url}: status code 405{detail}",
+            t(
+                "当前 WebDAV 路径不允许上传；飞牛请写入已开启协议访问的共享目录，例如 WebDAV 地址填 https://IP:5006/all/，或远端文件填 all/rudder-connections.json",
+                "The current WebDAV path does not allow upload; for FnOS, write into a shared folder such as https://IP:5006/all/ or set remote file to all/rudder-connections.json"
+            )
+        );
+    }
+    anyhow::anyhow!("{url}: status code {status}{detail}")
+}
+
+/// 传输层错误（连接 / TLS / 超时）→ 人话。
+pub(super) fn webdav_error(e: reqwest::Error) -> anyhow::Error {
+    let mut msg = e.to_string();
+    let mut source = std::error::Error::source(&e);
+    while let Some(src) = source {
+        msg.push_str(" | ");
+        msg.push_str(&src.to_string());
+        source = src.source();
+    }
     if msg.contains("UnknownIssuer") || msg.contains("invalid peer certificate") {
         anyhow::anyhow!(
             "{} ({msg})",
@@ -183,37 +216,41 @@ pub(super) fn webdav_dir_missing_or_no_create_error() -> anyhow::Error {
 }
 
 pub(super) fn webdav_dir_exists(
-    agent: &ureq::Agent,
+    agent: &reqwest::blocking::Client,
     url: &str,
     auth: Option<&str>,
 ) -> Result<bool> {
-    let req = webdav_auth_req(agent.request("PROPFIND", url).set("Depth", "0"), auth);
-    match req.call() {
-        Ok(_) => Ok(true),
-        Err(ureq::Error::Status(status, _)) if status == 404 || status == 409 => Ok(false),
-        Err(ureq::Error::Status(status, _)) if status == 401 || status == 403 || status == 405 => {
-            Err(webdav_dir_missing_or_no_create_error())
-        }
-        Err(e) => Err(webdav_error(e)),
+    let method = reqwest::Method::from_bytes(b"PROPFIND").expect("PROPFIND is a valid method");
+    let resp = webdav_auth(agent.request(method, url).header("Depth", "0"), auth)
+        .send()
+        .map_err(webdav_error)?;
+    match resp.status().as_u16() {
+        200..=299 => Ok(true),
+        404 | 409 => Ok(false),
+        401 | 403 | 405 => Err(webdav_dir_missing_or_no_create_error()),
+        _ => Err(webdav_status_error(resp)),
     }
 }
 
-pub(super) fn webdav_create_dir(agent: &ureq::Agent, url: &str, auth: Option<&str>) -> Result<()> {
-    let req = webdav_auth_req(agent.request("MKCOL", url), auth);
-    match req.call() {
-        Ok(_) => Ok(()),
-        Err(ureq::Error::Status(405, _)) => Ok(()),
-        Err(ureq::Error::Status(status, _))
-            if status == 401 || status == 403 || status == 404 || status == 409 =>
-        {
-            Err(webdav_dir_missing_or_no_create_error())
-        }
-        Err(e) => Err(webdav_error(e)),
+pub(super) fn webdav_create_dir(
+    agent: &reqwest::blocking::Client,
+    url: &str,
+    auth: Option<&str>,
+) -> Result<()> {
+    let method = reqwest::Method::from_bytes(b"MKCOL").expect("MKCOL is a valid method");
+    let resp = webdav_auth(agent.request(method, url), auth)
+        .send()
+        .map_err(webdav_error)?;
+    match resp.status().as_u16() {
+        200..=299 => Ok(()),
+        405 => Ok(()),
+        401 | 403 | 404 | 409 => Err(webdav_dir_missing_or_no_create_error()),
+        _ => Err(webdav_status_error(resp)),
     }
 }
 
 pub(super) fn webdav_ensure_parent_dirs(
-    agent: &ureq::Agent,
+    agent: &reqwest::blocking::Client,
     url: &str,
     auth: Option<&str>,
 ) -> Result<()> {
@@ -237,11 +274,18 @@ pub(super) fn webdav_put_json(
     let agent = webdav_agent(accept_invalid_certs);
     let auth = webdav_auth_header(username, password);
     webdav_ensure_parent_dirs(&agent, &url, auth.as_deref())?;
-    let req = webdav_auth_req(
-        agent.put(&url).set("Content-Type", "application/json"),
+    let resp = webdav_auth(
+        agent.put(&url).header("Content-Type", "application/json"),
         auth.as_deref(),
-    );
-    req.send_string(&json).map(|_| ()).map_err(webdav_error)
+    )
+    .body(json)
+    .send()
+    .map_err(webdav_error)?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(webdav_status_error(resp))
+    }
 }
 
 pub(super) fn webdav_get_json(
@@ -254,11 +298,13 @@ pub(super) fn webdav_get_json(
     let url = webdav_url(base_url, remote_path)?;
     let agent = webdav_agent(accept_invalid_certs);
     let auth = webdav_auth_header(username, password);
-    let req = webdav_auth_req(agent.get(&url), auth.as_deref());
-    req.call()
-        .map_err(webdav_error)?
-        .into_string()
-        .map_err(|e| anyhow::anyhow!("{e}"))
+    let resp = webdav_auth(agent.get(&url), auth.as_deref())
+        .send()
+        .map_err(webdav_error)?;
+    if !resp.status().is_success() {
+        return Err(webdav_status_error(resp));
+    }
+    resp.text().map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 #[cfg(test)]

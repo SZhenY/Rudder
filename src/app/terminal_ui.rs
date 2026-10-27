@@ -299,10 +299,12 @@ pub(super) fn theme_pref_is_dark(store: &ConfigStore) -> bool {
     match store.theme_pref() {
         "light" => false,
         "dark" => true,
+        // dark-light 3：`detect()` 返回 `Result<Mode, Error>`，且 `Mode::Default`
+        // 更名为 `Unspecified`；取不到就按深色处理（与之前一致）。
         _ => match dark_light::detect() {
-            dark_light::Mode::Light => false,
-            dark_light::Mode::Dark => true,
-            dark_light::Mode::Default => true, // undetectable → dark
+            Ok(dark_light::Mode::Light) => false,
+            Ok(dark_light::Mode::Dark) => true,
+            _ => true,
         },
     }
 }

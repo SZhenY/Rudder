@@ -1,4 +1,4 @@
-//! 在线一键更新（GitHub Releases + `self_update`）。
+//! 在线一键更新（GitHub Releases）。
 //!
 //! 流程：列 release → 按平台挑资产 → 下载（进度）→ 解压到临时目录 →
 //! 平台替换 → 提示用户重启。
@@ -134,14 +134,17 @@ pub(crate) fn fetch_channel_release(channel: &str) -> Result<Option<serde_json::
     } else {
         format!("https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases?per_page=30")
     };
-    let body = super::update_net::current()
-        .agent()
-        .map_err(|e| anyhow!("{e}"))?
+    let client = super::update_net::current()
+        .client()
+        .map_err(|e| anyhow!("{e}"))?;
+    let body = client
         .get(&url)
-        .timeout(std::time::Duration::from_secs(15))
-        .call()
+        .timeout(std::time::Duration::from_secs(20))
+        .send()
         .map_err(|e| anyhow!("{}", super::update_net::describe(&e)))?
-        .into_string()
+        .error_for_status()
+        .map_err(|e| anyhow!("{}", super::update_net::describe(&e)))?
+        .text()
         .context("read releases response")?;
     let json: serde_json::Value =
         serde_json::from_str(&body).context("parse releases response")?;
@@ -245,18 +248,19 @@ pub(crate) fn download_and_stage(
 
     let archive = stage_dir.join(&cand.asset_name);
     {
-        let resp = super::update_net::current()
-            .agent()
-            .map_err(|e| anyhow!("{e}"))?
+        let client = super::update_net::current()
+            .client()
+            .map_err(|e| anyhow!("{e}"))?;
+        let resp = client
             .get(&cand.download_url)
-            .timeout(std::time::Duration::from_secs(60))
-            .call()
+            .timeout(std::time::Duration::from_secs(600))
+            .send()
+            .map_err(|e| anyhow!("{}", super::update_net::describe(&e)))?
+            .error_for_status()
             .map_err(|e| anyhow!("{}", super::update_net::describe(&e)))?;
-        let total: u64 = resp
-            .header("Content-Length")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
-        let mut reader = resp.into_reader();
+        let total: u64 = resp.content_length().unwrap_or(0);
+        // blocking 的 Response 直接实现 io::Read。
+        let mut reader = resp;
         let mut file = std::fs::File::create(&archive).context("create archive file")?;
         let mut buf = vec![0u8; 64 * 1024];
         let mut done: u64 = 0;
@@ -277,9 +281,7 @@ pub(crate) fn download_and_stage(
 
     let extract_dir = stage_dir.join("extracted");
     std::fs::create_dir_all(&extract_dir).context("create extract dir")?;
-    self_update::Extract::from_source(&archive)
-        .extract_into(&extract_dir)
-        .context("extract release archive")?;
+    extract_archive(&archive, &extract_dir)?;
     // 解压完就把压缩包删掉：不再需要它，也少留一份可执行文件在临时目录里。
     let _ = std::fs::remove_file(&archive);
     on_progress(1.0);
@@ -409,12 +411,68 @@ fn replace_binary(_exe: &Path, extract_dir: &Path) -> Result<()> {
     self_replace::self_replace(&new_bin).context("replace executable in place")
 }
 
+/// 解压发布包（.zip 或 .tar.gz）。自己实现是为了不再依赖 `self_update` ——
+/// 它强制要求启用一个 HTTP 客户端特性，会把第二份 reqwest 与 aws-lc-sys 拉回依赖图。
+fn extract_archive(archive: &Path, dest: &Path) -> Result<()> {
+    let name = archive
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if name.ends_with(".zip") {
+        let file = std::fs::File::open(archive).context("open update zip")?;
+        let mut zip = zip::ZipArchive::new(file).context("read update zip")?;
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).context("read zip entry")?;
+            // `enclosed_name` 拒绝 `../` 之类越界路径：压缩包来自网络，必须防穿越。
+            let Some(rel) = entry.enclosed_name() else {
+                continue;
+            };
+            let out = dest.join(rel);
+            if entry.is_dir() {
+                std::fs::create_dir_all(&out).context("create dir from zip")?;
+                continue;
+            }
+            if let Some(parent) = out.parent() {
+                std::fs::create_dir_all(parent).context("create parent from zip")?;
+            }
+            let mut f = std::fs::File::create(&out).context("create file from zip")?;
+            std::io::copy(&mut entry, &mut f).context("write file from zip")?;
+        }
+        return Ok(());
+    }
+
+    if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+        let file = std::fs::File::open(archive).context("open update tar.gz")?;
+        let gz = flate2::read::GzDecoder::new(file);
+        tar::Archive::new(gz)
+            .unpack(dest)
+            .context("unpack update tar.gz")?;
+        return Ok(());
+    }
+
+    anyhow::bail!("unsupported update archive: {name}")
+}
+
 /// 用新版本重启应用（Unix 用 exec 保留 PID，Windows 起新进程并退出当前进程）。
 pub(crate) fn restart_app() -> Result<()> {
-    // Returns `Infallible` on success: on Unix the process image is replaced by
-    // exec, on Windows a new process is spawned and this one exits.
-    let never = self_update::restart::restart().map_err(|e| anyhow!("restart: {e}"))?;
-    Err(anyhow!("restart returned unexpectedly: {never:?}"))
+    let exe = current_exe()?;
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.args(std::env::args_os().skip(1));
+
+    #[cfg(windows)]
+    {
+        cmd.spawn().context("spawn new instance")?;
+        // 新进程已经起来，当前进程直接退出；调用方不会拿到返回值。
+        std::process::exit(0);
+    }
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = cmd.exec();
+        Err(anyhow!("exec new instance: {err}"))
+    }
 }
 
 #[cfg(test)]
@@ -565,7 +623,7 @@ pub(crate) fn changelog_section(md: &str, version: &str) -> Option<String> {
 /// 用裸 `ureq::get` 会让「检查能出结果、发布说明却是空的」这种半失败很难解释。
 fn fetch_changelog(tag: &str) -> Option<String> {
     let url = format!("https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/{tag}/CHANGELOG.md");
-    let agent = match super::update_net::current().agent() {
+    let agent = match super::update_net::current().client() {
         Ok(a) => a,
         Err(e) => {
             tracing::debug!("update notes: {e}");
@@ -575,9 +633,9 @@ fn fetch_changelog(tag: &str) -> Option<String> {
     match agent
         .get(&url)
         .timeout(std::time::Duration::from_secs(15))
-        .call()
+        .send()
     {
-        Ok(resp) => resp.into_string().ok(),
+        Ok(resp) => resp.text().ok(),
         Err(e) => {
             tracing::debug!(
                 "update notes: fetching CHANGELOG failed: {}",
