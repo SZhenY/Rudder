@@ -14,6 +14,15 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      # 只用于手动验证 MSI 能否编出来。WiX 的 ProductVersion 必须是纯数字，
+      # 而预发布期 Cargo.toml 是 `0.8.0-beta3` 这类值 —— 正式发版走 tag，
+      # beta/alpha/rc 已被 MSI 步骤的 if 排除，所以只有 dispatch 会遇到这个坑。
+      # 留空则退回读 Cargo.toml（正式版号本身是数字，不需要填）。
+      msi_version:
+        description: "MSI ProductVersion（纯数字，如 0.8.0.3；留空读 Cargo.toml）"
+        required: false
+        default: ""
 
 permissions:
   contents: write   # needed to create / update the GitHub Release
@@ -322,14 +331,24 @@ jobs:
           # "v" prefix and a workflow_dispatch run has no tag at all
           # (GITHUB_REF_NAME == the branch), so read the real version from
           # Cargo.toml — the single source of truth for both cases.
-          $MSI_VERSION = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' |
-            Select-Object -First 1).Matches[0].Groups[1].Value
+          # 手动验证 MSI 时用 msi_version 覆盖：预发布期 Cargo.toml 是
+          # `0.8.0-beta3`，WiX 收不了这种值。
+          $MSI_VERSION = "${{ github.event.inputs.msi_version }}"
+          if (-not $MSI_VERSION) {
+            $MSI_VERSION = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' |
+              Select-Object -First 1).Matches[0].Groups[1].Value
+          }
           if (-not $MSI_VERSION) { $MSI_VERSION = $VERSION.TrimStart("v") }
           # 仅历史 `-fixN` 标签需要这条映射（WiX 的 ProductVersion 只能是数字）。
           # 新命名 `-betaN` 不产 MSI —— 上面的 `if` 已经把 beta/alpha/rc 排除了，
           # 因为 WiX 表达不了"早于 0.7.9"这种预发布语义。
           # Legacy `-fixN` only: `0.7.7-fix1` → `0.7.7.1`（WiX rejects `-`）。
           $MSI_VERSION = $MSI_VERSION -replace '-fix(\d+)$', '.$1'
+          # 提前拦住非数字版本：否则 wix build 的报错指向 ProductVersion 属性，
+          # 看不出"这是预发布版本号"这层原因。
+          if ($MSI_VERSION -notmatch '^\d+(\.\d+){1,3}$') {
+            throw "MSI ProductVersion 必须是纯数字（当前 '$MSI_VERSION'）：预发布版本号进不了 MSI。手动验证时传 msi_version，例如 0.8.0.3"
+          }
           # CLI and extension versions must match: pinning the CLI to 4.x while
           # resolving the extension to 7.0.0 left the cache entry "damaged"
           # (WIX0144). Both are pinned to the same release here.
