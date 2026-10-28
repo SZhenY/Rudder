@@ -157,16 +157,12 @@ chacha20poly1305 = "0.11"
 # Detect whether the OS is running in dark or light mode.
 # Used on startup to honour the system preference before the user overrides it.
 dark-light = "3"
-# Lightweight synchronous HTTPS client (bundled rustls, no OpenSSL) for the
-# in-app update check against the GitHub releases API (#48). Runs on a
-# background thread so it never blocks startup; failure is silently ignored.
-# 统一 HTTP 栈：blocking + rustls（含平台根证书）+ HTTP/2。
+# 更新器与 WebDAV 的 HTTP 栈：blocking + rustls（含平台根证书）+ HTTP/2。
 # WebDAV 的证书指纹固定需要自定义校验器，经 reqwest 的 use_preconfigured_tls 注入。
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12", "logging"] }
 reqwest = { version = "0.12", default-features = false, features = [
     "blocking", "rustls-tls-native-roots", "http2", "gzip",
 ] }
-# 更新器专用：读系统根证书（解决代理做 TLS 中间人时的证书信任问题）。
 
 # Image decoding: custom wallpapers (PNG/JPEG/WebP/BMP) for the immersive theme,
 # and the embedded PNG window icon on Linux. On Windows the icon comes from the

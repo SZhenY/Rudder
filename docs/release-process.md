@@ -30,6 +30,22 @@ Release workflow 也会检查推送上来的 tag。比如 tag 名是 `v0.5.7` �
 `Cargo.toml`、`Cargo.lock` 和构建出的 `rudder --version` 都必须是
 `0.5.7`，否则 workflow 会在发布前失败。
 
+### 包体积记录
+
+tag 推送后，workflow 末尾的 `包体积` 作业会把各平台体积写进 Release 正文：
+
+- **可执行文件**：未压缩的二进制大小（各构建作业上传的 `size-*.json`，压缩包里看不到）
+- **安装包**：zip / tar.gz 的实际大小，AppImage 与 MSI 单列在表下方
+- **与上一版相比**：与上一份 Release 同名资产的差值（按 `windows-` / `linux-` / `macos-`
+  后缀对齐，版本号不同也能配上）
+
+这段由 `scripts/size-report.sh` 生成，正文里带 `<!-- size-report:start -->` 标记，
+重跑会整段替换而不是叠加。只想预览不写 Release：
+
+```bash
+bash scripts/size-report.sh v0.8.0-beta3 --dry-run
+```
+
 ### 「挂产物」步骤失败时（`Attach to GitHub Release`）
 
 如果构建、打包、`Upload workflow artifact` 都成功，只有最后一步挂产物报
@@ -80,6 +96,26 @@ git push origin v0.5.7
 The release workflow also checks pushed tags. A tag named `v0.5.7` must match
 `Cargo.toml`, `Cargo.lock`, and the built `rudder --version` output,
 otherwise the workflow fails before publishing.
+
+### Package sizes in the release notes
+
+After a tag is pushed, the `包体积` (`size-report`) job appends a size table to
+the release body:
+
+- **executable**: uncompressed binary size (from the per-job `size-*.json`;
+  the archives don't reveal it)
+- **package**: actual zip / tar.gz size; AppImage and MSI are listed below the table
+- **vs. previous release**: delta against the same asset of the previous release
+  (matched by the `windows-` / `linux-` / `macos-` suffix, so different version
+  numbers still line up)
+
+The table is produced by `scripts/size-report.sh` and wrapped in
+`<!-- size-report:start -->` markers, so reruns replace it instead of stacking.
+Preview without touching the release:
+
+```bash
+bash scripts/size-report.sh v0.8.0-beta3 --dry-run
+```
 
 ### When the attach step fails (`Attach to GitHub Release`)
 

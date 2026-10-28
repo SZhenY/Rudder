@@ -347,6 +347,28 @@ jobs:
             -out "rudder-$VERSION-${{ matrix.name }}.msi"
           echo "MSI=rudder-$VERSION-${{ matrix.name }}.msi" >> $env:GITHUB_ENV
 
+      # 体积基线：压缩包里看不出未压缩的可执行文件大小，所以每个作业各留一份，
+      # 由末尾的 size-report 作业汇总进 Release 正文（见 scripts/size-report.sh）。
+      - name: Record package size
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -eu
+          bin="target/${{ matrix.target }}/release/${{ matrix.bin }}"
+          bin_bytes=$(stat -c%s "$bin" 2>/dev/null || stat -f%z "$bin")
+          asset=$(basename "${ASSET}")
+          asset_bytes=$(stat -c%s "${ASSET}" 2>/dev/null || stat -f%z "${ASSET}")
+          mkdir -p sizes
+          printf '{"name":"%s","asset":"%s","bin_bytes":%s,"asset_bytes":%s}\n' \
+            "${{ matrix.name }}" "$asset" "$bin_bytes" "$asset_bytes" > "sizes/${{ matrix.name }}.json"
+
+      - name: Upload size record
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v6
+        with:
+          name: size-${{ matrix.name }}
+          path: sizes/${{ matrix.name }}.json
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
         with:
@@ -503,6 +525,28 @@ jobs:
           tar -czf "${STAGE}.tar.gz" "$STAGE"
           echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
 
+      # 体积基线：压缩包里看不出未压缩的可执行文件大小，所以每个作业各留一份，
+      # 由末尾的 size-report 作业汇总进 Release 正文（见 scripts/size-report.sh）。
+      - name: Record package size
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -eu
+          bin="target/aarch64-unknown-linux-gnu/release/rudder"
+          bin_bytes=$(stat -c%s "$bin" 2>/dev/null || stat -f%z "$bin")
+          asset=$(basename "${ASSET}")
+          asset_bytes=$(stat -c%s "${ASSET}" 2>/dev/null || stat -f%z "${ASSET}")
+          mkdir -p sizes
+          printf '{"name":"%s","asset":"%s","bin_bytes":%s,"asset_bytes":%s}\n' \
+            "linux-aarch64-glibc228" "$asset" "$bin_bytes" "$asset_bytes" > "sizes/linux-aarch64-glibc228.json"
+
+      - name: Upload size record
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v6
+        with:
+          name: size-linux-aarch64-glibc228
+          path: sizes/linux-aarch64-glibc228.json
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
         with:
@@ -605,6 +649,28 @@ jobs:
           tar -czf "${STAGE}.tar.gz" "$STAGE"
           echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
 
+      # 体积基线：压缩包里看不出未压缩的可执行文件大小，所以每个作业各留一份，
+      # 由末尾的 size-report 作业汇总进 Release 正文（见 scripts/size-report.sh）。
+      - name: Record package size
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -eu
+          bin="target/x86_64-unknown-linux-gnu/release/rudder"
+          bin_bytes=$(stat -c%s "$bin" 2>/dev/null || stat -f%z "$bin")
+          asset=$(basename "${ASSET}")
+          asset_bytes=$(stat -c%s "${ASSET}" 2>/dev/null || stat -f%z "${ASSET}")
+          mkdir -p sizes
+          printf '{"name":"%s","asset":"%s","bin_bytes":%s,"asset_bytes":%s}\n' \
+            "linux-x86_64-glibc228" "$asset" "$bin_bytes" "$asset_bytes" > "sizes/linux-x86_64-glibc228.json"
+
+      - name: Upload size record
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v6
+        with:
+          name: size-linux-x86_64-glibc228
+          path: sizes/linux-x86_64-glibc228.json
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
         with:
@@ -630,3 +696,25 @@ jobs:
           # 更新检查读 `/releases/latest`，该接口默认排除预发布，标成 prerelease
           # 等于用户永远收不到补丁版。
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
+
+  # 把各平台体积写进 Release 正文：给用户看下载体积，也给维护者留一条逐版本基线 ——
+  # 体积突然变大时能立刻定位到是哪一版引入的（数据来自各作业的 size-*.json 与资产列表）。
+  size-report:
+    name: 包体积
+    needs: [build, build-linux-aarch64-glibc228, build-linux-x86_64-glibc228]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download size records
+        uses: actions/download-artifact@v6
+        with:
+          pattern: size-*
+          path: sizes
+          merge-multiple: true
+
+      - name: Append sizes to release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/size-report.sh "$GITHUB_REF_NAME" | tee -a "$GITHUB_STEP_SUMMARY"
