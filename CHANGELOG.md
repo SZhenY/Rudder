@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-28
+
 ### 新增 / Added
 
 - 安装版（MSI）支持应用内自更新：检测到当前副本由 MSI 安装时，下载 `.msi` 交给 `msiexec`
