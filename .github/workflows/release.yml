@@ -742,4 +742,8 @@ jobs:
       - name: Append sizes to release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/size-report.sh "$GITHUB_REF_NAME" | tee -a "$GITHUB_STEP_SUMMARY"
+        # 必须开 pipefail：否则 `bash script | tee` 的退出码来自 tee，脚本失败
+        # （例如写回 404）也会让作业显示成功 —— 0.8.1 第一次发布就踩了这一下。
+        run: |
+          set -o pipefail
+          bash scripts/size-report.sh "$GITHUB_REF_NAME" | tee -a "$GITHUB_STEP_SUMMARY"

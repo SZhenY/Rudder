@@ -171,9 +171,10 @@ gh release view "$TAG" -R "$REPO" --json body -q .body |
     cat "$section"
 } > "$tmpdir/new-body.md"
 
-gh api --method PATCH "repos/$REPO/releases/tags/$TAG" \
+# 更新 Release 只能按 release id：`PATCH /releases/tags/<tag>` 不存在，会 404。
+release_id=$(gh api "repos/$REPO/releases/tags/$TAG" -q .id)
+gh api --method PATCH "repos/$REPO/releases/$release_id" \
     -F "body=@$tmpdir/new-body.md" > /dev/null
-
 echo "已写入 $TAG 的发布说明（基线：${prev_tag:-无}）。" >&2
 cat "$section"
 
