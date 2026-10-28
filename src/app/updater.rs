@@ -417,9 +417,23 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
     }
 
     {
+        let weak = window.as_weak();
         window.on_restart_app(move || {
             if let Err(e) = crate::app::self_updater::restart_app() {
                 tracing::warn!("restart after update failed: {e:#}");
+                // exec 失败时当前进程还在跑，不给提示的话用户只看到"点了没反应"
+                // （0.8.0-beta3 的 macOS 自更新就是栽在这里：新二进制没有执行位）。
+                if let Some(w) = weak.upgrade() {
+                    w.set_update_state(4);
+                    w.set_update_status(
+                        crate::i18n::t(
+                            "重启失败：请手动退出再打开。若仍打不开，请从发布页重新下载安装",
+                            "Restart failed — quit and reopen manually. If it still won't open, reinstall from the release page",
+                        )
+                        .into(),
+                    );
+                    w.set_update_dialog_open(true);
+                }
             }
         });
     }

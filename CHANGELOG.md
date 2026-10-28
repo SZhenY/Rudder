@@ -5,6 +5,32 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.8.1-fix1] - 2026-10-28
+
+### 修复 / Fixed
+
+- macOS 自更新把 app 更新成打不开：解压 zip 用的是 `File::create` + `io::copy`，既不还原
+  Unix 权限位也不还原符号链接，`Contents/MacOS/rudder` 于是变成 `0644` —— 更新后点「重启程序」
+  没有反应，手动打开提示「程序无法打开」，`xattr -dr com.apple.quarantine` 也无效（与隔离
+  属性无关）。现在 macOS 优先用系统的 `ditto -x -k` 解包（与 CI 的 `ditto -c -k` 打包闭环），
+  回退路径补齐权限位与符号链接还原；bundle 替换完再强制 `Contents/MacOS/*` 为 `0755` 并做
+  ad-hoc 重签。
+- 点「重启程序」失败时没有任何提示（当前进程还在跑，用户只看到「点了没反应」）：现在把
+  失败原因写进更新对话框并自动打开。
+- `copy_dir_recursive` 兜底拷贝会跟随符号链接，把 framework 的 `Versions/Current` 实体化，
+  改用 `symlink_metadata` 保留链接。
+
+**注意：受影响的用户请手动重装。** 0.8.0-beta3 与 0.8.1 的 macOS 自更新会破坏 app，且装坏
+之后无法再靠自更新修复。请从发布页重新下载本版本，先 `rm -rf /Applications/rudder.app`，
+再用 Finder（或 `ditto -x -k`）解压安装。0.8.0 及更早版本不受解压缺陷影响，可以正常更新。
+
+**Fixed** (macOS): the self-update left the app unbootable — the zip extractor dropped Unix
+permission bits and symlinks, so `Contents/MacOS/rudder` ended up mode 0644 (Restart did nothing
+and the app refused to launch). Extraction now prefers the system `ditto -x -k` (matching the CI's
+`ditto -c -k` packaging) and the fallback restores modes and symlinks; after replacing the bundle
+we force `Contents/MacOS/*` to 0755 and re-apply the ad-hoc signature. Restart failures are now
+surfaced in the update dialog instead of being silently logged.
+
 ## [0.8.1] - 2026-10-28
 
 ### 新增 / Added

@@ -554,6 +554,7 @@ pub(crate) fn install_staged(staged: &StagedUpdate) -> Result<InstallOutcome> {
         && let Some(app) = macos_app_bundle(&exe)
     {
         replace_app_bundle(&app, extract_dir)?;
+        repair_bundle_after_install(&app);
         return Ok(InstallOutcome::Replaced);
     }
     replace_binary(&exe, extract_dir)?;
@@ -686,6 +687,42 @@ fn replace_app_bundle(app: &Path, extract_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// 替换完 bundle 之后的兜底修复（macOS）。
+///
+/// 两步都是"上游环节出错时唯一还能救回来"的：
+/// 1. 强制恢复 `Contents/MacOS/*` 的执行位；
+/// 2. ad-hoc 重签 —— CI 产出的就是 ad-hoc 签名，替换后内容只要有一点偏差，
+///    Gatekeeper 会直接报"已损坏"，比"未识别开发者"更难排查。
+#[cfg(target_os = "macos")]
+fn repair_bundle_after_install(app: &Path) {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    if let Ok(entries) = std::fs::read_dir(app.join("Contents/MacOS")) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+            }
+        }
+    }
+
+    match std::process::Command::new("/usr/bin/codesign")
+        .args(["--force", "--deep", "--sign", "-"])
+        .arg(app)
+        .output()
+    {
+        Ok(out) if out.status.success() => {}
+        Ok(out) => tracing::warn!(
+            "ad-hoc re-sign after update failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+        Err(e) => tracing::warn!("codesign unavailable after update: {e}"),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn repair_bundle_after_install(_app: &Path) {}
+
 fn find_bundle(dir: &Path) -> Option<PathBuf> {
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
@@ -707,11 +744,26 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src).context("read source dir")? {
         let entry = entry?;
+        let from = entry.path();
         let to = dst.join(entry.file_name());
-        if entry.path().is_dir() {
-            copy_dir_recursive(&entry.path(), &to)?;
+        // 用 symlink_metadata：`is_dir()` 会跟随链接，把 `.app` 里 framework 的
+        // `Versions/Current` 之类实体化成真实目录，bundle 结构就坏了。
+        let meta = std::fs::symlink_metadata(&from).context("stat source entry")?;
+        if meta.file_type().is_symlink() {
+            #[cfg(unix)]
+            {
+                let target = std::fs::read_link(&from).context("read source symlink")?;
+                let _ = std::fs::remove_file(&to);
+                std::os::unix::fs::symlink(&target, &to).context("copy source symlink")?;
+            }
+            #[cfg(not(unix))]
+            std::fs::copy(&from, &to).context("copy source entry")?;
+            continue;
+        }
+        if meta.is_dir() {
+            copy_dir_recursive(&from, &to)?;
         } else {
-            std::fs::copy(entry.path(), &to)?;
+            std::fs::copy(&from, &to).context("copy source file")?;
         }
     }
     Ok(())
@@ -739,25 +791,14 @@ fn extract_archive(archive: &Path, dest: &Path) -> Result<()> {
         .to_ascii_lowercase();
 
     if name.ends_with(".zip") {
-        let file = std::fs::File::open(archive).context("open update zip")?;
-        let mut zip = zip::ZipArchive::new(file).context("read update zip")?;
-        for i in 0..zip.len() {
-            let mut entry = zip.by_index(i).context("read zip entry")?;
-            // `enclosed_name` 拒绝 `../` 之类越界路径：压缩包来自网络，必须防穿越。
-            let Some(rel) = entry.enclosed_name() else {
-                continue;
-            };
-            let out = dest.join(rel);
-            if entry.is_dir() {
-                std::fs::create_dir_all(&out).context("create dir from zip")?;
-                continue;
-            }
-            if let Some(parent) = out.parent() {
-                std::fs::create_dir_all(parent).context("create parent from zip")?;
-            }
-            let mut f = std::fs::File::create(&out).context("create file from zip")?;
-            std::io::copy(&mut entry, &mut f).context("write file from zip")?;
+        // macOS 的发布包是 CI 用 `ditto -c -k` 打的，这里用 `ditto -x -k` 解是闭环：
+        // 权限位、符号链接、扩展属性全由系统保留。自己解压则必须逐项还原，漏一项就坏了
+        // （0.8.0-beta3 / 0.8.1 就是把 `Contents/MacOS/rudder` 解成 0644，更新后打不开）。
+        #[cfg(target_os = "macos")]
+        if ditto_extract(archive, dest) {
+            return Ok(());
         }
+        extract_zip_manually(archive, dest)?;
         return Ok(());
     }
 
@@ -772,6 +813,85 @@ fn extract_archive(archive: &Path, dest: &Path) -> Result<()> {
 
     anyhow::bail!("unsupported update archive: {name}")
 }
+
+/// macOS：用系统 `ditto` 解 zip。成功返回 true，失败或不可用时返回 false 让调用方回退。
+#[cfg(target_os = "macos")]
+fn ditto_extract(archive: &Path, dest: &Path) -> bool {
+    match std::process::Command::new("/usr/bin/ditto")
+        .arg("-x")
+        .arg("-k")
+        .arg(archive)
+        .arg(dest)
+        .status()
+    {
+        Ok(status) if status.success() => true,
+        Ok(status) => {
+            tracing::warn!("ditto extract exited with {status}; falling back to built-in unzip");
+            false
+        }
+        Err(e) => {
+            tracing::warn!("ditto extract unavailable ({e}); falling back to built-in unzip");
+            false
+        }
+    }
+}
+
+/// 内置 zip 解压（非 macOS，或 ditto 失败时的回退）。
+///
+/// 有两样东西必须还原，否则 bundle 会被破坏：
+/// 1. Unix 权限位 —— `File::create` 一律建 0644，可执行文件就此丢掉执行位；
+/// 2. 符号链接 —— zip 里链接的"内容"是目标路径字符串，当普通文件写出来会让
+///    macOS framework 的 `Versions/Current` 这类链接实体化。
+fn extract_zip_manually(archive: &Path, dest: &Path) -> Result<()> {
+    let file = std::fs::File::open(archive).context("open update zip")?;
+    let mut zip = zip::ZipArchive::new(file).context("read update zip")?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).context("read zip entry")?;
+        // `enclosed_name` 拒绝 `../` 之类越界路径：压缩包来自网络，必须防穿越。
+        let Some(rel) = entry.enclosed_name() else {
+            continue;
+        };
+        let out = dest.join(rel);
+        let mode = entry.unix_mode();
+
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out).context("create dir from zip")?;
+            apply_zip_mode(&out, mode);
+            continue;
+        }
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent).context("create parent from zip")?;
+        }
+
+        #[cfg(unix)]
+        if mode.is_some_and(|m| m & 0o170000 == 0o120000) {
+            let mut target = String::new();
+            std::io::Read::read_to_string(&mut entry, &mut target)
+                .context("read zip symlink target")?;
+            let _ = std::fs::remove_file(&out);
+            std::os::unix::fs::symlink(&target, &out).context("create symlink from zip")?;
+            continue;
+        }
+
+        let mut f = std::fs::File::create(&out).context("create file from zip")?;
+        std::io::copy(&mut entry, &mut f).context("write file from zip")?;
+        drop(f);
+        apply_zip_mode(&out, mode);
+    }
+    Ok(())
+}
+
+/// 把 zip 条目记录的 Unix 权限位落到磁盘上。
+#[cfg(unix)]
+fn apply_zip_mode(path: &Path, mode: Option<u32>) {
+    use std::os::unix::fs::PermissionsExt as _;
+    if let Some(mode) = mode {
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode & 0o7777));
+    }
+}
+
+#[cfg(not(unix))]
+fn apply_zip_mode(_path: &Path, _mode: Option<u32>) {}
 
 /// 用新版本重启应用（Unix 用 exec 保留 PID，Windows 起新进程并退出当前进程）。
 pub(crate) fn restart_app() -> Result<()> {
@@ -796,6 +916,57 @@ pub(crate) fn restart_app() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 手写解压必须还原 Unix 权限位与符号链接 —— 漏了前者，macOS 更新后
+    /// `Contents/MacOS/rudder` 会变成 0644，app 直接打不开（0.8.0-beta3 / 0.8.1 的真实故障）；
+    /// 漏了后者，framework 的 `Versions/Current` 会被实体化，bundle 结构损坏。
+    #[cfg(unix)]
+    #[test]
+    fn manual_zip_extract_restores_mode_and_symlinks() {
+        use std::io::Write as _;
+        use std::os::unix::fs::PermissionsExt as _;
+        use zip::write::SimpleFileOptions;
+
+        let dir = std::env::temp_dir().join(format!("rudder-zip-extract-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("update.zip");
+        {
+            let file = std::fs::File::create(&zip_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            writer
+                .start_file(
+                    "rudder.app/Contents/MacOS/rudder",
+                    SimpleFileOptions::default().unix_permissions(0o755),
+                )
+                .unwrap();
+            writer.write_all(b"#!/bin/sh\n").unwrap();
+            writer
+                .add_symlink(
+                    "rudder.app/Contents/Frameworks/Current",
+                    "Versions/A",
+                    SimpleFileOptions::default(),
+                )
+                .unwrap();
+            writer.finish().unwrap();
+        }
+
+        let out = dir.join("out");
+        extract_zip_manually(&zip_path, &out).expect("extract");
+
+        let exe = out.join("rudder.app/Contents/MacOS/rudder");
+        let mode = std::fs::metadata(&exe).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o755, "可执行位必须还原，否则更新后 app 打不开");
+
+        let link = out.join("rudder.app/Contents/Frameworks/Current");
+        let meta = std::fs::symlink_metadata(&link).unwrap();
+        assert!(
+            meta.file_type().is_symlink(),
+            "符号链接不能被实体化成普通文件"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// beta3 的 9 个资产，顺序取自 GitHub API（并行上传，glibc228 与 AppImage 混在中间）。
     const REAL_ASSETS: [&str; 9] = [
