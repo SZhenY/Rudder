@@ -238,7 +238,7 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                         });
                     })
                 };
-                let dir = match staged {
+                let staged = match staged {
                     Ok(d) => d,
                     Err(e) => {
                         tracing::warn!("self-update download failed: {e:#}");
@@ -259,8 +259,8 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                     1.0,
                     crate::i18n::t("正在安装…", "Installing…").to_string(),
                 );
-                match crate::app::self_updater::install_staged(&dir) {
-                    Ok(()) => {
+                match crate::app::self_updater::install_staged(&staged) {
+                    Ok(crate::app::self_updater::InstallOutcome::Replaced) => {
                         tracing::info!("self-update installed {}", cand.version);
                         set(
                             3,
@@ -272,17 +272,41 @@ pub(crate) fn wire_update_check(window: &AppWindow, ctx: &AppContext) {
                             .to_string(),
                         );
                     }
+                    // MSI：安装程序已经在跑，它要覆盖的正是本进程占着的 exe。
+                    // 退出让出文件锁；安装进度由 msiexec 自己的窗口显示。
+                    Ok(crate::app::self_updater::InstallOutcome::InstallerLaunched) => {
+                        tracing::info!("self-update handed to msiexec: {}", cand.version);
+                        set(
+                            3,
+                            1.0,
+                            crate::i18n::t(
+                                "安装程序已启动，应用将退出；安装完成后请重新打开 Rudder",
+                                "Installer started — Rudder will exit; reopen it when setup finishes",
+                            )
+                            .to_string(),
+                        );
+                        // 上面这行进的是事件队列，而 Slint 文档明确写着退出时
+                        // "已排队的事件可能不会被处理"。延后 0.8s 再退，让提示真的
+                        // 画出来；此刻 UAC 还没点，msiexec 也还在等，不占文件锁。
+                        std::thread::spawn(|| {
+                            std::thread::sleep(std::time::Duration::from_millis(800));
+                            let _ = slint::quit_event_loop();
+                        });
+                    }
                     Err(e) => {
                         tracing::warn!("self-update install failed: {e:#}");
-                        set(
-                            4,
-                            1.0,
+                        // MSI 的失败原因（UAC 被拒 / ShellExecute 返回码 / 安装包路径）
+                        // 必须给到用户：这些信息在"去发布页重新下载"里一条也拿不到。
+                        let text = if cand.is_msi {
+                            format!("{}：{e}", crate::i18n::t("安装失败", "Install failed"))
+                        } else {
                             crate::i18n::t(
                                 "安装失败，请点下面的发布页手动下载安装包",
                                 "Install failed — download the package from the release page",
                             )
-                            .to_string(),
-                        );
+                            .to_string()
+                        };
+                        set(4, 1.0, text);
                     }
                 }
             });

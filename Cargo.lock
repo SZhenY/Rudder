@@ -5337,6 +5337,7 @@ dependencies = [
  "i-slint-backend-winit",
  "icu_provider",
  "image",
+ "libc",
  "md5 0.8.1",
  "memchr",
  "memmap2",

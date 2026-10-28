@@ -39,6 +39,10 @@ tag 推送后，workflow 末尾的 `包体积` 作业会把各平台体积写进
 - **与上一版相比**：与上一份 Release 同名资产的差值（按 `windows-` / `linux-` / `macos-`
   后缀对齐，版本号不同也能配上）
 
+正式版（tag 不含 `-alpha` / `-beta` / `-rc`）还会检查两个 Windows MSI：缺任一个就在这段
+末尾写一行 `⚠ 正式版缺少 Windows MSI`，脚本以非 0 退出，`包体积` 作业标红。安装版用户的
+自更新只认 msi（见 `src/app/self_updater.rs` 的 `install_kind`），缺了等于他们收不到更新。
+
 这段由 `scripts/size-report.sh` 生成，正文里带 `<!-- size-report:start -->` 标记，
 重跑会整段替换而不是叠加。只想预览不写 Release：
 
@@ -108,6 +112,12 @@ the release body:
 - **vs. previous release**: delta against the same asset of the previous release
   (matched by the `windows-` / `linux-` / `macos-` suffix, so different version
   numbers still line up)
+
+For stable releases (tags without `-alpha` / `-beta` / `-rc`) the script also
+requires both Windows MSIs: when one is missing it appends a
+`⚠ 正式版缺少 Windows MSI` line and exits non-zero, which marks the `size-report`
+job red. MSI installs only self-update from an `.msi` (see `install_kind` in
+`src/app/self_updater.rs`), so a missing MSI means those users get no update.
 
 The table is produced by `scripts/size-report.sh` and wrapped in
 `<!-- size-report:start -->` markers, so reruns replace it instead of stacking.

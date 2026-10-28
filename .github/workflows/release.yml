@@ -303,13 +303,15 @@ jobs:
             echo "ASSET=${STAGE}.tar.gz" >> "$GITHUB_ENV"
           fi
 
-      # MSI installer with a "choose install location" wizard (WixUI_InstallDir).
-      # Best-effort: if the WiX/cargo-wix tooling hiccups it must not block the
-      # .zip release, hence continue-on-error.
-      # MSI installer, one step for every Windows target. Built with the WiX 4
-      # CLI: WiX 3 (which cargo-wix drives) has no ARM64 support, so keeping
-      # both architectures on WiX 4 avoids two toolchains and two syntaxes.
-      # Best-effort: a toolchain hiccup must not block the .zip asset.
+      # MSI installer with a "choose install location" wizard (WixUI_InstallDir),
+      # one step for every Windows target. Built with the WiX 4 CLI: WiX 3 (which
+      # cargo-wix drives) has no ARM64 support, so keeping both architectures on
+      # WiX 4 avoids two toolchains and two syntaxes.
+      #
+      # Best-effort（continue-on-error）：MSI 工具链抖动不能连累 .zip —— 该步骤
+      # 失败时作业继续，zip 照常挂到 Release。缺 msi 由末尾的 size-report 作业点名
+      # 并以非 0 退出（正式版必须有 windows-x86_64.msi 与 windows-aarch64.msi），
+      # 所以不会被静默放过，只是不在这一步把整个 Windows 产物一起挡住。
       - name: Build MSI installer (WiX 4)
         if: startsWith(matrix.name, 'windows') && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') && !contains(github.ref, '-rc')
         continue-on-error: true
@@ -336,7 +338,10 @@ jobs:
           wix --version
           # `wix build -ext` only resolves an extension, it does not download
           # it — add it (pinned) first, then list for diagnostics.
+          # UI：安装目录选择向导；Util：给 config / log 两个运行时目录授写权限
+          # （见 wix\main.wxs 的 ConfigFolderAcl），缺了它安装包编不过。
           wix extension add WixToolset.UI.wixext/4.0.6 --global
+          wix extension add WixToolset.Util.wixext/4.0.6 --global
           wix extension list --global
           wix build wix\main.wxs `
             -arch "${{ matrix.arch }}" `
@@ -344,6 +349,7 @@ jobs:
             -d CargoTargetBinDir="target\${{ matrix.target }}\release" `
             -d UpgradeCode="${{ matrix.upgrade-code }}" `
             -ext WixToolset.UI.wixext `
+            -ext WixToolset.Util.wixext `
             -out "rudder-$VERSION-${{ matrix.name }}.msi"
           echo "MSI=rudder-$VERSION-${{ matrix.name }}.msi" >> $env:GITHUB_ENV
 

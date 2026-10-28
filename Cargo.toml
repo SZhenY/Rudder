@@ -178,6 +178,11 @@ objc2 = "0.6"
 raw-window-handle = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# 自更新选包要读本地 glibc 版本：主力 Linux 构建跑在 Ubuntu 24.04（glibc 2.39），
+# 老发行版得拿 `-glibc228` 变体，选错则替换后起不来。
+# 版本已在依赖树里（alacritty_terminal 等传递引入），这里只是提升为直接依赖。
+libc = "0.2"
+
 # Native Wayland clipboard (wlr-data-control protocol) so copy/paste works on
 # Wayland sessions (KDE/wlroots) without relying on XWayland (issue #47).
 # Feature is additive over the base `arboard = "3"` dependency above.

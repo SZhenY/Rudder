@@ -105,6 +105,20 @@ done
 
 total=$(awk -F'\t' '{ s += $2 } END { print s + 0 }' "$current_tsv")
 
+# 正式版的 Windows MSI 是安装版用户的自更新目标（`self_updater` 的 install_kind
+# 判定为 MSI 时会挑 .msi）。缺了要在这里点名并以非 0 退出，把作业标红 ——
+# 否则要等到用户点“立即更新”才发现安装包不存在。预发布版按设计不产 msi，
+# 不参与检查。
+msi_missing=""
+case "$TAG" in
+    *-alpha* | *-beta* | *-rc*) ;;
+    *)
+        for want in windows-x86_64.msi windows-aarch64.msi; do
+            cut -f1 "$current_tsv" | grep -qE -- "-${want}$" || msi_missing="$msi_missing $want"
+        done
+        ;;
+esac
+
 {
     printf '## 包体积\n\n'
     printf '%s\n' "$BEGIN_MARK"
@@ -126,12 +140,17 @@ total=$(awk -F'\t' '{ s += $2 } END { print s + 0 }' "$current_tsv")
     fi
 
     printf '\n全部资产合计：%s（单个平台通常下载其中之一）。\n' "$(human "$total")"
+    if [ -n "$msi_missing" ]; then
+        printf '\n> ⚠ **正式版缺少 Windows MSI：%s** —— 安装版用户将无法自更新。\n' "$msi_missing"
+    fi
     printf '%s\n' "$END_MARK"
 } > "$section"
 
 if [ "$DRY_RUN" = 1 ]; then
     [ -d sizes ] || echo "（未找到 sizes/*.json：只列安装包，可执行文件一列留空）" >&2
     cat "$section"
+    # 预览也照样以非 0 退出，方便在发版前用退出码判断。
+    [ -z "$msi_missing" ] || exit 1
     exit 0
 fi
 
@@ -157,3 +176,10 @@ gh api --method PATCH "repos/$REPO/releases/tags/$TAG" \
 
 echo "已写入 $TAG 的发布说明（基线：${prev_tag:-无}）。" >&2
 cat "$section"
+
+if [ -n "$msi_missing" ]; then
+    echo "" >&2
+    echo "错误：正式版缺少 Windows MSI 资产：$msi_missing" >&2
+    echo "      安装版用户的自更新依赖它，见 .github/workflows/release.yml 的 Build MSI installer。" >&2
+    exit 1
+fi

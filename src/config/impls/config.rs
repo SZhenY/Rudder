@@ -218,15 +218,24 @@ pub(crate) fn private_temp_dir() -> PathBuf {
 /// (logs in `<exe_dir>/log`, user fonts in `<exe_dir>/config/fonts`) —
 /// whether installed or portable. The app is fully self-contained and never
 /// writes to AppData. On the first launch in a portable location, existing
-/// legacy data is copied over once (`migrate_legacy`). The only fallback is a
-/// temp dir, so the app still launches from a read-only exe dir (e.g. Program
-/// Files), at the cost of persistence.
+/// legacy data is copied over once (`migrate_legacy`).
+///
+/// The MSI installer creates `config` and `log` and grants `Users` write access
+/// to them (`wix/main.wxs`), so a per-machine install in Program Files keeps its
+/// data too. The temp dir remains only as a last resort for installs where that
+/// grant is missing, so the app still starts on a read-only exe dir.
 #[cfg(target_os = "windows")]
 fn resolve_data_dir() -> PathBuf {
     if let Some(portable) = portable_data_dir()
         && fs::create_dir_all(&portable).is_ok()
         && dir_is_writable(&portable)
     {
+        // MSI 装在 Program Files 时，旧版本写不进 `config`，配置被放到这里的
+        // `%TEMP%\rudder`。安装包现在给 `config` 授权了，先把那份数据搬过来 ——
+        // 不搬的话升级后会话与设置全是空的。比 AppData 那份更近，先跑它。
+        if let Some(tmp) = temporary_data_dir() {
+            migrate_temp_legacy(&tmp, &portable);
+        }
         if let Some(legacy) = legacy_data_dir().filter(|l| l != &portable) {
             migrate_legacy(&legacy, &portable);
         }
@@ -236,6 +245,13 @@ fn resolve_data_dir() -> PathBuf {
     // Read-only exe dir → temp dir, so the app still launches. Data is lost on
     // reboot, but never silently goes to AppData.
     private_temp_dir()
+}
+
+/// 旧版 MSI 的配置目录：`private_temp_dir()` 的首选名，仅存在时返回。
+#[cfg(target_os = "windows")]
+fn temporary_data_dir() -> Option<PathBuf> {
+    let dir = std::env::temp_dir().join("rudder");
+    dir.is_dir().then_some(dir)
 }
 
 /// macOS: always the per-user OS config dir (`~/Library/Application
@@ -329,6 +345,20 @@ fn migrate_legacy(legacy: &Path, portable: &Path) {
             }
         }
     }
+}
+
+/// 把旧版 MSI 落在 `%TEMP%\rudder` 的配置搬进安装目录。
+///
+/// 只在目标目录**还没被用过**时搬（既没有 `sessions.json` 也没有 `secret.key`）：
+/// 那份临时数据可能很旧，用户也可能刚把会话清空过，往一份在用的配置里掺旧会话
+/// 比丢数据更糟。密钥与会话始终成对搬，不存在"新 key 解不开旧会话"的组合。
+/// 其余文件按"目标不存在才复制"（`migrate_legacy` 的既有规则）。
+#[cfg(any(windows, test))]
+fn migrate_temp_legacy(tmp: &Path, portable: &Path) {
+    if portable.join(SESSIONS_FILE).exists() || portable.join("secret.key").exists() {
+        return;
+    }
+    migrate_legacy(tmp, portable);
 }
 
 fn sessions_file_has_connections(path: &Path) -> bool {
@@ -3888,6 +3918,81 @@ mod tests {
             std::fs::read_to_string(dst.path().join("sessions.json")).unwrap(),
             "already-there",
             "an existing destination file must survive migration"
+        );
+    }
+
+    /// 旧版 MSI 的数据在 `%TEMP%\rudder`：升级后第一次以可写的 `config` 启动时
+    /// 必须整套搬过来，否则用户的会话与设置全空。
+    #[test]
+    fn migrate_temp_legacy_imports_the_temp_config() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        for name in [
+            "sessions.json",
+            "secret.key",
+            "settings.json",
+            "known_hosts",
+        ] {
+            std::fs::write(src.path().join(name), format!("content:{name}")).unwrap();
+        }
+
+        migrate_temp_legacy(src.path(), dst.path());
+
+        for name in [
+            "sessions.json",
+            "secret.key",
+            "settings.json",
+            "known_hosts",
+        ] {
+            assert_eq!(
+                std::fs::read_to_string(dst.path().join(name)).unwrap(),
+                format!("content:{name}"),
+                "{name} must be migrated"
+            );
+        }
+    }
+
+    /// 目标目录已经在用（哪怕只有密钥）就不搬：临时目录里的旧会话可能是用户
+    /// 主动清掉的，掺回来比丢数据更糟。
+    #[test]
+    fn migrate_temp_legacy_skips_a_config_already_in_use() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("sessions.json"), b"stale").unwrap();
+        std::fs::write(src.path().join("secret.key"), b"stale-key").unwrap();
+        std::fs::write(dst.path().join("secret.key"), b"current-key").unwrap();
+
+        migrate_temp_legacy(src.path(), dst.path());
+
+        assert!(
+            !dst.path().join("sessions.json").exists(),
+            "在用的配置不该被掺入旧会话"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dst.path().join("secret.key")).unwrap(),
+            "current-key"
+        );
+    }
+
+    /// 目标已经有会话时不动它，也不动它对应的 key。
+    #[test]
+    fn migrate_temp_legacy_keeps_existing_sessions_and_key() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("sessions.json"), b"stale").unwrap();
+        std::fs::write(src.path().join("secret.key"), b"stale-key").unwrap();
+        std::fs::write(dst.path().join("sessions.json"), b"current").unwrap();
+        std::fs::write(dst.path().join("secret.key"), b"current-key").unwrap();
+
+        migrate_temp_legacy(src.path(), dst.path());
+
+        assert_eq!(
+            std::fs::read_to_string(dst.path().join("sessions.json")).unwrap(),
+            "current"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dst.path().join("secret.key")).unwrap(),
+            "current-key"
         );
     }
 

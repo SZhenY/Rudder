@@ -19,7 +19,8 @@
   attributes of the WiX 3 days are gone (WiX 4 derives them from the package).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
     <Package Name="Rudder"
              Manufacturer="Rudder contributors"
@@ -30,6 +31,13 @@
              Codepage="1252"
              Compressed="yes"
              InstallerVersion="500">
+
+        <!--
+          内置组名随系统语言变化（德语是 "Benutzer"），权限里写死 "Users" 会让安装
+          在非英文系统上直接失败。这个元素在安装时把本地化组名写进 WIX_ACCOUNT_USERS，
+          下面的 PermissionEx 引用它。
+        -->
+        <util:QueryWindowsWellKnownSIDs/>
 
         <SummaryInformation Description="Rudder - lightweight Rust + Slint SSH/terminal client"
                             Manufacturer="Rudder contributors"/>
@@ -45,16 +53,25 @@
 
         <!--
           Preserve a custom install location across major upgrades (#293).
-          New packages write Software\Rudder\InstallDir below. The component
-          search is the migration fallback for v0.6.5-v0.6.7, which did not
-          persist either that value or ARPINSTALLLOCATION. MainExecutable's
-          generated component GUID in those packages was stable and is pinned
-          explicitly below.
-          NOTE: the registry search keeps the OLD key (Software\meatshell)
-          because it looks up installs created before the rename; the new
-          installer itself writes Software\Rudder.
+          New packages write Software\Rudder\InstallDir below, so that key is the
+          authoritative source for every install made since 2026-07-26; the
+          Software\meatshell lookup keeps installs created before the rename
+          pointing at their old directory, and the component search covers
+          v0.6.5-v0.6.7 (which persisted neither value).
+          A machine normally has only one of those keys, and one that has been
+          upgraded since the rename has both with the same value, so the three
+          sources cannot disagree in practice.
+          Self-update additionally passes APPLICATIONFOLDER on the msiexec
+          command line (see src/app/self_updater.rs) with the directory the
+          running copy lives in — two independent sources for the same answer,
+          which is what keeps an elevated /qb upgrade out of Program Files.
         -->
         <Property Id="APPLICATIONFOLDER" Secure="yes">
+            <RegistrySearch Id="CurrentInstallDirRegistry"
+                            Root="HKLM"
+                            Key="Software\Rudder"
+                            Name="InstallDir"
+                            Type="directory"/>
             <RegistrySearch Id="PreviousInstallDirRegistry"
                             Root="HKLM"
                             Key="Software\meatshell"
@@ -92,6 +109,35 @@
                                    Value="[APPLICATIONFOLDER]"
                                    KeyPath="yes"/>
                 </Component>
+
+                <!--
+                  应用把运行时数据写在 exe 旁边：配置在 <安装目录>\config，日志在
+                  <安装目录>\log（见 src/config/impls/config.rs 的 resolve_data_dir /
+                  log_dir）。Program Files 默认只给普通用户读+执行，建不出这两个目录，
+                  应用会退回 %TEMP% —— 重启或清理临时文件后会话、密钥、设置全丢。
+                  这里安装时就把它们建好并授权（GenericAll，可继承），让"数据留在安装
+                  目录"这条设计在 MSI 下真正成立。
+                  只放开这两个子目录，安装根目录保持只读：rudder.exe 不能被普通用户替换。
+                  代价与便携版放在可写目录时相同：本机其他账户也能读写这份配置。
+                  组名用 [WIX_ACCOUNT_USERS]（见文件开头的 QueryWindowsWellKnownSIDs），
+                  不能写死 "Users" —— 非英文系统上该组名是本地化的。
+                -->
+                <Directory Id="ConfigFolder" Name="config">
+                    <Component Id="ConfigFolderAcl"
+                               Guid="7E8AF5F2-FA80-4B6E-99B5-61DBA490A286">
+                        <CreateFolder>
+                            <util:PermissionEx User="[WIX_ACCOUNT_USERS]" GenericAll="yes"/>
+                        </CreateFolder>
+                    </Component>
+                </Directory>
+                <Directory Id="LogFolder" Name="log">
+                    <Component Id="LogFolderAcl"
+                               Guid="111734E2-DD85-4A9A-B7EE-B51B58409681">
+                        <CreateFolder>
+                            <util:PermissionEx User="[WIX_ACCOUNT_USERS]" GenericAll="yes"/>
+                        </CreateFolder>
+                    </Component>
+                </Directory>
             </Directory>
         </StandardDirectory>
 

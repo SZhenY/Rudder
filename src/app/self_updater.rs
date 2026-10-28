@@ -1,13 +1,17 @@
 //! 在线一键更新（GitHub Releases）。
 //!
-//! 流程：列 release → 按平台挑资产 → 下载（进度）→ 解压到临时目录 →
-//! 平台替换 → 提示用户重启。
+//! 流程：列 release → 按平台挑资产 → 下载（进度）→ 安装 → 重启。
+//! 安装分两条路：
+//! - 便携版（zip / tar.gz，以及 macOS 的 `.app`）：解压后原地替换，
+//!   由用户点"重启"生效；
+//! - Windows MSI 安装：不碰文件，把下载好的 `.msi` 交给 `msiexec`（UAC 提权），
+//!   应用随即退出让出 exe 的文件锁。
 //!
 //! 与 `updater.rs` 的分工：后者只负责"有新版本"的检查与横幅；本模块负责
 //! 真正的下载与替换。
 //!
 //! 为什么不用 `self_update` 的自动资产匹配：Rudder 的 release 资产按
-//! `matrix.name` 命名（`rudder-<ver>-macos-14.zip`），不含 target triple，
+//! `matrix.name` 命名（`rudder-<ver>-macos-aarch64.zip`），不含 target triple，
 //! `asset_for(get_target())` 匹配不到——所以走手动流程。
 
 use std::io::Read;
@@ -28,35 +32,200 @@ pub(crate) struct UpdateCandidate {
     pub notes: String,
     /// 目标版本比本机**低**：这是"降级 / 切换"（见 [`is_channel_switch`]），不是升级。
     pub is_switch: bool,
+    /// 选中的是 `.msi` 安装包而不是 `.zip` 便携包。
+    pub is_msi: bool,
 }
 
-/// 当前平台在 release 资产名里的关键字（按优先级）。
+/// 当前这份 Rudder 是怎么装上去的。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum InstallKind {
+    /// 便携版：解压即用。更新时替换 exe。
+    Portable,
+    /// Windows MSI 安装（装在 Program Files，由 Windows Installer 管理）。
+    ///
+    /// 这种安装不能走"替换 exe"：普通权限写不进 Program Files，而且替换后
+    /// MSI 记录的组件哈希与磁盘文件不符，日后的"修复安装"会把旧 exe 写回来。
+    Msi,
+}
+
+/// MSI 安装目录（`wix/main.wxs` 写入的 `HKLM\Software\Rudder\InstallDir`）。
+///
+/// 便携版不写这个值，所以"键存在且等于当前 exe 所在目录"就是 MSI 安装的判据。
+/// 只看键存在不够：用户可能把便携版解压到别处运行。
+#[cfg(windows)]
+fn msi_install_dir() -> Option<PathBuf> {
+    #[link(name = "advapi32")]
+    unsafe extern "system" {
+        fn RegGetValueW(
+            hkey: usize,
+            sub_key: *const u16,
+            value: *const u16,
+            flags: u32,
+            ty: *mut u32,
+            data: *mut core::ffi::c_void,
+            size: *mut u32,
+        ) -> i32;
+    }
+    const HKEY_LOCAL_MACHINE: usize = 0x8000_0002;
+    /// 只接受 REG_SZ；KEY_WOW64_64KEY 避免 32 位进程被重定向到 WOW6432Node
+    /// （64 位 MSI 写在 64 位视图里）。
+    const RRF_RT_REG_SZ: u32 = 0x0000_0002;
+    const RRF_SUBKEY_WOW6464KEY: u32 = 0x0001_0000;
+    const ERROR_SUCCESS: i32 = 0;
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    let sub_key = wide(r"SOFTWARE\Rudder");
+    let value_name = wide("InstallDir");
+    // 路径不可能超过 Windows 的 MAX_PATH 上限，定长缓冲够用，省掉两段式查询。
+    let mut buf = [0u16; 1024];
+    let mut size = (buf.len() * 2) as u32;
+    // SAFETY: 两个字符串都以 NUL 结尾且在调用期间存活；`buf` 的大小与 `size`
+    // 声明的字节数一致，函数只会写这么多。
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            sub_key.as_ptr(),
+            value_name.as_ptr(),
+            RRF_RT_REG_SZ | RRF_SUBKEY_WOW6464KEY,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    // size 含结尾 NUL；<= 2 说明是空串。
+    if rc != ERROR_SUCCESS || size <= 2 {
+        return None;
+    }
+    let len = (size as usize / 2).saturating_sub(1);
+    Some(PathBuf::from(String::from_utf16_lossy(&buf[..len])))
+}
+
+#[cfg(not(windows))]
+fn msi_install_dir() -> Option<PathBuf> {
+    None
+}
+
+/// 路径比较：Windows 上大小写不敏感，且注册表可能带结尾反斜杠。
+fn same_dir(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| {
+        p.to_string_lossy()
+            .trim_end_matches(['\\', '/'])
+            .to_ascii_lowercase()
+    };
+    !norm(a).is_empty() && norm(a) == norm(b)
+}
+
+fn install_kind() -> InstallKind {
+    if cfg!(windows)
+        && let Some(dir) = msi_install_dir()
+        && let Ok(exe) = current_exe()
+        && let Some(parent) = exe.parent()
+        && same_dir(&dir, parent)
+    {
+        return InstallKind::Msi;
+    }
+    InstallKind::Portable
+}
+
+/// 主力 Linux 构建的 glibc 底线：release.yml 的 `ubuntu-24.04` 作业。
+///
+/// 更老的发行版跑不了它，只能拿 `debian:10`（glibc 2.28）容器里编的 `-glibc228` 变体。
+const MAIN_BUILD_GLIBC: (u32, u32) = (2, 39);
+
+fn glibc_supports_main_build(glibc: Option<(u32, u32)>) -> bool {
+    matches!(glibc, Some(v) if v >= MAIN_BUILD_GLIBC)
+}
+
+/// 平台 + 架构 + glibc → release 资产名里的**唯一标识片段**。
+///
+/// 片段必须带扩展名：Linux 的普通包与 `-glibc228` 兼容包共用 `linux-x86_64` 前缀，
+/// 只写到架构的话两者都命中，取列表里靠前的那个 —— 并行上传时恰好是兼容包，等于
+/// 让所有新系统都降级到按 glibc 2.28 编的构建。带上 `.tar.gz` 后
+/// `...-linux-x86_64.tar.gz` 与 `...-linux-x86_64-glibc228.tar.gz` 互不包含。
+///
+/// 抽成纯函数是为了能测所有平台组合：CI 的测试作业只跑 Linux，用 `cfg!` 分支的话
+/// macOS / Windows 的匹配规则永远测不到。
+///
+/// `glibc` 只在 Linux 上有意义，`None` 表示判定不出本机版本 —— 按兼容包处理，
+/// 宁可多兼容（兼容包在新系统上照跑），也不能让老系统装上起不来的包。
 ///
 /// 对应 `.github/workflows/release.yml` 的 `matrix.name`。
-fn asset_keywords() -> &'static [&'static str] {
-    if cfg!(target_os = "macos") {
-        &["macos-14", "macos"]
-    } else if cfg!(target_os = "windows") {
+fn asset_keywords_for(
+    os: &str,
+    arch: &str,
+    glibc: Option<(u32, u32)>,
+    msi: bool,
+) -> &'static [&'static str] {
+    // MSI 只存在于 Windows 正式版，且只在检测到当前的 Rudder 本身就是 MSI 安装时
+    // 才选它 —— 便携版去装 msi 等于凭空加一份系统安装记录。
+    if msi {
+        return match arch {
+            "aarch64" => &["windows-aarch64.msi"],
+            _ => &["windows-x86_64.msi"],
+        };
+    }
+    match (os, arch) {
+        // 两个 macOS 包都含 "macos" 字样，架构不同。必须按架构精确匹配，且**不放
+        // 裸 "macos" 兜底**——兜底会命中先返回的那个包，Intel 与 Apple Silicon 互相
+        // 拿到对方的二进制，替换后无法启动。宁可判定"无更新"，也不能装错架构。
+        ("macos", "aarch64") => &["macos-aarch64.zip"],
+        ("macos", _) => &["macos-x86_64.zip"],
         // Windows on ARM64 ships its own asset; the x86_64 keywords must not
         // match there or an ARM64 user would be handed the emulated build.
-        if cfg!(target_arch = "aarch64") {
-            &["windows-aarch64", "windows-arm64"]
-        } else {
-            &["windows-x86_64", "windows"]
+        ("windows", "aarch64") => &["windows-aarch64.zip"],
+        ("windows", _) => &["windows-x86_64.zip"],
+        // Linux：同一架构有两个包，差别只在 glibc 底线。主力包优先——兼容包虽然
+        // 到处都能跑，但它按 glibc 2.28 编，没必要让新系统降级。
+        (_, "aarch64") => {
+            if glibc_supports_main_build(glibc) {
+                &["linux-aarch64.tar.gz"]
+            } else {
+                &["linux-aarch64-glibc228.tar.gz"]
+            }
         }
-    } else if cfg!(target_arch = "aarch64") {
-        &["linux-aarch64", "linux-arm64"]
-    } else {
-        &["linux-x86_64"]
+        _ => {
+            if glibc_supports_main_build(glibc) {
+                &["linux-x86_64.tar.gz"]
+            } else {
+                &["linux-x86_64-glibc228.tar.gz"]
+            }
+        }
     }
 }
 
-/// 当前平台接受的资产扩展名（排除安装器与 AppImage——自更新只换二进制）。
-fn asset_extension() -> &'static str {
-    if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
-        ".zip"
-    } else {
-        ".tar.gz"
+/// 本机 glibc 版本（仅 gnu 目标的 Linux 可判定）。
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn current_glibc() -> Option<(u32, u32)> {
+    // SAFETY: `gnu_get_libc_version` 返回指向静态字符串的指针，进程生命周期内有效。
+    let raw = unsafe { libc::gnu_get_libc_version() };
+    if raw.is_null() {
+        return None;
+    }
+    let text = unsafe { std::ffi::CStr::from_ptr(raw) }.to_str().ok()?;
+    let mut parts = text.split('.');
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
+/// musl / 非 Linux：没有 glibc 可言，交给 `None` 的兼容分支。
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn current_glibc() -> Option<(u32, u32)> {
+    None
+}
+
+/// 当前平台接受的资产扩展名。
+///
+/// `msi` 为真时只认 `.msi`（安装版交给系统安装程序）；否则排除安装器与
+/// AppImage —— 便携版的自更新只换二进制。
+fn asset_extension_for(os: &str, msi: bool) -> &'static str {
+    if msi {
+        return ".msi";
+    }
+    match os {
+        "macos" | "windows" => ".zip",
+        _ => ".tar.gz",
     }
 }
 
@@ -204,7 +373,17 @@ pub(crate) fn latest_update(current: super::Version, channel: &str) -> Result<Op
     }
 
     // 挑资产：先按扩展名过滤，再按平台关键字（按优先级）匹配。
-    let ext = asset_extension();
+    // MSI 安装要 msi（交给系统安装程序去覆盖 Program Files 里的文件），便携版要
+    // zip / tar.gz（替换 exe）。
+    let msi = install_kind() == InstallKind::Msi;
+    // 安装版不做降级：`wix/main.wxs` 的 MajorUpgrade 明确禁止降级
+    // （DowngradeErrorMessage），把旧包交给 msiexec 只会弹一句"已安装更新的版本"
+    // 然后退出。宁可判"无更新"，也不要让用户看到安装程序报错。
+    if msi && is_switch {
+        tracing::info!("self-update: MSI 安装不支持降级到 {tag}，已跳过");
+        return Ok(None);
+    }
+    let ext = asset_extension_for(std::env::consts::OS, msi);
     let empty = Vec::new();
     let assets = json["assets"].as_array().unwrap_or(&empty);
     let candidates: Vec<(String, String)> = assets
@@ -220,7 +399,12 @@ pub(crate) fn latest_update(current: super::Version, channel: &str) -> Result<Op
         .collect();
 
     let notes = notes_for(&tag, json["body"].as_str().unwrap_or_default());
-    for kw in asset_keywords() {
+    for kw in asset_keywords_for(
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        current_glibc(),
+        msi,
+    ) {
         if let Some((name, url)) = candidates.iter().find(|(n, _)| n.contains(kw)) {
             return Ok(Some(UpdateCandidate {
                 version: tag.trim_start_matches('v').to_string(),
@@ -228,19 +412,35 @@ pub(crate) fn latest_update(current: super::Version, channel: &str) -> Result<Op
                 download_url: url.clone(),
                 notes: notes.clone(),
                 is_switch,
+                is_msi: msi,
             }));
         }
+    }
+    // 安装版遇到不带 msi 的版本（预发布版按设计不产 msi）。这里只能判"无更新"，
+    // 但必须留一条日志：否则用户切到测试版通道后看到"已是最新版本"，无从判断
+    // 是自己已最新还是这个版本根本没提供安装包。
+    if msi {
+        tracing::info!("self-update: {tag} 未提供 MSI 安装包，安装版无法更新到该版本");
     }
     Ok(None)
 }
 
-/// 下载资产到临时目录并解压，返回解压目录。
+/// 下载完成后的中间产物。
+pub(crate) enum StagedUpdate {
+    /// 压缩包已解压到目录（便携版 zip / tar.gz，或 macOS 的 .app）。
+    Extracted(PathBuf),
+    /// 安装包原样落盘（Windows MSI）。不解压 —— 交给系统安装程序，
+    /// 它会按自己的记录覆盖 Program Files 里的文件并更新卸载项。
+    Installer(PathBuf),
+}
+
+/// 下载资产到临时目录；压缩包顺带解压，MSI 原样保留。
 ///
 /// `on_progress` 收到 0.0..=1.0 的进度（下载占 90%，解压占 10%）。
 pub(crate) fn download_and_stage(
     cand: &UpdateCandidate,
     on_progress: impl Fn(f32),
-) -> Result<PathBuf> {
+) -> Result<StagedUpdate> {
     // 随机名 + 0700 + 创建即独占。老写法是 `/tmp/rudder-update-<pid>`：名字可预测，
     // 而且先 `remove_dir_all` 再 `create_dir_all`（会跟随符号链接）—— 共享机器上别人
     // 可以先摆一个同名符号链接，把下载与解压都引到他指定的目录去。
@@ -273,11 +473,25 @@ pub(crate) fn download_and_stage(
             file.write_all(&buf[..n]).context("write archive")?;
             done += n as u64;
             if total > 0 {
-                on_progress((done as f32 / total as f32) * 0.9);
+                // reqwest 开了 gzip：若代理转码，`done` 是解压后字节数，会大于
+                // content-length 声明的压缩长度，进度要封顶。
+                on_progress(((done as f32 / total as f32) * 0.9).min(0.9));
             }
+        }
+        // 连接中途被切断时 `read` 未必报错，可能只是提前返回 0。不核对长度的话，
+        // 截断的 msi 会一路交给 msiexec，报出来的错误与网络毫无关系。
+        // 只查 `done < total`：gzip 转码时 `done` 会大于声明值，那一条不能算失败。
+        if total > 0 && done < total {
+            return Err(anyhow!("下载不完整（{done}/{total} 字节），请重试"));
         }
     }
     on_progress(0.9);
+
+    // MSI 不解压、不删包：安装程序要读它，清理交给系统。
+    if cand.is_msi {
+        on_progress(1.0);
+        return Ok(StagedUpdate::Installer(archive));
+    }
 
     let extract_dir = stage_dir.join("extracted");
     std::fs::create_dir_all(&extract_dir).context("create extract dir")?;
@@ -285,7 +499,7 @@ pub(crate) fn download_and_stage(
     // 解压完就把压缩包删掉：不再需要它，也少留一份可执行文件在临时目录里。
     let _ = std::fs::remove_file(&archive);
     on_progress(1.0);
-    Ok(extract_dir)
+    Ok(StagedUpdate::Extracted(extract_dir))
 }
 
 /// 在解压目录里递归查找指定文件名的路径。
@@ -305,15 +519,30 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
-/// 把解压好的新版本安装到当前位置。
+/// 安装结果：调用方据此决定提示什么。
+pub(crate) enum InstallOutcome {
+    /// 二进制已原地替换，重启后生效。
+    Replaced,
+    /// 已拉起系统安装程序（MSI）。它会自己覆盖文件并更新卸载记录，
+    /// 应用应尽快退出把文件锁让出来。
+    InstallerLaunched,
+}
+
+/// 把下载好的更新安装上去。
 ///
+/// - Windows MSI 安装：拉起 `msiexec`，不碰文件（见 [`launch_msi_installer`]）。
 /// - macOS：整个 `.app` 包替换（保留 CI 的 ad-hoc 签名；只换二进制会让
 ///   Gatekeeper 判定"已损坏"）。
-/// - Windows / Linux：用 `self_replace` 原地替换可执行文件（自动处理
-///   Windows 的文件锁）。
-///
-/// 任一路径都先备份旧版，失败回滚。
-pub(crate) fn install_staged(extract_dir: &Path) -> Result<()> {
+/// - 便携版 Windows / Linux：用 `self_replace` 原地替换可执行文件。
+pub(crate) fn install_staged(staged: &StagedUpdate) -> Result<InstallOutcome> {
+    let extract_dir = match staged {
+        StagedUpdate::Installer(msi) => {
+            launch_msi_installer(msi)?;
+            return Ok(InstallOutcome::InstallerLaunched);
+        }
+        StagedUpdate::Extracted(dir) => dir,
+    };
+
     let exe = current_exe()?;
     if is_translocated(&exe) {
         return Err(anyhow!(
@@ -324,9 +553,98 @@ pub(crate) fn install_staged(extract_dir: &Path) -> Result<()> {
     if cfg!(target_os = "macos")
         && let Some(app) = macos_app_bundle(&exe)
     {
-        return replace_app_bundle(&app, extract_dir);
+        replace_app_bundle(&app, extract_dir)?;
+        return Ok(InstallOutcome::Replaced);
     }
-    replace_binary(&exe, extract_dir)
+    replace_binary(&exe, extract_dir)?;
+    Ok(InstallOutcome::Replaced)
+}
+
+/// `msiexec` 参数。
+///
+/// `install_dir` 有值时作为 `APPLICATIONFOLDER` 传入：包里的同名属性是 public 且
+/// `Secure="yes"`，命令行赋值优先于 AppSearch 的搜索结果，升级于是落在旧版目录，
+/// 而不是回到默认的 `Program Files\Rudder`。取不到安装目录时省略，退回包内搜索。
+#[cfg(any(windows, test))]
+fn msi_args(msi: &Path, install_dir: Option<&Path>) -> String {
+    // 两个值都可能含空格（"C:\Program Files\..."），各自加引号。
+    let mut args = format!("/i \"{}\"", msi.display());
+    if let Some(dir) = install_dir {
+        args.push_str(&format!(" APPLICATIONFOLDER=\"{}\"", dir.display()));
+    }
+    args.push_str(" /qb /norestart");
+    args
+}
+
+/// 拉起 `msiexec` 安装刚下载的 msi（Windows，走 UAC 提权）。
+///
+/// 四条取舍：
+/// - `runas` 动词：Program Files 要管理员权限，不提权必然失败。
+/// - `/qb` 而不是 `/qn`：用户得看到进度条，否则双击之后几分钟毫无反应像是卡死。
+/// - `/norestart`：更新不该顺手重启整台机器。
+/// - 命令行显式传 `APPLICATIONFOLDER=<当前 exe 所在目录>`：它是包里的 public +
+///   Secure 属性，命令行的值优先于 AppSearch 的任何搜索结果，所以升级一定落在
+///   旧版目录，不会退回默认的 `Program Files\Rudder`。提权后该属性仍会传给
+///   server 端（这正是 `Secure="yes"` 的作用）。
+///
+/// 调用返回时安装程序已经在跑，调用方随后退出进程，让 msiexec 拿到文件锁。
+/// 若 msiexec 抢先进入卸载旧版阶段，Windows Installer 的 Restart Manager 会自己
+/// 结束本进程 —— 这正是我们要的结果。
+#[cfg(windows)]
+fn launch_msi_installer(msi: &Path) -> Result<()> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn ShellExecuteW(
+            hwnd: isize,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show_cmd: i32,
+        ) -> isize;
+    }
+
+    fn wide(s: &OsStr) -> Vec<u16> {
+        s.encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    let operation = wide(OsStr::new("runas"));
+    let file = wide(OsStr::new("msiexec.exe"));
+    // 能跑到这里说明 install_kind 已确认当前副本是 MSI 装的，exe 父目录就是
+    // 注册表里的安装目录；取不到时留空，退回 wix/main.wxs 里的 AppSearch。
+    let install_dir = current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    let params = wide(OsStr::new(&msi_args(msi, install_dir.as_deref())));
+    // SAFETY: 四个字符串都以 NUL 结尾且在调用期间存活；hwnd/环境/目录传空。
+    let rc = unsafe {
+        ShellExecuteW(
+            0,
+            operation.as_ptr(),
+            file.as_ptr(),
+            params.as_ptr(),
+            std::ptr::null(),
+            1,
+        )
+    };
+    // ShellExecute 的约定：返回值 > 32 才算成功；1223 是用户在 UAC 点了"否"。
+    if rc as usize <= 32 {
+        return Err(anyhow!(
+            "无法启动安装程序（ShellExecute={}）：安装版更新需要管理员权限，\
+             请在弹出的 UAC 提示里选择“是”，或手动运行已下载的安装包：{}",
+            rc as usize,
+            msi.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn launch_msi_installer(_msi: &Path) -> Result<()> {
+    Err(anyhow!("MSI 更新只适用于 Windows"))
 }
 
 /// macOS：stash 旧 bundle → 移入新 bundle → 失败回滚。
@@ -479,22 +797,232 @@ pub(crate) fn restart_app() -> Result<()> {
 mod tests {
     use super::*;
 
+    /// beta3 的 9 个资产，顺序取自 GitHub API（并行上传，glibc228 与 AppImage 混在中间）。
+    const REAL_ASSETS: [&str; 9] = [
+        "rudder-v0.8.0-beta3-linux-aarch64-glibc228.tar.gz",
+        "rudder-v0.8.0-beta3-linux-aarch64.tar.gz",
+        "rudder-v0.8.0-beta3-linux-x86_64-glibc228.tar.gz",
+        "rudder-v0.8.0-beta3-linux-x86_64.AppImage",
+        "rudder-v0.8.0-beta3-linux-x86_64.tar.gz",
+        "rudder-v0.8.0-beta3-macos-aarch64.zip",
+        "rudder-v0.8.0-beta3-macos-x86_64.zip",
+        "rudder-v0.8.0-beta3-windows-aarch64.zip",
+        "rudder-v0.8.0-beta3-windows-x86_64.zip",
+    ];
+
+    /// v0.8.0 正式版的 11 个资产 —— MSI 只在正式版产出，beta 版没有。
+    const RELEASE_ASSETS: [&str; 11] = [
+        "rudder-v0.8.0-linux-aarch64-glibc228.tar.gz",
+        "rudder-v0.8.0-linux-aarch64.tar.gz",
+        "rudder-v0.8.0-linux-x86_64-glibc228.tar.gz",
+        "rudder-v0.8.0-linux-x86_64.AppImage",
+        "rudder-v0.8.0-linux-x86_64.tar.gz",
+        "rudder-v0.8.0-macos-aarch64.zip",
+        "rudder-v0.8.0-macos-x86_64.zip",
+        "rudder-v0.8.0-windows-aarch64.msi",
+        "rudder-v0.8.0-windows-aarch64.zip",
+        "rudder-v0.8.0-windows-x86_64.msi",
+        "rudder-v0.8.0-windows-x86_64.zip",
+    ];
+
+    /// 按现有规则在给定资产表里挑一个。
+    fn pick_from(
+        assets: &[&'static str],
+        os: &str,
+        arch: &str,
+        glibc: Option<(u32, u32)>,
+        msi: bool,
+    ) -> Option<&'static str> {
+        let kw = asset_keywords_for(os, arch, glibc, msi);
+        let ext = asset_extension_for(os, msi);
+        assets
+            .iter()
+            .find(|n| n.ends_with(ext) && kw.iter().any(|k| n.contains(k)))
+            .copied()
+    }
+
+    /// 便携版口径（zip / tar.gz）。
+    fn pick(os: &str, arch: &str, glibc: Option<(u32, u32)>) -> Option<&'static str> {
+        pick_from(&REAL_ASSETS, os, arch, glibc, false)
+    }
+
+    /// 三个平台 × 两个架构，各自落到自己那份构建上。
+    #[test]
+    fn every_platform_picks_its_own_asset() {
+        assert_eq!(
+            pick("macos", "aarch64", None),
+            Some("rudder-v0.8.0-beta3-macos-aarch64.zip")
+        );
+        assert_eq!(
+            pick("macos", "x86_64", None),
+            Some("rudder-v0.8.0-beta3-macos-x86_64.zip")
+        );
+        assert_eq!(
+            pick("windows", "aarch64", None),
+            Some("rudder-v0.8.0-beta3-windows-aarch64.zip")
+        );
+        assert_eq!(
+            pick("windows", "x86_64", None),
+            Some("rudder-v0.8.0-beta3-windows-x86_64.zip")
+        );
+    }
+
+    /// Linux 按本机 glibc 选构建：新系统用主力包，老系统与判定不出的用兼容包。
+    ///
+    /// 兼容包在新系统上照跑，所以判定失败时往兼容侧退化是安全的；反过来会让
+    /// glibc < 2.39 的发行版装上起不来的二进制。
+    #[test]
+    fn linux_picks_build_matching_local_glibc() {
+        assert_eq!(
+            pick("linux", "x86_64", Some((2, 39))),
+            Some("rudder-v0.8.0-beta3-linux-x86_64.tar.gz")
+        );
+        assert_eq!(
+            pick("linux", "x86_64", Some((2, 31))),
+            Some("rudder-v0.8.0-beta3-linux-x86_64-glibc228.tar.gz")
+        );
+        assert_eq!(
+            pick("linux", "x86_64", None),
+            Some("rudder-v0.8.0-beta3-linux-x86_64-glibc228.tar.gz")
+        );
+        assert_eq!(
+            pick("linux", "aarch64", Some((2, 40))),
+            Some("rudder-v0.8.0-beta3-linux-aarch64.tar.gz")
+        );
+        assert_eq!(
+            pick("linux", "aarch64", Some((2, 28))),
+            Some("rudder-v0.8.0-beta3-linux-aarch64-glibc228.tar.gz")
+        );
+    }
+
+    /// 选择结果不能依赖资产排列顺序 —— API 返回顺序由并行上传决定，不可控。
+    #[test]
+    fn asset_order_does_not_matter() {
+        let cases = [
+            ("macos", "aarch64", None),
+            ("macos", "x86_64", None),
+            ("windows", "aarch64", None),
+            ("windows", "x86_64", None),
+            ("linux", "x86_64", Some((2, 39))),
+            ("linux", "x86_64", Some((2, 28))),
+            ("linux", "aarch64", Some((2, 39))),
+            ("linux", "aarch64", Some((2, 28))),
+        ];
+        for (os, arch, glibc) in cases {
+            let kw = asset_keywords_for(os, arch, glibc, false);
+            let ext = asset_extension_for(os, false);
+            let forward = REAL_ASSETS
+                .iter()
+                .find(|n| n.ends_with(ext) && kw.iter().any(|k| n.contains(k)));
+            let backward = REAL_ASSETS
+                .iter()
+                .rev()
+                .find(|n| n.ends_with(ext) && kw.iter().any(|k| n.contains(k)));
+            assert_eq!(forward, backward, "{os}/{arch} 的选择依赖资产顺序");
+        }
+    }
+
+    /// AppImage 是单文件安装器，自更新换的是压缩包里的二进制。
+    #[test]
+    fn appimage_is_never_selected() {
+        let appimage = "rudder-v0.8.0-beta3-linux-x86_64.AppImage";
+        let kw = asset_keywords_for("linux", "x86_64", Some((2, 39)), false);
+        // 关键字带 `.tar.gz`，名字里没有它，天然排除；扩展名过滤是第二道防线。
+        assert!(!kw.iter().any(|k| appimage.contains(k)));
+        assert!(!appimage.ends_with(asset_extension_for("linux", false)));
+    }
+
+    /// MSI 安装必须拿 msi：拿 zip 会撞上 Program Files 的写权限，而且替换后
+    /// MSI 记录的组件哈希与磁盘文件不符，"修复安装"会把旧 exe 写回来。
+    #[test]
+    fn msi_install_picks_msi_never_zip() {
+        assert_eq!(
+            pick_from(&RELEASE_ASSETS, "windows", "x86_64", None, true),
+            Some("rudder-v0.8.0-windows-x86_64.msi")
+        );
+        assert_eq!(
+            pick_from(&RELEASE_ASSETS, "windows", "aarch64", None, true),
+            Some("rudder-v0.8.0-windows-aarch64.msi")
+        );
+    }
+
+    /// 升级必须继续装在旧版目录：命令行要带 public 属性 `APPLICATIONFOLDER`，
+    /// 否则 msiexec 会退回包里的默认值 `Program Files\Rudder`。
+    #[test]
+    fn msi_args_carry_the_previous_install_dir() {
+        let msi = Path::new(
+            r"C:\Users\me\AppData\Local\Temp\rudder-update-ab12\rudder-v0.8.1-windows-x86_64.msi",
+        );
+        let args = msi_args(msi, Some(Path::new(r"D:\Apps\Rudder")));
+        assert!(
+            args.starts_with(r#"/i "C:\Users\me\AppData\Local\Temp\rudder-update-ab12\"#),
+            "{args}"
+        );
+        assert!(
+            args.contains(r#"APPLICATIONFOLDER="D:\Apps\Rudder""#),
+            "{args}"
+        );
+        assert!(args.ends_with(" /qb /norestart"), "{args}");
+    }
+
+    /// 取不到安装目录时省略该属性，让 wix/main.wxs 的 AppSearch 兜底。
+    #[test]
+    fn msi_args_omit_missing_install_dir() {
+        let args = msi_args(Path::new(r"C:\Temp\rudder.msi"), None);
+        assert!(!args.contains("APPLICATIONFOLDER"), "{args}");
+        assert!(args.ends_with(" /qb /norestart"), "{args}");
+    }
+
+    /// 反向：便携版不能拿到 msi，否则会凭空多出一条系统安装记录。
+    #[test]
+    fn portable_install_picks_zip_never_msi() {
+        assert_eq!(
+            pick_from(&RELEASE_ASSETS, "windows", "x86_64", None, false),
+            Some("rudder-v0.8.0-windows-x86_64.zip")
+        );
+        assert_eq!(
+            pick_from(&RELEASE_ASSETS, "windows", "aarch64", None, false),
+            Some("rudder-v0.8.0-windows-aarch64.zip")
+        );
+    }
+
+    /// msi 关键字按架构分开，且都带 `.msi` 后缀（否则会命中 zip）。
+    #[test]
+    fn msi_keywords_are_arch_specific() {
+        assert_eq!(
+            asset_keywords_for("windows", "aarch64", None, true)
+                .first()
+                .copied(),
+            Some("windows-aarch64.msi")
+        );
+        assert_eq!(
+            asset_keywords_for("windows", "x86_64", None, true)
+                .first()
+                .copied(),
+            Some("windows-x86_64.msi")
+        );
+        assert_eq!(asset_extension_for("windows", true), ".msi");
+    }
+
     #[test]
     fn keywords_cover_current_platform() {
-        // 资产关键字必须能命中 release.yml 里各平台的资产名。
-        let kw = asset_keywords();
-        let names = [
-            "rudder-0.7.2-macos-14.zip",
-            "rudder-0.7.2-windows-x86_64.zip",
-            "rudder-0.7.3-windows-aarch64.zip",
-            "rudder-0.7.2-linux-x86_64.tar.gz",
-            "rudder-0.7.2-linux-aarch64-glibc228.tar.gz",
-        ];
-        let ext = asset_extension();
-        let mine = names
+        let msi = install_kind() == InstallKind::Msi;
+        let kw = asset_keywords_for(
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            current_glibc(),
+            msi,
+        );
+        let ext = asset_extension_for(std::env::consts::OS, msi);
+        // MSI 安装只能对照正式版资产表（beta 不产 msi）。
+        let pool: &[&str] = if msi {
+            &RELEASE_ASSETS[..]
+        } else {
+            &REAL_ASSETS[..]
+        };
+        let mine = pool
             .iter()
-            .filter(|n| n.ends_with(ext))
-            .find(|n| kw.iter().any(|k| n.contains(k)));
+            .find(|n| n.ends_with(ext) && kw.iter().any(|k| n.contains(k)));
         assert!(mine.is_some(), "no asset matches {kw:?} with ext {ext}");
     }
 
@@ -524,7 +1052,6 @@ mod tests {
         );
     }
 }
-
 
 #[cfg(test)]
 mod channel_tests {
