@@ -1,6 +1,6 @@
 [package]
 name = "rudder"
-version = "0.8.1"
+version = "0.8.1-fix1"
 edition = "2024"
 authors = ["Rudder contributors"]
 description = "A lightweight FinalShell-style SSH/terminal client written in Rust + Slint"
