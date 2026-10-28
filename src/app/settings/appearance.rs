@@ -736,7 +736,7 @@ pub(crate) fn apply_builtin_theme(
 /// 把配置里的主题色套到界面上。
 ///
 /// ⚠️ 换深浅档后**必须再调一次**：预设的两档本来就是两个颜色，自定义色在浅色档还要压深。
-pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
+pub(crate) fn apply_accent(w: &AppWindow, choice: &str) -> String {
     let dark = w.global::<Theme>().get_dark();
     let (overridden, seed) = match resolve_accent(choice, dark) {
         Some(c) => (true, c),
@@ -757,9 +757,12 @@ pub(crate) fn apply_accent(w: &AppWindow, choice: &str) {
     } else {
         effective_accent_hex(choice, dark)
     };
-    w.set_accent_hex(hex_shown.into());
+    w.set_accent_hex(hex_shown.clone().into());
     w.set_accent_presets(accent_presets_model(dark));
     w.set_accent_name(accent_display_name(choice, w.global::<Theme>().get_wallpaper_active()));
+    // 返回生效色：`Theme.accent-solid` 带过渡动画，刚 `set_accent_seed` 完立刻读它只能拿到
+    // 动画起始帧（首次启动就是出厂蓝）。调用方要"当前主题色"时必须用这个返回值。
+    hex_shown
 }
 
 /// 「还原本页默认」：替换外观域为出厂默认，再走与 `bind` 相同的落点。

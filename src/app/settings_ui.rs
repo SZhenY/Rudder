@@ -228,12 +228,13 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
             let s = store.borrow();
             (s.accent().to_string(), s.theme_pref().to_string())
         };
-        settings::appearance::apply_accent(window, &choice);
+        let follow_hex = settings::appearance::apply_accent(window, &choice);
         window.set_accent_mode(mode.into());
         // 光标色必须等主题色落定之后才解析：空串 = 跟随主题，取的是 `Theme.accent-solid`，
         // 而它要等壁纸（wp-accent）与主题色都写进去才成立。早一步算，拿到的是出厂蓝。
         let cursor = store.borrow().terminal_cursor_color().to_string();
-        settings::terminal::apply_cursor_color(window, &cursor);
+        // 用 apply_accent 的返回值而不是 Theme.accent-solid：后者此刻还在动画起始帧上。
+        settings::terminal::apply_cursor_color_with(window, &cursor, &follow_hex);
     }
 
     start_system_theme_watcher(window, store, bufs);

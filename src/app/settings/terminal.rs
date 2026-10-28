@@ -47,7 +47,15 @@ fn is_follow_echo(v: &str, stored: &str, follow_hex: &str) -> bool {
 /// ⚠️ 换深浅档后**必须再调一次**，与「配色」分区的主题色是同一个道理。
 pub(crate) fn apply_cursor_color(w: &AppWindow, stored: &str) {
     let follow = follow_cursor_hex(w);
-    let effective = resolve_cursor_color(&follow, stored);
+    apply_cursor_color_with(w, stored, &follow);
+}
+
+/// 与 [`apply_cursor_color`] 相同，但「跟随主题」的取值由调用方给出。
+///
+/// 启动播种时要走这条：那时 `Theme.accent-solid` 的过渡动画还没开始，直接读全局只能拿到
+/// 起始帧（出厂蓝），所以必须把 `apply_accent` 算出的生效色显式传进来。
+pub(crate) fn apply_cursor_color_with(w: &AppWindow, stored: &str, follow_hex: &str) {
+    let effective = resolve_cursor_color(follow_hex, stored);
     // 输入框回填**当前生效的颜色**（跟随主题时就是解析出来的那个色号）—— 用户因此始终
     // 看得到真实值。这次程序化回填会触发输入框的 `changed text` → `on_set_term_cursor_color`，
     // 那里的「回声」判定把它当无操作，不会把"跟随主题"写死成具体颜色。
