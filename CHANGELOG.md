@@ -5,6 +5,25 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- 安装版（MSI）支持应用内自更新：检测到当前副本由 MSI 安装时，下载 `.msi` 交给 `msiexec`
+  安装（UAC 提权、`/qb` 显示进度），并显式指定原来的安装目录；便携版仍是压缩包原地替换。
+- MSI 安装时预建 `config` 与 `log` 目录并授予 Users 完全控制（可继承），配置不再落到
+  `%TEMP%`（重启即丢）；从旧版升级会自动把 `%TEMP%\rudder` 里的配置搬进安装目录。
+- 发布流程记录每次的可执行文件与安装包体积：写入 Release 正文并与上一版对比；正式版缺
+  MSI 时点名并让作业失败。
+
+### 修复 / Fixed
+
+- 自更新挑错发布包：macOS 没有按架构匹配（Intel 与 Apple Silicon 会互相拿到对方的二进制，
+  替换后无法启动），Windows 在精确包缺失时退回 ARM64 包，Linux 则一律选中按 glibc 2.28
+  编译的兼容包。现在 macOS / Windows 按架构精确匹配，Linux 按本机 glibc 选主力或兼容构建，
+  AppImage 与 msi 不会被误选。
+- 下载中途断开时未校验长度，截断的安装包会一路交给安装程序，报出的错误与网络无关。
+- 安装版在"测试版 / 全部版本"通道上会把更旧的 msi 交给 msiexec，被系统以"已安装更新的
+  版本"挡下且没有任何说明；现在直接判定为无可用更新。
+
 ## [0.8.0-beta3] - 2026-10-28
 
 ### 新增 / Added
