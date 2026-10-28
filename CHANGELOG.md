@@ -5,6 +5,30 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- 设置「新版本提示」增加**更新代理**（留空跟随系统，支持 `http://用户名:密码@主机:端口`）与
+  **使用系统证书链**；企业网关 / 加速器做 TLS 中间人时不再只报笼统的"网络原因"。
+- 更新失败按 DNS / 代理 / 证书 / 限流 / 超时分类给出可执行提示。
+
+### 变更 / Changed
+
+- HTTP 栈统一：移除 ureq 2 与 ureq 3，WebDAV 与更新检查改走 reqwest（HTTP/2、连接池、
+  平台根证书）；WebDAV 的证书指纹固定行为不变。
+- 移除 self_update：解压（zip / tar.gz，含路径穿越防护）与重启改为自实现，依赖图不再出现
+  第二份 reqwest 与 aws-lc-sys。
+- 依赖升级：sysinfo 0.39、directories 6、dark-light 3、rfd 0.17、fontdb 0.24、base64 0.23、
+  pollster 1，以及 aes/cbc/des/hmac/sha1/sha2/md5 与 chacha20poly1305/argon2；`rand` 换成
+  `getrandom`（rand 0.10 已移除 `OsRng`）。
+
+### 修复 / Fixed
+
+- 设置窗口无法拉伸缩放，且拖过一次后再也拖不动（只能重启程序）：根因是窗口用
+  `width:`/`height:` 钉死尺寸，Slint 因此判定"不可缩放"，系统的缩放循环不启动，winit 的
+  `dragging` 标志也永远复位不了。改用 `min-*` + `preferred-*`。
+- 首次启动时光标颜色不是主题色：`Theme.accent-solid` 的过渡动画尚未开始，读到的是出厂蓝；
+  改为直接使用 `apply_accent` 返回的生效色。
+
 ## [0.8.0-beta2] - 2026-10-26
 
 ### 修复 / Fixed
