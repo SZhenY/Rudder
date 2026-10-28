@@ -183,6 +183,10 @@
             <ComponentRef Id="InstallLocationRegistry"/>
             <ComponentRef Id="ApplicationShortcut"/>
             <ComponentRef Id="DesktopShortcut"/>
+            <!-- 建目录 + 授权也算安装内容，没有这两条引用 WiX 会报 WIX0267
+                 orphaned Component，整个 msi 编不出来。 -->
+            <ComponentRef Id="ConfigFolderAcl"/>
+            <ComponentRef Id="LogFolderAcl"/>
         </Feature>
 
         <!-- Populate Programs and Features -> InstallLocation as well. -->
