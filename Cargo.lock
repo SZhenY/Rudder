@@ -5312,7 +5312,7 @@ dependencies = [
 
 [[package]]
 name = "rudder"
-version = "0.8.0-beta2"
+version = "0.8.0-beta3"
 dependencies = [
  "aes 0.9.3",
  "alacritty_terminal",

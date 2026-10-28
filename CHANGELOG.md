@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.8.0-beta3] - 2026-10-28
+
 ### 新增 / Added
 
 - 设置「新版本提示」增加**更新代理**（留空跟随系统，支持 `http://用户名:密码@主机:端口`）与
