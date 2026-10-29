@@ -423,8 +423,20 @@ msgstr "留空则用 $ALL_PROXY 环境变量，或直接连接"
 msgid "Proxy address"
 msgstr "代理地址"
 
-msgid "Format: host:port  (with auth: user:pass@host:port)"
-msgstr "格式：host:port（带认证：user:pass@host:port）"
+msgid "Format: host:port — fill in the user / password below if the proxy requires auth"
+msgstr "格式：host:port — 代理需要认证时填下面的用户名 / 密码"
+
+msgid "Proxy user"
+msgstr "代理用户名"
+
+msgid "Proxy password"
+msgstr "代理密码"
+
+msgid "Optional"
+msgstr "可选"
+
+msgid "Leave blank to keep"
+msgstr "留空则保持不变"
 
 msgid "Jump host (optional)"
 msgstr "跳板机（可选）"

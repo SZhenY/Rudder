@@ -43,6 +43,10 @@ export struct SessionDraft {
     private-key-inline: string,
     private-key-inline-mode: bool,
     proxy: string,     // "" | "socks5://host:port" | "http://host:port"
+    // 代理认证。密码留空表示保留已存的那份（与登录密码同一口径）；
+    // 地址框里也可以写 user:pass@host:port，保存时会拆到这两个字段。
+    proxy-user: string,
+    proxy-password: string,
     group: string,     // folder/group name ("" = ungrouped)
     // Serial-only (ignored unless kind == "serial")
     serial-port: string,

@@ -35,6 +35,8 @@ export component SessionDialog inherits Rectangle {
     in-out property <bool> draft-key-inline-mode: false;
     in-out property <string> draft-proxy-type: "none";  // "none" | "socks5" | "http"
     in-out property <string> draft-proxy-hostport;
+    in-out property <string> draft-proxy-user;
+    in-out property <string> draft-proxy-password;
     in-out property <string> draft-group;
     in property <[string]> session-groups;   // existing groups for the dropdown (#179)
     // SSH jump host picker (#211): parallel label/id lists (index 0 = "none")
@@ -89,6 +91,8 @@ export component SessionDialog inherits Rectangle {
                 proxy: (root.draft-proxy-type == "none" || root.draft-proxy-hostport == "") ? ""
                 : root.draft-proxy-type == "http" ? "http://" + root.draft-proxy-hostport
                 : "socks5://" + root.draft-proxy-hostport,
+                proxy-user: root.draft-proxy-user,
+                proxy-password: root.draft-proxy-password,
                 group: root.draft-group,
                 serial-port: root.draft-serial-port,
                 baud-rate: root.draft-baud.to-float(),
@@ -560,17 +564,40 @@ export component SessionDialog inherits Rectangle {
                     SegOption { label: "SOCKS5"; active: root.draft-proxy-type == "socks5"; clicked => { root.draft-proxy-type = "socks5"; } }
                     SegOption { label: "HTTP"; active: root.draft-proxy-type == "http"; clicked => { root.draft-proxy-type = "http"; } }
                 }
-                if root.draft-proxy-type != "none" : LabeledInput {
-                    input-background: Theme.bg-elevated;
-                    idle-border: Theme.border-strong;
-                    label: @tr("Proxy address");
-                    placeholder: "127.0.0.1:1080";
-                    value <=> root.draft-proxy-hostport;
+                if root.draft-proxy-type != "none" : VerticalLayout {
+                    spacing: 6px;
+                    LabeledInput {
+                        input-background: Theme.bg-elevated;
+                        idle-border: Theme.border-strong;
+                        label: @tr("Proxy address");
+                        placeholder: "127.0.0.1:1080";
+                        value <=> root.draft-proxy-hostport;
+                    }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        LabeledInput {
+                            input-background: Theme.bg-elevated;
+                            idle-border: Theme.border-strong;
+                            label: @tr("Proxy user");
+                            placeholder: @tr("Optional");
+                            value <=> root.draft-proxy-user;
+                            horizontal-stretch: 1;
+                        }
+                        LabeledInput {
+                            input-background: Theme.bg-elevated;
+                            idle-border: Theme.border-strong;
+                            label: @tr("Proxy password");
+                            placeholder: root.is-editing ? @tr("Leave blank to keep") : @tr("Optional");
+                            password: true;
+                            value <=> root.draft-proxy-password;
+                            horizontal-stretch: 1;
+                        }
+                    }
                 }
                 Text {
                     text: root.draft-proxy-type == "none"
                         ? @tr("No proxy — use $ALL_PROXY or connect directly")
-                        : @tr("Format: host:port  (with auth: user:pass@host:port)");
+                        : @tr("Format: host:port — fill in the user / password below if the proxy requires auth");
                     color: Theme.text-muted;
                     font-size: Theme.fs-xs;
                 }

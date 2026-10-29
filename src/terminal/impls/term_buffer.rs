@@ -1,6 +1,6 @@
 use crate::terminal::{
     BuiltScreen, CsiState, FrameStats, HistSpan, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
-    ScrollLine, ScrollbackKey, TermBuffer, build_line, build_row, cursor_pos,
+    ScrollLine, ScrollbackKey, TermBuffer, TextSnapshot, build_line, build_row, cursor_pos,
     highlight_plain_output, is_alt, merge_runs, process_bytes, refresh_overlines, render_term_span,
     resize_term, term_size,
 };
@@ -69,6 +69,7 @@ impl TermBuffer {
             sgr_buf: Vec::new(),
             interactive_echo_until: std::time::Instant::now(),
             json_format_output: false,
+            output_seq: 0,
         }
     }
 
@@ -111,6 +112,69 @@ impl TermBuffer {
             ScrollbackKey::PageDown => self.view_offset.saturating_sub(page_rows),
         };
         true
+    }
+
+    /// 可见区域（或含回滚）的纯文本快照。
+    ///
+    /// **只读**：既不调用 `render()`、也不改 `view_offset` / 行缓存 —— 因此可以
+    /// 从任意线程在 `Mutex` 后面安全调用（MCP 的 `read_terminal` 就是这么用的）。
+    /// 行文本来自 `build_line`，与滚动视图走同一条渲染路径，CJK 宽字符与组合符
+    /// 的口径天然一致。
+    pub(crate) fn snapshot_text(&self, max_rows: usize, include_scrollback: bool) -> TextSnapshot {
+        let (rows, cols) = term_size(&self.term);
+        let (cursor_row, cursor_col) = cursor_pos(&self.term);
+        let total = self.term.total_lines();
+        let screen = self.term.screen_lines();
+        let limit = max_rows.clamp(1, 400);
+
+        // 视口从 `Line(0)` 起（`topmost_line()` = -history）；回滚模式取最近 limit 行。
+        let (first, count, mut truncated) = if include_scrollback {
+            let take = limit.min(total);
+            (self.term.topmost_line().0 + (total - take) as i32, take, total > take)
+        } else {
+            (0, screen, false)
+        };
+
+        let mut lines: Vec<(String, bool)> = (0..count)
+            .map(|offset| {
+                let (plain, _runs, wrapped) =
+                    build_line(&self.term, GridLine(first + offset as i32), cols, &[]);
+                (plain, wrapped)
+            })
+            .collect();
+        // 视口下方通常是空行；回滚模式的末尾也可能是一片空白。两种模式都裁掉，
+        // 否则 `max_rows` 会被这些空行占满（MCP 的 wait_for_output 会拿到整屏空格）。
+        while lines
+            .last()
+            .is_some_and(|(line, _)| line.trim_end().is_empty())
+        {
+            lines.pop();
+        }
+        if lines.len() > limit {
+            lines.drain(0..lines.len() - limit);
+            truncated = true;
+        }
+
+        let mut text = String::with_capacity(lines.len() * (cols as usize + 1));
+        for (line, wrapped) in lines {
+            if wrapped {
+                // 软换行是终端宽度造成的，不是真换行：续行直接拼回去。
+                // 断开的话，AI 按整词搜索（`aarch64 GNU/Linux`）永远匹配不上。
+                text.push_str(&line);
+            } else {
+                text.push_str(line.trim_end());
+                text.push('\n');
+            }
+        }
+        TextSnapshot {
+            rows,
+            cols,
+            cursor_row: cursor_row as i32,
+            cursor_col: cursor_col as i32,
+            text,
+            truncated,
+            output_seq: self.output_seq,
+        }
     }
 
     /// 用户**主动关标签页**时释放这块缓冲的内存大头。
@@ -303,6 +367,8 @@ impl TermBuffer {
     }
 
     pub(crate) fn ingest(&mut self, input: &[u8]) -> Vec<u8> {
+        // 外部观察者（MCP 的 wait_for_output）用这个计数判断"之后有没有新输出"。
+        self.output_seq = self.output_seq.saturating_add(input.len() as u64);
         // Pretty-print + colour complete JSON lines before any other handling
         // so the grid, raw replay stream, and query scanner all see the same
         // bytes (#338).
@@ -1232,6 +1298,7 @@ x1b[21munder\x1b[4:2m\x1b[38;2;53;100;200mtrue\x1b[0m tail";
             interactive_echo_until: std::time::Instant::now(),
             json_format_output: false,
             mouse_tracked: false,
+            output_seq: 0,
         }
     }
 
@@ -1626,6 +1693,7 @@ x1b[21munder\x1b[4:2m\x1b[38;2;53;100;200mtrue\x1b[0m tail";
             interactive_echo_until: std::time::Instant::now(),
             json_format_output: false,
             mouse_tracked: false,
+            output_seq: 0,
         };
         let mut input = Vec::new();
         for i in 0..60 {
@@ -1747,6 +1815,7 @@ mod real_file_overline_verify {
             interactive_echo_until: std::time::Instant::now(),
             json_format_output: false,
             mouse_tracked: false,
+            output_seq: 0,
         };
         // Feed in realistic 4 KiB chunks (cat / SSH behaviour).
         for chunk in DATA.chunks(4096) {
@@ -1808,6 +1877,7 @@ mod render_path_cube_tests {
             interactive_echo_until: std::time::Instant::now(),
             json_format_output: false,
             mouse_tracked: false,
+            output_seq: 0,
         }
     }
 
@@ -1944,5 +2014,48 @@ mod render_path_cube_tests {
         // 异常超长 CSI（>64 字节）被丢弃：不回复、也不越界
         let junk = format!("\x1b[{}n", "9".repeat(80));
         assert!(buf.detect_terminal_queries(junk.as_bytes()).is_empty());
+    }
+
+    /// MCP 的读屏入口：必须是纯读，且 output_seq 随 ingest 增长。
+    #[test]
+    fn snapshot_text_reads_screen_without_touching_view() {
+        let mut buf = make_buffer();
+        buf.ingest(b"hello\r\nworld\r\n");
+        let before_offset = buf.view_offset;
+        let snapshot = buf.snapshot_text(10, false);
+        assert!(snapshot.text.contains("hello"), "{}", snapshot.text);
+        assert!(snapshot.text.contains("world"), "{}", snapshot.text);
+        assert_eq!(snapshot.output_seq, 14);
+        assert_eq!(buf.view_offset, before_offset, "读屏不能改变滚动位置");
+        assert!(!snapshot.truncated);
+    }
+
+    /// 软换行是终端宽度造成的，不是真换行 —— 拼回去，否则整词搜索永远匹配不上。
+    #[test]
+    fn snapshot_text_joins_soft_wrapped_lines() {
+        let mut buf = make_buffer(); // 40 列
+        let token = "x".repeat(100);
+        buf.ingest(format!("head {token} tail\r\n").as_bytes());
+        let snapshot = buf.snapshot_text(10, false);
+        assert!(
+            snapshot.text.contains(&token),
+            "soft wrap split the logical line: {}",
+            snapshot.text
+        );
+        assert!(snapshot.text.contains(&format!("head {token} tail")));
+    }
+
+    /// 回滚模式取的是"最后 N 行"，行数不足时不能报截断。
+    #[test]
+    fn snapshot_text_reports_truncation_only_when_rows_are_dropped() {
+        let mut buf = make_buffer();
+        for index in 0..80 {
+            buf.ingest(format!("line {index}\r\n").as_bytes());
+        }
+        let short = buf.snapshot_text(5, true);
+        assert!(short.truncated, "80 行历史应被截断到 5 行");
+        assert!(short.text.contains("line 79"), "{}", short.text);
+        let tall = buf.snapshot_text(400, true);
+        assert!(!tall.truncated, "行数够时不该报截断");
     }
 }

@@ -158,6 +158,15 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_accent_mode(m.get_accent_mode());
     // 更新通道：分段控件按这个值高亮。点击只改主窗口那份属性，不回灌的话设置窗口停在开窗时的旧值。
     sw.set_update_channel(m.get_update_channel());
+    // AI / MCP：状态、地址、令牌都会被后台服务改写，必须跟着主窗口刷。
+    sw.set_mcp_status(m.get_mcp_status());
+    sw.set_mcp_status_error(m.get_mcp_status_error());
+    sw.set_mcp_urls(m.get_mcp_urls());
+    sw.set_mcp_token_masked(m.get_mcp_token_masked());
+    sw.set_mcp_token_plain(m.get_mcp_token_plain());
+    sw.set_mcp_ifaces(m.get_mcp_ifaces());
+    sw.set_mcp_permissions(m.get_mcp_permissions());
+    sw.set_mcp_port(m.get_mcp_port());
     // 字体 / 壁纸 / 渲染器（其余可能被 Rust 侧规范化或回落的值）
     sw.set_term_font_index(m.get_term_font_index());
     sw.set_ui_font_index(m.get_ui_font_index());
@@ -182,6 +191,19 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_output_highlight_rule_status(m.get_output_highlight_rule_status());
     sw.set_output_highlight_rules(m.get_output_highlight_rules());
     sw.set_wsl_profiles(m.get_wsl_profiles());
+    // AI / MCP：状态与令牌由主窗口的 1 Hz 定时器维护，这里只做开窗时的拷贝。
+    sw.set_mcp_enabled(m.get_mcp_enabled());
+    sw.set_mcp_port(m.get_mcp_port());
+    sw.set_mcp_port_valid(m.get_mcp_port_valid());
+    sw.set_mcp_status(m.get_mcp_status());
+    sw.set_mcp_status_error(m.get_mcp_status_error());
+    sw.set_mcp_urls(m.get_mcp_urls());
+    sw.set_mcp_lan_enabled(m.get_mcp_lan_enabled());
+    sw.set_mcp_ifaces(m.get_mcp_ifaces());
+    sw.set_mcp_permissions(m.get_mcp_permissions());
+    sw.set_mcp_token_masked(m.get_mcp_token_masked());
+    sw.set_mcp_token_plain(m.get_mcp_token_plain());
+    sw.set_mcp_token_visible(m.get_mcp_token_visible());
 }
 
 /// 打开设置窗口：播种主窗口当前值 → 同步主题 → `show()` → 首帧补救三连。
@@ -395,6 +417,14 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_welcome_as_sidebar => invoke_set_welcome_as_sidebar, (a0));
     forward!(sw, m, s, on_webdav_download => invoke_webdav_download, ());
     forward!(sw, m, s, on_webdav_upload => invoke_webdav_upload, ());
+    // AI / MCP
+    forward!(sw, m, s, on_set_mcp_enabled => invoke_set_mcp_enabled, (a0));
+    forward!(sw, m, s, on_set_mcp_port -> invoke_set_mcp_port, (a0));
+    forward!(sw, m, s, on_set_mcp_lan => invoke_set_mcp_lan, (a0));
+    forward!(sw, m, s, on_toggle_mcp_iface => invoke_toggle_mcp_iface, (a0));
+    forward!(sw, m, s, on_toggle_mcp_permission => invoke_toggle_mcp_permission, (a0));
+    forward!(sw, m, s, on_copy_mcp_token => invoke_copy_mcp_token, ());
+    forward!(sw, m, s, on_regenerate_mcp_token => invoke_regenerate_mcp_token, ());
 }
 
 #[cfg(test)]

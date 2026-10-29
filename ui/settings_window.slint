@@ -38,7 +38,7 @@ import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpPermission } from "settings/types.slint";
 import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
@@ -179,6 +179,20 @@ export component SettingsWindow inherits Window {
     in-out property <string> webdav-status;
     in-out property <string> webdav-url;
     in-out property <string> webdav-username;
+
+    // ── AI（进程内 MCP server）──
+    in-out property <bool> mcp-enabled: false;
+    in-out property <string> mcp-port: "8765";
+    in property <bool> mcp-port-valid: true;
+    in property <string> mcp-status;
+    in property <string> mcp-status-error;
+    in property <[string]> mcp-urls;
+    in-out property <bool> mcp-lan-enabled: false;
+    in property <[McpIface]> mcp-ifaces;
+    in property <[McpPermission]> mcp-permissions;
+    in property <string> mcp-token-masked;
+    in property <string> mcp-token-plain;
+    in-out property <bool> mcp-token-visible: false;
     in-out property <bool> welcome-as-sidebar:false;
     in-out property <string> wsl-new-directory:"~";
     in property <[WslProfileInfo]> wsl-profiles;
@@ -235,6 +249,13 @@ export component SettingsWindow inherits Window {
     callback set-update-freq(int);
     callback set-update-proxy(string);
     callback set-update-proxy-enabled(bool);
+    callback set-mcp-enabled(bool);
+    callback set-mcp-port(string) -> bool;
+    callback set-mcp-lan(bool);
+    callback toggle-mcp-iface(string);
+    callback toggle-mcp-permission(string);
+    callback copy-mcp-token();
+    callback regenerate-mcp-token();
     callback set-wallpaper(string);
     callback set-welcome-as-sidebar(bool);
     callback webdav-download();
@@ -405,6 +426,26 @@ export component SettingsWindow inherits Window {
                 }
                 webdav-upload => { root.webdav-upload(); }
                 webdav-download => { root.webdav-download(); }
+                // ── AI / MCP ──
+                mcp-enabled <=> root.mcp-enabled;
+                mcp-port <=> root.mcp-port;
+                mcp-port-valid: root.mcp-port-valid;
+                mcp-status: root.mcp-status;
+                mcp-status-error: root.mcp-status-error;
+                mcp-urls: root.mcp-urls;
+                mcp-lan-enabled <=> root.mcp-lan-enabled;
+                mcp-ifaces: root.mcp-ifaces;
+                mcp-permissions: root.mcp-permissions;
+                mcp-token-masked: root.mcp-token-masked;
+                mcp-token-plain: root.mcp-token-plain;
+                mcp-token-visible <=> root.mcp-token-visible;
+                set-mcp-enabled(v) => { root.set-mcp-enabled(v); }
+                set-mcp-port(v) => { root.set-mcp-port(v); }
+                set-mcp-lan(v) => { root.set-mcp-lan(v); }
+                toggle-mcp-iface(v) => { root.toggle-mcp-iface(v); }
+                toggle-mcp-permission(v) => { root.toggle-mcp-permission(v); }
+                copy-mcp-token => { root.copy-mcp-token(); }
+                regenerate-mcp-token => { root.regenerate-mcp-token(); }
                 set-download-always-ask(v) => { root.set-download-always-ask(v); }
                 set-welcome-as-sidebar(v) => { root.set-welcome-as-sidebar(v); }
                 set-show-cmd-bar(v) => { root.set-show-cmd-bar(v); }

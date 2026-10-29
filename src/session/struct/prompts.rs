@@ -33,6 +33,9 @@ pub(crate) struct ConnectCtx {
     pub(crate) last_term_size: Arc<Mutex<(u32, u32)>>,
     pub(crate) sftp_follow_cd: Arc<AtomicBool>,
     pub(crate) store: Rc<RefCell<ConfigStore>>,
+    /// 首次连接未知主机时是否免确认（只由 MCP 的 `open_session` 显式打开）。
+    /// **密钥变更绝不受它影响** —— 那可能是中间人，必须人来决定。
+    pub(crate) trust_unknown_host_key: bool,
 }
 
 impl ConnectCtx {
@@ -54,6 +57,8 @@ impl ConnectCtx {
             last_term_size: app.last_term_size.clone(),
             sftp_follow_cd: app.sftp_follow_cd.clone(),
             store: app.store.clone(),
+            // 默认要求确认；只有 MCP 的 open_session 会把它置 true。
+            trust_unknown_host_key: false,
         }
     }
 }

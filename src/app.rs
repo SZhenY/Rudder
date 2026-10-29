@@ -195,11 +195,13 @@ mod sftp_callbacks;
 mod sftp_ui;
 mod sidebar;
 mod tab_callbacks;
+mod tab_ops;
 mod terminal_ui;
 mod webdav;
 mod window;
 mod window_geometry;
 mod key_input;
+pub(crate) mod mcp_ui;
 mod session_callbacks;
 mod pane_layout;
 mod fonts_ui;
@@ -1415,7 +1417,26 @@ pub fn run() -> Result<()> {
         window_size_tracking_ready.set(true);
     }
 
+    // 进程内 MCP server：配置里启用（或 debug 构建给了 RUDDER_MCP_DEV_TOKEN）就起监听。
+    // UI 桥先注册 —— 工具调用随时可能进来；快照在启用但没令牌时会当场生成并落盘。
+    {
+        mcp_ui::install(&window, &ctx);
+        let snapshot = {
+            let mut store_ref = store.borrow_mut();
+            crate::mcp::McpConfigSnapshot::from_store(&mut store_ref)
+        };
+        crate::mcp::set_context(ctx.runtime.handle(), mcp_ui::app_handles(&ctx));
+        crate::mcp::start(
+            ctx.runtime.handle(),
+            snapshot,
+            mcp_ui::app_handles(&ctx),
+        );
+    }
+
     let run_result = window.run();
+    // 事件循环已退出：MCP 服务不再可能操作界面，先停服务、摘掉 UI 桥，再收尾。
+    crate::mcp::stop();
+    mcp_ui::uninstall();
     // 退出前把防抖窗口内未落盘的设置改动写出去：事件循环一停，挂起的改动就没机会落盘了。
     store.borrow_mut().flush_logging();
     if let Err(err) = run_result {
@@ -1789,17 +1810,8 @@ pub(crate) fn clipboard_set_text(text: String) {
     }
 }
 
-
-
-
-
-
 mod version;
 pub(crate) use version::{is_test_build, parse_version, Version};
-
-
-
-
 
 pub(crate) fn split_proxy(url: &str) -> (String, String) {
     let s = url.trim();
@@ -1824,6 +1836,55 @@ pub(crate) fn split_proxy(url: &str) -> (String, String) {
         }
     }
     ("socks5".to_string(), s.trim_end_matches('/').to_string())
+}
+
+/// 把对话框里的代理输入整理成配置的三段：`(url, user, password)`。
+///
+/// 地址框允许写 `user:pass@host:port`（老配置就是这样），但密码写在 URL 里
+/// 就没法按密码字段加密落盘，所以保存时统一把它摘出来：
+///
+/// * `proxy_type == "none"` 或地址为空 → 三段全空，凭据一并清掉；
+/// * 用户名以独立输入框为准，空则取 URL 里的 userinfo；
+/// * 密码留空表示"保留已存的"：依次回退到 URL 里的密码、同一用户名下的旧密码。
+pub(crate) fn compose_proxy(
+    proxy_type: &str,
+    hostport: &str,
+    user: &str,
+    password: &str,
+    existing: Option<&crate::config::Session>,
+) -> (String, String, crate::config::Secret) {
+    let hostport = hostport.trim();
+    if proxy_type == "none" || hostport.is_empty() {
+        return (String::new(), String::new(), crate::config::Secret::default());
+    }
+    let (url_user, url_pass, hostport) = match hostport.rsplit_once('@') {
+        Some((userinfo, rest)) => {
+            let (u, p) = userinfo.split_once(':').unwrap_or((userinfo, ""));
+            (u.to_string(), p.to_string(), rest)
+        }
+        None => (String::new(), String::new(), hostport),
+    };
+    let final_user = if user.trim().is_empty() {
+        url_user
+    } else {
+        user.trim().to_string()
+    };
+    let saved = existing
+        .filter(|session| session.proxy_user == final_user)
+        .map(|session| session.proxy_pass.clone())
+        .unwrap_or_default();
+    let final_pass = if !password.is_empty() {
+        crate::config::Secret::new(password.to_string())
+    } else if !url_pass.is_empty() {
+        crate::config::Secret::new(url_pass)
+    } else {
+        saved
+    };
+    (
+        format!("{proxy_type}://{hostport}"),
+        final_user,
+        final_pass,
+    )
 }
 
 fn parent_path(path: &str) -> String {
@@ -1996,6 +2057,57 @@ mod key_tests {
             split_proxy("127.0.0.1:1080"),
             ("socks5".into(), "127.0.0.1:1080".into())
         );
+    }
+
+    #[test]
+    fn compose_proxy_splits_credentials_out_of_the_url() {
+        // 老配置把凭据写在 URL 里：保存时拆到独立字段，URL 只剩 host:port。
+        let (url, user, pass) = compose_proxy("http", "u:p@host:8080", "", "", None);
+        assert_eq!(url, "http://host:8080");
+        assert_eq!(user, "u");
+        assert_eq!(pass.as_str(), "p");
+
+        // 独立字段优先于 URL 里的用户名。
+        let (url, user, pass) = compose_proxy("socks5", "u:p@host:1080", "bob", "", None);
+        assert_eq!(url, "socks5://host:1080");
+        assert_eq!(user, "bob");
+        assert_eq!(pass.as_str(), "p", "密码仍取自 URL");
+    }
+
+    #[test]
+    fn compose_proxy_keeps_saved_password_only_for_the_same_user() {
+        let mut existing = Session::new_empty();
+        existing.proxy = "socks5://host:1080".into();
+        existing.proxy_user = "bob".into();
+        existing.proxy_pass = Secret::new("s3cret");
+
+        // 密码框留空 + 用户名没变 → 沿用旧密码（与登录密码同一口径）。
+        let (_, user, pass) =
+            compose_proxy("socks5", "host:1080", "bob", "", Some(&existing));
+        assert_eq!(user, "bob");
+        assert_eq!(pass.as_str(), "s3cret");
+
+        // 换了用户名还留空 → 旧密码不能跟过去。
+        let (_, user, pass) =
+            compose_proxy("socks5", "host:1080", "alice", "", Some(&existing));
+        assert_eq!(user, "alice");
+        assert!(pass.is_empty());
+
+        // 显式输入覆盖一切。
+        let (_, _, pass) =
+            compose_proxy("socks5", "host:1080", "bob", "newpass", Some(&existing));
+        assert_eq!(pass.as_str(), "newpass");
+    }
+
+    #[test]
+    fn compose_proxy_none_clears_credentials() {
+        let mut existing = Session::new_empty();
+        existing.proxy_user = "bob".into();
+        existing.proxy_pass = Secret::new("s3cret");
+        let (url, user, pass) = compose_proxy("none", "", "bob", "", Some(&existing));
+        assert!(url.is_empty());
+        assert!(user.is_empty());
+        assert!(pass.is_empty());
     }
 
     #[test]

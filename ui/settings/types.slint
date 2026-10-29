@@ -32,3 +32,19 @@ export struct AccentPreset {
     name: string,
     color: color,
 }
+
+/// AI 设置页：一个可勾选的局域网网口。
+export struct McpIface {
+    name: string,
+    addr: string,
+    enabled: bool,
+}
+
+/// AI 设置页：一个工具权限位。
+///
+/// 用模型而不是 5 个属性传递：权限位会随工具集增长，模型只需要在 Rust 侧加一行。
+export struct McpPermission {
+    key: string,
+    label: string,
+    enabled: bool,
+}

@@ -95,6 +95,39 @@ impl SftpHandle {
     pub fn mkdir(&self, path: String) {
         let _ = self.commands.send(SftpCommand::MkDir(path));
     }
+    /// MCP：列目录并取回结果。
+    pub fn mcp_list(
+        &self,
+        path: String,
+    ) -> tokio::sync::oneshot::Receiver<Result<Vec<RemoteEntry>, String>> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        let _ = self.commands.send(SftpCommand::McpList { path, reply });
+        rx
+    }
+    /// MCP：下载一个远端文件到本地路径。
+    pub fn mcp_download(
+        &self,
+        remote: String,
+        local: PathBuf,
+    ) -> tokio::sync::oneshot::Receiver<Result<u64, String>> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .commands
+            .send(SftpCommand::McpDownload { remote, local, reply });
+        rx
+    }
+    /// MCP：把本地文件上传到远端路径。
+    pub fn mcp_upload(
+        &self,
+        local: PathBuf,
+        remote: String,
+    ) -> tokio::sync::oneshot::Receiver<Result<u64, String>> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .commands
+            .send(SftpCommand::McpUpload { local, remote, reply });
+        rx
+    }
     pub fn touch(&self, path: String) {
         let _ = self.commands.send(SftpCommand::TouchFile(path));
     }
@@ -304,6 +337,8 @@ async fn run_sftp(
                 config.clone(),
                 sftp_handler(&session, &events),
                 &events,
+                // SFTP 在 shell 连上之后才连，主机密钥那时已被记住。
+                false,
             )
             .await
             .with_context(|| format!("sftp connect {} via jump failed", addr))?;
@@ -312,7 +347,7 @@ async fn run_sftp(
         }
         None => {
             _jump_keepalive = None;
-            match crate::ssh::proxy::resolve(&session.proxy) {
+            match crate::ssh::proxy::resolve_session(&session) {
                 Some(p) => {
                     let stream = crate::ssh::proxy::connect(&p, &session.host, session.port)
                         .await
@@ -360,6 +395,7 @@ async fn run_sftp(
                             config.clone(),
                             sftp_handler(&session, &events),
                             &events,
+                            false,
                         )
                         .await
                         .with_context(|| format!("sftp reconnect {} via jump failed", addr))?;
@@ -368,7 +404,7 @@ async fn run_sftp(
                     }
                     None => {
                         _jump_keepalive = None;
-                        match crate::ssh::proxy::resolve(&session.proxy) {
+                        match crate::ssh::proxy::resolve_session(&session) {
                             Some(p) => {
                                 let stream =
                                     crate::ssh::proxy::connect(&p, &session.host, session.port)
@@ -532,6 +568,54 @@ async fn run_sftp(
 
             SftpCommand::ListDir(path) => {
                 emit_panel_dir(&sftp, &events, &path).await;
+            }
+
+            // MCP 的三条直连命令：不经过界面、不产生面板事件，结果直接回给调用方。
+            SftpCommand::McpList { path, reply } => {
+                let result = list_dir_impl(&sftp, &path)
+                    .await
+                    .map_err(|err| format!("{err:#}"));
+                let _ = reply.send(result);
+            }
+            SftpCommand::McpDownload { remote, local, reply } => {
+                let result = async {
+                    let data = sftp
+                        .read(&remote)
+                        .await
+                        .map_err(|err| format!("read {remote}: {err}"))?;
+                    if data.len() > crate::sftp::MCP_TRANSFER_LIMIT {
+                        return Err(format!(
+                            "{remote} is larger than the {} MiB MCP limit; use the SFTP panel",
+                            crate::sftp::MCP_TRANSFER_LIMIT / (1024 * 1024)
+                        ));
+                    }
+                    tokio::fs::write(&local, &data)
+                        .await
+                        .map_err(|err| format!("write {}: {err}", local.display()))?;
+                    Ok(data.len() as u64)
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            SftpCommand::McpUpload { local, remote, reply } => {
+                let result = async {
+                    let data = tokio::fs::read(&local)
+                        .await
+                        .map_err(|err| format!("read {}: {err}", local.display()))?;
+                    if data.len() > crate::sftp::MCP_TRANSFER_LIMIT {
+                        return Err(format!(
+                            "{} is larger than the {} MiB MCP limit; use the SFTP panel",
+                            local.display(),
+                            crate::sftp::MCP_TRANSFER_LIMIT / (1024 * 1024)
+                        ));
+                    }
+                    sftp.write(&remote, &data)
+                        .await
+                        .map_err(|err| format!("write {remote}: {err}"))?;
+                    Ok(data.len() as u64)
+                }
+                .await;
+                let _ = reply.send(result);
             }
 
             SftpCommand::RefreshDir(path) => {
@@ -2518,8 +2602,16 @@ impl Handler for SftpClientHandler {
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
         Ok(
-            crate::ssh::verify_host_key(&self.host, self.port, server_public_key, &self.events)
-                .await,
+            crate::ssh::verify_host_key(
+                &self.host,
+                self.port,
+                server_public_key,
+                &self.events,
+                // SFTP 在 shell 连上之后才连（见 `session_runtime` 的 ready 门），
+                // 那时主机密钥已被记住，正常走 Match；这里不需要也不该再放行未知主机。
+                false,
+            )
+            .await,
         )
     }
 

@@ -423,8 +423,20 @@ msgstr "Leave blank to use $ALL_PROXY or connect directly"
 msgid "Proxy address"
 msgstr "Proxy address"
 
-msgid "Format: host:port  (with auth: user:pass@host:port)"
-msgstr "Format: host:port  (with auth: user:pass@host:port)"
+msgid "Format: host:port — fill in the user / password below if the proxy requires auth"
+msgstr "Format: host:port — fill in the user / password below if the proxy requires auth"
+
+msgid "Proxy user"
+msgstr "Proxy user"
+
+msgid "Proxy password"
+msgstr "Proxy password"
+
+msgid "Optional"
+msgstr "Optional"
+
+msgid "Leave blank to keep"
+msgstr "Leave blank to keep"
 
 msgid "Jump host (optional)"
 msgstr "Jump host (optional)"

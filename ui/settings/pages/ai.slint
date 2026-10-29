@@ -1,0 +1,205 @@
+// 设置页：AI（进程内 MCP server）
+//
+// 这一页只做三件事：开关服务、勾选监听面、逐个授权工具。令牌明文只在用户
+// 主动点「显示 / 复制」时由 Rust 填进来（`mcp-token-plain`），平时只有掩码。
+
+import { Theme } from "../../theme.slint";
+import { SettingsSection } from "../section.slint";
+import { SettingRow, SettingSwitch, ToggleSwitch } from "../chrome.slint";
+import { GhostButton } from "../../widgets.slint";
+import { GroupGap } from "../../components/surfaces.slint";
+import { McpIface, McpPermission } from "../types.slint";
+
+export component AiPage inherits VerticalLayout {
+    in property <bool> lang-en;
+
+    in-out property <bool> mcp-enabled;
+    in-out property <string> mcp-port: "8765";
+    in-out property <bool> mcp-port-valid: true;
+    in property <string> mcp-status;
+    in property <string> mcp-status-error;
+    in property <[string]> mcp-urls;
+    in-out property <bool> mcp-lan-enabled;
+    in property <[McpIface]> mcp-ifaces;
+    in property <[McpPermission]> mcp-permissions;
+    in property <string> mcp-token-masked;
+    in property <string> mcp-token-plain;
+    in-out property <bool> mcp-token-visible;
+
+    callback set-mcp-enabled(bool);
+    callback set-mcp-port(string) -> bool;
+    callback set-mcp-lan(bool);
+    callback toggle-mcp-iface(string);
+    callback toggle-mcp-permission(string);
+    callback copy-mcp-token();
+    callback regenerate-mcp-token();
+
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 14px;
+    spacing: 0;
+    alignment: start;
+
+    SettingsSection {
+        section-id: "ai.server";
+        lang-en: root.lang-en;
+        title-zh: "AI 访问";
+        title-en: "AI ACCESS";
+        title-height: 24px;
+
+        SettingSwitch {
+            label: root.lang-en ? "Enable MCP server" : "启用 MCP 服务";
+            desc: root.lang-en
+                ? "Lets an AI agent connect over HTTP and drive this running window. Off by default."
+                : "允许 AI agent 通过 HTTP 连接并操作这个正在运行的窗口。默认关闭。";
+            show-divider: false;
+            checked <=> root.mcp-enabled;
+            toggled(v) => { root.set-mcp-enabled(v); }
+        }
+
+        // 端口：`TextInput` 逐键生效（写盘自带防抖）；非法值由 Rust 返回 false，红框提示。
+        SettingRow {
+            label: root.lang-en ? "Port" : "端口";
+            desc: root.lang-en
+                ? "Listens on 127.0.0.1 by default. Override to 1024–65535 if 8765 is taken."
+                : "默认只监听 127.0.0.1。8765 被占用时可改成 1024–65535。";
+            Rectangle {
+                width: 110px;
+                height: 30px;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: root.mcp-port-valid ? Theme.border-subtle : Theme.danger;
+                background: Theme.bg-root;
+                input := TextInput {
+                    input-method-hints: Theme.plain-input-hints;
+                    x: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    color: Theme.text-primary;
+                    text <=> root.mcp-port;
+                    edited => { root.mcp-port-valid = root.set-mcp-port(root.mcp-port); }
+                }
+            }
+        }
+
+        // 状态：一行文字 + 可粘贴地址。错误用主色红字。
+        SettingRow {
+            label: root.lang-en ? "Status" : "状态";
+            desc: root.mcp-status-error == "" ? "" : root.mcp-status-error;
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                Text {
+                    text: root.mcp-status;
+                    color: root.mcp-status-error == "" ? Theme.text-secondary : Theme.danger;
+                    font-size: 12px * Theme.panel-font;
+                    horizontal-alignment: right;
+                }
+                for url in root.mcp-urls : Text {
+                    text: url;
+                    color: Theme.text-muted;
+                    font-size: 11px * Theme.panel-font;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+    }
+
+    GroupGap { gap: Theme.gap-sm; }
+
+    SettingsSection {
+        section-id: "ai.network";
+        lang-en: root.lang-en;
+        title-zh: "监听范围";
+        title-en: "LISTENING";
+        title-height: 24px;
+
+        SettingSwitch {
+            label: root.lang-en ? "Also listen on LAN interfaces" : "同时监听局域网网口";
+            desc: root.lang-en
+                ? "Off = loopback only. Each ticked interface gets its own listener; 0.0.0.0 is never used."
+                : "关闭时只监听本机回环。勾选的每个网口各起一个 listener，绝不绑 0.0.0.0。";
+            show-divider: root.mcp-lan-enabled && root.mcp-ifaces.length > 0;
+            checked <=> root.mcp-lan-enabled;
+            toggled(v) => { root.set-mcp-lan(v); }
+        }
+
+        if root.mcp-lan-enabled : VerticalLayout {
+            for iface in root.mcp-ifaces : HorizontalLayout {
+                height: 30px;
+                spacing: 10px;
+                Text {
+                    text: iface.name + "   " + iface.addr;
+                    color: Theme.text-secondary;
+                    font-size: 12px * Theme.panel-font;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                ToggleSwitch {
+                    checked: iface.enabled;
+                    toggled(v) => { root.toggle-mcp-iface(iface.name); }
+                }
+            }
+        }
+    }
+
+    GroupGap { gap: Theme.gap-sm; }
+
+    SettingsSection {
+        section-id: "ai.token";
+        lang-en: root.lang-en;
+        title-zh: "访问令牌";
+        title-en: "ACCESS TOKEN";
+        title-height: 24px;
+
+        SettingRow {
+            label: root.lang-en ? "Bearer token" : "Bearer 令牌";
+            desc: root.lang-en
+                ? "The agent must send this as `Authorization: Bearer <token>`. Stored encrypted."
+                : "agent 需要在请求头带 `Authorization: Bearer <令牌>`。令牌加密存储。";
+            show-divider: false;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                Text {
+                    text: root.mcp-token-visible ? root.mcp-token-plain : root.mcp-token-masked;
+                    color: Theme.text-secondary;
+                    font-size: 12px * Theme.panel-font;
+                    vertical-alignment: center;
+                }
+                GhostButton {
+                    text: root.mcp-token-visible
+                        ? (root.lang-en ? "Hide" : "隐藏")
+                        : (root.lang-en ? "Show" : "显示");
+                    clicked => { root.mcp-token-visible = !root.mcp-token-visible; }
+                }
+                GhostButton {
+                    text: root.lang-en ? "Copy" : "复制";
+                    clicked => { root.copy-mcp-token(); }
+                }
+                GhostButton {
+                    text: root.lang-en ? "Regenerate" : "重新生成";
+                    clicked => { root.regenerate-mcp-token(); }
+                }
+            }
+        }
+    }
+
+    GroupGap { gap: Theme.gap-sm; }
+
+    SettingsSection {
+        section-id: "ai.permissions";
+        lang-en: root.lang-en;
+        title-zh: "工具权限";
+        title-en: "TOOL PERMISSIONS";
+        title-height: 24px;
+
+        // 默认全关；逐项授权。模型由 Rust 侧按工具集生成，加工具只改一处。
+        for permission in root.mcp-permissions : SettingSwitch {
+            label: permission.label;
+            checked: permission.enabled;
+            toggled(v) => { root.toggle-mcp-permission(permission.key); }
+        }
+    }
+}

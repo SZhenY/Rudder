@@ -23,7 +23,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{DEFAULT_WALLPAPER_OVERLAY, OutputHighlightRule, Secret};
+use crate::config::{DEFAULT_MCP_PORT, DEFAULT_WALLPAPER_OVERLAY, OutputHighlightRule, Secret};
 
 /// 终端页：字体 / 光标 / 回滚 / 高亮 / 粘贴行为。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -259,5 +259,57 @@ pub struct UpdateSettings {
     /// 更新代理：空 = 跟随系统（Windows 的 IE 代理 / macOS 的 `scutil --proxy` /
     /// Linux 的环境变量）。只影响更新检查与下载，不影响 SSH。
     pub update_proxy: String,
+}
+
+/// AI 页：进程内 MCP server —— 外部 AI agent 通过 HTTP 操作这个正在运行的程序。
+///
+/// 出厂**关闭**：开启后，任何持有令牌的客户端都能在已保存凭据下开终端、敲命令、
+/// 改配置。权限位一律默认 false，逐项授权（见 `mcp_allow_*`）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct McpSettings {
+    /// 是否启动进程内 MCP 服务。
+    pub mcp_enabled: bool,
+    /// 监听端口（1024..=65535；0 或越界按 `DEFAULT_MCP_PORT` 处理）。
+    pub mcp_port: u16,
+    /// 是否监听本机回环（127.0.0.1）。关掉就只剩勾选的局域网网口。
+    pub mcp_bind_loopback: bool,
+    /// 是否额外监听局域网网口。
+    pub mcp_lan_enabled: bool,
+    /// 勾选的网口名（`sysinfo` 的接口名）；空 = 不监听任何局域网网口。
+    pub mcp_lan_ifaces: Vec<String>,
+    /// 客户端 Bearer 令牌，与登录口令同样加密落盘。
+    pub mcp_token: Secret,
+    /// 允许把字节写进会话的 PTY（等同用户打字）。
+    pub mcp_allow_terminal_input: bool,
+    /// 允许在会话上开一次性 exec 通道执行命令。
+    pub mcp_allow_exec: bool,
+    /// 允许通过 MCP 修改设置。
+    pub mcp_allow_settings_write: bool,
+    /// 允许新增 / 修改 / 删除主机。
+    pub mcp_allow_host_write: bool,
+    /// 允许打开 / 关闭会话标签页。
+    pub mcp_allow_session_open_close: bool,
+    /// 允许通过 SFTP 上传 / 下载文件（可读写本机与远端文件系统）。
+    pub mcp_allow_file_transfer: bool,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            mcp_enabled: false,
+            mcp_port: DEFAULT_MCP_PORT,
+            mcp_bind_loopback: true,
+            mcp_lan_enabled: false,
+            mcp_lan_ifaces: Vec::new(),
+            mcp_token: Secret::default(),
+            mcp_allow_terminal_input: false,
+            mcp_allow_exec: false,
+            mcp_allow_settings_write: false,
+            mcp_allow_host_write: false,
+            mcp_allow_session_open_close: false,
+            mcp_allow_file_transfer: false,
+        }
+    }
 }
 

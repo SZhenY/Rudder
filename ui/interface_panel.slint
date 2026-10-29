@@ -8,7 +8,7 @@
 
 import { Theme, AnimationSettings } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpPermission } from "settings/types.slint";
 
 import { NavItem } from "settings/chrome.slint";
 import { ResetBar } from "settings/reset_bar.slint";
@@ -19,6 +19,7 @@ import { SyncPage } from "settings/pages/sync.slint";
 import { WslPage } from "settings/pages/wsl.slint";
 import { TransferPage } from "settings/pages/transfer.slint";
 import { UpdatePage } from "settings/pages/update.slint";
+import { AiPage } from "settings/pages/ai.slint";
 
 // The settings content (nav + pages). Embedded in AppWindow's modal overlay.
 export component InterfacePanel inherits Rectangle {
@@ -67,6 +68,20 @@ export component InterfacePanel inherits Rectangle {
     in property <string> update-channel: "stable";
     in property <[string]> update-freq-labels;
     in-out property <int> update-freq-index: 0;
+
+    // ── AI（进程内 MCP server）──
+    in-out property <bool> mcp-enabled;
+    in-out property <string> mcp-port: "8765";
+    in property <bool> mcp-port-valid: true;
+    in property <string> mcp-status;
+    in property <string> mcp-status-error;
+    in property <[string]> mcp-urls;
+    in-out property <bool> mcp-lan-enabled;
+    in property <[McpIface]> mcp-ifaces;
+    in property <[McpPermission]> mcp-permissions;
+    in property <string> mcp-token-masked;
+    in property <string> mcp-token-plain;
+    in-out property <bool> mcp-token-visible;
     in property <string> update-last-check: "";
     // 更新器网络：代理开关（默认关 = 直连）+ 地址（空 = 跟随系统）；证书链恒用系统根。
     in-out property <string> update-proxy;
@@ -124,7 +139,8 @@ export component InterfacePanel inherits Rectangle {
             : page == "layout" ? 3
             : page == "wsl" ? 4
             : page == "sync" ? (root.is-windows ? 5 : 4)
-            : (root.is-windows ? 6 : 5);
+            : page == "update" ? (root.is-windows ? 6 : 5)
+            : (root.is-windows ? 7 : 6);
     }
 
     // 单次定时器：等淡出快走完再换页，然后淡入。动效关闭时间隔归零，不白等。
@@ -185,6 +201,13 @@ export component InterfacePanel inherits Rectangle {
     callback set-update-check-enabled(bool);   // startup new-version check (#184)
     callback set-update-channel(string);
     callback set-update-freq(int);
+    callback set-mcp-enabled(bool);
+    callback set-mcp-port(string) -> bool;
+    callback set-mcp-lan(bool);
+    callback toggle-mcp-iface(string);
+    callback toggle-mcp-permission(string);
+    callback copy-mcp-token();
+    callback regenerate-mcp-token();
     callback set-update-proxy(string);
     callback set-update-proxy-enabled(bool);
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
@@ -257,6 +280,11 @@ export component InterfacePanel inherits Rectangle {
                     icon: "\u{E923}"; label: root.lang-en ? "Update check" : "新版本提示";
                     active: root.nav-page == "update";
                     clicked => { root.goto-page("update"); }
+                }
+                NavItem {
+                    icon: "\u{E99A}"; label: "AI";
+                    active: root.nav-page == "ai";
+                    clicked => { root.goto-page("ai"); }
                 }
             }
             // 选中指示器：整列只有这一条，切页时从旧项**滑**到新项（弹簧缓动），
@@ -470,6 +498,29 @@ export component InterfacePanel inherits Rectangle {
                             set-update-freq(b1) => { root.set-update-freq(b1); }
                             set-update-proxy(c0) => { root.set-update-proxy(c0); }
                             set-update-proxy-enabled(c1) => { root.set-update-proxy-enabled(c1); }
+                    }
+
+                    if root.ifd-page == "ai" : AiPage {
+                            lang-en: root.lang-en;
+                            mcp-enabled <=> root.mcp-enabled;
+                            mcp-port <=> root.mcp-port;
+                            mcp-port-valid: root.mcp-port-valid;
+                            mcp-status: root.mcp-status;
+                            mcp-status-error: root.mcp-status-error;
+                            mcp-urls: root.mcp-urls;
+                            mcp-lan-enabled <=> root.mcp-lan-enabled;
+                            mcp-ifaces: root.mcp-ifaces;
+                            mcp-permissions: root.mcp-permissions;
+                            mcp-token-masked: root.mcp-token-masked;
+                            mcp-token-plain: root.mcp-token-plain;
+                            mcp-token-visible <=> root.mcp-token-visible;
+                            set-mcp-enabled(a0) => { root.set-mcp-enabled(a0); }
+                            set-mcp-port(b0) => { root.set-mcp-port(b0); }
+                            set-mcp-lan(c0) => { root.set-mcp-lan(c0); }
+                            toggle-mcp-iface(c1) => { root.toggle-mcp-iface(c1); }
+                            toggle-mcp-permission(c2) => { root.toggle-mcp-permission(c2); }
+                            copy-mcp-token() => { root.copy-mcp-token(); }
+                            regenerate-mcp-token() => { root.regenerate-mcp-token(); }
                     }
 
                 }

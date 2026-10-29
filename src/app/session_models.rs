@@ -443,6 +443,15 @@ pub(crate) fn session_from_draft(
         _ => format!("{}@{}", draft.user, draft.host),
     };
     let default_port = if kind == SessionKind::Telnet { 23 } else { 22 };
+    // 与对话框提交同一套换算：地址框里的 userinfo 拆到独立字段，密码单独加密存。
+    let (proxy_type, proxy_hostport) = split_proxy(draft.proxy.as_ref());
+    let (proxy, proxy_user, proxy_pass) = compose_proxy(
+        &proxy_type,
+        &proxy_hostport,
+        draft.proxy_user.as_ref(),
+        draft.proxy_password.as_ref(),
+        existing,
+    );
 
     Session {
         id: draft.id.to_string(),
@@ -462,7 +471,9 @@ pub(crate) fn session_from_draft(
         password,
         private_key_path,
         private_key_inline,
-        proxy: draft.proxy.to_string(),
+        proxy,
+        proxy_user,
+        proxy_pass,
         last_used: None,
         // 同 `session_callbacks` 里那份 draft→Session：分组名归一空白后再存。
         group: draft.group.trim().to_string(),

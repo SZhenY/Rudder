@@ -2,6 +2,8 @@
 // SSH session manager.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// MCP 的工具清单是一整个 `json!` 字面量，嵌套层级已经超过默认的 128。
+#![recursion_limit = "512"]
 
 mod app;
 mod config;
@@ -10,6 +12,7 @@ mod fonts;
 mod i18n;
 mod layout;
 mod logging;
+mod mcp;
 mod resource;
 mod session;
 mod sftp;

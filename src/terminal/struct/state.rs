@@ -83,6 +83,22 @@ pub(crate) struct TermBuffer {
     /// (#338). Seeded from the global setting when the buffer is created and
     /// flipped live by the settings toggle.
     pub(crate) json_format_output: bool,
+    /// 累计写入本缓冲的字节数。给外部观察者（MCP 的 `wait_for_output`）判断
+    /// "这之后有没有新输出"用 —— 比时间戳可靠，不受渲染节流影响。
+    pub(crate) output_seq: u64,
+}
+
+/// 终端屏幕的纯文本快照（供 MCP 读取；不改变任何渲染状态）。
+#[derive(Clone, Debug, Default)]
+pub(crate) struct TextSnapshot {
+    pub(crate) rows: u16,
+    pub(crate) cols: u16,
+    pub(crate) cursor_row: i32,
+    pub(crate) cursor_col: i32,
+    pub(crate) text: String,
+    /// 被 `max_rows` 截掉了更早的行。
+    pub(crate) truncated: bool,
+    pub(crate) output_seq: u64,
 }
 
 /// 一帧实时视口的构建统计（见 `TermBuffer::frame_stats`）。

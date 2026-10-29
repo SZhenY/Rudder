@@ -62,7 +62,7 @@ pub(crate) use state::CtrlKeySide;
 pub(crate) use state::{
 ATerm, BuiltScreen, CompiledOutputRule, CsiState, HistSpan, Line, OutputHighlightPreset,
 OverlineRange, RenderGates, FrameStats, RenderedLine, ScrollLine, ScrollbackKey, TabRenderGate,
-TermBuffer, TermBufferHandle, TermBuffers, TermColor, UnderlineStyle,
+TermBuffer, TermBufferHandle, TermBuffers, TermColor, TextSnapshot, UnderlineStyle,
 };
 pub(crate) use tailspin_rules::builtin_rules;
 pub(crate) use vt_adapter::{

@@ -74,8 +74,25 @@ pub fn resolve(session_proxy: &str) -> Option<ProxyConfig> {
     None
 }
 
+/// Resolve the proxy for a saved session.
+///
+/// 凭据有两个来源，URL userinfo 优先（老配置），其次是 `proxy_user` /
+/// `proxy_pass` 两个独立字段。密码单独存一份的意义在于：把它从 URL 里摘出来
+/// 之后才能按密码字段加密落盘，而不是明文躺在 sessions.json 里。
+pub fn resolve_session(session: &crate::config::Session) -> Option<ProxyConfig> {
+    let mut cfg = resolve(&session.proxy)?;
+    // 只有会话自己配了代理才套用这两个字段；走 $ALL_PROXY 时它们是无关的。
+    if cfg.auth.is_none() && !session.proxy.trim().is_empty() && !session.proxy_user.is_empty() {
+        cfg.auth = Some((session.proxy_user.clone(), session.proxy_pass.clone()));
+    }
+    Some(cfg)
+}
+
 /// Parse a proxy URL: `scheme://[user:pass@]host:port`.
-fn parse(url: &str) -> Option<ProxyConfig> {
+///
+/// `pub(crate)` 供 MCP 保存主机时做一次前置校验：写进配置的串连解析都过不了，
+/// 只会在连接时才报错。
+pub(crate) fn parse(url: &str) -> Option<ProxyConfig> {
     let (scheme, rest) = url.split_once("://").unwrap_or(("socks5", url));
     let kind = match scheme.to_ascii_lowercase().as_str() {
         "socks5" | "socks5h" | "socks" => ProxyKind::Socks5,
@@ -259,5 +276,163 @@ mod tests {
         assert!(!rendered.contains("supersecret"), "leaked: {rendered}");
         assert!(rendered.contains("[redacted]"));
         assert!(rendered.contains("proxy.local"));
+    }
+
+    #[test]
+    fn resolve_session_uses_dedicated_credential_fields() {
+        let mut session = crate::config::Session::new_empty();
+        session.proxy = "socks5://proxy.local:1080".into();
+        session.proxy_user = "bob".into();
+        session.proxy_pass = crate::config::Secret::new("s3cret");
+
+        let cfg = resolve_session(&session).unwrap();
+        let (user, pass) = cfg.auth.as_ref().expect("credentials missing");
+        assert_eq!(user, "bob");
+        assert_eq!(pass.as_str(), "s3cret");
+        // 凭据不能经由 describe() 泄漏出去。
+        assert_eq!(describe(&cfg), "socks5://proxy.local:1080");
+    }
+
+    #[test]
+    fn resolve_session_lets_url_userinfo_win() {
+        // 老配置把凭据写在 URL 里，URL 有 auth 时不再叠加独立字段。
+        let mut session = crate::config::Session::new_empty();
+        session.proxy = "socks5://urlu:urlp@proxy.local:1080".into();
+        session.proxy_user = "bob".into();
+        session.proxy_pass = crate::config::Secret::new("s3cret");
+
+        let cfg = resolve_session(&session).unwrap();
+        let (user, pass) = cfg.auth.as_ref().expect("credentials missing");
+        assert_eq!(user, "urlu");
+        assert_eq!(pass.as_str(), "urlp");
+    }
+
+    #[test]
+    fn resolve_session_leaves_a_direct_connection_alone() {
+        let mut session = crate::config::Session::new_empty();
+        // 没有代理地址时，凭据字段不参与 —— 否则 $ALL_PROXY 会被套上别人的口令。
+        session.proxy_user = "bob".into();
+        session.proxy_pass = crate::config::Secret::new("s3cret");
+        if std::env::var("ALL_PROXY").is_err() && std::env::var("all_proxy").is_err() {
+            assert!(resolve_session(&session).is_none());
+        }
+    }
+
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    /// 假 SOCKS5 服务器：强制要求用户名/密码，记录收到的凭据，然后回一个
+    /// 连接失败（REP=0x05）。这样不用真的建隧道也能验证认证协商走对了。
+    async fn fake_socks5_server(
+        listener: tokio::net::TcpListener,
+        seen: Arc<Mutex<Option<(String, String)>>>,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (mut sock, _) = listener.accept().await.unwrap();
+        let mut head = [0u8; 2];
+        sock.read_exact(&mut head).await.unwrap();
+        let mut methods = vec![0u8; head[1] as usize];
+        sock.read_exact(&mut methods).await.unwrap();
+        assert!(methods.contains(&0x02), "client did not offer user/pass auth");
+        sock.write_all(&[0x05, 0x02]).await.unwrap();
+
+        let mut one = [0u8; 1];
+        sock.read_exact(&mut one).await.unwrap(); // auth version
+        assert_eq!(one[0], 0x01);
+        sock.read_exact(&mut one).await.unwrap();
+        let mut user = vec![0u8; one[0] as usize];
+        sock.read_exact(&mut user).await.unwrap();
+        sock.read_exact(&mut one).await.unwrap();
+        let mut pass = vec![0u8; one[0] as usize];
+        sock.read_exact(&mut pass).await.unwrap();
+        *seen.lock().unwrap() = Some((
+            String::from_utf8_lossy(&user).into_owned(),
+            String::from_utf8_lossy(&pass).into_owned(),
+        ));
+        sock.write_all(&[0x01, 0x00]).await.unwrap();
+
+        // CONNECT 请求：读完地址就回失败，客户端不会有可用的隧道。
+        let mut req = [0u8; 4];
+        sock.read_exact(&mut req).await.unwrap();
+        let mut skip = match req[3] {
+            0x01 => vec![0u8; 4],
+            0x03 => {
+                sock.read_exact(&mut one).await.unwrap();
+                vec![0u8; one[0] as usize]
+            }
+            _ => vec![0u8; 16],
+        };
+        sock.read_exact(&mut skip).await.unwrap();
+        let mut port = [0u8; 2];
+        sock.read_exact(&mut port).await.unwrap();
+        sock.write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn socks5_credentials_are_sent_to_the_proxy() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(Mutex::new(None));
+        tokio::spawn(fake_socks5_server(listener, seen.clone()));
+
+        let cfg = parse(&format!("socks5://bob:s3cret@127.0.0.1:{port}")).unwrap();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            connect(&cfg, "target.local", 22),
+        )
+        .await
+        .expect("handshake timed out");
+        assert!(result.is_err(), "server refused, so connect must fail");
+
+        assert_eq!(
+            seen.lock().unwrap().clone(),
+            Some(("bob".into(), "s3cret".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn http_proxy_sends_basic_authorization() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(Mutex::new(String::new()));
+        let seen_srv = seen.clone();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = Vec::new();
+            let mut byte = [0u8; 1];
+            loop {
+                sock.read_exact(&mut byte).await.unwrap();
+                buf.push(byte[0]);
+                if buf.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+            *seen_srv.lock().unwrap() = String::from_utf8_lossy(&buf).into_owned();
+            sock.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
+        });
+
+        let cfg = parse(&format!("http://bob:s3cret@127.0.0.1:{port}")).unwrap();
+        let stream = tokio::time::timeout(
+            Duration::from_secs(5),
+            connect(&cfg, "target.local", 22),
+        )
+        .await
+        .expect("CONNECT timed out")
+        .expect("proxy accepted");
+
+        let request = seen.lock().unwrap().clone();
+        assert!(request.starts_with("CONNECT target.local:22 HTTP/1.1"), "{request}");
+        let token = base64::engine::general_purpose::STANDARD.encode("bob:s3cret");
+        assert!(
+            request.contains(&format!("Proxy-Authorization: Basic {token}")),
+            "{request}"
+        );
+        drop(stream);
     }
 }

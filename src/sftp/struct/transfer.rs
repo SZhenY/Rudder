@@ -3,6 +3,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
+
+use crate::ssh::RemoteEntry;
+
+/// MCP 单次传输的字节上限。超过就明确拒绝，而不是把整台机器的内存吃掉 ——
+/// 大文件请用界面上的 SFTP 面板（它是流式的）。
+pub(crate) const MCP_TRANSFER_LIMIT: usize = 64 * 1024 * 1024;
 
 /// Commands sent to the SFTP worker task from the UI thread.
 #[derive(Debug)]
@@ -69,6 +76,23 @@ pub enum SftpCommand {
     /// Overwrite a remote file with text from the built-in editor (#70).
     WriteText { remote: String, content: String },
     /// Gracefully shut down the SFTP worker.
+    /// MCP：列目录，结果直接回给调用方（不经过界面）。
+    McpList {
+        path: String,
+        reply: oneshot::Sender<Result<Vec<RemoteEntry>, String>>,
+    },
+    /// MCP：把远端文件整份读下来写到本地路径。
+    McpDownload {
+        remote: String,
+        local: PathBuf,
+        reply: oneshot::Sender<Result<u64, String>>,
+    },
+    /// MCP：把本地文件整份写到远端路径。
+    McpUpload {
+        local: PathBuf,
+        remote: String,
+        reply: oneshot::Sender<Result<u64, String>>,
+    },
     Close,
 }
 

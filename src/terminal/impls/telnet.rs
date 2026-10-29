@@ -127,7 +127,7 @@ async fn run_telnet(
     )));
 
     // Direct, or tunnel through a SOCKS5 / HTTP proxy (reuses issue #7 plumbing).
-    let stream = match crate::ssh::proxy::resolve(&session.proxy) {
+    let stream = match crate::ssh::proxy::resolve_session(&session) {
         Some(p) => {
             let _ = events.send(SessionEvent::Status(format!(
                 "{} {} → {}",
@@ -192,6 +192,12 @@ async fn run_telnet(
                             success: false,
                             message: t("Telnet 不支持远程进程操作", "Remote process control is unavailable for Telnet sessions").into(),
                         });
+                    }
+                    Some(SessionCommand::Exec { reply, .. }) => {
+                        let _ = reply.send(crate::ssh::ExecResult::unsupported(t(
+                            "Telnet 不支持 exec 通道",
+                            "exec is unavailable for telnet sessions",
+                        )));
                     }
                     Some(SessionCommand::Close) | None => break,
                 }

@@ -4,26 +4,21 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, SharedString};
 
-use crate::resource::TabStatus;
 use crate::session::ConnectCtx;
 use crate::ssh::{SessionEvent, test_session_auth};
-use crate::app::render_tickets::RENDER_MIN_INTERVAL;
-use crate::terminal::{
-    OutputHighlightPreset, TabRenderGate, TermBuffer, compile_output_rules,
-};
 use crate::ui::*;
 use crate::app::pane_layout::refresh_panes;
 use crate::app::port_forward::{blank_forward_draft, forward_drafts, forward_model, validated_port_forwards};
 use crate::app::session_models::{builtin_local_sessions, jump_candidates, parse_batch_import, refresh_session_rows_in_place, session_from_draft, session_groups_model, sync_sessions_to_model, sync_sessions_to_model_with_filter};
 use crate::app::auth_dialogs::{enqueue_cred_prompt, enqueue_hostkey_prompt, enqueue_mfa_prompt};
-use crate::app::session_runtime::{resolve_jump, start_session_in_tab};
+use crate::app::session_runtime::resolve_jump;
 use crate::app::session_trigger::{blank_trigger_draft, trigger_drafts, trigger_model, validated_triggers};
+use crate::app::tab_ops::{self, TabEnv};
 use crate::app::{
-    AppContext, split_proxy, sync_sessions_for_window,
+    AppContext, compose_proxy, split_proxy, sync_sessions_for_window,
     tab_title_len,
 };
 use crate::config::{AuthMethod, Secret, Session, SessionKind, is_reserved_session_group};
@@ -48,6 +43,8 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
         sftp_last_cwd,
         tab_statuses,
         tab_titles,
+        handles,
+        sftp_handles,
         ..
     } = ctx;
     // on_connect_session moves panes_model/splitters_model into its closure;
@@ -120,6 +117,8 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
             w.set_dialog_test_status("".into());
             w.set_dialog_proxy_type("none".into());
             w.set_dialog_proxy_hostport("".into());
+            w.set_dialog_proxy_user("".into());
+            w.set_dialog_proxy_password("".into());
             w.set_dialog_group("".into());
             w.set_dialog_kind("ssh".into());
             w.set_dialog_serial_port("".into());
@@ -338,6 +337,9 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                 let (proxy_type, proxy_hostport) = split_proxy(&session.proxy);
                 w.set_dialog_proxy_type(proxy_type.into());
                 w.set_dialog_proxy_hostport(proxy_hostport.into());
+                w.set_dialog_proxy_user(session.proxy_user.clone().into());
+                // 代理密码与登录密码同样不回显：留空保存时沿用已存的那份。
+                w.set_dialog_proxy_password("".into());
                 let (jump_labels, jump_ids, jump_idx) =
                     jump_candidates(&store, &session.id, &session.jump_session_id);
                 w.set_jump_choices(jump_labels);
@@ -684,6 +686,19 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
             } else {
                 22
             };
+            // 代理凭据：地址框里的 userinfo 与两个独立字段合成一份，
+            // 密码统一落到 `proxy_pass`（加密存储），URL 里不再留明文。
+            let (proxy, proxy_user, proxy_pass) = {
+                let existing_session = store.borrow().get(&id).cloned();
+                let (proxy_type, hostport) = split_proxy(draft.proxy.as_ref());
+                compose_proxy(
+                    &proxy_type,
+                    &hostport,
+                    draft.proxy_user.as_ref(),
+                    draft.proxy_password.as_ref(),
+                    existing_session.as_ref(),
+                )
+            };
             let new_session = Session {
                 id,
                 name: if draft.name.is_empty() {
@@ -703,7 +718,9 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                 // Store the key path with forward slashes uniformly.
                 private_key_path,
                 private_key_inline,
-                proxy: draft.proxy.to_string(),
+                proxy,
+                proxy_user,
+                proxy_pass,
                 last_used: None,
                 // 分组名先归一空白：输入框里手打的 " Prod " 不该带空白进配置
                 // （与 `normalize_move_group` / `add_group` 同一口径）。
@@ -1061,8 +1078,10 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
         let render_gates = render_gates.clone();
         let sftp_last_cwd = sftp_last_cwd.clone();
         let tab_statuses = tab_statuses.clone();
-        // 会话启动上下文：一次装配、闭包内 clone（闭包不能捕获 `&AppContext`，
-        // 上面那几个 clone 是给闭包别处用的）。
+        let handles = handles.clone();
+        let sftp_handles = sftp_handles.clone();
+        let tab_titles = tab_titles.clone();
+        // 会话启动上下文：一次装配、闭包内借用（闭包不能捕获 `&AppContext`）。
         let connect_ctx = ConnectCtx::from_app(window.as_weak(), ctx);
         window.on_connect_session(move |id: SharedString| {
             let id = id.to_string();
@@ -1080,138 +1099,27 @@ pub(crate) fn wire_session_callbacks(window: &AppWindow, ctx: &AppContext) {
                     None => return,
                 }
             };
-            let tab_id = format!("term-{}", uuid::Uuid::new_v4());
-            let tab_title = session.name.clone();
-
-            // Connection label shown in the sidebar / status line, per transport.
-            let conn_label = conn_label(&session);
-            // Serial / Telnet have no SFTP side-channel.
-            let has_sftp = session_has_sftp(&session.kind);
-
-            // Seed the per-tab status so the sidebar shows "连接中 host" the
-            // moment this tab becomes active (the `changed active-tab-id`
-            // handler fires refresh-sidebar right after set_active_tab_id below).
-            tab_statuses.lock().unwrap_or_else(|e| e.into_inner()).insert(
-                tab_id.clone(),
-                TabStatus {
-                    host: conn_label.clone(),
-                    user: session.user.clone(),
-                    session_id: id.clone(),
-                    state: 0,
-                    is_local: session.kind == SessionKind::Local,
-                    ..Default::default()
-                },
-            );
-
-            // Register tab + terminal state (SFTP fields start empty/loading).
-            tabs_model.push(TabInfo {
-                id: tab_id.clone().into(),
-                title_len: tab_title_len(&tab_title),
-                title: tab_title.into(),
-                kind: "terminal".into(),
-                connected: false,
-            });
-            // Each session keeps its own SFTP collapse state + sizes, seeded from
-            // the global defaults (the "collapse SFTP by default" pref and the
-            // persisted panel sizes) so they no longer bleed across panes (#v0.5).
-            let (sftp_collapsed_default, sftp_h_default, sftp_w_default) = weak
-                .upgrade()
-                .map(|w| {
-                    (
-                        w.get_collapse_sftp_default(),
-                        w.get_sftp_panel_height(),
-                        w.get_sftp_panel_width(),
-                    )
-                })
-                .unwrap_or((false, 220.0, 380.0));
-            terminals_model.push(TerminalState {
-                id: tab_id.clone().into(),
-                status: t("连接中...", "Connecting...").into(),
-                spans: ModelRc::from(std::rc::Rc::new(VecModel::<TermSpan>::default())),
-                cursor_row: 0,
-                mouse_tracked: false,
-                cursor_col: 0,
-                rows_used: 0,
-                scroll_max: 0,
-                scroll_offset: 0,
-                is_alt_screen: false,
-                find_matches: ModelRc::from(std::rc::Rc::new(VecModel::<TermMatch>::default())),
-                selection: ModelRc::from(std::rc::Rc::new(VecModel::<TermMatch>::default())),
-                font_size: 0.0,
-                sftp_path: "/".into(),
-                sftp_entries: ModelRc::from(std::rc::Rc::new(VecModel::<SftpEntry>::default())),
-                sftp_status: if has_sftp {
-                    t("SFTP 连接中...", "SFTP connecting...").into()
-                } else {
-                    t(
-                        "此会话类型不支持 SFTP",
-                        "SFTP not available for this session",
-                    )
-                    .into()
-                },
-                sftp_loading: has_sftp,
-                sftp_tree_nodes: ModelRc::from(std::rc::Rc::new(
-                    VecModel::<SftpTreeNode>::default(),
-                )),
-                sftp_selected_count: 0,
-                sftp_sort_key: "".into(),
-                sftp_sort_dir: 0,
-                sftp_available: has_sftp,
-                tunnels: ModelRc::from(std::rc::Rc::new(VecModel::<TunnelInfo>::default())),
-                sftp_collapsed: !has_sftp || sftp_collapsed_default,
-                sftp_panel_height: sftp_h_default,
-                sftp_panel_width: sftp_w_default,
-            });
-            // Create the alacritty-backed terminal for this tab (default
-            // 24×80; resized on the first terminal-resize callback). The
-            // scrollback depth comes from the settings value
-            // (scrollback_lines, clamped to 100..=1_000_000 in config.rs).
-            let is_dark_now = weak.upgrade().map(|w| w.global::<Theme>().get_dark()).unwrap_or(true);
-            let (output_highlight, custom_highlight_rules) = {
-                let settings = store.borrow();
-                (
-                    OutputHighlightPreset::from_settings(
-                        settings.output_highlight_enabled(),
-                        settings.output_highlight_preset(),
-                    ),
-                    compile_output_rules(settings.output_highlight_rules()),
-                )
+            let Some(window) = weak.upgrade() else {
+                return;
             };
-            // 22 字段的字面量收敛到 `TermBuffer::new()`（与单测共用同一构造点）。
-            let mut buf = TermBuffer::new(24, 80, store.borrow().scrollback_lines());
-            buf.is_dark = is_dark_now;
-            buf.output_highlight = output_highlight;
-            buf.custom_highlight_rules = custom_highlight_rules;
-            buf.json_format_output = store.borrow().json_format_output();
-            bufs.lock().unwrap_or_else(|e| e.into_inner()).insert(
-                tab_id.clone(),
-                Arc::new(Mutex::new(buf)),
-            );
-            render_gates.lock().unwrap_or_else(|e| e.into_inner()).insert(
-                tab_id.clone(),
-                Arc::new(TabRenderGate::new(RENDER_MIN_INTERVAL)),
-            );
-            // No followed-cwd yet: the first OSC 7 always triggers a follow.
-            sftp_last_cwd.lock().unwrap_or_else(|e| e.into_inner()).remove(&tab_id);
-            // Add the new tab to the focused pane and re-flatten (this also sets
-            // active-tab-id to the new tab via refresh_panes).
-            layout.borrow_mut().add_tab(tab_id.clone());
-            if let Some(w) = weak.upgrade() {
-                refresh_panes(
-                    &w,
-                    &layout,
-                    content_size.get(),
-                    &tabs_model,
-                    &panes_model,
-                    &splitters_model,
-                );
-            }
-
-            // Spawn the shell (+ SFTP) workers and their event-pump threads.
-            // Shared with in-place reconnect (#79) via start_session_in_tab.
-            let ctx = connect_ctx.clone();
-            start_session_in_tab(&tab_id, session, &ctx);
-        });
+            let env = TabEnv {
+                window: &window,
+                store: &store,
+                handles: &handles,
+                tab_titles: &tab_titles,
+                tab_statuses: &tab_statuses,
+                tabs_model: &tabs_model,
+                terminals_model: &terminals_model,
+                bufs: &bufs,
+                render_gates: &render_gates,
+                sftp_handles: &sftp_handles,
+                sftp_last_cwd: &sftp_last_cwd,
+                layout: &layout,
+                panes_model: &panes_model,
+                splitters_model: &splitters_model,
+                content_size: &content_size,
+            };
+            tab_ops::open_session_tab(&env, &connect_ctx, session);        });
     }
 
     // Duplicate a tab's connection (#v0.5): open a fresh tab to the same saved
@@ -1369,7 +1277,7 @@ fn normalize_move_group(group: &str) -> Option<String> {
 }
 
 /// 侧边栏 / 状态行里的连接标签（按传输类型区分）。
-fn conn_label(session: &Session) -> String {
+pub(super) fn conn_label(session: &Session) -> String {
     match &session.kind {
         SessionKind::Ssh => format!("{}@{}", session.user, session.host),
         SessionKind::Serial => format!("{} @{}", session.serial_port, session.baud_rate),
@@ -1379,7 +1287,7 @@ fn conn_label(session: &Session) -> String {
 }
 
 /// 只有 SSH 有 SFTP 旁路；串口 / Telnet / 本地会话都不该显示 SFTP 面板。
-fn session_has_sftp(kind: &SessionKind) -> bool {
+pub(super) fn session_has_sftp(kind: &SessionKind) -> bool {
     *kind == SessionKind::Ssh
 }
 

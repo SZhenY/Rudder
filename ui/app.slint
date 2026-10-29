@@ -36,7 +36,7 @@ import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpPermission } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
 // `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
 // `slint::include_modules!` 才会生成对应的 Rust 窗口类型（只 import 不实例化的话，
@@ -503,6 +503,26 @@ export component AppWindow inherits Window {
     in-out property <bool> update-proxy-enabled: false;
     callback set-update-proxy(string);
     callback set-update-proxy-enabled(bool);
+    // ── AI（进程内 MCP server）──
+    in-out property <bool> mcp-enabled;
+    in-out property <string> mcp-port: "8765";
+    in property <bool> mcp-port-valid: true;
+    in property <string> mcp-status;
+    in property <string> mcp-status-error;
+    in property <[string]> mcp-urls;
+    in-out property <bool> mcp-lan-enabled;
+    in property <[McpIface]> mcp-ifaces;
+    in property <[McpPermission]> mcp-permissions;
+    in property <string> mcp-token-masked;
+    in property <string> mcp-token-plain;
+    in-out property <bool> mcp-token-visible;
+    callback set-mcp-enabled(bool);
+    callback set-mcp-port(string) -> bool;
+    callback set-mcp-lan(bool);
+    callback toggle-mcp-iface(string);
+    callback toggle-mcp-permission(string);
+    callback copy-mcp-token();
+    callback regenerate-mcp-token();
     // WSL profiles (upstream a64097e): managed in Interface → WSL.
     in property <[WslProfileInfo]> wsl-profiles;
     in-out property <string> wsl-new-directory: "~";
@@ -706,6 +726,8 @@ export component AppWindow inherits Window {
     in-out property <bool> dialog-key-inline-mode: false;
     in-out property <string> dialog-proxy-type: "none";  // "none" | "socks5" | "http"
     in-out property <string> dialog-proxy-hostport;
+    in-out property <string> dialog-proxy-user;
+    in-out property <string> dialog-proxy-password;
     in-out property <string> dialog-group;
     // Existing group names (from Rust) for the dialog's group dropdown (#179).
     in property <[string]> session-groups;
@@ -2272,6 +2294,8 @@ export component AppWindow inherits Window {
         draft-key-inline-mode <=> root.dialog-key-inline-mode;
         draft-proxy-type <=> root.dialog-proxy-type;
         draft-proxy-hostport <=> root.dialog-proxy-hostport;
+        draft-proxy-user <=> root.dialog-proxy-user;
+        draft-proxy-password <=> root.dialog-proxy-password;
         draft-group <=> root.dialog-group;
         session-groups: root.session-groups;
         jump-choices: root.jump-choices;

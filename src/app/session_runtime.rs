@@ -35,6 +35,7 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
             jump.clone(),
             initial_cols,
             initial_rows,
+            ctx.trust_unknown_host_key,
         ),
         SessionKind::Serial => crate::terminal::serial::spawn_serial_session(
             ctx.runtime.handle(),

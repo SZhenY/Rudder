@@ -36,7 +36,7 @@ use chacha20poly1305::{
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
-use super::settings::{AppearanceSettings, LayoutSettings, SyncSettings, TerminalSettings, TransferSettings, UpdateSettings};
+use super::settings::{AppearanceSettings, LayoutSettings, McpSettings, SyncSettings, TerminalSettings, TransferSettings, UpdateSettings};
 use uuid::Uuid;
 use zeroize::Zeroize;
 
@@ -542,6 +542,10 @@ const PREVIOUS_DEFAULT_WALLPAPER_OVERLAY_015: f32 = 0.85;
 const DEFAULT_WALLPAPER_TRANSPARENCY: f32 = 0.30;
 pub(crate) const DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - DEFAULT_WALLPAPER_TRANSPARENCY;
 
+/// MCP 服务的出厂端口。与上游 meatshell 的 Streamable HTTP 默认值一致，
+/// 避开 8080/3000 这类常被别的开发服务器占用的口。
+pub(crate) const DEFAULT_MCP_PORT: u16 = 8765;
+
 fn normalize_hex_color(value: &str) -> Option<String> {
     let digits = value.trim().strip_prefix('#').unwrap_or(value.trim());
     if digits.len() != 6 || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -705,8 +709,17 @@ pub struct Session {
     pub private_key_inline: Secret,
     /// Optional outbound proxy, e.g. "socks5://127.0.0.1:1080" or
     /// "http://user:pass@host:8080". Empty = use $ALL_PROXY, else direct.
+    ///
+    /// 新建的会话不把凭据写在 URL 里：`proxy_user` / `proxy_pass` 各存一份，
+    /// 密码落地前加密（[`Self::proxy_pass`]）。带 userinfo 的旧 URL 仍然认。
     #[serde(default)]
     pub proxy: String,
+    /// 代理用户名；空 = 不需要认证，或凭据在 `proxy` 的 userinfo 里。
+    #[serde(default)]
+    pub proxy_user: String,
+    /// 代理密码（落盘加密、永不下发界面 / MCP 回读）。
+    #[serde(default)]
+    pub proxy_pass: Secret,
     /// Optional SSH jump host (bastion): the id of another saved SSH session to
     /// tunnel this connection through, like OpenSSH's ProxyJump. Empty = direct.
     /// Single hop only; the jump session supplies its own host/user/auth (#211).
@@ -840,6 +853,8 @@ impl Session {
             private_key_path: String::new(),
             private_key_inline: Secret::default(),
             proxy: String::new(),
+            proxy_user: String::new(),
+            proxy_pass: Secret::default(),
             jump_session_id: String::new(),
             last_used: None,
             group: String::new(),
@@ -976,6 +991,8 @@ pub struct ConfigFile {
     pub sync: SyncSettings,
     #[serde(flatten)]
     pub update: UpdateSettings,
+    #[serde(flatten)]
+    pub mcp: McpSettings,
 }
 
 /// 落盘形态之一：会话与用户数据 → `sessions.json`。
@@ -1027,6 +1044,8 @@ pub struct SettingsFile {
     pub sync: SyncSettings,
     #[serde(flatten)]
     pub update: UpdateSettings,
+    #[serde(flatten)]
+    pub mcp: McpSettings,
 }
 
 impl SessionsFile {
@@ -1055,6 +1074,7 @@ impl SettingsFile {
             transfer: cache.transfer.clone(),
             sync: cache.sync.clone(),
             update: cache.update.clone(),
+            mcp: cache.mcp.clone(),
         }
     }
 
@@ -1068,6 +1088,7 @@ impl SettingsFile {
         cfg.transfer = self.transfer;
         cfg.sync = self.sync;
         cfg.update = self.update;
+        cfg.mcp = self.mcp;
     }
 }
 
@@ -1380,6 +1401,11 @@ impl ConfigStore {
             if let Some(plain) = Self::try_decrypt(key, session.private_key_inline.as_str()) {
                 session.private_key_inline = Secret::new(plain);
             }
+            if let Some(plain) = Self::try_decrypt(key, session.proxy_pass.as_str()) {
+                session.proxy_pass = Secret::new(plain);
+            } else if session.proxy_pass.as_str().starts_with(Self::ENC_PREFIX) {
+                undecryptable += 1;
+            }
             // Trigger responses share the password's on-disk format;
             // legacy plaintext values stay as-is and are encrypted by
             // the next `save()`.
@@ -1391,6 +1417,9 @@ impl ConfigStore {
         }
         if let Some(plain) = Self::try_decrypt(key, cfg.sync.webdav_password.as_str()) {
             cfg.sync.webdav_password = Secret::new(plain);
+        }
+        if let Some(plain) = Self::try_decrypt(key, cfg.mcp.mcp_token.as_str()) {
+            cfg.mcp.mcp_token = Secret::new(plain);
         }
         // 命令历史：旧文件里的明文原样保留（下次 save 时加密），解不开的密文直接丢掉 ——
         // 留着只是一条谁也读不出来的乱码，还会被当成命令补全出来。
@@ -2328,6 +2357,97 @@ impl ConfigStore {
     pub fn set_update_last_check(&mut self, unix_secs: i64) {
         self.cache.update.update_last_check_unix = unix_secs.max(0);
     }
+
+    // ── MCP server（AI 页）────────────────────────────────────────────────
+    pub fn mcp_enabled(&self) -> bool {
+        self.cache.mcp.mcp_enabled
+    }
+    pub fn set_mcp_enabled(&mut self, v: bool) {
+        self.cache.mcp.mcp_enabled = v;
+    }
+    /// 出厂端口之外的一律回退：0 会让系统随机分配，用户填了也找不回来。
+    pub fn mcp_port(&self) -> u16 {
+        let port = self.cache.mcp.mcp_port;
+        if port < 1024 {
+            DEFAULT_MCP_PORT
+        } else {
+            port
+        }
+    }
+    pub fn set_mcp_port(&mut self, port: u16) {
+        if port >= 1024 {
+            self.cache.mcp.mcp_port = port;
+        }
+    }
+    pub fn mcp_bind_loopback(&self) -> bool {
+        self.cache.mcp.mcp_bind_loopback
+    }
+    pub fn mcp_lan_enabled(&self) -> bool {
+        self.cache.mcp.mcp_lan_enabled
+    }
+    pub fn set_mcp_lan_enabled(&mut self, v: bool) {
+        self.cache.mcp.mcp_lan_enabled = v;
+    }
+    pub fn mcp_lan_ifaces(&self) -> &[String] {
+        &self.cache.mcp.mcp_lan_ifaces
+    }
+    /// 开关某个网口：已勾选则去掉，否则追加。
+    pub fn toggle_mcp_lan_iface(&mut self, name: &str) {
+        if let Some(index) = self
+            .cache
+            .mcp
+            .mcp_lan_ifaces
+            .iter()
+            .position(|iface| iface == name)
+        {
+            self.cache.mcp.mcp_lan_ifaces.remove(index);
+        } else {
+            self.cache.mcp.mcp_lan_ifaces.push(name.to_string());
+        }
+    }
+    pub fn mcp_token(&self) -> &str {
+        self.cache.mcp.mcp_token.as_str()
+    }
+    pub fn set_mcp_token(&mut self, token: String) {
+        self.cache.mcp.mcp_token = Secret::new(token);
+    }
+    pub fn mcp_allow_terminal_input(&self) -> bool {
+        self.cache.mcp.mcp_allow_terminal_input
+    }
+    pub fn set_mcp_allow_terminal_input(&mut self, v: bool) {
+        self.cache.mcp.mcp_allow_terminal_input = v;
+    }
+    pub fn mcp_allow_exec(&self) -> bool {
+        self.cache.mcp.mcp_allow_exec
+    }
+    pub fn set_mcp_allow_exec(&mut self, v: bool) {
+        self.cache.mcp.mcp_allow_exec = v;
+    }
+    pub fn mcp_allow_settings_write(&self) -> bool {
+        self.cache.mcp.mcp_allow_settings_write
+    }
+    pub fn set_mcp_allow_settings_write(&mut self, v: bool) {
+        self.cache.mcp.mcp_allow_settings_write = v;
+    }
+    pub fn mcp_allow_host_write(&self) -> bool {
+        self.cache.mcp.mcp_allow_host_write
+    }
+    pub fn set_mcp_allow_host_write(&mut self, v: bool) {
+        self.cache.mcp.mcp_allow_host_write = v;
+    }
+    pub fn mcp_allow_session_open_close(&self) -> bool {
+        self.cache.mcp.mcp_allow_session_open_close
+    }
+    pub fn set_mcp_allow_session_open_close(&mut self, v: bool) {
+        self.cache.mcp.mcp_allow_session_open_close = v;
+    }
+    pub fn mcp_allow_file_transfer(&self) -> bool {
+        self.cache.mcp.mcp_allow_file_transfer
+    }
+    pub fn set_mcp_allow_file_transfer(&mut self, v: bool) {
+        self.cache.mcp.mcp_allow_file_transfer = v;
+    }
+
     pub fn wallpaper_overlay(&self) -> f32 {
         let a = self.cache.appearance.wallpaper_overlay;
         // Floor lowered 0.40 -> 0.30 so more see-through panels are reachable.
@@ -2632,6 +2752,13 @@ impl ConfigStore {
                 let enc = Self::encrypt(&self.key, session.private_key_inline.as_str())?;
                 session.private_key_inline = Secret::new(enc);
             }
+            // 代理密码与登录密码同一套处理：这是明文网络凭据，不能裸存。
+            if !session.proxy_pass.is_empty()
+                && !session.proxy_pass.as_str().starts_with(Self::ENC_PREFIX)
+            {
+                let enc = Self::encrypt(&self.key, session.proxy_pass.as_str())?;
+                session.proxy_pass = Secret::new(enc);
+            }
             // Trigger responses are credentials too — the documented use case
             // is auto-answering a `Password:` prompt — so they get exactly the
             // same at-rest treatment as the session password. `Secret` has no
@@ -2663,6 +2790,13 @@ impl ConfigStore {
         {
             let enc = Self::encrypt(&self.key, settings_disk.sync.webdav_password.as_str())?;
             settings_disk.sync.webdav_password = Secret::new(enc);
+        }
+        // MCP 令牌与口令同一套加密；已带前缀的跳过（幂等）。
+        if !settings_disk.mcp.mcp_token.is_empty()
+            && !settings_disk.mcp.mcp_token.as_str().starts_with(Self::ENC_PREFIX)
+        {
+            let enc = Self::encrypt(&self.key, settings_disk.mcp.mcp_token.as_str())?;
+            settings_disk.mcp.mcp_token = Secret::new(enc);
         }
         let settings_raw = serde_json::to_string_pretty(&settings_disk)?;
         let sessions_raw = serde_json::to_string_pretty(&sessions_disk)?;
@@ -3584,6 +3718,36 @@ mod tests {
         assert_eq!(
             ConfigStore::try_decrypt(&store.key, encrypted).as_deref(),
             Some(password)
+        );
+
+        let _ = std::fs::remove_file(&store.path);
+    }
+
+    #[test]
+    fn proxy_passwords_are_encrypted_at_rest() {
+        // 代理密码是明文网络凭据：写盘前必须与登录密码同一套加密，
+        // 否则 `sessions.json` 里就躺着一份可直接拿去用代理的口令。
+        let mut store = temp_store();
+        let secret = "proxy-s3cret-hunter2";
+        store.cache.sessions.push(Session {
+            name: "via-proxy".into(),
+            host: "10.1.2.3".into(),
+            proxy: "socks5://127.0.0.1:1080".into(),
+            proxy_user: "bob".into(),
+            proxy_pass: Secret::new(secret),
+            ..Session::new_empty()
+        });
+
+        store.save().unwrap();
+        let raw = std::fs::read_to_string(&store.path).unwrap();
+        assert!(!raw.contains(secret), "proxy password written in the clear");
+        let disk: ConfigFile = serde_json::from_str(&raw).unwrap();
+        assert_eq!(disk.sessions[0].proxy_user, "bob");
+        let encrypted = disk.sessions[0].proxy_pass.as_str();
+        assert!(encrypted.starts_with(ConfigStore::ENC_PREFIX));
+        assert_eq!(
+            ConfigStore::try_decrypt(&store.key, encrypted).as_deref(),
+            Some(secret)
         );
 
         let _ = std::fs::remove_file(&store.path);

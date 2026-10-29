@@ -78,7 +78,7 @@ directories = "6"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sysinfo = { version = "0.39", default-features = false, features = ["disk", "network", "system"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs", "process"] }
 # Pinned to 0.49: RUSTSEC-2026-0154 (an unbounded-allocation DoS in russh's
 # ssh-AGENT frame parsing) is fixed only in >= 0.60.3, which drags in pre-release
 # crypto crates (ed25519-dalek 3.0.0-pre, aes-gcm 0.11.0-rc, 鈥?. Rudder never
@@ -164,6 +164,18 @@ reqwest = { version = "0.12", default-features = false, features = [
     "blocking", "rustls-tls-native-roots", "http2", "gzip",
 ] }
 
+# ── MCP server（进程内，供外部 AI agent 通过 HTTP 操作本程序）──
+# 固定在 2.2：上游 meatshell 已验证这套组合（server + streamable-http 传输）；
+# 2.x 的 API 跨小版本仍会动，升级要连同 handler 一起改。
+rmcp = { version = "=2.2.0", default-features = false, features = [
+    "server", "transport-streamable-http-server",
+] }
+axum = "0.8"
+# 请求体上限（axum 的 DefaultBodyLimit 对 nest_service 不生效，只能包一层 Limited）。
+http-body-util = "0.1"
+# CancellationToken：多 listener 的统一停止信号。
+tokio-util = "0.7"
+
 # Image decoding: custom wallpapers (PNG/JPEG/WebP/BMP) for the immersive theme,
 # and the embedded PNG window icon on Linux. On Windows the icon comes from the
 # .ico embedded by winresource at link time; on macOS from the app bundle.
@@ -203,6 +215,8 @@ winresource = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
+# 直接驱动 axum Router（MCP 边界测试不需要开真实端口）。
+tower = { version = "0.5", features = ["util"] }
 
 [profile.release]
 opt-level = 3                # Speed: our code (Slint animations, terminal rendering)

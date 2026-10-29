@@ -1,3 +1,4 @@
+use super::tab_ops::{self, TabEnv};
 use super::*;
 
 pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
@@ -5,6 +6,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
     // hand-maintained copy of its field list — a field missing from that copy
     // is how the closed-tab `tab_statuses` leak arose.
     let AppContext {
+        store,
         tabs_model,
         terminals_model,
         layout,
@@ -123,6 +125,7 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
     // collapses the pane if it becomes empty).
     {
         let weak = window.as_weak();
+        let store = store.clone();
         let layout = layout.clone();
         let content_size = content_size.clone();
         let tabs_model = tabs_model.clone();
@@ -138,89 +141,27 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
         let tab_statuses = tab_statuses.clone();
         window.on_pane_tab_closed(move |_pane_id: i32, id: SharedString| {
             let id = id.to_string();
-            if id == "welcome" {
+            let Some(window) = weak.upgrade() else {
                 return;
-            }
-            // Drop any display-name override so a fresh connect starts clean.
-            tab_titles.borrow_mut().remove(&id);
-            if let Some(handle) = handles.borrow_mut().remove(&id) {
-                handle.close();
-            }
-            // Closing a tab must never take the process down. Release builds
-            // use panic = "abort", so a poisoned lock in this UI callback would
-            // kill the whole client instead of just leaving one tab's
-            // resources behind — skip the cleanup we cannot reach.
-            if let Ok(mut h) = sftp_handles.lock()
-                && let Some(sftp) = h.remove(&id)
-            {
-                sftp.close();
-            }
-            if let Ok(mut cwd) = sftp_last_cwd.lock() {
-                cwd.remove(&id);
-            }
-            if let Ok(mut gates) = render_gates.lock()
-                && let Some(gate) = gates.remove(&id)
-            {
-                gate.close();
-            }
-            if let Ok(mut b) = bufs.lock()
-                && let Some(handle) = b.remove(&id)
-            {
-                // 用户**主动**关标签页 → 不保留回滚历史（网络断线是另一回事：那时要保留，
-                // 方便回看断线前发生了什么）。这里显式释放一次：只把 Arc 从表里摘掉并不保证
-                // 内存立刻回来 —— 会话线程还握着句柄，卡住的连接会让几十 MB 一直挂着。
-                if let Ok(mut buf) = handle.lock() {
-                    buf.release_history_keep_screen();
-                }
-            }
-            // The status entry carries the tab's process list, network history
-            // and disk rows. Nothing else in the app removes one, so leaving it
-            // behind would retain all of that for the rest of the process run.
-            if let Ok(mut s) = tab_statuses.lock() {
-                s.remove(&id);
-            }
-
-            // Remove from tabs + terminals models.
-            let mut idx = None;
-            for i in 0..tabs_model.row_count() {
-                if tabs_model
-                    .row_data(i)
-                    .map(|r| r.id.as_str() == id)
-                    .unwrap_or(false)
-                {
-                    idx = Some(i);
-                    break;
-                }
-            }
-            if let Some(i) = idx {
-                tabs_model.remove(i);
-            }
-            let mut tidx = None;
-            for i in 0..terminals_model.row_count() {
-                if terminals_model
-                    .row_data(i)
-                    .map(|r| r.id.as_str() == id)
-                    .unwrap_or(false)
-                {
-                    tidx = Some(i);
-                    break;
-                }
-            }
-            if let Some(i) = tidx {
-                terminals_model.remove(i);
-            }
-
-            layout.borrow_mut().remove_tab(&id);
-            if let Some(w) = weak.upgrade() {
-                refresh_panes(
-                    &w,
-                    &layout,
-                    content_size.get(),
-                    &tabs_model,
-                    &panes_model,
-                    &splitters_model,
-                );
-            }
+            };
+            let env = TabEnv {
+                window: &window,
+                store: &store,
+                handles: &handles,
+                tab_titles: &tab_titles,
+                tab_statuses: &tab_statuses,
+                tabs_model: &tabs_model,
+                terminals_model: &terminals_model,
+                bufs: &bufs,
+                render_gates: &render_gates,
+                sftp_handles: &sftp_handles,
+                sftp_last_cwd: &sftp_last_cwd,
+                layout: &layout,
+                panes_model: &panes_model,
+                splitters_model: &splitters_model,
+                content_size: &content_size,
+            };
+            tab_ops::close_tab(&env, &id);
         });
     }
 

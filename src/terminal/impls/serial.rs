@@ -205,6 +205,12 @@ async fn run_serial(
                     .into(),
                 });
             }
+            SessionCommand::Exec { reply, .. } => {
+                let _ = reply.send(crate::ssh::ExecResult::unsupported(t(
+                    "串口不支持 exec 通道",
+                    "exec is unavailable for serial sessions",
+                )));
+            }
             SessionCommand::Close => break,
         }
     }

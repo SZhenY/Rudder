@@ -171,6 +171,7 @@ pub(super) fn apply_session_event_to_window<'a>(
                 if let Some(sys) = *sys {
                     st.sys = sys;
                 }
+                st.last_stats_at = Some(std::time::Instant::now());
                 // A sample means the channel is alive → treat as connected.
                 if st.state != 1 {
                     st.state = 1;

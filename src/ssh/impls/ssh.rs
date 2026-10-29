@@ -524,6 +524,119 @@ fn spawn_monitoring_channels(
     });
 }
 
+/// 排队中的一次性命令。
+struct ExecRequest {
+    command: String,
+    timeout: std::time::Duration,
+    max_output_bytes: usize,
+    reply: tokio::sync::oneshot::Sender<ExecResult>,
+}
+
+/// 从队列取一条命令并启动。
+///
+/// 与监控通道共用 `aux_open_in_flight`：开通道期间泵会挂起主 PTY 的
+/// `channel.wait()`（#264）。开完立刻经 `done` 通知泵恢复，读取阶段不再占用互斥。
+fn start_next_exec(
+    pending: &mut std::collections::VecDeque<ExecRequest>,
+    in_flight: &mut bool,
+    started: &mut Option<tokio::time::Instant>,
+    handle: &Arc<Handle<ClientHandler>>,
+    done: &tokio::sync::mpsc::UnboundedSender<()>,
+) {
+    if *in_flight || pending.is_empty() {
+        return;
+    }
+    let request = pending.pop_front().expect("checked non-empty");
+    *in_flight = true;
+    *started = Some(tokio::time::Instant::now());
+    let handle = handle.clone();
+    let done = done.clone();
+    tokio::spawn(async move { run_exec(handle, request, done).await });
+}
+
+async fn run_exec(
+    handle: Arc<Handle<ClientHandler>>,
+    request: ExecRequest,
+    done: tokio::sync::mpsc::UnboundedSender<()>,
+) {
+    let started = std::time::Instant::now();
+    let mut result = ExecResult {
+        exit_code: None,
+        stdout: String::new(),
+        stderr: String::new(),
+        truncated: false,
+        timed_out: false,
+        duration: std::time::Duration::ZERO,
+        error: None,
+    };
+
+    let opened = auxiliary_timeout(AUXILIARY_CHANNEL_TIMEOUT, async {
+        let channel = handle.channel_open_session().await?;
+        channel.exec(true, request.command.as_str()).await?;
+        Ok::<_, russh::Error>(channel)
+    })
+    .await;
+    // 开通道阶段结束：无论成败都立刻让泵恢复主 PTY 轮询。
+    let _ = done.send(());
+
+    let mut channel = match opened {
+        Ok(Ok(channel)) => channel,
+        Ok(Err(err)) => {
+            result.error = Some(format!("exec channel: {err}"));
+            result.duration = started.elapsed();
+            let _ = request.reply.send(result);
+            return;
+        }
+        Err(_) => {
+            result.error = Some("exec channel open timed out".to_string());
+            result.duration = started.elapsed();
+            let _ = request.reply.send(result);
+            return;
+        }
+    };
+
+    let mut stdout: Vec<u8> = Vec::new();
+    let mut stderr: Vec<u8> = Vec::new();
+    let read = async {
+        loop {
+            match channel.wait().await {
+                Some(ChannelMsg::Data { data }) => {
+                    let room = request.max_output_bytes.saturating_sub(stdout.len());
+                    if data.len() > room {
+                        result.truncated = true;
+                    }
+                    stdout.extend_from_slice(&data[..data.len().min(room)]);
+                }
+                Some(ChannelMsg::ExtendedData { data, ext }) => {
+                    if ext != 1 {
+                        continue;
+                    }
+                    let room = request.max_output_bytes.saturating_sub(stderr.len());
+                    if data.len() > room {
+                        result.truncated = true;
+                    }
+                    stderr.extend_from_slice(&data[..data.len().min(room)]);
+                }
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    result.exit_code = Some(exit_status as i32);
+                }
+                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                _ => {}
+            }
+        }
+    };
+
+    if tokio::time::timeout(request.timeout, read).await.is_err() {
+        result.timed_out = true;
+        let _ = channel.close().await;
+    }
+    result.duration = started.elapsed();
+    // 远端可能是 GBK 等非 UTF-8 编码；这里按 UTF-8 有损解码，与读屏口径一致。
+    result.stdout = String::from_utf8_lossy(&stdout).into_owned();
+    result.stderr = String::from_utf8_lossy(&stderr).into_owned();
+    let _ = request.reply.send(result);
+}
+
 fn prompt_setup_supported(probe_output: &str) -> Option<bool> {
     if probe_output.contains("__MEATSHELL_SHELL__:bash")
         || probe_output.contains("__MEATSHELL_SHELL__:zsh")
@@ -923,6 +1036,15 @@ pub enum SessionCommand {
         root_password: Option<crate::config::Secret>,
         reply: tokio::sync::oneshot::Sender<ProcessKillResult>,
     },
+    /// Run one command on a fresh exec channel. Opening the channel goes through
+    /// the same "do not poll the PTY while opening" gate as the monitor channels
+    /// (#264); the read phase does not block the PTY.
+    Exec {
+        command: String,
+        timeout: std::time::Duration,
+        max_output_bytes: usize,
+        reply: tokio::sync::oneshot::Sender<ExecResult>,
+    },
     /// Gracefully disconnect and drop the session.
     Close,
 }
@@ -931,6 +1053,36 @@ pub enum SessionCommand {
 pub struct ProcessKillResult {
     pub success: bool,
     pub message: String,
+}
+
+/// 一次性 exec 通道的结果。
+#[derive(Debug, Clone)]
+pub struct ExecResult {
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    /// 输出超过 `max_output_bytes`，后续内容被丢弃。
+    pub truncated: bool,
+    /// 超时后通道被关闭（远端进程是否退出不做保证）。
+    pub timed_out: bool,
+    pub duration: std::time::Duration,
+    /// 开通道 / 写 exec 失败时的原因；`Some` 时其余字段无意义。
+    pub error: Option<String>,
+}
+
+impl ExecResult {
+    /// 该传输没有 exec 通道（串口 / Telnet / 本地 PTY）。
+    pub fn unsupported(message: impl Into<String>) -> Self {
+        Self {
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            truncated: false,
+            timed_out: false,
+            duration: std::time::Duration::ZERO,
+            error: Some(message.into()),
+        }
+    }
 }
 
 /// Carries the user's answer to a host-key confirmation prompt back to the
@@ -1230,6 +1382,26 @@ impl SessionHandle {
     }
 }
 
+impl SessionHandle {
+    /// 在会话的连接上开一条一次性 exec 通道执行 `command`。
+    /// 返回的 `oneshot` 在命令结束（或失败 / 超时）时给出结果。
+    pub fn exec(
+        &self,
+        command: String,
+        timeout: std::time::Duration,
+        max_output_bytes: usize,
+    ) -> tokio::sync::oneshot::Receiver<ExecResult> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        let _ = self.commands.send(SessionCommand::Exec {
+            command,
+            timeout,
+            max_output_bytes,
+            reply,
+        });
+        rx
+    }
+}
+
 async fn kill_remote_process(
     handle: Arc<Handle<ClientHandler>>,
     pid: u32,
@@ -1502,6 +1674,7 @@ pub fn spawn_session(
     jump: Option<Session>,
     initial_cols: u32,
     initial_rows: u32,
+    trust_unknown_host_key: bool,
 ) -> (SessionHandle, UnboundedReceiver<SessionEvent>) {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
     let (evt_tx, evt_rx) = mpsc::unbounded_channel::<SessionEvent>();
@@ -1516,6 +1689,7 @@ pub fn spawn_session(
             evt_tx_for_task.clone(),
             initial_cols,
             initial_rows,
+            trust_unknown_host_key,
         )
         .await
         {
@@ -1617,6 +1791,7 @@ async fn connect_ssh(
     jump: Option<&Session>,
     config: Arc<client::Config>,
     events: &UnboundedSender<SessionEvent>,
+    trust_unknown_host_key: bool,
 ) -> Result<(Handle<ClientHandler>, Option<Handle<ClientHandler>>)> {
     // Remote (-R) forwards are serviced inside the handler when the server opens
     // channels back, so it needs the bind-port → local-target map up front (the
@@ -1632,6 +1807,7 @@ async fn connect_ssh(
         port: session.port,
         remote_forwards,
         events: events.clone(),
+        trust_unknown_host_key,
     };
     let addr = format!("{}:{}", session.host, session.port);
 
@@ -1648,14 +1824,22 @@ async fn connect_ssh(
             addr
         )));
         let (handle, jump_handle) =
-            connect_target_via_jump(j, &session.host, session.port, config, handler, events)
+            connect_target_via_jump(
+                j,
+                &session.host,
+                session.port,
+                config,
+                handler,
+                events,
+                trust_unknown_host_key,
+            )
                 .await
                 .with_context(|| format!("connect {} via jump failed", addr))?;
         return Ok((handle, Some(jump_handle)));
     }
 
     // Connect directly, or tunnel through a SOCKS5 / HTTP proxy (issue #7).
-    let handle = match crate::ssh::proxy::resolve(&session.proxy) {
+    let handle = match crate::ssh::proxy::resolve_session(session) {
         Some(p) => {
             let _ = events.send(SessionEvent::Status(format!(
                 "{} {} → {}",
@@ -1697,6 +1881,7 @@ pub(crate) async fn authenticate_session(
     jump: Option<&Session>,
     config: Arc<client::Config>,
     events: &UnboundedSender<SessionEvent>,
+    trust_unknown_host_key: bool,
 ) -> Result<AuthResult> {
     let (user, password) = match resolve_credentials(session, events).await {
         Some(c) => c,
@@ -1714,7 +1899,9 @@ pub(crate) async fn authenticate_session(
                 // already failed (it hangs), so reconnect on a fresh handle before
                 // trying keyboard-interactive (#86).
                 let _ = handle.disconnect(Disconnect::ByApplication, "", "").await;
-                let (h, jh) = Box::pin(connect_ssh(session, jump, config.clone(), events)).await?;
+                let (h, jh) =
+                    Box::pin(connect_ssh(session, jump, config.clone(), events, trust_unknown_host_key))
+                        .await?;
                 *handle = h;
                 *jump_handle = jh;
                 ok = keyboard_interactive_auth(
@@ -1775,6 +1962,7 @@ pub(crate) async fn connect_target_via_jump<H>(
     config: Arc<client::Config>,
     handler: H,
     events: &UnboundedSender<SessionEvent>,
+    trust_unknown_host_key: bool,
 ) -> Result<(Handle<H>, Handle<ClientHandler>)>
 where
     H: client::Handler + 'static,
@@ -1782,7 +1970,7 @@ where
 {
     // Single hop: the jump session itself never goes through another jump.
     // `Box::pin` breaks the async recursion (connect_ssh → jump → connect_ssh).
-    let (mut jhandle, mut no_nested) = Box::pin(connect_ssh(jump, None, config.clone(), events))
+    let (mut jhandle, mut no_nested) = Box::pin(connect_ssh(jump, None, config.clone(), events, trust_unknown_host_key))
         .await
         .with_context(|| format!("connect jump host {}:{} failed", jump.host, jump.port))?;
     match authenticate_session(
@@ -1792,6 +1980,7 @@ where
         None,
         config.clone(),
         events,
+        trust_unknown_host_key,
     )
     .await?
     {
@@ -1888,7 +2077,7 @@ pub async fn test_session_auth(
 ) -> Result<()> {
     let config = ssh_client_config();
     let (mut handle, mut jump_handle) =
-        connect_ssh(&session, jump.as_ref(), config.clone(), &events).await?;
+        connect_ssh(&session, jump.as_ref(), config.clone(), &events, false).await?;
 
     let auth = authenticate_session(
         &mut handle,
@@ -1897,6 +2086,7 @@ pub async fn test_session_auth(
         jump.as_ref(),
         config,
         &events,
+        false,
     )
     .await?;
 
@@ -2003,6 +2193,7 @@ async fn run_session(
     events: UnboundedSender<SessionEvent>,
     initial_cols: u32,
     initial_rows: u32,
+    trust_unknown_host_key: bool,
 ) -> Result<()> {
     let session_started = std::time::Instant::now();
     let _ = events.send(SessionEvent::Status(format!(
@@ -2016,7 +2207,8 @@ async fn run_session(
     let config = ssh_client_config();
 
     let (mut handle, mut jump_handle) =
-        connect_ssh(&session, jump.as_ref(), config.clone(), &events).await?;
+        connect_ssh(&session, jump.as_ref(), config.clone(), &events, trust_unknown_host_key)
+            .await?;
     tracing::info!(
         "[SESSION_START] id={} stage=transport-ready elapsed_ms={}",
         session.id,
@@ -2034,6 +2226,7 @@ async fn run_session(
         jump.as_ref(),
         config.clone(),
         &events,
+        trust_unknown_host_key,
     )
     .await?
     {
@@ -2306,6 +2499,10 @@ async fn run_session(
     // 在飞的那批属于**启动序列**（true）还是**重开监控**（false）—— 只有前者
     // 在结果回来后推进 `auxiliary_startup`。
     let mut aux_open_for_startup = false;
+    // MCP 的一次性命令队列。与监控通道共用同一把"开通道"互斥（#264）：
+    // 同一时刻只允许一个开通道任务在飞。
+    let mut pending_execs: std::collections::VecDeque<ExecRequest> = std::collections::VecDeque::new();
+    let (exec_done_tx, mut exec_done_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let mut auxiliary_deadline = auxiliary_startup
         .pending()
         .map(|kind| auxiliary_started_at + kind.delay());
@@ -2358,6 +2555,14 @@ async fn run_session(
                     aux_open_in_flight = false;
                     aux_open_started = None;
                     auxiliary_startup.complete();
+                    // 看门狗复位后也把排队的一次性命令接上，否则它们会一直等着。
+                    start_next_exec(
+                        &mut pending_execs,
+                        &mut aux_open_in_flight,
+                        &mut aux_open_started,
+                        &handle,
+                        &exec_done_tx,
+                    );
                 }
                 // ⚠️ 必须先判"有批次在飞"再 `begin()`：否则 `begin()` 已把
                 // in_progress 置上，随后又因为让路而不开通道，序列就再也推进不了。
@@ -2455,6 +2660,29 @@ async fn run_session(
                         .pending()
                         .map(|next| tokio::time::Instant::now() + next.delay());
                 }
+                // 启动批次结束后，把排队中的一次性命令接上。
+                start_next_exec(
+                    &mut pending_execs,
+                    &mut aux_open_in_flight,
+                    &mut aux_open_started,
+                    &handle,
+                    &exec_done_tx,
+                );
+            }
+            // 一次性命令的通道已经开完（或开失败）：恢复主 PTY 轮询，并接上下一条。
+            Some(()) = exec_done_rx.recv() => {
+                // 若此刻在飞的其实是启动序列的批次，别动它的标志位。
+                if !aux_open_for_startup {
+                    aux_open_in_flight = false;
+                    aux_open_started = None;
+                }
+                start_next_exec(
+                    &mut pending_execs,
+                    &mut aux_open_in_flight,
+                    &mut aux_open_started,
+                    &handle,
+                    &exec_done_tx,
+                );
             }
             cmd = commands.recv() => {
                 match cmd {
@@ -2544,6 +2772,21 @@ async fn run_session(
                             let result = kill_remote_process(exec_handle, pid, root_password).await;
                             let _ = reply.send(result);
                         });
+                    }
+                    Some(SessionCommand::Exec { command, timeout, max_output_bytes, reply }) => {
+                        pending_execs.push_back(ExecRequest {
+                            command,
+                            timeout,
+                            max_output_bytes,
+                            reply,
+                        });
+                        start_next_exec(
+                            &mut pending_execs,
+                            &mut aux_open_in_flight,
+                            &mut aux_open_started,
+                            &handle,
+                            &exec_done_tx,
+                        );
                     }
                     Some(SessionCommand::Close) | None => {
                         let _ = channel.eof().await;
@@ -3691,23 +3934,35 @@ pub(crate) struct ClientHandler {
     pub(crate) port: u16,
     pub(crate) remote_forwards: std::collections::HashMap<u32, (String, u16)>,
     pub(crate) events: UnboundedSender<SessionEvent>,
+    /// 首次连接未知主机时直接信任并记录（MCP 显式授权）。密钥**变更**不看它。
+    pub(crate) trust_unknown_host_key: bool,
 }
 
 /// Shared host-key check used by both the shell and SFTP connections: trust a
 /// matching stored key silently; otherwise ask the UI (via `events`) and, on
 /// acceptance, remember the key. A dropped/closed reply channel (UI gone)
 /// counts as a rejection so we never connect to an unverified host.
+///
+/// `trust_unknown` 只对**未知**主机生效（MCP 显式授权首次连接）：直接记录并放行，
+/// 不弹窗。**密钥变更永远弹窗** —— 那可能是中间人，必须由人判断。
 pub(crate) async fn verify_host_key(
     host: &str,
     port: u16,
     key: &PublicKey,
     events: &UnboundedSender<SessionEvent>,
+    trust_unknown: bool,
 ) -> bool {
     use crate::ssh::known_hosts::HostKeyStatus;
     match crate::ssh::known_hosts::verify(host, port, key) {
         HostKeyStatus::Match => true,
         status => {
             let changed = status == HostKeyStatus::Changed;
+            if trust_unknown && !changed {
+                if let Err(e) = crate::ssh::known_hosts::remember(host, port, key) {
+                    tracing::warn!("could not save host key for {host}:{port}: {e:#}");
+                }
+                return true;
+            }
             let (tx, rx) = tokio::sync::oneshot::channel();
             let sent = events.send(SessionEvent::HostKeyPrompt {
                 host: host.to_string(),
@@ -3783,7 +4038,14 @@ impl Handler for ClientHandler {
         &mut self,
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(verify_host_key(&self.host, self.port, server_public_key, &self.events).await)
+        Ok(verify_host_key(
+            &self.host,
+            self.port,
+            server_public_key,
+            &self.events,
+            self.trust_unknown_host_key,
+        )
+        .await)
     }
 
     async fn data(

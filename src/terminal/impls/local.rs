@@ -161,6 +161,12 @@ async fn run_local(
                     .into(),
                 });
             }
+            SessionCommand::Exec { reply, .. } => {
+                let _ = reply.send(crate::ssh::ExecResult::unsupported(t(
+                    "本地终端不支持 exec 通道",
+                    "exec is unavailable for local terminals",
+                )));
+            }
             SessionCommand::Close => {
                 let _ = child.lock().unwrap_or_else(|e| e.into_inner()).kill();
                 break;

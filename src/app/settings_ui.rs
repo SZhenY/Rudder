@@ -356,6 +356,8 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
 
 
     settings::update::bind(window, store);
+    // AI 页：MCP 开关 / 监听面 / 令牌 / 权限位。
+    settings::ai::bind(window, store);
 
 
 
