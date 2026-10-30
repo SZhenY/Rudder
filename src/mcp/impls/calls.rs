@@ -84,6 +84,7 @@ pub(super) async fn call(
         "sftp_list" => sftp_list(state, args).await,
         "sftp_download" => sftp_download(state, args).await,
         "sftp_upload" => sftp_upload(state, args).await,
+        "run_action" => crate::app::mcp_ui::run_action(str_arg(args, "action")?).await,
         other => Err(McpError::Invalid(format!("unknown tool: {other}"))),
     }
 }

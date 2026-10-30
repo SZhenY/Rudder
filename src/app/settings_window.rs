@@ -16,7 +16,7 @@ use i_slint_backend_winit::WinitWindowAccessor as _;
 use slint::{ComponentHandle, Timer};
 
 use super::resource_ui::request_first_frame;
-use crate::ui::{AppWindow, SettingsWindow, Theme};
+use crate::ui::{AnimationSettings, AppWindow, SettingsWindow, Theme};
 
 thread_local! {
     /// 设置窗口句柄（`wire_settings_window` 里登记一次）。用来支持"外面改了主题顺手回灌"。
@@ -179,6 +179,23 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_quick_panel_collapsed(m.get_quick_panel_collapsed());
     sw.set_wallpaper_labels(m.get_wallpaper_labels());
     sw.set_renderer_mode(m.get_renderer_mode());
+    // 开关类：这些值既可能被设置页自己改（改完回调会回写主窗口），也可能被 MCP
+    // 从外部改。不灌回去的话，设置窗开着时看到的仍是开窗那一刻的旧状态。
+    sw.set_convert_eol(m.get_convert_eol());
+    sw.set_osc52_clipboard(m.get_osc52_clipboard());
+    sw.set_json_format_output(m.get_json_format_output());
+    sw.set_collapse_sidebar_default(m.get_collapse_sidebar_default());
+    sw.set_collapse_sftp_default(m.get_collapse_sftp_default());
+    sw.set_show_cmd_bar(m.get_show_cmd_bar());
+    sw.set_sftp_follow_cd(m.get_sftp_follow_cd());
+    sw.set_download_always_ask(m.get_download_always_ask());
+    sw.set_update_check_enabled(m.get_update_check_enabled());
+    sw.set_update_freq_index(m.get_update_freq_index());
+    sw.set_sync_upload_enabled(m.get_sync_upload_enabled());
+    sw.set_output_highlight_enabled(m.get_output_highlight_enabled());
+    sw.set_output_highlight_preset(m.get_output_highlight_preset());
+    sw.set_hide_special_partitions(m.get_hide_special_partitions());
+    sw.set_webdav_accept_invalid_certs(m.get_webdav_accept_invalid_certs());
     // 异步状态（上传 / 下载 / 更新检查 / 输出高亮规则校验）
     sw.set_webdav_status(m.get_webdav_status());
     sw.set_update_check_status(m.get_update_check_status());
@@ -208,6 +225,10 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
 
 /// 打开设置窗口：播种主窗口当前值 → 同步主题 → `show()` → 首帧补救三连。
 pub(super) fn open_settings_window(m: &AppWindow, sw: &SettingsWindow) {
+    // `AnimationSettings` 是每个窗口一份的全局：设置窗那份不会自动跟主窗口同步，
+    // 不同步的话「动画」开关每次开窗都显示出厂默认（true），与配置不符。
+    sw.global::<AnimationSettings>()
+        .set_enabled(m.global::<AnimationSettings>().get_enabled());
     // 每次打开都重新播种：设置窗口的属性是**独立副本**（不像旧覆盖层那样双向绑定），
     // 期间主窗口可能被别处改过（例如「还原本页默认」），重播一次就不会滞后。
     // 值全部从主窗口现成属性拷过来，不需要再从配置重新推导标签 / 模型。

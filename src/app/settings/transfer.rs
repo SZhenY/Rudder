@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use slint::ComponentHandle;
+
 use super::{Store, persist};
 use crate::config::fresh_config;
 use crate::ui::AppWindow;
@@ -13,20 +15,29 @@ pub(crate) fn bind(w: &AppWindow, store: &Store, follow_flag: &Arc<AtomicBool>) 
     // 配置。两处都要写，否则"界面变了、行为没变"。
     w.set_sftp_follow_cd(store.borrow().sftp_follow_cd());
     {
+        let weak = w.as_weak();
         let store = store.clone();
         let flag = follow_flag.clone();
         w.on_set_sftp_follow_cd(move |follow| {
             flag.store(follow, Ordering::Relaxed);
             persist(&store, |s| s.set_sftp_follow_cd(follow));
+            // 主窗口属性是设置窗的播种源，不回写会显示旧值。
+            if let Some(w) = weak.upgrade() {
+                w.set_sftp_follow_cd(follow);
+            }
         });
     }
 
     // 总是询问保存位置（#87）：下载处理器实时读取该窗口属性，所以只需播种 + 持久化。
     w.set_download_always_ask(store.borrow().download_always_ask());
     {
+        let weak = w.as_weak();
         let store = store.clone();
         w.on_set_download_always_ask(move |ask| {
             persist(&store, |s| s.set_download_always_ask(ask));
+            if let Some(w) = weak.upgrade() {
+                w.set_download_always_ask(ask);
+            }
         });
     }
 }

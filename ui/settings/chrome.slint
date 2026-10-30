@@ -103,6 +103,11 @@ export component SettingRow inherits Rectangle {
 /// 自己那套蓝，换「配色」时它是设置页里最扎眼的一处死角。
 export component ToggleSwitch inherits Rectangle {
     in-out property <bool> checked;
+    /// false = 置灰且不响应点击（用于"上级开关关闭时，下级不可操作"）。
+    in-out property <bool> interactive: true;
+    /// true = 值由模型/外部提供（`checked` 是一条单向绑定），点击只发意图，
+    /// 不在本地改 `checked` —— 就地赋值会把那条绑定拆掉，之后模型再变就传不进来。
+    in-out property <bool> mirror: false;
     callback toggled(bool);
 
     width: 40px;
@@ -139,11 +144,27 @@ export component ToggleSwitch inherits Rectangle {
         }
     }
 
+    opacity: root.interactive ? 1 : 0.45;
+    animate opacity {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+
     switch-ta := TouchArea {
-        mouse-cursor: pointer;
+        mouse-cursor: root.interactive ? pointer : default;
         clicked => {
-            root.checked = !root.checked;
-            root.toggled(root.checked);
+            if (!root.interactive) {
+                return;
+            }
+            if (root.mirror) {
+                // 只发意图：真正的值由调用方写回模型，绑定保持完好 —— 模型变化
+                // （例如总开关关闭）才能一路传到这里，并触发 150/250ms 的过渡。
+                root.toggled(!root.checked);
+            } else {
+                root.checked = !root.checked;
+                root.toggled(root.checked);
+            }
         }
     }
 }
@@ -152,10 +173,14 @@ export component ToggleSwitch inherits Rectangle {
 /// `label` / `desc` / `show-divider` 的用法与普通 `SettingRow` 一致。
 export component SettingSwitch inherits SettingRow {
     in-out property <bool> checked;
+    in-out property <bool> interactive: true;
+    in-out property <bool> mirror: false;
     callback toggled(bool);
 
     ToggleSwitch {
         checked <=> root.checked;
+        interactive: root.interactive;
+        mirror: root.mirror;
         toggled(v) => { root.toggled(v); }
     }
 }

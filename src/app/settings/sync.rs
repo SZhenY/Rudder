@@ -23,11 +23,16 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
     // （两者都是 `Rc`，捕获不进 `Send` 闭包）。
     register_ui_handles(store, sessions_model);
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_sync_upload_enabled(move |v| {
             persist(&store, |s| {
                 s.set_sync_upload(v);
             });
+            // 主窗口属性是设置窗的播种源，不回写会显示旧值。
+            if let Some(w) = weak.upgrade() {
+                w.set_sync_upload_enabled(v);
+            }
         });
     }
 
@@ -54,6 +59,17 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, sessions_model: &Rc<VecMod
                 });
                 // 存完就把输入框清空：口令不再以明文留在界面层里。
                 if let Some(w) = weak.upgrade() {
+                    // 主窗口属性是设置窗的播种源：不回写的话，"保存 → 关掉 →
+                    // 重开"会看到保存前的旧值（配置其实已经写进去了）。
+                    // 用 store 里的值回填，顺带带上规范化结果（裁尾斜杠、空路径回默认）。
+                    {
+                        let s = store.borrow();
+                        w.set_webdav_enabled(s.webdav_enabled());
+                        w.set_webdav_url(s.webdav_url().into());
+                        w.set_webdav_username(s.webdav_username().into());
+                        w.set_webdav_remote_path(s.webdav_remote_path().into());
+                        w.set_webdav_accept_invalid_certs(s.webdav_accept_invalid_certs());
+                    }
                     w.set_webdav_password(String::new().into());
                 }
             },

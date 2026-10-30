@@ -6,7 +6,7 @@
 //! * 回滚行数变化要让每个终端缓冲 reset；
 //! * OSC52 开关要同步 `vt_adapter::OSC52_ENABLED` 这个运行时原子标志。
 
-use slint::{ComponentHandle, SharedString};
+use slint::{ComponentHandle, Model as _, SharedString};
 
 use crate::app::fonts_ui::{family_from_label, term_font_covers_cjk};
 use crate::app::terminal_ui::{
@@ -258,6 +258,15 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             if let Some(w) = weak.upgrade() {
                 w.global::<Theme>().set_term_font_family(family.into());
                 w.global::<Theme>().set_term_font_cjk(term_font_covers_cjk(family));
+                // 选中项必须同步到主窗口：AI 页 1 Hz 轮询会 `resync_if_open` 把
+                // 设置窗的 `term-font-index` 从主窗口覆盖回来，不回写就会"点了
+                // 一秒内自己弹回原项"，看起来像根本改不动。
+                let index = w
+                    .get_term_fonts()
+                    .iter()
+                    .position(|item| item == label)
+                    .unwrap_or(0) as i32;
+                w.set_term_font_index(index);
             }
         });
     }
@@ -276,11 +285,16 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             }
             if let Some(w) = weak.upgrade() {
                 apply_output_highlight(&w, &bufs, enabled, &preset);
+                // 回写主窗口属性：设置窗每次打开都按它播种，不回写就会在重开时
+                // 退回修改前的值（配置其实已经生效）。
+                w.set_output_highlight_enabled(enabled);
+                w.set_output_highlight_preset(preset.into());
             }
         });
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         let bufs = bufs.clone();
         window.on_set_json_format_output(move |enabled| {
@@ -295,6 +309,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .json_format_output = enabled;
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_json_format_output(enabled);
             }
         });
     }
@@ -374,22 +391,36 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_convert_eol(move |v: bool| {
-            let mut s = store.borrow_mut();
-            s.set_convert_eol(v);
-            s.save_logging();
+            {
+                let mut s = store.borrow_mut();
+                s.set_convert_eol(v);
+                s.save_logging();
+            }
+            // 回写主窗口属性：设置窗每次打开都从它播种，不回写就会"改了 → 关掉 →
+            // 重开显示旧值"（配置其实已经生效，纯粹是界面层滞后）。
+            if let Some(w) = weak.upgrade() {
+                w.set_convert_eol(v);
+            }
         });
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_osc52_clipboard(move |v: bool| {
-            let mut s = store.borrow_mut();
-            s.set_osc52_clipboard(v);
-            s.save_logging();
+            {
+                let mut s = store.borrow_mut();
+                s.set_osc52_clipboard(v);
+                s.save_logging();
+            }
             crate::terminal::vt_adapter::OSC52_ENABLED
                 .store(v, std::sync::atomic::Ordering::Relaxed);
+            if let Some(w) = weak.upgrade() {
+                w.set_osc52_clipboard(v);
+            }
         });
     }
 

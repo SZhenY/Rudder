@@ -3,7 +3,7 @@
 // 这一页只做三件事：开关服务、勾选监听面、逐个授权工具。令牌明文只在用户
 // 主动点「显示 / 复制」时由 Rust 填进来（`mcp-token-plain`），平时只有掩码。
 
-import { Theme } from "../../theme.slint";
+import { Theme, AnimationSettings } from "../../theme.slint";
 import { SettingsSection } from "../section.slint";
 import { SettingRow, SettingSwitch, ToggleSwitch } from "../chrome.slint";
 import { GhostButton } from "../../widgets.slint";
@@ -69,14 +69,19 @@ export component AiPage inherits VerticalLayout {
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
                 border-color: root.mcp-port-valid ? Theme.border-subtle : Theme.danger;
-                background: Theme.bg-root;
+                background: root.mcp-enabled ? Theme.bg-root : Theme.bg-elevated;
+                animate background {
+                    duration: AnimationSettings.short2();
+                    enabled: AnimationSettings.enabled;
+                }
                 input := TextInput {
                     input-method-hints: Theme.plain-input-hints;
+                    enabled: root.mcp-enabled;
                     x: 8px;
                     width: parent.width - 16px;
                     height: parent.height;
                     vertical-alignment: center;
-                    color: Theme.text-primary;
+                    color: root.mcp-enabled ? Theme.text-primary : Theme.text-muted;
                     text <=> root.mcp-port;
                     edited => { root.mcp-port-valid = root.set-mcp-port(root.mcp-port); }
                 }
@@ -120,12 +125,13 @@ export component AiPage inherits VerticalLayout {
             desc: root.lang-en
                 ? "Off = loopback only. Each ticked interface gets its own listener; 0.0.0.0 is never used."
                 : "关闭时只监听本机回环。勾选的每个网口各起一个 listener，绝不绑 0.0.0.0。";
-            show-divider: root.mcp-lan-enabled && root.mcp-ifaces.length > 0;
+            show-divider: root.mcp-enabled && root.mcp-lan-enabled && root.mcp-ifaces.length > 0;
+            interactive: root.mcp-enabled;
             checked <=> root.mcp-lan-enabled;
             toggled(v) => { root.set-mcp-lan(v); }
         }
 
-        if root.mcp-lan-enabled : VerticalLayout {
+        if root.mcp-enabled && root.mcp-lan-enabled : VerticalLayout {
             for iface in root.mcp-ifaces : HorizontalLayout {
                 height: 30px;
                 spacing: 10px;
@@ -137,6 +143,7 @@ export component AiPage inherits VerticalLayout {
                     horizontal-stretch: 1;
                 }
                 ToggleSwitch {
+                    mirror: true;
                     checked: iface.enabled;
                     toggled(v) => { root.toggle-mcp-iface(iface.name); }
                 }
@@ -198,6 +205,10 @@ export component AiPage inherits VerticalLayout {
         // 默认全关；逐项授权。模型由 Rust 侧按工具集生成，加工具只改一处。
         for permission in root.mcp-permissions : SettingSwitch {
             label: permission.label;
+            interactive: root.mcp-enabled;
+            // 值来自模型行：必须走 mirror，否则用户点过一次就会拆掉这条绑定，
+            // 之后总开关关闭时模型推下来的 false 传不进来（只置灰、不关闭）。
+            mirror: true;
             checked: permission.enabled;
             toggled(v) => { root.toggle-mcp-permission(permission.key); }
         }

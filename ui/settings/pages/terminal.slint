@@ -482,7 +482,7 @@ export component TerminalPage inherits VerticalLayout {
             label: root.lang-en ? "Case sensitive" : "区分大小写";
 
             checked <=> root.new-rule-case-sensitive;
-            toggled(v) => {}
+            toggled(v) => { root.new-rule-case-sensitive = v; }
 
         }
         SettingSwitch {
@@ -493,7 +493,7 @@ export component TerminalPage inherits VerticalLayout {
             show-divider: false;
 
             checked <=> root.new-rule-whole-line;
-            toggled(v) => {}
+            toggled(v) => { root.new-rule-whole-line = v; }
 
         }
         if root.output-highlight-rule-status != "" : Text {
@@ -557,6 +557,7 @@ export component TerminalPage inherits VerticalLayout {
                 // 与设置页其它开关同款：自绘、跟随主题色、有过渡（官方 Switch 的强调色
                 // 是 fluent 派生属性，改不了）。
                 ToggleSwitch {
+                    mirror: true;
                     checked: rule.enabled;
                     toggled(v) => { root.set-output-highlight-rule-enabled(index, v); }
                     vertical-stretch: 0;

@@ -423,6 +423,27 @@ pub(super) fn definitions() -> Value {
                 "idempotentHint": true,
                 "openWorldHint": true
             }
+        },
+        {
+            "name": "run_action",
+            "description": "Trigger a one-shot UI action: check for updates now, or push/pull the host list to the configured WebDAV. Returns as soon as the action starts; progress and the outcome show up in the status bar and the settings page.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["check_update", "webdav_upload", "webdav_download"]
+                    }
+                },
+                "required": ["action"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": true
+            }
         }
     ])
 }
@@ -442,6 +463,7 @@ const PERMISSIONS: &[(&str, &str)] = &[
     ("sftp_list", "file_transfer"),
     ("sftp_download", "file_transfer"),
     ("sftp_upload", "file_transfer"),
+    ("run_action", "settings_write"),
 ];
 
 pub(super) fn required_perm(name: &str) -> Option<&'static str> {

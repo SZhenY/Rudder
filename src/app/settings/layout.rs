@@ -129,6 +129,7 @@ pub(crate) fn bind(
     let splitters_model = &panes.splitters_model;
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         // UI 传上来的是正向值（显示与否），config 存反向 —— 翻转只在这里与
         // apply_layout_prefs / settings_ui 播种三处。
@@ -136,15 +137,23 @@ pub(crate) fn bind(
             persist(&store, |s| {
                 s.set_cmd_bar_hidden(!shown);
             });
+            if let Some(w) = weak.upgrade() {
+                w.set_show_cmd_bar(shown);
+            }
         });
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_zen_mode(move |enabled| {
             persist(&store, |s| {
                 s.set_zen_mode(enabled);
             });
+            // 主窗口属性是设置窗的播种源，不回写会在重开时退回旧值。
+            if let Some(w) = weak.upgrade() {
+                w.set_zen_mode(enabled);
+            }
         });
     }
 
@@ -163,11 +172,16 @@ pub(crate) fn bind(
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_collapse_sidebar_default(move |v| {
             persist(&store, |s| {
                 s.set_collapse_sidebar_default(v);
             });
+            // 主窗口属性是设置窗每次打开时的播种源，不回写就会显示旧值。
+            if let Some(w) = weak.upgrade() {
+                w.set_collapse_sidebar_default(v);
+            }
         });
     }
 
@@ -191,12 +205,16 @@ pub(crate) fn bind(
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         let handles = handles.clone();
         window.on_set_sidebar_collapsed(move |v| {
             persist(&store, |s| {
                 s.set_sidebar_collapsed(v);
             });
+            if let Some(w) = weak.upgrade() {
+                w.set_sidebar_collapsed(v);
+            }
             // Pause resource monitoring for every live session while the
             // sidebar is hidden; resume when it comes back (upstream b17da25).
             for handle in handles.borrow().values() {
@@ -224,20 +242,28 @@ pub(crate) fn bind(
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_welcome_collapsed(move |v| {
             persist(&store, |s| {
                 s.set_welcome_collapsed(v);
             });
+            if let Some(w) = weak.upgrade() {
+                w.set_welcome_collapsed(v);
+            }
         });
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_collapse_sftp_default(move |v| {
             persist(&store, |s| {
                 s.set_collapse_sftp_default(v);
             });
+            if let Some(w) = weak.upgrade() {
+                w.set_collapse_sftp_default(v);
+            }
         });
     }
 

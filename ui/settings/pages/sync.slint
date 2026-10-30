@@ -73,7 +73,9 @@ export component SyncPage inherits VerticalLayout {
             show-divider: false;
 
             checked <=> root.webdav-enabled;
-            toggled(v) => {}
+            // 开关只发意图，值由持有方写回（这里没有 Rust 回调，直接写本页属性；
+            // 点「保存」时统一提交）。
+            toggled(v) => { root.webdav-enabled = v; }
 
         }
         LabeledInput {
@@ -106,7 +108,7 @@ export component SyncPage inherits VerticalLayout {
             show-divider: false;
 
             checked <=> root.webdav-accept-invalid-certs;
-            toggled(v) => {}
+            toggled(v) => { root.webdav-accept-invalid-certs = v; }
 
         }
         HorizontalLayout {

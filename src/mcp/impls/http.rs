@@ -77,6 +77,18 @@ async fn guard(State(state): State<SharedState>, request: Request, next: Next) -
         return method_not_allowed();
     }
 
+    // 先按 Content-Length 挡掉超大请求体：`Limited` 抛错时 axum 只会回 500，
+    // 客户端看不出是自己发太大了。
+    if request
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .is_some_and(|len| len > MAX_BODY as u64)
+    {
+        return failure(StatusCode::PAYLOAD_TOO_LARGE, "request body is too large");
+    }
+
     let session = match request.headers().get("mcp-session-id") {
         Some(value) => match value.to_str() {
             Ok(value) if !value.is_empty() && value.len() <= 128 => Some(value.to_owned()),
@@ -215,6 +227,7 @@ mod tests {
     use super::super::types::{
         AppHandles, McpConfigSnapshot, McpState, Permissions, SharedState,
     };
+    use super::MAX_BODY;
 
     const TOKEN: &str = "rk_test";
 
@@ -321,6 +334,25 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(second.status(), StatusCode::CONFLICT);
+    }
+
+    /// 超过上限的请求体要在进 rmcp 之前挡掉：`Limited` 抛错时只会变成 500。
+    #[tokio::test]
+    async fn oversized_body_is_rejected_with_413() {
+        let app = app(state());
+        let session = open_session(&app).await;
+        let request = Request::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header(header::HOST, "127.0.0.1:8765")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::CONTENT_LENGTH, (MAX_BODY + 1).to_string())
+            .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+            .header("mcp-session-id", &session)
+            .body(Body::from("a".repeat(MAX_BODY + 1)))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     /// 会话被 rmcp 回收后必须释放租约：否则客户端下一次 initialize 只会拿到

@@ -1988,6 +1988,19 @@ impl ConfigStore {
         }
     }
 
+    /// 整表替换（MCP 的 `terminal.output_highlight` 用）。逐条 `add` 做不到"删掉
+    /// 列表里没有的那几条"，而界面的增删接口是按下标操作的。
+    pub fn set_output_highlight_rules(&mut self, rules: Vec<OutputHighlightRule>) {
+        self.cache.terminal.output_highlight_rules = rules
+            .into_iter()
+            .map(|mut rule| {
+                rule.pattern = rule.pattern.trim().to_string();
+                rule.color = normalize_highlight_color(&rule.color).to_string();
+                rule
+            })
+            .collect();
+    }
+
     /// Global UI scale in percent (#100). Defaults to 100.
     pub fn ui_scale(&self) -> u32 {
         if self.cache.appearance.ui_scale == 0 {
@@ -2051,6 +2064,26 @@ impl ConfigStore {
 
     pub fn remove_wsl_profile(&mut self, id: &str) {
         self.cache.wsl_profiles.retain(|profile| profile.id != id);
+    }
+
+    /// 整表替换（MCP 的 `wsl.profiles` 用）。名字与目录在这里统一归一化，
+    /// 免得 MCP 与界面两条路径写出不一样的形状。
+    pub fn set_wsl_profiles(&mut self, profiles: Vec<WslProfile>) {
+        self.cache.wsl_profiles = profiles
+            .into_iter()
+            .filter_map(|mut profile| {
+                profile.name = profile.name.trim().to_string();
+                if profile.name.is_empty() {
+                    return None;
+                }
+                profile.distribution = profile.distribution.trim().to_string();
+                profile.directory = match profile.directory.trim() {
+                    "" => "~".to_string(),
+                    value => value.to_string(),
+                };
+                Some(profile)
+            })
+            .collect();
     }
 
     pub fn quick_panel_open(&self) -> bool {

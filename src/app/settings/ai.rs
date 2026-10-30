@@ -6,7 +6,7 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Model as _, ModelRc, SharedString, VecModel};
 use sysinfo::Networks;
 
 use super::{Store, persist};
@@ -68,6 +68,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
         let ifaces = ifaces.clone();
         let permissions = permissions.clone();
         window.on_set_mcp_lan(move |enabled| {
+            // 服务关着时下级控件是禁用态；这里再挡一次，避免陈旧点击改到配置。
+            if !store.borrow().mcp_enabled() {
+                return;
+            }
             persist(&store, |s| s.set_mcp_lan_enabled(enabled));
             apply(&store);
             if let Some(window) = weak.upgrade() {
@@ -81,6 +85,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
         let ifaces = ifaces.clone();
         let permissions = permissions.clone();
         window.on_toggle_mcp_iface(move |name| {
+            if !store.borrow().mcp_enabled() {
+                return;
+            }
             persist(&store, |s| s.toggle_mcp_lan_iface(name.as_str()));
             apply(&store);
             if let Some(window) = weak.upgrade() {
@@ -94,6 +101,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
         let ifaces = ifaces.clone();
         let permissions = permissions.clone();
         window.on_toggle_mcp_permission(move |key| {
+            // 同上：关闭态下不允许改授权位。
+            if !store.borrow().mcp_enabled() {
+                return;
+            }
             persist(&store, |s| toggle_permission(s, key.as_str()));
             apply(&store);
             if let Some(window) = weak.upgrade() {
@@ -200,7 +211,9 @@ fn refresh(
     };
     window.set_mcp_enabled(enabled);
     window.set_mcp_port(SharedString::from(port.to_string()));
-    window.set_mcp_lan_enabled(lan);
+    // 服务关着时，"监听范围"整段是禁用态：**显示**为关，但配置里原来的值保留，
+    // 重新打开服务后原样恢复（不是把用户的授权抹掉）。
+    window.set_mcp_lan_enabled(enabled && lan);
     window.set_mcp_token_masked(masked.into());
     window.set_mcp_token_plain(plain.into());
 
@@ -215,30 +228,50 @@ fn refresh(
             store.mcp_allow_file_transfer(),
         ]
     };
-    permissions.set_vec(
-        PERMISSIONS
-            .iter()
-            .enumerate()
-            .map(|(index, (key, zh, en))| McpPermission {
-                key: SharedString::from(*key),
-                label: SharedString::from(t(zh, en)),
-                enabled: selected[index],
-            })
-            .collect::<Vec<_>>(),
-    );
+    // 服务关闭时把权限位**显示**成全关（配置不动）。这样拨掉总开关时，下面六个
+    // 开关会各自从"开"过渡到"关"，而不是停在开的状态却不可点。
+    let selected = if enabled {
+        selected
+    } else {
+        [false; 6]
+    };
+    let rows = PERMISSIONS
+        .iter()
+        .enumerate()
+        .map(|(index, (key, zh, en))| McpPermission {
+            key: SharedString::from(*key),
+            label: SharedString::from(t(zh, en)),
+            enabled: selected[index],
+        })
+        .collect::<Vec<_>>();
+    // 逐行 `set_row_data` 而不是整表 `set_vec`：整表替换会让 Slint 重建每一个
+    // 开关元素，重建出来的元素没有"从旧值切到新值"这一步，动画自然不播。
+    if permissions.row_count() == rows.len() {
+        for (index, row) in rows.into_iter().enumerate() {
+            permissions.set_row_data(index, row);
+        }
+    } else {
+        permissions.set_vec(rows);
+    }
     window.set_mcp_permissions(ModelRc::from(permissions.clone()));
 
     let selected_ifaces = store.borrow().mcp_lan_ifaces().to_vec();
-    ifaces.set_vec(
-        enumerate_ifaces()
-            .into_iter()
-            .map(|(name, addr)| McpIface {
-                enabled: selected_ifaces.iter().any(|iface| iface == &name),
-                name: SharedString::from(name),
-                addr: SharedString::from(addr),
-            })
-            .collect::<Vec<_>>(),
-    );
+    let iface_rows = enumerate_ifaces()
+        .into_iter()
+        .map(|(name, addr)| McpIface {
+            enabled: enabled && selected_ifaces.iter().any(|iface| iface == &name),
+            name: SharedString::from(name),
+            addr: SharedString::from(addr),
+        })
+        .collect::<Vec<_>>();
+    // 同上：行数没变就逐行更新，别整表替换（否则开关也是"瞬变无动画"）。
+    if ifaces.row_count() == iface_rows.len() {
+        for (index, row) in iface_rows.into_iter().enumerate() {
+            ifaces.set_row_data(index, row);
+        }
+    } else {
+        ifaces.set_vec(iface_rows);
+    }
     window.set_mcp_ifaces(ModelRc::from(ifaces.clone()));
 
     publish_status(window, store);

@@ -4,7 +4,7 @@
 //! * `ui-font-index`（字体选择器索引）—— 只改 family 会让下拉框停在旧项；
 //! * 壁纸切换要走 `apply_wallpaper`（完整的换肤与调色板派生），不能只 set 属性。
 
-use slint::{Color, ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{Color, ComponentHandle, Model as _, ModelRc, SharedString, VecModel};
 use std::rc::Rc;
 
 use super::{FontCatalog, Store, persist};
@@ -23,10 +23,16 @@ use crate::ui::{ AccentPreset, AnimationSettings, AppWindow, ProcWindow, Theme }
 pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_win: &ProcWindow) {
     {
         let store = store.clone();
+        let weak = window.as_weak();
         window.on_set_animations_enabled(move |v| {
             persist(&store, |s| {
                 s.set_animations_enabled(v);
             });
+            // 动画开关读的是 `AnimationSettings` 全局，而全局是**每个窗口一份**。
+            // 不推主窗口那份，主界面的动效要重启才变。
+            if let Some(w) = weak.upgrade() {
+                w.global::<AnimationSettings>().set_enabled(v);
+            }
         });
     }
 
@@ -84,20 +90,29 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_hide_special_partitions(move |v: bool| {
             persist(&store, |s| {
                 s.set_hide_special_partitions(v);
             });
+            // 主窗口属性是设置窗的播种源，不回写会在重开时退回旧值。
+            if let Some(w) = weak.upgrade() {
+                w.set_hide_special_partitions(v);
+            }
         });
     }
 
     {
+        let weak = window.as_weak();
         let store = store.clone();
         window.on_set_mount_filter(move |v: slint::SharedString| {
             persist(&store, |s| {
                 s.set_mount_filter(v.to_string());
             });
+            if let Some(w) = weak.upgrade() {
+                w.set_mount_filter(v.clone());
+            }
         });
     }
 
@@ -241,6 +256,14 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 // ⚠️ 不能是逗号分隔的字体栈：Slint 的 `font-family` 是单个家族名，
                 // 整串会被当成一个不存在的家族，界面看起来毫无变化。
                 w.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
+                // 与终端字体同理：不回写选中项，AI 页 1 Hz 轮询的 `resync_if_open`
+                // 会把设置窗的选择弹回旧项。
+                let index = w
+                    .get_ui_fonts()
+                    .iter()
+                    .position(|item| item == label)
+                    .unwrap_or(0) as i32;
+                w.set_ui_font_index(index);
             }
         });
     }

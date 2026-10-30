@@ -609,9 +609,21 @@ async fn run_sftp(
                             crate::sftp::MCP_TRANSFER_LIMIT / (1024 * 1024)
                         ));
                     }
-                    sftp.write(&remote, &data)
+                    // `SftpSession::write` 只带 `OpenFlags::WRITE`：新建文件会被服务端
+                    // 判成 NoSuchFile，覆盖已有文件时也不会截断，长文件尾部会残留。
+                    // 走 `create`（CREATE | TRUNCATE | WRITE）再整块写。
+                    let mut file = sftp
+                        .create(&remote)
+                        .await
+                        .map_err(|err| format!("create {remote}: {err}"))?;
+                    use tokio::io::AsyncWriteExt;
+                    file.write_all(&data)
                         .await
                         .map_err(|err| format!("write {remote}: {err}"))?;
+                    file.flush()
+                        .await
+                        .map_err(|err| format!("flush {remote}: {err}"))?;
+                    let _ = file.shutdown().await;
                     Ok(data.len() as u64)
                 }
                 .await;

@@ -597,9 +597,22 @@ async fn run_exec(
 
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
+    // 多数服务端把 exit-status 放在 EOF **之后**再发。原来遇到 EOF 直接 break，
+    // 退出码永远是 None；这里给 EOF 后留一小段窗口取回状态，拿不到就退出 ——
+    // 个别实现不发 CLOSE，不能一直等到整体超时。
+    const EXIT_STATUS_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+    let mut saw_eof = false;
     let read = async {
         loop {
-            match channel.wait().await {
+            let message = if saw_eof {
+                match tokio::time::timeout(EXIT_STATUS_GRACE, channel.wait()).await {
+                    Ok(message) => message,
+                    Err(_) => break,
+                }
+            } else {
+                channel.wait().await
+            };
+            match message {
                 Some(ChannelMsg::Data { data }) => {
                     let room = request.max_output_bytes.saturating_sub(stdout.len());
                     if data.len() > room {
@@ -620,7 +633,8 @@ async fn run_exec(
                 Some(ChannelMsg::ExitStatus { exit_status }) => {
                     result.exit_code = Some(exit_status as i32);
                 }
-                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                Some(ChannelMsg::Eof) => saw_eof = true,
+                Some(ChannelMsg::Close) | None => break,
                 _ => {}
             }
         }

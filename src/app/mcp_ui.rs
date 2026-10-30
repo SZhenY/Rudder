@@ -181,6 +181,12 @@ enum SettingKind {
     Int { min: u64, max: u64 },
     Choice(&'static [&'static str]),
     HexColor,
+    /// 自由文本。长度与格式约束放在 `extra_check` 里 —— 有些键的上界要读配置
+    /// （例如回滚行数取决于"大回滚"开关），静态枚举表达不了。
+    Text,
+    /// 对象 / 数组：规则表、WSL 配置这类**整表替换**的键。形状校验同样在
+    /// `extra_check`，这里只要求是 JSON 对象或数组。
+    Structured,
 }
 
 struct SettingDef {
@@ -188,18 +194,18 @@ struct SettingDef {
     kind: SettingKind,
     get: fn(&UiAccess) -> Value,
     set: fn(&UiAccess, &Value) -> Result<(), McpError>,
-    apply: fn(&UiAccess),
+    /// 部分键的界面是"动作"而不是"属性"（例如壁纸项要同时改深浅档、换肤、
+    /// 重置主题色与光标），所以 apply 也拿得到刚写入的值。
+    apply: fn(&UiAccess, &Value),
 }
 
 /// 明确拒绝的键。给出原因而不是静默忽略，客户端才知道换个办法。
 fn denied_reason(key: &str) -> Option<&'static str> {
     Some(match key {
         "sync.webdav_password" => "secret_not_exposed",
-        "sync.webdav_url" => "secret_bearing_endpoint",
         "appearance.renderer_mode" => "restart_required_process",
         "appearance.language" => "requires_i18n_reload",
         "layout.window_width" | "layout.window_height" => "geometry_owned_by_ui",
-        "sync.webdav_username" => "secret_bearing_endpoint",
         _ => return None,
     })
 }
@@ -219,7 +225,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_font_size(value.as_u64().unwrap_or(13) as u32);
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window
                         .global::<Theme>()
                         .set_term_font_size(ui.ctx.store.borrow().font_size() as f32);
@@ -236,7 +242,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_terminal_bold(value.as_bool().unwrap_or(false));
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window
                         .global::<Theme>()
                         .set_term_font_bold(ui.ctx.store.borrow().terminal_bold());
@@ -253,7 +259,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_terminal_cursor_style(value.as_str().unwrap_or("bar").to_string());
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window.set_term_cursor_style(
                         ui.ctx.store.borrow().terminal_cursor_style().into(),
                     );
@@ -270,7 +276,7 @@ fn settings_table() -> &'static [SettingDef] {
                     }
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     terminal_settings::apply_cursor_color(
                         &ui.window,
                         ui.ctx.store.borrow().terminal_cursor_color(),
@@ -288,7 +294,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_convert_eol(value.as_bool().unwrap_or(true));
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window.set_convert_eol(ui.ctx.store.borrow().convert_eol());
                 },
             },
@@ -303,7 +309,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_theme_pref(value.as_str().unwrap_or("system").to_string());
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     let dark = terminal_ui::theme_pref_is_dark(&ui.ctx.store.borrow());
                     terminal_ui::apply_dark_mode(&ui.window, &ui.ctx.bufs, dark);
                     let choice = ui.ctx.store.borrow().accent().to_string();
@@ -329,7 +335,7 @@ fn settings_table() -> &'static [SettingDef] {
                     ui.ctx.store.borrow_mut().set_accent(choice);
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     let choice = ui.ctx.store.borrow().accent().to_string();
                     let follow = appearance::apply_accent(&ui.window, &choice);
                     let cursor = ui.ctx.store.borrow().terminal_cursor_color().to_string();
@@ -348,7 +354,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_ui_scale(value.as_u64().unwrap_or(100) as u32);
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window
                         .global::<Theme>()
                         .set_ui_scale(ui.ctx.store.borrow().ui_scale() as f32 / 100.0);
@@ -365,7 +371,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_panel_font(value.as_u64().unwrap_or(100) as u32);
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window.global::<Theme>().set_panel_font(
                         ui.ctx.store.borrow().panel_font() as f32 / 100.0,
                     );
@@ -382,7 +388,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_collapse_sidebar_default(value.as_bool().unwrap_or(false));
                     Ok(())
                 },
-                apply: |ui| super::settings::layout::apply_layout_prefs(&ui.window, &ui.ctx.store),
+                apply: |ui, _| super::settings::layout::apply_layout_prefs(&ui.window, &ui.ctx.store),
             },
             SettingDef {
                 key: "layout.collapse_sftp_default",
@@ -395,7 +401,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_collapse_sftp_default(value.as_bool().unwrap_or(false));
                     Ok(())
                 },
-                apply: |ui| super::settings::layout::apply_layout_prefs(&ui.window, &ui.ctx.store),
+                apply: |ui, _| super::settings::layout::apply_layout_prefs(&ui.window, &ui.ctx.store),
             },
             SettingDef {
                 key: "layout.hide_cmd_bar",
@@ -408,7 +414,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_cmd_bar_hidden(value.as_bool().unwrap_or(false));
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window
                         .set_show_cmd_bar(!ui.ctx.store.borrow().cmd_bar_hidden());
                 },
@@ -423,7 +429,7 @@ fn settings_table() -> &'static [SettingDef] {
                     ui.ctx.sftp_follow_cd.store(follow, Ordering::Relaxed);
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window
                         .set_sftp_follow_cd(ui.ctx.store.borrow().sftp_follow_cd());
                 },
@@ -439,7 +445,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_download_always_ask(value.as_bool().unwrap_or(false));
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window
                         .set_download_always_ask(ui.ctx.store.borrow().download_always_ask());
                 },
@@ -455,7 +461,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_sync_upload(value.as_bool().unwrap_or(false));
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window
                         .set_sync_upload_enabled(ui.ctx.store.borrow().sync_upload());
                 },
@@ -471,7 +477,7 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_update_check_enabled(value.as_bool().unwrap_or(true));
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window
                         .set_update_check_enabled(ui.ctx.store.borrow().update_check_enabled());
                 },
@@ -487,13 +493,442 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_update_channel(value.as_str().unwrap_or("stable").to_string());
                     Ok(())
                 },
-                apply: |ui| {
+                apply: |ui, _| {
                     ui.window
                         .set_update_channel(ui.ctx.store.borrow().update_channel().into());
                 },
             },
+            // ── 终端页其余项 ────────────────────────────────────────────
+            SettingDef {
+                key: "terminal.font_family",
+                kind: SettingKind::Text,
+                get: |ui| json!(ui.ctx.store.borrow().font_family()),
+                set: |ui, value| {
+                    ui.ctx.store.borrow_mut().set_font_family(
+                        value.as_str().unwrap_or_default().trim().to_string(),
+                    );
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    let family = ui.ctx.store.borrow().font_family().to_string();
+                    ui.window
+                        .global::<Theme>()
+                        .set_term_font_family(family.clone().into());
+                    ui.window
+                        .global::<Theme>()
+                        .set_term_font_cjk(super::fonts_ui::term_font_covers_cjk(&family));
+                    // 选中项跟着走：设置窗 1 Hz 会被主窗口的索引覆盖，不同步的话
+                    // 界面显示与实际字体不一致（看着像没改成功）。
+                    let catalog = font_catalog();
+                    ui.window.set_term_font_index(catalog.term_index(&family));
+                },
+            },
+            SettingDef {
+                key: "terminal.scrollback_lines",
+                kind: SettingKind::Int { min: 100, max: 1_000_000 },
+                get: |ui| json!(ui.ctx.store.borrow().scrollback_lines()),
+                set: |ui, value| {
+                    ui.ctx
+                        .store
+                        .borrow_mut()
+                        .set_scrollback_lines(value.as_u64().unwrap_or(5_000) as usize);
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    let lines = ui.ctx.store.borrow().scrollback_lines();
+                    ui.window.set_scrollback_lines(lines.to_string().into());
+                },
+            },
+            SettingDef {
+                key: "terminal.osc52",
+                kind: SettingKind::Bool,
+                get: |ui| json!(ui.ctx.store.borrow().osc52_clipboard()),
+                set: |ui, value| {
+                    let enabled = value.as_bool().unwrap_or(false);
+                    ui.ctx.store.borrow_mut().set_osc52_clipboard(enabled);
+                    // 剪贴板那侧读的是原子量，不只读配置。
+                    crate::terminal::vt_adapter::OSC52_ENABLED.store(enabled, Ordering::Relaxed);
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    ui.window
+                        .set_osc52_clipboard(ui.ctx.store.borrow().osc52_clipboard());
+                },
+            },
+            SettingDef {
+                key: "terminal.json_format",
+                kind: SettingKind::Bool,
+                get: |ui| json!(ui.ctx.store.borrow().json_format_output()),
+                set: |ui, value| {
+                    ui.ctx
+                        .store
+                        .borrow_mut()
+                        .set_json_format_output(value.as_bool().unwrap_or(true));
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    let enabled = ui.ctx.store.borrow().json_format_output();
+                    // 已在跑的标签页也要立刻换行为，否则要重连才生效。
+                    for buffer in ui
+                        .ctx
+                        .bufs
+                        .lock()
+                        .unwrap_or_else(|err| err.into_inner())
+                        .values()
+                    {
+                        buffer
+                            .lock()
+                            .unwrap_or_else(|err| err.into_inner())
+                            .json_format_output = enabled;
+                    }
+                    ui.window.set_json_format_output(enabled);
+                },
+            },
+            // ── 布局页其余项 ────────────────────────────────────────────
+            SettingDef {
+                key: "layout.quick_commands_sidebar",
+                kind: SettingKind::Bool,
+                get: |ui| json!(ui.ctx.store.borrow().quick_commands_as_sidebar()),
+                set: |ui, value| {
+                    ui.ctx
+                        .store
+                        .borrow_mut()
+                        .set_quick_commands_as_sidebar(value.as_bool().unwrap_or(false));
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    // 复用界面那条：它还要把快捷面板的开关一起同步过去。
+                    let enabled = ui.ctx.store.borrow().quick_commands_as_sidebar();
+                    super::settings::layout::apply_quick_commands_as_sidebar(
+                        &ui.window,
+                        &ui.ctx.store,
+                        enabled,
+                    );
+                },
+            },
+            SettingDef {
+                key: "layout.welcome_sidebar",
+                kind: SettingKind::Bool,
+                get: |ui| json!(ui.ctx.store.borrow().welcome_as_sidebar()),
+                set: |ui, value| {
+                    ui.ctx
+                        .store
+                        .borrow_mut()
+                        .set_welcome_as_sidebar(value.as_bool().unwrap_or(false));
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    let enabled = ui.ctx.store.borrow().welcome_as_sidebar();
+                    // 走界面回调：它内部把 Welcome 子树延迟一帧重建（#323），
+                    // 自己只改属性会漏掉这一步。
+                    ui.window.invoke_set_welcome_as_sidebar(enabled);
+                },
+            },
+            // ── 更新页其余项 ────────────────────────────────────────────
+            SettingDef {
+                key: "update.frequency",
+                kind: SettingKind::Choice(&crate::config::UPDATE_FREQUENCIES),
+                get: |ui| json!(ui.ctx.store.borrow().update_frequency()),
+                set: |ui, value| {
+                    ui.ctx
+                        .store
+                        .borrow_mut()
+                        .set_update_frequency(value.as_str().unwrap_or("daily").to_string());
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    let current = ui.ctx.store.borrow().update_frequency().to_string();
+                    let index = crate::config::UPDATE_FREQUENCIES
+                        .iter()
+                        .position(|value| *value == current)
+                        .unwrap_or(0) as i32;
+                    ui.window.set_update_freq_index(index);
+                },
+            },
+            SettingDef {
+                key: "update.proxy_enabled",
+                kind: SettingKind::Bool,
+                get: |ui| json!(ui.ctx.store.borrow().update_proxy_enabled()),
+                set: |ui, value| {
+                    ui.ctx
+                        .store
+                        .borrow_mut()
+                        .set_update_proxy_enabled(value.as_bool().unwrap_or(false));
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    // 更新器读的是全局快照，改完配置得推一次。
+                    super::settings::update::apply_net(&ui.window, &ui.ctx.store, None);
+                },
+            },
+            SettingDef {
+                key: "update.proxy",
+                kind: SettingKind::Text,
+                get: |ui| json!(ui.ctx.store.borrow().update_proxy()),
+                set: |ui, value| {
+                    ui.ctx.store.borrow_mut().set_update_proxy(
+                        value.as_str().unwrap_or_default().trim().to_string(),
+                    );
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    let proxy = ui.ctx.store.borrow().update_proxy().to_string();
+                    super::settings::update::apply_net(&ui.window, &ui.ctx.store, Some(&proxy));
+                },
+            },
+            // ── 同步页（WebDAV）：口令仍不开放，其余三项可写 ─────────────
+            SettingDef {
+                key: "sync.webdav_url",
+                kind: SettingKind::Text,
+                get: |ui| json!(ui.ctx.store.borrow().webdav_url()),
+                set: |ui, value| {
+                    webdav_update(
+                        ui,
+                        Some(value.as_str().unwrap_or_default().to_string()),
+                        None,
+                        None,
+                    )
+                },
+                apply: |ui, _| {
+                    ui.window
+                        .set_webdav_url(ui.ctx.store.borrow().webdav_url().into());
+                },
+            },
+            SettingDef {
+                key: "sync.webdav_username",
+                kind: SettingKind::Text,
+                get: |ui| json!(ui.ctx.store.borrow().webdav_username()),
+                set: |ui, value| {
+                    webdav_update(
+                        ui,
+                        None,
+                        Some(value.as_str().unwrap_or_default().to_string()),
+                        None,
+                    )
+                },
+                apply: |ui, _| {
+                    ui.window
+                        .set_webdav_username(ui.ctx.store.borrow().webdav_username().into());
+                },
+            },
+            SettingDef {
+                key: "sync.webdav_remote_path",
+                kind: SettingKind::Text,
+                get: |ui| json!(ui.ctx.store.borrow().webdav_remote_path()),
+                set: |ui, value| {
+                    webdav_update(
+                        ui,
+                        None,
+                        None,
+                        Some(value.as_str().unwrap_or_default().to_string()),
+                    )
+                },
+                apply: |ui, _| {
+                    ui.window.set_webdav_remote_path(
+                        ui.ctx.store.borrow().webdav_remote_path().into(),
+                    );
+                },
+            },
+            // ── 外观：壁纸与界面字体 ──────────────────────────────────
+            SettingDef {
+                key: "appearance.wallpaper",
+                kind: SettingKind::Text,
+                get: |ui| {
+                    let store = ui.ctx.store.borrow();
+                    match store.wallpaper().strip_prefix("builtin:") {
+                        // 三档内置背景图直接报档位；上传的图片报当前深浅档。
+                        Some(mode) => json!(mode),
+                        None => json!(store.theme_pref()),
+                    }
+                },
+                // 写入交给 apply：换壁纸是"动作"，要同时改深浅档、换肤、重算主题色
+                // 与光标色（见 on_set_wallpaper），这里重复一遍必然分叉。
+                set: |_, _| Ok(()),
+                apply: |ui, value| {
+                    let mode = value.as_str().unwrap_or("system");
+                    let label = super::settings::appearance::wallpaper_choices()
+                        .into_iter()
+                        .find(|choice| {
+                            if matches!(mode, "system" | "dark" | "light") {
+                                choice.theme == mode && choice.wallpaper.is_empty()
+                            } else {
+                                choice.theme.is_empty() && choice.wallpaper == mode
+                            }
+                        })
+                        .map(|choice| choice.label);
+                    if let Some(label) = label {
+                        ui.window.invoke_set_wallpaper(label.into());
+                    }
+                },
+            },
+            SettingDef {
+                key: "appearance.ui_font",
+                kind: SettingKind::Text,
+                get: |ui| json!(ui.ctx.store.borrow().ui_font_family()),
+                set: |ui, value| {
+                    ui.ctx.store.borrow_mut().set_ui_font_family(
+                        value.as_str().unwrap_or_default().trim().to_string(),
+                    );
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    ui.window
+                        .global::<Theme>()
+                        .set_ui_font_family(super::fonts_ui::resolve_ui_font_family());
+                    let stored = ui.ctx.store.borrow().ui_font_family().to_string();
+                    let catalog = font_catalog();
+                    ui.window.set_ui_font_index(catalog.ui_index(&stored));
+                },
+            },
+            // ── 输出高亮：开关 / 预设 / 自定义规则（整表替换）────────────
+            SettingDef {
+                key: "terminal.output_highlight",
+                kind: SettingKind::Structured,
+                get: |ui| {
+                    let store = ui.ctx.store.borrow();
+                    json!({
+                        "enabled": store.output_highlight_enabled(),
+                        "preset": store.output_highlight_preset(),
+                        "rules": store.output_highlight_rules(),
+                    })
+                },
+                set: |ui, value| {
+                    let object = value.as_object().ok_or_else(|| {
+                        McpError::Invalid("`terminal.output_highlight` must be an object".into())
+                    })?;
+                    let enabled = object
+                        .get("enabled")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true);
+                    let preset = object
+                        .get("preset")
+                        .and_then(Value::as_str)
+                        .unwrap_or("builtin")
+                        .to_string();
+                    let rules = match object.get("rules") {
+                        Some(rules) => Some(
+                            serde_json::from_value::<Vec<crate::config::OutputHighlightRule>>(
+                                rules.clone(),
+                            )
+                            .map_err(|err| {
+                                McpError::Invalid(format!("invalid output highlight rules: {err}"))
+                            })?,
+                        ),
+                        None => None,
+                    };
+                    let mut store = ui.ctx.store.borrow_mut();
+                    store.set_output_highlight_enabled(enabled);
+                    store.set_output_highlight_preset(preset);
+                    if let Some(rules) = rules {
+                        store.set_output_highlight_rules(rules);
+                    }
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    let (enabled, preset, rules) = {
+                        let store = ui.ctx.store.borrow();
+                        (
+                            store.output_highlight_enabled(),
+                            store.output_highlight_preset().to_string(),
+                            store.output_highlight_rules().to_vec(),
+                        )
+                    };
+                    super::terminal_ui::apply_output_highlight(
+                        &ui.window,
+                        &ui.ctx.bufs,
+                        enabled,
+                        &preset,
+                    );
+                    super::terminal_ui::apply_custom_output_rules(
+                        &ui.window,
+                        &ui.ctx.bufs,
+                        &rules,
+                    );
+                },
+            },
+            // ── WSL 启动项（整表替换）──────────────────────────────────
+            SettingDef {
+                key: "wsl.profiles",
+                kind: SettingKind::Structured,
+                get: |ui| json!(ui.ctx.store.borrow().wsl_profiles()),
+                set: |ui, value| {
+                    let items = value.as_array().ok_or_else(|| {
+                        McpError::Invalid("`wsl.profiles` must be an array".into())
+                    })?;
+                    let existing = ui.ctx.store.borrow().wsl_profiles().to_vec();
+                    let mut profiles = Vec::with_capacity(items.len());
+                    for item in items {
+                        let name = item
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .trim()
+                            .to_string();
+                        if name.is_empty() {
+                            return Err(McpError::Invalid(
+                                "wsl profile `name` is required".to_string(),
+                            ));
+                        }
+                        // 带 id 就沿用（更新），否则按同名匹配旧条目，最后才新建。
+                        let id = item
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .filter(|id| !id.is_empty())
+                            .map(str::to_string)
+                            .or_else(|| {
+                                existing
+                                    .iter()
+                                    .find(|profile| profile.name == name)
+                                    .map(|profile| profile.id.clone())
+                            })
+                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                        profiles.push(crate::config::WslProfile {
+                            id,
+                            name,
+                            distribution: item
+                                .get("distribution")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .trim()
+                                .to_string(),
+                            directory: item
+                                .get("directory")
+                                .and_then(Value::as_str)
+                                .unwrap_or("~")
+                                .to_string(),
+                        });
+                    }
+                    ui.ctx.store.borrow_mut().set_wsl_profiles(profiles);
+                    Ok(())
+                },
+                apply: |ui, _| {
+                    let model = super::session_models::wsl_profile_model(&ui.ctx.store.borrow());
+                    ui.window.set_wsl_profiles(model);
+                    // 设置窗口拿到的是独立副本，不同步就会显示旧列表。
+                    super::settings_window::resync_if_open(&ui.window);
+                },
+            },
         ]
     })
+}
+
+/// WebDAV 没有单项 setter：读齐其余字段后整组写回，只替换传进来的那一项。
+fn webdav_update(
+    ui: &UiAccess,
+    url: Option<String>,
+    username: Option<String>,
+    remote_path: Option<String>,
+) -> Result<(), McpError> {
+    let mut store = ui.ctx.store.borrow_mut();
+    let enabled = store.webdav_enabled();
+    let url = url.unwrap_or_else(|| store.webdav_url().to_string());
+    let username = username.unwrap_or_else(|| store.webdav_username().to_string());
+    // 口令不在白名单里，但整组写回时必须带上，否则会被空串覆盖掉。
+    let password = store.webdav_password().to_string();
+    let remote_path = remote_path.unwrap_or_else(|| store.webdav_remote_path().to_string());
+    let certs = store.webdav_accept_invalid_certs();
+    store.set_webdav_settings(enabled, url, username, password, remote_path, certs);
+    Ok(())
 }
 
 fn validate(kind: &SettingKind, value: &Value) -> Result<(), &'static str> {
@@ -518,7 +953,137 @@ fn validate(kind: &SettingKind, value: &Value) -> Result<(), &'static str> {
             }
             _ => Err("expected_hex_color"),
         },
+        SettingKind::Text => value.as_str().map(|_| ()).ok_or("expected_string"),
+        SettingKind::Structured => {
+            if value.is_object() || value.is_array() {
+                Ok(())
+            } else {
+                Err("expected_object_or_array")
+            }
+        }
     }
+}
+
+/// 依赖当前配置的上界 / 禁止携带凭据的键，放这里统一前置校验。
+///
+/// 必须在写入前判断：`set_settings` 是"全部合法才写"，等执行 `set` 时才发现
+/// 不合法，前面几个键已经落库了。
+fn extra_check(ui: &UiAccess, key: &str, value: &Value) -> Result<(), &'static str> {
+    match key {
+        "terminal.font_family" => {
+            let family = value.as_str().unwrap_or_default().trim();
+            if family.is_empty() || family.len() > 64 {
+                return Err("invalid_font_family");
+            }
+        }
+        "terminal.scrollback_lines" => {
+            let max = if ui.ctx.store.borrow().large_scrollback() {
+                crate::config::SCROLLBACK_MAX_LARGE
+            } else {
+                crate::config::SCROLLBACK_MAX
+            };
+            match value.as_u64() {
+                Some(lines) if (100..=max as u64).contains(&lines) => {}
+                _ => return Err("out_of_range"),
+            }
+        }
+        // URL 里嵌口令的话会明文躺进 settings.json：只允许在用户名 / 密码字段里给。
+        "sync.webdav_url" if url_has_userinfo(value.as_str().unwrap_or_default()) => {
+            return Err("credentials_not_allowed_in_url");
+        }
+        "appearance.wallpaper" => {
+            let value = value.as_str().unwrap_or_default();
+            if !matches!(value, "system" | "dark" | "light") {
+                // 其余只可能是已上传壁纸的 id（列表里 theme 为空的那几项）。
+                let known = super::settings::appearance::wallpaper_choices()
+                    .iter()
+                    .any(|choice| choice.theme.is_empty() && choice.wallpaper == value);
+                if !known {
+                    return Err("unknown_wallpaper");
+                }
+            }
+        }
+        "appearance.ui_font" => {
+            let family = value.as_str().unwrap_or_default().trim();
+            if family.len() > 64 {
+                return Err("invalid_font_family");
+            }
+            if !family.is_empty() && !ui_font_exists(family) {
+                return Err("unknown_font_family");
+            }
+        }
+        "terminal.output_highlight" => {
+            let Some(object) = value.as_object() else {
+                return Err("expected_object");
+            };
+            if let Some(preset) = object.get("preset").and_then(Value::as_str)
+                && !matches!(preset, "builtin" | "devops" | "log")
+            {
+                return Err("unknown_value");
+            }
+            if let Some(rules) = object.get("rules") {
+                let Some(items) = rules.as_array() else {
+                    return Err("expected_array");
+                };
+                if items.len() > 200 {
+                    return Err("too_many_rules");
+                }
+                for item in items {
+                    let pattern = item.get("pattern").and_then(Value::as_str).unwrap_or("");
+                    if pattern.trim().is_empty() {
+                        return Err("invalid_rule_pattern");
+                    }
+                }
+            }
+        }
+        "wsl.profiles" => {
+            let Some(items) = value.as_array() else {
+                return Err("expected_array");
+            };
+            if items.len() > 64 {
+                return Err("too_many_profiles");
+            }
+            for item in items {
+                let name = item.get("name").and_then(Value::as_str).unwrap_or("");
+                if name.trim().is_empty() {
+                    return Err("invalid_profile_name");
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// 字体选择器用的目录：与 `settings_ui` 播种时同一套 `FontCatalog` 规则，
+/// 保证 MCP 写入后的选中项与界面自己算出来的一致。
+fn font_catalog() -> super::settings::FontCatalog {
+    let external = crate::fonts::load_external_fonts(&crate::fonts::external_fonts_dirs());
+    let (_, term) = super::fonts_ui::font_choices(&external, true);
+    let (_, mut ui) = super::fonts_ui::font_choices(&external, false);
+    // 界面字体列表最前面是「跟随系统（自动）」= 空串。
+    ui.insert(0, super::fonts_ui::FontEntry::Auto);
+    super::settings::FontCatalog {
+        term: Rc::new(term),
+        ui: Rc::new(ui),
+    }
+}
+
+/// 界面字体是否存在于可选列表（内嵌 + 外置 + 系统字体）。
+fn ui_font_exists(family: &str) -> bool {
+    let external = crate::fonts::load_external_fonts(&crate::fonts::external_fonts_dirs());
+    let (_, entries) = super::fonts_ui::font_choices(&external, false);
+    entries.iter().any(|entry| match entry {
+        super::fonts_ui::FontEntry::Family(name) => name == family,
+        _ => false,
+    })
+}
+
+/// `scheme://user:pass@host/...` 里的 authority 是否带 userinfo。
+fn url_has_userinfo(url: &str) -> bool {
+    url.split_once("://")
+        .and_then(|(_, rest)| rest.split('/').next())
+        .is_some_and(|authority| authority.contains('@'))
 }
 
 /// 读设置。`keys` 为空 = 返回整张白名单。
@@ -554,7 +1119,9 @@ pub(crate) async fn set_settings(values: serde_json::Map<String, Value>) -> Resu
         for (key, value) in &values {
             match table.iter().find(|def| def.key == key) {
                 Some(def) => {
-                    if let Err(reason) = validate(&def.kind, value) {
+                    if let Err(reason) = validate(&def.kind, value)
+                        .and_then(|_| extra_check(ui, key, value))
+                    {
                         rejected.push(json!({ "key": key, "reason": reason }));
                     }
                 }
@@ -569,18 +1136,18 @@ pub(crate) async fn set_settings(values: serde_json::Map<String, Value>) -> Resu
         }
 
         let mut applied = Vec::new();
-        let mut defs: Vec<&SettingDef> = Vec::new();
+        let mut defs: Vec<(&SettingDef, &Value)> = Vec::new();
         for (key, value) in &values {
             if let Some(def) = table.iter().find(|def| def.key == key) {
                 (def.set)(ui, value)?;
-                defs.push(def);
+                defs.push((def, value));
                 applied.push(key.clone());
             }
         }
         // 只触发一次防抖写盘：逐键 save() 会重写整个 sessions.json。
         super::settings::persist(&ui.ctx.store, |_| {});
-        for def in defs {
-            (def.apply)(ui);
+        for (def, value) in defs {
+            (def.apply)(ui, value);
         }
         Ok(json!({ "applied": applied, "rejected": [] }))
     })
@@ -668,6 +1235,16 @@ pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
                 session.proxy_user = String::new();
                 session.proxy_pass = Secret::default();
             } else {
+                // 只认这四种 scheme：`ftp://x:1` 这种会被 `parse` 当成主机名放过去，
+                // 存下来只会到连接时才报一个莫名其妙的错。
+                let lower = value.to_ascii_lowercase();
+                if let Some((scheme, _)) = lower.split_once("://")
+                    && !matches!(scheme, "socks5" | "socks5h" | "socks" | "http")
+                {
+                    return Err(McpError::Invalid(format!(
+                        "`proxy` scheme is not supported: {scheme}:// (use socks5:// or http://)"
+                    )));
+                }
                 // 地址里可以带 user:pass：拆到独立字段，密码才能加密落盘。
                 let (proxy_type, hostport) = crate::app::split_proxy(value);
                 let (url, user, pass) =
@@ -1055,4 +1632,48 @@ fn session_row(session: &Session) -> Value {
             .collect::<Vec<_>>(),
         "jump_session_id": session.jump_session_id,
     })
+}
+
+/// MCP 的动作类调用：`check_update` / `webdav_upload` / `webdav_download`。
+/// 这三件事在界面上就是回调，这里只负责触发并把"已开始"回给客户端 ——
+/// 进度和结果落在状态栏 / 设置页，不在这份返回值里。
+pub(crate) async fn run_action(action: String) -> Result<Value, McpError> {
+    call(READ_TIMEOUT, move |ui| {
+        match action.as_str() {
+            "check_update" => ui.window.invoke_check_update_now(),
+            "webdav_upload" => ui.window.invoke_webdav_upload(),
+            "webdav_download" => ui.window.invoke_webdav_download(),
+            other => {
+                return Err(McpError::Invalid(format!(
+                    "unknown action: {other} (expected check_update / webdav_upload / webdav_download)"
+                )));
+            }
+        }
+        Ok(json!({ "started": true, "action": action }))
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn webdav_url_rejects_embedded_credentials() {
+        assert!(url_has_userinfo("https://bob:pw@dav.example.com/remote.php"));
+        assert!(url_has_userinfo("https://bob@dav.example.com"));
+        assert!(!url_has_userinfo("https://dav.example.com/remote.php"));
+        // `@` 出现在路径里不算 userinfo。
+        assert!(!url_has_userinfo("https://dav.example.com/dav/user@example.com"));
+        assert!(!url_has_userinfo(""));
+        assert!(!url_has_userinfo("localhost:8080"));
+    }
+
+    #[test]
+    fn text_kind_requires_a_string() {
+        assert!(validate(&SettingKind::Text, &json!("x")).is_ok());
+        assert!(validate(&SettingKind::Text, &json!("")).is_ok());
+        assert_eq!(validate(&SettingKind::Text, &json!(1)), Err("expected_string"));
+        assert_eq!(validate(&SettingKind::Text, &json!(true)), Err("expected_string"));
+    }
 }

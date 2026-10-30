@@ -34,7 +34,7 @@ fn freq_labels() -> Vec<slint::SharedString> {
 ///
 /// `raw_proxy` 把用户正在输入的原文回填界面：配置层存的是 trim 后的值，直接拿库里的值
 /// 回写会在输入过程中吞掉首尾空格、光标跟着跳。
-fn apply_net(w: &AppWindow, store: &Store, raw_proxy: Option<&str>) {
+pub(crate) fn apply_net(w: &AppWindow, store: &Store, raw_proxy: Option<&str>) {
     let (enabled, proxy) = {
         let s = store.borrow();
         (s.update_proxy_enabled(), s.update_proxy().to_string())
@@ -69,8 +69,13 @@ pub(crate) fn bind(w: &AppWindow, store: &Store) {
     apply_net(w, &store, None);
 
     let store_cb = store.clone();
+    let weak_check = w.as_weak();
     w.on_set_update_check_enabled(move |v| {
         persist(&store_cb, |s| s.set_update_check_enabled(v));
+        // 主窗口属性是设置窗的播种源，不回写会"改了 → 重开显示旧值"。
+        if let Some(w) = weak_check.upgrade() {
+            w.set_update_check_enabled(v);
+        }
     });
 
     let store_cb = store.clone();
