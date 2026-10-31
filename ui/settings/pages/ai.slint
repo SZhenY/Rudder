@@ -8,7 +8,8 @@ import { SettingsSection } from "../section.slint";
 import { SettingRow, SettingSwitch, ToggleSwitch } from "../chrome.slint";
 import { GhostButton } from "../../widgets.slint";
 import { GroupGap } from "../../components/surfaces.slint";
-import { McpIface, McpPermission } from "../types.slint";
+import { ScrollView } from "std-widgets.slint";
+import { AuditRow, McpClientRow, McpIface } from "../types.slint";
 
 export component AiPage inherits VerticalLayout {
     in property <bool> lang-en;
@@ -21,18 +22,35 @@ export component AiPage inherits VerticalLayout {
     in property <[string]> mcp-urls;
     in-out property <bool> mcp-lan-enabled;
     in property <[McpIface]> mcp-ifaces;
-    in property <[McpPermission]> mcp-permissions;
     in property <string> mcp-token-masked;
     in property <string> mcp-token-plain;
     in-out property <bool> mcp-token-visible;
+    // 可直接粘贴的客户端配置：明文 / 掩码两份，显示哪份由上面的「显示」开关决定。
+    in property <string> mcp-json;
+    in property <string> mcp-json-masked;
 
     callback set-mcp-enabled(bool);
     callback set-mcp-port(string) -> bool;
     callback set-mcp-lan(bool);
     callback toggle-mcp-iface(string);
-    callback toggle-mcp-permission(string);
     callback copy-mcp-token();
     callback regenerate-mcp-token();
+    callback copy-mcp-json();
+
+    // 已接入的客户端：每个客户端一行 header + 12 行权限开关（扁平模型）。
+    in property <[McpClientRow]> mcp-clients;
+    callback toggle-mcp-client-permission(string, string, bool);
+    callback disconnect-mcp-client(string);
+
+    // 审计
+    in-out property <bool> mcp-audit-enabled: true;
+    in-out property <string> mcp-audit-retention: "14";
+    in-out property <bool> mcp-audit-retention-valid: true;
+    in property <bool> mcp-audit-degraded;
+    in property <[AuditRow]> mcp-recent-calls;
+    callback set-mcp-audit-enabled(bool);
+    callback set-mcp-audit-retention(string) -> bool;
+    callback open-mcp-log-dir();
 
     padding-left: 20px;
     padding-right: 20px;
@@ -195,22 +213,287 @@ export component AiPage inherits VerticalLayout {
 
     GroupGap { gap: Theme.gap-sm; }
 
+    // ── 客户端配置 ──────────────────────────────────────────────────────
+    // 给一整段能直接粘进 MCP 客户端（`mcpServers` 结构）的 JSON。省掉用户手写
+    // 地址与 Bearer 头这一步 —— 这两样恰好是最容易填错、也最容易过期的东西。
     SettingsSection {
-        section-id: "ai.permissions";
+        section-id: "ai.client";
         lang-en: root.lang-en;
-        title-zh: "工具权限";
-        title-en: "TOOL PERMISSIONS";
+        title-zh: "客户端配置";
+        title-en: "CLIENT CONFIG";
         title-height: 24px;
 
-        // 默认全关；逐项授权。模型由 Rust 侧按工具集生成，加工具只改一处。
-        for permission in root.mcp-permissions : SettingSwitch {
-            label: permission.label;
-            interactive: root.mcp-enabled;
-            // 值来自模型行：必须走 mirror，否则用户点过一次就会拆掉这条绑定，
-            // 之后总开关关闭时模型推下来的 false 传不进来（只置灰、不关闭）。
-            mirror: true;
-            checked: permission.enabled;
-            toggled(v) => { root.toggle-mcp-permission(permission.key); }
+        SettingRow {
+            label: "mcp.json";
+            desc: root.lang-en
+                ? "Paste as-is into your MCP client. Copy always takes the real token; the preview stays masked until you press Show above."
+                : "整段粘进客户端的 MCP 配置文件即可连接。「复制配置」始终复制完整令牌；预览框在你点上面的「显示」之前只显示掩码。";
+            // 代码框属于这一行，不画分隔线。
+            show-divider: false;
+            GhostButton {
+                text: root.lang-en ? "Copy config" : "复制配置";
+                clicked => { root.copy-mcp-json(); }
+            }
+        }
+
+        VerticalLayout {
+            padding-top: 9px;
+            padding-bottom: 9px;
+            spacing: 0;
+
+            Rectangle {
+                // 固定高度而不是按内容撑开：`TextInput` 的 preferred-height 在
+                // 未约束宽度时不等于换行后的高度，绑上去会算错。11 行的片段在
+                // 默认字号下刚好放下，字号放大时截断而不外溢。
+                height: 224px;
+                clip: true;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.border-subtle;
+                background: Theme.bg-root;
+
+                TextInput {
+                    read-only: true;
+                    single-line: false;
+                    wrap: word-wrap;
+                    x: 10px;
+                    y: 8px;
+                    width: parent.width - 20px;
+                    height: parent.height - 16px;
+                    font-family: Theme.font-mono;
+                    font-size: 11px * Theme.panel-font;
+                    color: Theme.text-primary;
+                    text: root.mcp-token-visible ? root.mcp-json : root.mcp-json-masked;
+                }
+
+                // 没有令牌时（服务从没启用过）给一句说明，而不是一个空框。
+                if root.mcp-json == "" : Text {
+                    x: 12px;
+                    y: 12px;
+                    width: parent.width - 24px;
+                    text: root.lang-en
+                        ? "Turn the MCP server on first: the snippet appears once a token exists."
+                        : "先启用 MCP 服务：生成令牌后这里才会出现配置。";
+                    color: Theme.text-muted;
+                    font-size: 11px * Theme.panel-font;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+
+    GroupGap { gap: Theme.gap-sm; }
+
+    // ── 已接入的客户端 ──────────────────────────────────────────────────
+    SettingsSection {
+        section-id: "ai.clients";
+        lang-en: root.lang-en;
+        title-zh: "客户端";
+        title-en: "CLIENTS";
+        title-height: 24px;
+
+        if root.mcp-clients.length == 0 : Text {
+            text: root.lang-en ? "No client connected." : "当前没有客户端连接。";
+            color: Theme.text-muted;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+            height: 36px;
+        }
+
+        for row in root.mcp-clients : VerticalLayout {
+            spacing: 0;
+
+            if row.kind == "header" : VerticalLayout {
+                spacing: 0;
+                padding-top: 10px;
+                padding-bottom: 4px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text {
+                            text: row.client;
+                            font-size: 13px * Theme.panel-font;
+                            color: Theme.text-primary;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: row.since + " · " + row.status;
+                            font-size: 11px * Theme.panel-font;
+                            color: Theme.text-muted;
+                            overflow: elide;
+                        }
+                    }
+                    GhostButton {
+                        text: root.lang-en ? "Disconnect" : "断开";
+                        clicked => { root.disconnect-mcp-client(row.session-id); }
+                    }
+                }
+            }
+
+            if row.kind == "permission" : VerticalLayout {
+                spacing: 0;
+
+                if row.risk != "" : VerticalLayout {
+                    spacing: 2px;
+                    padding-top: 8px;
+                    padding-bottom: 2px;
+                    Text {
+                        text: row.risk;
+                        font-size: 12px * Theme.panel-font;
+                        font-weight: 700;
+                        color: Theme.text-primary;
+                    }
+                    if row.risk-note != "" : Text {
+                        text: row.risk-note;
+                        font-size: 11px * Theme.panel-font;
+                        color: Theme.text-muted;
+                        wrap: word-wrap;
+                    }
+                }
+
+                if row.group != "" : Text {
+                    text: row.group;
+                    font-size: 11px * Theme.panel-font;
+                    font-weight: 700;
+                    color: Theme.text-muted;
+                    height: 24px;
+                    vertical-alignment: bottom;
+                }
+
+                SettingSwitch {
+                    label: row.label;
+                    desc: row.desc;
+                    interactive: root.mcp-enabled;
+                    mirror: true;
+                    checked: row.enabled;
+                    toggled(v) => { root.toggle-mcp-client-permission(row.session-id, row.key, v); }
+                }
+            }
+        }
+    }
+
+    GroupGap { gap: Theme.gap-sm; }
+
+    // ── 审计日志 ────────────────────────────────────────────────────────
+    SettingsSection {
+        section-id: "ai.audit";
+        lang-en: root.lang-en;
+        title-zh: "审计日志";
+        title-en: "AUDIT LOG";
+        title-height: 24px;
+
+        SettingSwitch {
+            label: root.lang-en ? "Record tool calls" : "记录工具调用";
+            desc: root.lang-en
+                ? "One NDJSON line per call, rotated daily under log/. Passwords and typed text are never written."
+                : "每次调用写一行 NDJSON，按天切分放在 log/ 下。口令与输入正文不会写入。";
+            show-divider: true;
+            checked <=> root.mcp-audit-enabled;
+            toggled(v) => { root.set-mcp-audit-enabled(v); }
+        }
+
+        SettingRow {
+            label: root.lang-en ? "Keep for" : "保留天数";
+            desc: root.lang-en
+                ? "0 = keep forever. Older audit-YYYY-MM-DD.ndjson files are removed on day change."
+                : "0 = 永久保留。换天时删除超过该天数的 audit-YYYY-MM-DD.ndjson。";
+            show-divider: !root.mcp-audit-degraded;
+            Rectangle {
+                width: 110px;
+                height: 30px;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: root.mcp-audit-retention-valid ? Theme.border-subtle : Theme.danger;
+                background: root.mcp-audit-enabled ? Theme.bg-root : Theme.bg-elevated;
+                TextInput {
+                    input-method-hints: Theme.plain-input-hints;
+                    enabled: root.mcp-audit-enabled;
+                    x: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    color: root.mcp-audit-enabled ? Theme.text-primary : Theme.text-muted;
+                    text <=> root.mcp-audit-retention;
+                    edited => {
+                        root.mcp-audit-retention-valid = root.set-mcp-audit-retention(root.mcp-audit-retention);
+                    }
+                }
+            }
+        }
+
+        if root.mcp-audit-degraded : SettingRow {
+            label: root.lang-en ? "Status" : "状态";
+            desc: root.lang-en
+                ? "Audit is degraded: the log directory is not writable. Tool calls keep working."
+                : "审计已降级：日志目录不可写。工具调用不受影响。";
+            show-divider: false;
+        }
+
+        SettingRow {
+            label: root.lang-en ? "Recent calls" : "最近调用";
+            desc: "";
+            show-divider: true;
+            Rectangle {
+                width: 100%;
+                height: 132px;
+                background: Theme.bg-root;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.border-subtle;
+                ScrollView {
+                    width: 100%;
+                    height: 100%;
+                    content-width: self.width;
+                    VerticalLayout {
+                        padding: 6px;
+                        spacing: 2px;
+                        if root.mcp-recent-calls.length == 0 : Text {
+                            text: root.lang-en ? "No calls yet." : "还没有调用记录。";
+                            color: Theme.text-muted;
+                            font-size: Theme.fs-xs;
+                            height: 20px;
+                        }
+                        for call in root.mcp-recent-calls : HorizontalLayout {
+                            height: 20px;
+                            spacing: 8px;
+                            Text {
+                                text: call.at;
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-xs;
+                                width: 56px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: call.tool;
+                                color: call.ok ? Theme.text-primary : Theme.danger;
+                                font-size: Theme.fs-xs;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: call.ok ? (call.ms + " ms") : call.result;
+                                color: call.ok ? Theme.text-muted : Theme.danger;
+                                font-size: Theme.fs-xs;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        SettingRow {
+            label: root.lang-en ? "Log folder" : "日志目录";
+            desc: "";
+            show-divider: false;
+            GhostButton {
+                text: root.lang-en ? "Open" : "打开";
+                clicked => { root.open-mcp-log-dir(); }
+            }
         }
     }
 }

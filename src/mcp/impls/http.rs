@@ -22,7 +22,7 @@ use serde_json::json;
 
 use super::auth;
 use super::handler::McpHandler;
-use super::types::{ClientLease, SharedState};
+use super::types::{ClientLease, CloseReason, SharedState};
 
 /// 请求体上限。工具调用的参数都是短 JSON，1 MiB 已经远超实际需要。
 const MAX_BODY: usize = 1024 * 1024;
@@ -100,32 +100,21 @@ async fn guard(State(state): State<SharedState>, request: Request, next: Next) -
         return failure(StatusCode::BAD_REQUEST, "ambiguous session id");
     }
 
-    // 单客户端：不带会话 id 的 POST 只可能是 initialize；已有活跃租约就 409。
+    // 多客户端：每个 session id 对应一份租约；不带 id 的 POST 只可能是 initialize。
     let now = Instant::now();
-    {
-        let mut lease = state.lease.lock().await;
-        if lease
-            .as_ref()
-            .is_some_and(|current: &ClientLease| current.expired(now))
-        {
-            *lease = None;
+    state.prune_expired(now);
+    if let Some(requested) = &session {
+        // 租约已不在（空闲过期 / 拒绝 / 断开 / 令牌轮换）：rmcp 可能仍认识这个会话，
+        // 放行等于"清租约不断权"，必须挡回去逼客户端重新 initialize。
+        // DELETE 例外：那是客户端主动收尾。
+        if !state.touch(requested, now) && method != Method::DELETE {
+            return failure(
+                StatusCode::NOT_FOUND,
+                "MCP session expired; initialize again",
+            );
         }
-        match (&session, lease.as_mut()) {
-            (None, Some(_)) => {
-                return failure(
-                    StatusCode::CONFLICT,
-                    "another MCP client is already connected",
-                );
-            }
-            (Some(requested), Some(current)) if requested != &current.session_id => {
-                return failure(
-                    StatusCode::NOT_FOUND,
-                    "MCP session not found; initialize again",
-                );
-            }
-            (Some(_), Some(current)) => current.last_seen = now,
-            _ => {}
-        }
+    } else if state.at_capacity() {
+        return failure(StatusCode::TOO_MANY_REQUESTS, "too many MCP clients");
     }
 
     let (mut parts, body) = request.into_parts();
@@ -140,22 +129,22 @@ async fn guard(State(state): State<SharedState>, request: Request, next: Next) -
             .get("mcp-session-id")
             .and_then(|value| value.to_str().ok())
         {
-            *state.lease.lock().await = Some(ClientLease {
-                session_id: id.to_owned(),
-                last_seen: Instant::now(),
-            });
+            let id = id.to_owned();
+            if state.insert_lease(id.clone()) {
+                audit_session(&state, "session_open", "", &id);
+            } else {
+                // 并发下超出上限：这次会话没有租约，客户端下一次请求会拿 404。
+                tracing::warn!("mcp: client limit reached; refusing session {}", &id[..id.len().min(8)]);
+            }
         }
     } else if method == Method::DELETE && response.status().is_success() {
-        let mut lease = state.lease.lock().await;
-        if lease.as_ref().map(|current| &current.session_id) == session.as_ref() {
-            *lease = None;
+        if let Some(id) = session.as_deref() {
+            state.close_session(id, CloseReason::Delete);
         }
     } else if response.status() == StatusCode::NOT_FOUND {
-        // rmcp 已经不认这个会话（空闲超时被回收）。租约留着只会让客户端在下次
-        // initialize 时吃 409，白等一个空闲周期 —— 立刻释放，让它重连。
-        let mut lease = state.lease.lock().await;
-        if lease.as_ref().map(|current| &current.session_id) == session.as_ref() {
-            *lease = None;
+        // rmcp 已经不认这个会话（空闲超时被回收）。
+        if let Some(id) = session.as_deref() {
+            state.close_session(id, CloseReason::NotFound);
         }
     }
 
@@ -163,6 +152,19 @@ async fn guard(State(state): State<SharedState>, request: Request, next: Next) -
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+/// 会话建立 / 关闭只进审计文件，不进 AI 页的"最近调用"列表。
+fn audit_session(state: &SharedState, event: &str, reason: &str, session: &str) {
+    if !state.config().audit.enabled {
+        return;
+    }
+    crate::mcp::record_event(serde_json::json!({
+        "ts": chrono::Local::now().to_rfc3339(),
+        "event": event,
+        "session": session.chars().take(8).collect::<String>(),
+        "reason": reason,
+    }));
 }
 
 /// 只接受单个 `Authorization: Bearer <token>`。多值或换 scheme 一律拒绝。
@@ -213,7 +215,7 @@ fn method_not_allowed() -> Response {
 #[cfg(test)]
 mod tests {
     //! 边界行为测试：不需要真实端口，也不需要 GUI —— 直接驱动 axum 的 Router。
-    //! 覆盖鉴权、Origin 拒绝、单客户端租约与工具调用链。
+    //! 覆盖鉴权、多客户端租约、按会话授权与工具列表过滤。
 
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
@@ -225,9 +227,10 @@ mod tests {
     use tower::ServiceExt;
 
     use super::super::types::{
-        AppHandles, McpConfigSnapshot, McpState, Permissions, SharedState,
+        AppHandles, CloseReason, McpConfigSnapshot, McpState, SharedState,
     };
     use super::MAX_BODY;
+    use crate::mcp::Permissions;
 
     const TOKEN: &str = "rk_test";
 
@@ -235,7 +238,12 @@ mod tests {
 
     const CALL_INFO: &str = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_server_info","arguments":{}}}"#;
 
-    fn state() -> SharedState {
+    /// 只需要 `file_upload`，不依赖 tab 类型，适合验证授权门。
+    const CALL_UPLOAD: &str = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"sftp_upload","arguments":{"tab_id":"t1","local_path":"/tmp/x","remote_path":"/tmp/y"}}}"#;
+
+    const LIST_TOOLS: &str = r#"{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}"#;
+
+    fn state(consent: crate::mcp::ConsentPolicy) -> SharedState {
         Arc::new(McpState::new(
             McpConfigSnapshot {
                 enabled: true,
@@ -244,7 +252,12 @@ mod tests {
                 lan_enabled: false,
                 lan_ifaces: Vec::new(),
                 token: TOKEN.to_string(),
-                perms: Permissions::default(),
+                client_grants: Vec::new(),
+                consent,
+                audit: super::super::types::AuditConfig {
+                    enabled: false,
+                    retention_days: 0,
+                },
             },
             AppHandles {
                 bufs: Arc::new(Mutex::new(HashMap::new())),
@@ -252,34 +265,43 @@ mod tests {
                 local_snap: Arc::new(Mutex::new(Default::default())),
                 sftp_handles: Arc::new(Mutex::new(HashMap::new())),
             },
+            tokio::runtime::Handle::current(),
         ))
     }
 
-    fn app(state: SharedState) -> Router {
+    fn router_for(state: SharedState) -> Router {
         super::router(state, StreamableHttpServerConfig::default())
     }
 
-    fn post(body: &str, token: Option<&str>) -> Request<Body> {
-        let mut builder = Request::builder()
+    fn post(body: &str) -> Request<Body> {
+        Request::builder()
             .method("POST")
             .uri("/mcp")
             // 真实服务端会由 HTTP 层补上 Host；直接驱动 Router 时要自己给，
             // 否则 rmcp 的 allowed_hosts 校验会把请求判成 400。
             .header(header::HOST, "127.0.0.1:8765")
             .header(header::CONTENT_TYPE, "application/json")
-            .header(header::ACCEPT, "application/json, text/event-stream");
-        if let Some(token) = token {
-            builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
-        }
-        builder.body(Body::from(body.to_string())).unwrap()
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    fn post_with_session(body: &str, session: &str) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header(header::HOST, "127.0.0.1:8765")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+            .header("mcp-session-id", session)
+            .body(Body::from(body.to_string()))
+            .unwrap()
     }
 
     async fn open_session(app: &Router) -> String {
-        let response = app
-            .clone()
-            .oneshot(post(INITIALIZE, Some(TOKEN)))
-            .await
-            .unwrap();
+        let response = app.clone().oneshot(post(INITIALIZE)).await.unwrap();
         let status = response.status();
         let session = response
             .headers()
@@ -295,15 +317,32 @@ mod tests {
         session.expect("initialize must issue a session id")
     }
 
+    async fn call(app: &Router, session: &str, body: &str) -> (StatusCode, String) {
+        let response = app
+            .clone()
+            .oneshot(post_with_session(body, session))
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        (status, String::from_utf8_lossy(&bytes).to_string())
+    }
+
     #[tokio::test]
     async fn rejects_missing_or_wrong_token() {
-        let app = app(state());
+        let app = router_for(state(crate::mcp::ConsentPolicy::Auto));
         for token in [None, Some("rk_wrong")] {
-            let response = app
-                .clone()
-                .oneshot(post(INITIALIZE, token))
-                .await
-                .unwrap();
+            let mut builder = Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header(header::HOST, "127.0.0.1:8765")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream");
+            if let Some(token) = token {
+                builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            let request = builder.body(Body::from(INITIALIZE)).unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
             assert!(response.headers().contains_key(header::WWW_AUTHENTICATE));
         }
@@ -318,28 +357,58 @@ mod tests {
             .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
             .body(Body::from(INITIALIZE))
             .unwrap();
-        let response = app(state()).oneshot(request).await.unwrap();
+        let response = router_for(state(crate::mcp::ConsentPolicy::Auto))
+            .oneshot(request)
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
+    /// 多客户端：第二个 initialize 不再 409，各自拿到独立 session id。
     #[tokio::test]
-    async fn initialize_issues_a_session_and_a_second_client_is_refused() {
-        let app = app(state());
-        let session = open_session(&app).await;
-        assert!(!session.is_empty());
-
-        let second = app
-            .clone()
-            .oneshot(post(INITIALIZE, Some(TOKEN)))
-            .await
-            .unwrap();
-        assert_eq!(second.status(), StatusCode::CONFLICT);
+    async fn multiple_clients_get_independent_sessions() {
+        let state = state(crate::mcp::ConsentPolicy::Auto);
+        let app = router_for(state.clone());
+        let first = open_session(&app).await;
+        let second = open_session(&app).await;
+        assert_ne!(first, second);
+        assert_eq!(state.lease_count(), 2);
     }
 
-    /// 超过上限的请求体要在进 rmcp 之前挡掉：`Limited` 抛错时只会变成 500。
+    /// 超过上限时 initialize 被挡在 429，不再创建第 9 个租约。
+    #[tokio::test]
+    async fn client_limit_is_enforced() {
+        let state = state(crate::mcp::ConsentPolicy::Auto);
+        let app = router_for(state.clone());
+        for _ in 0..McpState::MAX_CLIENTS {
+            let _ = open_session(&app).await;
+        }
+        let response = app.clone().oneshot(post(INITIALIZE)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    /// 未知 / 已断开的 session id 必须 404，不能放行到 rmcp。
+    #[tokio::test]
+    async fn unknown_or_closed_session_is_rejected() {
+        let state = state(crate::mcp::ConsentPolicy::Auto);
+        let app = router_for(state.clone());
+        let session = open_session(&app).await;
+
+        state.close_session(&session, CloseReason::Disconnected);
+        let (status, _) = call(&app, &session, CALL_INFO).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // 席位已释放：新客户端可以立刻 initialize。
+        let fresh = open_session(&app).await;
+        assert!(!fresh.is_empty());
+
+        let (status, _) = call(&app, "not-a-session", CALL_INFO).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
     #[tokio::test]
     async fn oversized_body_is_rejected_with_413() {
-        let app = app(state());
+        let app = router_for(state(crate::mcp::ConsentPolicy::Auto));
         let session = open_session(&app).await;
         let request = Request::builder()
             .method("POST")
@@ -355,53 +424,49 @@ mod tests {
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
-    /// 会话被 rmcp 回收后必须释放租约：否则客户端下一次 initialize 只会拿到
-    /// 409，白白空等一个空闲周期。
-    #[tokio::test]
-    async fn unknown_session_releases_the_lease() {
-        let state = state();
-        // 第一个路由的会话管理器认识新会话；第二个相当于"会话已被回收"的服务端。
-        let first = super::router(state.clone(), StreamableHttpServerConfig::default());
-        let stale = open_session(&first).await;
-        let second = super::router(state, StreamableHttpServerConfig::default());
-
-        let request = Request::builder()
-            .method("POST")
-            .uri("/mcp")
-            .header(header::HOST, "127.0.0.1:8765")
-            .header(header::CONTENT_TYPE, "application/json")
-            .header(header::ACCEPT, "application/json, text/event-stream")
-            .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
-            .header("mcp-session-id", &stale)
-            .body(Body::from(CALL_INFO))
-            .unwrap();
-        let response = second.clone().oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-        // 租约已释放 → 重新 initialize 能成功，而不是 409。
-        let fresh = open_session(&second).await;
-        assert!(!fresh.is_empty());
-    }
-
     #[tokio::test]
     async fn tools_call_reaches_the_handler() {
-        let app = app(state());
+        let app = router_for(state(crate::mcp::ConsentPolicy::Auto));
         let session = open_session(&app).await;
-
-        let request = Request::builder()
-            .method("POST")
-            .uri("/mcp")
-            .header(header::HOST, "127.0.0.1:8765")
-            .header(header::CONTENT_TYPE, "application/json")
-            .header(header::ACCEPT, "application/json, text/event-stream")
-            .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
-            .header("mcp-session-id", &session)
-            .body(Body::from(CALL_INFO))
-            .unwrap();
-        let response = app.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
-        let text = String::from_utf8_lossy(&body);
+        let (status, text) = call(&app, &session, CALL_INFO).await;
+        assert_eq!(status, StatusCode::OK);
         assert!(text.contains("rudder"), "unexpected body: {text}");
     }
+
+    /// 未批准的会话只能拿到 consent_pending；批准后缺位才是 permission_denied。
+    #[tokio::test]
+    async fn pending_session_is_not_allowed_to_call_tools() {
+        let state = state(crate::mcp::ConsentPolicy::Session);
+        let app = router_for(state.clone());
+        let session = open_session(&app).await;
+
+        let (status, text) = call(&app, &session, CALL_UPLOAD).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(text.contains("consent_pending"), "unexpected body: {text}");
+
+        state.approve(&session, Permissions::from_keys(&["read"]));
+        let (_, text) = call(&app, &session, CALL_UPLOAD).await;
+        assert!(text.contains("permission_denied"), "unexpected body: {text}");
+        assert!(text.contains("file_upload"), "unexpected body: {text}");
+    }
+
+    /// `list_tools` 按本次会话的授权过滤；另一个客户端看不到同样的集合。
+    #[tokio::test]
+    async fn tool_list_follows_each_session_grant() {
+        let state = state(crate::mcp::ConsentPolicy::Session);
+        let app = router_for(state.clone());
+        let reader = open_session(&app).await;
+        let executor = open_session(&app).await;
+        state.approve(&reader, Permissions::from_keys(&["read"]));
+        state.approve(&executor, Permissions::from_keys(&["exec"]));
+
+        let (_, read_list) = call(&app, &reader, LIST_TOOLS).await;
+        assert!(read_list.contains("read_terminal"), "{read_list}");
+        assert!(!read_list.contains("sftp_upload"), "{read_list}");
+
+        let (_, exec_list) = call(&app, &executor, LIST_TOOLS).await;
+        assert!(exec_list.contains("run_command"), "{exec_list}");
+        assert!(!exec_list.contains("read_terminal"), "{exec_list}");
+    }
 }
+

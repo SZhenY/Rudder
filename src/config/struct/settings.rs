@@ -261,10 +261,21 @@ pub struct UpdateSettings {
     pub update_proxy: String,
 }
 
+/// 一个 MCP 客户端记住的授权。按 `client_name + version` 匹配；只用于下次连接时
+/// 预勾，仍然每次都要用户点"允许接入"。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct McpClientGrant {
+    /// 客户端标识，形如 `Claude Desktop 0.7.2`。
+    pub id: String,
+    /// 权限 key 列表；读入时忽略未知 key。
+    pub permissions: Vec<String>,
+}
+
 /// AI 页：进程内 MCP server —— 外部 AI agent 通过 HTTP 操作这个正在运行的程序。
 ///
-/// 出厂**关闭**：开启后，任何持有令牌的客户端都能在已保存凭据下开终端、敲命令、
-/// 改配置。权限位一律默认 false，逐项授权（见 `mcp_allow_*`）。
+/// 出厂**关闭**。权限不再有全局开关：每个客户端连接时由弹窗授权，之后在 AI 页的
+/// 客户端卡上逐项开关；这里只保存"按客户端记住"的预勾集合。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct McpSettings {
@@ -280,18 +291,14 @@ pub struct McpSettings {
     pub mcp_lan_ifaces: Vec<String>,
     /// 客户端 Bearer 令牌，与登录口令同样加密落盘。
     pub mcp_token: Secret,
-    /// 允许把字节写进会话的 PTY（等同用户打字）。
-    pub mcp_allow_terminal_input: bool,
-    /// 允许在会话上开一次性 exec 通道执行命令。
-    pub mcp_allow_exec: bool,
-    /// 允许通过 MCP 修改设置。
-    pub mcp_allow_settings_write: bool,
-    /// 允许新增 / 修改 / 删除主机。
-    pub mcp_allow_host_write: bool,
-    /// 允许打开 / 关闭会话标签页。
-    pub mcp_allow_session_open_close: bool,
-    /// 允许通过 SFTP 上传 / 下载文件（可读写本机与远端文件系统）。
-    pub mcp_allow_file_transfer: bool,
+    /// 按客户端记住的授权（最近 32 个）。
+    pub mcp_client_grants: Vec<McpClientGrant>,
+    /// 是否记录审计日志（`<log_dir>/audit-YYYY-MM-DD.ndjson`）。
+    pub mcp_audit_enabled: bool,
+    /// 审计日志保留天数；`0` = 永久保留。
+    pub mcp_audit_retention_days: u16,
+    /// 授权策略：`session`（默认，每个客户端会话单独确认）/ `auto`（仅开发令牌）。
+    pub mcp_consent: String,
 }
 
 impl Default for McpSettings {
@@ -303,12 +310,10 @@ impl Default for McpSettings {
             mcp_lan_enabled: false,
             mcp_lan_ifaces: Vec::new(),
             mcp_token: Secret::default(),
-            mcp_allow_terminal_input: false,
-            mcp_allow_exec: false,
-            mcp_allow_settings_write: false,
-            mcp_allow_host_write: false,
-            mcp_allow_session_open_close: false,
-            mcp_allow_file_transfer: false,
+            mcp_client_grants: Vec::new(),
+            mcp_audit_enabled: true,
+            mcp_audit_retention_days: 14,
+            mcp_consent: "session".to_string(),
         }
     }
 }

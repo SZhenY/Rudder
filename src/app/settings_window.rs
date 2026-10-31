@@ -164,8 +164,10 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_mcp_urls(m.get_mcp_urls());
     sw.set_mcp_token_masked(m.get_mcp_token_masked());
     sw.set_mcp_token_plain(m.get_mcp_token_plain());
+    sw.set_mcp_json(m.get_mcp_json());
+    sw.set_mcp_json_masked(m.get_mcp_json_masked());
     sw.set_mcp_ifaces(m.get_mcp_ifaces());
-    sw.set_mcp_permissions(m.get_mcp_permissions());
+    sw.set_mcp_clients(m.get_mcp_clients());
     sw.set_mcp_port(m.get_mcp_port());
     // 字体 / 壁纸 / 渲染器（其余可能被 Rust 侧规范化或回落的值）
     sw.set_term_font_index(m.get_term_font_index());
@@ -196,6 +198,12 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_output_highlight_preset(m.get_output_highlight_preset());
     sw.set_hide_special_partitions(m.get_hide_special_partitions());
     sw.set_webdav_accept_invalid_certs(m.get_webdav_accept_invalid_certs());
+    // 会话卡与审计：状态由主窗口 1 Hz 维护，这里同步一份给独立窗。
+    sw.set_mcp_audit_enabled(m.get_mcp_audit_enabled());
+    sw.set_mcp_audit_retention(m.get_mcp_audit_retention());
+    sw.set_mcp_audit_retention_valid(m.get_mcp_audit_retention_valid());
+    sw.set_mcp_audit_degraded(m.get_mcp_audit_degraded());
+    sw.set_mcp_recent_calls(m.get_mcp_recent_calls());
     // 异步状态（上传 / 下载 / 更新检查 / 输出高亮规则校验）
     sw.set_webdav_status(m.get_webdav_status());
     sw.set_update_check_status(m.get_update_check_status());
@@ -217,9 +225,11 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_mcp_urls(m.get_mcp_urls());
     sw.set_mcp_lan_enabled(m.get_mcp_lan_enabled());
     sw.set_mcp_ifaces(m.get_mcp_ifaces());
-    sw.set_mcp_permissions(m.get_mcp_permissions());
+    sw.set_mcp_clients(m.get_mcp_clients());
     sw.set_mcp_token_masked(m.get_mcp_token_masked());
     sw.set_mcp_token_plain(m.get_mcp_token_plain());
+    sw.set_mcp_json(m.get_mcp_json());
+    sw.set_mcp_json_masked(m.get_mcp_json_masked());
     sw.set_mcp_token_visible(m.get_mcp_token_visible());
 }
 
@@ -233,6 +243,10 @@ pub(super) fn open_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     // 期间主窗口可能被别处改过（例如「还原本页默认」），重播一次就不会滞后。
     // 值全部从主窗口现成属性拷过来，不需要再从配置重新推导标签 / 模型。
     seed_settings_window(m, sw);
+    // `seed` 只覆盖基础项；AI/MCP 区（令牌、会话卡、审计状态）由后台 1 Hz 改写，
+    // 全在 `sync_settings_reflected` 里。不在这里补一次，开窗首帧会显示
+    // "没有客户端连接 / 权限全关"，最长滞后 1 秒。
+    sync_settings_reflected(m, sw);
     sync_settings_theme(m, sw);
     let _ = sw.show();
     sw.window().with_winit_window(|ww| ww.focus_window());
@@ -443,9 +457,14 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_mcp_port -> invoke_set_mcp_port, (a0));
     forward!(sw, m, s, on_set_mcp_lan => invoke_set_mcp_lan, (a0));
     forward!(sw, m, s, on_toggle_mcp_iface => invoke_toggle_mcp_iface, (a0));
-    forward!(sw, m, s, on_toggle_mcp_permission => invoke_toggle_mcp_permission, (a0));
+    forward!(sw, m, s, on_toggle_mcp_client_permission => invoke_toggle_mcp_client_permission, (a0, a1, a2));
     forward!(sw, m, s, on_copy_mcp_token => invoke_copy_mcp_token, ());
+    forward!(sw, m, s, on_copy_mcp_json => invoke_copy_mcp_json, ());
     forward!(sw, m, s, on_regenerate_mcp_token => invoke_regenerate_mcp_token, ());
+    forward!(sw, m, s, on_disconnect_mcp_client => invoke_disconnect_mcp_client, (a0));
+    forward!(sw, m, s, on_set_mcp_audit_enabled => invoke_set_mcp_audit_enabled, (a0));
+    forward!(sw, m, s, on_set_mcp_audit_retention -> invoke_set_mcp_audit_retention, (a0));
+    forward!(sw, m, s, on_open_mcp_log_dir => invoke_open_mcp_log_dir, ());
 }
 
 #[cfg(test)]

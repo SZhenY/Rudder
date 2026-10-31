@@ -36,7 +36,7 @@ use chacha20poly1305::{
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
-use super::settings::{AppearanceSettings, LayoutSettings, McpSettings, SyncSettings, TerminalSettings, TransferSettings, UpdateSettings};
+use super::settings::{AppearanceSettings, LayoutSettings, McpClientGrant, McpSettings, SyncSettings, TerminalSettings, TransferSettings, UpdateSettings};
 use uuid::Uuid;
 use zeroize::Zeroize;
 
@@ -2444,41 +2444,51 @@ impl ConfigStore {
     pub fn set_mcp_token(&mut self, token: String) {
         self.cache.mcp.mcp_token = Secret::new(token);
     }
-    pub fn mcp_allow_terminal_input(&self) -> bool {
-        self.cache.mcp.mcp_allow_terminal_input
+    /// 记住的客户端授权（最近 32 个，新的在末尾）。
+    pub fn mcp_client_grants(&self) -> &[McpClientGrant] {
+        &self.cache.mcp.mcp_client_grants
     }
-    pub fn set_mcp_allow_terminal_input(&mut self, v: bool) {
-        self.cache.mcp.mcp_allow_terminal_input = v;
+
+    /// 写入/更新一个客户端的记忆授权。空 id 或含控制字符的 id 不写。
+    /// 列表上限 32，超出时丢最旧的（列表头部）。
+    pub fn upsert_mcp_client_grant(&mut self, id: &str, permissions: Vec<String>) {
+        let id = id.trim();
+        if id.is_empty() || id.chars().any(char::is_control) {
+            return;
+        }
+        let mut list = std::mem::take(&mut self.cache.mcp.mcp_client_grants);
+        list.retain(|g| g.id != id);
+        list.push(McpClientGrant {
+            id: id.to_string(),
+            permissions,
+        });
+        if list.len() > 32 {
+            list.drain(..list.len() - 32);
+        }
+        self.cache.mcp.mcp_client_grants = list;
     }
-    pub fn mcp_allow_exec(&self) -> bool {
-        self.cache.mcp.mcp_allow_exec
+    pub fn mcp_audit_enabled(&self) -> bool {
+        self.cache.mcp.mcp_audit_enabled
     }
-    pub fn set_mcp_allow_exec(&mut self, v: bool) {
-        self.cache.mcp.mcp_allow_exec = v;
+    pub fn set_mcp_audit_enabled(&mut self, v: bool) {
+        self.cache.mcp.mcp_audit_enabled = v;
     }
-    pub fn mcp_allow_settings_write(&self) -> bool {
-        self.cache.mcp.mcp_allow_settings_write
+    /// 保留天数：0 = 永久；其余夹到 1..=365，避免一个 0 或 65535 造成意外。
+    pub fn mcp_audit_retention_days(&self) -> u16 {
+        match self.cache.mcp.mcp_audit_retention_days {
+            0 => 0,
+            days => days.clamp(1, 365),
+        }
     }
-    pub fn set_mcp_allow_settings_write(&mut self, v: bool) {
-        self.cache.mcp.mcp_allow_settings_write = v;
+    pub fn set_mcp_audit_retention_days(&mut self, days: u16) {
+        self.cache.mcp.mcp_audit_retention_days = days;
     }
-    pub fn mcp_allow_host_write(&self) -> bool {
-        self.cache.mcp.mcp_allow_host_write
-    }
-    pub fn set_mcp_allow_host_write(&mut self, v: bool) {
-        self.cache.mcp.mcp_allow_host_write = v;
-    }
-    pub fn mcp_allow_session_open_close(&self) -> bool {
-        self.cache.mcp.mcp_allow_session_open_close
-    }
-    pub fn set_mcp_allow_session_open_close(&mut self, v: bool) {
-        self.cache.mcp.mcp_allow_session_open_close = v;
-    }
-    pub fn mcp_allow_file_transfer(&self) -> bool {
-        self.cache.mcp.mcp_allow_file_transfer
-    }
-    pub fn set_mcp_allow_file_transfer(&mut self, v: bool) {
-        self.cache.mcp.mcp_allow_file_transfer = v;
+    /// 授权策略，只认 `session` / `auto` 两个值，其余按默认走。
+    pub fn mcp_consent(&self) -> &str {
+        match self.cache.mcp.mcp_consent.as_str() {
+            "auto" => "auto",
+            _ => "session",
+        }
     }
 
     pub fn wallpaper_overlay(&self) -> f32 {
@@ -4704,5 +4714,60 @@ mod split_file_tests {
                 .contains("20"),
             "无挂起时 flush 必须是空操作"
         );
+    }
+
+    /// 客户端记忆授权的往返、去重与 32 条上限。
+    #[test]
+    fn mcp_client_grants_roundtrip_and_cap() {
+        let dir = temp_dir("mcp-grants");
+        let mut store = store_in(&dir);
+        assert!(store.mcp_client_grants().is_empty());
+
+        store.upsert_mcp_client_grant(
+            "Claude Desktop 0.7.2",
+            vec!["read".to_string(), "exec".to_string()],
+        );
+        assert_eq!(
+            store
+                .mcp_client_grants()
+                .iter()
+                .find(|grant| grant.id == "Claude Desktop 0.7.2")
+                .unwrap()
+                .permissions,
+            vec!["read", "exec"]
+        );
+
+        store.upsert_mcp_client_grant("Client B", vec!["read".to_string()]);
+        store.upsert_mcp_client_grant("Claude Desktop 0.7.2", vec!["read".to_string()]);
+        assert_eq!(store.mcp_client_grants().len(), 2);
+        assert_eq!(
+            store.mcp_client_grants().last().unwrap().id,
+            "Claude Desktop 0.7.2"
+        );
+
+        for index in 0..40 {
+            store.upsert_mcp_client_grant(&format!("client-{index}"), Vec::new());
+        }
+        assert_eq!(store.mcp_client_grants().len(), 32);
+        assert!(!store.mcp_client_grants().iter().any(|grant| grant.id == "client-0"));
+
+        let before = store.mcp_client_grants().len();
+        store.upsert_mcp_client_grant("", Vec::new());
+        store.upsert_mcp_client_grant("bad\nid", Vec::new());
+        assert_eq!(store.mcp_client_grants().len(), before);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 旧版全局权限键不再被识别，也不会被写回。
+    #[test]
+    fn legacy_global_permission_keys_are_ignored() {
+        let cfg: ConfigFile = serde_json::from_str(
+            r#"{"mcp_allow_read":false,"mcp_allow_exec":true,"mcp_allow_host_write":true}"#,
+        )
+        .unwrap();
+        assert!(cfg.mcp.mcp_client_grants.is_empty());
+        let settings = serde_json::to_string(&SettingsFile::from_cache(&cfg)).unwrap();
+        assert!(!settings.contains("mcp_allow_"), "旧键应被丢弃: {settings}");
     }
 }

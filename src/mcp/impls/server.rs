@@ -13,7 +13,9 @@ use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
 use super::http;
-use super::types::{AppHandles, McpConfigSnapshot, McpState, McpStatus, SharedState};
+use super::types::{
+    AppHandles, CloseReason, McpConfigSnapshot, McpSessionInfo, McpState, McpStatus, SharedState,
+};
 
 struct Active {
     cancel: CancellationToken,
@@ -50,8 +52,62 @@ pub(crate) fn status() -> McpStatus {
     }
 }
 
+/// 当前接入的客户端列表（AI 页的客户端卡读它）。
+///
+/// 顺带清理空闲过期的租约；状态锁都是短临界区，UI 线程不会卡住。
+pub(crate) fn sessions_info() -> Vec<McpSessionInfo> {
+    let state = {
+        let guard = active().lock().unwrap_or_else(|err| err.into_inner());
+        match guard.as_ref() {
+            Some(running) => running.state.clone(),
+            None => return Vec::new(),
+        }
+    };
+    state.sessions_info()
+}
+
+/// 用户在 AI 页点"断开"：移除该客户端租约。它下一次请求拿 404。
+pub(crate) fn disconnect_session(session_id: &str) {
+    let state = {
+        let guard = active().lock().unwrap_or_else(|err| err.into_inner());
+        match guard.as_ref() {
+            Some(running) => running.state.clone(),
+            None => return,
+        }
+    };
+    state.close_session(session_id, CloseReason::Disconnected);
+}
+
+/// 客户端卡上的权限开关。返回 null 表示 session 已不在或位未识别。
+pub(crate) fn set_session_permission(
+    session_id: &str,
+    key: &str,
+    enabled: bool,
+) -> Option<super::types::GrantUpdate> {
+    let state = {
+        let guard = active().lock().unwrap_or_else(|err| err.into_inner());
+        guard.as_ref()?.state.clone()
+    };
+    state.set_permission(session_id, key, enabled)
+}
+
+/// AI 页"最近调用"列表。
+pub(crate) fn recent_calls() -> Vec<super::audit_types::AuditEntry> {
+    super::audit::recent()
+}
+
+/// 审计写盘是否处于降级状态。
+pub(crate) fn audit_degraded() -> bool {
+    super::audit::degraded()
+}
+
 /// 按配置起服务。已有一份在跑就先停掉（改端口 / 改网口走同一条路径）。
 pub(crate) fn start(rt: &Handle, snapshot: McpConfigSnapshot, app: AppHandles) {
+    // 审计线程与保留天数：线程只起一次；天数放在热更新之前设，改完立刻生效，
+    // 不用等到下次重绑监听。
+    super::audit::set_retention(snapshot.audit.retention_days);
+    super::audit::init();
+
     // 监听面没变就只换配置：权限位与令牌的改动不该掐断已经连上的客户端。
     {
         let guard = active().lock().unwrap_or_else(|err| err.into_inner());
@@ -67,10 +123,8 @@ pub(crate) fn start(rt: &Handle, snapshot: McpConfigSnapshot, app: AppHandles) {
                 .unwrap_or_else(|err| err.into_inner()) = snapshot;
             // 令牌换了就释放唯一席位：旧客户端随后每个请求都是 401，若还占着租约，
             // 新客户端要等 15 分钟空闲才连得上。
-            if previous.token != running.state.config().token
-                && let Ok(mut lease) = running.state.lease.try_lock()
-            {
-                *lease = None;
+            if previous.token != running.state.config().token {
+                running.state.close_all(CloseReason::TokenRotated);
             }
             return;
         }
@@ -79,7 +133,7 @@ pub(crate) fn start(rt: &Handle, snapshot: McpConfigSnapshot, app: AppHandles) {
     if !snapshot.enabled {
         return;
     }
-    let state: SharedState = Arc::new(McpState::new(snapshot, app));
+    let state: SharedState = Arc::new(McpState::new(snapshot, app, rt.clone()));
     let cancel = CancellationToken::new();
     if let Ok(mut slot) = active().lock() {
         *slot = Some(Active {

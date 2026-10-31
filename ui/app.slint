@@ -36,7 +36,7 @@ import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpPermission } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, AuditRow } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
 // `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
 // `slint::include_modules!` 才会生成对应的 Rust 窗口类型（只 import 不实例化的话，
@@ -54,6 +54,7 @@ import { WindowTitleBar } from "components/window_shell.slint";
 // 「自动更新」对话框：挂在文件末尾只是为了减少改动；设置页改成独立窗口后，"谁压谁"
 // 的层级顾虑已不成立（原文说的是"必须挂在设置遮罩之后"）。
 // 否则会重演横幅那个 bug（设置面板是全窗遮罩，挂在最后，压住一切在它之前的东西）。
+import { McpConsentDialog } from "mcp_consent_dialog.slint";
 import { UpdateDialog } from "update_dialog.slint";
 import { EditorFindResult, FileEditor } from "file_editor.slint";
 import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
@@ -512,17 +513,40 @@ export component AppWindow inherits Window {
     in property <[string]> mcp-urls;
     in-out property <bool> mcp-lan-enabled;
     in property <[McpIface]> mcp-ifaces;
-    in property <[McpPermission]> mcp-permissions;
+    in property <[McpClientRow]> mcp-clients;
     in property <string> mcp-token-masked;
     in property <string> mcp-token-plain;
     in-out property <bool> mcp-token-visible;
+    // 可直接粘进 MCP 客户端配置的 JSON（明文 / 掩码两份）
+    in property <string> mcp-json;
+    in property <string> mcp-json-masked;
     callback set-mcp-enabled(bool);
     callback set-mcp-port(string) -> bool;
     callback set-mcp-lan(bool);
     callback toggle-mcp-iface(string);
-    callback toggle-mcp-permission(string);
+    callback toggle-mcp-client-permission(string, string, bool);
+    callback disconnect-mcp-client(string);
     callback copy-mcp-token();
+    callback copy-mcp-json();
     callback regenerate-mcp-token();
+    // 当前会话 + 审计（设置窗里的 AI 页读它们；这里只做声明，Rust 侧回填）
+    in-out property <bool> mcp-audit-enabled: true;
+    in-out property <string> mcp-audit-retention: "14";
+    in-out property <bool> mcp-audit-retention-valid: true;
+    in property <bool> mcp-audit-degraded;
+    in property <[AuditRow]> mcp-recent-calls;
+    callback set-mcp-audit-enabled(bool);
+    callback set-mcp-audit-retention(string) -> bool;
+    callback open-mcp-log-dir();
+    // 会话授权确认框（首次出现未授权工具调用时弹出）
+    in-out property <bool> mcp-consent-open: false;
+    in property <string> mcp-consent-client;
+    in property <string> mcp-consent-tool;
+    in property <string> mcp-consent-summary;
+    in-out property <[McpConsentRow]> mcp-consent-rows;
+    callback mcp-consent-toggle(string);
+    callback mcp-consent-accept();
+    callback mcp-consent-reject();
     // WSL profiles (upstream a64097e): managed in Interface → WSL.
     in property <[WslProfileInfo]> wsl-profiles;
     in-out property <string> wsl-new-directory: "~";
@@ -2390,6 +2414,19 @@ export component AppWindow inherits Window {
         run-update => { root.run-self-update(); }
         restart-app => { root.restart-app(); }
         open-releases => { root.open-update-url(); }
+    }
+
+    // --- MCP 会话授权确认框 -------------------------------------------------
+    McpConsentDialog {
+        is-open: root.mcp-consent-open;
+        lang-en: root.lang-en;
+        client: root.mcp-consent-client;
+        tool: root.mcp-consent-tool;
+        summary: root.mcp-consent-summary;
+        rows <=> root.mcp-consent-rows;
+        toggle(key) => { root.mcp-consent-toggle(key); }
+        accept => { root.mcp-consent-accept(); }
+        reject => { root.mcp-consent-reject(); }
     }
 }
 

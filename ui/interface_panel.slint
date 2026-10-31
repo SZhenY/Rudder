@@ -8,7 +8,7 @@
 
 import { Theme, AnimationSettings } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpPermission } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, AuditRow } from "settings/types.slint";
 
 import { NavItem } from "settings/chrome.slint";
 import { ResetBar } from "settings/reset_bar.slint";
@@ -78,10 +78,12 @@ export component InterfacePanel inherits Rectangle {
     in property <[string]> mcp-urls;
     in-out property <bool> mcp-lan-enabled;
     in property <[McpIface]> mcp-ifaces;
-    in property <[McpPermission]> mcp-permissions;
+    in property <[McpClientRow]> mcp-clients;
     in property <string> mcp-token-masked;
     in property <string> mcp-token-plain;
     in-out property <bool> mcp-token-visible;
+    in property <string> mcp-json;
+    in property <string> mcp-json-masked;
     in property <string> update-last-check: "";
     // 更新器网络：代理开关（默认关 = 直连）+ 地址（空 = 跟随系统）；证书链恒用系统根。
     in-out property <string> update-proxy;
@@ -205,9 +207,19 @@ export component InterfacePanel inherits Rectangle {
     callback set-mcp-port(string) -> bool;
     callback set-mcp-lan(bool);
     callback toggle-mcp-iface(string);
-    callback toggle-mcp-permission(string);
+    callback toggle-mcp-client-permission(string, string, bool);
+    callback disconnect-mcp-client(string);
     callback copy-mcp-token();
+    callback copy-mcp-json();
     callback regenerate-mcp-token();
+    in-out property <bool> mcp-audit-enabled: true;
+    in-out property <string> mcp-audit-retention: "14";
+    in-out property <bool> mcp-audit-retention-valid: true;
+    in property <bool> mcp-audit-degraded;
+    in property <[AuditRow]> mcp-recent-calls;
+    callback set-mcp-audit-enabled(bool);
+    callback set-mcp-audit-retention(string) -> bool;
+    callback open-mcp-log-dir();
     callback set-update-proxy(string);
     callback set-update-proxy-enabled(bool);
     callback persist-wallpaper-overlay(float);   // save the overlay opacity
@@ -510,17 +522,29 @@ export component InterfacePanel inherits Rectangle {
                             mcp-urls: root.mcp-urls;
                             mcp-lan-enabled <=> root.mcp-lan-enabled;
                             mcp-ifaces: root.mcp-ifaces;
-                            mcp-permissions: root.mcp-permissions;
+                            mcp-clients: root.mcp-clients;
                             mcp-token-masked: root.mcp-token-masked;
                             mcp-token-plain: root.mcp-token-plain;
                             mcp-token-visible <=> root.mcp-token-visible;
+                            mcp-json: root.mcp-json;
+                            mcp-json-masked: root.mcp-json-masked;
                             set-mcp-enabled(a0) => { root.set-mcp-enabled(a0); }
                             set-mcp-port(b0) => { root.set-mcp-port(b0); }
                             set-mcp-lan(c0) => { root.set-mcp-lan(c0); }
                             toggle-mcp-iface(c1) => { root.toggle-mcp-iface(c1); }
-                            toggle-mcp-permission(c2) => { root.toggle-mcp-permission(c2); }
+                            toggle-mcp-client-permission(c2, c3, c4) => { root.toggle-mcp-client-permission(c2, c3, c4); }
+                            disconnect-mcp-client(c5) => { root.disconnect-mcp-client(c5); }
                             copy-mcp-token() => { root.copy-mcp-token(); }
+                            copy-mcp-json() => { root.copy-mcp-json(); }
                             regenerate-mcp-token() => { root.regenerate-mcp-token(); }
+                            mcp-audit-enabled <=> root.mcp-audit-enabled;
+                            mcp-audit-retention <=> root.mcp-audit-retention;
+                            mcp-audit-retention-valid <=> root.mcp-audit-retention-valid;
+                            mcp-audit-degraded: root.mcp-audit-degraded;
+                            mcp-recent-calls: root.mcp-recent-calls;
+                            set-mcp-audit-enabled(a5) => { root.set-mcp-audit-enabled(a5); }
+                            set-mcp-audit-retention(b5) => { root.set-mcp-audit-retention(b5); }
+                            open-mcp-log-dir() => { root.open-mcp-log-dir(); }
                     }
 
                 }

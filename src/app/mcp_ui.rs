@@ -79,6 +79,7 @@ pub(crate) fn install(window: &AppWindow, ctx: &Rc<AppContext>) {
             ctx: ctx.clone(),
         });
     });
+    bind_consent(window);
 }
 
 pub(crate) fn uninstall() {
@@ -94,6 +95,7 @@ where
     if UI_THREAD.get() == Some(&std::thread::current().id()) {
         return Err(McpError::Reentrant);
     }
+    let started = std::time::Instant::now();
     let (tx, rx) = tokio::sync::oneshot::channel();
     slint::invoke_from_event_loop(move || {
         let out = UI.with(|slot| match slot.borrow().as_ref() {
@@ -103,11 +105,14 @@ where
         let _ = tx.send(out);
     })
     .map_err(|_| McpError::UiUnavailable)?;
-    match tokio::time::timeout(timeout, rx).await {
+    let out = match tokio::time::timeout(timeout, rx).await {
         Ok(Ok(result)) => result,
         Ok(Err(_)) => Err(McpError::UiUnavailable),
         Err(_) => Err(McpError::UiTimeout),
-    }
+    };
+    // 记进本次调用的"UI 等待"累计（审计里的 `ui_ms`）。
+    crate::mcp::add_ui_wait(started.elapsed().as_millis() as u64);
+    out
 }
 
 /// 取一份只读共享句柄给 MCP 服务（必须在 UI 线程调用一次）。
@@ -151,23 +156,35 @@ pub(crate) async fn get_session(session_id: String) -> Result<Value, McpError> {
     .await
 }
 
-/// 侧栏是否折叠。折叠时 `start_session_in_tab` 会把资源采样停掉，
-/// MCP 要临时采样就得先知道"原本该不该开"。
-pub(crate) async fn sidebar_collapsed() -> Result<bool, McpError> {
-    call(READ_TIMEOUT, |ui| Ok(ui.window.get_sidebar_collapsed())).await
-}
-
-/// 开 / 关某个标签页的远端资源采样。
-pub(crate) async fn set_resource_monitoring(tab_id: String, enabled: bool) -> Result<(), McpError> {
-    call(READ_TIMEOUT, move |ui| {
-        let handles = ui.ctx.handles.borrow();
-        let Some(handle) = handles.get(&tab_id) else {
-            return Err(McpError::Invalid(format!("unknown tab_id: {tab_id}")));
-        };
-        handle.set_resource_monitoring(enabled);
-        Ok(())
+/// 传输管理配置的下载目录。MCP 的 `sftp_download` 固定写这里。
+pub(crate) async fn download_dir() -> Result<std::path::PathBuf, McpError> {
+    call(READ_TIMEOUT, |ui| {
+        let dir = ui.ctx.store.borrow().download_dir().to_string();
+        if dir.trim().is_empty() {
+            return Err(McpError::Invalid(
+                "download directory is not configured".to_string(),
+            ));
+        }
+        Ok(std::path::PathBuf::from(dir))
     })
     .await
+}
+
+/// 把一次授权变更写回"按客户端记住"的配置，并刷新 MCP 配置快照。
+pub(crate) async fn remember_client_grant(update: crate::mcp::GrantUpdate) -> bool {
+    let Some(client_id) = update.client_id else {
+        return false;
+    };
+    let granted = update.granted;
+    call(READ_TIMEOUT, move |ui| {
+        super::settings::persist(&ui.ctx.store, move |store| {
+            store.upsert_mcp_client_grant(&client_id, granted);
+        });
+        super::settings::ai::apply(&ui.ctx.store);
+        Ok(true)
+    })
+    .await
+    .unwrap_or(false)
 }
 
 // ── 设置注册表 ──────────────────────────────────────────────────────────
@@ -1087,36 +1104,66 @@ fn url_has_userinfo(url: &str) -> bool {
 }
 
 /// 读设置。`keys` 为空 = 返回整张白名单。
-pub(crate) async fn get_settings(keys: Vec<String>) -> Result<Value, McpError> {
+///
+/// `allow_high == false` 时，9 个高风险键不进 `values`，改列在 `hidden` 里。
+pub(crate) async fn get_settings(
+    keys: Vec<String>,
+    allow_high: bool,
+) -> Result<Value, McpError> {
     call(READ_TIMEOUT, move |ui| {
         let table = settings_table();
         let mut values = serde_json::Map::new();
         let mut unknown = Vec::new();
+        let mut hidden = Vec::new();
         if keys.is_empty() {
             for def in table {
-                values.insert(def.key.to_string(), (def.get)(ui));
+                if !allow_high && crate::mcp::is_high_risk_setting(def.key) {
+                    hidden.push(def.key.to_string());
+                } else {
+                    values.insert(def.key.to_string(), (def.get)(ui));
+                }
             }
         } else {
             for key in &keys {
                 match table.iter().find(|def| def.key == key) {
                     Some(def) => {
-                        values.insert(key.clone(), (def.get)(ui));
+                        if !allow_high && crate::mcp::is_high_risk_setting(def.key) {
+                            hidden.push(key.clone());
+                        } else {
+                            values.insert(key.clone(), (def.get)(ui));
+                        }
                     }
                     None => unknown.push(key.clone()),
                 }
             }
         }
-        Ok(json!({ "values": Value::Object(values), "unknown": unknown }))
+        Ok(json!({
+            "values": Value::Object(values),
+            "unknown": unknown,
+            "hidden": hidden,
+        }))
     })
     .await
 }
 
 /// 写设置。事务式：有一个键不合法就整体不写。
-pub(crate) async fn set_settings(values: serde_json::Map<String, Value>) -> Result<Value, McpError> {
+pub(crate) async fn set_settings(
+    values: serde_json::Map<String, Value>,
+    allow_high: bool,
+) -> Result<Value, McpError> {
     call(Duration::from_secs(5), move |ui| {
         let table = settings_table();
         let mut rejected = Vec::new();
         for (key, value) in &values {
+            // 高风险键额外要 settings_high；工具层再挡一次，防绕过授权门。
+            if !allow_high && crate::mcp::is_high_risk_setting(key) {
+                rejected.push(json!({
+                    "key": key,
+                    "reason": "permission_denied",
+                    "hint": "settings_high is required for this key",
+                }));
+                continue;
+            }
             match table.iter().find(|def| def.key == key) {
                 Some(def) => {
                     if let Err(reason) = validate(&def.kind, value)
@@ -1654,9 +1701,206 @@ pub(crate) async fn run_action(action: String) -> Result<Value, McpError> {
     .await
 }
 
+
+// ── 会话授权弹窗 ────────────────────────────────────────────────────────
+//
+// 两段式桥接：MCP 线程登记一个 oneshot → 请 UI 线程开窗 → 等用户点。
+// 与 `call()` 的区别是"闭包不同步执行"，所以不能用同一个 helper。
+
+use std::sync::atomic::AtomicU64;
+use std::sync::Mutex;
+
+use slint::{Model as _, ModelRc, SharedString, VecModel};
+
+use crate::mcp::Permissions;
+use crate::ui::McpConsentRow;
+
+/// 授权弹窗要展示的内容（全部为 `Send` 数据，可跨线程）。
+pub(crate) struct ConsentRequest {
+    pub(crate) client: String,
+    /// 该客户端上次记住的授权，用来预勾。
+    pub(crate) base: Permissions,
+}
+
+type ConsentSender = tokio::sync::oneshot::Sender<Result<Permissions, McpError>>;
+
+static CONSENT_REPLY: Mutex<Option<ConsentSender>> = Mutex::new(None);
+static CONSENT_SEQ: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    /// 弹窗里的模型句柄：只在本线程用（`Rc`）。
+    static CONSENT_ROWS: RefCell<Option<Rc<VecModel<McpConsentRow>>>> = const { RefCell::new(None) };
+}
+
+fn bind_consent(window: &AppWindow) {
+    {
+        let weak = window.as_weak();
+        window.on_mcp_consent_toggle(move |key| {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+            let model = window.get_mcp_consent_rows();
+            for index in 0..model.row_count() {
+                let Some(row) = model.row_data(index) else {
+                    continue;
+                };
+                if row.key == key {
+                    let mut updated = row.clone();
+                    updated.checked = !updated.checked;
+                    model.set_row_data(index, updated);
+                    break;
+                }
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_mcp_consent_accept(move || {
+            if let Some(window) = weak.upgrade() {
+                finish_consent(&window, true);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_mcp_consent_reject(move || {
+            if let Some(window) = weak.upgrade() {
+                finish_consent(&window, false);
+            }
+        });
+    }
+}
+
+/// 用户点了按钮：把勾选收成权限位，关窗，唤醒等待方。
+fn finish_consent(window: &AppWindow, accept: bool) {
+    let mut granted = Permissions::default();
+    if accept {
+        let model = window.get_mcp_consent_rows();
+        for row in model.iter() {
+            if row.allowed && row.checked {
+                let _ = granted.set(row.key.as_str(), true);
+            }
+        }
+    }
+    window.set_mcp_consent_open(false);
+    CONSENT_ROWS.with(|slot| *slot.borrow_mut() = None);
+    let sender = CONSENT_REPLY
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .take();
+    if let Some(sender) = sender {
+        let _ = sender.send(if accept {
+            Ok(granted)
+        } else {
+            Err(McpError::Revoked)
+        });
+    }
+}
+
+/// 请用户批准本次接入。返回勾选出来的权限位。
+pub(crate) async fn ask_consent(
+    request: ConsentRequest,
+    timeout: Duration,
+) -> Result<Permissions, McpError> {
+    if UI_THREAD.get() == Some(&std::thread::current().id()) {
+        return Err(McpError::Reentrant);
+    }
+    // 上一轮若还有残留（理论上不该有），先丢弃，避免错唤醒。
+    let _ = CONSENT_REPLY
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .take();
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    *CONSENT_REPLY
+        .lock()
+        .unwrap_or_else(|err| err.into_inner()) = Some(tx);
+    CONSENT_SEQ.fetch_add(1, Ordering::Relaxed);
+
+    let base = request.base;
+    let client = request.client;
+
+    slint::invoke_from_event_loop(move || {
+        UI.with(|slot| {
+            let borrowed = slot.borrow();
+            if let Some(access) = borrowed.as_ref() {
+                // 文案语言在 UI 线程取（MCP 线程读不到 `lang-en`）。
+                let en = access.window.get_lang_en();
+                let pick = |zh: &'static str, en_text: &'static str| if en { en_text } else { zh };
+                let rows: Vec<McpConsentRow> = crate::mcp::bits_with_heads()
+                    .into_iter()
+                    .map(|(bit, risk, group)| McpConsentRow {
+                        key: bit.key.into(),
+                        label: pick(bit.label_zh, bit.label_en).into(),
+                        desc: pick(bit.desc_zh, bit.desc_en).into(),
+                        // 预勾该客户端上次记住的授权；用户可以改。
+                        checked: base.allows(bit.key),
+                        allowed: true,
+                        risk: risk
+                            .map(|risk| pick(risk.label_zh(), risk.label_en()))
+                            .unwrap_or_default()
+                            .into(),
+                        risk_note: risk
+                            .map(|risk| pick(risk.note_zh(), risk.note_en()))
+                            .unwrap_or_default()
+                            .into(),
+                        group: group
+                            .map(|group| pick(group.label_zh(), group.label_en()))
+                            .unwrap_or_default()
+                            .into(),
+                    })
+                    .collect();
+                let model = Rc::new(VecModel::from(rows));
+                access.window.set_mcp_consent_client(client.into());
+                access.window.set_mcp_consent_tool(SharedString::default());
+                access.window.set_mcp_consent_summary(SharedString::default());
+                access.window.set_mcp_consent_rows(ModelRc::from(model.clone()));
+                access.window.set_mcp_consent_open(true);
+                CONSENT_ROWS.with(|slot| *slot.borrow_mut() = Some(model));
+            }
+        });
+    })
+    .map_err(|_| McpError::UiUnavailable)?;
+
+    match tokio::time::timeout(timeout, rx).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err(McpError::Revoked),
+        Err(_) => {
+            // 超时：关窗、清掉句柄，按拒绝处理。
+            let _ = CONSENT_REPLY
+                .lock()
+                .unwrap_or_else(|err| err.into_inner())
+                .take();
+            let _ = slint::invoke_from_event_loop(|| {
+                UI.with(|slot| {
+                    if let Some(access) = slot.borrow().as_ref() {
+                        access.window.set_mcp_consent_open(false);
+                    }
+                });
+                CONSENT_ROWS.with(|slot| *slot.borrow_mut() = None);
+            });
+            Err(McpError::ConsentTimeout)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 9 个高风险键必须都在白名单里；33 - 9 = 24 对应 UI 文案里的常规项数量。
+    #[test]
+    fn high_risk_settings_match_the_table() {
+        let table = settings_table();
+        assert_eq!(table.len(), 33);
+        for key in crate::mcp::HIGH_RISK_SETTINGS {
+            assert!(
+                table.iter().any(|def| def.key == *key),
+                "高风险键 {key} 不在 settings_table 里"
+            );
+        }
+        assert_eq!(table.len() - crate::mcp::HIGH_RISK_SETTINGS.len(), 24);
+    }
 
     #[test]
     fn webdav_url_rejects_embedded_credentials() {

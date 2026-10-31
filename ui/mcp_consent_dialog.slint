@@ -1,0 +1,209 @@
+//! MCP 客户端接入确认框。
+//!
+//! 客户端 `initialize` 后弹一次，列出 12 个权限位（按风险 → 功能区聚合）。
+//! 用户点"允许接入"才建立授权；"拒绝接入"或 45 秒超时都会移除租约，客户端必须重连。
+//!
+//! 三条约束来自既有确认框的经验：
+//! * 点背景**不**做任何决定（既不当同意也不当拒绝）；
+//! * 不支持回车确认 —— 授权是安全动作；
+//! * 行区可滚，标题与按钮固定，窗口压到最小高度时按钮仍可见。
+
+import { AnimationSettings, Theme } from "theme.slint";
+import "fonts/MaterialIcons-Regular.ttf";
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import { GhostButton, PrimaryButton } from "widgets.slint";
+import { ToggleSwitch } from "settings/chrome.slint";
+import { McpConsentRow } from "settings/types.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export component McpConsentDialog inherits Rectangle {
+    in-out property <bool> is-open: false;
+    in property <bool> lang-en;
+    /// "Claude Desktop 0.7.2"
+    in property <string> client;
+    /// 保留字段：连接请求没有"触发工具"。
+    in property <string> tool;
+    in property <string> summary;
+    in-out property <[McpConsentRow]> rows;
+
+    callback toggle(string /* key */);
+    callback accept();
+    callback reject();
+
+    visible: self.opacity > 0.001;
+    opacity: root.is-open ? 1 : 0;
+    animate opacity {
+        duration: root.is-open ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
+        easing: root.is-open ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    background: #000000aa;
+
+    // 吞掉背景点击：不关窗、不表态。
+    TouchArea {
+        enabled: root.is-open;
+        width: 100%;
+        height: 100%;
+    }
+
+    Rectangle {
+        width: min(parent.width - 40px, 460px);
+        // 12 行 + 风险/功能区标题会超过窗口 min-height 600：封顶并让行区滚动。
+        height: min(parent.height - 40px, 620px);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: Theme.bg-panel;
+        border-radius: Theme.radius-lg;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: Theme.card-shadow-blur;
+        drop-shadow-color: Theme.card-shadow-color;
+
+        TouchArea {
+            width: 100%;
+            height: 100%;
+        }
+
+        card := VerticalLayout {
+            height: 100%;
+            padding: 20px;
+            spacing: 10px;
+
+            Text {
+                text: root.lang-en ? "An AI client wants to connect" : "有 AI 客户端请求接入";
+                color: Theme.text-primary;
+                font-size: Theme.fs-lg;
+                font-weight: 700;
+            }
+
+            Text {
+                text: root.client;
+                color: Theme.text-secondary;
+                font-size: Theme.fs-sm;
+            }
+
+            Text {
+                text: root.lang-en
+                    ? "Check what this client may do. Grants apply to this session only; deny or timeout disconnects it."
+                    : "勾选这个客户端可以做什么。授权仅对本次会话有效；拒绝或超时会断开这次连接。";
+                color: Theme.text-muted;
+                font-size: Theme.fs-xs;
+                wrap: word-wrap;
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.border-subtle;
+            }
+
+            // 行区：标题与底部按钮固定，中间滚动。
+            Rectangle {
+                vertical-stretch: 1;
+                min-height: 120px;
+
+                ScrollView {
+                    width: 100%;
+                    height: 100%;
+                    content-width: self.width;
+
+                    VerticalLayout {
+                        spacing: 2px;
+
+                        for row in root.rows : VerticalLayout {
+                            spacing: 0;
+
+                            if row.risk != "" : VerticalLayout {
+                                spacing: 2px;
+                                padding-top: 8px;
+                                padding-bottom: 2px;
+                                Text {
+                                    text: row.risk;
+                                    color: Theme.text-primary;
+                                    font-size: Theme.fs-sm;
+                                    font-weight: 700;
+                                }
+                                if row.risk-note != "" : Text {
+                                    text: row.risk-note;
+                                    color: Theme.text-muted;
+                                    font-size: Theme.fs-xs;
+                                    wrap: word-wrap;
+                                }
+                            }
+
+                            if row.group != "" : Text {
+                                text: row.group;
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-xs;
+                                font-weight: 700;
+                                height: 22px;
+                                vertical-alignment: bottom;
+                            }
+
+                            HorizontalLayout {
+                                height: 28px;
+                                spacing: 8px;
+                                alignment: center;
+
+                                HorizontalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 6px;
+                                    Text {
+                                        text: row.label;
+                                        color: row.allowed ? Theme.text-primary : Theme.text-muted;
+                                        font-size: Theme.fs-sm;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: row.desc;
+                                        color: Theme.text-muted;
+                                        font-size: Theme.fs-xs;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                ToggleSwitch {
+                                    mirror: true;
+                                    interactive: row.allowed;
+                                    checked: row.checked && row.allowed;
+                                    toggled(v) => {
+                                        root.toggle(row.key);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: root.lang-en
+                    ? "With nothing checked the client can only call get_server_info."
+                    : "未勾选任何项时，客户端只能调用 get_server_info（连接与能力查询）。";
+                color: Theme.text-muted;
+                font-size: Theme.fs-xs;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+
+                GhostButton {
+                    text: root.lang-en ? "Deny" : "拒绝接入";
+                    clicked => {
+                        root.reject();
+                    }
+                }
+
+                PrimaryButton {
+                    text: root.lang-en ? "Allow" : "允许接入";
+                    clicked => {
+                        root.accept();
+                    }
+                }
+            }
+        }
+    }
+}

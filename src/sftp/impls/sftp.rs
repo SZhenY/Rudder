@@ -104,16 +104,16 @@ impl SftpHandle {
         let _ = self.commands.send(SftpCommand::McpList { path, reply });
         rx
     }
-    /// MCP：下载一个远端文件到本地路径。
-    pub fn mcp_download(
+    /// MCP：下载到下载目录，同名自动避让（`name (1).ext`）。
+    pub fn mcp_download_auto(
         &self,
         remote: String,
-        local: PathBuf,
-    ) -> tokio::sync::oneshot::Receiver<Result<u64, String>> {
+        dir: PathBuf,
+    ) -> tokio::sync::oneshot::Receiver<Result<(PathBuf, bool, u64), String>> {
         let (reply, rx) = tokio::sync::oneshot::channel();
         let _ = self
             .commands
-            .send(SftpCommand::McpDownload { remote, local, reply });
+            .send(SftpCommand::McpDownloadAuto { remote, dir, reply });
         rx
     }
     /// MCP：把本地文件上传到远端路径。
@@ -577,7 +577,7 @@ async fn run_sftp(
                     .map_err(|err| format!("{err:#}"));
                 let _ = reply.send(result);
             }
-            SftpCommand::McpDownload { remote, local, reply } => {
+            SftpCommand::McpDownloadAuto { remote, dir, reply } => {
                 let result = async {
                     let data = sftp
                         .read(&remote)
@@ -589,10 +589,41 @@ async fn run_sftp(
                             crate::sftp::MCP_TRANSFER_LIMIT / (1024 * 1024)
                         ));
                     }
-                    tokio::fs::write(&local, &data)
+                    tokio::fs::create_dir_all(&dir)
                         .await
-                        .map_err(|err| format!("write {}: {err}", local.display()))?;
-                    Ok(data.len() as u64)
+                        .map_err(|err| format!("create {}: {err}", dir.display()))?;
+                    let requested = download_target_path(&remote, &dir.to_string_lossy());
+                    let mut candidate = available_download_path(&requested);
+                    let mut renamed = candidate != requested;
+                    // `available_download_path` 只检查"当时不存在"；用 create_new 落盘，
+                    // 撞上并发创建就重新扫下一个，避免覆盖别人刚写下的文件。
+                    for _ in 0..64 {
+                        match tokio::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&candidate)
+                            .await
+                        {
+                            Ok(mut file) => {
+                                use tokio::io::AsyncWriteExt;
+                                file.write_all(&data).await.map_err(|err| {
+                                    format!("write {}: {err}", candidate.display())
+                                })?;
+                                file.flush().await.map_err(|err| {
+                                    format!("flush {}: {err}", candidate.display())
+                                })?;
+                                return Ok((candidate, renamed, data.len() as u64));
+                            }
+                            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                                candidate = available_download_path(&requested);
+                                renamed = true;
+                            }
+                            Err(err) => {
+                                return Err(format!("write {}: {err}", candidate.display()));
+                            }
+                        }
+                    }
+                    Err("could not find a free download name".to_string())
                 }
                 .await;
                 let _ = reply.send(result);

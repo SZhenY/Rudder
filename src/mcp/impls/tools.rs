@@ -6,6 +6,10 @@
 
 use serde_json::{Value, json};
 
+use super::perms::{Permissions, is_high_risk_setting};
+use crate::config::SessionKind;
+use crate::resource::TabStatuses;
+
 /// 全部工具定义。
 pub(super) fn definitions() -> Value {
     json!([
@@ -198,7 +202,7 @@ pub(super) fn definitions() -> Value {
                 "readOnlyHint": false,
                 "destructiveHint": true,
                 "idempotentHint": false,
-                "openWorldHint": false
+                "openWorldHint": true
             }
         },
         {
@@ -259,7 +263,7 @@ pub(super) fn definitions() -> Value {
             },
             "annotations": {
                 "readOnlyHint": false,
-                "destructiveHint": false,
+                "destructiveHint": true,
                 "idempotentHint": true,
                 "openWorldHint": false
             }
@@ -341,7 +345,7 @@ pub(super) fn definitions() -> Value {
             },
             "annotations": {
                 "readOnlyHint": false,
-                "destructiveHint": false,
+                "destructiveHint": true,
                 "idempotentHint": false,
                 "openWorldHint": false
             }
@@ -361,7 +365,7 @@ pub(super) fn definitions() -> Value {
             "annotations": {
                 "readOnlyHint": false,
                 "destructiveHint": true,
-                "idempotentHint": true,
+                "idempotentHint": false,
                 "openWorldHint": false
             }
         },
@@ -386,21 +390,21 @@ pub(super) fn definitions() -> Value {
         },
         {
             "name": "sftp_download",
-            "description": "Download one remote file to a path on this machine over SFTP. Both paths are exact file paths (not directories). Files above 64 MiB are refused — use the SFTP panel for those.",
+            "description": "Download one remote file into Rudder's configured download folder over SFTP. Never overwrites: a colliding name becomes `report (1).pdf`. Files above 64 MiB are refused — use the SFTP panel for those.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "tab_id": { "type": "string", "minLength": 1 },
-                    "remote_path": { "type": "string", "minLength": 1 },
-                    "local_path": { "type": "string", "minLength": 1, "description": "Destination path on the machine running Rudder." }
+                    "remote_path": { "type": "string", "minLength": 1 }
                 },
-                "required": ["tab_id", "remote_path", "local_path"],
+                "required": ["tab_id", "remote_path"],
                 "additionalProperties": false
             },
             "annotations": {
                 "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": true,
+                // 不覆盖已有文件，只写一个新名字。
+                "destructiveHint": false,
+                "idempotentHint": false,
                 "openWorldHint": true
             }
         },
@@ -440,7 +444,7 @@ pub(super) fn definitions() -> Value {
             },
             "annotations": {
                 "readOnlyHint": false,
-                "destructiveHint": false,
+                "destructiveHint": true,
                 "idempotentHint": false,
                 "openWorldHint": true
             }
@@ -448,27 +452,264 @@ pub(super) fn definitions() -> Value {
     ])
 }
 
-/// 工具名 → 需要的权限位。只读工具不登记（`None`）。
-///
-/// 写工具必须在这里登记，否则会绕过权限门；`handler::call_tool` 对未知工具名
-/// 返回错误，双重兜底。
-const PERMISSIONS: &[(&str, &str)] = &[
-    ("open_session", "session_open_close"),
-    ("close_session", "session_open_close"),
-    ("send_input", "terminal_input"),
-    ("run_command", "exec"),
-    ("set_settings", "settings_write"),
-    ("upsert_host", "host_write"),
-    ("delete_host", "host_write"),
-    ("sftp_list", "file_transfer"),
-    ("sftp_download", "file_transfer"),
-    ("sftp_upload", "file_transfer"),
-    ("run_action", "settings_write"),
-];
+/// 工具名不认识 / 参数不足以判定权限。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PermLookup {
+    UnknownTool,
+    BadArgument(&'static str),
+}
 
-pub(super) fn required_perm(name: &str) -> Option<&'static str> {
-    PERMISSIONS
-        .iter()
-        .find(|(tool, _)| *tool == name)
-        .map(|(_, permission)| *permission)
+/// 全部 19 个工具名。`required_perms` 用它把"未登记"与"动态判定"分开：
+/// 未登记就是 fail closed，绝不回落成 `read`。
+fn known_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "get_server_info"
+            | "list_sessions"
+            | "get_session"
+            | "list_tabs"
+            | "get_tab_status"
+            | "read_terminal"
+            | "wait_for_output"
+            | "get_settings"
+            | "open_session"
+            | "close_session"
+            | "send_input"
+            | "run_command"
+            | "set_settings"
+            | "upsert_host"
+            | "delete_host"
+            | "sftp_list"
+            | "sftp_download"
+            | "sftp_upload"
+            | "run_action"
+    )
+}
+
+fn str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args.get(key).and_then(Value::as_str)
+}
+
+fn bool_arg(args: &Value, key: &str) -> bool {
+    args.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// `run_command` / `send_input` 的基位由标签页类型决定。
+fn command_perm(kind: SessionKind) -> &'static str {
+    if kind == SessionKind::Local {
+        "local_exec"
+    } else {
+        "exec"
+    }
+}
+
+fn tab_kind(statuses: &TabStatuses, args: &Value) -> Result<SessionKind, PermLookup> {
+    let tab_id = str_arg(args, "tab_id").ok_or(PermLookup::BadArgument("missing tab_id"))?;
+    let statuses = statuses
+        .lock()
+        .unwrap_or_else(|err| err.into_inner());
+    statuses
+        .get(tab_id)
+        .map(|status| status.kind)
+        .ok_or(PermLookup::BadArgument("unknown tab_id"))
+}
+
+/// 本次调用需要的权限位。动态分支只看参数与标签页类型，不读全局配置。
+pub(super) fn required_perms(
+    statuses: &TabStatuses,
+    name: &str,
+    args: &Value,
+) -> Result<Permissions, PermLookup> {
+    if !known_tool(name) {
+        return Err(PermLookup::UnknownTool);
+    }
+    let mut perms = Permissions::default();
+    let mut add = |key: &str| {
+        let _ = perms.set(key, true);
+    };
+    match name {
+        "get_server_info" => {}
+        "list_sessions"
+        | "get_session"
+        | "list_tabs"
+        | "get_tab_status"
+        | "read_terminal"
+        | "wait_for_output"
+        | "get_settings"
+        | "sftp_list" => add("read"),
+        "open_session" => {
+            add("session_open_close");
+            if bool_arg(args, "trust_unknown_host_key") {
+                add("host_key_trust");
+            }
+        }
+        "close_session" => add("session_open_close"),
+        "send_input" => {
+            add("terminal_input");
+            // 本地标签页上打字等价于在本机执行命令。
+            if tab_kind(statuses, args)? == SessionKind::Local {
+                add("local_exec");
+            }
+        }
+        "run_command" => add(command_perm(tab_kind(statuses, args)?)),
+        "set_settings" => {
+            add("settings_write");
+            if args
+                .get("values")
+                .and_then(Value::as_object)
+                .is_some_and(|values| values.keys().any(|key| is_high_risk_setting(key)))
+            {
+                add("settings_high");
+            }
+        }
+        "upsert_host" => add("host_upsert"),
+        "delete_host" => {
+            add("host_delete");
+            if bool_arg(args, "close_open_tabs") {
+                add("session_open_close");
+            }
+        }
+        "sftp_download" => add("file_download"),
+        "sftp_upload" => add("file_upload"),
+        "run_action" => match str_arg(args, "action") {
+            Some("check_update") => add("settings_write"),
+            // webdav 两个动作会先写回 WebDAV 配置，并移动整份主机库。
+            Some("webdav_upload" | "webdav_download") => {
+                add("settings_write");
+                add("settings_high");
+                add("host_upsert");
+            }
+            _ => add("settings_write"),
+        },
+        _ => return Err(PermLookup::UnknownTool),
+    }
+    Ok(perms)
+}
+
+/// `list_tools` 的过滤谓词。OR 语义：任一相关位开启就展示。
+pub(super) fn listable(perms: &Permissions, name: &str) -> bool {
+    match name {
+        "get_server_info" => true,
+        "list_sessions"
+        | "get_session"
+        | "list_tabs"
+        | "get_tab_status"
+        | "read_terminal"
+        | "wait_for_output"
+        | "get_settings"
+        | "sftp_list" => perms.allows("read"),
+        "open_session" | "close_session" => perms.allows("session_open_close"),
+        "send_input" => perms.allows("terminal_input"),
+        "run_command" => perms.allows("exec") || perms.allows("local_exec"),
+        // `set_settings` / `run_action` 的基位始终是 `settings_write`；高风险键
+        // 只是额外要求，单有 `settings_high` 不足以调用。
+        "set_settings" => perms.allows("settings_write"),
+        "upsert_host" => perms.allows("host_upsert"),
+        "delete_host" => perms.allows("host_delete"),
+        "sftp_download" => perms.allows("file_download"),
+        "sftp_upload" => perms.allows("file_upload"),
+        "run_action" => perms.allows("settings_write"),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn definition_names() -> Vec<String> {
+        definitions()
+            .as_array()
+            .expect("definitions 必须是数组")
+            .iter()
+            .filter_map(|tool| tool.get("name").and_then(Value::as_str).map(str::to_owned))
+            .collect()
+    }
+
+    #[test]
+    fn every_definition_is_registered() {
+        let names = definition_names();
+        assert_eq!(names.len(), 19);
+        for name in &names {
+            assert!(known_tool(name), "{name} 没有登记权限");
+        }
+    }
+
+    #[test]
+    fn unknown_tool_fails_closed() {
+        let statuses = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
+        assert_eq!(
+            required_perms(&statuses, "not_a_tool", &json!({})),
+            Err(PermLookup::UnknownTool)
+        );
+    }
+
+    #[test]
+    fn dynamic_branches_add_the_expected_bits() {
+        let statuses = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
+
+        let open = required_perms(
+            &statuses,
+            "open_session",
+            &json!({"session_id": "s", "trust_unknown_host_key": true}),
+        )
+        .unwrap();
+        assert!(open.allows("session_open_close"));
+        assert!(open.allows("host_key_trust"));
+
+        let delete = required_perms(
+            &statuses,
+            "delete_host",
+            &json!({"session_id": "s", "close_open_tabs": true}),
+        )
+        .unwrap();
+        assert!(delete.allows("host_delete"));
+        assert!(delete.allows("session_open_close"));
+
+        let settings = required_perms(
+            &statuses,
+            "set_settings",
+            &json!({"values": {"update.proxy": "http://x:1"}}),
+        )
+        .unwrap();
+        assert!(settings.allows("settings_write"));
+        assert!(settings.allows("settings_high"));
+
+        let webdav = required_perms(
+            &statuses,
+            "run_action",
+            &json!({"action": "webdav_upload"}),
+        )
+        .unwrap();
+        assert!(webdav.allows("settings_write"));
+        assert!(webdav.allows("settings_high"));
+        assert!(webdav.allows("host_upsert"));
+
+        assert_eq!(
+            required_perms(&statuses, "run_command", &json!({"tab_id": "missing"})),
+            Err(PermLookup::BadArgument("unknown tab_id"))
+        );
+    }
+
+    #[test]
+    fn listable_is_or_for_split_bits() {
+        let mut perms = Permissions::default();
+        assert!(listable(&perms, "get_server_info"));
+        assert!(!listable(&perms, "run_command"));
+        assert!(!listable(&perms, "sftp_download"));
+
+        perms.set("local_exec", true);
+        assert!(listable(&perms, "run_command"));
+        assert!(!listable(&perms, "sftp_download"));
+
+        perms.set("file_download", true);
+        assert!(listable(&perms, "sftp_download"));
+        assert!(!listable(&perms, "sftp_upload"));
+    }
+
+    #[test]
+    fn command_perm_follows_tab_kind() {
+        assert_eq!(command_perm(SessionKind::Ssh), "exec");
+        assert_eq!(command_perm(SessionKind::Local), "local_exec");
+    }
 }

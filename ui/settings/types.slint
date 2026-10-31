@@ -40,11 +40,43 @@ export struct McpIface {
     enabled: bool,
 }
 
-/// AI 设置页：一个工具权限位。
-///
-/// 用模型而不是 5 个属性传递：权限位会随工具集增长，模型只需要在 Rust 侧加一行。
-export struct McpPermission {
+/// AI 设置页：一条审计记录（只含展示所需的最小集）。
+export struct AuditRow {
+    at: string,
+    tool: string,
+    result: string,
+    ok: bool,
+    ms: int,
+    client: string,
+}
+
+/// 授权确认框里的一行。`risk`/`group` 非空表示该组的第一行。
+export struct McpConsentRow {
     key: string,
     label: string,
+    desc: string,
+    checked: bool,
+    allowed: bool,
+    risk: string,
+    risk-note: string,
+    group: string,
+}
+
+/// AI 设置页：客户端列表的扁平行。
+///
+/// `kind == "header"` 是客户端标题（client/since/status + 断开），
+/// `kind == "permission"` 是该客户端的一位权限开关（session-id + key）。
+export struct McpClientRow {
+    kind: string,
+    session-id: string,
+    client: string,
+    since: string,
+    status: string,
+    key: string,
+    label: string,
+    desc: string,
     enabled: bool,
+    risk: string,
+    risk-note: string,
+    group: string,
 }

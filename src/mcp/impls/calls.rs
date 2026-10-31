@@ -58,7 +58,11 @@ pub(super) async fn call(
                         .collect()
                 })
                 .unwrap_or_default();
-            crate::app::mcp_ui::get_settings(keys).await
+            crate::app::mcp_ui::get_settings(
+                keys,
+                session_perms(state).allows("settings_high"),
+            )
+            .await
         }
         "set_settings" => {
             let values = args
@@ -71,7 +75,11 @@ pub(super) async fn call(
                     "`values` must be a non-empty object".to_string(),
                 ));
             }
-            crate::app::mcp_ui::set_settings(values).await
+            crate::app::mcp_ui::set_settings(
+                values,
+                session_perms(state).allows("settings_high"),
+            )
+            .await
         }
         "upsert_host" => crate::app::mcp_ui::upsert_host(args.clone()).await,
         "delete_host" => {
@@ -90,20 +98,39 @@ pub(super) async fn call(
 }
 
 fn server_info(state: &SharedState) -> Value {
-    let cfg = state.config();
     let status = state.status();
+    let granted = session_perms(state);
+    let cfg = state.config();
     json!({
         "name": "rudder",
         "version": env!("CARGO_PKG_VERSION"),
         "running": status.running,
         "endpoints": status.urls(),
-        "permissions": cfg.perms.describe(),
+        // 权限只在会话上；`session` 与 `effective` 现在同义，保留两个键是为了
+        // 老客户端不用改解析。
+        "permissions": {
+            "session": granted.describe(),
+            "effective": granted.describe(),
+        },
+        "permissions_rev": crate::mcp::PERMISSIONS_REV,
+        "consent": match cfg.consent {
+            crate::mcp::ConsentPolicy::Session => "session",
+            crate::mcp::ConsentPolicy::Auto => "auto",
+        },
         "limits": {
             "max_concurrent_calls": 8,
             "max_request_bytes": 1024 * 1024,
         },
         "error": status.error,
     })
+}
+
+/// 当前调用的会话授权。供 `get_server_info` 与设置键脱敏使用。
+fn session_perms(state: &SharedState) -> crate::mcp::Permissions {
+    crate::mcp::current_session()
+        .and_then(|session_id| state.lease(&session_id))
+        .map(|lease| lease.granted)
+        .unwrap_or_default()
 }
 
 fn list_tabs(state: &SharedState) -> Value {
@@ -169,58 +196,20 @@ async fn tab_status(state: &SharedState, args: &Value) -> Result<Value, McpError
         return Ok(value);
     }
 
-    let refresh = bool_arg(args, "refresh", true);
-    let fresh = if refresh {
-        refresh_stats(state, &tab_id).await?
-    } else {
-        false
-    };
     let mut value = status_json(state, &tab_id);
-    value["stale"] = json!(!fresh);
+    // `get_tab_status` 是只读工具：不再临时打开远端采样（那会写会话运行态，
+    // 且恢复判断依赖"侧栏是否折叠"，可能永久留在开启）。数据陈旧就如实标记。
+    let stale = value
+        .get("last_sample_ms_ago")
+        .and_then(Value::as_u64)
+        .map(|ms| ms > 5_000)
+        .unwrap_or(true);
+    value["stale"] = json!(stale);
+    if bool_arg(args, "refresh", false) {
+        value["refresh_ignored"] = json!(true);
+        value["hint"] = json!("open the resource panel in Rudder to get fresh samples");
+    }
     Ok(value)
-}
-
-/// 侧栏折叠时远端采样是停着的。这里临时开一下、等一个新样本、再恢复原状。
-/// 返回数据是否已经新鲜。
-async fn refresh_stats(state: &SharedState, tab_id: &str) -> Result<bool, McpError> {
-    if sample_age(state, tab_id).is_some_and(|age| age < Duration::from_secs(5)) {
-        return Ok(true);
-    }
-    let was_enabled = match crate::app::mcp_ui::sidebar_collapsed().await {
-        Ok(collapsed) => !collapsed,
-        // 界面已关：拿不到采样开关，就用现成数据并标记 stale，不要整个工具失败。
-        Err(_) => return Ok(false),
-    };
-    if crate::app::mcp_ui::set_resource_monitoring(tab_id.to_string(), true)
-        .await
-        .is_err()
-    {
-        return Ok(false);
-    }
-
-    let deadline = Instant::now() + Duration::from_millis(1600);
-    while Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        if sample_age(state, tab_id).is_some_and(|age| age < Duration::from_millis(400)) {
-            break;
-        }
-    }
-    if !was_enabled {
-        let _ = crate::app::mcp_ui::set_resource_monitoring(tab_id.to_string(), false).await;
-    }
-    Ok(sample_age(state, tab_id).is_some_and(|age| age < Duration::from_secs(5)))
-}
-
-fn sample_age(state: &SharedState, tab_id: &str) -> Option<Duration> {
-    let statuses = state
-        .app
-        .tab_statuses
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    statuses
-        .get(tab_id)
-        .and_then(|status| status.last_stats_at)
-        .map(|at| at.elapsed())
 }
 
 fn status_json(state: &SharedState, tab_id: &str) -> Value {
@@ -572,16 +561,21 @@ async fn sftp_list(state: &SharedState, args: &Value) -> Result<Value, McpError>
 async fn sftp_download(state: &SharedState, args: &Value) -> Result<Value, McpError> {
     let tab_id = str_arg(args, "tab_id")?;
     let remote = str_arg(args, "remote_path")?;
-    let local = str_arg(args, "local_path")?;
-    let local_path = std::path::PathBuf::from(&local);
-    let receiver = with_sftp(state, &tab_id, |handle| {
-        handle.mcp_download(remote.clone(), local_path)
-    })?;
-    let bytes = receiver
+    // 固定写到传输管理配置的下载目录；不再接受任意 local_path。
+    let dir = crate::app::mcp_ui::download_dir().await?;
+    let receiver =
+        with_sftp(state, &tab_id, |handle| handle.mcp_download_auto(remote.clone(), dir))?;
+    let (local_path, renamed, bytes) = receiver
         .await
         .map_err(|_| sftp_closed())?
         .map_err(McpError::TransferFailed)?;
-    Ok(json!({ "tab_id": tab_id, "remote_path": remote, "local_path": local, "bytes": bytes }))
+    Ok(json!({
+        "tab_id": tab_id,
+        "remote_path": remote,
+        "local_path": local_path.to_string_lossy(),
+        "renamed": renamed,
+        "bytes": bytes,
+    }))
 }
 
 async fn sftp_upload(state: &SharedState, args: &Value) -> Result<Value, McpError> {
@@ -652,7 +646,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::super::types::{AppHandles, McpConfigSnapshot, McpState, Permissions};
+    use super::super::types::{AppHandles, McpConfigSnapshot, McpState};
 
     fn state_with_buffer() -> super::SharedState {
         let mut buffer = crate::terminal::TermBuffer::new(24, 80, 1000);
@@ -667,7 +661,9 @@ mod tests {
                 lan_enabled: false,
                 lan_ifaces: Vec::new(),
                 token: "rk_test".to_string(),
-                perms: Permissions::default(),
+                client_grants: Vec::new(),
+                consent: crate::mcp::ConsentPolicy::Auto,
+                audit: super::super::types::AuditConfig::default(),
             },
             AppHandles {
                 bufs: Arc::new(Mutex::new(bufs)),
@@ -675,6 +671,7 @@ mod tests {
                 local_snap: Arc::new(Mutex::new(Default::default())),
                 sftp_handles: Arc::new(Mutex::new(HashMap::new())),
             },
+            tokio::runtime::Handle::current(),
         ))
     }
 

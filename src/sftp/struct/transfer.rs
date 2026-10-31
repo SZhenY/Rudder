@@ -81,11 +81,12 @@ pub enum SftpCommand {
         path: String,
         reply: oneshot::Sender<Result<Vec<RemoteEntry>, String>>,
     },
-    /// MCP：把远端文件整份读下来写到本地路径。
-    McpDownload {
+    /// MCP：把远端文件整份读下来，写到下载目录里一个不冲突的文件名。
+    /// 返回 (实际路径, 是否改名, 字节数)。
+    McpDownloadAuto {
         remote: String,
-        local: PathBuf,
-        reply: oneshot::Sender<Result<u64, String>>,
+        dir: std::path::PathBuf,
+        reply: oneshot::Sender<Result<(std::path::PathBuf, bool, u64), String>>,
     },
     /// MCP：把本地文件整份写到远端路径。
     McpUpload {
