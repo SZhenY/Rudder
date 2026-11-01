@@ -7,11 +7,12 @@ import { Theme, AnimationSettings } from "../../theme.slint";
 import { SettingsSection } from "../section.slint";
 import { SettingRow, SettingSwitch, ToggleSwitch } from "../chrome.slint";
 import { GhostButton } from "../../widgets.slint";
+import { ResetBar } from "../reset_bar.slint";
 import { GroupGap } from "../../components/surfaces.slint";
 import { StateSurface } from "../../components/interactive.slint";
 import { IconText } from "../../components/text.slint";
 import { ScrollView } from "std-widgets.slint";
-import { AuditRow, McpClientRow, McpCloseRow, McpIface } from "../types.slint";
+import { AuditRow, McpClientRow, McpCloseRow, McpGrantRow, McpIface } from "../types.slint";
 
 export component AiPage inherits VerticalLayout {
     in property <bool> lang-en;
@@ -27,6 +28,9 @@ export component AiPage inherits VerticalLayout {
     in property <string> mcp-token-masked;
     in property <string> mcp-token-plain;
     in-out property <bool> mcp-token-visible;
+    /// 「重新生成」的两段式确认（与 ResetBar 同一套：第一下上膛，第二下才执行）。
+    /// 换令牌会踢掉所有已连的客户端，不该一下点到就生效。
+    property <bool> regen-armed: false;
     // 可直接粘贴的客户端配置：明文 / 掩码两份，显示哪份由上面的「显示」开关决定。
     in property <string> mcp-json;
     in property <string> mcp-json-masked;
@@ -41,10 +45,14 @@ export component AiPage inherits VerticalLayout {
 
     // 已接入的客户端：每个客户端一行 header + 12 行权限开关（扁平模型）。
     in property <[McpClientRow]> mcp-clients;
+    /// 已记住的客户端授权（离线可撤销）。
+    in property <[McpGrantRow]> mcp-grants;
     callback toggle-mcp-client-permission(string, string, bool);
     callback disconnect-mcp-client(string);
     callback set-mcp-client-trusted(string /* client-id */, bool);
     callback toggle-mcp-client-expanded(string /* session-id */);
+    callback forget-mcp-grant(string /* grant id */);
+    callback reset-page(string);
 
     // 执行通道：开 = run_command 走交互式 PTY（命令与输出显示在终端里）
     in-out property <bool> mcp-pty-commands: false;
@@ -147,61 +155,22 @@ export component AiPage inherits VerticalLayout {
         }
     }
 
-    GroupGap { gap: Theme.gap-sm; }
-
-    SettingsSection {
-        section-id: "ai.network";
-        lang-en: root.lang-en;
-        title-zh: "监听范围";
-        title-en: "LISTENING";
-        title-height: 24px;
-
-        SettingSwitch {
-            label: root.lang-en ? "Also listen on LAN interfaces" : "同时监听局域网网口";
-            desc: root.lang-en
-                ? "Off = loopback only. Each ticked interface gets its own listener; 0.0.0.0 is never used."
-                : "关闭时只监听本机回环。勾选的每个网口各起一个 listener，绝不绑 0.0.0.0。";
-            show-divider: root.mcp-enabled && root.mcp-lan-enabled && root.mcp-ifaces.length > 0;
-            interactive: root.mcp-enabled;
-            checked <=> root.mcp-lan-enabled;
-            toggled(v) => { root.set-mcp-lan(v); }
-        }
-
-        if root.mcp-enabled && root.mcp-lan-enabled : VerticalLayout {
-            for iface in root.mcp-ifaces : HorizontalLayout {
-                height: 30px;
-                spacing: 10px;
-                Text {
-                    text: iface.name + "   " + iface.addr;
-                    color: Theme.text-secondary;
-                    font-size: 12px * Theme.panel-font;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-                ToggleSwitch {
-                    mirror: true;
-                    checked: iface.enabled;
-                    toggled(v) => { root.toggle-mcp-iface(iface.name); }
-                }
-            }
-        }
-    }
 
     GroupGap { gap: Theme.gap-sm; }
 
     SettingsSection {
         section-id: "ai.token";
         lang-en: root.lang-en;
-        title-zh: "访问令牌";
-        title-en: "ACCESS TOKEN";
+        title-zh: "令牌与客户端配置";
+        title-en: "TOKEN & CLIENT CONFIG";
         title-height: 24px;
 
         SettingRow {
             label: root.lang-en ? "Bearer token" : "Bearer 令牌";
             desc: root.lang-en
-                ? "The agent must send this as `Authorization: Bearer <token>`. Stored encrypted."
-                : "agent 需要在请求头带 `Authorization: Bearer <令牌>`。令牌加密存储。";
-            show-divider: false;
+                ? "The agent must send this as `Authorization: Bearer <token>`. Stored encrypted. The snippet right below is what you paste into the client."
+                : "agent 需要在请求头带 `Authorization: Bearer <令牌>`。令牌加密存储。下面那段就是粘进客户端的配置。";
+            show-divider: true;
             HorizontalLayout {
                 alignment: center;
                 spacing: 8px;
@@ -226,26 +195,24 @@ export component AiPage inherits VerticalLayout {
                     clicked => { root.copy-mcp-token(); }
                 }
                 GhostButton {
-                    text: root.lang-en ? "Regenerate" : "重新生成";
+                    text: root.regen-armed
+                        ? (root.lang-en ? "Confirm?" : "确认重新生成？")
+                        : (root.lang-en ? "Regenerate" : "重新生成");
                     disabled: !root.mcp-enabled;
-                    clicked => { root.regenerate-mcp-token(); }
+                    clicked => {
+                        if (root.regen-armed) {
+                            root.regen-armed = false;
+                            root.regenerate-mcp-token();
+                        } else {
+                            root.regen-armed = true;
+                        }
+                    }
                 }
             }
         }
-    }
 
-    GroupGap { gap: Theme.gap-sm; }
-
-    // ── 客户端配置 ──────────────────────────────────────────────────────
-    // 给一整段能直接粘进 MCP 客户端（`mcpServers` 结构）的 JSON。省掉用户手写
-    // 地址与 Bearer 头这一步 —— 这两样恰好是最容易填错、也最容易过期的东西。
-    SettingsSection {
-        section-id: "ai.client";
-        lang-en: root.lang-en;
-        title-zh: "客户端配置";
-        title-en: "CLIENT CONFIG";
-        title-height: 24px;
-
+        // 可整段粘进客户端（`mcpServers` 结构）的 JSON：省掉手写地址与 Bearer 头，
+        // 这两样恰好最容易填错、也最容易过期。
         SettingRow {
             label: "mcp.json";
             desc: root.lang-en
@@ -501,6 +468,108 @@ export component AiPage inherits VerticalLayout {
 
     GroupGap { gap: Theme.gap-sm; }
 
+    // ── 已记住的客户端 ──────────────────────────────────────────────────
+    // 记忆授权是持久化的：客户端不在线也要能撤销，否则「永久信任」一旦点错就没救。
+    SettingsSection {
+        section-id: "ai.grants";
+        lang-en: root.lang-en;
+        title-zh: "已记住的客户端";
+        title-en: "REMEMBERED CLIENTS";
+        title-height: 24px;
+
+        if root.mcp-grants.length == 0 : Text {
+            text: root.lang-en
+                ? "Nothing remembered yet. Allowing a client remembers it for 15 minutes."
+                : "暂时没有记住的客户端。允许接入后会记住 15 分钟。";
+            color: Theme.text-muted;
+            font-size: 11px * Theme.panel-font;
+            wrap: word-wrap;
+            height: 40px;
+            vertical-alignment: center;
+        }
+
+        for grant in root.mcp-grants : HorizontalLayout {
+            height: 34px;
+            spacing: 10px;
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                min-width: 0;
+                alignment: center;
+                spacing: 1px;
+                Text {
+                    text: grant.client;
+                    color: Theme.text-primary;
+                    font-size: 12px * Theme.panel-font;
+                    overflow: elide;
+                }
+                Text {
+                    text: (grant.device == "" ? "" : grant.device + " · ") + grant.permissions;
+                    color: Theme.text-muted;
+                    font-size: 11px * Theme.panel-font;
+                    overflow: elide;
+                }
+            }
+
+            if grant.trusted : Text {
+                text: root.lang-en ? "trusted" : "永久";
+                color: Theme.accent;
+                font-size: 11px * Theme.panel-font;
+                vertical-alignment: center;
+            }
+
+            GhostButton {
+                text: root.lang-en ? "Forget" : "撤销";
+                clicked => { root.forget-mcp-grant(grant.id); }
+            }
+        }
+    }
+
+    GroupGap { gap: Theme.gap-sm; }
+
+    SettingsSection {
+        section-id: "ai.network";
+        lang-en: root.lang-en;
+        title-zh: "网络（高级）";
+        title-en: "NETWORK (ADVANCED)";
+        title-height: 24px;
+
+        SettingSwitch {
+            label: root.lang-en ? "Also listen on LAN interfaces" : "同时监听局域网网口";
+            desc: root.lang-en
+                ? "Off = loopback only. Each ticked interface gets its own listener; 0.0.0.0 is never used."
+                : "关闭时只监听本机回环。勾选的每个网口各起一个 listener，绝不绑 0.0.0.0。";
+            show-divider: root.mcp-enabled && root.mcp-lan-enabled && root.mcp-ifaces.length > 0;
+            interactive: root.mcp-enabled;
+            checked <=> root.mcp-lan-enabled;
+            toggled(v) => { root.set-mcp-lan(v); }
+        }
+
+        // 只要配置了局域网就列出网口（关着服务也列，让用户看到勾了哪些），
+        // 能不能改由下面的 `interactive` 决定。
+        if root.mcp-lan-enabled : VerticalLayout {
+            for iface in root.mcp-ifaces : HorizontalLayout {
+                height: 30px;
+                spacing: 10px;
+                Text {
+                    text: iface.name + "   " + iface.addr;
+                    color: Theme.text-secondary;
+                    font-size: 12px * Theme.panel-font;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                ToggleSwitch {
+                    mirror: true;
+                    checked: iface.enabled;
+                    interactive: root.mcp-enabled;
+                    toggled(v) => { root.toggle-mcp-iface(iface.name); }
+                }
+            }
+        }
+    }
+
+    GroupGap { gap: Theme.gap-sm; }
+
     // ── 审计日志 ────────────────────────────────────────────────────────
     SettingsSection {
         section-id: "ai.audit";
@@ -619,5 +688,11 @@ export component AiPage inherits VerticalLayout {
                 clicked => { root.open-mcp-log-dir(); }
             }
         }
+    }
+
+    // 「还原本页默认」：只重置设置项，不动令牌与已记住的授权（见 Rust 侧 `ai::reset`）。
+    ResetBar {
+        page-id: "ai";
+        reset-page(p) => { root.reset-page(p); }
     }
 }

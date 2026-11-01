@@ -44,11 +44,12 @@ pub(crate) use perms::{
     PERMISSION_BITS, PERMISSIONS_REV, Permissions, bit_rows, is_high_risk_setting,
 };
 pub(crate) use server::{
-    audit_degraded, disconnect_session, recent_calls, recent_closes, reload, sessions_info,
+    audit_degraded, disconnect_session, recent_calls, recent_calls_rev, recent_closes, reload,
+    sessions_info,
     set_context, set_session_permission, start, status, stop,
 };
 pub(crate) use types::{
-    AppHandles, CloseReason, ConsentPolicy, GrantUpdate, McpConfigSnapshot, McpError,
+    AppHandles, CloseReason, ConsentPolicy, GrantUpdate, McpConfigSnapshot, McpError, McpErrorKind,
     McpSessionInfo, grant_allows_silent,
 };
 

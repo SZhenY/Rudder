@@ -29,6 +29,13 @@ pub(super) async fn call(
         "get_session" => crate::app::mcp_ui::get_session(str_arg(args, "session_id")?).await,
         "list_tabs" => Ok(list_tabs(state)),
         "get_tab_status" => tab_status(state, args).await,
+        "get_host_info" => host_info(state).await,
+        "kill_process" => kill_process(state, args).await,
+        "get_update_status" => crate::app::mcp_ui::update_status().await,
+        "sftp_mkdir" => sftp_mkdir(state, args).await,
+        "sftp_remove" => sftp_remove(state, args).await,
+        "sftp_rename" => sftp_rename(state, args).await,
+        "sftp_chmod" => sftp_chmod(state, args).await,
         "read_terminal" => read_terminal(state, args),
         "wait_for_output" => wait_for_output(state, args).await,
         "open_session" => {
@@ -162,6 +169,126 @@ fn list_tabs(state: &SharedState) -> Value {
     json!({ "count": tabs.len(), "tabs": tabs })
 }
 
+/// 本机（运行 Rudder 的这台机器）的资源快照，不需要 `tab_id`。
+///
+/// 快照在 2 秒内就直接用 UI 采样器的结果（零成本）；否则用 MCP 自己持有的采样器现采。
+/// 不能只读 `local_snap`：侧栏折叠 / 窗口隐藏时采样会整拍跳过（`sampler.rs`），
+/// 读到的可能是几分钟前的数字。
+async fn host_info(state: &SharedState) -> Result<Value, McpError> {
+    let fresh = {
+        let snap = state
+            .app
+            .local_snap
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .clone();
+        snap.sampled_at
+            .map(|at| at.elapsed() < std::time::Duration::from_secs(2))
+            .unwrap_or(false)
+            .then_some(snap)
+    };
+    let (snapshot, source) = match fresh {
+        Some(snapshot) => (snapshot, "snapshot"),
+        None => (sample_local(state).await?, "on_demand"),
+    };
+    Ok(json!({
+        "scope": "local",
+        "source": source,
+        "sampled_ms_ago": snapshot.sampled_at.map(|at| at.elapsed().as_millis() as u64),
+        "cpu_percent": snapshot.cpu_percent,
+        "memory": {
+            "used_mib": snapshot.mem_used_mib,
+            "total_mib": snapshot.mem_total_mib,
+            "percent": snapshot.mem_percent,
+        },
+        "swap": {
+            "used_mib": snapshot.swap_used_mib,
+            "total_mib": snapshot.swap_total_mib,
+            "percent": snapshot.swap_percent,
+        },
+        "network": {
+            "rx_bytes_per_sec": snapshot.net_rx_per_sec,
+            "tx_bytes_per_sec": snapshot.net_tx_per_sec,
+        },
+        "filesystems": snapshot
+            .disks
+            .iter()
+            .map(|(mount, available, total)| json!({
+                "mount": mount,
+                "available_bytes": available,
+                "total_bytes": total,
+            }))
+            .collect::<Vec<_>>(),
+    }))
+}
+
+/// 现场采一次。
+///
+/// 放 `spawn_blocking`：磁盘枚举在 macOS 上约 27 ms（见 `DISK_REFRESH_EVERY` 的注释），
+/// 占着 tokio worker 会拖慢同一 runtime 上的其它请求。
+async fn sample_local(state: &SharedState) -> Result<crate::resource::SystemSnapshot, McpError> {
+    let sampler = state.local_sampler.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut guard = sampler.lock().unwrap_or_else(|err| err.into_inner());
+        let first = guard.is_none();
+        if first {
+            *guard = Some(crate::resource::SystemSampler::new());
+            // 新建的 System 第一次 `refresh_cpu_usage` 没有基线，CPU 必为 0 —— 等一拍再采。
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        guard.as_mut().map(crate::resource::SystemSampler::sample)
+    })
+    .await
+    .map_err(|err| McpError::Internal(format!("local sampler failed: {err}")))?
+    .ok_or_else(|| McpError::Internal("local sampler unavailable".to_string()))
+}
+
+/// 结束远端进程。
+///
+/// **失败也返回 `Ok`**：`ProcessKillResult.message` 是远端原始输出，sudo 可能把口令
+/// 回显在里面；走 `Err` 会被 `handler` 原样写进审计的 `error` 字段，等于把口令落盘。
+async fn kill_process(state: &SharedState, args: &Value) -> Result<Value, McpError> {
+    let tab_id = str_arg(args, "tab_id")?;
+    // 不用 `int_arg`：它会把缺失的 pid clamp 成 1，那就变成"杀 init"了。
+    let pid = args
+        .get("pid")
+        .and_then(Value::as_u64)
+        .filter(|pid| *pid > 0 && *pid <= u32::MAX as u64)
+        .ok_or_else(|| McpError::Invalid("missing or invalid `pid`".to_string()))?
+        as u32;
+    let root_password = opt_str_arg(args, "root_password");
+
+    // 只有 SSH 标签有远端进程控制。
+    let kind = {
+        let statuses = state
+            .app
+            .tab_statuses
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        match statuses.get(&tab_id) {
+            Some(status) => status.kind,
+            None => return Err(McpError::Invalid(format!("unknown tab_id: {tab_id}"))),
+        }
+    };
+    if kind != crate::config::SessionKind::Ssh {
+        return Err(McpError::NotSupported(
+            "only SSH tabs can kill a remote process; use send_input for local, telnet and serial tabs",
+        ));
+    }
+
+    let receiver = crate::app::mcp_ui::ssh_kill_process(tab_id.clone(), pid, root_password).await?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), receiver)
+        .await
+        .map_err(|_| McpError::TimedOut)?
+        .map_err(|_| McpError::NotConnected("the session closed before the kill finished"))?;
+    Ok(json!({
+        "tab_id": tab_id,
+        "pid": pid,
+        "success": result.success,
+        "message": result.message,
+    }))
+}
+
 async fn tab_status(state: &SharedState, args: &Value) -> Result<Value, McpError> {
     let tab_id = str_arg(args, "tab_id")?;
     let is_local = {
@@ -190,10 +317,24 @@ async fn tab_status(state: &SharedState, args: &Value) -> Result<Value, McpError
             "mem_percent": local.mem_percent,
             "mem_used_mib": local.mem_used_mib,
             "mem_total_mib": local.mem_total_mib,
+            "swap_percent": local.swap_percent,
+            "swap_used_mib": local.swap_used_mib,
+            "swap_total_mib": local.swap_total_mib,
             "net_rx_per_sec": local.net_rx_per_sec,
             "net_tx_per_sec": local.net_tx_per_sec,
+            // 本机磁盘之前被整段丢掉，其实快照里一直有。
+            "disks": local
+                .disks
+                .iter()
+                .map(|(mount, avail, total)| {
+                    json!({ "mount": mount, "avail": avail, "total": total })
+                })
+                .collect::<Vec<_>>(),
         });
-        value["stale"] = json!(false);
+        // 与远端共用同一套陈旧判定：采样器在侧栏折叠 / 窗口隐藏时整拍跳过。
+        let age_ms = local.sampled_at.map(|at| at.elapsed().as_millis() as u64);
+        value["last_sample_ms_ago"] = json!(age_ms);
+        value["stale"] = json!(age_ms.map(|ms| ms > 5_000).unwrap_or(true));
         return Ok(value);
     }
 
@@ -211,6 +352,65 @@ async fn tab_status(state: &SharedState, args: &Value) -> Result<Value, McpError
         value["hint"] = json!("open the resource panel in Rudder to get fresh samples");
     }
     Ok(value)
+}
+
+/// `SystemDetails` 的 7 节。
+///
+/// 6 个 label/value 节输出成对象（沿用既有的 `pairs`），两个 5 元组输出成具名数组：
+/// `networks` 的第 4/5 位、`filesystems` 的第 5 位是采集脚本里的占位符，不输出。
+/// 全空时返回 `null` —— 给 6 个空对象会让调用方以为"这台机器没有内存"。
+fn sys_json(sys: &crate::ssh::SystemDetails) -> Value {
+    let mut out = serde_json::Map::new();
+    for (key, rows) in [
+        ("overview", &sys.overview),
+        ("cpu_info", &sys.cpu_info),
+        ("gpu_info", &sys.gpu_info),
+        ("cpu_usage", &sys.cpu_usage),
+        ("memory", &sys.memory),
+        ("swap", &sys.swap),
+    ] {
+        if !rows.is_empty() {
+            out.insert(key.to_string(), pairs(rows));
+        }
+    }
+    if !sys.networks.is_empty() {
+        out.insert(
+            "networks".to_string(),
+            Value::Array(
+                sys.networks
+                    .iter()
+                    // 元组是 (iface, tx, rx, "-", "-")。
+                    .map(|(iface, tx, rx, _, _)| {
+                        json!({ "iface": iface, "tx_total": tx, "rx_total": rx })
+                    })
+                    .collect(),
+            ),
+        );
+    }
+    if !sys.filesystems.is_empty() {
+        out.insert(
+            "filesystems".to_string(),
+            Value::Array(
+                sys.filesystems
+                    .iter()
+                    // 元组是 (mount, total, used_percent, avail, mount重复)。
+                    .map(|(mount, total, used_percent, available, _)| {
+                        json!({
+                            "mount": mount,
+                            "total": total,
+                            "used_percent": used_percent,
+                            "available": available,
+                        })
+                    })
+                    .collect(),
+            ),
+        );
+    }
+    if out.is_empty() {
+        Value::Null
+    } else {
+        Value::Object(out)
+    }
 }
 
 fn status_json(state: &SharedState, tab_id: &str) -> Value {
@@ -254,7 +454,7 @@ fn status_json(state: &SharedState, tab_id: &str) -> Value {
                 "command": proc.command,
             }))
             .collect::<Vec<_>>(),
-        "sys": { "overview": pairs(&status.sys.overview) },
+        "sys": sys_json(&status.sys),
         "last_sample_ms_ago": status
             .last_stats_at
             .map(|at| at.elapsed().as_millis() as u64),
@@ -326,36 +526,81 @@ async fn wait_for_output(state: &SharedState, args: &Value) -> Result<Value, Mcp
     // 静默模式会一路等到超时。
     let mut saw_output = false;
 
+    let mut first = true;
     loop {
-        let snapshot = snapshot(state, &tab_id, max_rows, true)?;
-        if snapshot.output_seq != seen_seq {
-            seen_seq = snapshot.output_seq;
-            last_change = Instant::now();
-            saw_output = true;
-        }
-        let hit = match &regex {
-            Some(regex) => regex.is_match(&snapshot.text),
-            None => saw_output && last_change.elapsed() >= Duration::from_millis(quiet_ms),
-        };
-        if hit {
-            return Ok(json!({
-                "matched": true,
-                "text": tail(&snapshot.text, 4096),
-                "output_seq": snapshot.output_seq,
-                "elapsed_ms": started.elapsed().as_millis() as u64,
-            }));
-        }
-        if Instant::now() >= deadline {
-            return Ok(json!({
-                "matched": false,
-                "timed_out": true,
-                "text": tail(&snapshot.text, 4096),
-                "output_seq": snapshot.output_seq,
-                "elapsed_ms": started.elapsed().as_millis() as u64,
-            }));
+        // 先只读序号：文本没变时 regex 的结果也不会变，没必要生成整屏文本。
+        let changed = output_seq_of(state, &tab_id)? != seen_seq;
+        if first || changed {
+            first = false;
+            let snapshot = snapshot(state, &tab_id, max_rows, true)?;
+            if snapshot.output_seq != seen_seq {
+                seen_seq = snapshot.output_seq;
+                last_change = Instant::now();
+                saw_output = true;
+            }
+            let hit = match &regex {
+                Some(regex) => regex.is_match(&snapshot.text),
+                None => saw_output && last_change.elapsed() >= Duration::from_millis(quiet_ms),
+            };
+            if hit {
+                return Ok(json!({
+                    "matched": true,
+                    "text": tail(&snapshot.text, 4096),
+                    "output_seq": snapshot.output_seq,
+                    "elapsed_ms": started.elapsed().as_millis() as u64,
+                }));
+            }
+            if Instant::now() >= deadline {
+                return Ok(json!({
+                    "matched": false,
+                    "timed_out": true,
+                    "text": tail(&snapshot.text, 4096),
+                    "output_seq": snapshot.output_seq,
+                    "elapsed_ms": started.elapsed().as_millis() as u64,
+                }));
+            }
+        } else {
+            // 没有新输出：静默模式等够 quiet 就返回，其余情况只检查超时（都不需要文本，
+            // 真要返回时才取一次）。
+            let quiet = regex.is_none()
+                && saw_output
+                && last_change.elapsed() >= Duration::from_millis(quiet_ms);
+            if quiet || Instant::now() >= deadline {
+                let snapshot = snapshot(state, &tab_id, max_rows, true)?;
+                let mut out = json!({
+                    "matched": quiet,
+                    "text": tail(&snapshot.text, 4096),
+                    "output_seq": snapshot.output_seq,
+                    "elapsed_ms": started.elapsed().as_millis() as u64,
+                });
+                // `timed_out` 只在真的超时出现：静默命中时带上它会让调用方误判成失败。
+                if !quiet {
+                    out["timed_out"] = json!(true);
+                }
+                return Ok(out);
+            }
         }
         tokio::time::sleep(Duration::from_millis(40)).await;
     }
+}
+
+/// 只读输出序号，不生成文本。
+///
+/// 等待类工具每 40–60 ms 轮询一次；直接调 `snapshot()` 的话每次都要逐行渲染 400 行，
+/// 还占着缓冲锁（与 SSH ingest、UI 渲染共用）。先比序号能把这笔开销降到一次读 u64。
+fn output_seq_of(state: &SharedState, tab_id: &str) -> Result<u64, McpError> {
+    let handle = {
+        let bufs = state
+            .app
+            .bufs
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        bufs.get(tab_id)
+            .cloned()
+            .ok_or_else(|| McpError::Invalid(format!("unknown tab_id: {tab_id}")))?
+    };
+    let buffer = handle.lock().unwrap_or_else(|err| err.into_inner());
+    Ok(buffer.output_seq())
 }
 
 /// 取一块终端缓冲的只读快照。先克隆 `Arc` 再单独锁缓冲，避免外层表与缓冲同时持锁。
@@ -562,24 +807,35 @@ async fn pty_run_command(
     crate::app::mcp_ui::send_input(tab_id.clone(), line, true).await?;
 
     let deadline = started + timeout;
+    let mut seen_seq = output_seq_of(state, &tab_id)?;
+    let mut first = true;
     loop {
-        let snap = snapshot(state, &tab_id, 400, true)?;
-        let out = pty_cmd::extract(&token, &snap.text);
-        if out.found {
-            let (text, truncated) = clamp_chars(out.text, max_output_bytes);
-            return Ok(json!({
-                "tab_id": tab_id,
-                "channel": "pty",
-                "marker_found": true,
-                "exit_code": out.code,
-                "stdout": text,
-                "stderr": "",
-                "truncated": truncated,
-                "timed_out": false,
-                "duration_ms": started.elapsed().as_millis() as u64,
-            }));
+        // 没有新输出时不必生成整屏文本再扫 marker —— 60 ms 一次的轮询里那是主要开销，
+        // 而且每次都要占住缓冲锁（与 ingest、渲染共用）。
+        let changed = output_seq_of(state, &tab_id)? != seen_seq;
+        if first || changed {
+            first = false;
+            let snap = snapshot(state, &tab_id, 400, true)?;
+            seen_seq = snap.output_seq;
+            let out = pty_cmd::extract(&token, &snap.text);
+            if out.found {
+                let (text, truncated) = clamp_chars(out.text, max_output_bytes);
+                return Ok(json!({
+                    "tab_id": tab_id,
+                    "channel": "pty",
+                    "marker_found": true,
+                    "exit_code": out.code,
+                    "stdout": text,
+                    "stderr": "",
+                    "truncated": truncated,
+                    "timed_out": false,
+                    "duration_ms": started.elapsed().as_millis() as u64,
+                }));
+            }
         }
         if Instant::now() >= deadline {
+            // 超时才取一次文本（用来告诉调用方卡在哪）。
+            let snap = snapshot(state, &tab_id, 400, true)?;
             return Ok(json!({
                 "tab_id": tab_id,
                 "channel": "pty",
@@ -693,6 +949,81 @@ fn with_sftp<T>(
 
 fn sftp_closed() -> McpError {
     McpError::NotConnected("the SFTP channel closed before the request finished")
+}
+
+/// SFTP 变更类的共用尾部：等回执并套超时。
+///
+/// SFTP worker 是串行的，大传输在飞时这些命令要排队 —— 没有超时的话，一个卡住的
+/// 请求会占着 1/8 的并发许可，直到 handler 的 310 秒上限。
+async fn await_sftp_mutation(
+    receiver: tokio::sync::oneshot::Receiver<Result<(), String>>,
+) -> Result<(), McpError> {
+    tokio::time::timeout(std::time::Duration::from_secs(30), receiver)
+        .await
+        .map_err(|_| McpError::TimedOut)?
+        .map_err(|_| sftp_closed())?
+        .map_err(McpError::TransferFailed)
+}
+
+/// 八进制权限位。抽成纯函数是为了能单测（`"999"` 这种必须在进 worker 前就拒掉）。
+fn parse_mode(raw: &str) -> Result<u32, McpError> {
+    let trimmed = raw.trim();
+    u32::from_str_radix(trimmed, 8)
+        .ok()
+        // 3 或 4 位：`"75"` 虽然能解析成八进制 61，但不是一个有效的权限位写法。
+        .filter(|mode| *mode <= 0o7777 && (3..=4).contains(&trimmed.len()))
+        .ok_or_else(|| {
+            McpError::Invalid("`mode` must be octal digits such as \"755\" or \"0644\"".to_string())
+        })
+}
+
+async fn sftp_mkdir(state: &SharedState, args: &Value) -> Result<Value, McpError> {
+    let tab_id = str_arg(args, "tab_id")?;
+    let path = str_arg(args, "path")?;
+    let receiver = with_sftp(state, &tab_id, |handle| handle.mcp_mkdir(path.clone()))?;
+    await_sftp_mutation(receiver).await?;
+    Ok(json!({ "tab_id": tab_id, "path": path, "created": true }))
+}
+
+async fn sftp_remove(state: &SharedState, args: &Value) -> Result<Value, McpError> {
+    let tab_id = str_arg(args, "tab_id")?;
+    let path = str_arg(args, "path")?;
+    let recursive = bool_arg(args, "recursive", false);
+    let receiver = with_sftp(state, &tab_id, |handle| {
+        handle.mcp_remove(path.clone(), recursive)
+    })?;
+    await_sftp_mutation(receiver).await?;
+    Ok(json!({
+        "tab_id": tab_id,
+        "path": path,
+        "recursive": recursive,
+        "removed": true,
+    }))
+}
+
+async fn sftp_rename(state: &SharedState, args: &Value) -> Result<Value, McpError> {
+    let tab_id = str_arg(args, "tab_id")?;
+    let from = str_arg(args, "from")?;
+    let to = str_arg(args, "to")?;
+    let receiver = with_sftp(state, &tab_id, |handle| {
+        handle.mcp_rename(from.clone(), to.clone())
+    })?;
+    await_sftp_mutation(receiver).await?;
+    Ok(json!({ "tab_id": tab_id, "from": from, "to": to, "renamed": true }))
+}
+
+async fn sftp_chmod(state: &SharedState, args: &Value) -> Result<Value, McpError> {
+    let tab_id = str_arg(args, "tab_id")?;
+    let path = str_arg(args, "path")?;
+    let mode = parse_mode(&str_arg(args, "mode")?)?;
+    let receiver = with_sftp(state, &tab_id, |handle| handle.mcp_chmod(path.clone(), mode))?;
+    await_sftp_mutation(receiver).await?;
+    Ok(json!({
+        "tab_id": tab_id,
+        "path": path,
+        "mode": format!("{mode:o}"),
+        "changed": true,
+    }))
 }
 
 async fn sftp_list(state: &SharedState, args: &Value) -> Result<Value, McpError> {
@@ -846,6 +1177,52 @@ mod tests {
         ))
     }
 
+    /// 快照新鲜时直接复用 UI 采样器的结果，不额外采样。
+    #[tokio::test]
+    async fn host_info_reuses_a_fresh_snapshot() {
+        let state = state_with_buffer();
+        {
+            let mut snap = state
+                .app
+                .local_snap
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            snap.cpu_percent = 0.25;
+            snap.mem_total_mib = 16384;
+            snap.sampled_at = Some(std::time::Instant::now());
+        }
+        let value = super::call(&state, "get_host_info", &json!({}))
+            .await
+            .unwrap();
+        assert_eq!(value["scope"], "local");
+        assert_eq!(value["source"], "snapshot");
+        assert_eq!(value["memory"]["total_mib"], 16384);
+    }
+
+    /// 快照陈旧（侧栏折叠时采样器会整拍跳过）→ 现场采一次，数字必须是真的。
+    #[tokio::test]
+    async fn host_info_samples_on_demand_when_the_snapshot_is_stale() {
+        let state = state_with_buffer();
+        {
+            let mut snap = state
+                .app
+                .local_snap
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            snap.sampled_at = None;
+        }
+        // 首次采样要预热 200ms（新建的 System 没有 CPU 基线）。
+        let value = super::call(&state, "get_host_info", &json!({}))
+            .await
+            .unwrap();
+        assert_eq!(value["source"], "on_demand");
+        assert!(
+            value["memory"]["total_mib"].as_u64().unwrap_or(0) > 0,
+            "本机总内存不该是 0"
+        );
+        assert!(value["filesystems"].is_array());
+    }
+
     #[tokio::test]
     async fn read_terminal_returns_screen_text() {
         let state = state_with_buffer();
@@ -894,5 +1271,85 @@ mod tests {
         .unwrap();
         assert_eq!(value["matched"], true, "{value}");
         assert!(value.get("timed_out").is_none(), "{value}");
+    }
+}
+
+#[cfg(test)]
+mod sys_json_tests {
+    use super::sys_json;
+    use crate::ssh::SystemDetails;
+
+    /// 全空时给 `null`，不给 6 个空对象 —— 否则调用方会以为"这台机器没有内存"。
+    #[test]
+    fn empty_details_serialize_to_null() {
+        assert!(sys_json(&SystemDetails::default()).is_null());
+    }
+
+    /// 两个 5 元组节要输出成具名对象，并丢掉采集脚本的占位列。
+    #[test]
+    fn tuple_sections_drop_placeholder_columns() {
+        let sys = SystemDetails {
+            overview: vec![("系统".to_string(), "Linux".to_string())],
+            networks: vec![(
+                "eth0".to_string(),
+                "1 GB".to_string(),
+                "2 GB".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+            )],
+            filesystems: vec![(
+                "/".to_string(),
+                "120G".to_string(),
+                "61%".to_string(),
+                "46G".to_string(),
+                "/".to_string(),
+            )],
+            ..Default::default()
+        };
+
+        let value = sys_json(&sys);
+        assert_eq!(value["overview"]["系统"], "Linux");
+        let net = value["networks"][0].as_object().expect("networks 是对象");
+        assert_eq!(net.len(), 3, "占位列不该输出：{net:?}");
+        assert_eq!(net["iface"], "eth0");
+        let fs = value["filesystems"][0]
+            .as_object()
+            .expect("filesystems 是对象");
+        assert_eq!(fs.len(), 4, "重复的 mount 列不该输出：{fs:?}");
+        assert_eq!(fs["used_percent"], "61%");
+    }
+
+    /// 只有部分节有值时，缺的节不出现在对象里（而不是给空对象）。
+    #[test]
+    fn missing_sections_are_omitted() {
+        let sys = SystemDetails {
+            memory: vec![("总计".to_string(), "16 GB".to_string())],
+            ..Default::default()
+        };
+        let value = sys_json(&sys);
+        assert!(value.get("overview").is_none());
+        assert!(value.get("networks").is_none());
+        assert_eq!(value["memory"]["总计"], "16 GB");
+    }
+}
+
+#[cfg(test)]
+mod mode_tests {
+    use super::parse_mode;
+
+    /// 八进制是唯一接受的写法：`"755"` 与 `"0755"` 等价，`"999"` 这种必须在进 worker 前拒掉。
+    #[test]
+    fn mode_is_parsed_as_octal() {
+        assert_eq!(parse_mode("755").unwrap(), 0o755);
+        assert_eq!(parse_mode("0755").unwrap(), 0o755);
+        assert_eq!(parse_mode("0644").unwrap(), 0o644);
+        assert_eq!(parse_mode("  777 ").unwrap(), 0o777);
+    }
+
+    #[test]
+    fn bad_modes_are_rejected() {
+        for raw in ["999", "75", "", "abc", "8888", "-1"] {
+            assert!(parse_mode(raw).is_err(), "{raw} 应该被拒");
+        }
     }
 }

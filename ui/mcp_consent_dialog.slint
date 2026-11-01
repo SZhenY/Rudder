@@ -134,8 +134,8 @@ export component McpConsentDialog inherits Rectangle {
 
             Text {
                 text: root.lang-en
-                    ? "Check what this client may do. Grants apply to this session only; deny or timeout disconnects it."
-                    : "勾选这个客户端可以做什么。授权仅对本次会话有效；拒绝或超时会断开这次连接。";
+                    ? "Check what this client may do. The choice is remembered for this client: reconnecting within 15 minutes skips this dialog, and permanent trust below skips it for good. Deny or timeout disconnects it."
+                    : "勾选这个客户端可以做什么。这里的选择会被记住：15 分钟内重连不再询问，勾选下方的永久信任则一直不再询问。拒绝或超时会断开这次连接。";
                 color: Theme.text-muted;
                 font-size: Theme.fs-xs;
                 wrap: word-wrap;

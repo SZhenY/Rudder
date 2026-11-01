@@ -68,7 +68,11 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
                 return;
             }
             persist(&store, |s| {
-                s.set_mcp_client_trusted(&id, trusted);
+                if !s.set_mcp_client_trusted(&id, trusted) {
+                    // 还没有记忆记录（从没授权过、或走的是 dev token 路径）：
+                    // 先落一条空的，否则开关点完会静默回弹，用户以为点坏了。
+                    s.upsert_mcp_client_grant(&id, Vec::new(), trusted);
+                }
             });
             apply(&store);
             if let Some(window) = weak.upgrade() {
@@ -229,6 +233,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
         });
     }
 
+    bind_forget_grant(window, store, &ifaces, &clients);
+
     // 服务在 tokio 线程上启停，UI 只能轮询状态。
     let timer = slint::Timer::default();
     {
@@ -316,7 +322,9 @@ fn refresh(
     window.set_mcp_port(SharedString::from(port.to_string()));
     // 服务关着时，"监听范围"整段是禁用态：**显示**为关，但配置里原来的值保留，
     // 重新打开服务后原样恢复（不是把用户的授权抹掉）。
-    window.set_mcp_lan_enabled(enabled && lan);
+    // 显示**真实的**配置值：服务关着时由 `interactive: mcp-enabled` 表达"现在不生效"。
+    // 之前写成 `enabled && lan`，关服务后开关显示为关、网口行整段消失，看起来像配置丢了。
+    window.set_mcp_lan_enabled(lan);
     window.set_mcp_token_masked(masked.into());
     window.set_mcp_token_plain(plain.into());
     // 端口或令牌一改，可粘贴的配置就跟着变；这里推两份（明文 / 掩码），界面按
@@ -339,7 +347,7 @@ fn refresh(
     let iface_rows = enumerate_ifaces()
         .into_iter()
         .map(|(name, addr)| McpIface {
-            enabled: enabled && selected_ifaces.iter().any(|iface| iface == &name),
+            enabled: selected_ifaces.iter().any(|iface| iface == &name),
             name: SharedString::from(name),
             addr: SharedString::from(addr),
         })
@@ -360,19 +368,27 @@ fn refresh(
 fn publish_status(window: &AppWindow, store: &Store, clients: &Rc<VecModel<McpClientRow>>) {
     let enabled = store.borrow().mcp_enabled();
     let status = crate::mcp::status();
-    let (text, error, urls) = if let Some(error) = status.error.clone() {
+    let (text, error, urls) = if status.error.is_some() || status.error_kind.is_some() {
+        // 标题按类别翻译，细节（地址 / 系统错误）原样跟在后面。
+        let title = match status.error_kind {
+            Some(crate::mcp::McpErrorKind::NoAddress) => {
+                t("没有可监听的地址", "No address to listen on")
+            }
+            Some(crate::mcp::McpErrorKind::BindFailed) => t("绑定失败", "Failed to bind"),
+            None => t("启动失败", "Failed to start"),
+        };
         (
-            t("启动失败", "Failed to start").to_string(),
-            error,
+            title.to_string(),
+            status.error.unwrap_or_default(),
             Vec::new(),
         )
     } else if status.running {
-        let urls = status.urls();
-        let first = urls.first().cloned().unwrap_or_default();
+        // 地址交给下面的列表显示，状态行只留"运行中"—— 之前把首个 URL 拼进来，
+        // 紧接着列表又全量列一遍，同一个地址出现两次。
         (
-            format!("{} · {first}", t("运行中", "Running")),
+            t("运行中", "Running").to_string(),
             String::new(),
-            urls,
+            status.urls(),
         )
     } else if !enabled {
         (
@@ -398,6 +414,7 @@ fn publish_status(window: &AppWindow, store: &Store, clients: &Rc<VecModel<McpCl
     publish_clients(window, clients);
     publish_recent_calls(window);
     publish_recent_closes(window);
+    publish_grants(window, store);
     crate::app::settings_window::resync_if_open(window);
 }
 
@@ -503,6 +520,101 @@ fn session_rows(en: bool, sessions: &[crate::mcp::McpSessionInfo]) -> Vec<McpCli
 }
 
 /// 客户端标题行上的授权摘要。最多列 4 项，超出用计数，避免撑爆一行。
+/// 还原本页默认。
+///
+/// 只重置**设置项**：令牌与已记住的授权是用户明确做过的决定，重置它们会踢掉所有
+/// 正在连的客户端、让「永久信任」凭空消失 —— 那不是"还原默认"该干的事。
+pub(crate) fn reset(w: &AppWindow, store: &Store) {
+    let d = crate::config::fresh_config();
+    let (port, lan, pty, audit, retention) = (
+        d.mcp.mcp_port,
+        d.mcp.mcp_lan_enabled,
+        d.mcp.mcp_pty_commands,
+        d.mcp.mcp_audit_enabled,
+        d.mcp.mcp_audit_retention_days,
+    );
+    persist(store, move |s| {
+        s.set_mcp_port(port);
+        s.set_mcp_lan_enabled(lan);
+        s.set_mcp_lan_ifaces(Vec::new());
+        s.set_mcp_pty_commands(pty);
+        s.set_mcp_audit_enabled(audit);
+        s.set_mcp_audit_retention_days(retention);
+    });
+    apply(store);
+    w.set_mcp_port(port.to_string().into());
+    w.set_mcp_lan_enabled(lan);
+    w.set_mcp_pty_commands(pty);
+    w.set_mcp_audit_enabled(audit);
+    w.set_mcp_audit_retention(retention.to_string().into());
+}
+
+/// 已记住的客户端（持久化授权）。离线也要能撤销，所以单独列一张表。
+fn publish_grants(window: &AppWindow, store: &Store) {
+    let en = window.get_lang_en();
+    let rows: Vec<crate::ui::McpGrantRow> = store
+        .borrow()
+        .mcp_client_grants()
+        .iter()
+        .map(|grant| {
+            // 记忆主键形如 `rudder 1.0.0@192.168.1.5`；没带后缀的是升级前的老记录。
+            let (client, device) = match grant.id.rsplit_once('@') {
+                Some((client, device)) => (client.to_string(), device.to_string()),
+                None => (grant.id.clone(), String::new()),
+            };
+            let keys: Vec<&str> = grant.permissions.iter().map(String::as_str).collect();
+            crate::ui::McpGrantRow {
+                id: grant.id.as_str().into(),
+                client: client.into(),
+                device: device.into(),
+                permissions: granted_summary(&crate::mcp::Permissions::from_keys(&keys), en)
+                    .into(),
+                trusted: grant.trusted,
+            }
+        })
+        .collect();
+    // 内容没变就不重建：这个函数每秒被 `publish_status` 调一次，重建会带来无谓的 UI 抖动。
+    let current = window.get_mcp_grants();
+    // 逐行比 id + trusted：只比首行的话，中间某条被撤销/改信任时检测不到。
+    // grants 上限 32 条，这点比较成本可以忽略。
+    let unchanged = current.row_count() == rows.len()
+        && rows.iter().enumerate().all(|(index, fresh)| {
+            current
+                .row_data(index)
+                .is_some_and(|row| row.id == fresh.id && row.trusted == fresh.trusted)
+        });
+    if unchanged {
+        return;
+    }
+    window.set_mcp_grants(ModelRc::from(Rc::new(VecModel::from(rows))));
+}
+
+/// 撤销一条记忆授权（客户端不在线也能撤）。
+fn bind_forget_grant(
+    window: &AppWindow,
+    store: &Store,
+    ifaces: &Rc<VecModel<McpIface>>,
+    clients: &Rc<VecModel<McpClientRow>>,
+) {
+    let store = store.clone();
+    let weak = window.as_weak();
+    let ifaces = ifaces.clone();
+    let clients = clients.clone();
+    window.on_forget_mcp_grant(move |id| {
+        let id = id.to_string();
+        if id.is_empty() {
+            return;
+        }
+        persist(&store, |s| {
+            s.remove_mcp_client_grant(&id);
+        });
+        apply(&store);
+        if let Some(window) = weak.upgrade() {
+            refresh(&window, &store, &ifaces, &clients);
+        }
+    });
+}
+
 fn granted_summary(perms: &crate::mcp::Permissions, en: bool) -> String {
     const MAX: usize = 4;
     let mut parts: Vec<&str> = crate::mcp::PERMISSION_BITS
@@ -543,6 +655,15 @@ fn publish_clients(window: &AppWindow, clients: &Rc<VecModel<McpClientRow>>) {
     let alive: HashSet<String> = rows_header_ids(clients.as_ref());
     EXPANDED_SESSIONS.with(|set| set.borrow_mut().retain(|id| alive.contains(id)));
     window.set_mcp_clients(ModelRc::from(clients.clone()));
+    // 顶部栏徽标：直接从建好的行里数 header，避免为拿计数再调一次 `sessions_info()`。
+    let online = (0..clients.row_count())
+        .filter(|index| {
+            clients
+                .row_data(*index)
+                .is_some_and(|row| row.kind == "header")
+        })
+        .count();
+    window.set_mcp_client_count(online as i32);
 }
 
 /// 当前模型里还活着的 session id（header 行）。
@@ -607,20 +728,30 @@ fn publish_recent_closes(window: &AppWindow) {
     window.set_mcp_recent_closes(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
-/// "最近调用"列表：长度与首行都没变就不重建模型，避免每秒抖动。
+thread_local! {
+    /// 上次渲染时的环版本号。初值 `u64::MAX` 保证第一次一定重建。
+    static LAST_CALLS_REV: std::cell::Cell<u64> = const { std::cell::Cell::new(u64::MAX) };
+}
+
+/// "最近调用"列表：环的版本号没变就不重建模型。
+///
+/// 原来先 `recent_calls()` 把 200 条整份 clone 出来、再比较首行决定"没变" ——
+/// 每秒一次的轮询里那是纯浪费（约 1400 次字符串分配/秒）。
 fn publish_recent_calls(window: &AppWindow) {
+    let rev = crate::mcp::recent_calls_rev();
+    let changed = LAST_CALLS_REV.with(|slot| {
+        if slot.get() == rev {
+            false
+        } else {
+            slot.set(rev);
+            true
+        }
+    });
+    if !changed && window.get_mcp_recent_calls().row_count() > 0 {
+        return;
+    }
     let entries = crate::mcp::recent_calls();
-    let current = window.get_mcp_recent_calls();
-    let unchanged = current.row_count() == entries.len()
-        && current
-            .row_data(0)
-            .map(|row| {
-                entries.first().is_some_and(|entry| {
-                    row.at == entry.at.as_str() && row.tool == entry.tool.as_str()
-                })
-            })
-            .unwrap_or(entries.is_empty());
-    if !unchanged {
+    {
         let rows: Vec<crate::ui::AuditRow> = entries
             .into_iter()
             .map(|entry| crate::ui::AuditRow {

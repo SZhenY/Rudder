@@ -80,18 +80,33 @@ pub(super) fn definitions() -> Value {
         },
         {
             "name": "get_tab_status",
-            "description": "Read remote host status for an open tab: CPU, memory, swap, network interfaces, filesystems, top processes and system overview. For local shell tabs it returns this machine's own figures.",
+            "description": "Resource snapshot of the host behind one tab: CPU, memory, swap, network totals, per-filesystem usage, the top 10 processes, and `sys` with the full system details (overview, cpu_info, gpu_info, cpu_usage, memory, swap, networks, filesystems). `sys` is a one-shot probe taken shortly after the session connects and never refreshed, so it is null on a tab that just opened — that is not an error. For local shell tabs the machine's own figures are under `local`. To read this machine without opening a tab, use get_host_info instead.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "tab_id": { "type": "string", "minLength": 1 },
                     "refresh": {
                         "type": "boolean",
-                        "default": true,
-                        "description": "Ask for a fresh sample when the last one is older than 5 seconds. The response reports stale=true if no fresh sample arrived in time."
+                        "default": false,
+                        "description": "Accepted for compatibility only. MCP cannot start remote sampling — the Rudder resource panel owns it. Check stale / last_sample_ms_ago and, when stale, tell the user to open the resource panel."
                     }
                 },
                 "required": ["tab_id"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "name": "get_host_info",
+            "description": "Report the local machine — the computer running Rudder — not a remote host, and no tab_id is needed. Returns CPU, memory, swap, per-filesystem usage and network throughput with the sample time. Figures come from the app's own 1 Hz sampler when it is running (source=snapshot); when that sampler is paused, for example because the sidebar is collapsed or the window is hidden, one sample is taken on demand (source=on_demand) and may take a moment. For a host behind an open tab use get_tab_status instead.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": false
             },
             "annotations": {
@@ -217,6 +232,50 @@ pub(super) fn definitions() -> Value {
                     "max_output_bytes": { "type": "integer", "minimum": 1024, "maximum": 4194304, "default": 1048576 }
                 },
                 "required": ["tab_id", "command"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "get_update_status",
+            "description": "Read the update state Rudder has already gathered: whether a newer release is known, the wording and error of the last check, the in-app download / install progress, and when the last check ran. Start a check with run_action action=check_update and then poll this tool — the check runs in the background. This call never downloads or installs anything.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "name": "kill_process",
+            "description": "Terminate one process on a remote SSH host with SIGTERM — the same action as the process dialog in Rudder. The process may ignore SIGTERM; this tool never escalates to SIGKILL, so re-check get_tab_status afterwards. Only SSH tabs are supported: local, telnet and serial tabs have no remote process control. Pass root_password only when the target belongs to another user; it is used once, never stored, and redacted from the audit log. A failed kill is reported as success=false with the remote message instead of as an error.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "string", "minLength": 1, "description": "An SSH tab from list_tabs." },
+                    "pid": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 4294967295u64,
+                        "description": "Process id, as listed in get_tab_status top_procs."
+                    },
+                    "root_password": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Optional sudo password for the connected user. Omit when the process belongs to that user."
+                    }
+                },
+                "required": ["tab_id", "pid"],
                 "additionalProperties": false
             },
             "annotations": {
@@ -429,6 +488,109 @@ pub(super) fn definitions() -> Value {
             }
         },
         {
+            "name": "sftp_mkdir",
+            "description": "Create one directory on the remote host over the tab's SFTP channel. The parent must already exist — SFTP v3 mkdir is single level — and an existing path is reported as an error rather than a silent success. Use an absolute path. Needs the file_upload permission, the same bit that authorises writing to the remote host.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "string", "minLength": 1 },
+                    "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Absolute remote path to create, e.g. /var/tmp/release."
+                    }
+                },
+                "required": ["tab_id", "path"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "sftp_remove",
+            "description": "Delete a file or directory on the remote host over SFTP. DELETION IS PERMANENT: there is no trash and no undo. A directory is removed only when it is empty unless recursive=true, which first deletes every file and subdirectory below it. Prefer sftp_rename to move something aside when the change might need reverting. Needs the file_upload permission.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "string", "minLength": 1 },
+                    "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Absolute remote path to delete."
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Delete a non-empty directory and everything under it. Irreversible; ignored for files."
+                    }
+                },
+                "required": ["tab_id", "path"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "sftp_rename",
+            "description": "Rename or move one remote path over SFTP; moving between directories is allowed. If `to` already exists it is replaced — SFTP v3 has no no-clobber flag — so pick a fresh name when both should survive. Needs the file_upload permission.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "string", "minLength": 1 },
+                    "from": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Existing absolute remote path."
+                    },
+                    "to": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Destination absolute remote path; replaced if present."
+                    }
+                },
+                "required": ["tab_id", "from", "to"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": true
+            }
+        },
+        {
+            "name": "sftp_chmod",
+            "description": "Change the permission bits of one remote path over SFTP. `mode` is octal text such as \"644\", \"755\" or \"0755\"; a wrong mode can lock the account out of its own files or expose them, so copy the value that was read from sftp_list rather than inventing one. Needs the file_upload permission.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "string", "minLength": 1 },
+                    "path": { "type": "string", "minLength": 1 },
+                    "mode": {
+                        "type": "string",
+                        "pattern": "^[0-7]{3,4}$",
+                        "description": "Octal permission bits, e.g. \"755\" or \"0644\"."
+                    }
+                },
+                "required": ["tab_id", "path", "mode"],
+                "additionalProperties": false
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": true
+            }
+        },
+        {
             "name": "run_action",
             "description": "Trigger a one-shot UI action: check for updates now, or push/pull the host list to the configured WebDAV. Returns as soon as the action starts; progress and the outcome show up in the status bar and the settings page.",
             "inputSchema": {
@@ -469,6 +631,8 @@ fn known_tool(name: &str) -> bool {
             | "get_session"
             | "list_tabs"
             | "get_tab_status"
+            | "get_host_info"
+            | "get_update_status"
             | "read_terminal"
             | "wait_for_output"
             | "get_settings"
@@ -476,12 +640,17 @@ fn known_tool(name: &str) -> bool {
             | "close_session"
             | "send_input"
             | "run_command"
+            | "kill_process"
             | "set_settings"
             | "upsert_host"
             | "delete_host"
             | "sftp_list"
             | "sftp_download"
             | "sftp_upload"
+            | "sftp_mkdir"
+            | "sftp_remove"
+            | "sftp_rename"
+            | "sftp_chmod"
             | "run_action"
     )
 }
@@ -533,6 +702,8 @@ pub(super) fn required_perms(
         | "get_session"
         | "list_tabs"
         | "get_tab_status"
+        | "get_host_info"
+        | "get_update_status"
         | "read_terminal"
         | "wait_for_output"
         | "get_settings"
@@ -552,6 +723,8 @@ pub(super) fn required_perms(
             }
         }
         "run_command" => add(command_perm(tab_kind(statuses, args)?)),
+        // 杀进程是"在远端执行动作"，归 exec 位；它不做 tab_kind 分支（调用处先挡了）。
+        "kill_process" => add("exec"),
         "set_settings" => {
             add("settings_write");
             if args
@@ -571,6 +744,8 @@ pub(super) fn required_perms(
         }
         "sftp_download" => add("file_download"),
         "sftp_upload" => add("file_upload"),
+        // 变更类共用写入位：删除 / 改名 / 改权限都是"改远端文件系统"。
+        "sftp_mkdir" | "sftp_remove" | "sftp_rename" | "sftp_chmod" => add("file_upload"),
         "run_action" => match str_arg(args, "action") {
             Some("check_update") => add("settings_write"),
             // webdav 两个动作会先写回 WebDAV 配置，并移动整份主机库。
@@ -594,6 +769,8 @@ pub(super) fn listable(perms: &Permissions, name: &str) -> bool {
         | "get_session"
         | "list_tabs"
         | "get_tab_status"
+        | "get_host_info"
+        | "get_update_status"
         | "read_terminal"
         | "wait_for_output"
         | "get_settings"
@@ -601,6 +778,7 @@ pub(super) fn listable(perms: &Permissions, name: &str) -> bool {
         "open_session" | "close_session" => perms.allows("session_open_close"),
         "send_input" => perms.allows("terminal_input"),
         "run_command" => perms.allows("exec") || perms.allows("local_exec"),
+        "kill_process" => perms.allows("exec"),
         // `set_settings` / `run_action` 的基位始终是 `settings_write`；高风险键
         // 只是额外要求，单有 `settings_high` 不足以调用。
         "set_settings" => perms.allows("settings_write"),
@@ -608,6 +786,9 @@ pub(super) fn listable(perms: &Permissions, name: &str) -> bool {
         "delete_host" => perms.allows("host_delete"),
         "sftp_download" => perms.allows("file_download"),
         "sftp_upload" => perms.allows("file_upload"),
+        "sftp_mkdir" | "sftp_remove" | "sftp_rename" | "sftp_chmod" => {
+            perms.allows("file_upload")
+        }
         "run_action" => perms.allows("settings_write"),
         _ => false,
     }
@@ -629,7 +810,7 @@ mod tests {
     #[test]
     fn every_definition_is_registered() {
         let names = definition_names();
-        assert_eq!(names.len(), 19);
+        assert_eq!(names.len(), 26);
         for name in &names {
             assert!(known_tool(name), "{name} 没有登记权限");
         }

@@ -8,7 +8,7 @@
 
 import { Theme, AnimationSettings } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpCloseRow, AuditRow } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 
 import { NavItem } from "settings/chrome.slint";
 import { ResetBar } from "settings/reset_bar.slint";
@@ -79,6 +79,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> mcp-lan-enabled;
     in property <[McpIface]> mcp-ifaces;
     in property <[McpClientRow]> mcp-clients;
+    in property <[McpGrantRow]> mcp-grants;
     in property <string> mcp-token-masked;
     in property <string> mcp-token-plain;
     in-out property <bool> mcp-token-visible;
@@ -211,6 +212,7 @@ export component InterfacePanel inherits Rectangle {
     callback disconnect-mcp-client(string);
     callback set-mcp-client-trusted(string, bool);
     callback toggle-mcp-client-expanded(string);
+    callback forget-mcp-grant(string);
     callback copy-mcp-token();
     callback copy-mcp-json();
     callback regenerate-mcp-token();
@@ -528,6 +530,7 @@ export component InterfacePanel inherits Rectangle {
                             mcp-lan-enabled <=> root.mcp-lan-enabled;
                             mcp-ifaces: root.mcp-ifaces;
                             mcp-clients: root.mcp-clients;
+                            mcp-grants: root.mcp-grants;
                             mcp-token-masked: root.mcp-token-masked;
                             mcp-token-plain: root.mcp-token-plain;
                             mcp-token-visible <=> root.mcp-token-visible;
@@ -541,6 +544,8 @@ export component InterfacePanel inherits Rectangle {
                             disconnect-mcp-client(c5) => { root.disconnect-mcp-client(c5); }
                             set-mcp-client-trusted(d0, d1) => { root.set-mcp-client-trusted(d0, d1); }
                             toggle-mcp-client-expanded(d2) => { root.toggle-mcp-client-expanded(d2); }
+                            forget-mcp-grant(d3) => { root.forget-mcp-grant(d3); }
+                            reset-page(e0) => { root.reset-page(e0); }
                             copy-mcp-token() => { root.copy-mcp-token(); }
                             copy-mcp-json() => { root.copy-mcp-json(); }
                             regenerate-mcp-token() => { root.regenerate-mcp-token(); }

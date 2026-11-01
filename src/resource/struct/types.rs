@@ -24,6 +24,11 @@ pub(crate) struct SystemSnapshot {
     /// `Vec` 版本每次都要把每个挂载点的字符串深拷贝一遍 —— 而磁盘数据本来就只在
     /// `DISK_REFRESH_EVERY` 那一轮才变，那份深拷贝纯属白做。
     pub disks: Arc<[(String, u64, u64)]>,
+    /// 这份快照的采样时刻。
+    ///
+    /// 采样器在侧栏折叠 / 窗口隐藏时会整拍跳过（`sampler.rs`），没有时间戳就
+    /// 无法如实标注"数据有多旧"——MCP 的 `stale` 与远端共用同一套判定。
+    pub sampled_at: Option<std::time::Instant>,
 }
 
 /// Stateful sampler. Construct once per process and poll via [`Self::sample`].

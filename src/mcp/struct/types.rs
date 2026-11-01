@@ -132,7 +132,20 @@ impl McpConfigSnapshot {
 pub(crate) struct McpStatus {
     pub(crate) running: bool,
     pub(crate) listeners: Vec<SocketAddr>,
+    /// 失败细节（地址 / 系统错误）。**不要在这里拼中文文案** —— 界面按语言自己拼标题，
+    /// 否则英文界面里会冒出中文。
     pub(crate) error: Option<String>,
+    /// 失败类别，决定界面显示哪句标题。
+    pub(crate) error_kind: Option<McpErrorKind>,
+}
+
+/// 服务启动失败的原因类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum McpErrorKind {
+    /// 没有可监听的地址：回环关了、又没勾任何网口。
+    NoAddress,
+    /// 某个地址绑定失败（端口被占、权限不足等）。
+    BindFailed,
 }
 
 impl McpStatus {
@@ -447,6 +460,8 @@ pub(crate) enum McpError {
     ConsentTimeout,
     /// 用户撤销了本次会话的授权。
     Revoked,
+    /// 内部故障（采样线程崩了之类），不该让调用方按"用法错误"处理。
+    Internal(String),
 }
 
 impl McpError {
@@ -462,6 +477,7 @@ impl McpError {
             Self::TimedOut => "timeout",
             Self::ConsentTimeout => "consent_timeout",
             Self::Revoked => "revoked",
+            Self::Internal(_) => "internal",
         }
     }
 
@@ -477,6 +493,7 @@ impl McpError {
             Self::TimedOut => "the tool call exceeded its time budget".to_string(),
             Self::ConsentTimeout => "no answer from the Rudder window in time".to_string(),
             Self::Revoked => "the user revoked this session".to_string(),
+            Self::Internal(message) => message.clone(),
         }
     }
 }
@@ -490,7 +507,9 @@ pub(crate) struct GrantUpdate {
 
 /// 处理请求时共享的状态。全部字段可跨线程，`McpHandler` 只持有它。
 pub(crate) struct McpState {
-    pub(crate) cfg: RwLock<McpConfigSnapshot>,
+    /// 配置快照。用 `Arc` 装：`config()` 每次返回引用计数 +1，而不是把整份
+    /// （含 `client_grants` 列表与所有字符串）深拷贝一遍 —— 一次工具调用会取 2–3 次。
+    pub(crate) cfg: RwLock<std::sync::Arc<McpConfigSnapshot>>,
     pub(crate) status: Mutex<McpStatus>,
     /// 多客户端：key 是 `mcp-session-id`。权限只活在这里，配置里没有全局位。
     pub(crate) leases: Mutex<HashMap<String, ClientLease>>,
@@ -499,6 +518,11 @@ pub(crate) struct McpState {
     pub(crate) consent_gate: tokio::sync::Mutex<()>,
     /// 租约 epoch 的全局序号。跨租约单调，在途弹窗不会写到重连后的新会话上。
     pub(crate) epoch_seq: AtomicU64,
+    /// `get_host_info` 的现场采样器。懒创建：只有在 UI 侧栏采样器停摆时才用得上。
+    ///
+    /// 不读 `app.local_snap` 就够的原因见 `host_info()`：侧栏折叠时采样整拍跳过，
+    /// 读到的可能是几分钟前的数字。
+    pub(crate) local_sampler: std::sync::Arc<Mutex<Option<crate::resource::SystemSampler>>>,
     /// UI 线程不能 await；授权变化后的 `list_changed` 用这个 handle 派发。
     rt: tokio::runtime::Handle,
     pub(crate) app: AppHandles,
@@ -510,13 +534,14 @@ impl McpState {
 
     pub(crate) fn new(cfg: McpConfigSnapshot, app: AppHandles, rt: tokio::runtime::Handle) -> Self {
         Self {
-            cfg: RwLock::new(cfg),
+            cfg: RwLock::new(std::sync::Arc::new(cfg)),
             status: Mutex::new(McpStatus::default()),
             leases: Mutex::new(HashMap::new()),
             // 一次工具调用可能同时压着读屏与状态采样。
             requests: tokio::sync::Semaphore::new(8),
             consent_gate: tokio::sync::Mutex::new(()),
             epoch_seq: AtomicU64::new(1),
+            local_sampler: std::sync::Arc::new(Mutex::new(None)),
             rt,
             app,
         }
@@ -731,7 +756,8 @@ impl McpState {
         &self,
         client_id: &str,
     ) -> Option<crate::config::settings::McpClientGrant> {
-        find_grant(&self.config().client_grants, client_id).cloned()
+        let cfg = self.config();
+        find_grant(&cfg.client_grants, client_id).cloned()
     }
 
     /// 授权变化后让客户端重新 `tools/list`。UI 线程调用，派发到 tokio。
@@ -759,8 +785,9 @@ impl McpState {
             .filter(|lease| lease.verdict == ConsentState::Granted)
             .collect();
         items.sort_by_key(|lease| lease.connected_at);
-        // `config()` 返回的是快照副本（不是 guard），这里再取不会和租约锁打架。
-        let grants = self.config().client_grants;
+        // `config()` 返回的是 Arc 快照（不是 guard），这里再取不会和租约锁打架。
+        let cfg = self.config();
+        let grants = &cfg.client_grants;
         items
             .into_iter()
             .map(|lease| {
@@ -805,7 +832,7 @@ impl McpState {
         }));
     }
 
-    pub(crate) fn config(&self) -> McpConfigSnapshot {
+    pub(crate) fn config(&self) -> std::sync::Arc<McpConfigSnapshot> {
         self.cfg
             .read()
             .unwrap_or_else(|err| err.into_inner())

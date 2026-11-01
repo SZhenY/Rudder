@@ -50,6 +50,21 @@ export struct McpCloseRow {
     alarm: bool,
 }
 
+/// AI 页「已记住的客户端」一行。对应一条持久化的记忆授权，**离线也能撤销** ——
+/// 之前只能从在线卡片上取消永久信任，客户端不在线就撤不掉。
+export struct McpGrantRow {
+    /// 记忆主键：`名称 版本@设备`。
+    id: string,
+    /// 客户端名（去掉 `@设备` 后缀）。
+    client: string,
+    /// 来源：`local` 或 IP。
+    device: string,
+    /// 已记住的权限（短名摘要）。
+    permissions: string,
+    /// 是否永久信任（否则只是 15 分钟窗口内的记忆）。
+    trusted: bool,
+}
+
 /// AI 设置页：一条审计记录（工具调用）。
 export struct AuditRow {
     at: string,

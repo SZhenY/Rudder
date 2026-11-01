@@ -38,7 +38,7 @@ import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpCloseRow, AuditRow } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
@@ -190,6 +190,7 @@ export component SettingsWindow inherits Window {
     in-out property <bool> mcp-lan-enabled: false;
     in property <[McpIface]> mcp-ifaces;
     in property <[McpClientRow]> mcp-clients;
+    in property <[McpGrantRow]> mcp-grants;
     in property <string> mcp-token-masked;
     in property <string> mcp-token-plain;
     in-out property <bool> mcp-token-visible: false;
@@ -266,6 +267,7 @@ export component SettingsWindow inherits Window {
     callback disconnect-mcp-client(string);
     callback set-mcp-client-trusted(string, bool);
     callback toggle-mcp-client-expanded(string);
+    callback forget-mcp-grant(string);
     callback copy-mcp-token();
     callback copy-mcp-json();
     callback set-mcp-pty-commands(bool);
@@ -453,6 +455,7 @@ export component SettingsWindow inherits Window {
                 mcp-lan-enabled <=> root.mcp-lan-enabled;
                 mcp-ifaces: root.mcp-ifaces;
                 mcp-clients: root.mcp-clients;
+                mcp-grants: root.mcp-grants;
                 mcp-token-masked: root.mcp-token-masked;
                 mcp-token-plain: root.mcp-token-plain;
                 mcp-token-visible <=> root.mcp-token-visible;
@@ -466,6 +469,7 @@ export component SettingsWindow inherits Window {
                 disconnect-mcp-client(v) => { root.disconnect-mcp-client(v); }
                 set-mcp-client-trusted(c0, c1) => { root.set-mcp-client-trusted(c0, c1); }
                 toggle-mcp-client-expanded(c2) => { root.toggle-mcp-client-expanded(c2); }
+                forget-mcp-grant(c3) => { root.forget-mcp-grant(c3); }
                 copy-mcp-token => { root.copy-mcp-token(); }
                 copy-mcp-json => { root.copy-mcp-json(); }
                 regenerate-mcp-token => { root.regenerate-mcp-token(); }

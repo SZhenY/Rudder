@@ -14,7 +14,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::http;
 use super::types::{
-    AppHandles, CloseReason, McpConfigSnapshot, McpSessionInfo, McpState, McpStatus, SharedState,
+    AppHandles, CloseReason, McpConfigSnapshot, McpErrorKind, McpSessionInfo, McpState, McpStatus,
+    SharedState,
 };
 
 struct Active {
@@ -92,6 +93,11 @@ pub(crate) fn set_session_permission(
 }
 
 /// AI 页"最近调用"列表。
+/// 「最近调用」环的版本号；UI 先比它再决定要不要取内容。
+pub(crate) fn recent_calls_rev() -> u64 {
+    super::audit::ring_rev()
+}
+
 pub(crate) fn recent_calls() -> Vec<super::audit_types::AuditEntry> {
     super::audit::recent()
 }
@@ -125,7 +131,7 @@ pub(crate) fn start(rt: &Handle, snapshot: McpConfigSnapshot, app: AppHandles) {
                 .state
                 .cfg
                 .write()
-                .unwrap_or_else(|err| err.into_inner()) = snapshot;
+                .unwrap_or_else(|err| err.into_inner()) = std::sync::Arc::new(snapshot);
             // 令牌换了就释放唯一席位：旧客户端随后每个请求都是 401，若还占着租约，
             // 新客户端要等 15 分钟空闲才连得上。
             if previous.token != running.state.config().token {
@@ -170,7 +176,8 @@ async fn run(state: SharedState, cancel: CancellationToken) {
         state.set_status(McpStatus {
             running: false,
             listeners: Vec::new(),
-            error: Some("没有可监听的地址".to_string()),
+            error: None,
+            error_kind: Some(McpErrorKind::NoAddress),
         });
         return;
     }
@@ -184,7 +191,8 @@ async fn run(state: SharedState, cancel: CancellationToken) {
                 state.set_status(McpStatus {
                     running: false,
                     listeners: Vec::new(),
-                    error: Some(format!("{addr} 绑定失败: {err}")),
+                    error: Some(format!("{addr}: {err}")),
+                    error_kind: Some(McpErrorKind::BindFailed),
                 });
                 return;
             }
@@ -194,6 +202,7 @@ async fn run(state: SharedState, cancel: CancellationToken) {
     let listeners: Vec<SocketAddr> = bound.iter().map(|(addr, _)| *addr).collect();
     state.set_status(McpStatus {
         running: true,
+        error_kind: None,
         listeners: listeners.clone(),
         error: None,
     });

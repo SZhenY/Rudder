@@ -104,6 +104,44 @@ impl SftpHandle {
         let _ = self.commands.send(SftpCommand::McpList { path, reply });
         rx
     }
+    /// MCP：新建目录，返回成败。
+    pub fn mcp_mkdir(&self, path: String) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        let _ = self.commands.send(SftpCommand::McpMkDir { path, reply });
+        rx
+    }
+    /// MCP：删除文件 / 目录（`recursive` 决定能否删非空目录）。
+    pub fn mcp_remove(
+        &self,
+        path: String,
+        recursive: bool,
+    ) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .commands
+            .send(SftpCommand::McpRemove { path, recursive, reply });
+        rx
+    }
+    /// MCP：改名 / 移动。
+    pub fn mcp_rename(
+        &self,
+        from: String,
+        to: String,
+    ) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        let _ = self.commands.send(SftpCommand::McpRename { from, to, reply });
+        rx
+    }
+    /// MCP：改权限位。
+    pub fn mcp_chmod(
+        &self,
+        path: String,
+        mode: u32,
+    ) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        let _ = self.commands.send(SftpCommand::McpChmod { path, mode, reply });
+        rx
+    }
     /// MCP：下载到下载目录，同名自动避让（`name (1).ext`）。
     pub fn mcp_download_auto(
         &self,
@@ -575,6 +613,79 @@ async fn run_sftp(
                 let result = list_dir_impl(&sftp, &path)
                     .await
                     .map_err(|err| format!("{err:#}"));
+                let _ = reply.send(result);
+            }
+            // ── MCP 变更类：带回执。只刷面板列表、不动左树（下次 Refresh 即修正） ──
+            SftpCommand::McpMkDir { path, reply } => {
+                let result = sftp
+                    .create_dir(&path)
+                    .await
+                    .map_err(|err| format!("mkdir {path}: {err}"));
+                if result.is_ok() {
+                    refresh_panel_dir(&sftp, &events, &parent_dir(&path)).await;
+                }
+                let _ = reply.send(result);
+            }
+            SftpCommand::McpRemove { path, recursive, reply } => {
+                let result = async {
+                    // 目录还是文件得先看权限位：SFTP 的 remove_file 删不掉目录。
+                    let is_dir = sftp
+                        .metadata(&path)
+                        .await
+                        .ok()
+                        .and_then(|meta| meta.permissions)
+                        .map(|mode| mode & 0o170_000 == 0o040_000)
+                        .unwrap_or(false);
+                    if !is_dir {
+                        return sftp
+                            .remove_file(&path)
+                            .await
+                            .map_err(|err| format!("remove {path}: {err}"));
+                    }
+                    if recursive {
+                        remove_dir_recursive(&sftp, &path)
+                            .await
+                            .map_err(|err| format!("{err:#}"))
+                    } else {
+                        sftp.remove_dir(&path).await.map_err(|err| {
+                            format!(
+                                "remove dir {path}: {err} \
+                                 (pass recursive=true to delete a non-empty directory)"
+                            )
+                        })
+                    }
+                }
+                .await;
+                if result.is_ok() {
+                    refresh_panel_dir(&sftp, &events, &parent_dir(&path)).await;
+                }
+                let _ = reply.send(result);
+            }
+            SftpCommand::McpRename { from, to, reply } => {
+                let result = sftp
+                    .rename(&from, &to)
+                    .await
+                    .map_err(|err| format!("rename {from} -> {to}: {err}"));
+                if result.is_ok() {
+                    refresh_panel_dir(&sftp, &events, &parent_dir(&from)).await;
+                    if parent_dir(&from) != parent_dir(&to) {
+                        refresh_panel_dir(&sftp, &events, &parent_dir(&to)).await;
+                    }
+                }
+                let _ = reply.send(result);
+            }
+            SftpCommand::McpChmod { path, mode, reply } => {
+                let attrs = FileAttributes {
+                    permissions: Some(mode),
+                    ..Default::default()
+                };
+                let result = sftp
+                    .set_metadata(&path, attrs)
+                    .await
+                    .map_err(|err| format!("chmod {path}: {err}"));
+                if result.is_ok() {
+                    refresh_panel_dir(&sftp, &events, &parent_dir(&path)).await;
+                }
                 let _ = reply.send(result);
             }
             SftpCommand::McpDownloadAuto { remote, dir, reply } => {
@@ -1636,6 +1747,23 @@ async fn write_text_file(sftp: &SftpSession, remote: &str, content: &str) -> Res
 /// File name component of a path.  Handles both remote (`/`) and local Windows
 /// (`\`) separators, so uploading `C:\…\frp.tar.gz` yields `frp.tar.gz` rather
 /// than the whole path (which previously became the remote file name).
+/// MCP 变更之后刷新面板列表。
+///
+/// 左树不跟着同步（那要改 `tree_dirs` / `tree_expanded` 两张表），代价是展开的树节点
+/// 可能短暂陈旧，用户下次 Refresh / 展开就会修正。
+async fn refresh_panel_dir(
+    sftp: &SftpSession,
+    events: &tokio::sync::mpsc::UnboundedSender<SessionEvent>,
+    dir: &str,
+) {
+    if let Ok(entries) = list_dir_impl(sftp, dir).await {
+        let _ = events.send(SessionEvent::SftpEntries {
+            path: dir.to_string(),
+            entries,
+        });
+    }
+}
+
 fn base_name(path: &str) -> String {
     let sep = |c: char| c == '/' || c == '\\';
     path.trim_end_matches(sep)

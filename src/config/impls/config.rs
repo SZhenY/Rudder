@@ -2431,6 +2431,10 @@ impl ConfigStore {
     pub fn mcp_lan_ifaces(&self) -> &[String] {
         &self.cache.mcp.mcp_lan_ifaces
     }
+    /// 整表替换网口勾选（「还原本页默认」用）。
+    pub fn set_mcp_lan_ifaces(&mut self, list: Vec<String>) {
+        self.cache.mcp.mcp_lan_ifaces = list;
+    }
     /// 开关某个网口：已勾选则去掉，否则追加。
     pub fn toggle_mcp_lan_iface(&mut self, name: &str) {
         if let Some(index) = self

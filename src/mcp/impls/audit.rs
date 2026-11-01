@@ -32,6 +32,9 @@ static TX: OnceLock<Option<SyncSender<Value>>> = OnceLock::new();
 static RING: OnceLock<Mutex<VecDeque<AuditEntry>>> = OnceLock::new();
 static CLOSES: OnceLock<Mutex<VecDeque<SessionCloseEntry>>> = OnceLock::new();
 static DEGRADED: AtomicBool = AtomicBool::new(false);
+/// 「最近调用」环的版本号，每次写入 +1。UI 每秒轮询时先比它，没变就不必
+/// 把 200 条整份 clone 出来再丢掉。
+static RING_REV: AtomicU64 = AtomicU64::new(0);
 static DROPPED: AtomicU64 = AtomicU64::new(0);
 
 fn ring() -> &'static Mutex<VecDeque<AuditEntry>> {
@@ -71,6 +74,7 @@ pub(super) fn record(record: Value, entry: AuditEntry) {
     {
         let mut ring = ring().lock().unwrap_or_else(|err| err.into_inner());
         push_capped(&mut ring, RING_CAPACITY, entry);
+        RING_REV.fetch_add(1, Ordering::Relaxed);
     }
     init();
     let Some(Some(tx)) = TX.get() else {
@@ -110,6 +114,11 @@ pub(super) fn record_only(record: Value) {
 }
 
 /// 最近若干条（新的在前）。
+/// 「最近调用」环的版本号。变了才有必要重新取内容。
+pub(super) fn ring_rev() -> u64 {
+    RING_REV.load(Ordering::Relaxed)
+}
+
 pub(super) fn recent() -> Vec<AuditEntry> {
     let ring = ring().lock().unwrap_or_else(|err| err.into_inner());
     ring.iter().rev().cloned().collect()
@@ -201,6 +210,9 @@ impl Sink {
         if let Some(err) = failure {
             self.file = None;
             self.warn_once(&format!("write failed: {err}"));
+        } else {
+            // 写成功就解除降级：用户把日志目录权限修好之后，不必重启程序。
+            DEGRADED.store(false, Ordering::Relaxed);
         }
     }
 

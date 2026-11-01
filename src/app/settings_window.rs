@@ -168,7 +168,7 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_mcp_json_masked(m.get_mcp_json_masked());
     sw.set_mcp_ifaces(m.get_mcp_ifaces());
     sw.set_mcp_clients(m.get_mcp_clients());
-    sw.set_mcp_port(m.get_mcp_port());
+    sw.set_mcp_grants(m.get_mcp_grants());
     // 字体 / 壁纸 / 渲染器（其余可能被 Rust 侧规范化或回落的值）
     sw.set_term_font_index(m.get_term_font_index());
     sw.set_ui_font_index(m.get_ui_font_index());
@@ -201,7 +201,7 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     // 会话卡与审计：状态由主窗口 1 Hz 维护，这里同步一份给独立窗。
     sw.set_mcp_pty_commands(m.get_mcp_pty_commands());
     sw.set_mcp_audit_enabled(m.get_mcp_audit_enabled());
-    sw.set_mcp_audit_retention(m.get_mcp_audit_retention());
+    // `mcp-audit-retention` 同理是输入框，不回灌；只同步它的校验结果。
     sw.set_mcp_audit_retention_valid(m.get_mcp_audit_retention_valid());
     sw.set_mcp_audit_degraded(m.get_mcp_audit_degraded());
     sw.set_mcp_recent_calls(m.get_mcp_recent_calls());
@@ -218,21 +218,16 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_output_highlight_rule_status(m.get_output_highlight_rule_status());
     sw.set_output_highlight_rules(m.get_output_highlight_rules());
     sw.set_wsl_profiles(m.get_wsl_profiles());
-    // AI / MCP：状态与令牌由主窗口的 1 Hz 定时器维护，这里只做开窗时的拷贝。
+    // AI / MCP：只补第一批漏掉的几项。`mcp-port` 与 `mcp-token-visible` 故意不回灌：
+    // 前者是正在编辑的输入框（每秒写回会把没提交的中间值打回），后者是设置窗的本地
+    // UI 状态（由用户控制，服务关闭时才强制复位）。
     sw.set_mcp_enabled(m.get_mcp_enabled());
-    sw.set_mcp_port(m.get_mcp_port());
     sw.set_mcp_port_valid(m.get_mcp_port_valid());
-    sw.set_mcp_status(m.get_mcp_status());
-    sw.set_mcp_status_error(m.get_mcp_status_error());
-    sw.set_mcp_urls(m.get_mcp_urls());
     sw.set_mcp_lan_enabled(m.get_mcp_lan_enabled());
-    sw.set_mcp_ifaces(m.get_mcp_ifaces());
-    sw.set_mcp_clients(m.get_mcp_clients());
-    sw.set_mcp_token_masked(m.get_mcp_token_masked());
-    sw.set_mcp_token_plain(m.get_mcp_token_plain());
-    sw.set_mcp_json(m.get_mcp_json());
-    sw.set_mcp_json_masked(m.get_mcp_json_masked());
-    sw.set_mcp_token_visible(m.get_mcp_token_visible());
+    if !m.get_mcp_enabled() {
+        // 服务关着还挂着明文令牌没有意义，复位成掩码。
+        sw.set_mcp_token_visible(false);
+    }
 }
 
 /// 打开设置窗口：播种主窗口当前值 → 同步主题 → `show()` → 首帧补救三连。
@@ -249,6 +244,11 @@ pub(super) fn open_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     // 全在 `sync_settings_reflected` 里。不在这里补一次，开窗首帧会显示
     // "没有客户端连接 / 权限全关"，最长滞后 1 秒。
     sync_settings_reflected(m, sw);
+    // `sync_settings_reflected` 故意不回灌三项（两个输入框 + 令牌显隐，原因见该函数），
+    // 开窗时在这里补一次初值，否则会停在 Slint 默认值。
+    sw.set_mcp_port(m.get_mcp_port());
+    sw.set_mcp_audit_retention(m.get_mcp_audit_retention());
+    sw.set_mcp_token_visible(false);
     sync_settings_theme(m, sw);
     let _ = sw.show();
     sw.window().with_winit_window(|ww| ww.focus_window());
@@ -467,6 +467,7 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_mcp_pty_commands => invoke_set_mcp_pty_commands, (a0));
     forward!(sw, m, s, on_set_mcp_client_trusted => invoke_set_mcp_client_trusted, (a0, a1));
     forward!(sw, m, s, on_toggle_mcp_client_expanded => invoke_toggle_mcp_client_expanded, (a0));
+    forward!(sw, m, s, on_forget_mcp_grant => invoke_forget_mcp_grant, (a0));
     forward!(sw, m, s, on_set_mcp_audit_enabled => invoke_set_mcp_audit_enabled, (a0));
     forward!(sw, m, s, on_set_mcp_audit_retention -> invoke_set_mcp_audit_retention, (a0));
     forward!(sw, m, s, on_open_mcp_log_dir => invoke_open_mcp_log_dir, ());

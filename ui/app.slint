@@ -36,7 +36,7 @@ import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, AuditRow } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
 // `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
 // `slint::include_modules!` 才会生成对应的 Rust 窗口类型（只 import 不实例化的话，
@@ -206,6 +206,8 @@ export component AppWindow inherits Window {
     // pulse on the Transfers toolbar button (#breathing-light).
     in-out property <bool> has-active-transfers: false;
     in-out property <bool> settings-open: false;  // settings menu popup
+    /// 当前接入的 AI 客户端数量（> 0 时顶部栏显示徽标）。
+    in property <int> mcp-client-count: 0;
 
     // Immersive custom title bar (#119). Rust sets `custom-titlebar` true on
     // Windows/Linux (frameless); macOS keeps native decorations. The callbacks
@@ -514,6 +516,7 @@ export component AppWindow inherits Window {
     in-out property <bool> mcp-lan-enabled;
     in property <[McpIface]> mcp-ifaces;
     in property <[McpClientRow]> mcp-clients;
+    in property <[McpGrantRow]> mcp-grants;
     in property <string> mcp-token-masked;
     in property <string> mcp-token-plain;
     in-out property <bool> mcp-token-visible;
@@ -554,6 +557,7 @@ export component AppWindow inherits Window {
     callback mcp-consent-toggle-section(string);
     callback set-mcp-client-trusted(string /* client_id */, bool);
     callback toggle-mcp-client-expanded(string /* session_id */);
+    callback forget-mcp-grant(string /* grant id */);
     // WSL profiles (upstream a64097e): managed in Interface → WSL.
     in property <[WslProfileInfo]> wsl-profiles;
     in-out property <string> wsl-new-directory: "~";
@@ -2041,6 +2045,28 @@ export component AppWindow inherits Window {
             // Breathe while any transfer is running (driven from Rust).
             breathe: root.has-active-transfers;
             clicked => { root.download-open = !root.download-open; root.settings-open = false; }
+        }
+        // AI 接入徽标：设置之外唯一能感知"有 agent 连着"的地方。
+        if root.mcp-client-count > 0 : Rectangle {
+            width: 40px;
+            height: 20px;
+            border-radius: Theme.radius-sm;
+            background: Theme.state-selected;
+            border-width: 1px;
+            border-color: Theme.state-selected-border;
+            Text {
+                text: "AI " + root.mcp-client-count;
+                color: Theme.accent;
+                font-size: Theme.fs-xs;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            // 点开设置。
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.settings-open = true; }
+            }
         }
         IconButton {
             size: 26px;

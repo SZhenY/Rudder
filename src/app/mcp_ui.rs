@@ -1653,6 +1653,59 @@ pub(crate) async fn send_input(
 
 /// 在会话的连接上排一条 exec 命令，**不在这里等结果** —— 等结果会占住 UI 线程。
 /// 返回的 `oneshot` 由调用方（tokio 线程）await。
+/// 更新检查与安装状态。
+///
+/// 这些值由 `updater.rs` 写进窗口属性，这里只是读一份镜像。触发检查用
+/// `run_action(action="check_update")`，然后轮询本工具。
+pub(crate) async fn update_status() -> Result<serde_json::Value, McpError> {
+    call(READ_TIMEOUT, move |access| {
+        let window = &access.window;
+        // 发布说明可能很长，截一段并标记，别把整篇塞进响应。
+        let mut notes = window.get_update_notes().to_string();
+        let notes_truncated = notes.chars().count() > 2000;
+        if notes_truncated {
+            notes = notes.chars().take(2000).collect();
+        }
+        Ok(serde_json::json!({
+            "current_version": window.get_update_current_version().to_string(),
+            "checked_at": window.get_update_last_check().to_string(),
+            "checking": window.get_update_checking(),
+            "check_status": window.get_update_check_status().to_string(),
+            "check_error": window.get_update_check_error().to_string(),
+            "update_available": window.get_update_available(),
+            "new_version": window.get_update_version().to_string(),
+            "badge": window.get_update_badge().to_string(),
+            "downgrade": window.get_update_downgrade(),
+            "notes": notes,
+            "notes_truncated": notes_truncated,
+            "install": {
+                "state_code": window.get_update_state(),
+                "progress": window.get_update_progress(),
+                "status": window.get_update_status().to_string(),
+            },
+        }))
+    })
+    .await
+}
+
+/// 结束远端进程（SIGTERM）。
+///
+/// 与 `ssh_exec` 一样只排队、不等结果 —— 等结果留给调用方（那里才有超时预算）。
+pub(crate) async fn ssh_kill_process(
+    tab_id: String,
+    pid: u32,
+    root_password: Option<String>,
+) -> Result<tokio::sync::oneshot::Receiver<crate::ssh::ProcessKillResult>, McpError> {
+    call(READ_TIMEOUT, move |ui| {
+        let handles = ui.ctx.handles.borrow();
+        let Some(handle) = handles.get(&tab_id) else {
+            return Err(McpError::Invalid(format!("unknown tab_id: {tab_id}")));
+        };
+        Ok(handle.kill_process(pid, root_password.map(crate::config::Secret::new)))
+    })
+    .await
+}
+
 pub(crate) async fn ssh_exec(
     tab_id: String,
     command: String,

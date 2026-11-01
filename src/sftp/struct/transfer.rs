@@ -94,6 +94,29 @@ pub enum SftpCommand {
         remote: String,
         reply: oneshot::Sender<Result<u64, String>>,
     },
+    /// MCP：新建目录（单层，父目录必须存在）。
+    McpMkDir {
+        path: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// MCP：删除一条路径。`recursive=false` 时目录必须为空。
+    McpRemove {
+        path: String,
+        recursive: bool,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// MCP：改名 / 移动（目标已存在会被覆盖，SFTP v3 没有 no-clobber）。
+    McpRename {
+        from: String,
+        to: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// MCP：改权限位。
+    McpChmod {
+        path: String,
+        mode: u32,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
     Close,
 }
 

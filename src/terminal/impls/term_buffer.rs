@@ -43,6 +43,14 @@ impl TermBuffer {
     /// 生产侧（`session_callbacks` 开新标签页）与单测**共用这一个构造点**：原来那是一处
     /// 22 字段的结构体字面量，加字段必漏，测试也没法随手造 buffer（M3 补测试的前置）。
     /// 主题 / 高亮预设 / 自定义规则 / JSON 美化这几项由调用方在返回后覆盖。
+    /// 输出序号（累计写入的字节数）。
+    ///
+    /// 等待类调用（`wait_for_output` / PTY 执行）先用它判断"有没有新内容"，
+    /// 没变就不必生成整屏文本 —— 后者要逐行走 `build_line`，是这条路径的主要开销。
+    pub(crate) fn output_seq(&self) -> u64 {
+        self.output_seq
+    }
+
     pub(crate) fn new(rows: u16, cols: u16, scrollback_lines: usize) -> Self {
         let (term, processor) = crate::terminal::new_term(rows, cols, scrollback_lines);
         Self {

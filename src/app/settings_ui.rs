@@ -30,6 +30,7 @@ pub(crate) enum SettingsPage {
     Appearance,
     Layout,
     Transfer,
+    Ai,
 }
 
 impl SettingsPage {
@@ -39,6 +40,7 @@ impl SettingsPage {
             "appearance" => Some(Self::Appearance),
             "layout" => Some(Self::Layout),
             "transfer" => Some(Self::Transfer),
+            "ai" => Some(Self::Ai),
             _ => None,
         }
     }
@@ -75,6 +77,7 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
         }
         SettingsPage::Layout => settings::layout::reset(w, store, &refs.panes),
         SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
+        SettingsPage::Ai => settings::ai::reset(w, store),
     }
 }
 

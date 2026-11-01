@@ -110,6 +110,7 @@ impl SystemSampler {
             net_rx_per_sec,
             net_tx_per_sec,
             disks,
+            sampled_at: Some(std::time::Instant::now()),
         }
     }
 }
