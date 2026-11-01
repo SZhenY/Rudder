@@ -5,6 +5,51 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.8.1-beta1] - 2026-11-01
+
+### 新增 / Added
+
+- MCP `run_command` 可选择在交互式终端里执行：设置里打开后，命令与输出都显示在终端窗口，
+  支持 POSIX / PowerShell / cmd 三套 shell；当前在 vim、htop 这类全屏程序里时会自动另开
+  标签页执行，不打断现有屏幕。
+- MCP 授权弹窗按权限组折叠，组内多于 1 位才出组标题（之前 12 个权限位会打出 10 个标题）；
+  顶部显示「已选 n / 共 12」，鼠标悬停可看完整说明。
+- 设置 → AI 新增「最近断开」，列出会话结束原因：授权超时、闲置回收、客户端主动关闭、
+  服务停止等。
+- 设置 → AI 的客户端卡片默认折起，展开再看 12 项权限。
+
+### 变更 / Changed
+
+- MCP 客户端的记忆授权改按「名称 + 版本 + 来源 IP」匹配：同一台设备的多个连接共享一条记录，
+  不同设备各自独立——之前同名客户端会互相覆盖，改一个另一个跟着变。15 分钟内重连免问，
+  勾了永久信任则一直免问；拒绝接入会删掉这条记录。
+- MCP 服务未启用时，令牌的显示 / 复制 / 重新生成按钮置灰。
+
+### 修复 / Fixed
+
+- 客户端卡片折起后仍占一大片空白：Slint 的 `visible: false` 不会释放布局空间，改用条件渲染。
+- 授权弹窗里权限行的开关没有右对齐：`HorizontalLayout` 的主轴 `alignment` 会关掉所有
+  `horizontal-stretch`，开关位置随描述长度漂移。
+- 授权弹窗的滚轮会穿透到下层终端：普通屏幕下终端跟着滚动，alt-screen 下还会把滚动编码成
+  转义序列发给远端程序。
+- `unix_now` 误挂 `#[cfg(target_os = "macos")]`，导致 Windows / Linux 编译失败。
+
+**Added**: MCP `run_command` can run in a visible interactive terminal (opt-in), wrapping the
+command for POSIX / PowerShell / cmd and opening a fresh tab when a full-screen program would be
+disturbed. The consent dialog groups permissions into collapsible sections with an "n of 12"
+summary and full descriptions on hover. Settings → AI gained a "Recently closed" list with the end
+reason, and client cards now start collapsed.
+
+**Changed**: remembered grants are keyed by name + version + source IP, so connections from one
+device share a grant while different devices stay independent (previously same-named clients
+overwrote each other). Reconnecting within 15 minutes skips the prompt, permanent trust skips it
+for good, and denying deletes the record. Token buttons are disabled while the server is off.
+
+**Fixed**: collapsed client cards left a large blank area (`visible: false` still occupies layout);
+permission-row switches drifted instead of right-aligning (main-axis `alignment` cancelled stretch);
+wheel events leaked through the dialog to the terminal underneath; `unix_now` was gated behind
+`#[cfg(target_os = "macos")]`, breaking Windows / Linux builds.
+
 ## [0.8.1-fix1] - 2026-10-28
 
 ### 修复 / Fixed
