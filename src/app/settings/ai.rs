@@ -33,6 +33,21 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
         });
     }
     {
+        // 执行通道：开 = run_command 走交互式 PTY（命令与输出在终端可见）。
+        // 只改快照，不需要重建 listener。
+        let store = store.clone();
+        let weak = window.as_weak();
+        let ifaces = ifaces.clone();
+        let clients = clients.clone();
+        window.on_set_mcp_pty_commands(move |enabled: bool| {
+            persist(&store, |s| s.set_mcp_pty_commands(enabled));
+            apply(&store);
+            if let Some(window) = weak.upgrade() {
+                refresh(&window, &store, &ifaces, &clients);
+            }
+        });
+    }
+    {
         let store = store.clone();
         let weak = window.as_weak();
         let ifaces = ifaces.clone();
@@ -259,6 +274,7 @@ fn refresh(
         );
         window.set_mcp_audit_retention_valid(true);
     }
+    window.set_mcp_pty_commands(store.borrow().mcp_pty_commands());
     window.set_mcp_audit_degraded(crate::mcp::audit_degraded());
 
     let selected_ifaces = store.borrow().mcp_lan_ifaces().to_vec();

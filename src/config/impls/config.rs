@@ -2467,6 +2467,13 @@ impl ConfigStore {
         }
         self.cache.mcp.mcp_client_grants = list;
     }
+    /// AI 执行命令走交互式 PTY（可见）还是一次性 exec 通道（默认，不可见）。
+    pub fn mcp_pty_commands(&self) -> bool {
+        self.cache.mcp.mcp_pty_commands
+    }
+    pub fn set_mcp_pty_commands(&mut self, v: bool) {
+        self.cache.mcp.mcp_pty_commands = v;
+    }
     pub fn mcp_audit_enabled(&self) -> bool {
         self.cache.mcp.mcp_audit_enabled
     }

@@ -199,6 +199,7 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_hide_special_partitions(m.get_hide_special_partitions());
     sw.set_webdav_accept_invalid_certs(m.get_webdav_accept_invalid_certs());
     // 会话卡与审计：状态由主窗口 1 Hz 维护，这里同步一份给独立窗。
+    sw.set_mcp_pty_commands(m.get_mcp_pty_commands());
     sw.set_mcp_audit_enabled(m.get_mcp_audit_enabled());
     sw.set_mcp_audit_retention(m.get_mcp_audit_retention());
     sw.set_mcp_audit_retention_valid(m.get_mcp_audit_retention_valid());
@@ -462,6 +463,7 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_copy_mcp_json => invoke_copy_mcp_json, ());
     forward!(sw, m, s, on_regenerate_mcp_token => invoke_regenerate_mcp_token, ());
     forward!(sw, m, s, on_disconnect_mcp_client => invoke_disconnect_mcp_client, (a0));
+    forward!(sw, m, s, on_set_mcp_pty_commands => invoke_set_mcp_pty_commands, (a0));
     forward!(sw, m, s, on_set_mcp_audit_enabled => invoke_set_mcp_audit_enabled, (a0));
     forward!(sw, m, s, on_set_mcp_audit_retention -> invoke_set_mcp_audit_retention, (a0));
     forward!(sw, m, s, on_open_mcp_log_dir => invoke_open_mcp_log_dir, ());

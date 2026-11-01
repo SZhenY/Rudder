@@ -195,6 +195,7 @@ export component SettingsWindow inherits Window {
     in-out property <bool> mcp-token-visible: false;
     in property <string> mcp-json;
     in property <string> mcp-json-masked;
+    in-out property <bool> mcp-pty-commands: false;
     in-out property <bool> mcp-audit-enabled: true;
     in-out property <string> mcp-audit-retention: "14";
     in-out property <bool> mcp-audit-retention-valid: true;
@@ -264,6 +265,7 @@ export component SettingsWindow inherits Window {
     callback disconnect-mcp-client(string);
     callback copy-mcp-token();
     callback copy-mcp-json();
+    callback set-mcp-pty-commands(bool);
     callback set-mcp-audit-enabled(bool);
     callback set-mcp-audit-retention(string) -> bool;
     callback open-mcp-log-dir();
@@ -462,11 +464,13 @@ export component SettingsWindow inherits Window {
                 copy-mcp-token => { root.copy-mcp-token(); }
                 copy-mcp-json => { root.copy-mcp-json(); }
                 regenerate-mcp-token => { root.regenerate-mcp-token(); }
+                mcp-pty-commands <=> root.mcp-pty-commands;
                 mcp-audit-enabled <=> root.mcp-audit-enabled;
                 mcp-audit-retention <=> root.mcp-audit-retention;
                 mcp-audit-retention-valid <=> root.mcp-audit-retention-valid;
                 mcp-audit-degraded: root.mcp-audit-degraded;
                 mcp-recent-calls: root.mcp-recent-calls;
+                set-mcp-pty-commands(v) => { root.set-mcp-pty-commands(v); }
                 set-mcp-audit-enabled(v) => { root.set-mcp-audit-enabled(v); }
                 set-mcp-audit-retention(v) => { root.set-mcp-audit-retention(v); }
                 open-mcp-log-dir => { root.open-mcp-log-dir(); }

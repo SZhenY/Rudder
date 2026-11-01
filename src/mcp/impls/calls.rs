@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde_json::{Value, json};
 
+use super::pty_cmd;
 use super::types::{McpError, SharedState};
 use crate::config::SessionKind;
 use crate::terminal::TextSnapshot;
@@ -387,17 +388,65 @@ async fn run_command(state: &SharedState, args: &Value) -> Result<Value, McpErro
     let max_output_bytes = int_arg(args, "max_output_bytes", 1_048_576, 1024, 4_194_304) as usize;
     let timeout = Duration::from_millis(timeout_ms);
 
-    let kind = {
+    // `host` 决定本地标签用哪套 marker 语法（cmd / wsl / PowerShell）；
+    // `session_id` 供全屏保护时另开一个标签页。
+    let (kind, host, session_id) = {
         let statuses = state
             .app
             .tab_statuses
             .lock()
             .unwrap_or_else(|err| err.into_inner());
         match statuses.get(&tab_id) {
-            Some(status) => status.kind,
+            Some(status) => (status.kind, status.host.clone(), status.session_id.clone()),
             None => return Err(McpError::Invalid(format!("unknown tab_id: {tab_id}"))),
         }
     };
+
+    // 执行通道开关：开 → 走交互式 PTY（命令与输出对用户可见）；
+    // 默认关 = 下面的 exec 通道（不碰终端）。
+    if state
+        .cfg
+        .read()
+        .map(|cfg| cfg.pty_commands)
+        .unwrap_or(false)
+    {
+        // 用户正在 vim / htop 这类全屏程序里时，往同一个 PTY 写会把屏幕打乱。
+        // 另开一个标签页执行，命令与输出在那边可见，当前屏幕一个字都不动。
+        if is_alt_screen(state, &tab_id) {
+            let opened =
+                crate::app::mcp_ui::open_session(session_id.clone(), false).await?;
+            let new_tab = opened
+                .get("tab_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            if new_tab.is_empty() {
+                return Err(McpError::Invalid(
+                    "could not open a tab to run the command in".to_string(),
+                ));
+            }
+            // 新标签页返回时还是 connecting，PTY 没就绪 —— 等它画出提示符再发命令。
+            wait_tab_ready(state, &new_tab, timeout.min(Duration::from_secs(20))).await?;
+            let mut out = pty_run_command(
+                state,
+                new_tab.clone(),
+                kind,
+                &host,
+                command,
+                timeout,
+                max_output_bytes,
+            )
+            .await?;
+            if let Some(obj) = out.as_object_mut() {
+                obj.insert("reason".to_string(), json!("alt_screen"));
+                obj.insert("opened_tab".to_string(), json!(new_tab));
+                obj.insert("executed_tab".to_string(), json!(new_tab));
+            }
+            return Ok(out);
+        }
+        return pty_run_command(state, tab_id, kind, &host, command, timeout, max_output_bytes)
+            .await;
+    }
 
     let result = match kind {
         SessionKind::Ssh => {
@@ -432,6 +481,127 @@ async fn run_command(state: &SharedState, args: &Value) -> Result<Value, McpErro
         "timed_out": result.timed_out,
         "duration_ms": result.duration.as_millis() as u64,
     }))
+}
+
+/// 这个标签页当前是否处于 alt-screen（vim / htop / less 这类全屏程序）。
+fn is_alt_screen(state: &SharedState, tab_id: &str) -> bool {
+    let handle = {
+        let bufs = state
+            .app
+            .bufs
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        match bufs.get(tab_id).cloned() {
+            Some(handle) => handle,
+            None => return false,
+        }
+    };
+    let buffer = handle.lock().unwrap_or_else(|err| err.into_inner());
+    crate::terminal::is_alt(&buffer.term)
+}
+
+/// 等一个新标签页的 PTY 就绪：它返回时还是 `connecting`，此刻写进去的字节会丢。
+/// 判据是"终端缓冲已经有输出"（登录提示符 / banner），而不是查状态字段 ——
+/// 状态转到 connected 之后提示符可能还没画出来。
+async fn wait_tab_ready(
+    state: &SharedState,
+    tab_id: &str,
+    timeout: Duration,
+) -> Result<(), McpError> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Ok(snap) = snapshot(state, tab_id, 40, false)
+            && snap.output_seq > 0
+        {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(McpError::Invalid(format!(
+                "the tab opened for this command did not become ready in time: {tab_id}"
+            )));
+        }
+        tokio::time::sleep(Duration::from_millis(80)).await;
+    }
+}
+
+/// 终端里那条 shell 的家族 —— 决定 marker 语法。
+///
+/// 判据跟着 `terminal/impls/local.rs` 的 `local_program`：`host == "cmd"` 才起
+/// cmd.exe，`"wsl"` 起的是发行版里的 POSIX 登录 shell，其余 Windows 本地标签是
+/// PowerShell；SSH / Telnet / 串口一律按 POSIX 处理。
+fn shell_family(kind: SessionKind, host: &str) -> pty_cmd::ShellFamily {
+    if !matches!(kind, SessionKind::Local) || !cfg!(windows) {
+        return pty_cmd::ShellFamily::Posix;
+    }
+    match host {
+        "cmd" => pty_cmd::ShellFamily::Cmd,
+        "wsl" => pty_cmd::ShellFamily::Posix,
+        _ => pty_cmd::ShellFamily::PowerShell,
+    }
+}
+
+/// PTY 通道执行：把命令包上 marker 发进**用户的交互式终端**，再从终端快照里切出输出。
+///
+/// 与 exec 通道的取舍：这条路径下命令与输出用户都看得见（这正是开关的目的），
+/// 但拿不到独立的 stderr，退出码也只能靠 marker 协议约定；被用户并发输入打断时
+/// marker 可能缺失，此时返回 `marker_found: false` 与快照尾部，让调用方知道结果不可靠。
+async fn pty_run_command(
+    state: &SharedState,
+    tab_id: String,
+    kind: SessionKind,
+    host: &str,
+    command: String,
+    timeout: Duration,
+    max_output_bytes: usize,
+) -> Result<Value, McpError> {
+    let started = Instant::now();
+    let token = pty_cmd::new_token(state.next_epoch());
+    let line = pty_cmd::wrap(shell_family(kind, host), &token, &command);
+
+    // 复用 send_input 的路径：它经 UI 线程把字节写进 PTY。
+    crate::app::mcp_ui::send_input(tab_id.clone(), line, true).await?;
+
+    let deadline = started + timeout;
+    loop {
+        let snap = snapshot(state, &tab_id, 400, true)?;
+        let out = pty_cmd::extract(&token, &snap.text);
+        if out.found {
+            let (text, truncated) = clamp_chars(out.text, max_output_bytes);
+            return Ok(json!({
+                "tab_id": tab_id,
+                "channel": "pty",
+                "marker_found": true,
+                "exit_code": out.code,
+                "stdout": text,
+                "stderr": "",
+                "truncated": truncated,
+                "timed_out": false,
+                "duration_ms": started.elapsed().as_millis() as u64,
+            }));
+        }
+        if Instant::now() >= deadline {
+            return Ok(json!({
+                "tab_id": tab_id,
+                "channel": "pty",
+                "marker_found": false,
+                "exit_code": null,
+                "stdout": tail(&snap.text, max_output_bytes.min(4096)),
+                "stderr": "",
+                "truncated": true,
+                "timed_out": true,
+                "duration_ms": started.elapsed().as_millis() as u64,
+            }));
+        }
+        tokio::time::sleep(Duration::from_millis(60)).await;
+    }
+}
+
+/// 按字符数截断（字节下标切多字节字符会 panic）。
+fn clamp_chars(text: String, max_bytes: usize) -> (String, bool) {
+    if text.len() <= max_bytes {
+        return (text, false);
+    }
+    (text.chars().take(max_bytes).collect(), true)
 }
 
 /// 本地会话：直接起一个子进程，不进 PTY（PTY 里跑命令会污染用户屏幕）。
@@ -663,6 +833,7 @@ mod tests {
                 token: "rk_test".to_string(),
                 client_grants: Vec::new(),
                 consent: crate::mcp::ConsentPolicy::Auto,
+                pty_commands: false,
                 audit: super::super::types::AuditConfig::default(),
             },
             AppHandles {

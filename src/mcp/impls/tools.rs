@@ -207,7 +207,7 @@ pub(super) fn definitions() -> Value {
         },
         {
             "name": "run_command",
-            "description": "Run one command without touching the user's terminal. SSH sessions use a one-shot exec channel on the existing connection; local shell tabs run a child process. Returns exit code, stdout and stderr. Telnet and serial sessions have no exec channel.",
+            "description": "Run one command in a tab. The channel follows the user's \"Run commands in the terminal\" setting. OFF (default): a one-shot exec channel on the existing SSH connection (or a child process for local tabs) runs it without touching the terminal, returning exit code, stdout and stderr. ON: the command is typed into the user's interactive shell so they see it and its output; if that tab is currently showing a full-screen app (vim/htop) a new tab is opened for the command instead and the response carries opened_tab. The PTY channel has no separate stderr, and reports marker_found=false when concurrent typing corrupted the output — treat that result as unreliable. Either channel requires the exec permission (local_exec for local tabs), but the PTY channel is equivalent to typing on the user's behalf. Telnet and serial sessions only work with the PTY channel.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

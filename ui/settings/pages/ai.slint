@@ -42,12 +42,15 @@ export component AiPage inherits VerticalLayout {
     callback toggle-mcp-client-permission(string, string, bool);
     callback disconnect-mcp-client(string);
 
+    // 执行通道：开 = run_command 走交互式 PTY（命令与输出显示在终端里）
+    in-out property <bool> mcp-pty-commands: false;
     // 审计
     in-out property <bool> mcp-audit-enabled: true;
     in-out property <string> mcp-audit-retention: "14";
     in-out property <bool> mcp-audit-retention-valid: true;
     in property <bool> mcp-audit-degraded;
     in property <[AuditRow]> mcp-recent-calls;
+    callback set-mcp-pty-commands(bool);
     callback set-mcp-audit-enabled(bool);
     callback set-mcp-audit-retention(string) -> bool;
     callback open-mcp-log-dir();
@@ -70,9 +73,19 @@ export component AiPage inherits VerticalLayout {
             desc: root.lang-en
                 ? "Lets an AI agent connect over HTTP and drive this running window. Off by default."
                 : "允许 AI agent 通过 HTTP 连接并操作这个正在运行的窗口。默认关闭。";
-            show-divider: false;
+            show-divider: true;
             checked <=> root.mcp-enabled;
             toggled(v) => { root.set-mcp-enabled(v); }
+        }
+
+        SettingSwitch {
+            label: root.lang-en ? "Run commands in the terminal" : "在终端里执行命令";
+            desc: root.lang-en
+                ? "On: commands and their output show up in your terminal, and full-screen apps (vim/htop) get a new tab instead. Off: a one-shot exec channel runs them invisibly."
+                : "开：命令与输出显示在你的终端里，正在跑 vim/htop 这类全屏程序时会另开一个标签页执行。关：走一次性 exec 通道，不碰终端。";
+            show-divider: false;
+            checked <=> root.mcp-pty-commands;
+            toggled(v) => { root.set-mcp-pty-commands(v); }
         }
 
         // 端口：`TextInput` 逐键生效（写盘自带防抖）；非法值由 Rust 返回 false，红框提示。

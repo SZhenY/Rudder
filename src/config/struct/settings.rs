@@ -293,6 +293,9 @@ pub struct McpSettings {
     pub mcp_token: Secret,
     /// 按客户端记住的授权（最近 32 个）。
     pub mcp_client_grants: Vec<McpClientGrant>,
+    /// AI 执行命令时走交互式 PTY（命令与输出显示在终端里）还是一次性 exec 通道。
+    /// `false`（默认）= exec 通道，不碰终端 —— 与历史行为一致。
+    pub mcp_pty_commands: bool,
     /// 是否记录审计日志（`<log_dir>/audit-YYYY-MM-DD.ndjson`）。
     pub mcp_audit_enabled: bool,
     /// 审计日志保留天数；`0` = 永久保留。
@@ -311,6 +314,7 @@ impl Default for McpSettings {
             mcp_lan_ifaces: Vec::new(),
             mcp_token: Secret::default(),
             mcp_client_grants: Vec::new(),
+            mcp_pty_commands: false,
             mcp_audit_enabled: true,
             mcp_audit_retention_days: 14,
             mcp_consent: "session".to_string(),

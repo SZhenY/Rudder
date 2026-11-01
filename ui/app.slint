@@ -530,11 +530,13 @@ export component AppWindow inherits Window {
     callback copy-mcp-json();
     callback regenerate-mcp-token();
     // 当前会话 + 审计（设置窗里的 AI 页读它们；这里只做声明，Rust 侧回填）
+    in-out property <bool> mcp-pty-commands: false;
     in-out property <bool> mcp-audit-enabled: true;
     in-out property <string> mcp-audit-retention: "14";
     in-out property <bool> mcp-audit-retention-valid: true;
     in property <bool> mcp-audit-degraded;
     in property <[AuditRow]> mcp-recent-calls;
+    callback set-mcp-pty-commands(bool);
     callback set-mcp-audit-enabled(bool);
     callback set-mcp-audit-retention(string) -> bool;
     callback open-mcp-log-dir();

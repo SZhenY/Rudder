@@ -212,11 +212,13 @@ export component InterfacePanel inherits Rectangle {
     callback copy-mcp-token();
     callback copy-mcp-json();
     callback regenerate-mcp-token();
+    in-out property <bool> mcp-pty-commands: false;
     in-out property <bool> mcp-audit-enabled: true;
     in-out property <string> mcp-audit-retention: "14";
     in-out property <bool> mcp-audit-retention-valid: true;
     in property <bool> mcp-audit-degraded;
     in property <[AuditRow]> mcp-recent-calls;
+    callback set-mcp-pty-commands(bool);
     callback set-mcp-audit-enabled(bool);
     callback set-mcp-audit-retention(string) -> bool;
     callback open-mcp-log-dir();
@@ -537,11 +539,13 @@ export component InterfacePanel inherits Rectangle {
                             copy-mcp-token() => { root.copy-mcp-token(); }
                             copy-mcp-json() => { root.copy-mcp-json(); }
                             regenerate-mcp-token() => { root.regenerate-mcp-token(); }
+                            mcp-pty-commands <=> root.mcp-pty-commands;
                             mcp-audit-enabled <=> root.mcp-audit-enabled;
                             mcp-audit-retention <=> root.mcp-audit-retention;
                             mcp-audit-retention-valid <=> root.mcp-audit-retention-valid;
                             mcp-audit-degraded: root.mcp-audit-degraded;
                             mcp-recent-calls: root.mcp-recent-calls;
+                            set-mcp-pty-commands(a4) => { root.set-mcp-pty-commands(a4); }
                             set-mcp-audit-enabled(a5) => { root.set-mcp-audit-enabled(a5); }
                             set-mcp-audit-retention(b5) => { root.set-mcp-audit-retention(b5); }
                             open-mcp-log-dir() => { root.open-mcp-log-dir(); }

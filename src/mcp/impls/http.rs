@@ -254,6 +254,7 @@ mod tests {
                 token: TOKEN.to_string(),
                 client_grants: Vec::new(),
                 consent,
+                pty_commands: false,
                 audit: super::super::types::AuditConfig {
                     enabled: false,
                     retention_days: 0,

@@ -25,6 +25,8 @@ mod calls;
 mod handler;
 #[path = "impls/http.rs"]
 mod http;
+#[path = "impls/pty_cmd.rs"]
+mod pty_cmd;
 #[path = "struct/perms.rs"]
 mod perms;
 #[path = "impls/server.rs"]

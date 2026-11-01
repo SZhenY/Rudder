@@ -28,6 +28,8 @@ pub(crate) struct McpConfigSnapshot {
     /// 按客户端记住的授权，只在连接时用来预勾弹窗。
     pub(crate) client_grants: Vec<McpClientGrant>,
     pub(crate) consent: ConsentPolicy,
+    /// `run_command` 走交互式 PTY（命令可见）而不是一次性 exec 通道。
+    pub(crate) pty_commands: bool,
     pub(crate) audit: AuditConfig,
 }
 
@@ -86,6 +88,7 @@ impl McpConfigSnapshot {
                 token,
                 client_grants,
                 consent: ConsentPolicy::Auto,
+                pty_commands: store.mcp_pty_commands(),
                 audit: AuditConfig {
                     enabled: true,
                     retention_days: audit.retention_days,
@@ -109,6 +112,7 @@ impl McpConfigSnapshot {
             token,
             client_grants,
             consent,
+            pty_commands: store.mcp_pty_commands(),
             audit,
         }
     }
