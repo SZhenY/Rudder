@@ -105,7 +105,12 @@ impl ServerHandler for McpHandler {
         let (name, version) = context
             .peer
             .peer_info()
-            .map(|info| (info.client_info.name.clone(), info.client_info.version.clone()))
+            .map(|info| {
+                (
+                    info.client_info.name.clone(),
+                    info.client_info.version.clone(),
+                )
+            })
             .unwrap_or_default();
         self.state
             .store_client(&session_id, name, version, context.peer.clone());
@@ -119,6 +124,29 @@ impl ServerHandler for McpHandler {
                     .collect::<Vec<_>>(),
             );
             self.state.approve(&session_id, all);
+            return;
+        }
+
+        // 记住过的客户端：永久信任，或上次授权在 15 分钟内（= 一次租约空闲期）→
+        // 直接按上次记住的权限放行，不再弹窗。活跃客户端不会反复被打扰；
+        // 闲置超过 15 分钟才需要重新授权。
+        if let Some(client_id) = self
+            .state
+            .lease(&session_id)
+            .and_then(|lease| lease.client_id())
+            && let Some(grant) = self.state.remembered_grant_record(&client_id)
+            && crate::mcp::grant_allows_silent(
+                &grant,
+                crate::config::unix_now(),
+                ClientLease::IDLE.as_secs(),
+            )
+        {
+            let keys: Vec<&str> = grant.permissions.iter().map(String::as_str).collect();
+            // 静默放行**不写回**记忆授权：时间戳一旦被这里刷新，客户端只要每 15 分钟内
+            // 重连一次就能永久免问，「永久信任」这个显式开关也就失去意义了。
+            let _ = self
+                .state
+                .approve(&session_id, crate::mcp::Permissions::from_keys(&keys));
             return;
         }
 
@@ -292,13 +320,7 @@ impl McpHandler {
     }
 
     /// 被权限门挡下的调用单独记一条，便于回答"为什么它一直失败"。
-    fn audit_denied(
-        &self,
-        name: &str,
-        args: &Value,
-        session_id: Option<&str>,
-        payload: &Value,
-    ) {
+    fn audit_denied(&self, name: &str, args: &Value, session_id: Option<&str>, payload: &Value) {
         if !self.state.config().audit.enabled {
             return;
         }
@@ -353,24 +375,35 @@ pub(super) async fn request_session_consent(state: SharedState, session_id: Stri
     if lease.verdict != ConsentState::Pending {
         return;
     }
-    let base = lease
+    let record = lease
         .client_id()
-        .map(|client_id| state.remembered_grant(&client_id))
+        .and_then(|client_id| state.remembered_grant_record(&client_id));
+    let base = record
+        .as_ref()
+        .map(|grant| {
+            let keys: Vec<&str> = grant.permissions.iter().map(String::as_str).collect();
+            crate::mcp::Permissions::from_keys(&keys)
+        })
         .unwrap_or_default();
 
     let request = crate::app::mcp_ui::ConsentRequest {
         client: lease.client_label(),
         base,
+        remembered_trusted: record.map(|grant| grant.trusted).unwrap_or(false),
     };
-    let reply =
-        crate::app::mcp_ui::ask_consent(request, ClientLease::CONSENT_TIMEOUT).await;
+    let reply = crate::app::mcp_ui::ask_consent(request, ClientLease::CONSENT_TIMEOUT).await;
     match reply {
-        Ok(granted) => {
-            if let Some(update) = state.approve(&session_id, granted) {
-                crate::app::mcp_ui::remember_client_grant(update).await;
+        Ok(reply) => {
+            if let Some(update) = state.approve(&session_id, reply.granted) {
+                crate::app::mcp_ui::remember_client_grant(update, reply.trusted).await;
             }
         }
         Err(crate::mcp::McpError::Revoked) => {
+            // 拒绝的语义是"我不再信任它"：记忆授权必须一起删掉，否则客户端立刻重连
+            // 会命中 15 分钟窗口被静默放行，用户看到的"拒绝"等于没生效。
+            if let Some(client_id) = state.lease(&session_id).and_then(|lease| lease.client_id()) {
+                crate::app::mcp_ui::forget_client_grant(client_id).await;
+            }
             state.close_session(&session_id, CloseReason::Denied);
         }
         Err(_) => {

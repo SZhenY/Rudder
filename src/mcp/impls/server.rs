@@ -96,6 +96,11 @@ pub(crate) fn recent_calls() -> Vec<super::audit_types::AuditEntry> {
     super::audit::recent()
 }
 
+/// AI 页"最近断开"列表。
+pub(crate) fn recent_closes() -> Vec<super::audit_types::SessionCloseEntry> {
+    super::audit::recent_closes()
+}
+
 /// 审计写盘是否处于降级状态。
 pub(crate) fn audit_degraded() -> bool {
     super::audit::degraded()
@@ -151,6 +156,9 @@ pub(crate) fn stop() {
         .unwrap_or_else(|err| err.into_inner())
         .take();
     if let Some(active) = taken {
+        // 先记下"服务停止"：这条路径原来完全无痕，界面上的客户端会静默消失，
+        // 用户只能猜是被踢了还是显示错了。
+        active.state.close_all(crate::mcp::CloseReason::Stopped);
         active.cancel.cancel();
     }
 }
@@ -198,7 +206,11 @@ async fn run(state: SharedState, cancel: CancellationToken) {
         let router = http::router(state.clone(), http_config.clone());
         let shutdown = cancel.clone();
         tokio::spawn(async move {
-            let _ = axum::serve(listener, router)
+            // 带 ConnectInfo：`client_id` 要用来源地址区分"不同设备上的同名客户端"。
+            let _ = axum::serve(
+                listener,
+                router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
                 .with_graceful_shutdown(async move { shutdown.cancelled().await })
                 .await;
         });

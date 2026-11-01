@@ -15,6 +15,8 @@ import "fonts/MeatshellMono-Bold.ttf";
 import { GhostButton, PrimaryButton } from "widgets.slint";
 import { ToggleSwitch } from "settings/chrome.slint";
 import { McpConsentRow } from "settings/types.slint";
+import { StateSurface } from "components/interactive.slint";
+import { IconText } from "components/text.slint";
 import { ScrollView } from "std-widgets.slint";
 
 export component McpConsentDialog inherits Rectangle {
@@ -26,9 +28,26 @@ export component McpConsentDialog inherits Rectangle {
     in property <string> tool;
     in property <string> summary;
     in-out property <[McpConsentRow]> rows;
+    /// 「永久信任此客户端」：勾了以后同 name+version 的连接不再弹这个窗口。
+    in-out property <bool> trusted: false;
+
+    // 悬停全文气泡的锚点。`hint-key` 既存"当前悬停的是哪一行"（用于离开时清理），
+    // `hint-y` 是气泡相对卡片顶部的纵坐标（悬停时算一次，滚动后不跟手，属可接受的小瑕疵）。
+    private property <string> hint-key: "";
+    private property <string> hint-text: "";
+    private property <length> hint-y: 0px;
+
+    // 关窗时清空气泡：否则下次打开会先闪一下上一轮的说明。
+    changed is-open => {
+        if (!self.is-open) {
+            self.hint-key = "";
+            self.hint-text = "";
+        }
+    }
 
     callback toggle(string /* key */);
     callback accept();
+    callback toggle-section(string);
     callback reject();
 
     visible: self.opacity > 0.001;
@@ -41,18 +60,27 @@ export component McpConsentDialog inherits Rectangle {
     background: #000000aa;
 
     // 吞掉背景点击：不关窗、不表态。
+    // 同时吞掉滚轮：否则滚轮会穿透到下层终端——普通屏滚回滚历史（整屏重绘），
+    // alt-screen 时把 wheel 编码成转义序列发给远端程序（见 #70 与 file_editor.slint 的同一处理）。
     TouchArea {
         enabled: root.is-open;
         width: 100%;
         height: 100%;
+        scroll-event(event) => { EventResult.accept }
     }
 
-    Rectangle {
+    card-box := Rectangle {
         width: min(parent.width - 40px, 460px);
         // 12 行 + 风险/功能区标题会超过窗口 min-height 600：封顶并让行区滚动。
         height: min(parent.height - 40px, 620px);
         x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
+        // 关窗时下沉 12px，开窗弹回 —— 与 confirm / update / about 三个模态同款。
+        y: (parent.height - self.height) / 2 + (root.is-open ? 0px : 12px);
+        animate y {
+            duration: root.is-open ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
+            easing: root.is-open ? AnimationSettings.s-default() : AnimationSettings.e-exit();
+            enabled: AnimationSettings.enabled;
+        }
         background: Theme.bg-panel;
         border-radius: Theme.radius-lg;
         border-width: 1px;
@@ -60,9 +88,12 @@ export component McpConsentDialog inherits Rectangle {
         drop-shadow-blur: Theme.card-shadow-blur;
         drop-shadow-color: Theme.card-shadow-color;
 
+        // 卡片外的滚轮不往下漏。声明在 card 布局之前 → z 序更低，
+        // 列表（ScrollView）永远先拿到滚轮，不会把列表自身滚动吃掉。
         TouchArea {
             width: 100%;
             height: 100%;
+            scroll-event(event) => { EventResult.accept }
         }
 
         card := VerticalLayout {
@@ -70,11 +101,29 @@ export component McpConsentDialog inherits Rectangle {
             padding: 20px;
             spacing: 10px;
 
-            Text {
-                text: root.lang-en ? "An AI client wants to connect" : "有 AI 客户端请求接入";
-                color: Theme.text-primary;
-                font-size: Theme.fs-lg;
-                font-weight: 700;
+            // 标题 + 「已选 n / 共 12」：高风险组默认收起，这是唯一能看出
+            // "有已勾选项被折叠在里面"的地方。
+            // 不写 alignment：Slint 的 alignment 是**主轴**对齐，center/end 会关掉所有
+            // horizontal-stretch（子项被钉成 preferred 宽），右对齐只能靠 stretch 列吃掉剩余空间。
+            HorizontalLayout {
+                spacing: 8px;
+
+                Text {
+                    text: root.lang-en ? "An AI client wants to connect" : "有 AI 客户端请求接入";
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-lg;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                    min-width: 0;
+                    overflow: elide;
+                }
+
+                if root.summary != "" : Text {
+                    text: root.summary;
+                    color: Theme.accent;
+                    font-size: Theme.fs-xs;
+                    vertical-alignment: center;
+                }
             }
 
             Text {
@@ -113,9 +162,10 @@ export component McpConsentDialog inherits Rectangle {
                         for row in root.rows : VerticalLayout {
                             spacing: 0;
 
+                            // ① 风险段：2 级标题 + 说明，不可折叠（折叠发生在"组"上）。
                             if row.risk != "" : VerticalLayout {
                                 spacing: 2px;
-                                padding-top: 8px;
+                                padding-top: 10px;
                                 padding-bottom: 2px;
                                 Text {
                                     text: row.risk;
@@ -131,44 +181,112 @@ export component McpConsentDialog inherits Rectangle {
                                 }
                             }
 
-                            if row.group != "" : Text {
-                                text: row.group;
-                                color: Theme.text-muted;
-                                font-size: Theme.fs-xs;
-                                font-weight: 700;
-                                height: 22px;
-                                vertical-alignment: bottom;
-                            }
+                            // ② 组标题：可点击折叠。只有组内多于 1 位才出现 ——
+                            //    单条组画标题会让标题比内容还密，正是之前显得杂乱的原因。
+                            if row.section-head && row.section-collapsible : StateSurface {
+                                radius: Theme.radius-sm;
+                                clicked => { root.toggle-section(row.section); }
 
-                            HorizontalLayout {
-                                height: 28px;
-                                spacing: 8px;
-                                alignment: center;
-
+                                // 不写 alignment（同上）：组名的 stretch 吃掉剩余空间，计数才会贴右。
                                 HorizontalLayout {
-                                    horizontal-stretch: 1;
-                                    spacing: 6px;
-                                    Text {
-                                        text: row.label;
-                                        color: row.allowed ? Theme.text-primary : Theme.text-muted;
+                                    padding-left: 2px;
+                                    padding-right: 6px;
+                                    padding-top: 3px;
+                                    padding-bottom: 3px;
+                                    spacing: 4px;
+
+                                    IconText {
+                                        text: row.expanded ? "\u{E5CF}" : "\u{E5CC}";
+                                        color: Theme.text-muted;
                                         font-size: Theme.fs-sm;
                                         vertical-alignment: center;
                                     }
                                     Text {
-                                        text: row.desc;
-                                        color: Theme.text-muted;
+                                        text: row.group;
+                                        color: Theme.text-secondary;
+                                        font-size: Theme.fs-xs;
+                                        font-weight: 700;
+                                        horizontal-stretch: 1;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: root.lang-en
+                                            ? "\{row.on-count}/\{row.total-count} on"
+                                            : "已选 \{row.on-count}/\{row.total-count}";
+                                        color: row.on-count > 0 ? Theme.accent : Theme.text-muted;
                                         font-size: Theme.fs-xs;
                                         vertical-alignment: center;
-                                        overflow: elide;
+                                    }
+                                }
+                            }
+
+                            // ③ 权限行：一行一个权限 —— label 定宽、desc 占余并省略、开关右对齐。
+                            //
+                            // 三个关键点缺一就会"排版乱"：
+                            // * desc 必须能收缩（min-width: 0），否则长文本把容器撑到超出可用宽，
+                            //   horizontal-stretch 失效，开关会逐行漂到不同位置；
+                            // * label 定宽，保证所有行的开关 x 坐标一致；
+                            // * hover 层必须是非布局子元素（放在 Rectangle 里），布局中的 TouchArea
+                            //   不写尺寸就是 0×0，has-hover 永远为假、气泡不会出现。
+                            if row.expanded : Rectangle {
+                                hover := TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    changed has-hover => {
+                                        if (self.has-hover && row.desc != "") {
+                                            root.hint-key = row.key;
+                                            root.hint-text = row.desc;
+                                            root.hint-y = hover.absolute-position.y + hover.height + 2px
+                                                - card-box.absolute-position.y;
+                                        } else if (root.hint-key == row.key) {
+                                            root.hint-key = "";
+                                            root.hint-text = "";
+                                        }
                                     }
                                 }
 
-                                ToggleSwitch {
-                                    mirror: true;
-                                    interactive: row.allowed;
-                                    checked: row.checked && row.allowed;
-                                    toggled(v) => {
-                                        root.toggle(row.key);
+                                // 不写 alignment（同上）：desc 的 stretch 吃掉剩余空间，开关才会贴右。
+                                HorizontalLayout {
+                                    padding-left: row.section-collapsible ? 12px : 0px;
+                                    // 右侧给 ScrollView 的滚动条留位，否则长描述会被它压住。
+                                    padding-right: 14px;
+                                    padding-top: 4px;
+                                    padding-bottom: 4px;
+                                    spacing: 8px;
+
+                                    Text {
+                                        text: row.label;
+                                        // 定宽 + 跟随 ui-scale：中文最长 8 字（信任未知主机密钥）
+                                        // 在 12px 下约需 96px，88px 在 100% 缩放就已经截断。
+                                        width: 104px * Theme.ui-scale;
+                                        color: row.allowed ? Theme.text-primary : Theme.text-muted;
+                                        font-size: Theme.fs-sm;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: row.desc;
+                                        horizontal-stretch: 1;
+                                        min-width: 0;
+                                        color: Theme.text-muted;
+                                        font-size: Theme.fs-xs;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+
+                                    // 包一层做交叉轴居中：删掉主轴 alignment 后，固定 22px 高的
+                                    // 开关会被交叉轴 stretch 拉变形。
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            mirror: true;
+                                            interactive: row.allowed;
+                                            checked: row.checked && row.allowed;
+                                            toggled(v) => {
+                                                root.toggle(row.key);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -184,6 +302,37 @@ export component McpConsentDialog inherits Rectangle {
                 color: Theme.text-muted;
                 font-size: Theme.fs-xs;
                 wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: start;
+                ToggleSwitch {
+                    checked: root.trusted;
+                    toggled(v) => { root.trusted = v; }
+                }
+                VerticalLayout {
+                    // 让它能收缩：英文描述很长，不设 stretch 会按 preferred 宽溢出卡片。
+                    horizontal-stretch: 1;
+                    min-width: 0;
+                    spacing: 2px;
+                    Text {
+                        text: root.lang-en
+                            ? "Trust this client permanently"
+                            : "永久信任此客户端";
+                        color: Theme.text-secondary;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.lang-en
+                            ? "Same name, version and source device will reconnect without this prompt, using the permissions above. Other devices running the same client still ask."
+                            : "同名同版本、且来自同一台设备的客户端以后直接用上面勾的权限接入，不再询问；其他设备上的同名客户端仍会单独询问。";
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-xs;
+                        wrap: word-wrap;
+                    }
+                }
             }
 
             HorizontalLayout {
@@ -203,6 +352,41 @@ export component McpConsentDialog inherits Rectangle {
                         root.accept();
                     }
                 }
+            }
+        }
+
+        // 悬停全文：卡片最后一个子元素，画在列表与按钮之上；clamp 在卡片内不越界。
+        // 卡片不能加 clip，否则这里会被裁掉。
+        // 常驻 + opacity 翻转：`if` 新建的元素加 animate 不生效（见 widgets.slint 的注释），
+        // 只能靠已存在元素的属性变化触发过渡。
+        Rectangle {
+            visible: self.opacity > 0.001;
+            opacity: root.hint-text != "" ? 1 : 0;
+            animate opacity {
+                duration: root.hint-text != "" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: root.hint-text != "" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            x: 20px;
+            y: clamp(root.hint-y, 20px, parent.height - self.height - 20px);
+            width: min(hint-txt.preferred-width + 16px, parent.width - 40px);
+            height: hint-txt.preferred-height + 12px;
+            // 浅色主题下 bg-elevated 比卡片更暗（看起来凹陷），改用卡片底色 + 阴影表达浮起。
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: Theme.shadow-float-blur;
+            drop-shadow-color: Theme.shadow-float-color;
+
+            hint-txt := Text {
+                x: 8px;
+                y: 6px;
+                width: parent.width - 16px;
+                text: root.hint-text;
+                color: Theme.text-primary;
+                font-size: Theme.fs-xs;
+                wrap: word-wrap;
             }
         }
     }

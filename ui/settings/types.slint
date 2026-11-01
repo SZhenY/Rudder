@@ -41,6 +41,16 @@ export struct McpIface {
 }
 
 /// AI 设置页：一条审计记录（只含展示所需的最小集）。
+/// AI 页「最近断开」的一行。`reason` 已按语言翻译好，`alarm` 决定是否用告警色。
+export struct McpCloseRow {
+    at: string,
+    session: string,
+    client: string,
+    reason: string,
+    alarm: bool,
+}
+
+/// AI 设置页：一条审计记录（工具调用）。
 export struct AuditRow {
     at: string,
     tool: string,
@@ -60,6 +70,18 @@ export struct McpConsentRow {
     risk: string,
     risk-note: string,
     group: string,
+    /// 组 id（`routine.view` / `high.terminal` …）：同组每行同值，用于"折叠某一组"。
+    section: string,
+    /// 该行是不是组首行（只有组首行画组标题、显示组内计数）。
+    section-head: bool,
+    /// 组内多于 1 位才可折叠；单条组直接平铺在段里，没有标题可点。
+    section-collapsible: bool,
+    /// 同组每行同值 —— Slint 的 for 平铺渲染无法跨行查找，只能把展开态复制到每一行。
+    expanded: bool,
+    /// 组内已勾选数（仅组首行有意义）。
+    on-count: int,
+    /// 组内总位数（仅组首行有意义）。
+    total-count: int,
 }
 
 /// AI 设置页：客户端列表的扁平行。
@@ -72,6 +94,13 @@ export struct McpClientRow {
     client: string,
     since: string,
     status: string,
+    /// 该客户端的记忆标识（`client_name + version`）；空 = 客户端没上报名字，无法记忆。
+    client-id: string,
+    /// 「永久信任」当前状态，驱动卡片上的开关。
+    trusted: bool,
+    /// 该客户端卡片的权限明细是否展开（header 与它下面的 12 行同值）。
+    /// 模型行数恒定（折叠不改模型），渲染侧用 `if` —— Slint 的 `visible:false` 仍占布局空间。
+    expanded: bool,
     key: string,
     label: string,
     desc: string,

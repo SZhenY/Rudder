@@ -25,10 +25,10 @@ mod calls;
 mod handler;
 #[path = "impls/http.rs"]
 mod http;
-#[path = "impls/pty_cmd.rs"]
-mod pty_cmd;
 #[path = "struct/perms.rs"]
 mod perms;
+#[path = "impls/pty_cmd.rs"]
+mod pty_cmd;
 #[path = "impls/server.rs"]
 mod server;
 #[path = "impls/tools.rs"]
@@ -36,18 +36,21 @@ mod tools;
 #[path = "struct/types.rs"]
 mod types;
 
-pub(crate) use auth::new_token;
 pub(crate) use audit_types::{AuditEntry, redact_args};
-pub(crate) use server::{
-    audit_degraded, disconnect_session, recent_calls, reload, sessions_info,
-    set_session_permission, set_context, start, status, stop,
-};
-pub(crate) use perms::{
-    PERMISSION_BITS, PERMISSIONS_REV, Permissions, bits_with_heads, is_high_risk_setting,
-};
+pub(crate) use auth::new_token;
 #[cfg(test)]
 pub(crate) use perms::HIGH_RISK_SETTINGS;
-pub(crate) use types::{AppHandles, ConsentPolicy, GrantUpdate, McpConfigSnapshot, McpError};
+pub(crate) use perms::{
+    PERMISSION_BITS, PERMISSIONS_REV, Permissions, bit_rows, is_high_risk_setting,
+};
+pub(crate) use server::{
+    audit_degraded, disconnect_session, recent_calls, recent_closes, reload, sessions_info,
+    set_context, set_session_permission, start, status, stop,
+};
+pub(crate) use types::{
+    AppHandles, CloseReason, ConsentPolicy, GrantUpdate, McpConfigSnapshot, McpError,
+    McpSessionInfo, grant_allows_silent,
+};
 
 tokio::task_local! {
     /// 本次工具调用花在"等 UI 线程"上的毫秒数。`mcp_ui::call` 累加，

@@ -170,15 +170,35 @@ pub(crate) async fn download_dir() -> Result<std::path::PathBuf, McpError> {
     .await
 }
 
+/// 忘掉一个客户端的记忆授权（用户点了「拒绝接入」）。
+///
+/// 与 `remember_client_grant` 相反：那个是写回，这个是删除。
+pub(crate) async fn forget_client_grant(client_id: String) -> bool {
+    if client_id.trim().is_empty() {
+        return false;
+    }
+    call(READ_TIMEOUT, move |ui| {
+        super::settings::persist(&ui.ctx.store, move |store| {
+            store.remove_mcp_client_grant(&client_id);
+        });
+        super::settings::ai::apply(&ui.ctx.store);
+        Ok(true)
+    })
+    .await
+    .unwrap_or(false)
+}
+
 /// 把一次授权变更写回"按客户端记住"的配置，并刷新 MCP 配置快照。
-pub(crate) async fn remember_client_grant(update: crate::mcp::GrantUpdate) -> bool {
+///
+/// `trusted` 为 true 表示用户勾了「永久信任」，同 name+version 以后不再弹窗。
+pub(crate) async fn remember_client_grant(update: crate::mcp::GrantUpdate, trusted: bool) -> bool {
     let Some(client_id) = update.client_id else {
         return false;
     };
     let granted = update.granted;
     call(READ_TIMEOUT, move |ui| {
         super::settings::persist(&ui.ctx.store, move |store| {
-            store.upsert_mcp_client_grant(&client_id, granted);
+            store.upsert_mcp_client_grant(&client_id, granted, trusted);
         });
         super::settings::ai::apply(&ui.ctx.store);
         Ok(true)
@@ -195,7 +215,10 @@ pub(crate) async fn remember_client_grant(update: crate::mcp::GrantUpdate) -> bo
 
 enum SettingKind {
     Bool,
-    Int { min: u64, max: u64 },
+    Int {
+        min: u64,
+        max: u64,
+    },
     Choice(&'static [&'static str]),
     HexColor,
     /// 自由文本。长度与格式约束放在 `extra_check` 里 —— 有些键的上界要读配置
@@ -312,7 +335,8 @@ fn settings_table() -> &'static [SettingDef] {
                     Ok(())
                 },
                 apply: |ui, _| {
-                    ui.window.set_convert_eol(ui.ctx.store.borrow().convert_eol());
+                    ui.window
+                        .set_convert_eol(ui.ctx.store.borrow().convert_eol());
                 },
             },
             SettingDef {
@@ -389,9 +413,9 @@ fn settings_table() -> &'static [SettingDef] {
                     Ok(())
                 },
                 apply: |ui, _| {
-                    ui.window.global::<Theme>().set_panel_font(
-                        ui.ctx.store.borrow().panel_font() as f32 / 100.0,
-                    );
+                    ui.window
+                        .global::<Theme>()
+                        .set_panel_font(ui.ctx.store.borrow().panel_font() as f32 / 100.0);
                 },
             },
             SettingDef {
@@ -405,7 +429,9 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_collapse_sidebar_default(value.as_bool().unwrap_or(false));
                     Ok(())
                 },
-                apply: |ui, _| super::settings::layout::apply_layout_prefs(&ui.window, &ui.ctx.store),
+                apply: |ui, _| {
+                    super::settings::layout::apply_layout_prefs(&ui.window, &ui.ctx.store)
+                },
             },
             SettingDef {
                 key: "layout.collapse_sftp_default",
@@ -418,7 +444,9 @@ fn settings_table() -> &'static [SettingDef] {
                         .set_collapse_sftp_default(value.as_bool().unwrap_or(false));
                     Ok(())
                 },
-                apply: |ui, _| super::settings::layout::apply_layout_prefs(&ui.window, &ui.ctx.store),
+                apply: |ui, _| {
+                    super::settings::layout::apply_layout_prefs(&ui.window, &ui.ctx.store)
+                },
             },
             SettingDef {
                 key: "layout.hide_cmd_bar",
@@ -521,9 +549,10 @@ fn settings_table() -> &'static [SettingDef] {
                 kind: SettingKind::Text,
                 get: |ui| json!(ui.ctx.store.borrow().font_family()),
                 set: |ui, value| {
-                    ui.ctx.store.borrow_mut().set_font_family(
-                        value.as_str().unwrap_or_default().trim().to_string(),
-                    );
+                    ui.ctx
+                        .store
+                        .borrow_mut()
+                        .set_font_family(value.as_str().unwrap_or_default().trim().to_string());
                     Ok(())
                 },
                 apply: |ui, _| {
@@ -542,7 +571,10 @@ fn settings_table() -> &'static [SettingDef] {
             },
             SettingDef {
                 key: "terminal.scrollback_lines",
-                kind: SettingKind::Int { min: 100, max: 1_000_000 },
+                kind: SettingKind::Int {
+                    min: 100,
+                    max: 1_000_000,
+                },
                 get: |ui| json!(ui.ctx.store.borrow().scrollback_lines()),
                 set: |ui, value| {
                     ui.ctx
@@ -683,9 +715,10 @@ fn settings_table() -> &'static [SettingDef] {
                 kind: SettingKind::Text,
                 get: |ui| json!(ui.ctx.store.borrow().update_proxy()),
                 set: |ui, value| {
-                    ui.ctx.store.borrow_mut().set_update_proxy(
-                        value.as_str().unwrap_or_default().trim().to_string(),
-                    );
+                    ui.ctx
+                        .store
+                        .borrow_mut()
+                        .set_update_proxy(value.as_str().unwrap_or_default().trim().to_string());
                     Ok(())
                 },
                 apply: |ui, _| {
@@ -741,9 +774,8 @@ fn settings_table() -> &'static [SettingDef] {
                     )
                 },
                 apply: |ui, _| {
-                    ui.window.set_webdav_remote_path(
-                        ui.ctx.store.borrow().webdav_remote_path().into(),
-                    );
+                    ui.window
+                        .set_webdav_remote_path(ui.ctx.store.borrow().webdav_remote_path().into());
                 },
             },
             // ── 外观：壁纸与界面字体 ──────────────────────────────────
@@ -783,9 +815,10 @@ fn settings_table() -> &'static [SettingDef] {
                 kind: SettingKind::Text,
                 get: |ui| json!(ui.ctx.store.borrow().ui_font_family()),
                 set: |ui, value| {
-                    ui.ctx.store.borrow_mut().set_ui_font_family(
-                        value.as_str().unwrap_or_default().trim().to_string(),
-                    );
+                    ui.ctx
+                        .store
+                        .borrow_mut()
+                        .set_ui_font_family(value.as_str().unwrap_or_default().trim().to_string());
                     Ok(())
                 },
                 apply: |ui, _| {
@@ -856,11 +889,7 @@ fn settings_table() -> &'static [SettingDef] {
                         enabled,
                         &preset,
                     );
-                    super::terminal_ui::apply_custom_output_rules(
-                        &ui.window,
-                        &ui.ctx.bufs,
-                        &rules,
-                    );
+                    super::terminal_ui::apply_custom_output_rules(&ui.window, &ui.ctx.bufs, &rules);
                 },
             },
             // ── WSL 启动项（整表替换）──────────────────────────────────
@@ -1106,10 +1135,7 @@ fn url_has_userinfo(url: &str) -> bool {
 /// 读设置。`keys` 为空 = 返回整张白名单。
 ///
 /// `allow_high == false` 时，9 个高风险键不进 `values`，改列在 `hidden` 里。
-pub(crate) async fn get_settings(
-    keys: Vec<String>,
-    allow_high: bool,
-) -> Result<Value, McpError> {
+pub(crate) async fn get_settings(keys: Vec<String>, allow_high: bool) -> Result<Value, McpError> {
     call(READ_TIMEOUT, move |ui| {
         let table = settings_table();
         let mut values = serde_json::Map::new();
@@ -1166,8 +1192,8 @@ pub(crate) async fn set_settings(
             }
             match table.iter().find(|def| def.key == key) {
                 Some(def) => {
-                    if let Err(reason) = validate(&def.kind, value)
-                        .and_then(|_| extra_check(ui, key, value))
+                    if let Err(reason) =
+                        validate(&def.kind, value).and_then(|_| extra_check(ui, key, value))
                     {
                         rejected.push(json!({ "key": key, "reason": reason }));
                     }
@@ -1235,7 +1261,11 @@ pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
         }
         // 新建且没给端口：按最终类型取出厂值（Telnet 是 23，其余 22）。
         if created && args.get("port").is_none() {
-            session.port = if session.kind == SessionKind::Telnet { 23 } else { 22 };
+            session.port = if session.kind == SessionKind::Telnet {
+                23
+            } else {
+                22
+            };
         }
         if let Some(value) = args.get("auth").and_then(Value::as_str) {
             session.auth = AuthMethod::from_str(value);
@@ -1325,7 +1355,10 @@ pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
             }
             session.encoding = value.to_string();
         }
-        if let Some(value) = args.get("disable_shell_integration").and_then(Value::as_bool) {
+        if let Some(value) = args
+            .get("disable_shell_integration")
+            .and_then(Value::as_bool)
+        {
             session.disable_shell_integration = value;
         }
         if let Some(value) = args.get("serial_port").and_then(Value::as_str) {
@@ -1333,7 +1366,9 @@ pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
         }
         if let Some(value) = args.get("baud_rate").and_then(Value::as_u64) {
             if !(300..=4_000_000).contains(&value) {
-                return Err(McpError::Invalid("`baud_rate` must be 300..4000000".to_string()));
+                return Err(McpError::Invalid(
+                    "`baud_rate` must be 300..4000000".to_string(),
+                ));
             }
             session.baud_rate = value as u32;
         }
@@ -1454,7 +1489,11 @@ pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
                     session.user = "root".to_string();
                 }
                 if session.port == 0 {
-                    session.port = if session.kind == SessionKind::Telnet { 23 } else { 22 };
+                    session.port = if session.kind == SessionKind::Telnet {
+                        23
+                    } else {
+                        22
+                    };
                 }
             }
             SessionKind::Serial => {
@@ -1494,7 +1533,10 @@ pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
 }
 
 /// 删除一个保存的主机。`close_open_tabs=true` 时把指向它的标签页一并关掉。
-pub(crate) async fn delete_host(session_id: String, close_open_tabs: bool) -> Result<Value, McpError> {
+pub(crate) async fn delete_host(
+    session_id: String,
+    close_open_tabs: bool,
+) -> Result<Value, McpError> {
     call(TAB_TIMEOUT, move |ui| {
         {
             let mut store = ui.ctx.store.borrow_mut();
@@ -1701,16 +1743,17 @@ pub(crate) async fn run_action(action: String) -> Result<Value, McpError> {
     .await
 }
 
-
 // ── 会话授权弹窗 ────────────────────────────────────────────────────────
 //
 // 两段式桥接：MCP 线程登记一个 oneshot → 请 UI 线程开窗 → 等用户点。
 // 与 `call()` 的区别是"闭包不同步执行"，所以不能用同一个 helper。
 
-use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicU64;
 
 use slint::{Model as _, ModelRc, SharedString, VecModel};
+
+use i_slint_backend_winit::WinitWindowAccessor as _;
 
 use crate::mcp::Permissions;
 use crate::ui::McpConsentRow;
@@ -1720,9 +1763,17 @@ pub(crate) struct ConsentRequest {
     pub(crate) client: String,
     /// 该客户端上次记住的授权，用来预勾。
     pub(crate) base: Permissions,
+    /// 上次是否勾了「永久信任」，用来回显勾选状态。
+    pub(crate) remembered_trusted: bool,
 }
 
-type ConsentSender = tokio::sync::oneshot::Sender<Result<Permissions, McpError>>;
+/// 用户在弹窗里的决定：勾出来的权限位 + 是否永久信任。
+pub(crate) struct ConsentReply {
+    pub(crate) granted: Permissions,
+    pub(crate) trusted: bool,
+}
+
+type ConsentSender = tokio::sync::oneshot::Sender<Result<ConsentReply, McpError>>;
 
 static CONSENT_REPLY: Mutex<Option<ConsentSender>> = Mutex::new(None);
 static CONSENT_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -1740,6 +1791,7 @@ fn bind_consent(window: &AppWindow) {
                 return;
             };
             let model = window.get_mcp_consent_rows();
+            let mut section = None;
             for index in 0..model.row_count() {
                 let Some(row) = model.row_data(index) else {
                     continue;
@@ -1747,8 +1799,73 @@ fn bind_consent(window: &AppWindow) {
                 if row.key == key {
                     let mut updated = row.clone();
                     updated.checked = !updated.checked;
+                    section = Some(updated.section.clone());
                     model.set_row_data(index, updated);
                     break;
+                }
+            }
+            let Some(section) = section else {
+                return;
+            };
+            // 重算该组已勾选数并回填到**组首行**（组内其它行不用重建）。
+            let mut on = 0;
+            for index in 0..model.row_count() {
+                if let Some(row) = model.row_data(index)
+                    && row.section == section
+                    && row.checked
+                {
+                    on += 1;
+                }
+            }
+            let mut allowed_on = 0;
+            for index in 0..model.row_count() {
+                let Some(row) = model.row_data(index) else {
+                    continue;
+                };
+                if row.checked && row.allowed {
+                    allowed_on += 1;
+                }
+                if row.section == section && row.section_head {
+                    let mut updated = row.clone();
+                    updated.on_count = on;
+                    model.set_row_data(index, updated);
+                }
+            }
+            window.set_mcp_consent_summary(summary_for_count(
+                window.get_lang_en(),
+                allowed_on,
+                model.row_count(),
+            ));
+        });
+    }
+    {
+        // 折叠 / 展开某一组：组内所有行同值，以组首行当前状态取反。
+        let weak = window.as_weak();
+        window.on_mcp_consent_toggle_section(move |section| {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+            let model = window.get_mcp_consent_rows();
+            let mut want = None;
+            for index in 0..model.row_count() {
+                if let Some(row) = model.row_data(index)
+                    && row.section == section
+                    && row.section_head
+                {
+                    want = Some(!row.expanded);
+                    break;
+                }
+            }
+            let Some(want) = want else {
+                return;
+            };
+            for index in 0..model.row_count() {
+                if let Some(row) = model.row_data(index)
+                    && row.section == section
+                {
+                    let mut updated = row.clone();
+                    updated.expanded = want;
+                    model.set_row_data(index, updated);
                 }
             }
         });
@@ -1771,6 +1888,61 @@ fn bind_consent(window: &AppWindow) {
     }
 }
 
+/// 组装授权弹窗的行。
+///
+/// 纯逻辑（组 id、默认折叠态、组内计数都在这里定），脱离 UI 可测。
+/// 默认折叠：常规段全展开；高风险段里"组内多于 1 位"的组收起，单条组恒展开。
+fn consent_rows(en: bool, base: &Permissions) -> Vec<McpConsentRow> {
+    let pick = |zh: &'static str, en_text: &'static str| if en { en_text } else { zh };
+    let bits = crate::mcp::bit_rows();
+    bits.iter()
+        .map(|row| {
+            let on = bits
+                .iter()
+                .filter(|other| other.section == row.section && base.allows(other.bit.key))
+                .count() as i32;
+            McpConsentRow {
+                key: row.bit.key.into(),
+                label: pick(row.bit.label_zh, row.bit.label_en).into(),
+                desc: pick(row.bit.desc_zh, row.bit.desc_en).into(),
+                // 预勾该客户端上次记住的授权；用户可以改。
+                checked: base.allows(row.bit.key),
+                allowed: true,
+                risk: row
+                    .risk
+                    .map(|risk| pick(risk.label_zh(), risk.label_en()))
+                    .unwrap_or_default()
+                    .into(),
+                risk_note: row
+                    .risk
+                    .map(|risk| pick(risk.note_zh(), risk.note_en()))
+                    .unwrap_or_default()
+                    .into(),
+                group: row
+                    .group
+                    .map(|group| pick(group.label_zh(), group.label_en()))
+                    .unwrap_or_default()
+                    .into(),
+                section: row.section.into(),
+                section_head: row.group.is_some(),
+                section_collapsible: row.collapsible(),
+                expanded: row.default_expanded(),
+                on_count: on,
+                total_count: row.section_total as i32,
+            }
+        })
+        .collect()
+}
+
+/// 顶部"已选 n / 共 12"。收起高风险组后，这是唯一能看出"有已勾选项被折叠"的地方。
+fn summary_for_count(en: bool, on: usize, total: usize) -> SharedString {
+    if en {
+        format!("{on} of {total} selected").into()
+    } else {
+        format!("已选 {on} / 共 {total}").into()
+    }
+}
+
 /// 用户点了按钮：把勾选收成权限位，关窗，唤醒等待方。
 fn finish_consent(window: &AppWindow, accept: bool) {
     let mut granted = Permissions::default();
@@ -1782,7 +1954,10 @@ fn finish_consent(window: &AppWindow, accept: bool) {
             }
         }
     }
+    // 只有"允许接入"时「永久信任」才有意义。
+    let trusted = accept && window.get_mcp_consent_trusted();
     window.set_mcp_consent_open(false);
+    window.set_mcp_consent_trusted(false);
     CONSENT_ROWS.with(|slot| *slot.borrow_mut() = None);
     let sender = CONSENT_REPLY
         .lock()
@@ -1790,7 +1965,7 @@ fn finish_consent(window: &AppWindow, accept: bool) {
         .take();
     if let Some(sender) = sender {
         let _ = sender.send(if accept {
-            Ok(granted)
+            Ok(ConsentReply { granted, trusted })
         } else {
             Err(McpError::Revoked)
         });
@@ -1801,7 +1976,7 @@ fn finish_consent(window: &AppWindow, accept: bool) {
 pub(crate) async fn ask_consent(
     request: ConsentRequest,
     timeout: Duration,
-) -> Result<Permissions, McpError> {
+) -> Result<ConsentReply, McpError> {
     if UI_THREAD.get() == Some(&std::thread::current().id()) {
         return Err(McpError::Reentrant);
     }
@@ -1812,13 +1987,12 @@ pub(crate) async fn ask_consent(
         .take();
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    *CONSENT_REPLY
-        .lock()
-        .unwrap_or_else(|err| err.into_inner()) = Some(tx);
+    *CONSENT_REPLY.lock().unwrap_or_else(|err| err.into_inner()) = Some(tx);
     CONSENT_SEQ.fetch_add(1, Ordering::Relaxed);
 
     let base = request.base;
     let client = request.client;
+    let remembered_trusted = request.remembered_trusted;
 
     slint::invoke_from_event_loop(move || {
         UI.with(|slot| {
@@ -1826,36 +2000,30 @@ pub(crate) async fn ask_consent(
             if let Some(access) = borrowed.as_ref() {
                 // 文案语言在 UI 线程取（MCP 线程读不到 `lang-en`）。
                 let en = access.window.get_lang_en();
-                let pick = |zh: &'static str, en_text: &'static str| if en { en_text } else { zh };
-                let rows: Vec<McpConsentRow> = crate::mcp::bits_with_heads()
-                    .into_iter()
-                    .map(|(bit, risk, group)| McpConsentRow {
-                        key: bit.key.into(),
-                        label: pick(bit.label_zh, bit.label_en).into(),
-                        desc: pick(bit.desc_zh, bit.desc_en).into(),
-                        // 预勾该客户端上次记住的授权；用户可以改。
-                        checked: base.allows(bit.key),
-                        allowed: true,
-                        risk: risk
-                            .map(|risk| pick(risk.label_zh(), risk.label_en()))
-                            .unwrap_or_default()
-                            .into(),
-                        risk_note: risk
-                            .map(|risk| pick(risk.note_zh(), risk.note_en()))
-                            .unwrap_or_default()
-                            .into(),
-                        group: group
-                            .map(|group| pick(group.label_zh(), group.label_en()))
-                            .unwrap_or_default()
-                            .into(),
-                    })
-                    .collect();
+                let rows = consent_rows(en, &base);
+                let selected = crate::mcp::PERMISSION_BITS
+                    .iter()
+                    .filter(|bit| base.allows(bit.key))
+                    .count();
                 let model = Rc::new(VecModel::from(rows));
                 access.window.set_mcp_consent_client(client.into());
                 access.window.set_mcp_consent_tool(SharedString::default());
-                access.window.set_mcp_consent_summary(SharedString::default());
-                access.window.set_mcp_consent_rows(ModelRc::from(model.clone()));
+                access.window.set_mcp_consent_summary(summary_for_count(
+                    en,
+                    selected,
+                    crate::mcp::PERMISSION_BITS.len(),
+                ));
+                access
+                    .window
+                    .set_mcp_consent_rows(ModelRc::from(model.clone()));
+                access.window.set_mcp_consent_trusted(remembered_trusted);
                 access.window.set_mcp_consent_open(true);
+                // 弹窗挂在主窗口上：主窗口在后台或被别的应用挡住时用户根本看不到，
+                // 45 秒后超时清掉租约，下次连接还得再弹一次（审计里 timeout 是高频原因）。
+                access.window.window().with_winit_window(|ww| {
+                    ww.set_minimized(false);
+                    ww.focus_window();
+                });
                 CONSENT_ROWS.with(|slot| *slot.borrow_mut() = Some(model));
             }
         });
@@ -1904,11 +2072,15 @@ mod tests {
 
     #[test]
     fn webdav_url_rejects_embedded_credentials() {
-        assert!(url_has_userinfo("https://bob:pw@dav.example.com/remote.php"));
+        assert!(url_has_userinfo(
+            "https://bob:pw@dav.example.com/remote.php"
+        ));
         assert!(url_has_userinfo("https://bob@dav.example.com"));
         assert!(!url_has_userinfo("https://dav.example.com/remote.php"));
         // `@` 出现在路径里不算 userinfo。
-        assert!(!url_has_userinfo("https://dav.example.com/dav/user@example.com"));
+        assert!(!url_has_userinfo(
+            "https://dav.example.com/dav/user@example.com"
+        ));
         assert!(!url_has_userinfo(""));
         assert!(!url_has_userinfo("localhost:8080"));
     }
@@ -1917,7 +2089,88 @@ mod tests {
     fn text_kind_requires_a_string() {
         assert!(validate(&SettingKind::Text, &json!("x")).is_ok());
         assert!(validate(&SettingKind::Text, &json!("")).is_ok());
-        assert_eq!(validate(&SettingKind::Text, &json!(1)), Err("expected_string"));
-        assert_eq!(validate(&SettingKind::Text, &json!(true)), Err("expected_string"));
+        assert_eq!(
+            validate(&SettingKind::Text, &json!(1)),
+            Err("expected_string")
+        );
+        assert_eq!(
+            validate(&SettingKind::Text, &json!(true)),
+            Err("expected_string")
+        );
+    }
+}
+
+#[cfg(test)]
+mod consent_row_tests {
+    use super::{consent_rows, summary_for_count};
+    use crate::mcp::Permissions;
+
+    fn perms(keys: &[&str]) -> Permissions {
+        Permissions::from_keys(keys)
+    }
+
+    /// 段标题 2 个；组标题只在"组内多于 1 位"的组首行 —— 高风险段的
+    /// 终端与命令(3)、主机(2)、文件(2)，共 3 个。单条组不再各占一个标题。
+    #[test]
+    fn sections_and_heads_follow_the_two_level_rule() {
+        let rows = consent_rows(false, &Permissions::default());
+        assert_eq!(rows.iter().filter(|row| !row.risk.is_empty()).count(), 2);
+        let heads: Vec<&str> = rows
+            .iter()
+            .filter(|row| row.section_head)
+            .map(|row| row.section.as_str())
+            .collect();
+        assert_eq!(heads.len(), 3, "可折叠组数量变了：{heads:?}");
+        // 每个组首行都必须可折叠（单条组不画标题，也就没有组首行）。
+        for row in &rows {
+            if row.section_head {
+                assert!(row.section_collapsible);
+                assert!(row.total_count > 1);
+            }
+        }
+    }
+
+    /// 组内计数随传入的授权变化；隐藏（默认收起）的行仍然保留勾选状态，
+    /// 否则点「允许接入」会把折叠里的历史授权吞掉。
+    #[test]
+    fn counts_and_checked_follow_grants() {
+        let rows = consent_rows(false, &perms(&["read", "exec", "run_command"]));
+        let terminal = rows
+            .iter()
+            .find(|row| row.section == "high.terminal" && row.section_head)
+            .expect("终端与命令组应该有组首行");
+        assert_eq!(terminal.total_count, 3);
+        assert!(terminal.on_count >= 1, "已授权的位要计入组内计数");
+        assert!(!terminal.expanded, "高风险组默认收起");
+        // 收起不等于取消勾选。
+        let exec_row = rows
+            .iter()
+            .find(|row| row.key == "exec")
+            .expect("exec 位存在");
+        assert!(exec_row.checked, "被折叠的行必须保留勾选状态");
+    }
+
+    /// 常规段默认全展开、单条组恒展开。
+    #[test]
+    fn routine_section_is_expanded_by_default() {
+        for row in consent_rows(false, &Permissions::default()) {
+            if !row.section_collapsible {
+                assert!(row.expanded, "单条组必须展开：{}", row.section);
+            } else if row.section.starts_with("routine.") {
+                assert!(row.expanded, "常规组默认应展开：{}", row.section);
+            }
+        }
+    }
+
+    #[test]
+    fn summary_counts_both_languages() {
+        assert_eq!(
+            summary_for_count(false, 3, 12).to_string(),
+            "已选 3 / 共 12"
+        );
+        assert_eq!(
+            summary_for_count(true, 3, 12).to_string(),
+            "3 of 12 selected"
+        );
     }
 }

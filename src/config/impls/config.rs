@@ -36,7 +36,10 @@ use chacha20poly1305::{
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
-use super::settings::{AppearanceSettings, LayoutSettings, McpClientGrant, McpSettings, SyncSettings, TerminalSettings, TransferSettings, UpdateSettings};
+use super::settings::{
+    AppearanceSettings, LayoutSettings, McpClientGrant, McpSettings, SyncSettings,
+    TerminalSettings, TransferSettings, UpdateSettings,
+};
 use uuid::Uuid;
 use zeroize::Zeroize;
 
@@ -79,6 +82,16 @@ pub fn log_dir() -> PathBuf {
     let dir = data_dir().join("log");
     let _ = fs::create_dir_all(&dir);
     dir
+}
+
+/// 当前 unix 秒。授权时间戳要跨进程重启存活，所以用挂钟而不是 `Instant`。
+///
+/// 跨平台：`upsert_mcp_client_grant` 与 `on_initialized` 都调它，不能挂 `cfg`。
+pub(crate) fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
 }
 
 /// Windows / Linux: portable-first — `<exe_dir>/log`, sibling of the portable
@@ -492,9 +505,6 @@ impl SessionKind {
     }
 }
 
-
-
-
 fn default_baud() -> u32 {
     115_200
 }
@@ -608,7 +618,8 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     // rev 2: settings show wallpaper transparency, while rev 1 accidentally
     // stored the default as panel alpha 0.38, so it displayed as ~62%.
     if cfg.defaults_rev < 2
-        && (cfg.appearance.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY).abs() < 0.005
+        && (cfg.appearance.wallpaper_overlay - PREVIOUS_DEFAULT_WALLPAPER_TRANSPARENCY).abs()
+            < 0.005
     {
         cfg.appearance.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
     }
@@ -1061,7 +1072,6 @@ impl SessionsFile {
             command_history: cache.command_history.clone(),
         }
     }
-
 }
 
 impl SettingsFile {
@@ -1357,7 +1367,9 @@ impl ConfigStore {
         // Persist the migration so it runs exactly once (and so a later opt-out —
         // e.g. turning the welcome sidebar back off — isn't reverted next launch).
         // `split_pending` 同理：老配置在这里被拆成两个文件，只此一次。
-        if (migrated || split_pending) && let Err(e) = store.save() {
+        if (migrated || split_pending)
+            && let Err(e) = store.save()
+        {
             tracing::warn!("failed to persist config migration: {e:#}");
         }
         Ok(store)
@@ -1423,15 +1435,14 @@ impl ConfigStore {
         }
         // 命令历史：旧文件里的明文原样保留（下次 save 时加密），解不开的密文直接丢掉 ——
         // 留着只是一条谁也读不出来的乱码，还会被当成命令补全出来。
-        cfg.command_history.retain_mut(|cmd| {
-            match Self::try_decrypt(key, cmd) {
+        cfg.command_history
+            .retain_mut(|cmd| match Self::try_decrypt(key, cmd) {
                 Some(plain) => {
                     *cmd = plain;
                     true
                 }
                 None => !cmd.starts_with(Self::ENC_PREFIX),
-            }
-        });
+            });
         if undecryptable > 0 {
             // Nothing can recover these — `save()` skips values that
             // already carry the prefix, so the stale blobs would
@@ -2401,11 +2412,7 @@ impl ConfigStore {
     /// 出厂端口之外的一律回退：0 会让系统随机分配，用户填了也找不回来。
     pub fn mcp_port(&self) -> u16 {
         let port = self.cache.mcp.mcp_port;
-        if port < 1024 {
-            DEFAULT_MCP_PORT
-        } else {
-            port
-        }
+        if port < 1024 { DEFAULT_MCP_PORT } else { port }
     }
     pub fn set_mcp_port(&mut self, port: u16) {
         if port >= 1024 {
@@ -2451,7 +2458,10 @@ impl ConfigStore {
 
     /// 写入/更新一个客户端的记忆授权。空 id 或含控制字符的 id 不写。
     /// 列表上限 32，超出时丢最旧的（列表头部）。
-    pub fn upsert_mcp_client_grant(&mut self, id: &str, permissions: Vec<String>) {
+    ///
+    /// `last_auth_unix` 每次写入都刷新：它既是"多久没来过就要重新授权"的计时起点，
+    /// 也是免弹窗窗口的滑动起点 —— 活跃客户端不会反复被打扰。
+    pub fn upsert_mcp_client_grant(&mut self, id: &str, permissions: Vec<String>, trusted: bool) {
         let id = id.trim();
         if id.is_empty() || id.chars().any(char::is_control) {
             return;
@@ -2461,11 +2471,37 @@ impl ConfigStore {
         list.push(McpClientGrant {
             id: id.to_string(),
             permissions,
+            last_auth_unix: unix_now(),
+            trusted,
         });
         if list.len() > 32 {
             list.drain(..list.len() - 32);
         }
         self.cache.mcp.mcp_client_grants = list;
+    }
+    /// 忘掉这个客户端的记忆授权。用户点「拒绝接入」时调用 —— 拒绝之后它不该再靠
+    /// 旧授权在 15 分钟窗口里静默重连。
+    pub fn remove_mcp_client_grant(&mut self, id: &str) -> bool {
+        let before = self.cache.mcp.mcp_client_grants.len();
+        self.cache
+            .mcp
+            .mcp_client_grants
+            .retain(|grant| grant.id != id);
+        self.cache.mcp.mcp_client_grants.len() != before
+    }
+    /// 只改「永久信任」标记，不动权限与时间戳。设置页客户端卡片的开关走这里。
+    pub fn set_mcp_client_trusted(&mut self, id: &str, trusted: bool) -> bool {
+        let Some(grant) = self
+            .cache
+            .mcp
+            .mcp_client_grants
+            .iter_mut()
+            .find(|grant| grant.id == id)
+        else {
+            return false;
+        };
+        grant.trusted = trusted;
+        true
     }
     /// AI 执行命令走交互式 PTY（可见）还是一次性 exec 通道（默认，不可见）。
     pub fn mcp_pty_commands(&self) -> bool {
@@ -2547,7 +2583,10 @@ impl ConfigStore {
     }
     /// Last window size in logical px; `(0,0)` means unset (use the default).
     pub fn window_size(&self) -> (f32, f32) {
-        (self.cache.layout.window_width, self.cache.layout.window_height)
+        (
+            self.cache.layout.window_width,
+            self.cache.layout.window_height,
+        )
     }
     pub fn set_window_size(&mut self, w: f32, h: f32) {
         self.cache.layout.window_width = w;
@@ -2843,7 +2882,11 @@ impl ConfigStore {
         }
         // MCP 令牌与口令同一套加密；已带前缀的跳过（幂等）。
         if !settings_disk.mcp.mcp_token.is_empty()
-            && !settings_disk.mcp.mcp_token.as_str().starts_with(Self::ENC_PREFIX)
+            && !settings_disk
+                .mcp
+                .mcp_token
+                .as_str()
+                .starts_with(Self::ENC_PREFIX)
         {
             let enc = Self::encrypt(&self.key, settings_disk.mcp.mcp_token.as_str())?;
             settings_disk.mcp.mcp_token = Secret::new(enc);
@@ -2975,10 +3018,7 @@ impl ConfigStore {
             return;
         }
 
-        for (name, raw) in [
-            (SESSIONS_FILE, sessions_raw),
-            (SETTINGS_FILE, settings_raw),
-        ] {
+        for (name, raw) in [(SESSIONS_FILE, sessions_raw), (SETTINGS_FILE, settings_raw)] {
             let dst = backup_dir.join(name);
             let tmp = dst.with_extension("json.tmp");
             // 备份是尽力而为：权限同样要在建文件时就 0600（里面是加密凭据），
@@ -3126,6 +3166,18 @@ impl ConfigStore {
 
 #[cfg(test)]
 mod tests {
+
+    /// 老配置里的客户端授权没有新加的两字段：反序列化必须当成"从未授权、
+    /// 未信任"，而不是报错或被误判成已信任。
+    #[test]
+    fn legacy_client_grant_deserialises_as_unsigned() {
+        let grant: McpClientGrant =
+            serde_json::from_str(r#"{"id":"Claude Desktop 0.7.2","permissions":["read"]}"#)
+                .expect("legacy grant must deserialize");
+        assert_eq!(grant.last_auth_unix, 0);
+        assert!(!grant.trusted);
+        assert_eq!(grant.permissions, vec!["read".to_string()]);
+    }
     use super::*;
 
     fn temp_store() -> ConfigStore {
@@ -3300,10 +3352,12 @@ mod tests {
         let saved = std::fs::read_to_string(&store.path).unwrap();
         assert!(!saved.contains("meatshell-test"));
         let disk: ConfigFile = serde_json::from_str(&saved).unwrap();
-        assert!(disk.sessions[0]
-            .password
-            .as_str()
-            .starts_with(ConfigStore::ENC_PREFIX));
+        assert!(
+            disk.sessions[0]
+                .password
+                .as_str()
+                .starts_with(ConfigStore::ENC_PREFIX)
+        );
 
         let _ = std::fs::remove_file(&store.path);
     }
@@ -3344,7 +3398,11 @@ mod tests {
         // 验不到读取端。
         for legacy in ["gpu", "skia", "skia-vulkan", "femtovg", "femtovg-wgpu"] {
             store.cache.appearance.renderer_mode = legacy.into();
-            assert_eq!(store.renderer_mode_choice(), "wgpu", "{legacy} 应归到 GPU 档");
+            assert_eq!(
+                store.renderer_mode_choice(),
+                "wgpu",
+                "{legacy} 应归到 GPU 档"
+            );
         }
         store.cache.appearance.renderer_mode = "unexpected".into();
         assert_eq!(store.renderer_mode_choice(), "auto");
@@ -3435,7 +3493,10 @@ mod tests {
         cfg.terminal.large_scrollback = false;
 
         assert!(migrate_defaults(&mut cfg));
-        assert!(cfg.terminal.large_scrollback, "超限的旧配置必须自动打开开关");
+        assert!(
+            cfg.terminal.large_scrollback,
+            "超限的旧配置必须自动打开开关"
+        );
         assert_eq!(cfg.terminal.scrollback_lines, 500_000, "原上限不能被改动");
 
         // 常规范围内的配置不受影响
@@ -3455,7 +3516,11 @@ mod tests {
         let mut store = temp_store();
 
         store.set_scrollback_lines(500_000);
-        assert_eq!(store.scrollback_lines(), SCROLLBACK_MAX, "开关关着时被常规上限夹住");
+        assert_eq!(
+            store.scrollback_lines(),
+            SCROLLBACK_MAX,
+            "开关关着时被常规上限夹住"
+        );
 
         store.set_large_scrollback(true);
         store.set_scrollback_lines(500_000);
@@ -3654,7 +3719,9 @@ mod tests {
         // Fresh install (no file).
         let fresh = fresh_config();
         assert_eq!(fresh.appearance.wallpaper, "builtin:dark");
-        assert!((fresh.appearance.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs() < f32::EPSILON);
+        assert!(
+            (fresh.appearance.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs() < f32::EPSILON
+        );
         // User upgrading from before the feature: JSON without the key.
         let cfg: ConfigFile = serde_json::from_str("{}").unwrap();
         assert_eq!(cfg.appearance.wallpaper, "builtin:dark");
@@ -3689,7 +3756,10 @@ mod tests {
             ..ConfigFile::default()
         };
         assert!(migrate_defaults(&mut old_default));
-        assert!((old_default.appearance.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs() < f32::EPSILON);
+        assert!(
+            (old_default.appearance.wallpaper_overlay - DEFAULT_WALLPAPER_OVERLAY).abs()
+                < f32::EPSILON
+        );
 
         // 自定义滑条值不被迁移覆盖（取一个不与新默认重合的值）。
         let mut custom = ConfigFile {
@@ -4377,8 +4447,7 @@ mod domain_split_compat_tests {
             "animations_disabled": true,
             "defaults_rev": 5
         }"##;
-        let cfg: ConfigFile =
-            serde_json::from_str(legacy).expect("老的平铺配置必须仍能读入");
+        let cfg: ConfigFile = serde_json::from_str(legacy).expect("老的平铺配置必须仍能读入");
 
         // 每个域都取到了自己的字段。
         assert_eq!(cfg.terminal.font_family, "Maple Mono");
@@ -4403,15 +4472,28 @@ mod domain_split_compat_tests {
         let out = serde_json::to_string(&cfg).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         let obj = v.as_object().expect("顶层必须是对象");
-        for nested in ["terminal", "appearance", "layout", "transfer", "sync", "update"] {
+        for nested in [
+            "terminal",
+            "appearance",
+            "layout",
+            "transfer",
+            "sync",
+            "update",
+        ] {
             assert!(
                 !obj.contains_key(nested),
                 "分域结构体被序列化成了嵌套对象 {nested:?} —— flatten 失效，用户配置会读不出来"
             );
         }
         for key in [
-            "font_family", "scrollback_lines", "ui_scale", "wallpaper_overlay",
-            "sidebar_dock", "download_dir", "webdav_url", "update_check_disabled",
+            "font_family",
+            "scrollback_lines",
+            "ui_scale",
+            "wallpaper_overlay",
+            "sidebar_dock",
+            "download_dir",
+            "webdav_url",
+            "update_check_disabled",
         ] {
             assert!(obj.contains_key(key), "平铺键 {key:?} 丢失");
         }
@@ -4445,16 +4527,25 @@ mod domain_split_compat_tests {
             assert_eq!(cfg.terminal.osc52_clipboard, d.osc52_clipboard);
             assert_eq!(cfg.terminal.terminal_cursor_style, d.terminal_cursor_style);
             assert_eq!(cfg.terminal.terminal_cursor_color, d.terminal_cursor_color);
-            assert_eq!(cfg.terminal.output_highlight_preset, d.output_highlight_preset);
+            assert_eq!(
+                cfg.terminal.output_highlight_preset,
+                d.output_highlight_preset
+            );
 
             assert_eq!(cfg.appearance.wallpaper, a.wallpaper);
             assert_eq!(cfg.appearance.wallpaper_overlay, a.wallpaper_overlay);
             assert_eq!(cfg.appearance.ui_scale, a.ui_scale);
             assert_eq!(cfg.appearance.panel_font, a.panel_font);
-            assert_eq!(cfg.appearance.hide_special_partitions, a.hide_special_partitions);
+            assert_eq!(
+                cfg.appearance.hide_special_partitions,
+                a.hide_special_partitions
+            );
 
             assert_eq!(cfg.layout.sidebar_dock, l.sidebar_dock);
-            assert_eq!(cfg.layout.collapse_sidebar_default, l.collapse_sidebar_default);
+            assert_eq!(
+                cfg.layout.collapse_sidebar_default,
+                l.collapse_sidebar_default
+            );
             assert_eq!(cfg.layout.welcome_as_sidebar, l.welcome_as_sidebar);
 
             assert!(!cfg.transfer.sftp_no_follow_cd, "存储取反：默认跟随 cd");
@@ -4557,7 +4648,6 @@ mod session_trigger_tests {
         assert!(back.triggers[0].append_enter);
         assert!(!back.triggers[0].repeat);
     }
-
 }
 
 #[cfg(test)]
@@ -4733,6 +4823,7 @@ mod split_file_tests {
         store.upsert_mcp_client_grant(
             "Claude Desktop 0.7.2",
             vec!["read".to_string(), "exec".to_string()],
+            false,
         );
         assert_eq!(
             store
@@ -4744,8 +4835,8 @@ mod split_file_tests {
             vec!["read", "exec"]
         );
 
-        store.upsert_mcp_client_grant("Client B", vec!["read".to_string()]);
-        store.upsert_mcp_client_grant("Claude Desktop 0.7.2", vec!["read".to_string()]);
+        store.upsert_mcp_client_grant("Client B", vec!["read".to_string()], false);
+        store.upsert_mcp_client_grant("Claude Desktop 0.7.2", vec!["read".to_string()], false);
         assert_eq!(store.mcp_client_grants().len(), 2);
         assert_eq!(
             store.mcp_client_grants().last().unwrap().id,
@@ -4753,14 +4844,19 @@ mod split_file_tests {
         );
 
         for index in 0..40 {
-            store.upsert_mcp_client_grant(&format!("client-{index}"), Vec::new());
+            store.upsert_mcp_client_grant(&format!("client-{index}"), Vec::new(), false);
         }
         assert_eq!(store.mcp_client_grants().len(), 32);
-        assert!(!store.mcp_client_grants().iter().any(|grant| grant.id == "client-0"));
+        assert!(
+            !store
+                .mcp_client_grants()
+                .iter()
+                .any(|grant| grant.id == "client-0")
+        );
 
         let before = store.mcp_client_grants().len();
-        store.upsert_mcp_client_grant("", Vec::new());
-        store.upsert_mcp_client_grant("bad\nid", Vec::new());
+        store.upsert_mcp_client_grant("", Vec::new(), false);
+        store.upsert_mcp_client_grant("bad\nid", Vec::new(), false);
         assert_eq!(store.mcp_client_grants().len(), before);
 
         let _ = fs::remove_dir_all(&dir);

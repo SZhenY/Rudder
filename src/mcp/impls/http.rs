@@ -118,6 +118,12 @@ async fn guard(State(state): State<SharedState>, request: Request, next: Next) -
     }
 
     let (mut parts, body) = request.into_parts();
+    // 取来源地址：`client_id` 要用它区分"不同设备上的同名客户端"。
+    // 由 `into_make_service_with_connect_info` 注入；单元测试直接喂 router 时取不到，退回 None。
+    let peer_ip = parts
+        .extensions
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|info| info.0.ip());
     // 不要把 Bearer 令牌带进 SDK 的请求上下文 / debug 视图。
     parts.headers.remove(header::AUTHORIZATION);
     let request = Request::from_parts(parts, Body::new(Limited::new(body, MAX_BODY)));
@@ -130,7 +136,7 @@ async fn guard(State(state): State<SharedState>, request: Request, next: Next) -
             .and_then(|value| value.to_str().ok())
         {
             let id = id.to_owned();
-            if state.insert_lease(id.clone()) {
+            if state.insert_lease(id.clone(), peer_ip) {
                 audit_session(&state, "session_open", "", &id);
             } else {
                 // 并发下超出上限：这次会话没有租约，客户端下一次请求会拿 404。

@@ -151,6 +151,8 @@ export component PrimaryButton inherits Rectangle {
 // --- GhostButton -----------------------------------------------------------
 export component GhostButton inherits Rectangle {
     in property <string> text;
+    /// true = 置灰且不响应点击（用于"上级开关关闭时，下级不可操作"）。
+    in property <bool> disabled: false;
     callback clicked();
 
     height: 30px;
@@ -159,14 +161,15 @@ export component GhostButton inherits Rectangle {
     border-width: 1px;
     border-color: Theme.border-subtle;
     background: Theme.bg-panel;
+    opacity: root.disabled ? 0.45 : 1;
     states [
-        pressed when touch.pressed : { background: Theme.accent-press; }
-        hovered when touch.has-hover : {
+        pressed when touch.pressed && !root.disabled : { background: Theme.accent-press; }
+        hovered when touch.has-hover && !root.disabled : {
             border-color: Theme.accent-ring;
             background: Theme.bg-hover;
         }
     ]
-    animate background, border-color {
+    animate background, border-color, opacity {
         duration: (touch.has-hover || touch.pressed) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
         easing: (touch.has-hover || touch.pressed) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
         enabled: AnimationSettings.enabled;
@@ -178,14 +181,15 @@ export component GhostButton inherits Rectangle {
         alignment: center;
         Text {
             text: root.text;
-            color: Theme.text-primary;
+            color: root.disabled ? Theme.text-muted : Theme.text-primary;
             font-size: Theme.fs-md;
             vertical-alignment: center;
         }
     }
 
     touch := TouchArea {
-        mouse-cursor: pointer;
+        enabled: !root.disabled;
+        mouse-cursor: root.disabled ? default : pointer;
         clicked => { root.clicked(); }
     }
 }

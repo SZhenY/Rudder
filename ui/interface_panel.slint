@@ -8,7 +8,7 @@
 
 import { Theme, AnimationSettings } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, AuditRow } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpCloseRow, AuditRow } from "settings/types.slint";
 
 import { NavItem } from "settings/chrome.slint";
 import { ResetBar } from "settings/reset_bar.slint";
@@ -209,6 +209,8 @@ export component InterfacePanel inherits Rectangle {
     callback toggle-mcp-iface(string);
     callback toggle-mcp-client-permission(string, string, bool);
     callback disconnect-mcp-client(string);
+    callback set-mcp-client-trusted(string, bool);
+    callback toggle-mcp-client-expanded(string);
     callback copy-mcp-token();
     callback copy-mcp-json();
     callback regenerate-mcp-token();
@@ -218,6 +220,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> mcp-audit-retention-valid: true;
     in property <bool> mcp-audit-degraded;
     in property <[AuditRow]> mcp-recent-calls;
+    in property <[McpCloseRow]> mcp-recent-closes;
     callback set-mcp-pty-commands(bool);
     callback set-mcp-audit-enabled(bool);
     callback set-mcp-audit-retention(string) -> bool;
@@ -536,6 +539,8 @@ export component InterfacePanel inherits Rectangle {
                             toggle-mcp-iface(c1) => { root.toggle-mcp-iface(c1); }
                             toggle-mcp-client-permission(c2, c3, c4) => { root.toggle-mcp-client-permission(c2, c3, c4); }
                             disconnect-mcp-client(c5) => { root.disconnect-mcp-client(c5); }
+                            set-mcp-client-trusted(d0, d1) => { root.set-mcp-client-trusted(d0, d1); }
+                            toggle-mcp-client-expanded(d2) => { root.toggle-mcp-client-expanded(d2); }
                             copy-mcp-token() => { root.copy-mcp-token(); }
                             copy-mcp-json() => { root.copy-mcp-json(); }
                             regenerate-mcp-token() => { root.regenerate-mcp-token(); }
@@ -545,6 +550,7 @@ export component InterfacePanel inherits Rectangle {
                             mcp-audit-retention-valid <=> root.mcp-audit-retention-valid;
                             mcp-audit-degraded: root.mcp-audit-degraded;
                             mcp-recent-calls: root.mcp-recent-calls;
+                            mcp-recent-closes: root.mcp-recent-closes;
                             set-mcp-pty-commands(a4) => { root.set-mcp-pty-commands(a4); }
                             set-mcp-audit-enabled(a5) => { root.set-mcp-audit-enabled(a5); }
                             set-mcp-audit-retention(b5) => { root.set-mcp-audit-retention(b5); }

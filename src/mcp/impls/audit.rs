@@ -17,10 +17,12 @@ use std::sync::{Mutex, OnceLock};
 
 use serde_json::{Value, json};
 
-use super::audit_types::AuditEntry;
+use super::audit_types::{AuditEntry, SessionCloseEntry};
 
 /// AI 页"最近调用"保留的条数。
 const RING_CAPACITY: usize = 200;
+/// AI 页"最近断开"保留的条数。
+const CLOSE_CAPACITY: usize = 16;
 /// 待写队列容量：突发流量下够撑一阵，满了就丢。
 const CHANNEL_CAPACITY: usize = 1024;
 /// 单日文件上限。
@@ -28,11 +30,24 @@ const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
 
 static TX: OnceLock<Option<SyncSender<Value>>> = OnceLock::new();
 static RING: OnceLock<Mutex<VecDeque<AuditEntry>>> = OnceLock::new();
+static CLOSES: OnceLock<Mutex<VecDeque<SessionCloseEntry>>> = OnceLock::new();
 static DEGRADED: AtomicBool = AtomicBool::new(false);
 static DROPPED: AtomicU64 = AtomicU64::new(0);
 
 fn ring() -> &'static Mutex<VecDeque<AuditEntry>> {
     RING.get_or_init(|| Mutex::new(VecDeque::with_capacity(RING_CAPACITY)))
+}
+
+fn close_ring() -> &'static Mutex<VecDeque<SessionCloseEntry>> {
+    CLOSES.get_or_init(|| Mutex::new(VecDeque::with_capacity(CLOSE_CAPACITY)))
+}
+
+/// 有界环形缓冲的标准写法：满了丢最旧的，再追加。
+fn push_capped<T>(ring: &mut VecDeque<T>, capacity: usize, item: T) {
+    if ring.len() >= capacity {
+        ring.pop_front();
+    }
+    ring.push_back(item);
 }
 
 /// 起写线程（幂等）。`enabled == false` 时也要起 —— 开关可能在会话中途被打开。
@@ -55,10 +70,7 @@ pub(super) fn init() {
 pub(super) fn record(record: Value, entry: AuditEntry) {
     {
         let mut ring = ring().lock().unwrap_or_else(|err| err.into_inner());
-        if ring.len() >= RING_CAPACITY {
-            ring.pop_front();
-        }
-        ring.push_back(entry);
+        push_capped(&mut ring, RING_CAPACITY, entry);
     }
     init();
     let Some(Some(tx)) = TX.get() else {
@@ -73,6 +85,19 @@ pub(super) fn record(record: Value, entry: AuditEntry) {
             DEGRADED.store(true, Ordering::Relaxed);
         }
     }
+}
+
+/// 记一条"会话结束"进内存环。**不受 `audit.enabled` 影响** —— 这是运行期的界面状态，
+/// 关掉"记录工具调用"不该让用户失去"会话为什么没了"的归因能力。
+pub(super) fn record_close(entry: SessionCloseEntry) {
+    let mut ring = close_ring().lock().unwrap_or_else(|err| err.into_inner());
+    push_capped(&mut ring, CLOSE_CAPACITY, entry);
+}
+
+/// 最近若干条会话结束（新的在前）。
+pub(super) fn recent_closes() -> Vec<SessionCloseEntry> {
+    let ring = close_ring().lock().unwrap_or_else(|err| err.into_inner());
+    ring.iter().rev().cloned().collect()
 }
 
 /// 只写文件，不进环形缓冲（会话事件用）。
@@ -94,7 +119,6 @@ pub(super) fn recent() -> Vec<AuditEntry> {
 pub(super) fn degraded() -> bool {
     DEGRADED.load(Ordering::Relaxed)
 }
-
 
 fn drain(rx: Receiver<Value>) {
     let dir = crate::config::log_dir();
@@ -276,11 +300,17 @@ mod tests {
     #[test]
     fn ring_keeps_only_the_last_entries() {
         for index in 0..(RING_CAPACITY + 5) {
-            record(json!({"tool": format!("t{index}")}), entry(&format!("t{index}")));
+            record(
+                json!({"tool": format!("t{index}")}),
+                entry(&format!("t{index}")),
+            );
         }
         let recent = recent();
         assert_eq!(recent.len(), RING_CAPACITY);
-        assert_eq!(recent.first().unwrap().tool, format!("t{}", RING_CAPACITY + 4));
+        assert_eq!(
+            recent.first().unwrap().tool,
+            format!("t{}", RING_CAPACITY + 4)
+        );
     }
 
     #[test]
@@ -294,5 +324,29 @@ mod tests {
         sink.write(&json!({"event": "tool_call"}));
         assert!(sink.full_for_today);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod ring_tests {
+    use super::push_capped;
+    use std::collections::VecDeque;
+
+    /// 满了丢最旧的，顺序保持插入序 —— "最近断开"只保留最后 N 条依赖它。
+    #[test]
+    fn push_capped_keeps_the_last_n_in_order() {
+        let mut ring: VecDeque<u32> = VecDeque::new();
+        for value in 0..5 {
+            push_capped(&mut ring, 3, value);
+        }
+        assert_eq!(ring.into_iter().collect::<Vec<_>>(), vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn push_capped_below_capacity_keeps_everything() {
+        let mut ring: VecDeque<u32> = VecDeque::new();
+        push_capped(&mut ring, 4, 1);
+        push_capped(&mut ring, 4, 2);
+        assert_eq!(ring.into_iter().collect::<Vec<_>>(), vec![1, 2]);
     }
 }

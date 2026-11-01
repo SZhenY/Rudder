@@ -38,7 +38,7 @@ import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, AuditRow } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpCloseRow, AuditRow } from "settings/types.slint";
 import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
 import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
@@ -201,6 +201,7 @@ export component SettingsWindow inherits Window {
     in-out property <bool> mcp-audit-retention-valid: true;
     in property <bool> mcp-audit-degraded: false;
     in property <[AuditRow]> mcp-recent-calls;
+    in property <[McpCloseRow]> mcp-recent-closes;
     in-out property <bool> welcome-as-sidebar:false;
     in-out property <string> wsl-new-directory:"~";
     in property <[WslProfileInfo]> wsl-profiles;
@@ -263,6 +264,8 @@ export component SettingsWindow inherits Window {
     callback toggle-mcp-iface(string);
     callback toggle-mcp-client-permission(string, string, bool);
     callback disconnect-mcp-client(string);
+    callback set-mcp-client-trusted(string, bool);
+    callback toggle-mcp-client-expanded(string);
     callback copy-mcp-token();
     callback copy-mcp-json();
     callback set-mcp-pty-commands(bool);
@@ -461,6 +464,8 @@ export component SettingsWindow inherits Window {
                 toggle-mcp-iface(v) => { root.toggle-mcp-iface(v); }
                 toggle-mcp-client-permission(v, k, on) => { root.toggle-mcp-client-permission(v, k, on); }
                 disconnect-mcp-client(v) => { root.disconnect-mcp-client(v); }
+                set-mcp-client-trusted(c0, c1) => { root.set-mcp-client-trusted(c0, c1); }
+                toggle-mcp-client-expanded(c2) => { root.toggle-mcp-client-expanded(c2); }
                 copy-mcp-token => { root.copy-mcp-token(); }
                 copy-mcp-json => { root.copy-mcp-json(); }
                 regenerate-mcp-token => { root.regenerate-mcp-token(); }
@@ -470,6 +475,7 @@ export component SettingsWindow inherits Window {
                 mcp-audit-retention-valid <=> root.mcp-audit-retention-valid;
                 mcp-audit-degraded: root.mcp-audit-degraded;
                 mcp-recent-calls: root.mcp-recent-calls;
+                mcp-recent-closes: root.mcp-recent-closes;
                 set-mcp-pty-commands(v) => { root.set-mcp-pty-commands(v); }
                 set-mcp-audit-enabled(v) => { root.set-mcp-audit-enabled(v); }
                 set-mcp-audit-retention(v) => { root.set-mcp-audit-retention(v); }

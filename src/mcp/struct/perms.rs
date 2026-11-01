@@ -311,16 +311,80 @@ pub(crate) fn is_high_risk_setting(key: &str) -> bool {
     HIGH_RISK_SETTINGS.contains(&key)
 }
 
-/// 逐位给出"这一行要不要打标题"：`risk` 非空 = 该风险组第一行；`group` 非空 =
-/// 该 (风险, 功能区) 的第一行。设置页与弹窗共用，Slint 不再做分组判断。
-pub(crate) fn bits_with_heads() -> Vec<(&'static PermissionBit, Option<Risk>, Option<Group>)> {
+/// 一位权限在「风险段 → 功能区」树里的位置。设置页与授权弹窗共用，
+/// Slint 侧只读这些标记、不做分组判断。
+pub(crate) struct BitRow {
+    pub(crate) bit: &'static PermissionBit,
+    /// 非空 = 该风险段的第一行（要打段标题）。
+    pub(crate) risk: Option<Risk>,
+    /// 非空 = 该组的第一行，且**只在组内多于 1 位时**才会给出 ——
+    /// 单条组（常规段的查看/会话/配置、高风险段的会话/配置）不画组标题，
+    /// 否则标题会比内容还密，正是弹窗排版显得杂乱的原因。
+    /// 授权弹窗用这个：可折叠的组才有标题。
+    pub(crate) group: Option<Group>,
+    /// 同样的"组首行"标记，但**不管组内几条都给**（旧语义）。
+    /// 设置页的权限列表用它：那里没有折叠，每个功能区都要标题。
+    pub(crate) group_always: Option<Group>,
+    /// 组 id（每行都有，同组同值），供「折叠某组」定位。
+    pub(crate) section: &'static str,
+    /// 组内位数。
+    pub(crate) section_total: usize,
+}
+
+impl BitRow {
+    /// 组内多于 1 位才值得折叠。
+    pub(crate) fn collapsible(&self) -> bool {
+        self.section_total > 1
+    }
+
+    /// 默认展开：常规段全展开；高风险段的可折叠组收起（高危项默认不铺在眼前）；
+    /// 单条组恒展开 —— 它没有标题可点，收起就永远看不见了。
+    pub(crate) fn default_expanded(&self) -> bool {
+        !(self.collapsible() && matches!(self.bit.risk, Risk::High))
+    }
+}
+
+/// `(风险段, 功能区)` → 稳定组 id。穷举 match：新增功能区时编译器会强制补齐。
+fn section_id(risk: Risk, group: Group) -> &'static str {
+    match (risk, group) {
+        (Risk::Normal, Group::View) => "routine.view",
+        (Risk::Normal, Group::Session) => "routine.session",
+        (Risk::Normal, Group::Config) => "routine.config",
+        (Risk::Normal, Group::Terminal) => "routine.terminal",
+        (Risk::Normal, Group::Host) => "routine.host",
+        (Risk::Normal, Group::File) => "routine.file",
+        (Risk::High, Group::View) => "high.view",
+        (Risk::High, Group::Session) => "high.session",
+        (Risk::High, Group::Config) => "high.config",
+        (Risk::High, Group::Terminal) => "high.terminal",
+        (Risk::High, Group::Host) => "high.host",
+        (Risk::High, Group::File) => "high.file",
+    }
+}
+
+/// 逐位给出分组信息：`risk` 非空 = 段首行；`group` 非空 = 可折叠组的组首行。
+pub(crate) fn bit_rows() -> Vec<BitRow> {
     let mut out = Vec::with_capacity(PERMISSION_BITS.len());
     let mut prev_risk: Option<Risk> = None;
     let mut prev_group: Option<Group> = None;
     for bit in PERMISSION_BITS {
+        let total = PERMISSION_BITS
+            .iter()
+            .filter(|other| other.risk == bit.risk && other.group == bit.group)
+            .count();
         let risk = (prev_risk != Some(bit.risk)).then_some(bit.risk);
-        let group = (risk.is_some() || prev_group != Some(bit.group)).then_some(bit.group);
-        out.push((bit, risk, group));
+        let is_group_head = risk.is_some() || prev_group != Some(bit.group);
+        let group_always = is_group_head.then_some(bit.group);
+        // 弹窗只给"可折叠的组"画标题；设置页用 group_always。
+        let group = if total > 1 { group_always } else { None };
+        out.push(BitRow {
+            bit,
+            risk,
+            group,
+            group_always,
+            section: section_id(bit.risk, bit.group),
+            section_total: total,
+        });
         prev_risk = Some(bit.risk);
         prev_group = Some(bit.group);
     }
@@ -430,26 +494,82 @@ mod tests {
     }
 
     #[test]
-    fn heads_follow_risk_then_group() {
-        let heads = bits_with_heads();
-        assert_eq!(heads.len(), PERMISSION_BITS.len());
-        assert_eq!(heads[0].1, Some(Risk::Normal), "第一行必须是风险标题");
-        assert_eq!(heads[0].2, Some(Group::View), "第一行必须带功能区标题");
-        let risk_heads: Vec<Risk> = heads.iter().filter_map(|(_, risk, _)| *risk).collect();
+    fn bit_rows_heads_follow_risk_then_collapsible_group() {
+        let rows = bit_rows();
+        assert_eq!(rows.len(), PERMISSION_BITS.len());
+        assert_eq!(rows[0].risk, Some(Risk::Normal), "第一行必须是段标题");
+        let risk_heads: Vec<Risk> = rows.iter().filter_map(|row| row.risk).collect();
         assert_eq!(risk_heads, vec![Risk::Normal, Risk::High]);
-        // 每个风险组内，功能区标题只在组首出现。
-        let mut current_risk = Risk::Normal;
-        let mut seen: Vec<Group> = Vec::new();
-        for (bit, risk, group) in heads {
-            if let Some(risk) = risk {
-                current_risk = risk;
-                seen.clear();
+
+        // 组标题只出现在"组内多于 1 位"的组首行，且同一组只打一次。
+        let mut seen: Vec<&str> = Vec::new();
+        for row in &rows {
+            if let Some(group) = row.group {
+                assert!(row.section_total > 1, "{group:?} 是单条组，不该打标题");
+                assert!(!seen.contains(&row.section), "{} 重复打标题", row.section);
+                seen.push(row.section);
             }
-            if let Some(group) = group {
-                assert!(!seen.contains(&group), "{:?} 在 {:?} 内重复打标题", group, current_risk);
-                seen.push(group);
+            // 反过来：可折叠组的首行必须有标题。
+            if row.section_total > 1 && !seen.contains(&row.section) {
+                panic!("{} 是可折叠组却没有组标题", row.section);
             }
-            let _ = bit;
+        }
+        // 2 个段标题 + 3 个可折叠组（高风险段的终端与命令、主机、文件）。
+        assert_eq!(seen.len(), 3, "可折叠组数量变了：{seen:?}");
+
+        // 设置页要的是"每个功能区都有标题"的旧语义：常规 3 组 + 高风险 5 组。
+        let always: Vec<&str> = rows
+            .iter()
+            .filter(|row| row.group_always.is_some())
+            .map(|row| row.section)
+            .collect();
+        assert_eq!(always.len(), 8, "设置页的分组标题数变了：{always:?}");
+    }
+
+    /// 组 id 连续、每组的 total 与实际行数一致、总和 = 12。
+    #[test]
+    fn bit_rows_sections_are_contiguous_and_total() {
+        let rows = bit_rows();
+        let mut sum = 0;
+        let mut index = 0;
+        while index < rows.len() {
+            let section = rows[index].section;
+            let total = rows[index].section_total;
+            let run = rows[index..]
+                .iter()
+                .take_while(|row| row.section == section)
+                .count();
+            assert_eq!(run, total, "{section} 的 section_total 与相邻行数不符");
+            sum += total;
+            index += run;
+        }
+        assert_eq!(sum, PERMISSION_BITS.len());
+    }
+
+    /// 默认折叠态：常规段全展开、高风险段的可折叠组收起、单条组恒展开。
+    #[test]
+    fn bit_rows_default_expansion() {
+        for row in bit_rows() {
+            if row.section_total <= 1 {
+                assert!(row.default_expanded(), "单条组必须展开：{}", row.section);
+            } else if row.bit.risk == Risk::High {
+                assert!(
+                    !row.default_expanded(),
+                    "高风险组默认应收起：{}",
+                    row.section
+                );
+            } else {
+                assert!(row.default_expanded(), "常规组默认应展开：{}", row.section);
+            }
+        }
+    }
+
+    /// 悬停气泡靠 desc 兜底，12 位的中英文描述都不能为空。
+    #[test]
+    fn every_bit_has_a_description() {
+        for bit in PERMISSION_BITS {
+            assert!(!bit.desc_zh.trim().is_empty(), "{} 缺中文描述", bit.key);
+            assert!(!bit.desc_en.trim().is_empty(), "{} 缺英文描述", bit.key);
         }
     }
 

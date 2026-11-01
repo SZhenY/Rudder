@@ -205,6 +205,7 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_mcp_audit_retention_valid(m.get_mcp_audit_retention_valid());
     sw.set_mcp_audit_degraded(m.get_mcp_audit_degraded());
     sw.set_mcp_recent_calls(m.get_mcp_recent_calls());
+    sw.set_mcp_recent_closes(m.get_mcp_recent_closes());
     // 异步状态（上传 / 下载 / 更新检查 / 输出高亮规则校验）
     sw.set_webdav_status(m.get_webdav_status());
     sw.set_update_check_status(m.get_update_check_status());
@@ -464,6 +465,8 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_regenerate_mcp_token => invoke_regenerate_mcp_token, ());
     forward!(sw, m, s, on_disconnect_mcp_client => invoke_disconnect_mcp_client, (a0));
     forward!(sw, m, s, on_set_mcp_pty_commands => invoke_set_mcp_pty_commands, (a0));
+    forward!(sw, m, s, on_set_mcp_client_trusted => invoke_set_mcp_client_trusted, (a0, a1));
+    forward!(sw, m, s, on_toggle_mcp_client_expanded => invoke_toggle_mcp_client_expanded, (a0));
     forward!(sw, m, s, on_set_mcp_audit_enabled => invoke_set_mcp_audit_enabled, (a0));
     forward!(sw, m, s, on_set_mcp_audit_retention -> invoke_set_mcp_audit_retention, (a0));
     forward!(sw, m, s, on_open_mcp_log_dir => invoke_open_mcp_log_dir, ());
@@ -489,7 +492,9 @@ mod sync_guard_tests {
         ];
 
         let src = include_str!("settings_window.rs");
-        let start = src.find("fn sync_settings_theme").expect("sync_settings_theme 不见了");
+        let start = src
+            .find("fn sync_settings_theme")
+            .expect("sync_settings_theme 不见了");
         let end = start + src[start..].find("\n}").expect("函数体结束位置找不到");
         let body = &src[start..end];
 
@@ -507,7 +512,9 @@ mod sync_guard_tests {
 
     /// 取 `export global Theme { .. }` 里的 `in-out property` 名（运行期可变的那批）。
     fn mutable_theme_props(theme: &str) -> Vec<String> {
-        let start = theme.find("export global Theme {").expect("Theme 全局不见了");
+        let start = theme
+            .find("export global Theme {")
+            .expect("Theme 全局不见了");
         let end = start + theme[start..].find("\n}").expect("Theme 全局未闭合");
         theme[start..end]
             .lines()

@@ -36,7 +36,7 @@ import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, AuditRow } from "settings/types.slint";
+import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, AuditRow } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
 // `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
 // `slint::include_modules!` 才会生成对应的 Rust 窗口类型（只 import 不实例化的话，
@@ -536,6 +536,7 @@ export component AppWindow inherits Window {
     in-out property <bool> mcp-audit-retention-valid: true;
     in property <bool> mcp-audit-degraded;
     in property <[AuditRow]> mcp-recent-calls;
+    in property <[McpCloseRow]> mcp-recent-closes;
     callback set-mcp-pty-commands(bool);
     callback set-mcp-audit-enabled(bool);
     callback set-mcp-audit-retention(string) -> bool;
@@ -546,9 +547,13 @@ export component AppWindow inherits Window {
     in property <string> mcp-consent-tool;
     in property <string> mcp-consent-summary;
     in-out property <[McpConsentRow]> mcp-consent-rows;
+    in-out property <bool> mcp-consent-trusted: false;
     callback mcp-consent-toggle(string);
     callback mcp-consent-accept();
     callback mcp-consent-reject();
+    callback mcp-consent-toggle-section(string);
+    callback set-mcp-client-trusted(string /* client_id */, bool);
+    callback toggle-mcp-client-expanded(string /* session_id */);
     // WSL profiles (upstream a64097e): managed in Interface → WSL.
     in property <[WslProfileInfo]> wsl-profiles;
     in-out property <string> wsl-new-directory: "~";
@@ -2426,9 +2431,11 @@ export component AppWindow inherits Window {
         tool: root.mcp-consent-tool;
         summary: root.mcp-consent-summary;
         rows <=> root.mcp-consent-rows;
+        trusted <=> root.mcp-consent-trusted;
         toggle(key) => { root.mcp-consent-toggle(key); }
         accept => { root.mcp-consent-accept(); }
         reject => { root.mcp-consent-reject(); }
+        toggle-section(s) => { root.mcp-consent-toggle-section(s); }
     }
 }
 

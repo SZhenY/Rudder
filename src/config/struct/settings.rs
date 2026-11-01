@@ -220,7 +220,6 @@ pub struct TransferSettings {
     pub download_dir: String,
 }
 
-
 /// 同步页：WebDAV 配置备份（含加密口令）。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -237,7 +236,6 @@ pub struct SyncSettings {
     /// 可选的证书 SHA-256 指纹（小写 hex）；配合"信任自签名"收紧校验。
     pub webdav_cert_pin: String,
 }
-
 
 /// 新版本提示页。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -261,8 +259,11 @@ pub struct UpdateSettings {
     pub update_proxy: String,
 }
 
-/// 一个 MCP 客户端记住的授权。按 `client_name + version` 匹配；只用于下次连接时
-/// 预勾，仍然每次都要用户点"允许接入"。
+/// 一个 MCP 客户端记住的授权。按 `client_name + version` 匹配。
+///
+/// 命中后不再无条件弹窗：`trusted`（用户勾了「永久信任」）或 `last_auth_unix`
+/// 距今不足一个租约空闲期（15 分钟）时，直接按 `permissions` 放行；两者都不满足
+/// 才重新弹窗（并按 `permissions` 预勾）。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct McpClientGrant {
@@ -270,6 +271,10 @@ pub struct McpClientGrant {
     pub id: String,
     /// 权限 key 列表；读入时忽略未知 key。
     pub permissions: Vec<String>,
+    /// 上次授权成功的 unix 秒；0 = 从未授权（老配置升上来就是这个值）。
+    pub last_auth_unix: u64,
+    /// 用户显式勾了「永久信任此客户端」：命中即放行，永不弹窗。
+    pub trusted: bool,
 }
 
 /// AI 页：进程内 MCP server —— 外部 AI agent 通过 HTTP 操作这个正在运行的程序。
@@ -321,4 +326,3 @@ impl Default for McpSettings {
         }
     }
 }
-

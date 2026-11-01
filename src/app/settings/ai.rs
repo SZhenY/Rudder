@@ -3,6 +3,8 @@
 //! 状态（运行中 / 绑定失败 / 当前地址）由 `crate::mcp` 的 `McpStatus` 提供，
 //! 这里用 1 Hz 定时器拉取 —— 服务在 tokio 线程上跑，UI 侧没有别的通知渠道。
 
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -13,6 +15,14 @@ use super::{Store, persist};
 use crate::i18n::t;
 use crate::mcp::McpConfigSnapshot;
 use crate::ui::{AppWindow, McpClientRow, McpIface};
+
+thread_local! {
+    /// 设置页里哪些客户端会话的权限明细是展开的。
+    ///
+    /// UI 态、不落盘，只属于本线程（与 `clients` 模型同一生命周期）。
+    /// 放线程局部而不是穿参：刷新链路有 13 个调用点，新增参数会牵动每一个回调块。
+    static EXPANDED_SESSIONS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+}
 
 pub(crate) fn bind(window: &AppWindow, store: &Store) {
     let ifaces = Rc::new(VecModel::<McpIface>::default());
@@ -41,6 +51,25 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
         let clients = clients.clone();
         window.on_set_mcp_pty_commands(move |enabled: bool| {
             persist(&store, |s| s.set_mcp_pty_commands(enabled));
+            apply(&store);
+            if let Some(window) = weak.upgrade() {
+                refresh(&window, &store, &ifaces, &clients);
+            }
+        });
+    }
+    {
+        let store = store.clone();
+        let weak = window.as_weak();
+        let ifaces = ifaces.clone();
+        let clients = clients.clone();
+        window.on_set_mcp_client_trusted(move |client_id, trusted| {
+            let id = client_id.to_string();
+            if id.is_empty() {
+                return;
+            }
+            persist(&store, |s| {
+                s.set_mcp_client_trusted(&id, trusted);
+            });
             apply(&store);
             if let Some(window) = weak.upgrade() {
                 refresh(&window, &store, &ifaces, &clients);
@@ -111,10 +140,35 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
             {
                 let granted = update.granted;
                 persist(&store, move |s| {
-                    s.upsert_mcp_client_grant(&client_id, granted);
+                    // 逐项改权限时保留原有的「永久信任」标记，别把它一并冲掉。
+                    let trusted = s
+                        .mcp_client_grants()
+                        .iter()
+                        .find(|grant| grant.id == client_id)
+                        .map(|grant| grant.trusted)
+                        .unwrap_or(false);
+                    s.upsert_mcp_client_grant(&client_id, granted, trusted);
                 });
                 apply(&store);
             }
+            if let Some(window) = weak.upgrade() {
+                publish_status(&window, &store, &clients);
+            }
+        });
+    }
+    {
+        // 展开/收起某个客户端的权限明细。改完立刻重算一次，不等 1 Hz 定时器。
+        let store = store.clone();
+        let weak = window.as_weak();
+        let clients = clients.clone();
+        window.on_toggle_mcp_client_expanded(move |session_id| {
+            let id = session_id.to_string();
+            EXPANDED_SESSIONS.with(|set| {
+                let mut set = set.borrow_mut();
+                if !set.remove(&id) {
+                    set.insert(id);
+                }
+            });
             if let Some(window) = weak.upgrade() {
                 publish_status(&window, &store, &clients);
             }
@@ -162,6 +216,10 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
         let ifaces = ifaces.clone();
         let clients = clients.clone();
         window.on_regenerate_mcp_token(move || {
+            // UI 已置灰，这里再挡一道：服务没开时换令牌没有任何意义，还会写盘。
+            if !store.borrow().mcp_enabled() {
+                return;
+            }
             let token = crate::mcp::new_token();
             persist(&store, |s| s.set_mcp_token(token));
             apply(&store);
@@ -269,9 +327,9 @@ fn refresh(
     {
         let store = store.borrow();
         window.set_mcp_audit_enabled(store.mcp_audit_enabled());
-        window.set_mcp_audit_retention(
-            SharedString::from(store.mcp_audit_retention_days().to_string()),
-        );
+        window.set_mcp_audit_retention(SharedString::from(
+            store.mcp_audit_retention_days().to_string(),
+        ));
         window.set_mcp_audit_retention_valid(true);
     }
     window.set_mcp_pty_commands(store.borrow().mcp_pty_commands());
@@ -299,15 +357,15 @@ fn refresh(
     publish_status(window, store, clients);
 }
 
-fn publish_status(
-    window: &AppWindow,
-    store: &Store,
-    clients: &Rc<VecModel<McpClientRow>>,
-) {
+fn publish_status(window: &AppWindow, store: &Store, clients: &Rc<VecModel<McpClientRow>>) {
     let enabled = store.borrow().mcp_enabled();
     let status = crate::mcp::status();
     let (text, error, urls) = if let Some(error) = status.error.clone() {
-        (t("启动失败", "Failed to start").to_string(), error, Vec::new())
+        (
+            t("启动失败", "Failed to start").to_string(),
+            error,
+            Vec::new(),
+        )
     } else if status.running {
         let urls = status.urls();
         let first = urls.first().cloned().unwrap_or_default();
@@ -317,9 +375,17 @@ fn publish_status(
             urls,
         )
     } else if !enabled {
-        (t("未启用", "Disabled").to_string(), String::new(), Vec::new())
+        (
+            t("未启用", "Disabled").to_string(),
+            String::new(),
+            Vec::new(),
+        )
     } else {
-        (t("正在启动", "Starting").to_string(), String::new(), Vec::new())
+        (
+            t("正在启动", "Starting").to_string(),
+            String::new(),
+            Vec::new(),
+        )
     };
     window.set_mcp_status(text.into());
     window.set_mcp_status_error(error.into());
@@ -331,6 +397,7 @@ fn publish_status(
     window.set_mcp_json_masked(client_config(store, true).into());
     publish_clients(window, clients);
     publish_recent_calls(window);
+    publish_recent_closes(window);
     crate::app::settings_window::resync_if_open(window);
 }
 
@@ -338,19 +405,42 @@ fn publish_status(
 ///
 /// 扁平模型而不是嵌套模型：Slint 里一层 `for` 就能渲染，开关回调带
 /// `session_id + key` 即可定位是哪个客户端的哪一位。
+/// 卡片副标题用的会话短标识 —— 同名同版本的两个客户端靠它区分。
+fn session_tag(session_id: &str) -> String {
+    format!("#{}", session_id.chars().take(6).collect::<String>())
+}
+
 fn client_rows(en: bool) -> Vec<McpClientRow> {
+    session_rows(en, &crate::mcp::sessions_info())
+}
+
+/// 纯逻辑，便于单测：两条同名会话必须产出两组可区分的行。
+fn session_rows(en: bool, sessions: &[crate::mcp::McpSessionInfo]) -> Vec<McpClientRow> {
+    // 先克隆成局部：建行过程中会 `set_row_data`（触发布局/绑定求值），
+    // 不能一直持有 RefCell 的借用。
+    let expanded = EXPANDED_SESSIONS.with(|set| set.borrow().clone());
     let mut rows = Vec::new();
-    for session in crate::mcp::sessions_info() {
+    for session in sessions {
+        let is_open = expanded.contains(session.session_id.as_str());
         rows.push(McpClientRow {
             kind: "header".into(),
             session_id: session.session_id.as_str().into(),
             client: session.client.as_str().into(),
-            since: format!(
-                "{} · {}m{}s",
-                session.connected_wall,
-                session.connected_secs / 60,
-                session.connected_secs % 60
-            )
+            since: {
+                // 带上来源：`local` 表示本机，其余是来源 IP。
+                // 同一个 token 多设备时，这是唯一能看出"这两张卡是同一台还是两台设备"的地方。
+                let mut parts = vec![session_tag(&session.session_id)];
+                if !session.peer_ip.is_empty() {
+                    parts.push(session.peer_ip.clone());
+                }
+                parts.push(session.connected_wall.clone());
+                parts.push(format!(
+                    "{}m{}s",
+                    session.connected_secs / 60,
+                    session.connected_secs % 60
+                ));
+                parts.join(" · ")
+            }
             .into(),
             status: format!(
                 "{} · {}",
@@ -358,6 +448,9 @@ fn client_rows(en: bool) -> Vec<McpClientRow> {
                 granted_summary(&session.granted, en)
             )
             .into(),
+            client_id: session.client_id.clone().unwrap_or_default().into(),
+            trusted: session.trusted,
+            expanded: is_open,
             key: SharedString::default(),
             label: SharedString::default(),
             desc: SharedString::default(),
@@ -366,13 +459,21 @@ fn client_rows(en: bool) -> Vec<McpClientRow> {
             risk_note: SharedString::default(),
             group: SharedString::default(),
         });
-        for (bit, risk, group) in crate::mcp::bits_with_heads() {
+        for row_bit in crate::mcp::bit_rows() {
+            let bit = row_bit.bit;
+            let risk = row_bit.risk;
+            // 设置页没有折叠，每个功能区都要标题 —— 用 `group_always`（旧语义），
+            // 不能用 `group`（只给可折叠的组，弹窗专用）。
+            let group = row_bit.group_always;
             rows.push(McpClientRow {
                 kind: "permission".into(),
                 session_id: session.session_id.as_str().into(),
                 client: SharedString::default(),
                 since: SharedString::default(),
                 status: SharedString::default(),
+                client_id: SharedString::default(),
+                trusted: false,
+                expanded: is_open,
                 key: bit.key.into(),
                 label: if en { bit.label_en } else { bit.label_zh }.into(),
                 desc: if en { bit.desc_en } else { bit.desc_zh }.into(),
@@ -386,7 +487,13 @@ fn client_rows(en: bool) -> Vec<McpClientRow> {
                     .unwrap_or_default()
                     .into(),
                 group: group
-                    .map(|group| if en { group.label_en() } else { group.label_zh() })
+                    .map(|group| {
+                        if en {
+                            group.label_en()
+                        } else {
+                            group.label_zh()
+                        }
+                    })
                     .unwrap_or_default()
                     .into(),
             });
@@ -422,7 +529,8 @@ fn granted_summary(perms: &crate::mcp::Permissions, en: bool) -> String {
     parts.join(" · ")
 }
 
-fn publish_clients(window: &AppWindow, clients: &Rc<VecModel<McpClientRow>>) {    let rows = client_rows(window.get_lang_en());
+fn publish_clients(window: &AppWindow, clients: &Rc<VecModel<McpClientRow>>) {
+    let rows = client_rows(window.get_lang_en());
     // 行数没变就逐行更新，别整表替换（否则开关会被重建，动画丢失）。
     if clients.row_count() == rows.len() {
         for (index, row) in rows.into_iter().enumerate() {
@@ -431,7 +539,72 @@ fn publish_clients(window: &AppWindow, clients: &Rc<VecModel<McpClientRow>>) {  
     } else {
         clients.set_vec(rows);
     }
+    // 会话断开后把它的展开态一起丢掉，避免集合无限增长；重连是新 session-id，默认收起。
+    let alive: HashSet<String> = rows_header_ids(clients.as_ref());
+    EXPANDED_SESSIONS.with(|set| set.borrow_mut().retain(|id| alive.contains(id)));
     window.set_mcp_clients(ModelRc::from(clients.clone()));
+}
+
+/// 当前模型里还活着的 session id（header 行）。
+fn rows_header_ids(clients: &VecModel<McpClientRow>) -> HashSet<String> {
+    (0..clients.row_count())
+        .filter_map(|index| clients.row_data(index))
+        .filter(|row| row.kind == "header")
+        .map(|row| row.session_id.to_string())
+        .collect()
+}
+
+/// "最近断开"列表：长度与首行都没变就不重建模型，避免每秒抖动。
+fn publish_recent_closes(window: &AppWindow) {
+    let entries = crate::mcp::recent_closes();
+    let en = window.get_lang_en();
+    let current = window.get_mcp_recent_closes();
+    let unchanged = current.row_count() == entries.len()
+        && current
+            .row_data(0)
+            .map(|row| {
+                entries.first().is_some_and(|entry| {
+                    row.at == entry.at.as_str() && row.session == entry.session8.as_str()
+                })
+            })
+            .unwrap_or(entries.is_empty());
+    if unchanged {
+        return;
+    }
+    let rows: Vec<crate::ui::McpCloseRow> = entries
+        .into_iter()
+        .map(|entry| {
+            let mut reason = entry.reason.label(en).to_string();
+            // 刚连上就断的情况单独点出来 —— "授权完又没了"最容易让人困惑。
+            if entry.alive_secs < 60 {
+                reason.push_str(&if en {
+                    format!(" ({}s after connect)", entry.alive_secs)
+                } else {
+                    format!("（接入 {} 秒即断开）", entry.alive_secs)
+                });
+            }
+            crate::ui::McpCloseRow {
+                at: entry.at.into(),
+                session: format!("#{}", entry.session8).into(),
+                // 汇总条目（服务停止一次关掉多个会话）的文案按语言现拼，
+                // 不能在 Rust 里写死中文，否则英文界面会出现中文。
+                client: match entry.count {
+                    Some(count) => {
+                        if en {
+                            format!("{count} sessions")
+                        } else {
+                            format!("{count} 个会话")
+                        }
+                    }
+                    None => entry.client,
+                }
+                .into(),
+                reason: reason.into(),
+                alarm: entry.reason.alarm(),
+            }
+        })
+        .collect();
+    window.set_mcp_recent_closes(ModelRc::from(Rc::new(VecModel::from(rows))));
 }
 
 /// "最近调用"列表：长度与首行都没变就不重建模型，避免每秒抖动。
@@ -442,9 +615,9 @@ fn publish_recent_calls(window: &AppWindow) {
         && current
             .row_data(0)
             .map(|row| {
-                entries
-                    .first()
-                    .is_some_and(|entry| row.at == entry.at.as_str() && row.tool == entry.tool.as_str())
+                entries.first().is_some_and(|entry| {
+                    row.at == entry.at.as_str() && row.tool == entry.tool.as_str()
+                })
             })
             .unwrap_or(entries.is_empty());
     if !unchanged {
@@ -531,4 +704,100 @@ fn enumerate_ifaces() -> Vec<(String, String)> {
     }
     rows.sort();
     rows
+}
+
+#[cfg(test)]
+mod session_row_tests {
+    use super::{session_rows, session_tag};
+
+    fn info(session_id: &str, client: &str) -> crate::mcp::McpSessionInfo {
+        crate::mcp::McpSessionInfo {
+            session_id: session_id.to_string(),
+            client: client.to_string(),
+            connected_wall: "10:22:31".to_string(),
+            connected_secs: 12,
+            granted: crate::mcp::Permissions::default(),
+            peer_ip: "local".to_string(),
+            client_id: Some(client.to_string()),
+            trusted: false,
+        }
+    }
+
+    /// 两个同名同版本客户端必须是两组能区分的行 —— 否则用户会把它们当成一条，
+    /// 从而觉得"前一个客户端消失了"。
+    #[test]
+    fn identical_client_names_produce_separate_tagged_rows() {
+        let sessions = vec![
+            info("aaaa1111", "WorkBuddy Connector 5.9.3"),
+            info("bbbb2222", "WorkBuddy Connector 5.9.3"),
+        ];
+        let rows = session_rows(false, &sessions);
+        let headers: Vec<_> = rows.iter().filter(|row| row.kind == "header").collect();
+        assert_eq!(headers.len(), 2);
+        assert_ne!(headers[0].session_id, headers[1].session_id);
+        assert!(headers[0].since.to_string().contains("#aaaa11"));
+        assert!(headers[1].since.to_string().contains("#bbbb22"));
+    }
+
+    #[test]
+    fn session_tag_takes_six_chars_and_handles_short_ids() {
+        assert_eq!(session_tag("abcdef123"), "#abcdef");
+        assert_eq!(session_tag("ab"), "#ab");
+        assert_eq!(session_tag(""), "#");
+    }
+}
+
+#[cfg(test)]
+mod client_expansion_tests {
+    use super::{EXPANDED_SESSIONS, session_rows};
+
+    fn info(session_id: &str) -> crate::mcp::McpSessionInfo {
+        crate::mcp::McpSessionInfo {
+            session_id: session_id.to_string(),
+            client: "WorkBuddy Connector 5.9.3".to_string(),
+            connected_wall: "10:22:31".to_string(),
+            connected_secs: 12,
+            granted: crate::mcp::Permissions::default(),
+            peer_ip: "local".to_string(),
+            client_id: Some("WorkBuddy Connector 5.9.3".to_string()),
+            trusted: false,
+        }
+    }
+
+    fn reset() {
+        EXPANDED_SESSIONS.with(|set| set.borrow_mut().clear());
+    }
+
+    /// 折叠靠 `visible`，行数必须恒定（否则 1 Hz 刷新会退化成整表替换）。
+    #[test]
+    fn row_count_is_constant_regardless_of_expansion() {
+        reset();
+        let sessions = vec![info("aaaa1111")];
+        let collapsed = session_rows(false, &sessions);
+        EXPANDED_SESSIONS.with(|set| set.borrow_mut().insert("aaaa1111".to_string()));
+        let expanded = session_rows(false, &sessions);
+        assert_eq!(collapsed.len(), expanded.len());
+        assert_eq!(collapsed.len(), 1 + crate::mcp::PERMISSION_BITS.len());
+        assert!(collapsed.iter().all(|row| !row.expanded));
+        assert!(expanded.iter().all(|row| row.expanded));
+        reset();
+    }
+
+    /// 展开态按会话独立：两个同名客户端只展开其中一个。
+    #[test]
+    fn expansion_is_per_session() {
+        reset();
+        let sessions = vec![info("aaaa1111"), info("bbbb2222")];
+        EXPANDED_SESSIONS.with(|set| set.borrow_mut().insert("aaaa1111".to_string()));
+        let rows = session_rows(false, &sessions);
+        let first = rows
+            .iter()
+            .find(|row| row.session_id == "aaaa1111" && row.kind == "header");
+        let second = rows
+            .iter()
+            .find(|row| row.session_id == "bbbb2222" && row.kind == "header");
+        assert!(first.expect("第一张卡").expanded);
+        assert!(!second.expect("第二张卡").expanded);
+        reset();
+    }
 }

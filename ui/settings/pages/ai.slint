@@ -8,8 +8,10 @@ import { SettingsSection } from "../section.slint";
 import { SettingRow, SettingSwitch, ToggleSwitch } from "../chrome.slint";
 import { GhostButton } from "../../widgets.slint";
 import { GroupGap } from "../../components/surfaces.slint";
+import { StateSurface } from "../../components/interactive.slint";
+import { IconText } from "../../components/text.slint";
 import { ScrollView } from "std-widgets.slint";
-import { AuditRow, McpClientRow, McpIface } from "../types.slint";
+import { AuditRow, McpClientRow, McpCloseRow, McpIface } from "../types.slint";
 
 export component AiPage inherits VerticalLayout {
     in property <bool> lang-en;
@@ -41,6 +43,8 @@ export component AiPage inherits VerticalLayout {
     in property <[McpClientRow]> mcp-clients;
     callback toggle-mcp-client-permission(string, string, bool);
     callback disconnect-mcp-client(string);
+    callback set-mcp-client-trusted(string /* client-id */, bool);
+    callback toggle-mcp-client-expanded(string /* session-id */);
 
     // 执行通道：开 = run_command 走交互式 PTY（命令与输出显示在终端里）
     in-out property <bool> mcp-pty-commands: false;
@@ -50,6 +54,7 @@ export component AiPage inherits VerticalLayout {
     in-out property <bool> mcp-audit-retention-valid: true;
     in property <bool> mcp-audit-degraded;
     in property <[AuditRow]> mcp-recent-calls;
+    in property <[McpCloseRow]> mcp-recent-closes;
     callback set-mcp-pty-commands(bool);
     callback set-mcp-audit-enabled(bool);
     callback set-mcp-audit-retention(string) -> bool;
@@ -206,18 +211,23 @@ export component AiPage inherits VerticalLayout {
                     font-size: 12px * Theme.panel-font;
                     vertical-alignment: center;
                 }
+                // 服务关着时令牌没有校验对象，三个按钮一律置灰（「复制配置」例外，
+                // 那是给"先配好客户端再开服务"用的）。
                 GhostButton {
                     text: root.mcp-token-visible
                         ? (root.lang-en ? "Hide" : "隐藏")
                         : (root.lang-en ? "Show" : "显示");
+                    disabled: !root.mcp-enabled;
                     clicked => { root.mcp-token-visible = !root.mcp-token-visible; }
                 }
                 GhostButton {
                     text: root.lang-en ? "Copy" : "复制";
+                    disabled: !root.mcp-enabled;
                     clicked => { root.copy-mcp-token(); }
                 }
                 GhostButton {
                     text: root.lang-en ? "Regenerate" : "重新生成";
+                    disabled: !root.mcp-enabled;
                     clicked => { root.regenerate-mcp-token(); }
                 }
             }
@@ -313,16 +323,29 @@ export component AiPage inherits VerticalLayout {
             height: 36px;
         }
 
+        // 折叠必须用 `if` 而不是 `visible`：Slint 的 visible:false 只是不绘制，
+        // 仍然占据布局空间 —— 12 行权限会留下近 600px 的空白。
         for row in root.mcp-clients : VerticalLayout {
             spacing: 0;
 
-            if row.kind == "header" : VerticalLayout {
-                spacing: 0;
-                padding-top: 10px;
-                padding-bottom: 4px;
+            if row.kind == "header" : StateSurface {
+                radius: Theme.radius-sm;
+                clicked => { root.toggle-mcp-client-expanded(row.session-id); }
+
                 HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    padding-top: 8px;
+                    padding-bottom: 4px;
                     spacing: 8px;
                     alignment: center;
+
+                    IconText {
+                        text: row.expanded ? "\u{E5CF}" : "\u{E5CC}";
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 2px;
@@ -331,12 +354,31 @@ export component AiPage inherits VerticalLayout {
                             font-size: 13px * Theme.panel-font;
                             color: Theme.text-primary;
                             font-weight: 700;
+                            overflow: elide;
                         }
                         Text {
                             text: row.since + " · " + row.status;
                             font-size: 11px * Theme.panel-font;
                             color: Theme.text-muted;
                             overflow: elide;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: center;
+                        ToggleSwitch {
+                            checked: row.trusted;
+                            // 值由模型提供：点击只发意图，别在本地改 checked 把绑定拆掉。
+                            mirror: true;
+                            // 客户端没上报名字时无法记忆授权，开关置灰（Rust 侧会直接忽略）。
+                            interactive: row.client-id != "";
+                            toggled(v) => { root.set-mcp-client-trusted(row.client-id, v); }
+                        }
+                        Text {
+                            text: root.lang-en ? "Trust" : "永久信任";
+                            color: Theme.text-muted;
+                            font-size: 11px * Theme.panel-font;
+                            vertical-alignment: center;
                         }
                     }
                     GhostButton {
@@ -346,7 +388,7 @@ export component AiPage inherits VerticalLayout {
                 }
             }
 
-            if row.kind == "permission" : VerticalLayout {
+            if row.kind == "permission" && row.expanded : VerticalLayout {
                 spacing: 0;
 
                 if row.risk != "" : VerticalLayout {
@@ -383,6 +425,75 @@ export component AiPage inherits VerticalLayout {
                     mirror: true;
                     checked: row.enabled;
                     toggled(v) => { root.toggle-mcp-client-permission(row.session-id, row.key, v); }
+                }
+            }
+        }
+
+        // 会话为什么结束 —— 卡片消失时的归因入口，不必再翻审计日志。
+        SettingRow {
+            label: root.lang-en ? "Recently closed" : "最近断开";
+            desc: root.lang-en
+                ? "Session endings Rudder observed. \"closed by the client\" and \"idle for 15 minutes\" come from the client or the MCP runtime, not from Rudder."
+                : "Rudder 侧观察到的会话结束。「客户端主动关闭」「闲置 15 分钟被回收」来自客户端或 MCP 运行时，不是 Rudder 主动断开。";
+            show-divider: false;
+            Rectangle {
+                width: 100%;
+                height: 108px;
+                background: Theme.bg-root;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.border-subtle;
+                ScrollView {
+                    width: 100%;
+                    height: 100%;
+                    content-width: self.width;
+                    VerticalLayout {
+                        padding: 6px;
+                        spacing: 2px;
+                        if root.mcp-recent-closes.length == 0 : Text {
+                            text: root.lang-en ? "No session has ended yet." : "还没有会话结束的记录。";
+                            color: Theme.text-muted;
+                            font-size: Theme.fs-xs;
+                            height: 20px;
+                        }
+                        for item in root.mcp-recent-closes : HorizontalLayout {
+                            height: 20px;
+                            spacing: 8px;
+                            Text {
+                                text: item.at;
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-xs;
+                                width: 56px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: item.session;
+                                color: Theme.text-muted;
+                                font-size: Theme.fs-xs;
+                                width: 62px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: item.client;
+                                color: Theme.text-secondary;
+                                font-size: Theme.fs-xs;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: item.reason;
+                                color: item.alarm ? Theme.danger : Theme.text-muted;
+                                font-size: Theme.fs-xs;
+                                // 长 reason（带「接入 N 秒即断开」后缀）要能被压缩，
+                                // 否则会把左边的 client 列挤掉、还会被滚动条压住。
+                                horizontal-stretch: 1;
+                                min-width: 0;
+                                overflow: elide;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
                 }
             }
         }

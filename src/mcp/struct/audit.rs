@@ -5,6 +5,8 @@
 
 use serde_json::{Map, Value};
 
+use super::types::{ClientLease, CloseReason, ConsentState};
+
 /// 单条字符串的截断上限（按 char 计）。
 const MAX_TEXT_CHARS: usize = 200;
 /// 单条记录里 `args` 的总量上限，超过就整体降级为摘要。
@@ -36,6 +38,54 @@ pub(crate) struct AuditEntry {
     pub(crate) code: String,
     pub(crate) ms: u64,
     pub(crate) client: String,
+}
+
+/// 一条"会话结束"记录（AI 页「最近断开」用）。
+///
+/// 与 `AuditEntry` 分开：那个是工具调用，这个是会话生命周期；混在一起会把
+/// "最近调用"列表冲掉。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionCloseEntry {
+    /// `HH:MM:SS`（本地时间）。
+    pub(crate) at: String,
+    /// session id 前 8 位 —— 两个同名客户端靠它区分。
+    pub(crate) session8: String,
+    pub(crate) client: String,
+    pub(crate) reason: CloseReason,
+    /// 从接入到断开经过的秒数；很短说明"刚连上就没了"。
+    pub(crate) alive_secs: u64,
+    /// 断开时是否已经授权过（区分"被拒"与"接入后掉线"）。
+    pub(crate) granted: bool,
+    /// 汇总条目（服务停止 / 令牌轮换一次关掉多个会话）的数量；单条关闭为 `None`。
+    /// 存数字而不是拼好的文案，是为了让界面按当前语言拼 —— 否则英文界面会显示中文。
+    pub(crate) count: Option<usize>,
+}
+
+impl SessionCloseEntry {
+    /// 一次关掉多个会话时的汇总条目（服务停止 / 令牌轮换）。
+    pub(crate) fn from_summary(count: usize, reason: CloseReason) -> Self {
+        Self {
+            at: chrono::Local::now().format("%H:%M:%S").to_string(),
+            session8: String::from("—"),
+            client: String::new(),
+            reason,
+            alive_secs: 0,
+            granted: true,
+            count: Some(count),
+        }
+    }
+
+    pub(crate) fn from_lease(lease: &ClientLease, reason: CloseReason, alive_secs: u64) -> Self {
+        Self {
+            at: chrono::Local::now().format("%H:%M:%S").to_string(),
+            session8: lease.session_id.chars().take(8).collect(),
+            client: lease.client_label(),
+            reason,
+            alive_secs,
+            granted: lease.verdict == ConsentState::Granted,
+            count: None,
+        }
+    }
 }
 
 /// 脱敏后的参数 + 原始字节数 + 是否发生截断。
@@ -154,7 +204,10 @@ mod tests {
 
     #[test]
     fn newlines_and_controls_are_stripped() {
-        let (out, _, _) = redact_args("run_command", &json!({ "command": "line1\nline2\u{1b}[31m" }));
+        let (out, _, _) = redact_args(
+            "run_command",
+            &json!({ "command": "line1\nline2\u{1b}[31m" }),
+        );
         let text = out["command"].as_str().unwrap();
         assert!(!text.contains('\n'));
         assert!(!text.contains('\u{1b}'));
@@ -172,7 +225,10 @@ mod tests {
 
     #[test]
     fn send_input_never_records_the_text() {
-        let (out, _, _) = redact_args("send_input", &json!({ "tab_id": "t", "text": "hunter2", "enter": true }));
+        let (out, _, _) = redact_args(
+            "send_input",
+            &json!({ "tab_id": "t", "text": "hunter2", "enter": true }),
+        );
         assert!(out.get("text").is_some());
         assert_eq!(out["text"]["chars"], 7);
         assert!(!serde_json::to_string(&out).unwrap().contains("hunter2"));
