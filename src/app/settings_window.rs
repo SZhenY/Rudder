@@ -43,6 +43,14 @@ pub(super) fn sync_wallpaper_ramp(main: &AppWindow) {
     });
 }
 
+/// 设置窗口是否开着。
+///
+/// 后台 1 Hz 的 MCP 状态刷新用它跳过"只服务设置页"的重活（配置片段序列化）。
+/// 顶部徽标用的客户端数不在此列 —— 那个窗口关着也要更新。
+pub(super) fn is_open() -> bool {
+    SETTINGS_WEAK.with(|s| s.borrow().clone().and_then(|w| w.upgrade()).is_some())
+}
+
 pub(super) fn resync_if_open(main: &AppWindow) {
     SETTINGS_WEAK.with(|s| {
         let weak = s.borrow().clone();

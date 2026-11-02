@@ -107,6 +107,16 @@ impl CloseReason {
     }
 }
 
+/// 标签页连接状态码转字符串（审计与工具输出共用同一套名字）。
+pub(super) fn state_name(state: u8) -> &'static str {
+    match state {
+        0 => "connecting",
+        1 => "connected",
+        2 => "closed",
+        _ => "unknown",
+    }
+}
+
 #[cfg(test)]
 mod close_reason_tests {
     use super::CloseReason;
@@ -162,4 +172,3 @@ mod close_reason_tests {
         }
     }
 }
-

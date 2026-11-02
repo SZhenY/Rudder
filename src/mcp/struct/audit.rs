@@ -88,9 +88,53 @@ impl SessionCloseEntry {
     }
 }
 
+/// 只数字节、不留内容的 writer：给 `serde_json::to_writer` 算序列化长度用。
+struct ByteCounter(usize);
+
+impl std::io::Write for ByteCounter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// 参数序列化后的字节数。走 `to_writer` 而不是 `to_vec`：原来为了一个审计字段
+/// 要把整份参数（可能上兆的 `write_text`）再序列化一遍、留一份完整副本。
+fn json_bytes(value: &Value) -> usize {
+    let mut counter = ByteCounter(0);
+    match serde_json::to_writer(&mut counter, value) {
+        Ok(()) => counter.0,
+        Err(_) => 0,
+    }
+}
+
+/// 会话关闭事件的审计记录（只进文件，不进「最近调用」环）。
+///
+/// 两条路径共用：`audit_close`（单个租约移除）与批量停止（`Stopped` 汇总后逐条落盘）。
+/// 汇总进内存环时只记一条，但文件里保留每条，事后排查需要完整清单。
+pub(crate) fn session_close_record(
+    lease: &ClientLease,
+    reason: CloseReason,
+    tool: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "ts": chrono::Local::now().to_rfc3339(),
+        "event": "session_close",
+        "reason": reason.as_str(),
+        "session": session8(&lease.session_id),
+        "client": lease.client_label(),
+        "tool": tool.unwrap_or(""),
+        "epoch": lease.epoch,
+    })
+}
+
 /// 脱敏后的参数 + 原始字节数 + 是否发生截断。
 pub(crate) fn redact_args(tool: &str, args: &Value) -> (Value, usize, bool) {
-    let bytes = serde_json::to_vec(args).map(|raw| raw.len()).unwrap_or(0);
+    let bytes = json_bytes(args);
 
     // `send_input` 可能就是在敲密码：只留长度，正文一个字都不记。
     if tool == "send_input" {
@@ -189,6 +233,22 @@ fn is_secret_key(key: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// 两条关闭路径必须是同一个字段形状 —— 之前手写两份，批量停止那条漏了 `epoch`。
+    #[test]
+    fn session_close_record_has_one_shape() {
+        let lease = ClientLease::new("abcdefgh12345".to_string(), 7, None);
+        let with_tool = session_close_record(&lease, CloseReason::Delete, Some("run_command"));
+        let batch = session_close_record(&lease, CloseReason::Stopped, None);
+        for field in ["ts", "event", "reason", "session", "client", "tool", "epoch"] {
+            assert!(with_tool.get(field).is_some(), "缺字段 {field}");
+            assert!(batch.get(field).is_some(), "缺字段 {field}");
+        }
+        assert_eq!(with_tool["session"], "abcdefgh");
+        assert_eq!(with_tool["tool"], "run_command");
+        assert_eq!(batch["tool"], "");
+        assert_eq!(batch["epoch"], 7);
+    }
 
     #[test]
     fn secrets_are_masked_by_field_name() {

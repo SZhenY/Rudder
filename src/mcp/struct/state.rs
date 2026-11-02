@@ -1,27 +1,20 @@
 //! 进程内共享状态：租约表、配置热更新、审计封装。
 
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::RwLock;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
+
 use rmcp::RoleServer;
 use rmcp::service::Peer;
-use crate::resource::LocalSnap;
-use crate::resource::TabStatuses;
+
+use crate::resource::{LocalSnap, TabStatuses};
 use crate::terminal::TermBuffers;
-use super::config::GrantUpdate;
-use super::config::McpConfigSnapshot;
-use super::config::McpStatus;
+
+use super::audit_types::session_close_record;
+use super::config::{GrantUpdate, McpConfigSnapshot, McpStatus};
 use super::labels::CloseReason;
-use super::lease::ClientLease;
-use super::lease::ConsentState;
-use super::lease::McpSessionInfo;
-use super::lease::session8;
-use super::lease::find_grant;
-use super::lease::grant_perms;
+use super::lease::{ClientLease, ConsentState, McpSessionInfo, find_grant, grant_perms, session8};
 use super::perms::Permissions;
 
 /// 界面侧工具的共享句柄。四个都是 `Arc`，MCP 线程可以直接读，
@@ -213,14 +206,7 @@ impl McpState {
         // 审计文件仍逐条记（那是给事后排查用的，不该被合并）。
         if self.config().audit.enabled {
             for lease in &granted {
-                crate::mcp::record_event(serde_json::json!({
-                    "ts": chrono::Local::now().to_rfc3339(),
-                    "event": "session_close",
-                    "reason": reason.as_str(),
-                    "session": session8(&lease.session_id),
-                    "client": lease.client_label(),
-                    "tool": "",
-                }));
+                crate::mcp::record_event(session_close_record(lease, reason, None));
             }
         }
     }
@@ -348,15 +334,7 @@ impl McpState {
         if !self.config().audit.enabled {
             return;
         }
-        crate::mcp::record_event(serde_json::json!({
-            "ts": chrono::Local::now().to_rfc3339(),
-            "event": "session_close",
-            "reason": reason.as_str(),
-            "session": session8(&lease.session_id),
-            "client": lease.client_label(),
-            "tool": tool.unwrap_or(""),
-            "epoch": lease.epoch,
-        }));
+        crate::mcp::record_event(session_close_record(lease, reason, tool));
     }
 
     pub(crate) fn config(&self) -> std::sync::Arc<McpConfigSnapshot> {

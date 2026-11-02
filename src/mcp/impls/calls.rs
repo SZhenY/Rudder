@@ -13,8 +13,10 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde_json::{Value, json};
 
-use super::pty_cmd;
 use super::args::{bool_arg, int_arg, opt_str_arg, raw_str_arg, str_arg};
+use super::labels::state_name;
+use super::pty_cmd;
+use super::text::{tail_bytes, truncate_chars};
 use super::types::{McpError, SharedState};
 use crate::config::SessionKind;
 use crate::terminal::TextSnapshot;
@@ -489,15 +491,6 @@ fn pairs(rows: &[(String, String)]) -> Value {
     )
 }
 
-fn state_name(state: u8) -> &'static str {
-    match state {
-        0 => "connecting",
-        1 => "connected",
-        2 => "closed",
-        _ => "unknown",
-    }
-}
-
 fn read_terminal(state: &SharedState, args: &Value) -> Result<Value, McpError> {
     let tab_id = str_arg(args, "tab_id")?;
     let source = opt_str_arg(args, "source").unwrap_or_else(|| "screen".to_string());
@@ -592,7 +585,7 @@ async fn wait_for_output(state: &SharedState, args: &Value) -> Result<Value, Mcp
             if hit || timed_out {
                 let mut out = json!({
                     "matched": hit,
-                    "text": tail(&snapshot.text, 4096),
+                    "text": tail_bytes(&snapshot.text, 4096),
                     "output_seq": snapshot.output_seq,
                     "elapsed_ms": started.elapsed().as_millis() as u64,
                 });
@@ -844,7 +837,9 @@ async fn pty_run_command(
             seen_seq = snap.output_seq;
             let out = pty_cmd::extract(&token, &snap.text);
             if out.found {
-                let (text, truncated) = clamp_chars(out.text, max_output_bytes);
+                // 参数名是字节预算，这里按字符截断：中文输出最多 3 倍字节（上限 4 MiB → 12 MiB），
+            // 换来的是不会把一个汉字劈成两半。
+            let (text, truncated) = truncate_chars(out.text, max_output_bytes);
                 return Ok(json!({
                     "tab_id": tab_id,
                     "channel": "pty",
@@ -866,7 +861,7 @@ async fn pty_run_command(
                 "channel": "pty",
                 "marker_found": false,
                 "exit_code": null,
-                "stdout": tail(&snap.text, max_output_bytes.min(4096)),
+                "stdout": tail_bytes(&snap.text, max_output_bytes.min(4096)),
                 "stderr": "",
                 "truncated": true,
                 "timed_out": true,
@@ -875,14 +870,6 @@ async fn pty_run_command(
         }
         tokio::time::sleep(Duration::from_millis(60)).await;
     }
-}
-
-/// 按字符数截断（字节下标切多字节字符会 panic）。
-fn clamp_chars(text: String, max_bytes: usize) -> (String, bool) {
-    if text.len() <= max_bytes {
-        return (text, false);
-    }
-    (text.chars().take(max_bytes).collect(), true)
 }
 
 /// 本地会话：直接起一个子进程，不进 PTY（PTY 里跑命令会污染用户屏幕）。
@@ -1182,17 +1169,6 @@ async fn sftp_upload(state: &SharedState, args: &Value) -> Result<Value, McpErro
     Ok(json!({ "tab_id": tab_id, "local_path": local, "remote_path": remote, "bytes": bytes }))
 }
 
-fn tail(text: &str, max_bytes: usize) -> String {
-    if text.len() <= max_bytes {
-        return text.to_string();
-    }
-    let mut start = text.len() - max_bytes;
-    while start < text.len() && !text.is_char_boundary(start) {
-        start += 1;
-    }
-    text[start..].to_string()
-}
-
 #[cfg(test)]
 mod tests {
     //! 只读路径不依赖 UI 线程：直接准备一块终端缓冲就能验证。
@@ -1203,6 +1179,26 @@ mod tests {
     use serde_json::json;
 
     use super::super::types::{AppHandles, McpConfigSnapshot, McpState};
+
+    /// 流式截断：只留前 `cap` 字节，但必须把管道读空 —— 否则子进程会卡在写端。
+    #[tokio::test]
+    async fn read_capped_stops_at_the_cap_and_drains_the_pipe() {
+        let data = vec![b'x'; 10 * 1024 * 1024];
+        let mut reader = &data[..];
+        let (kept, cut) = super::read_capped(&mut reader, 4096).await.expect("read");
+        assert_eq!(kept.len(), 4096);
+        assert!(cut, "超出上限必须标记为截断");
+        assert!(reader.is_empty(), "抽干管道后不应有剩余");
+    }
+
+    #[tokio::test]
+    async fn read_capped_leaves_short_output_untouched() {
+        let data = b"hello".to_vec();
+        let mut reader = &data[..];
+        let (kept, cut) = super::read_capped(&mut reader, 4096).await.expect("read");
+        assert_eq!(kept, b"hello");
+        assert!(!cut);
+    }
 
     fn state_with_buffer() -> super::SharedState {
         let mut buffer = crate::terminal::TermBuffer::new(24, 80, 1000);

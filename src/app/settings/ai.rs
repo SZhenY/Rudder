@@ -361,6 +361,12 @@ fn refresh(
     publish_status(window, store, clients);
 }
 
+thread_local! {
+    /// 配置片段是否发布过。设置窗关着时只跳过"重复发布"，首次仍要写一遍 ——
+    /// 否则第一次打开设置页会从主窗口拷到空文本，直到下一次刷新（≤ 1 秒）才填上。
+    static JSON_PUBLISHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 fn publish_status(window: &AppWindow, store: &Store, clients: &Rc<VecModel<McpClientRow>>) {
     let enabled = store.borrow().mcp_enabled();
     let status = crate::mcp::status();
@@ -404,14 +410,19 @@ fn publish_status(window: &AppWindow, store: &Store, clients: &Rc<VecModel<McpCl
     window.set_mcp_urls(ModelRc::from(Rc::new(VecModel::from(
         urls.into_iter().map(SharedString::from).collect::<Vec<_>>(),
     ))));
-    // 服务起来后监听地址才算得出来（局域网网口尤其），配置片段跟着刷。
-    window.set_mcp_json(client_config(store, false).into());
-    window.set_mcp_json_masked(client_config(store, true).into());
+    // 顶部徽标用的是 `mcp-client-count`，设置窗关着也得刷，所以客户端列表不跳过。
     publish_clients(window, clients);
     publish_recent_calls(window);
     publish_recent_closes(window);
     publish_grants(window, store);
-    crate::app::settings_window::resync_if_open(window);
+    // 配置片段与回显只服务设置页：窗口没开时不每秒把整份设置序列化两遍。
+    if crate::app::settings_window::is_open() || !JSON_PUBLISHED.with(|flag| flag.get()) {
+        // 服务起来后监听地址才算得出来（局域网网口尤其），配置片段跟着刷。
+        window.set_mcp_json(client_config(store, false).into());
+        window.set_mcp_json_masked(client_config(store, true).into());
+        JSON_PUBLISHED.with(|flag| flag.set(true));
+        crate::app::settings_window::resync_if_open(window);
+    }
 }
 
 /// 客户端列表：每个客户端先一行 header，再跟 12 行权限开关。

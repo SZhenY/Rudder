@@ -202,6 +202,20 @@ mod tests {
         }
     }
 
+    /// 每个工具的 `inputSchema` 必须是 object：rmcp 会把它原样交给客户端，
+    /// 少了这一项，客户端生成的调用参数会退化成无约束的任意 JSON。
+    #[test]
+    fn every_schema_is_an_object() {
+        for tool in definitions() {
+            assert_eq!(
+                tool.input_schema.get("type").and_then(Value::as_str),
+                Some("object"),
+                "{} 的 inputSchema 缺 type: object",
+                tool.name
+            );
+        }
+    }
+
     #[test]
     fn unknown_tool_fails_closed() {
         let statuses = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
@@ -211,6 +225,17 @@ mod tests {
         );
         let perms = Permissions::default();
         assert!(!listable(&perms, "not_a_tool"));
+    }
+
+    /// 空串与缺参数同一结论：schema 里 `tab_id` 是 `minLength: 1`，
+    /// 权限门不能因为 `""` 而在执行层之前给出另一套错误。
+    #[test]
+    fn empty_tab_id_is_treated_as_missing() {
+        let statuses = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
+        assert_eq!(
+            required_perms(&statuses, "run_command", &serde_json::json!({"tab_id": ""})),
+            Err(PermLookup::BadArgument("missing tab_id"))
+        );
     }
 
     #[test]

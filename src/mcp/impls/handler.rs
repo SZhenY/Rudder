@@ -289,8 +289,10 @@ impl McpHandler {
             Err(err) => (false, err.code().to_string(), err.message()),
         };
         let keys = needed.keys();
+        // 同一时刻只取一次：`ts` 与界面列表的 `at` 必须是同一条记录的时间。
+        let now = chrono::Local::now();
         let record = serde_json::json!({
-            "ts": chrono::Local::now().to_rfc3339(),
+            "ts": now.to_rfc3339(),
             "event": "tool_call",
             "session": session8,
             "client": client,
@@ -309,7 +311,7 @@ impl McpHandler {
             "epoch": epoch,
         });
         let entry = crate::mcp::AuditEntry {
-            at: chrono::Local::now().format("%H:%M:%S").to_string(),
+            at: now.format("%H:%M:%S").to_string(),
             tool: name.to_string(),
             ok,
             code: code.clone(),

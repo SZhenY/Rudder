@@ -9,8 +9,9 @@
 //! * `server` —— 生命周期（多地址绑定 / 停止 / 状态回填）
 //! * `http`   —— axum 边界：鉴权、单客户端租约、请求体上限
 //! * `handler`—— `rmcp::ServerHandler`：工具列表与调用入口
-//! * `tools`  —— 工具的 JSON schema 与权限位映射
+//! * `tools`  —— 工具 schema（`tools.json`）与权限位映射
 //! * `args`   —— 工具参数的取值规则（权限判定与执行共用）
+//! * `text`   —— 输出截断的两种口径（按字符 / 按字节）
 //! * `calls`  —— 工具实现
 //! * `auth`   —— 令牌生成与常量时间比对
 //! * `audit`  —— 审计：内存环 + 有界写盘通道（不阻塞调用方）
@@ -50,6 +51,8 @@ mod pty_cmd;
 mod server;
 #[path = "struct/state.rs"]
 mod state;
+#[path = "impls/text.rs"]
+mod text;
 #[path = "impls/tools.rs"]
 mod tools;
 #[path = "struct/types.rs"]

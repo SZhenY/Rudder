@@ -64,58 +64,23 @@ async fn guard(State(state): State<SharedState>, request: Request, next: Next) -
     let Some(token) = bearer_token(&request) else {
         return unauthorized();
     };
-    let cfg = state.config();
-    if !auth::token_matches(&cfg.token, &token) {
+    if !auth::token_matches(&state.config().token, &token) {
         return unauthorized();
     }
 
-    let method = request.method().clone();
-    // 本服务不主动推消息，独立事件流按 MCP 规范可以回 405。
-    if method == Method::GET || method == Method::HEAD {
-        return method_not_allowed();
-    }
-    if method != Method::POST && method != Method::DELETE {
-        return method_not_allowed();
-    }
-
-    // 先按 Content-Length 挡掉超大请求体：`Limited` 抛错时 axum 只会回 500，
-    // 客户端看不出是自己发太大了。
-    if request
-        .headers()
-        .get(header::CONTENT_LENGTH)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .is_some_and(|len| len > MAX_BODY as u64)
-    {
+    let method = match method_gate(&request) {
+        Ok(method) => method,
+        Err(reject) => return reject.response(),
+    };
+    if body_too_large(&request) {
         return failure(StatusCode::PAYLOAD_TOO_LARGE, "request body is too large");
     }
-
-    let session = match request.headers().get("mcp-session-id") {
-        Some(value) => match value.to_str() {
-            Ok(value) if !value.is_empty() && value.len() <= 128 => Some(value.to_owned()),
-            _ => return failure(StatusCode::BAD_REQUEST, "invalid session id"),
-        },
-        None => None,
+    let session = match session_id_of(&request) {
+        Ok(session) => session,
+        Err(reject) => return reject.response(),
     };
-    if request.headers().get_all("mcp-session-id").iter().count() > 1 {
-        return failure(StatusCode::BAD_REQUEST, "ambiguous session id");
-    }
-
-    // 多客户端：每个 session id 对应一份租约；不带 id 的 POST 只可能是 initialize。
-    let now = Instant::now();
-    state.prune_expired(now);
-    if let Some(requested) = &session {
-        // 租约已不在（空闲过期 / 拒绝 / 断开 / 令牌轮换）：rmcp 可能仍认识这个会话，
-        // 放行等于"清租约不断权"，必须挡回去逼客户端重新 initialize。
-        // DELETE 例外：那是客户端主动收尾。
-        if !state.touch(requested, now) && method != Method::DELETE {
-            return failure(
-                StatusCode::NOT_FOUND,
-                "MCP session expired; initialize again",
-            );
-        }
-    } else if state.at_capacity() {
-        return failure(StatusCode::TOO_MANY_REQUESTS, "too many MCP clients");
+    if let Err(reject) = admit_session(&state, session.as_deref(), &method) {
+        return reject.response();
     }
 
     let (mut parts, body) = request.into_parts();
@@ -128,8 +93,101 @@ async fn guard(State(state): State<SharedState>, request: Request, next: Next) -
     // 不要把 Bearer 令牌带进 SDK 的请求上下文 / debug 视图。
     parts.headers.remove(header::AUTHORIZATION);
     let request = Request::from_parts(parts, Body::new(Limited::new(body, MAX_BODY)));
-    let mut response = next.run(request).await;
+    let response = next.run(request).await;
 
+    finish_response(&state, response, session.as_deref(), &method, peer_ip)
+}
+
+/// 中间件提前拒绝。
+///
+/// 不直接返回 `Response` —— 它有 128 字节，塞进 `Result` 的 `Err` 会让每次
+/// 早期返回都搬这么大一块（clippy 的 `result_large_err`）。
+#[derive(Clone, Copy)]
+enum Reject {
+    /// 独立事件流不支持：405，并带 `Allow: POST, DELETE`。
+    MethodNotAllowed,
+    /// 状态码 + 固定文案。
+    Status(StatusCode, &'static str),
+}
+
+impl Reject {
+    fn response(self) -> Response {
+        match self {
+            Reject::MethodNotAllowed => method_not_allowed(),
+            Reject::Status(status, message) => failure(status, message),
+        }
+    }
+}
+
+/// 本服务不主动推消息：GET/HEAD 的独立事件流按 MCP 规范回 405，其余只放行 POST/DELETE。
+fn method_gate(request: &Request) -> Result<Method, Reject> {
+    let method = request.method().clone();
+    if method == Method::POST || method == Method::DELETE {
+        Ok(method)
+    } else {
+        Err(Reject::MethodNotAllowed)
+    }
+}
+
+/// 先按 Content-Length 挡掉超大请求体：`Limited` 抛错时 axum 只会回 500，
+/// 客户端看不出是自己发太大了。
+fn body_too_large(request: &Request) -> bool {
+    request
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .is_some_and(|len| len > MAX_BODY as u64)
+}
+
+/// 取出请求上的会话 id。格式不合法或重复出现都算客户端错误。
+fn session_id_of(request: &Request) -> Result<Option<String>, Reject> {
+    let session = match request.headers().get("mcp-session-id") {
+        Some(value) => match value.to_str() {
+            Ok(value) if !value.is_empty() && value.len() <= 128 => Some(value.to_owned()),
+            _ => return Err(Reject::Status(StatusCode::BAD_REQUEST, "invalid session id")),
+        },
+        None => None,
+    };
+    if request.headers().get_all("mcp-session-id").iter().count() > 1 {
+        return Err(Reject::Status(StatusCode::BAD_REQUEST, "ambiguous session id"));
+    }
+    Ok(session)
+}
+
+/// 会话准入：清掉过期租约，确认来客仍持有租约，新连接则检查容量。
+fn admit_session(state: &SharedState, session: Option<&str>, method: &Method) -> Result<(), Reject> {
+    let now = Instant::now();
+    state.prune_expired(now);
+    match session {
+        Some(requested) => {
+            // 租约已不在（空闲过期 / 拒绝 / 断开 / 令牌轮换）：rmcp 可能仍认识这个会话，
+            // 放行等于"清租约不断权"，必须挡回去逼客户端重新 initialize。
+            // DELETE 例外：那是客户端主动收尾。
+            if !state.touch(requested, now) && *method != Method::DELETE {
+                return Err(Reject::Status(
+                    StatusCode::NOT_FOUND,
+                    "MCP session expired; initialize again",
+                ));
+            }
+            Ok(())
+        }
+        None if state.at_capacity() => Err(Reject::Status(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many MCP clients",
+        )),
+        None => Ok(()),
+    }
+}
+
+/// 响应后处理：新会话登记租约、DELETE 与 404 收尾，并统一禁用缓存。
+fn finish_response(
+    state: &SharedState,
+    mut response: Response,
+    session: Option<&str>,
+    method: &Method,
+    peer_ip: Option<std::net::IpAddr>,
+) -> Response {
     if session.is_none() && response.status().is_success() {
         if let Some(id) = response
             .headers()
@@ -138,19 +196,22 @@ async fn guard(State(state): State<SharedState>, request: Request, next: Next) -
         {
             let id = id.to_owned();
             if state.insert_lease(id.clone(), peer_ip) {
-                audit_session(&state, "session_open", "", &id);
+                audit_session(state, "session_open", "", &id);
             } else {
                 // 并发下超出上限：这次会话没有租约，客户端下一次请求会拿 404。
-                tracing::warn!("mcp: client limit reached; refusing session {}", &id[..id.len().min(8)]);
+                tracing::warn!(
+                    "mcp: client limit reached; refusing session {}",
+                    &id[..id.len().min(8)]
+                );
             }
         }
-    } else if method == Method::DELETE && response.status().is_success() {
-        if let Some(id) = session.as_deref() {
+    } else if *method == Method::DELETE && response.status().is_success() {
+        if let Some(id) = session {
             state.close_session(id, CloseReason::Delete);
         }
     } else if response.status() == StatusCode::NOT_FOUND {
         // rmcp 已经不认这个会话（空闲超时被回收）。
-        if let Some(id) = session.as_deref() {
+        if let Some(id) = session {
             state.close_session(id, CloseReason::NotFound);
         }
     }
