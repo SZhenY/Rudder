@@ -5,7 +5,7 @@
 
 use serde_json::{Map, Value};
 
-use super::types::{ClientLease, CloseReason, ConsentState};
+use super::types::{ClientLease, CloseReason, ConsentState, session8};
 
 /// 单条字符串的截断上限（按 char 计）。
 const MAX_TEXT_CHARS: usize = 200;
@@ -78,7 +78,7 @@ impl SessionCloseEntry {
     pub(crate) fn from_lease(lease: &ClientLease, reason: CloseReason, alive_secs: u64) -> Self {
         Self {
             at: chrono::Local::now().format("%H:%M:%S").to_string(),
-            session8: lease.session_id.chars().take(8).collect(),
+            session8: session8(&lease.session_id),
             client: lease.client_label(),
             reason,
             alive_secs,

@@ -327,10 +327,6 @@ fn refresh(
     window.set_mcp_lan_enabled(lan);
     window.set_mcp_token_masked(masked.into());
     window.set_mcp_token_plain(plain.into());
-    // 端口或令牌一改，可粘贴的配置就跟着变；这里推两份（明文 / 掩码），界面按
-    // 「显示」开关自己选，不必把窗口里的可见性状态传回来。
-    window.set_mcp_json(client_config(store, false).into());
-    window.set_mcp_json_masked(client_config(store, true).into());
 
     {
         let store = store.borrow();
@@ -519,7 +515,6 @@ fn session_rows(en: bool, sessions: &[crate::mcp::McpSessionInfo]) -> Vec<McpCli
     rows
 }
 
-/// 客户端标题行上的授权摘要。最多列 4 项，超出用计数，避免撑爆一行。
 /// 还原本页默认。
 ///
 /// 只重置**设置项**：令牌与已记住的授权是用户明确做过的决定，重置它们会踢掉所有
@@ -562,13 +557,11 @@ fn publish_grants(window: &AppWindow, store: &Store) {
                 Some((client, device)) => (client.to_string(), device.to_string()),
                 None => (grant.id.clone(), String::new()),
             };
-            let keys: Vec<&str> = grant.permissions.iter().map(String::as_str).collect();
             crate::ui::McpGrantRow {
                 id: grant.id.as_str().into(),
                 client: client.into(),
                 device: device.into(),
-                permissions: granted_summary(&crate::mcp::Permissions::from_keys(&keys), en)
-                    .into(),
+                permissions: granted_summary(&crate::mcp::grant_perms(grant), en).into(),
                 trusted: grant.trusted,
             }
         })
@@ -615,6 +608,7 @@ fn bind_forget_grant(
     });
 }
 
+/// 客户端标题行上的授权摘要。最多列 4 项，超出用计数，避免撑爆一行。
 fn granted_summary(perms: &crate::mcp::Permissions, en: bool) -> String {
     const MAX: usize = 4;
     let mut parts: Vec<&str> = crate::mcp::PERMISSION_BITS
@@ -781,7 +775,6 @@ fn open_directory(dir: &std::path::Path) {
     let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
 }
 
-/// `rk_9f2a…7c31`：足够辨认是哪一枚，又不至于把令牌摊在屏幕上。
 /// 可直接粘进 MCP 客户端配置文件的片段。`masked` 只影响显示，复制始终走明文。
 ///
 /// 手拼字符串而不用 `serde_json`：键按常见写法排序（`type` / `url` / `headers`），
@@ -808,6 +801,7 @@ fn client_config(store: &Store, masked: bool) -> String {
     )
 }
 
+/// `rk_9f2a…7c31`：足够辨认是哪一枚，又不至于把令牌摊在屏幕上。
 fn mask_token(token: &str) -> String {
     if token.is_empty() {
         return String::new();
@@ -899,7 +893,8 @@ mod client_expansion_tests {
         EXPANDED_SESSIONS.with(|set| set.borrow_mut().clear());
     }
 
-    /// 折叠靠 `visible`，行数必须恒定（否则 1 Hz 刷新会退化成整表替换）。
+    /// 折叠靠渲染侧的 `if`（不是 `visible`），模型行数必须恒定 ——
+    /// 行数一变，1 Hz 刷新就会退化成整表替换，开关的重建会打断动画。
     #[test]
     fn row_count_is_constant_regardless_of_expansion() {
         reset();

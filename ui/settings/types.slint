@@ -40,7 +40,6 @@ export struct McpIface {
     enabled: bool,
 }
 
-/// AI 设置页：一条审计记录（只含展示所需的最小集）。
 /// AI 页「最近断开」的一行。`reason` 已按语言翻译好，`alarm` 决定是否用告警色。
 export struct McpCloseRow {
     at: string,
@@ -81,7 +80,6 @@ export struct McpConsentRow {
     label: string,
     desc: string,
     checked: bool,
-    allowed: bool,
     risk: string,
     risk-note: string,
     group: string,

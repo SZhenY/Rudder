@@ -21,6 +21,7 @@ use rmcp::transport::streamable_http_server::{
 use serde_json::json;
 
 use super::auth;
+use super::lease::session8;
 use super::handler::McpHandler;
 use super::types::{ClientLease, CloseReason, SharedState};
 
@@ -168,7 +169,7 @@ fn audit_session(state: &SharedState, event: &str, reason: &str, session: &str) 
     crate::mcp::record_event(serde_json::json!({
         "ts": chrono::Local::now().to_rfc3339(),
         "event": event,
-        "session": session.chars().take(8).collect::<String>(),
+        "session": session8(session),
         "reason": reason,
     }));
 }

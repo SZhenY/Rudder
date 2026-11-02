@@ -92,12 +92,12 @@ pub(crate) fn set_session_permission(
     state.set_permission(session_id, key, enabled)
 }
 
-/// AI 页"最近调用"列表。
 /// 「最近调用」环的版本号；UI 先比它再决定要不要取内容。
 pub(crate) fn recent_calls_rev() -> u64 {
     super::audit::ring_rev()
 }
 
+/// AI 页"最近调用"列表（新的在前）。
 pub(crate) fn recent_calls() -> Vec<super::audit_types::AuditEntry> {
     super::audit::recent()
 }

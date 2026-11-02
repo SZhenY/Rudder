@@ -8,13 +8,14 @@ use rmcp::{
     ErrorData, RoleServer, ServerHandler,
     model::{
         CallToolRequestParams, CallToolResult, Extensions, Implementation, ListToolsResult,
-        PaginatedRequestParams, ServerCapabilities, ServerInfo, Tool,
+        PaginatedRequestParams, ServerCapabilities, ServerInfo,
     },
     service::{NotificationContext, RequestContext},
 };
 use serde_json::Value;
 
 use super::calls;
+use super::lease::session8;
 use super::tools;
 use super::types::{ClientLease, CloseReason, ConsentState, SharedState};
 
@@ -66,8 +67,7 @@ impl ServerHandler for McpHandler {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        let all: Vec<Tool> = serde_json::from_value(tools::definitions())
-            .map_err(|_| ErrorData::internal_error("invalid tool definitions", None))?;
+        let all = tools::definitions();
 
         // 没有会话 id（协议异常）不过滤；有租约时按本次会话的授权过滤。
         // Pending 阶段用该客户端记住的授权兜底，避免握手时列表为空；
@@ -85,10 +85,11 @@ impl ServerHandler for McpHandler {
 
         let tools = match filter {
             Some(perms) => all
-                .into_iter()
+                .iter()
                 .filter(|tool| tools::listable(&perms, tool.name.as_ref()))
+                .cloned()
                 .collect(),
-            None => all,
+            None => all.to_vec(),
         };
         Ok(ListToolsResult {
             tools,
@@ -141,12 +142,11 @@ impl ServerHandler for McpHandler {
                 ClientLease::IDLE.as_secs(),
             )
         {
-            let keys: Vec<&str> = grant.permissions.iter().map(String::as_str).collect();
             // 静默放行**不写回**记忆授权：时间戳一旦被这里刷新，客户端只要每 15 分钟内
             // 重连一次就能永久免问，「永久信任」这个显式开关也就失去意义了。
             let _ = self
                 .state
-                .approve(&session_id, crate::mcp::Permissions::from_keys(&keys));
+                .approve(&session_id, crate::mcp::grant_perms(&grant));
             return;
         }
 
@@ -347,7 +347,7 @@ impl McpHandler {
     ) -> (String, String, crate::mcp::Permissions, u64) {
         match session_id.and_then(|id| self.state.lease(id)) {
             Some(lease) => (
-                lease.session_id.chars().take(8).collect(),
+                session8(&lease.session_id),
                 lease.client_label(),
                 lease.granted,
                 lease.epoch,
@@ -380,10 +380,7 @@ pub(super) async fn request_session_consent(state: SharedState, session_id: Stri
         .and_then(|client_id| state.remembered_grant_record(&client_id));
     let base = record
         .as_ref()
-        .map(|grant| {
-            let keys: Vec<&str> = grant.permissions.iter().map(String::as_str).collect();
-            crate::mcp::Permissions::from_keys(&keys)
-        })
+        .map(crate::mcp::grant_perms)
         .unwrap_or_default();
 
     let request = crate::app::mcp_ui::ConsentRequest {

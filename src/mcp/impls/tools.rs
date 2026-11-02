@@ -1,617 +1,81 @@
-//! 工具定义与权限映射。
+//! 工具定义与权限约定。
 //!
-//! schema 写成 JSON 字面量（与上游 `src/mcp/impls/tools.rs` 同一写法），再由
-//! `handler::list_tools` 反序列化成 `rmcp::model::Tool`。这样定义与协议类型解耦，
-//! 加一个工具只需要动这里和 `calls`。
+//! schema 放在同目录的 `tools.json`，用 `include_str!` 编进二进制，首次 `list_tools` 时解析一次。
+//! 不在 Rust 里写 `json!` 字面量：26 个工具的嵌套远超默认 `recursion_limit`，宏展开要在
+//! worker 线程的 2 MB 栈上重建整棵树（实测能把测试线程顶爆）。
+//!
+//! 工具名、调用所需权限、`list_tools` 的可见条件集中在 [`TOOLS`] 一张表里；
+//! 表里的名字与 `tools.json` 的一致性由 `every_definition_is_registered` 测试保证。
 
-use serde_json::{Value, json};
+use std::sync::OnceLock;
 
+use rmcp::model::Tool;
+use serde_json::Value;
+
+use super::args::{bool_arg, opt_str_arg, str_arg};
 use super::perms::{Permissions, is_high_risk_setting};
 use crate::config::SessionKind;
 use crate::resource::TabStatuses;
 
-/// 全部工具定义。
-pub(super) fn definitions() -> Value {
-    json!([
-        {
-            "name": "get_server_info",
-            "description": "Report this Rudder MCP server's version, listening endpoints and the tool permissions currently granted. Call it first to learn what the server allows.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "list_sessions",
-            "description": "List saved SSH/serial/telnet hosts in this Rudder profile. Passwords, private keys and notes are never returned. Use the returned session_id with open_session or get_session.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "group": { "type": "string", "description": "Optional exact group name filter." }
-                },
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "get_session",
-            "description": "Get non-secret metadata for one saved host.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "session_id": { "type": "string", "minLength": 1, "description": "Saved session id returned by list_sessions." }
-                },
-                "required": ["session_id"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "list_tabs",
-            "description": "List the session tabs currently open in the Rudder window. tab_id identifies a running terminal; session_id identifies the saved host it came from.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "get_tab_status",
-            "description": "Resource snapshot of the host behind one tab: CPU, memory, swap, network totals, per-filesystem usage, the top 10 processes, and `sys` with the full system details (overview, cpu_info, gpu_info, cpu_usage, memory, swap, networks, filesystems). `sys` is a one-shot probe taken shortly after the session connects and never refreshed, so it is null on a tab that just opened — that is not an error. For local shell tabs the machine's own figures are under `local`. To read this machine without opening a tab, use get_host_info instead.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "refresh": {
-                        "type": "boolean",
-                        "default": false,
-                        "description": "Accepted for compatibility only. MCP cannot start remote sampling — the Rudder resource panel owns it. Check stale / last_sample_ms_ago and, when stale, tell the user to open the resource panel."
-                    }
-                },
-                "required": ["tab_id"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "get_host_info",
-            "description": "Report the local machine — the computer running Rudder — not a remote host, and no tab_id is needed. Returns CPU, memory, swap, per-filesystem usage and network throughput with the sample time. Figures come from the app's own 1 Hz sampler when it is running (source=snapshot); when that sampler is paused, for example because the sidebar is collapsed or the window is hidden, one sample is taken on demand (source=on_demand) and may take a moment. For a host behind an open tab use get_tab_status instead.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "read_terminal",
-            "description": "Read a tab's terminal as plain text. `source=screen` returns the visible viewport; `source=scrollback` returns the most recent lines including history. output_seq can be passed to wait_for_output as since_seq.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "source": { "type": "string", "enum": ["screen", "scrollback"], "default": "screen" },
-                    "max_rows": { "type": "integer", "minimum": 1, "maximum": 400, "default": 200 }
-                },
-                "required": ["tab_id"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "wait_for_output",
-            "description": "Block until a tab produces new output. With `pattern` (a Rust regex) it returns as soon as the screen text matches; without it, it returns once output has been quiet for `quiet_ms` after at least one new byte. Returns the last 4 KiB of screen text.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "pattern": { "type": "string", "description": "Rust regex matched against the terminal's plain text." },
-                    "timeout_ms": { "type": "integer", "minimum": 100, "maximum": 120000, "default": 15000 },
-                    "quiet_ms": { "type": "integer", "minimum": 0, "maximum": 5000, "default": 300 },
-                    "since_seq": { "type": "integer", "minimum": 0, "description": "Only count output after this output_seq (from read_terminal). Defaults to now." },
-                    "max_rows": { "type": "integer", "minimum": 1, "maximum": 400, "default": 400 }
-                },
-                "required": ["tab_id"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": false,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "open_session",
-            "description": "Open a saved host in a new Rudder tab and start connecting. Returns the new tab_id; connection progress is visible in the app window. A host seen for the first time normally needs a human to confirm its key in the Rudder window — pass trust_unknown_host_key=true to accept and record it automatically for this connection. A CHANGED key is never auto-accepted: it still requires the user, because it may be a man-in-the-middle.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "session_id": { "type": "string", "minLength": 1, "description": "Saved session id from list_sessions, or a built-in `system:` id." },
-                    "trust_unknown_host_key": {
-                        "type": "boolean",
-                        "default": false,
-                        "description": "Only affects hosts with no saved key: record the key and connect without prompting. Ignored for changed keys, which always require the user."
-                    }
-                },
-                "required": ["session_id"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": false,
-                "idempotentHint": false,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "close_session",
-            "description": "Close one open tab, tearing down its SSH/SFTP connection and buffers exactly like clicking the tab's close button.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 }
-                },
-                "required": ["tab_id"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "send_input",
-            "description": "Type text into a tab's terminal, as if the user typed it. The bytes go to the PTY, so the user sees them and can take over. Use read_terminal or wait_for_output to see the result.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "text": { "type": "string", "description": "Text to type. May be empty to send only Enter." },
-                    "enter": { "type": "boolean", "default": true, "description": "Append a carriage return (press Enter) after the text." }
-                },
-                "required": ["tab_id"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": false,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "run_command",
-            "description": "Run one command in a tab. The channel follows the user's \"Run commands in the terminal\" setting. OFF (default): a one-shot exec channel on the existing SSH connection (or a child process for local tabs) runs it without touching the terminal, returning exit code, stdout and stderr. ON: the command is typed into the user's interactive shell so they see it and its output; if that tab is currently showing a full-screen app (vim/htop) a new tab is opened for the command instead and the response carries opened_tab. The PTY channel has no separate stderr, and reports marker_found=false when concurrent typing corrupted the output — treat that result as unreliable. Either channel requires the exec permission (local_exec for local tabs), but the PTY channel is equivalent to typing on the user's behalf. Telnet and serial sessions only work with the PTY channel.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "command": { "type": "string", "minLength": 1 },
-                    "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 300000, "default": 30000 },
-                    "max_output_bytes": { "type": "integer", "minimum": 1024, "maximum": 4194304, "default": 1048576 }
-                },
-                "required": ["tab_id", "command"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": false,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "get_update_status",
-            "description": "Read the update state Rudder has already gathered: whether a newer release is known, the wording and error of the last check, the in-app download / install progress, and when the last check ran. Start a check with run_action action=check_update and then poll this tool — the check runs in the background. This call never downloads or installs anything.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "kill_process",
-            "description": "Terminate one process on a remote SSH host with SIGTERM — the same action as the process dialog in Rudder. The process may ignore SIGTERM; this tool never escalates to SIGKILL, so re-check get_tab_status afterwards. Only SSH tabs are supported: local, telnet and serial tabs have no remote process control. Pass root_password only when the target belongs to another user; it is used once, never stored, and redacted from the audit log. A failed kill is reported as success=false with the remote message instead of as an error.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1, "description": "An SSH tab from list_tabs." },
-                    "pid": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 4294967295u64,
-                        "description": "Process id, as listed in get_tab_status top_procs."
-                    },
-                    "root_password": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Optional sudo password for the connected user. Omit when the process belongs to that user."
-                    }
-                },
-                "required": ["tab_id", "pid"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": false,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "get_settings",
-            "description": "Read Rudder settings by key. With no keys it returns the whole whitelist. Secrets (passwords, tokens, endpoints) are never included.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "keys": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Exact setting keys such as terminal.font_size. Omit for all."
-                    }
-                },
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "set_settings",
-            "description": "Change Rudder settings. Applied atomically: if any key is rejected, nothing is written. Each response lists applied keys and, for rejections, the reason (unknown_key, out_of_range, secret_not_exposed, restart_required_process, ...).",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "values": {
-                        "type": "object",
-                        "description": "Map of setting key to new value, e.g. {\"terminal.font_size\": 15}."
-                    }
-                },
-                "required": ["values"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "upsert_host",
-            "description": "Create a saved host, or update one when session_id is given. Only the fields you pass are changed. Covers every option of the host dialog, including the advanced ones. Passwords, inline keys and trigger responses are stored encrypted and never returned.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "session_id": { "type": "string", "description": "Empty or omitted = create a new host." },
-                    "name": { "type": "string" },
-                    "host": { "type": "string", "description": "Required for ssh/telnet." },
-                    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-                    "user": { "type": "string" },
-                    "kind": { "type": "string", "enum": ["ssh", "serial", "telnet", "local"] },
-                    "auth": { "type": "string", "enum": ["password", "key", "keyboard-interactive"] },
-                    "password": { "type": "string" },
-                    "key_mode": { "type": "string", "enum": ["path", "inline"], "description": "Which key source to use; clears the other one." },
-                    "private_key_path": { "type": "string" },
-                    "private_key_inline": { "type": "string", "description": "PEM/OpenSSH key text; implies key_mode=inline." },
-                    "group": { "type": "string" },
-                    "note": { "type": "string" },
-                    "jump_session_id": { "type": "string", "description": "Saved host id to use as a jump/bastion host." },
-                    "proxy": {
-                        "type": "string",
-                        "description": "Outbound proxy for this host: socks5://host:port or http://host:port. Credentials may be embedded as user:pass@; they are split out and the password is stored encrypted. Empty string = direct (or ALL_PROXY)."
-                    },
-                    "proxy_user": {
-                        "type": "string",
-                        "description": "Proxy username. Omit to keep the saved one; empty string clears it."
-                    },
-                    "proxy_password": {
-                        "type": "string",
-                        "description": "Proxy password, stored encrypted and never returned. Omit to keep the saved one; empty string clears it."
-                    },
-                    "encoding": { "type": "string", "description": "Terminal encoding, e.g. UTF-8 or GBK." },
-                    "disable_shell_integration": { "type": "boolean" },
-                    "serial_port": { "type": "string", "description": "Device name, e.g. COM3 or /dev/ttyUSB0. Required for kind=serial." },
-                    "baud_rate": { "type": "integer", "minimum": 300, "maximum": 4000000 },
-                    "data_bits": { "type": "integer", "enum": [7, 8] },
-                    "stop_bits": { "type": "integer", "enum": [1, 2] },
-                    "parity": { "type": "string", "enum": ["none", "odd", "even"] },
-                    "flow_control": { "type": "string", "enum": ["none", "hardware", "software"] },
-                    "forwards": {
-                        "type": "array",
-                        "description": "Replaces the host's tunnel list when given.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "kind": { "type": "string", "enum": ["local", "remote", "dynamic"], "description": "local = -L, remote = -R, dynamic = -D." },
-                                "name": { "type": "string" },
-                                "bind_addr": { "type": "string" },
-                                "bind_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-                                "host": { "type": "string" },
-                                "host_port": { "type": "integer", "minimum": 0, "maximum": 65535 }
-                            },
-                            "required": ["kind", "bind_port"],
-                            "additionalProperties": false
-                        }
-                    },
-                    "triggers": {
-                        "type": "array",
-                        "description": "Replaces the host's login triggers when given. Rules with an empty `expect` are skipped.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "expect": { "type": "string" },
-                                "response": { "type": "string" },
-                                "append_enter": { "type": "boolean", "default": true },
-                                "repeat": { "type": "boolean", "default": false }
-                            },
-                            "required": ["expect"],
-                            "additionalProperties": false
-                        }
-                    }
-                },
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": false,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "delete_host",
-            "description": "Delete a saved host. Open tabs pointing at it keep running unless close_open_tabs is true.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "session_id": { "type": "string", "minLength": 1 },
-                    "close_open_tabs": { "type": "boolean", "default": false }
-                },
-                "required": ["session_id"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": false,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "sftp_list",
-            "description": "List a directory on the remote host through the tab's SFTP channel. Directories come first, then files, each sorted by name. Only SSH tabs have SFTP.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "path": { "type": "string", "default": "/" }
-                },
-                "required": ["tab_id"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false
-            }
-        },
-        {
-            "name": "sftp_download",
-            "description": "Download one remote file into Rudder's configured download folder over SFTP. Never overwrites: a colliding name becomes `report (1).pdf`. Files above 64 MiB are refused — use the SFTP panel for those.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "remote_path": { "type": "string", "minLength": 1 }
-                },
-                "required": ["tab_id", "remote_path"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                // 不覆盖已有文件，只写一个新名字。
-                "destructiveHint": false,
-                "idempotentHint": false,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "sftp_upload",
-            "description": "Upload one local file to an exact remote path over SFTP, overwriting it if present. Files above 64 MiB are refused — use the SFTP panel for those.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "local_path": { "type": "string", "minLength": 1, "description": "Source path on the machine running Rudder." },
-                    "remote_path": { "type": "string", "minLength": 1 }
-                },
-                "required": ["tab_id", "local_path", "remote_path"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": true,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "sftp_mkdir",
-            "description": "Create one directory on the remote host over the tab's SFTP channel. The parent must already exist — SFTP v3 mkdir is single level — and an existing path is reported as an error rather than a silent success. Use an absolute path. Needs the file_upload permission, the same bit that authorises writing to the remote host.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "path": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Absolute remote path to create, e.g. /var/tmp/release."
-                    }
-                },
-                "required": ["tab_id", "path"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "sftp_remove",
-            "description": "Delete a file or directory on the remote host over SFTP. DELETION IS PERMANENT: there is no trash and no undo. A directory is removed only when it is empty unless recursive=true, which first deletes every file and subdirectory below it. Prefer sftp_rename to move something aside when the change might need reverting. Needs the file_upload permission.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "path": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Absolute remote path to delete."
-                    },
-                    "recursive": {
-                        "type": "boolean",
-                        "default": false,
-                        "description": "Delete a non-empty directory and everything under it. Irreversible; ignored for files."
-                    }
-                },
-                "required": ["tab_id", "path"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": false,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "sftp_rename",
-            "description": "Rename or move one remote path over SFTP; moving between directories is allowed. If `to` already exists it is replaced — SFTP v3 has no no-clobber flag — so pick a fresh name when both should survive. Needs the file_upload permission.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "from": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Existing absolute remote path."
-                    },
-                    "to": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Destination absolute remote path; replaced if present."
-                    }
-                },
-                "required": ["tab_id", "from", "to"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": false,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "sftp_chmod",
-            "description": "Change the permission bits of one remote path over SFTP. `mode` is octal text such as \"644\", \"755\" or \"0755\"; a wrong mode can lock the account out of its own files or expose them, so copy the value that was read from sftp_list rather than inventing one. Needs the file_upload permission.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tab_id": { "type": "string", "minLength": 1 },
-                    "path": { "type": "string", "minLength": 1 },
-                    "mode": {
-                        "type": "string",
-                        "pattern": "^[0-7]{3,4}$",
-                        "description": "Octal permission bits, e.g. \"755\" or \"0644\"."
-                    }
-                },
-                "required": ["tab_id", "path", "mode"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": true,
-                "openWorldHint": true
-            }
-        },
-        {
-            "name": "run_action",
-            "description": "Trigger a one-shot UI action: check for updates now, or push/pull the host list to the configured WebDAV. Returns as soon as the action starts; progress and the outcome show up in the status bar and the settings page.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["check_update", "webdav_upload", "webdav_download"]
-                    }
-                },
-                "required": ["action"],
-                "additionalProperties": false
-            },
-            "annotations": {
-                "readOnlyHint": false,
-                "destructiveHint": true,
-                "idempotentHint": false,
-                "openWorldHint": true
-            }
-        }
-    ])
+const TOOL_SCHEMA: &str = include_str!("tools.json");
+
+/// 全部工具定义；解析只做一次，之后按引用返回。
+pub(super) fn definitions() -> &'static [Tool] {
+    static TOOLS: OnceLock<Vec<Tool>> = OnceLock::new();
+    TOOLS.get_or_init(|| serde_json::from_str(TOOL_SCHEMA).expect("tools.json 必须是工具定义数组"))
+}
+
+/// 工具的权限约定。
+struct ToolMeta {
+    name: &'static str,
+    /// 调用需要的基础位；空 = 不需要授权。
+    ///
+    /// `run_command` 的基位取决于标签页类型（`exec` / `local_exec`），表里留空，
+    /// 由 [`required_perms`] 按 `tab_id` 判定。
+    require: &'static [&'static str],
+    /// `list_tools` 是否展示（OR 语义）；空 = 始终展示。
+    show: &'static [&'static str],
+}
+
+const TOOLS: &[ToolMeta] = &[
+    ToolMeta { name: "get_server_info", require: &[], show: &[] },
+    ToolMeta { name: "list_sessions", require: &["read"], show: &["read"] },
+    ToolMeta { name: "get_session", require: &["read"], show: &["read"] },
+    ToolMeta { name: "list_tabs", require: &["read"], show: &["read"] },
+    ToolMeta { name: "get_tab_status", require: &["read"], show: &["read"] },
+    ToolMeta { name: "get_host_info", require: &["read"], show: &["read"] },
+    ToolMeta { name: "read_terminal", require: &["read"], show: &["read"] },
+    ToolMeta { name: "wait_for_output", require: &["read"], show: &["read"] },
+    ToolMeta { name: "get_update_status", require: &["read"], show: &["read"] },
+    ToolMeta { name: "get_settings", require: &["read"], show: &["read"] },
+    ToolMeta { name: "sftp_list", require: &["read"], show: &["read"] },
+    ToolMeta {
+        name: "open_session",
+        require: &["session_open_close"],
+        show: &["session_open_close"],
+    },
+    ToolMeta {
+        name: "close_session",
+        require: &["session_open_close"],
+        show: &["session_open_close"],
+    },
+    ToolMeta { name: "send_input", require: &["terminal_input"], show: &["terminal_input"] },
+    ToolMeta { name: "run_command", require: &[], show: &["exec", "local_exec"] },
+    ToolMeta { name: "kill_process", require: &["exec"], show: &["exec"] },
+    ToolMeta { name: "set_settings", require: &["settings_write"], show: &["settings_write"] },
+    ToolMeta { name: "upsert_host", require: &["host_upsert"], show: &["host_upsert"] },
+    ToolMeta { name: "delete_host", require: &["host_delete"], show: &["host_delete"] },
+    ToolMeta { name: "sftp_download", require: &["file_download"], show: &["file_download"] },
+    ToolMeta { name: "sftp_upload", require: &["file_upload"], show: &["file_upload"] },
+    ToolMeta { name: "sftp_mkdir", require: &["file_upload"], show: &["file_upload"] },
+    ToolMeta { name: "sftp_remove", require: &["file_upload"], show: &["file_upload"] },
+    ToolMeta { name: "sftp_rename", require: &["file_upload"], show: &["file_upload"] },
+    ToolMeta { name: "sftp_chmod", require: &["file_upload"], show: &["file_upload"] },
+    ToolMeta { name: "run_action", require: &["settings_write"], show: &["settings_write"] },
+];
+
+fn meta(name: &str) -> Option<&'static ToolMeta> {
+    TOOLS.iter().find(|meta| meta.name == name)
 }
 
 /// 工具名不认识 / 参数不足以判定权限。
@@ -619,48 +83,6 @@ pub(super) fn definitions() -> Value {
 pub(super) enum PermLookup {
     UnknownTool,
     BadArgument(&'static str),
-}
-
-/// 全部 19 个工具名。`required_perms` 用它把"未登记"与"动态判定"分开：
-/// 未登记就是 fail closed，绝不回落成 `read`。
-fn known_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "get_server_info"
-            | "list_sessions"
-            | "get_session"
-            | "list_tabs"
-            | "get_tab_status"
-            | "get_host_info"
-            | "get_update_status"
-            | "read_terminal"
-            | "wait_for_output"
-            | "get_settings"
-            | "open_session"
-            | "close_session"
-            | "send_input"
-            | "run_command"
-            | "kill_process"
-            | "set_settings"
-            | "upsert_host"
-            | "delete_host"
-            | "sftp_list"
-            | "sftp_download"
-            | "sftp_upload"
-            | "sftp_mkdir"
-            | "sftp_remove"
-            | "sftp_rename"
-            | "sftp_chmod"
-            | "run_action"
-    )
-}
-
-fn str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
-    args.get(key).and_then(Value::as_str)
-}
-
-fn bool_arg(args: &Value, key: &str) -> bool {
-    args.get(key).and_then(Value::as_bool).unwrap_or(false)
 }
 
 /// `run_command` / `send_input` 的基位由标签页类型决定。
@@ -673,124 +95,79 @@ fn command_perm(kind: SessionKind) -> &'static str {
 }
 
 fn tab_kind(statuses: &TabStatuses, args: &Value) -> Result<SessionKind, PermLookup> {
-    let tab_id = str_arg(args, "tab_id").ok_or(PermLookup::BadArgument("missing tab_id"))?;
+    // 空串等同于没给：schema 里 tab_id 是 minLength: 1。
+    let tab_id = str_arg(args, "tab_id").map_err(|_| PermLookup::BadArgument("missing tab_id"))?;
     let statuses = statuses
         .lock()
         .unwrap_or_else(|err| err.into_inner());
     statuses
-        .get(tab_id)
+        .get(&tab_id)
         .map(|status| status.kind)
         .ok_or(PermLookup::BadArgument("unknown tab_id"))
 }
 
-/// 本次调用需要的权限位。动态分支只看参数与标签页类型，不读全局配置。
+/// 本次调用需要的权限位。表里给出基础位，这里只补依赖参数与标签页类型的部分。
 pub(super) fn required_perms(
     statuses: &TabStatuses,
     name: &str,
     args: &Value,
 ) -> Result<Permissions, PermLookup> {
-    if !known_tool(name) {
-        return Err(PermLookup::UnknownTool);
-    }
+    // 未登记就是 fail closed，绝不回落成 `read`。
+    let meta = meta(name).ok_or(PermLookup::UnknownTool)?;
     let mut perms = Permissions::default();
     let mut add = |key: &str| {
         let _ = perms.set(key, true);
     };
+    for bit in meta.require {
+        add(bit);
+    }
     match name {
-        "get_server_info" => {}
-        "list_sessions"
-        | "get_session"
-        | "list_tabs"
-        | "get_tab_status"
-        | "get_host_info"
-        | "get_update_status"
-        | "read_terminal"
-        | "wait_for_output"
-        | "get_settings"
-        | "sftp_list" => add("read"),
         "open_session" => {
-            add("session_open_close");
-            if bool_arg(args, "trust_unknown_host_key") {
+            if bool_arg(args, "trust_unknown_host_key", false) {
                 add("host_key_trust");
             }
         }
-        "close_session" => add("session_open_close"),
         "send_input" => {
-            add("terminal_input");
             // 本地标签页上打字等价于在本机执行命令。
             if tab_kind(statuses, args)? == SessionKind::Local {
                 add("local_exec");
             }
         }
         "run_command" => add(command_perm(tab_kind(statuses, args)?)),
-        // 杀进程是"在远端执行动作"，归 exec 位；它不做 tab_kind 分支（调用处先挡了）。
-        "kill_process" => add("exec"),
         "set_settings" => {
-            add("settings_write");
-            if args
+            let high_risk = args
                 .get("values")
                 .and_then(Value::as_object)
-                .is_some_and(|values| values.keys().any(|key| is_high_risk_setting(key)))
-            {
+                .is_some_and(|values| values.keys().any(|key| is_high_risk_setting(key)));
+            if high_risk {
                 add("settings_high");
             }
         }
-        "upsert_host" => add("host_upsert"),
         "delete_host" => {
-            add("host_delete");
-            if bool_arg(args, "close_open_tabs") {
+            if bool_arg(args, "close_open_tabs", false) {
                 add("session_open_close");
             }
         }
-        "sftp_download" => add("file_download"),
-        "sftp_upload" => add("file_upload"),
-        // 变更类共用写入位：删除 / 改名 / 改权限都是"改远端文件系统"。
-        "sftp_mkdir" | "sftp_remove" | "sftp_rename" | "sftp_chmod" => add("file_upload"),
-        "run_action" => match str_arg(args, "action") {
-            Some("check_update") => add("settings_write"),
-            // webdav 两个动作会先写回 WebDAV 配置，并移动整份主机库。
-            Some("webdav_upload" | "webdav_download") => {
-                add("settings_write");
+        "run_action" => {
+            // 两个 webdav 动作先写回 WebDAV 配置，再移动整份主机库。
+            let action = opt_str_arg(args, "action");
+            if matches!(action.as_deref(), Some("webdav_upload" | "webdav_download")) {
                 add("settings_high");
                 add("host_upsert");
             }
-            _ => add("settings_write"),
-        },
-        _ => return Err(PermLookup::UnknownTool),
+        }
+        _ => {}
     }
     Ok(perms)
 }
 
 /// `list_tools` 的过滤谓词。OR 语义：任一相关位开启就展示。
 pub(super) fn listable(perms: &Permissions, name: &str) -> bool {
-    match name {
-        "get_server_info" => true,
-        "list_sessions"
-        | "get_session"
-        | "list_tabs"
-        | "get_tab_status"
-        | "get_host_info"
-        | "get_update_status"
-        | "read_terminal"
-        | "wait_for_output"
-        | "get_settings"
-        | "sftp_list" => perms.allows("read"),
-        "open_session" | "close_session" => perms.allows("session_open_close"),
-        "send_input" => perms.allows("terminal_input"),
-        "run_command" => perms.allows("exec") || perms.allows("local_exec"),
-        "kill_process" => perms.allows("exec"),
-        // `set_settings` / `run_action` 的基位始终是 `settings_write`；高风险键
-        // 只是额外要求，单有 `settings_high` 不足以调用。
-        "set_settings" => perms.allows("settings_write"),
-        "upsert_host" => perms.allows("host_upsert"),
-        "delete_host" => perms.allows("host_delete"),
-        "sftp_download" => perms.allows("file_download"),
-        "sftp_upload" => perms.allows("file_upload"),
-        "sftp_mkdir" | "sftp_remove" | "sftp_rename" | "sftp_chmod" => {
-            perms.allows("file_upload")
-        }
-        "run_action" => perms.allows("settings_write"),
-        _ => false,
+    match meta(name) {
+        Some(meta) if meta.show.is_empty() => true,
+        Some(meta) => meta.show.iter().any(|bit| perms.allows(bit)),
+        // 未登记的工具不展示，与 `required_perms` 的 fail closed 保持一致。
+        None => false,
     }
 }
 
@@ -800,19 +177,28 @@ mod tests {
 
     fn definition_names() -> Vec<String> {
         definitions()
-            .as_array()
-            .expect("definitions 必须是数组")
             .iter()
-            .filter_map(|tool| tool.get("name").and_then(Value::as_str).map(str::to_owned))
+            .map(|tool| tool.name.to_string())
             .collect()
     }
 
     #[test]
     fn every_definition_is_registered() {
         let names = definition_names();
-        assert_eq!(names.len(), 26);
+        assert_eq!(names.len(), TOOLS.len());
         for name in &names {
-            assert!(known_tool(name), "{name} 没有登记权限");
+            assert!(meta(name).is_some(), "{name} 没有登记权限");
+        }
+    }
+
+    #[test]
+    fn every_registered_tool_has_a_definition() {
+        for tool in TOOLS {
+            assert!(
+                definitions().iter().any(|def| def.name == tool.name),
+                "{} 有权限约定但 tools.json 里没有定义",
+                tool.name
+            );
         }
     }
 
@@ -820,9 +206,11 @@ mod tests {
     fn unknown_tool_fails_closed() {
         let statuses = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
         assert_eq!(
-            required_perms(&statuses, "not_a_tool", &json!({})),
+            required_perms(&statuses, "not_a_tool", &serde_json::json!({})),
             Err(PermLookup::UnknownTool)
         );
+        let perms = Permissions::default();
+        assert!(!listable(&perms, "not_a_tool"));
     }
 
     #[test]
@@ -832,7 +220,7 @@ mod tests {
         let open = required_perms(
             &statuses,
             "open_session",
-            &json!({"session_id": "s", "trust_unknown_host_key": true}),
+            &serde_json::json!({"session_id": "s", "trust_unknown_host_key": true}),
         )
         .unwrap();
         assert!(open.allows("session_open_close"));
@@ -841,7 +229,7 @@ mod tests {
         let delete = required_perms(
             &statuses,
             "delete_host",
-            &json!({"session_id": "s", "close_open_tabs": true}),
+            &serde_json::json!({"session_id": "s", "close_open_tabs": true}),
         )
         .unwrap();
         assert!(delete.allows("host_delete"));
@@ -850,7 +238,7 @@ mod tests {
         let settings = required_perms(
             &statuses,
             "set_settings",
-            &json!({"values": {"update.proxy": "http://x:1"}}),
+            &serde_json::json!({"values": {"update.proxy": "http://x:1"}}),
         )
         .unwrap();
         assert!(settings.allows("settings_write"));
@@ -859,7 +247,7 @@ mod tests {
         let webdav = required_perms(
             &statuses,
             "run_action",
-            &json!({"action": "webdav_upload"}),
+            &serde_json::json!({"action": "webdav_upload"}),
         )
         .unwrap();
         assert!(webdav.allows("settings_write"));
@@ -867,9 +255,23 @@ mod tests {
         assert!(webdav.allows("host_upsert"));
 
         assert_eq!(
-            required_perms(&statuses, "run_command", &json!({"tab_id": "missing"})),
+            required_perms(&statuses, "run_command", &serde_json::json!({"tab_id": "missing"})),
             Err(PermLookup::BadArgument("unknown tab_id"))
         );
+    }
+
+    #[test]
+    fn static_table_bits_match_call_and_list_policy() {
+        let statuses = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
+
+        // 纯读工具：表里的 require 与 show 是同一批位。
+        let read = required_perms(&statuses, "list_sessions", &serde_json::json!({})).unwrap();
+        assert!(read.allows("read"));
+
+        // run_command 在表里没有静态位（取决于标签页），但展示条件覆盖两个基位。
+        let exec_only = required_perms(&statuses, "kill_process", &serde_json::json!({})).unwrap();
+        assert!(exec_only.allows("exec"));
+        assert!(listable(&exec_only, "run_command"));
     }
 
     #[test]

@@ -305,8 +305,6 @@ pub struct McpSettings {
     pub mcp_audit_enabled: bool,
     /// 审计日志保留天数；`0` = 永久保留。
     pub mcp_audit_retention_days: u16,
-    /// 授权策略：`session`（默认，每个客户端会话单独确认）/ `auto`（仅开发令牌）。
-    pub mcp_consent: String,
 }
 
 impl Default for McpSettings {
@@ -322,7 +320,6 @@ impl Default for McpSettings {
             mcp_pty_commands: false,
             mcp_audit_enabled: true,
             mcp_audit_retention_days: 14,
-            mcp_consent: "session".to_string(),
         }
     }
 }

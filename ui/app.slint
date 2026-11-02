@@ -65,6 +65,7 @@ import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
 import { ChmodDialog } from "chmod_dialog.slint";
 import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
 import { SettingsMenuPopup } from "settings_menu.slint";
+import { McpClientsPopup } from "mcp_clients_popup.slint";
 import { AboutDialog } from "about_dialog.slint";
 import { DockSnapOverlay } from "dock_snap_overlay.slint";
 import { ConfirmOverlays } from "confirm_overlays.slint";
@@ -208,6 +209,15 @@ export component AppWindow inherits Window {
     in-out property <bool> settings-open: false;  // settings menu popup
     /// 当前接入的 AI 客户端数量（> 0 时顶部栏显示徽标）。
     in property <int> mcp-client-count: 0;
+    /// AI 客户端浮层（点徽标打开）。
+    in-out property <bool> mcp-clients-open: false;
+    // 徽标本身挂在 count > 0 上，客户端全部断开时它会消失；浮层失去锚点必须跟着收起，
+    // 否则会在原地悬空。这一条覆盖浮层内断开、设置窗断开、令牌轮换、服务停止四种来源。
+    changed mcp-client-count => {
+        if (root.mcp-client-count == 0) {
+            root.mcp-clients-open = false;
+        }
+    }
 
     // Immersive custom title bar (#119). Rust sets `custom-titlebar` true on
     // Windows/Linux (frameless); macOS keeps native decorations. The callbacks
@@ -547,7 +557,6 @@ export component AppWindow inherits Window {
     // 会话授权确认框（首次出现未授权工具调用时弹出）
     in-out property <bool> mcp-consent-open: false;
     in property <string> mcp-consent-client;
-    in property <string> mcp-consent-tool;
     in property <string> mcp-consent-summary;
     in-out property <[McpConsentRow]> mcp-consent-rows;
     in-out property <bool> mcp-consent-trusted: false;
@@ -555,6 +564,14 @@ export component AppWindow inherits Window {
     callback mcp-consent-accept();
     callback mcp-consent-reject();
     callback mcp-consent-toggle-section(string);
+    // 授权框会抓走键盘焦点（否则收不到 Esc），关掉后必须把焦点还给终端，
+    // 不然终端失焦、要点一下才恢复（与 810-812 记录的同一类问题）。
+    // 这一条覆盖允许 / 拒绝 / 45 秒超时三条关闭路径。
+    changed mcp-consent-open => {
+        if (!root.mcp-consent-open) {
+            root.terminal-focus-sequence += 1;
+        }
+    }
     callback set-mcp-client-trusted(string /* client_id */, bool);
     callback toggle-mcp-client-expanded(string /* session_id */);
     callback forget-mcp-grant(string /* grant id */);
@@ -2044,28 +2061,37 @@ export component AppWindow inherits Window {
             active: root.download-open;
             // Breathe while any transfer is running (driven from Rust).
             breathe: root.has-active-transfers;
-            clicked => { root.download-open = !root.download-open; root.settings-open = false; }
+            clicked => { root.download-open = !root.download-open; root.settings-open = false; root.mcp-clients-open = false; }
         }
         // AI 接入徽标：设置之外唯一能感知"有 agent 连着"的地方。
-        if root.mcp-client-count > 0 : Rectangle {
-            width: 40px;
-            height: 20px;
-            border-radius: Theme.radius-sm;
-            background: Theme.state-selected;
-            border-width: 1px;
-            border-color: Theme.state-selected-border;
-            Text {
-                text: "AI " + root.mcp-client-count;
-                color: Theme.accent;
-                font-size: Theme.fs-xs;
-                font-weight: 700;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            // 点开设置。
-            TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.settings-open = true; }
+        // 包一层做交叉轴居中：26px 的行里放 20px 徽标，不包就贴顶 6px。
+        // 包装层 stretch 默认 0、首选宽 40px，右侧齿轮与 8px 边距都不受影响。
+        if root.mcp-client-count > 0 : VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 20px;
+                border-radius: Theme.radius-sm;
+                background: Theme.state-selected;
+                border-width: 1px;
+                border-color: Theme.state-selected-border;
+                Text {
+                    text: "AI " + root.mcp-client-count;
+                    color: Theme.accent;
+                    font-size: Theme.fs-xs;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                // 点开客户端浮层（不是设置菜单）：这里是"谁连着"的最短路径。
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.mcp-clients-open = !root.mcp-clients-open;
+                        root.settings-open = false;
+                        root.download-open = false;
+                    }
+                }
             }
         }
         IconButton {
@@ -2075,7 +2101,7 @@ export component AppWindow inherits Window {
             glyph: "\u{E8B8}";
             tooltip: root.lang-en ? "Settings" : "设置";
             active: root.settings-open;
-            clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.ssh-import-hint = ""; }
+            clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.mcp-clients-open = false; root.ssh-import-hint = ""; }
         }
     }
 
@@ -2224,6 +2250,21 @@ export component AppWindow inherits Window {
         open-batch-import => { root.batch-import-text = ""; root.batch-import-open = true; }
         open-shortcuts => { root.shortcuts-open = true; }
         open-about => { root.about-open = true; }
+    }
+    // --- AI 客户端浮层：点顶部栏的 AI 徽标展开 -----------------------------
+    McpClientsPopup {
+        open: root.mcp-clients-open;
+        lang-en: root.lang-en;
+        clients: root.mcp-clients;
+        client-count: root.mcp-client-count;
+        avail-width: root.width;
+        avail-height: root.height;
+        custom-titlebar: root.custom-titlebar;
+        titlebar-inset: root.titlebar-inset;
+        toolbar-x-off: root.toolbar-x-off;
+        toolbar-y-off: root.toolbar-y-off;
+        close-requested => { root.mcp-clients-open = false; }
+        disconnect(sid) => { root.disconnect-mcp-client(sid); }
     }
     // --- Group create / rename dialog (#41) -------------------------------
     // 已抽成 `ui/group_dialog.slint`：显隐判断 + 状态透传 + 动作转发。
@@ -2454,7 +2495,6 @@ export component AppWindow inherits Window {
         is-open: root.mcp-consent-open;
         lang-en: root.lang-en;
         client: root.mcp-consent-client;
-        tool: root.mcp-consent-tool;
         summary: root.mcp-consent-summary;
         rows <=> root.mcp-consent-rows;
         trusted <=> root.mcp-consent-trusted;

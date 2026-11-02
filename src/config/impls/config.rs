@@ -2530,13 +2530,6 @@ impl ConfigStore {
     pub fn set_mcp_audit_retention_days(&mut self, days: u16) {
         self.cache.mcp.mcp_audit_retention_days = days;
     }
-    /// 授权策略，只认 `session` / `auto` 两个值，其余按默认走。
-    pub fn mcp_consent(&self) -> &str {
-        match self.cache.mcp.mcp_consent.as_str() {
-            "auto" => "auto",
-            _ => "session",
-        }
-    }
 
     pub fn wallpaper_overlay(&self) -> f32 {
         let a = self.cache.appearance.wallpaper_overlay;

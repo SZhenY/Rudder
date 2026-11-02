@@ -8,7 +8,7 @@ import { SettingsSection } from "../section.slint";
 import { SettingRow, SettingSwitch, ToggleSwitch } from "../chrome.slint";
 import { GhostButton } from "../../widgets.slint";
 import { ResetBar } from "../reset_bar.slint";
-import { GroupGap } from "../../components/surfaces.slint";
+import { Divider, GroupGap } from "../../components/surfaces.slint";
 import { StateSurface } from "../../components/interactive.slint";
 import { IconText } from "../../components/text.slint";
 import { ScrollView } from "std-widgets.slint";
@@ -118,6 +118,11 @@ export component AiPage inherits VerticalLayout {
                     duration: AnimationSettings.short2();
                     enabled: AnimationSettings.enabled;
                 }
+                animate border-color {
+                    duration: AnimationSettings.short2();
+                    easing: AnimationSettings.e-standard-decelerate();
+                    enabled: AnimationSettings.enabled;
+                }
                 input := TextInput {
                     input-method-hints: Theme.plain-input-hints;
                     enabled: root.mcp-enabled;
@@ -170,16 +175,30 @@ export component AiPage inherits VerticalLayout {
             desc: root.lang-en
                 ? "The agent must send this as `Authorization: Bearer <token>`. Stored encrypted. The snippet right below is what you paste into the client."
                 : "agent 需要在请求头带 `Authorization: Bearer <令牌>`。令牌加密存储。下面那段就是粘进客户端的配置。";
-            show-divider: true;
+            // 令牌本体在下面单独占一行：塞进右侧内容槽的话，67 字符的明文
+            // （约 440px）会把最小宽度顶到槽外，三个按钮被甩出可视区。
+            show-divider: false;
+        }
+
+        // 令牌区：通栏两行 —— 令牌一行（等宽、必要时折行），按钮另起一行右对齐。
+        VerticalLayout {
+            padding-top: 2px;
+            padding-bottom: 9px;
+            spacing: 8px;
+
+            Text {
+                text: root.mcp-token-visible ? root.mcp-token-plain : root.mcp-token-masked;
+                color: Theme.text-secondary;
+                font-family: Theme.font-mono;
+                font-size: 12px * Theme.panel-font;
+                // 67 字符没有空格，`word-wrap` 会对超长单词按任意位置断开；
+                // `char-wrap` 只有 Qt / 软件渲染器支持，这里不能用。
+                wrap: word-wrap;
+            }
+
             HorizontalLayout {
-                alignment: center;
+                alignment: end;
                 spacing: 8px;
-                Text {
-                    text: root.mcp-token-visible ? root.mcp-token-plain : root.mcp-token-masked;
-                    color: Theme.text-secondary;
-                    font-size: 12px * Theme.panel-font;
-                    vertical-alignment: center;
-                }
                 // 服务关着时令牌没有校验对象，三个按钮一律置灰（「复制配置」例外，
                 // 那是给"先配好客户端再开服务"用的）。
                 GhostButton {
@@ -210,6 +229,9 @@ export component AiPage inherits VerticalLayout {
                 }
             }
         }
+
+        // 令牌区与 mcp.json 行之间的分隔线（原来挂在令牌行底部）。
+        Divider {}
 
         // 可整段粘进客户端（`mcpServers` 结构）的 JSON：省掉手写地址与 Bearer 头，
         // 这两样恰好最容易填错、也最容易过期。
@@ -305,7 +327,6 @@ export component AiPage inherits VerticalLayout {
                     padding-top: 8px;
                     padding-bottom: 4px;
                     spacing: 8px;
-                    alignment: center;
 
                     IconText {
                         text: row.expanded ? "\u{E5CF}" : "\u{E5CC}";
@@ -314,7 +335,11 @@ export component AiPage inherits VerticalLayout {
                         vertical-alignment: center;
                     }
                     VerticalLayout {
+                        // 名称块吃掉剩余宽度：「断开」才会贴右边缘，长名字也会在这里截断。
+                        // 不能给这个 HorizontalLayout 写 alignment —— 主轴对齐一设，
+                        // 所有 horizontal-stretch 失效，整块会缩成首选宽度并居中。
                         horizontal-stretch: 1;
+                        min-width: 0;
                         spacing: 2px;
                         Text {
                             text: row.client;
@@ -332,14 +357,18 @@ export component AiPage inherits VerticalLayout {
                     }
                     HorizontalLayout {
                         spacing: 6px;
-                        alignment: center;
-                        ToggleSwitch {
-                            checked: row.trusted;
-                            // 值由模型提供：点击只发意图，别在本地改 checked 把绑定拆掉。
-                            mirror: true;
-                            // 客户端没上报名字时无法记忆授权，开关置灰（Rust 侧会直接忽略）。
-                            interactive: row.client-id != "";
-                            toggled(v) => { root.set-mcp-client-trusted(row.client-id, v); }
+                        // 竖排包一层做交叉轴居中：22px 的开关在横排里会被固定高度钉在顶部，
+                        // 与旁边可拉伸的 Text 差约 6px。横排的 alignment 是主轴对齐，管不到这里。
+                        VerticalLayout {
+                            alignment: center;
+                            ToggleSwitch {
+                                checked: row.trusted;
+                                // 值由模型提供：点击只发意图，别在本地改 checked 把绑定拆掉。
+                                mirror: true;
+                                // 客户端没上报名字时无法记忆授权，开关置灰（Rust 侧会直接忽略）。
+                                interactive: row.client-id != "";
+                                toggled(v) => { root.set-mcp-client-trusted(row.client-id, v); }
+                            }
                         }
                         Text {
                             text: root.lang-en ? "Trust" : "永久信任";
@@ -348,9 +377,13 @@ export component AiPage inherits VerticalLayout {
                             vertical-alignment: center;
                         }
                     }
-                    GhostButton {
-                        text: root.lang-en ? "Disconnect" : "断开";
-                        clicked => { root.disconnect-mcp-client(row.session-id); }
+                    // 30px 的按钮同样需要竖排包装才能在行内容盒里居中（行 padding 上 8 / 下 4）。
+                    VerticalLayout {
+                        alignment: center;
+                        GhostButton {
+                            text: root.lang-en ? "Disconnect" : "断开";
+                            clicked => { root.disconnect-mcp-client(row.session-id); }
+                        }
                     }
                 }
             }
@@ -518,9 +551,13 @@ export component AiPage inherits VerticalLayout {
                 vertical-alignment: center;
             }
 
-            GhostButton {
-                text: root.lang-en ? "Forget" : "撤销";
-                clicked => { root.forget-mcp-grant(grant.id); }
+            // 30px 的按钮在 34px 行里会被钉在顶部，包一层竖排才能和左侧两行文字对齐。
+            VerticalLayout {
+                alignment: center;
+                GhostButton {
+                    text: root.lang-en ? "Forget" : "撤销";
+                    clicked => { root.forget-mcp-grant(grant.id); }
+                }
             }
         }
     }
@@ -558,11 +595,15 @@ export component AiPage inherits VerticalLayout {
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                 }
-                ToggleSwitch {
-                    mirror: true;
-                    checked: iface.enabled;
-                    interactive: root.mcp-enabled;
-                    toggled(v) => { root.toggle-mcp-iface(iface.name); }
+                // 22px 开关在 30px 行里同样贴顶，包一层竖排居中。
+                VerticalLayout {
+                    alignment: center;
+                    ToggleSwitch {
+                        mirror: true;
+                        checked: iface.enabled;
+                        interactive: root.mcp-enabled;
+                        toggled(v) => { root.toggle-mcp-iface(iface.name); }
+                    }
                 }
             }
         }
@@ -601,6 +642,15 @@ export component AiPage inherits VerticalLayout {
                 border-width: 1px;
                 border-color: root.mcp-audit-retention-valid ? Theme.border-subtle : Theme.danger;
                 background: root.mcp-audit-enabled ? Theme.bg-root : Theme.bg-elevated;
+                animate background {
+                    duration: AnimationSettings.short2();
+                    enabled: AnimationSettings.enabled;
+                }
+                animate border-color {
+                    duration: AnimationSettings.short2();
+                    easing: AnimationSettings.e-standard-decelerate();
+                    enabled: AnimationSettings.enabled;
+                }
                 TextInput {
                     input-method-hints: Theme.plain-input-hints;
                     enabled: root.mcp-audit-enabled;

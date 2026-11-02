@@ -35,7 +35,6 @@ static DEGRADED: AtomicBool = AtomicBool::new(false);
 /// 「最近调用」环的版本号，每次写入 +1。UI 每秒轮询时先比它，没变就不必
 /// 把 200 条整份 clone 出来再丢掉。
 static RING_REV: AtomicU64 = AtomicU64::new(0);
-static DROPPED: AtomicU64 = AtomicU64::new(0);
 
 fn ring() -> &'static Mutex<VecDeque<AuditEntry>> {
     RING.get_or_init(|| Mutex::new(VecDeque::with_capacity(RING_CAPACITY)))
@@ -82,9 +81,9 @@ pub(super) fn record(record: Value, entry: AuditEntry) {
     };
     match tx.try_send(record) {
         Ok(()) => {}
-        Err(TrySendError::Full(_)) => {
-            DROPPED.fetch_add(1, Ordering::Relaxed);
-        }
+        // 通道满了就丢这条：审计绝不阻塞工具调用。丢弃数不再单独计数 —— 没有人读它，
+        // 真正的降级信号是下面的 `DEGRADED`（写盘线程挂了）。
+        Err(TrySendError::Full(_)) => {}
         Err(TrySendError::Disconnected(_)) => {
             DEGRADED.store(true, Ordering::Relaxed);
         }
@@ -113,7 +112,6 @@ pub(super) fn record_only(record: Value) {
     let _ = tx.try_send(record);
 }
 
-/// 最近若干条（新的在前）。
 /// 「最近调用」环的版本号。变了才有必要重新取内容。
 pub(super) fn ring_rev() -> u64 {
     RING_REV.load(Ordering::Relaxed)

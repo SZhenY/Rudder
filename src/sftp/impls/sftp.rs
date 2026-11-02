@@ -1764,6 +1764,9 @@ async fn refresh_panel_dir(
     }
 }
 
+/// File name component of a path.  Handles both remote (`/`) and local Windows
+/// (`\`) separators, so uploading `C://…//frp.tar.gz` yields `frp.tar.gz` rather
+/// than the whole path (which previously became the remote file name).
 fn base_name(path: &str) -> String {
     let sep = |c: char| c == '/' || c == '\\';
     path.trim_end_matches(sep)

@@ -6,6 +6,7 @@
 //! 三条约束来自既有确认框的经验：
 //! * 点背景**不**做任何决定（既不当同意也不当拒绝）；
 //! * 不支持回车确认 —— 授权是安全动作；
+//! * 关闭（标题栏 ✕ / Esc）**等于拒绝接入**，与底部 Deny 同一条链；
 //! * 行区可滚，标题与按钮固定，窗口压到最小高度时按钮仍可见。
 
 import { AnimationSettings, Theme } from "theme.slint";
@@ -13,6 +14,7 @@ import "fonts/MaterialIcons-Regular.ttf";
 import "fonts/MeatshellMono-Regular.ttf";
 import "fonts/MeatshellMono-Bold.ttf";
 import { GhostButton, PrimaryButton } from "widgets.slint";
+import { CloseButton } from "components/buttons.slint";
 import { ToggleSwitch } from "settings/chrome.slint";
 import { McpConsentRow } from "settings/types.slint";
 import { StateSurface } from "components/interactive.slint";
@@ -24,8 +26,6 @@ export component McpConsentDialog inherits Rectangle {
     in property <bool> lang-en;
     /// "Claude Desktop 0.7.2"
     in property <string> client;
-    /// 保留字段：连接请求没有"触发工具"。
-    in property <string> tool;
     in property <string> summary;
     in-out property <[McpConsentRow]> rows;
     /// 「永久信任此客户端」：勾了以后同 name+version 的连接不再弹这个窗口。
@@ -58,6 +58,39 @@ export component McpConsentDialog inherits Rectangle {
         enabled: AnimationSettings.enabled;
     }
     background: #000000aa;
+
+    // 键盘焦点：Esc 只发给焦点项及其祖先链，而焦点平时在终端那个隐藏输入框上。
+    // `visible` 由 opacity 动画驱动，开窗第一帧还是 false —— 此时 focus() 会把焦点
+    // 按在不可见元素上，下一次按键就被运行时清掉，所以等 visible 变真再取。
+    private property <bool> focus-pending: false;
+    changed visible => {
+        if (self.visible && root.is-open) {
+            root.focus-pending = true;
+        }
+    }
+    // 0ms Timer 把取焦挪出当前事件派发栈，与 terminal_view / welcome 同一做法。
+    Timer {
+        interval: 0ms;
+        running: root.focus-pending;
+        triggered => {
+            root.focus-pending = false;
+            if (root.is-open) {
+                modal-keys.focus();
+            }
+        }
+    }
+    // 只在这里收键：其余键一律 accept，弹窗期间不再往终端漏按键（也挡住误输入到远端）。
+    // 返回 reject 会让 Tab 触发运行时的换焦点逻辑，焦点一走 Esc 就再也收不到。
+    modal-keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.reject();
+            }
+            // 用 EventResult 而不是裸 `accept`：本组件有个同名回调 `accept()`，
+            // 裸写会被解析成"回调没调用"。
+            EventResult.accept
+        }
+    }
 
     // 吞掉背景点击：不关窗、不表态。
     // 同时吞掉滚轮：否则滚轮会穿透到下层终端——普通屏滚回滚历史（整屏重绘），
@@ -123,6 +156,17 @@ export component McpConsentDialog inherits Rectangle {
                     color: Theme.accent;
                     font-size: Theme.fs-xs;
                     vertical-alignment: center;
+                }
+
+                // 关闭 = 拒绝接入：与底部「拒绝接入」同一条链，只是窗口被拖到屏幕外
+                // 够不到按钮时这里仍然点得到（标题行总在卡片顶部）。
+                VerticalLayout {
+                    alignment: center;
+                    CloseButton {
+                        size: 20px;
+                        glyph-size: Theme.fs-sm;
+                        clicked => { root.reject(); }
+                    }
                 }
             }
 
@@ -247,7 +291,9 @@ export component McpConsentDialog inherits Rectangle {
 
                                 // 不写 alignment（同上）：desc 的 stretch 吃掉剩余空间，开关才会贴右。
                                 HorizontalLayout {
-                                    padding-left: row.section-collapsible ? 12px : 0px;
+                                    // 所有权限行统一缩进 12px：单条组没有组标题，若给它 0px，
+                                    // 12 行的标签左边缘会在 0 与 12 之间来回跳。
+                                    padding-left: 12px;
                                     // 右侧给 ScrollView 的滚动条留位，否则长描述会被它压住。
                                     padding-right: 14px;
                                     padding-top: 4px;
@@ -259,7 +305,7 @@ export component McpConsentDialog inherits Rectangle {
                                         // 定宽 + 跟随 ui-scale：中文最长 8 字（信任未知主机密钥）
                                         // 在 12px 下约需 96px，88px 在 100% 缩放就已经截断。
                                         width: 104px * Theme.ui-scale;
-                                        color: row.allowed ? Theme.text-primary : Theme.text-muted;
+                                        color: Theme.text-primary;
                                         font-size: Theme.fs-sm;
                                         overflow: elide;
                                         vertical-alignment: center;
@@ -281,8 +327,7 @@ export component McpConsentDialog inherits Rectangle {
                                         alignment: center;
                                         ToggleSwitch {
                                             mirror: true;
-                                            interactive: row.allowed;
-                                            checked: row.checked && row.allowed;
+                                            checked: row.checked;
                                             toggled(v) => {
                                                 root.toggle(row.key);
                                             }

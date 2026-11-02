@@ -1651,8 +1651,6 @@ pub(crate) async fn send_input(
     .await
 }
 
-/// 在会话的连接上排一条 exec 命令，**不在这里等结果** —— 等结果会占住 UI 线程。
-/// 返回的 `oneshot` 由调用方（tokio 线程）await。
 /// 更新检查与安装状态。
 ///
 /// 这些值由 `updater.rs` 写进窗口属性，这里只是读一份镜像。触发检查用
@@ -1706,6 +1704,8 @@ pub(crate) async fn ssh_kill_process(
     .await
 }
 
+/// 在会话的连接上排一条 exec 命令，**不在这里等结果** —— 等结果会占住 UI 线程。
+/// 返回的 `oneshot` 由调用方（tokio 线程）await。
 pub(crate) async fn ssh_exec(
     tab_id: String,
     command: String,
@@ -1860,24 +1860,26 @@ fn bind_consent(window: &AppWindow) {
             let Some(section) = section else {
                 return;
             };
-            // 重算该组已勾选数并回填到**组首行**（组内其它行不用重建）。
+            // 重算该组已勾选数并回填到**组首行**（组内其它行不用重建）；
+            // 同一趟顺带数出总勾选数，供顶部「已选 n / 共 12」用。
+            // 必须先数完再回填：组首行是本组第一行，边数边写会把它写成 0。
             let mut on = 0;
-            for index in 0..model.row_count() {
-                if let Some(row) = model.row_data(index)
-                    && row.section == section
-                    && row.checked
-                {
-                    on += 1;
-                }
-            }
-            let mut allowed_on = 0;
+            let mut selected = 0;
             for index in 0..model.row_count() {
                 let Some(row) = model.row_data(index) else {
                     continue;
                 };
-                if row.checked && row.allowed {
-                    allowed_on += 1;
+                if row.checked {
+                    selected += 1;
+                    if row.section == section {
+                        on += 1;
+                    }
                 }
+            }
+            for index in 0..model.row_count() {
+                let Some(row) = model.row_data(index) else {
+                    continue;
+                };
                 if row.section == section && row.section_head {
                     let mut updated = row.clone();
                     updated.on_count = on;
@@ -1886,7 +1888,7 @@ fn bind_consent(window: &AppWindow) {
             }
             window.set_mcp_consent_summary(summary_for_count(
                 window.get_lang_en(),
-                allowed_on,
+                selected,
                 model.row_count(),
             ));
         });
@@ -1960,7 +1962,6 @@ fn consent_rows(en: bool, base: &Permissions) -> Vec<McpConsentRow> {
                 desc: pick(row.bit.desc_zh, row.bit.desc_en).into(),
                 // 预勾该客户端上次记住的授权；用户可以改。
                 checked: base.allows(row.bit.key),
-                allowed: true,
                 risk: row
                     .risk
                     .map(|risk| pick(risk.label_zh(), risk.label_en()))
@@ -2002,7 +2003,7 @@ fn finish_consent(window: &AppWindow, accept: bool) {
     if accept {
         let model = window.get_mcp_consent_rows();
         for row in model.iter() {
-            if row.allowed && row.checked {
+            if row.checked {
                 let _ = granted.set(row.key.as_str(), true);
             }
         }
@@ -2054,17 +2055,14 @@ pub(crate) async fn ask_consent(
                 // 文案语言在 UI 线程取（MCP 线程读不到 `lang-en`）。
                 let en = access.window.get_lang_en();
                 let rows = consent_rows(en, &base);
-                let selected = crate::mcp::PERMISSION_BITS
-                    .iter()
-                    .filter(|bit| base.allows(bit.key))
-                    .count();
+                let selected = rows.iter().filter(|row| row.checked).count();
+                let total = rows.len();
                 let model = Rc::new(VecModel::from(rows));
                 access.window.set_mcp_consent_client(client.into());
-                access.window.set_mcp_consent_tool(SharedString::default());
                 access.window.set_mcp_consent_summary(summary_for_count(
                     en,
                     selected,
-                    crate::mcp::PERMISSION_BITS.len(),
+                    total,
                 ));
                 access
                     .window

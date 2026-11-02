@@ -10,9 +10,18 @@
 //! * `http`   —— axum 边界：鉴权、单客户端租约、请求体上限
 //! * `handler`—— `rmcp::ServerHandler`：工具列表与调用入口
 //! * `tools`  —— 工具的 JSON schema 与权限位映射
+//! * `args`   —— 工具参数的取值规则（权限判定与执行共用）
 //! * `calls`  —— 工具实现
 //! * `auth`   —— 令牌生成与常量时间比对
+//! * `audit`  —— 审计：内存环 + 有界写盘通道（不阻塞调用方）
+//! * `perms`  —— 12 位权限表、风险分级与超集判定
+//! * `pty_cmd`—— 在交互式终端里跑命令并提取输出
+//! * `types`  —— 数据结构的再导出入口，实体在同目录：
+//!   `config`（配置快照）／`error`（错误）／`labels`（关闭原因文案）／
+//!   `lease`（租约与记忆授权）／`state`（共享状态）
 
+#[path = "impls/args.rs"]
+mod args;
 #[path = "impls/audit.rs"]
 mod audit;
 #[path = "struct/audit.rs"]
@@ -21,16 +30,26 @@ mod audit_types;
 mod auth;
 #[path = "impls/calls.rs"]
 mod calls;
+#[path = "struct/config.rs"]
+mod config;
+#[path = "struct/error.rs"]
+mod error;
 #[path = "impls/handler.rs"]
 mod handler;
 #[path = "impls/http.rs"]
 mod http;
+#[path = "struct/labels.rs"]
+mod labels;
+#[path = "struct/lease.rs"]
+mod lease;
 #[path = "struct/perms.rs"]
 mod perms;
 #[path = "impls/pty_cmd.rs"]
 mod pty_cmd;
 #[path = "impls/server.rs"]
 mod server;
+#[path = "struct/state.rs"]
+mod state;
 #[path = "impls/tools.rs"]
 mod tools;
 #[path = "struct/types.rs"]
@@ -50,7 +69,7 @@ pub(crate) use server::{
 };
 pub(crate) use types::{
     AppHandles, CloseReason, ConsentPolicy, GrantUpdate, McpConfigSnapshot, McpError, McpErrorKind,
-    McpSessionInfo, grant_allows_silent,
+    McpSessionInfo, grant_allows_silent, grant_perms,
 };
 
 tokio::task_local! {

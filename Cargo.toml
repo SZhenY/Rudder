@@ -170,7 +170,9 @@ reqwest = { version = "0.12", default-features = false, features = [
 rmcp = { version = "=2.2.0", default-features = false, features = [
     "server", "transport-streamable-http-server",
 ] }
-axum = "0.8"
+# 只用到 Router / Json / ConnectInfo / from_fn_with_state / serve。
+# 默认特性会额外拉进 form / query / matched-path / original-uri / tower-log 及其依赖。
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 # 请求体上限（axum 的 DefaultBodyLimit 对 nest_service 不生效，只能包一层 Limited）。
 http-body-util = "0.1"
 # CancellationToken：多 listener 的统一停止信号。

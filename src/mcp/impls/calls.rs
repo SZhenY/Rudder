@@ -14,6 +14,7 @@ use regex::Regex;
 use serde_json::{Value, json};
 
 use super::pty_cmd;
+use super::args::{bool_arg, int_arg, opt_str_arg, raw_str_arg, str_arg};
 use super::types::{McpError, SharedState};
 use crate::config::SessionKind;
 use crate::terminal::TextSnapshot;
@@ -142,30 +143,43 @@ fn session_perms(state: &SharedState) -> crate::mcp::Permissions {
 }
 
 fn list_tabs(state: &SharedState) -> Value {
-    let statuses = state
-        .app
-        .tab_statuses
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    let mut tabs: Vec<Value> = statuses
-        .iter()
-        .map(|(tab_id, status)| {
+    // 锁内只拷标量：`tab_statuses` 由 UI 线程 1 Hz 写入，JSON 化（每个标签一份
+    // Map + 字符串）不该占着这把锁。
+    let mut rows: Vec<(String, String, String, String, &'static str, bool)> = {
+        let statuses = state
+            .app
+            .tab_statuses
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        statuses
+            .iter()
+            .map(|(tab_id, status)| {
+                (
+                    tab_id.clone(),
+                    status.host.clone(),
+                    status.user.clone(),
+                    status.session_id.clone(),
+                    state_name(status.state),
+                    status.is_local,
+                )
+            })
+            .collect()
+    };
+    // 排序在锁外、按元组首项比，不再从 JSON 里往回取值。
+    rows.sort_by(|left, right| left.0.cmp(&right.0));
+    let tabs: Vec<Value> = rows
+        .into_iter()
+        .map(|(tab_id, host, user, session_id, state, is_local)| {
             json!({
                 "tab_id": tab_id,
-                "host": status.host,
-                "user": status.user,
-                "session_id": status.session_id,
-                "state": state_name(status.state),
-                "is_local": status.is_local,
+                "host": host,
+                "user": user,
+                "session_id": session_id,
+                "state": state,
+                "is_local": is_local,
             })
         })
         .collect();
-    tabs.sort_by(|a, b| {
-        a["tab_id"]
-            .as_str()
-            .unwrap_or_default()
-            .cmp(b["tab_id"].as_str().unwrap_or_default())
-    });
     json!({ "count": tabs.len(), "tabs": tabs })
 }
 
@@ -414,12 +428,18 @@ fn sys_json(sys: &crate::ssh::SystemDetails) -> Value {
 }
 
 fn status_json(state: &SharedState, tab_id: &str) -> Value {
-    let statuses = state
-        .app
-        .tab_statuses
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    let Some(status) = statuses.get(tab_id) else {
+    // 锁内只取一份副本：下面要生成 `procs` / `disks` / `sys` 几十个 Value，
+    // 占着锁会把 UI 线程的 1 Hz 采样挡在后面。`TabStatus` 的 Clone 是几次
+    // Vec/String 拷贝，代价远低于边持锁边分配。
+    let status = {
+        let statuses = state
+            .app
+            .tab_statuses
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        statuses.get(tab_id).cloned()
+    };
+    let Some(status) = status else {
         return json!({ "tab_id": tab_id, "state": "unknown" });
     };
     json!({
@@ -526,55 +546,58 @@ async fn wait_for_output(state: &SharedState, args: &Value) -> Result<Value, Mcp
     // 静默模式会一路等到超时。
     let mut saw_output = false;
 
+    // 两次整屏快照的最小间隔。序号仍然每 40 ms 看一次（读一个 u64），但 400 行文本
+    // 的重建要占住终端缓冲锁（与 SSH ingest、UI 渲染共用），输出持续时按 25 次/秒
+    // 重建整屏没有意义：正则匹配晚 200 ms 也不会漏掉那段时间的输出。
+    const SNAPSHOT_MIN_INTERVAL: Duration = Duration::from_millis(200);
+
     let mut first = true;
+    let mut last_snapshot_at = started - SNAPSHOT_MIN_INTERVAL;
     loop {
-        // 先只读序号：文本没变时 regex 的结果也不会变，没必要生成整屏文本。
-        let changed = output_seq_of(state, &tab_id)? != seen_seq;
-        if first || changed {
-            first = false;
+        let seq_now = output_seq_of(state, &tab_id)?;
+        let changed = seq_now != seen_seq;
+        if changed {
+            seen_seq = seq_now;
+            last_change = Instant::now();
+            saw_output = true;
+        }
+
+        let quiet_due = regex.is_none()
+            && saw_output
+            && last_change.elapsed() >= Duration::from_millis(quiet_ms);
+        let timed_out = Instant::now() >= deadline;
+        // 文本只在要判断的时候生成：首次（拿基线）、正则匹配（按间隔节流）、
+        // 或即将返回（静默 / 超时）。静默模式在有输出时完全不生成文本。
+        let need_text = first
+            || quiet_due
+            || timed_out
+            || (regex.is_some()
+                && changed
+                && last_snapshot_at.elapsed() >= SNAPSHOT_MIN_INTERVAL);
+
+        if need_text {
             let snapshot = snapshot(state, &tab_id, max_rows, true)?;
+            last_snapshot_at = Instant::now();
+            // 快照里的序号可能比刚才读到的更新，以它为准。
             if snapshot.output_seq != seen_seq {
                 seen_seq = snapshot.output_seq;
                 last_change = Instant::now();
                 saw_output = true;
             }
+            first = false;
             let hit = match &regex {
                 Some(regex) => regex.is_match(&snapshot.text),
-                None => saw_output && last_change.elapsed() >= Duration::from_millis(quiet_ms),
+                None => quiet_due,
             };
-            if hit {
-                return Ok(json!({
-                    "matched": true,
-                    "text": tail(&snapshot.text, 4096),
-                    "output_seq": snapshot.output_seq,
-                    "elapsed_ms": started.elapsed().as_millis() as u64,
-                }));
-            }
-            if Instant::now() >= deadline {
-                return Ok(json!({
-                    "matched": false,
-                    "timed_out": true,
-                    "text": tail(&snapshot.text, 4096),
-                    "output_seq": snapshot.output_seq,
-                    "elapsed_ms": started.elapsed().as_millis() as u64,
-                }));
-            }
-        } else {
-            // 没有新输出：静默模式等够 quiet 就返回，其余情况只检查超时（都不需要文本，
-            // 真要返回时才取一次）。
-            let quiet = regex.is_none()
-                && saw_output
-                && last_change.elapsed() >= Duration::from_millis(quiet_ms);
-            if quiet || Instant::now() >= deadline {
-                let snapshot = snapshot(state, &tab_id, max_rows, true)?;
+            if hit || timed_out {
                 let mut out = json!({
-                    "matched": quiet,
+                    "matched": hit,
                     "text": tail(&snapshot.text, 4096),
                     "output_seq": snapshot.output_seq,
                     "elapsed_ms": started.elapsed().as_millis() as u64,
                 });
                 // `timed_out` 只在真的超时出现：静默命中时带上它会让调用方误判成失败。
-                if !quiet {
+                if !hit {
                     out["timed_out"] = json!(true);
                 }
                 return Ok(out);
@@ -706,7 +729,9 @@ async fn run_command(state: &SharedState, args: &Value) -> Result<Value, McpErro
                 McpError::Invalid("session closed before the command finished".to_string())
             })?
         }
-        SessionKind::Local => local_exec(command, timeout, max_output_bytes).await,
+        // 装箱：这条分支带管道读取的状态机，不装箱会把它的体积并进 `call()` 的 future，
+        // 进而抬高所有工具调用（包括不相关的 http 测试）的栈占用。
+        SessionKind::Local => Box::pin(local_exec(command, timeout, max_output_bytes)).await,
         _ => {
             return Err(McpError::NotSupported(
                 "exec is unavailable for telnet and serial sessions; use send_input + read_terminal",
@@ -887,28 +912,56 @@ async fn local_exec(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let child = match child_cmd.spawn() {
+    let mut child = match child_cmd.spawn() {
         Ok(child) => child,
         Err(err) => {
             return crate::ssh::ExecResult::unsupported(format!("failed to start shell: {err}"));
         }
     };
-    // 超时后 future 被丢弃 → `kill_on_drop` 负责杀掉子进程。
-    match tokio::time::timeout(timeout, child.wait_with_output()).await {
-        Ok(Ok(output)) => {
-            let (stdout, stdout_cut) = truncate_bytes(&output.stdout, max_output_bytes);
-            let (stderr, stderr_cut) = truncate_bytes(&output.stderr, max_output_bytes);
-            crate::ssh::ExecResult {
-                exit_code: output.status.code(),
-                stdout,
-                stderr,
-                truncated: stdout_cut || stderr_cut,
-                timed_out: false,
-                duration: started.elapsed(),
-                error: None,
+    // 边读边截断：`wait_with_output` 会把整份输出留在内存里，一个 `yes` 或
+    // `journalctl -f` 就能顶到 GB 级（并发上限 8，等于 OOM）。两条管道必须并发读，
+    // 否则子进程写满 stderr 时会和我们读 stdout 互相等死。
+    let mut out_pipe = child.stdout.take();
+    let mut err_pipe = child.stderr.take();
+    let readers = async move {
+        let out_fut = async {
+            match out_pipe.as_mut() {
+                Some(pipe) => read_capped(pipe, max_output_bytes).await,
+                None => Ok((Vec::new(), false)),
             }
+        };
+        let err_fut = async {
+            match err_pipe.as_mut() {
+                Some(pipe) => read_capped(pipe, max_output_bytes).await,
+                None => Ok((Vec::new(), false)),
+            }
+        };
+        tokio::join!(out_fut, err_fut)
+    };
+
+    // 超时后 future 被丢弃 → `kill_on_drop` 负责杀掉子进程。
+    match tokio::time::timeout(timeout, async move {
+        let (stdout_res, stderr_res) = readers.await;
+        let status = child.wait().await;
+        (stdout_res, stderr_res, status)
+    })
+    .await
+    {
+        Ok((Ok((stdout, out_cut)), Ok((stderr, err_cut)), Ok(status))) => crate::ssh::ExecResult {
+            exit_code: status.code(),
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
+            truncated: out_cut || err_cut,
+            timed_out: false,
+            duration: started.elapsed(),
+            error: None,
+        },
+        Ok((Err(err), _, _)) | Ok((_, Err(err), _)) => {
+            crate::ssh::ExecResult::unsupported(format!("read shell output: {err}"))
         }
-        Ok(Err(err)) => crate::ssh::ExecResult::unsupported(format!("shell wait failed: {err}")),
+        Ok((_, _, Err(err))) => {
+            crate::ssh::ExecResult::unsupported(format!("shell wait failed: {err}"))
+        }
         Err(_) => crate::ssh::ExecResult {
             exit_code: None,
             stdout: String::new(),
@@ -921,11 +974,37 @@ async fn local_exec(
     }
 }
 
-fn truncate_bytes(bytes: &[u8], max: usize) -> (String, bool) {
-    let cut = bytes.len() > max;
-    let slice = &bytes[..bytes.len().min(max)];
-    (String::from_utf8_lossy(slice).into_owned(), cut)
+/// 读到 `cap` 字节为止，超出部分继续读但丢弃 —— 必须抽干管道，否则子进程会阻塞在写端。
+/// 返回 (数据, 是否被截断)。
+async fn read_capped<R: tokio::io::AsyncRead + Unpin>(
+    reader: &mut R,
+    cap: usize,
+) -> std::io::Result<(Vec<u8>, bool)> {
+    use tokio::io::AsyncReadExt as _;
+
+    let mut kept = Vec::with_capacity(cap.min(64 * 1024));
+    // 放堆上：这个函数的状态机是 `call()` 那个巨型 future 的一部分，
+    // 16 KB 栈缓冲会把整条调用链的栈占用一起抬高（实测能把 2 MB 线程顶爆）。
+    let mut chunk = Box::new([0u8; 16 * 1024]);
+    let mut cut = false;
+    loop {
+        let n = reader.read(&mut chunk[..]).await?;
+        if n == 0 {
+            return Ok((kept, cut));
+        }
+        let room = cap.saturating_sub(kept.len());
+        if room == 0 {
+            cut = true;
+            continue;
+        }
+        let take = room.min(n);
+        kept.extend_from_slice(&chunk[..take]);
+        if take < n {
+            cut = true;
+        }
+    }
 }
+
 
 /// 取该标签页的 SFTP 通道发一条命令。`SftpHandle` 不是 `Clone`，所以闭包里发完
 /// 立刻释放表锁，再在锁外等结果 —— 不能把 UI 线程要用的表锁按住等传输。
@@ -946,6 +1025,11 @@ fn with_sftp<T>(
     };
     Ok(send(handle))
 }
+
+/// 列目录超时：目录很大时 30 秒仍不够属于异常，交给客户端重试。
+const SFTP_LIST_TIMEOUT: Duration = Duration::from_secs(30);
+/// 上传/下载超时：与 `await_sftp_mutation` 的量级一致。
+const SFTP_TRANSFER_TIMEOUT: Duration = Duration::from_secs(300);
 
 fn sftp_closed() -> McpError {
     McpError::NotConnected("the SFTP channel closed before the request finished")
@@ -1030,8 +1114,11 @@ async fn sftp_list(state: &SharedState, args: &Value) -> Result<Value, McpError>
     let tab_id = str_arg(args, "tab_id")?;
     let path = opt_str_arg(args, "path").unwrap_or_else(|| "/".to_string());
     let receiver = with_sftp(state, &tab_id, |handle| handle.mcp_list(path.clone()))?;
-    let mut entries = receiver
+    // 与变更类一致：SFTP worker 是串行的，一个卡住不回的列目录会占着并发许可
+    // 直到调用方的总超时。
+    let mut entries = tokio::time::timeout(SFTP_LIST_TIMEOUT, receiver)
         .await
+        .map_err(|_| McpError::TransferFailed("列目录超时（30 秒）".to_string()))?
         .map_err(|_| sftp_closed())?
         .map_err(McpError::TransferFailed)?;
     // 目录优先、再按名字：与界面上的 SFTP 面板同一顺序。
@@ -1066,8 +1153,9 @@ async fn sftp_download(state: &SharedState, args: &Value) -> Result<Value, McpEr
     let dir = crate::app::mcp_ui::download_dir().await?;
     let receiver =
         with_sftp(state, &tab_id, |handle| handle.mcp_download_auto(remote.clone(), dir))?;
-    let (local_path, renamed, bytes) = receiver
+    let (local_path, renamed, bytes) = tokio::time::timeout(SFTP_TRANSFER_TIMEOUT, receiver)
         .await
+        .map_err(|_| McpError::TransferFailed("下载超时（300 秒）".to_string()))?
         .map_err(|_| sftp_closed())?
         .map_err(McpError::TransferFailed)?;
     Ok(json!({
@@ -1086,8 +1174,9 @@ async fn sftp_upload(state: &SharedState, args: &Value) -> Result<Value, McpErro
     let local_path = std::path::PathBuf::from(&local);
     let receiver =
         with_sftp(state, &tab_id, |handle| handle.mcp_upload(local_path, remote.clone()))?;
-    let bytes = receiver
+    let bytes = tokio::time::timeout(SFTP_TRANSFER_TIMEOUT, receiver)
         .await
+        .map_err(|_| McpError::TransferFailed("上传超时（300 秒）".to_string()))?
         .map_err(|_| sftp_closed())?
         .map_err(McpError::TransferFailed)?;
     Ok(json!({ "tab_id": tab_id, "local_path": local, "remote_path": remote, "bytes": bytes }))
@@ -1102,40 +1191,6 @@ fn tail(text: &str, max_bytes: usize) -> String {
         start += 1;
     }
     text[start..].to_string()
-}
-
-fn str_arg(args: &Value, key: &str) -> Result<String, McpError> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| McpError::Invalid(format!("missing string argument `{key}`")))
-}
-
-fn opt_str_arg(args: &Value, key: &str) -> Option<String> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .filter(|value| !value.is_empty())
-}
-
-/// 允许空串（`send_input` 只按回车时 `text` 就是空的）。
-fn raw_str_arg(args: &Value, key: &str) -> String {
-    args.get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string()
-}
-
-fn int_arg(args: &Value, key: &str, default: u64, min: u64, max: u64) -> u64 {
-    args.get(key)
-        .and_then(Value::as_u64)
-        .unwrap_or(default)
-        .clamp(min, max)
-}
-
-fn bool_arg(args: &Value, key: &str, default: bool) -> bool {
-    args.get(key).and_then(Value::as_bool).unwrap_or(default)
 }
 
 #[cfg(test)]

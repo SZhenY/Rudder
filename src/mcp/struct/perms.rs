@@ -11,7 +11,8 @@ use serde_json::{Map, Value};
 /// 权限模型的对外版本。1 = 旧的 7 位全局模型；2 = 12 位、按客户端授权。
 pub(crate) const PERMISSIONS_REV: u32 = 2;
 
-/// 两级风险。常规位可以默认出现；高风险位必须用户逐次勾选。
+/// 两级风险。常规位在连接授权时可以默认勾选；高风险位默认不勾，但一旦授权并记住，
+/// 在记忆窗口内不再逐次询问（见 `handler::resume_remembered`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Risk {
     Normal,
@@ -440,14 +441,11 @@ impl Permissions {
         out
     }
 
-    pub(crate) fn subset_of(&self, upper: &Self) -> bool {
+    /// 本权限是 `upper` 的子集（`upper` 能覆盖的全部位）。
+    pub(crate) fn covered_by(&self, upper: &Self) -> bool {
         PERMISSION_BITS
             .iter()
             .all(|bit| !(bit.get)(self) || (bit.get)(upper))
-    }
-
-    pub(crate) fn covered_by(&self, upper: &Self) -> bool {
-        self.subset_of(upper)
     }
 
     pub(crate) fn describe(&self) -> Value {

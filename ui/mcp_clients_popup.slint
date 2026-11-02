@@ -1,0 +1,182 @@
+//! AI 客户端浮层：点工具栏徽标展开，列出当前接入的 MCP 客户端。
+//!
+//! 结构照 `settings_menu.slint`：全窗口透明根 + 背景感应层 + **常驻**卡片
+//! （`visible` 切换）。不要用 `if` 包裹卡片 —— 在事件派发栈上销毁正在处理事件的
+//! 子树会闪退（见 `settings_menu.slint` 与 `download_manager.slint` 的教训）。
+//!
+//! 数据全部来自主窗口现成的 `mcp-clients` 扁平模型：每个客户端 1 行 `header`
+//! （名称 / 来源 / 时长 / 权限摘要）+ 12 行 `permission`，这里只渲染 header。
+
+import { AnimationSettings, Theme } from "theme.slint";
+import "fonts/MaterialIcons-Regular.ttf";
+import { GhostButton } from "widgets.slint";
+import { CloseButton } from "components/buttons.slint";
+import { McpClientRow } from "settings/types.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export component McpClientsPopup inherits Rectangle {
+    // 弹层根必须显式给宽高：不给的话根项宽度会由子项 layout_info 聚合算错，
+    // 交互命中区塌成视觉中央的一条窄竖条。
+    width: avail-width;
+    height: avail-height;
+
+    in property <bool> open: false;
+    in property <bool> lang-en: false;
+    in property <[McpClientRow]> clients;
+    in property <int> client-count: 0;
+
+    in property <length> avail-width: 100000px;
+    in property <length> avail-height: 100000px;
+    in property <bool> custom-titlebar: true;
+    in property <length> titlebar-inset: 0px;
+    in property <length> toolbar-x-off: 0px;
+    in property <length> toolbar-y-off: 0px;
+
+    callback close-requested();
+    callback disconnect(string /* session-id */);
+
+    // 点背景关闭：关闭时必须同时不可见、不可点，否则会挡住下层主界面。
+    TouchArea {
+        visible: root.open;
+        enabled: root.open;
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.close-requested(); }
+    }
+
+    card := Rectangle {
+        // 右边缘对齐工具栏内容区：工具栏的 `padding-right` 是 8px，跟着它走就不会
+        // 因为图标增减而漂（不学设置菜单那个 196/198 的推导常数）。
+        x: parent.width - self.width - 8px - toolbar-x-off;
+        // 与设置菜单 / 下载面板同一公式，三个偏移同源。
+        y: (root.custom-titlebar ? 78px : 40px + titlebar-inset) + toolbar-y-off;
+        width: 320px;
+        height: card-vl.preferred-height;
+        visible: root.open;
+        background: Theme.bg-panel;
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: Theme.shadow-float-blur;
+        drop-shadow-color: Theme.shadow-float-color;
+
+        TouchArea {}   // 吞掉卡片内的点击，别漏给下层终端
+
+        card-vl := VerticalLayout {
+            padding: 8px;
+            spacing: 2px;
+
+            // 标题行：标题 stretch + ✕
+            HorizontalLayout {
+                padding: 4px;
+                spacing: 4px;
+
+                Text {
+                    text: root.lang-en
+                        ? "\{root.client-count} client(s) connected"
+                        : "已接入 \{root.client-count} 个客户端";
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-md;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                    min-width: 0;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    CloseButton {
+                        size: 20px;
+                        glyph-size: Theme.fs-sm;
+                        clicked => { root.close-requested(); }
+                    }
+                }
+            }
+
+            // 空态：客户端全部断开时浮层会自动收起，这里只是兜底。
+            if root.client-count == 0 : Text {
+                text: root.lang-en ? "No client connected." : "当前没有客户端连接。";
+                color: Theme.text-muted;
+                font-size: Theme.fs-sm;
+                height: 56px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            // 列表：超过 5 行滚动（服务端上限 8 个客户端）。
+            if root.client-count > 0 : Rectangle {
+                height: min(56px * root.client-count, 280px);
+                ScrollView {
+                    width: 100%;
+                    height: 100%;
+                    content-width: self.width;
+
+                    VerticalLayout {
+                        // 必须是 0：`for` 会给每条权限行各建一个空壳，给了 spacing 就多出空洞。
+                        spacing: 0;
+
+                        for row in root.clients : VerticalLayout {
+                            spacing: 0;
+
+                            if row.kind == "header" : Rectangle {
+                                height: 56px;
+                                border-radius: Theme.radius-sm;
+                                background: row-ta.has-hover ? Theme.state-hover : transparent;
+                                animate background {
+                                    duration: row-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                    easing: row-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                    enabled: AnimationSettings.enabled;
+                                }
+
+                                row-ta := TouchArea { }
+
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    // 右侧给 ScrollView 的滚动条留位，否则「断开」会被它压住。
+                                    padding-right: 10px;
+                                    spacing: 8px;
+
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        min-width: 0;
+                                        alignment: center;
+                                        spacing: 1px;
+                                        Text {
+                                            text: row.client;
+                                            color: Theme.text-primary;
+                                            font-size: Theme.fs-md;
+                                            font-weight: 700;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: row.since;
+                                            color: Theme.text-muted;
+                                            font-size: Theme.fs-xs;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: row.status;
+                                            color: Theme.text-muted;
+                                            font-size: Theme.fs-xs;
+                                            overflow: elide;
+                                        }
+                                    }
+
+                                    // 30px 的按钮要包竖排才能在 56px 行里居中。
+                                    VerticalLayout {
+                                        alignment: center;
+                                        GhostButton {
+                                            text: root.lang-en ? "Disconnect" : "断开";
+                                            clicked => { root.disconnect(row.session-id); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,600 @@
+[
+    {
+        "name": "get_server_info",
+        "description": "Report this Rudder MCP server's version, listening endpoints and the tool permissions currently granted. Call it first to learn what the server allows.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "list_sessions",
+        "description": "List saved SSH/serial/telnet hosts in this Rudder profile. Passwords, private keys and notes are never returned. Use the returned session_id with open_session or get_session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "group": { "type": "string", "description": "Optional exact group name filter." }
+            },
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "get_session",
+        "description": "Get non-secret metadata for one saved host.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": { "type": "string", "minLength": 1, "description": "Saved session id returned by list_sessions." }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "list_tabs",
+        "description": "List the session tabs currently open in the Rudder window. tab_id identifies a running terminal; session_id identifies the saved host it came from.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "get_tab_status",
+        "description": "Resource snapshot of the host behind one tab: CPU, memory, swap, network totals, per-filesystem usage, the top 10 processes, and `sys` with the full system details (overview, cpu_info, gpu_info, cpu_usage, memory, swap, networks, filesystems). `sys` is a one-shot probe taken shortly after the session connects and never refreshed, so it is null on a tab that just opened — that is not an error. For local shell tabs the machine's own figures are under `local`. To read this machine without opening a tab, use get_host_info instead.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "refresh": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Accepted for compatibility only. MCP cannot start remote sampling — the Rudder resource panel owns it. Check stale / last_sample_ms_ago and, when stale, tell the user to open the resource panel."
+                }
+            },
+            "required": ["tab_id"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "get_host_info",
+        "description": "Report the local machine — the computer running Rudder — not a remote host, and no tab_id is needed. Returns CPU, memory, swap, per-filesystem usage and network throughput with the sample time. Figures come from the app's own 1 Hz sampler when it is running (source=snapshot); when that sampler is paused, for example because the sidebar is collapsed or the window is hidden, one sample is taken on demand (source=on_demand) and may take a moment. For a host behind an open tab use get_tab_status instead.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "read_terminal",
+        "description": "Read a tab's terminal as plain text. `source=screen` returns the visible viewport; `source=scrollback` returns the most recent lines including history. output_seq can be passed to wait_for_output as since_seq.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "source": { "type": "string", "enum": ["screen", "scrollback"], "default": "screen" },
+                "max_rows": { "type": "integer", "minimum": 1, "maximum": 400, "default": 200 }
+            },
+            "required": ["tab_id"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "wait_for_output",
+        "description": "Block until a tab produces new output. With `pattern` (a Rust regex) it returns as soon as the screen text matches; without it, it returns once output has been quiet for `quiet_ms` after at least one new byte. Returns the last 4 KiB of screen text.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "pattern": { "type": "string", "description": "Rust regex matched against the terminal's plain text." },
+                "timeout_ms": { "type": "integer", "minimum": 100, "maximum": 120000, "default": 15000 },
+                "quiet_ms": { "type": "integer", "minimum": 0, "maximum": 5000, "default": 300 },
+                "since_seq": { "type": "integer", "minimum": 0, "description": "Only count output after this output_seq (from read_terminal). Defaults to now." },
+                "max_rows": { "type": "integer", "minimum": 1, "maximum": 400, "default": 400 }
+            },
+            "required": ["tab_id"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "open_session",
+        "description": "Open a saved host in a new Rudder tab and start connecting. Returns the new tab_id; connection progress is visible in the app window. A host seen for the first time normally needs a human to confirm its key in the Rudder window — pass trust_unknown_host_key=true to accept and record it automatically for this connection. A CHANGED key is never auto-accepted: it still requires the user, because it may be a man-in-the-middle.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": { "type": "string", "minLength": 1, "description": "Saved session id from list_sessions, or a built-in `system:` id." },
+                "trust_unknown_host_key": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Only affects hosts with no saved key: record the key and connect without prompting. Ignored for changed keys, which always require the user."
+                }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "close_session",
+        "description": "Close one open tab, tearing down its SSH/SFTP connection and buffers exactly like clicking the tab's close button.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 }
+            },
+            "required": ["tab_id"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "send_input",
+        "description": "Type text into a tab's terminal, as if the user typed it. The bytes go to the PTY, so the user sees them and can take over. Use read_terminal or wait_for_output to see the result.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "text": { "type": "string", "description": "Text to type. May be empty to send only Enter." },
+                "enter": { "type": "boolean", "default": true, "description": "Append a carriage return (press Enter) after the text." }
+            },
+            "required": ["tab_id"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "run_command",
+        "description": "Run one command in a tab. The channel follows the user's \"Run commands in the terminal\" setting. OFF (default): a one-shot exec channel on the existing SSH connection (or a child process for local tabs) runs it without touching the terminal, returning exit code, stdout and stderr. ON: the command is typed into the user's interactive shell so they see it and its output; if that tab is currently showing a full-screen app (vim/htop) a new tab is opened for the command instead and the response carries opened_tab. The PTY channel has no separate stderr, and reports marker_found=false when concurrent typing corrupted the output — treat that result as unreliable. Either channel requires the exec permission (local_exec for local tabs), but the PTY channel is equivalent to typing on the user's behalf. Telnet and serial sessions only work with the PTY channel.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "command": { "type": "string", "minLength": 1 },
+                "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 300000, "default": 30000 },
+                "max_output_bytes": { "type": "integer", "minimum": 1024, "maximum": 4194304, "default": 1048576 }
+            },
+            "required": ["tab_id", "command"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "get_update_status",
+        "description": "Read the update state Rudder has already gathered: whether a newer release is known, the wording and error of the last check, the in-app download / install progress, and when the last check ran. Start a check with run_action action=check_update and then poll this tool — the check runs in the background. This call never downloads or installs anything.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "kill_process",
+        "description": "Terminate one process on a remote SSH host with SIGTERM — the same action as the process dialog in Rudder. The process may ignore SIGTERM; this tool never escalates to SIGKILL, so re-check get_tab_status afterwards. Only SSH tabs are supported: local, telnet and serial tabs have no remote process control. Pass root_password only when the target belongs to another user; it is used once, never stored, and redacted from the audit log. A failed kill is reported as success=false with the remote message instead of as an error.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1, "description": "An SSH tab from list_tabs." },
+                "pid": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4294967295,
+                    "description": "Process id, as listed in get_tab_status top_procs."
+                },
+                "root_password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional sudo password for the connected user. Omit when the process belongs to that user."
+                }
+            },
+            "required": ["tab_id", "pid"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "get_settings",
+        "description": "Read Rudder settings by key. With no keys it returns the whole whitelist. Secrets (passwords, tokens, endpoints) are never included.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "keys": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Exact setting keys such as terminal.font_size. Omit for all."
+                }
+            },
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "set_settings",
+        "description": "Change Rudder settings. Applied atomically: if any key is rejected, nothing is written. Each response lists applied keys and, for rejections, the reason (unknown_key, out_of_range, secret_not_exposed, restart_required_process, ...).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "values": {
+                    "type": "object",
+                    "description": "Map of setting key to new value, e.g. {\"terminal.font_size\": 15}."
+                }
+            },
+            "required": ["values"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "upsert_host",
+        "description": "Create a saved host, or update one when session_id is given. Only the fields you pass are changed. Covers every option of the host dialog, including the advanced ones. Passwords, inline keys and trigger responses are stored encrypted and never returned.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": { "type": "string", "description": "Empty or omitted = create a new host." },
+                "name": { "type": "string" },
+                "host": { "type": "string", "description": "Required for ssh/telnet." },
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                "user": { "type": "string" },
+                "kind": { "type": "string", "enum": ["ssh", "serial", "telnet", "local"] },
+                "auth": { "type": "string", "enum": ["password", "key", "keyboard-interactive"] },
+                "password": { "type": "string" },
+                "key_mode": { "type": "string", "enum": ["path", "inline"], "description": "Which key source to use; clears the other one." },
+                "private_key_path": { "type": "string" },
+                "private_key_inline": { "type": "string", "description": "PEM/OpenSSH key text; implies key_mode=inline." },
+                "group": { "type": "string" },
+                "note": { "type": "string" },
+                "jump_session_id": { "type": "string", "description": "Saved host id to use as a jump/bastion host." },
+                "proxy": {
+                    "type": "string",
+                    "description": "Outbound proxy for this host: socks5://host:port or http://host:port. Credentials may be embedded as user:pass@; they are split out and the password is stored encrypted. Empty string = direct (or ALL_PROXY)."
+                },
+                "proxy_user": {
+                    "type": "string",
+                    "description": "Proxy username. Omit to keep the saved one; empty string clears it."
+                },
+                "proxy_password": {
+                    "type": "string",
+                    "description": "Proxy password, stored encrypted and never returned. Omit to keep the saved one; empty string clears it."
+                },
+                "encoding": { "type": "string", "description": "Terminal encoding, e.g. UTF-8 or GBK." },
+                "disable_shell_integration": { "type": "boolean" },
+                "serial_port": { "type": "string", "description": "Device name, e.g. COM3 or /dev/ttyUSB0. Required for kind=serial." },
+                "baud_rate": { "type": "integer", "minimum": 300, "maximum": 4000000 },
+                "data_bits": { "type": "integer", "enum": [7, 8] },
+                "stop_bits": { "type": "integer", "enum": [1, 2] },
+                "parity": { "type": "string", "enum": ["none", "odd", "even"] },
+                "flow_control": { "type": "string", "enum": ["none", "hardware", "software"] },
+                "forwards": {
+                    "type": "array",
+                    "description": "Replaces the host's tunnel list when given.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "kind": { "type": "string", "enum": ["local", "remote", "dynamic"], "description": "local = -L, remote = -R, dynamic = -D." },
+                            "name": { "type": "string" },
+                            "bind_addr": { "type": "string" },
+                            "bind_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                            "host": { "type": "string" },
+                            "host_port": { "type": "integer", "minimum": 0, "maximum": 65535 }
+                        },
+                        "required": ["kind", "bind_port"],
+                        "additionalProperties": false
+                    }
+                },
+                "triggers": {
+                    "type": "array",
+                    "description": "Replaces the host's login triggers when given. Rules with an empty `expect` are skipped.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "expect": { "type": "string" },
+                            "response": { "type": "string" },
+                            "append_enter": { "type": "boolean", "default": true },
+                            "repeat": { "type": "boolean", "default": false }
+                        },
+                        "required": ["expect"],
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "delete_host",
+        "description": "Delete a saved host. Open tabs pointing at it keep running unless close_open_tabs is true.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": { "type": "string", "minLength": 1 },
+                "close_open_tabs": { "type": "boolean", "default": false }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "sftp_list",
+        "description": "List a directory on the remote host through the tab's SFTP channel. Directories come first, then files, each sorted by name. Only SSH tabs have SFTP.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "path": { "type": "string", "default": "/" }
+            },
+            "required": ["tab_id"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    },
+    {
+        "name": "sftp_download",
+        "description": "Download one remote file into Rudder's configured download folder over SFTP. Never overwrites: a colliding name becomes `report (1).pdf`. Files above 64 MiB are refused — use the SFTP panel for those.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "remote_path": { "type": "string", "minLength": 1 }
+            },
+            "required": ["tab_id", "remote_path"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "sftp_upload",
+        "description": "Upload one local file to an exact remote path over SFTP, overwriting it if present. Files above 64 MiB are refused — use the SFTP panel for those.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "local_path": { "type": "string", "minLength": 1, "description": "Source path on the machine running Rudder." },
+                "remote_path": { "type": "string", "minLength": 1 }
+            },
+            "required": ["tab_id", "local_path", "remote_path"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "sftp_mkdir",
+        "description": "Create one directory on the remote host over the tab's SFTP channel. The parent must already exist — SFTP v3 mkdir is single level — and an existing path is reported as an error rather than a silent success. Use an absolute path. Needs the file_upload permission, the same bit that authorises writing to the remote host.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Absolute remote path to create, e.g. /var/tmp/release."
+                }
+            },
+            "required": ["tab_id", "path"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "sftp_remove",
+        "description": "Delete a file or directory on the remote host over SFTP. DELETION IS PERMANENT: there is no trash and no undo. A directory is removed only when it is empty unless recursive=true, which first deletes every file and subdirectory below it. Prefer sftp_rename to move something aside when the change might need reverting. Needs the file_upload permission.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Absolute remote path to delete."
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Delete a non-empty directory and everything under it. Irreversible; ignored for files."
+                }
+            },
+            "required": ["tab_id", "path"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "sftp_rename",
+        "description": "Rename or move one remote path over SFTP; moving between directories is allowed. If `to` already exists it is replaced — SFTP v3 has no no-clobber flag — so pick a fresh name when both should survive. Needs the file_upload permission.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "from": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Existing absolute remote path."
+                },
+                "to": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Destination absolute remote path; replaced if present."
+                }
+            },
+            "required": ["tab_id", "from", "to"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "sftp_chmod",
+        "description": "Change the permission bits of one remote path over SFTP. `mode` is octal text such as \"644\", \"755\" or \"0755\"; a wrong mode can lock the account out of its own files or expose them, so copy the value that was read from sftp_list rather than inventing one. Needs the file_upload permission.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab_id": { "type": "string", "minLength": 1 },
+                "path": { "type": "string", "minLength": 1 },
+                "mode": {
+                    "type": "string",
+                    "pattern": "^[0-7]{3,4}$",
+                    "description": "Octal permission bits, e.g. \"755\" or \"0644\"."
+                }
+            },
+            "required": ["tab_id", "path", "mode"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "run_action",
+        "description": "Trigger a one-shot UI action: check for updates now, or push/pull the host list to the configured WebDAV. Returns as soon as the action starts; progress and the outcome show up in the status bar and the settings page.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["check_update", "webdav_upload", "webdav_download"]
+                }
+            },
+            "required": ["action"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    }
+]
