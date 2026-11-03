@@ -245,7 +245,6 @@ export component SystemInfoWindow inherits Window {
 
         if root.custom-titlebar : WindowTitleBar {
             title: @tr("System information") + (root.host != "" ? "  -  " + root.host : "");
-            bar-height: 36px;
             bg: Theme.bg-elevated;
             icon-size: 16px;
             close() => { root.request-close(); }

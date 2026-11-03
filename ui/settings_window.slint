@@ -319,7 +319,6 @@ export component SettingsWindow inherits Window {
             // 自绘标题栏（Windows / Linux）：标题 + 拖动 + ✕。
             if root.custom-titlebar : WindowTitleBar {
                 title: root.lang-en ? "Settings" : "设置";
-                bar-height: 36px;
                 bg: Theme.bg-elevated;
                 icon-size: 16px;
                 close() => { root.close-requested(); }

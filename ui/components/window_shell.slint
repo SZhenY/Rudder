@@ -40,9 +40,11 @@ component WinBtn inherits Rectangle {
 
 /// 自绘标题栏：图标 + 标题 + 可拖拽留白 + 窗口控制按钮。
 ///
-/// 参数只保留两处窗口**真实存在**的差异：
-/// * `bar-height` / `bg` / `icon-size`：主窗口 38 / bg-panel / 18，两个子窗口 36 / bg-elevated / 16；
+/// 参数只保留窗口**真实存在**的差异：
+/// * `bg` / `icon-size`：主窗口 bg-panel / 18，三个子窗口 bg-elevated / 16；
 /// * `show-min-max`：只有主窗口有最小化与最大化（也决定是否响应双击最大化）。
+///
+/// 高度四个窗口统一取 `Theme.titlebar-height`，不再逐窗口传。
 ///
 /// 「拖动标题栏移动窗口」由 Slint 1.18 的 `WindowMoveArea` 负责（见下）。原先那套
 /// "按下后位移超过 6px 才交给系统"的手写状态机（`armed-drag`）因此删掉了 ——
@@ -50,7 +52,7 @@ component WinBtn inherits Rectangle {
 /// 而这恰好就是 `WindowMoveArea` 内置的行为（拖过阈值才开始移动，单击不接管指针）。
 export component WindowTitleBar inherits Rectangle {
     in property <string> title;
-    in property <length> bar-height: 38px;
+    in property <length> bar-height: Theme.titlebar-height;
     in property <brush> bg: Theme.bg-panel;
     in property <length> icon-size: 18px;
     in property <bool> show-min-max: false;

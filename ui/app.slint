@@ -306,7 +306,7 @@ export component AppWindow inherits Window {
                 ? (collapsed-bar-taken("top") ? 0px : 36px)
                 : root.quick-panel-height + 4px);
     property <length> toolbar-y:
-        (root.custom-titlebar ? 43px : 5px + root.titlebar-inset) + root.toolbar-y-off;
+        (root.custom-titlebar ? Theme.titlebar-height + 5px : 5px + root.titlebar-inset) + root.toolbar-y-off;
     in-out property <bool> about-open: false;     // centered About dialog
     callback open-repo();                          // open the project's GitHub page
     in-out property <bool> shortcuts-open: false; // centered keyboard-shortcuts dialog (#103)

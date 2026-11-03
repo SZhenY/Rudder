@@ -49,7 +49,7 @@ export component McpClientsPopup inherits Rectangle {
         // 因为图标增减而漂（不学设置菜单那个 196/198 的推导常数）。
         x: parent.width - self.width - 8px - toolbar-x-off;
         // 与设置菜单 / 下载面板同一公式，三个偏移同源。
-        y: (root.custom-titlebar ? 78px : 40px + titlebar-inset) + toolbar-y-off;
+        y: (root.custom-titlebar ? Theme.titlebar-height + 40px : 40px + titlebar-inset) + toolbar-y-off;
         width: 320px;
         height: card-vl.preferred-height;
         visible: root.open;

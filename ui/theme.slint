@@ -224,6 +224,10 @@ export global Theme {
     out property <length> radius-lg: (is-mac ? 13px : 10px) * root.ui-scale;
     /// 按钮统一圆角（设置页所有按钮/上传钮共用；改这一处全局生效）。
     out property <length> radius-btn: 7px * root.ui-scale;
+
+    /// 自绘标题栏高度。主窗口与三个子窗口共用；右上工具条与三个弹层的垂直偏移
+    /// 都由它推导，改这一处即可（不乘 `ui-scale`：图标与窗口按钮都是固定像素）。
+    out property <length> titlebar-height: 30px;
     // 卡片阴影：macOS 更柔和（blur 更大、alpha 更低）
     out property <length> card-shadow-blur: is-mac ? 28px : 24px;
     out property <brush> card-shadow-color: is-mac ? #00000060 : #00000080;

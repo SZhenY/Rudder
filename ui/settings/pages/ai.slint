@@ -199,8 +199,8 @@ export component AiPage inherits VerticalLayout {
             HorizontalLayout {
                 alignment: end;
                 spacing: 8px;
-                // 服务关着时令牌没有校验对象，三个按钮一律置灰（「复制配置」例外，
-                // 那是给"先配好客户端再开服务"用的）。
+                // 服务关着时令牌没有校验对象，四个按钮一律置灰 —— 「复制配置」也不再
+                // 例外：配置框本身已经隐藏，复制一份看不见的内容没有意义。
                 GhostButton {
                     text: root.mcp-token-visible
                         ? (root.lang-en ? "Hide" : "隐藏")
@@ -244,20 +244,22 @@ export component AiPage inherits VerticalLayout {
             show-divider: false;
             GhostButton {
                 text: root.lang-en ? "Copy config" : "复制配置";
+                disabled: !root.mcp-enabled;
                 clicked => { root.copy-mcp-json(); }
             }
         }
 
-        VerticalLayout {
+        // 服务关着时没有可粘贴的配置：整块不参与布局（`visible:false` 仍占位）。
+        if root.mcp-enabled : VerticalLayout {
             padding-top: 9px;
             padding-bottom: 9px;
             spacing: 0;
 
             Rectangle {
                 // 固定高度而不是按内容撑开：`TextInput` 的 preferred-height 在
-                // 未约束宽度时不等于换行后的高度，绑上去会算错。11 行的片段在
-                // 默认字号下刚好放下，字号放大时截断而不外溢。
-                height: 224px;
+                // 未约束宽度时不等于换行后的高度，绑上去会算错。224 × 0.8：11 行片段
+                // 在默认字号下约占 141–152px，余 11–22px；字号放大时截断而不外溢。
+                height: 179px;
                 clip: true;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
@@ -278,7 +280,7 @@ export component AiPage inherits VerticalLayout {
                     text: root.mcp-token-visible ? root.mcp-json : root.mcp-json-masked;
                 }
 
-                // 没有令牌时（服务从没启用过）给一句说明，而不是一个空框。
+                // 启用但令牌被外部清空时的兜底：给一句说明，而不是一个空框。
                 if root.mcp-json == "" : Text {
                     x: 12px;
                     y: 12px;
@@ -290,6 +292,22 @@ export component AiPage inherits VerticalLayout {
                     font-size: 11px * Theme.panel-font;
                     wrap: word-wrap;
                 }
+            }
+        }
+
+        // 关服务时只留一句话：代码框整块换掉，不留空框也不留边框。
+        if !root.mcp-enabled : VerticalLayout {
+            padding-top: 9px;
+            padding-bottom: 9px;
+            spacing: 0;
+
+            Text {
+                text: root.lang-en
+                    ? "Turn the MCP server on: the paste-ready snippet appears here."
+                    : "启用 MCP 服务后这里显示可粘贴的客户端配置。";
+                color: Theme.text-muted;
+                font-size: 11px * Theme.panel-font;
+                wrap: word-wrap;
             }
         }
     }

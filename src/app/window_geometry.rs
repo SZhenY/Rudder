@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 use slint::{ComponentHandle as _, Model as _, VecModel};
 
+use crate::ui::Theme;
+
 #[cfg(windows)]
 use i_slint_backend_winit::WinitWindowAccessor;
 
@@ -243,10 +245,12 @@ pub(crate) fn contains_logical(rect: LogicalRect, x: f32, y: f32) -> bool {
 pub(crate) fn app_content_area(win: &AppWindow) -> LogicalRect {
     let size = win.window().size();
     let scale = win.window().scale_factor().max(0.01);
+    // 高度从 Theme 读，不在 Rust 里留第二份字面量。
+    let titlebar = win.global::<Theme>().get_titlebar_height();
     let mut area = LogicalRect {
         x: 0.0,
         y: if win.get_custom_titlebar() {
-            38.0
+            titlebar
         } else if win.get_is_mac() {
             28.0
         } else {

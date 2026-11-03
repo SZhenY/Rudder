@@ -161,7 +161,6 @@ export component ProcWindow inherits Window {
         // --- Custom titlebar (frameless platforms) -------------------------
         if root.custom-titlebar : WindowTitleBar {
             title: @tr("Processes") + (root.host != "" ? "  ·  " + root.host : "");
-            bar-height: 36px;
             bg: Theme.bg-elevated;
             icon-size: 16px;
             close() => { root.request-close(); }

@@ -689,87 +689,144 @@ async fn run_sftp(
                 let _ = reply.send(result);
             }
             SftpCommand::McpDownloadAuto { remote, dir, reply } => {
-                let result = async {
-                    let data = sftp
-                        .read(&remote)
-                        .await
-                        .map_err(|err| format!("read {remote}: {err}"))?;
-                    if data.len() > crate::sftp::MCP_TRANSFER_LIMIT {
-                        return Err(format!(
-                            "{remote} is larger than the {} MiB MCP limit; use the SFTP panel",
-                            crate::sftp::MCP_TRANSFER_LIMIT / (1024 * 1024)
-                        ));
-                    }
-                    tokio::fs::create_dir_all(&dir)
-                        .await
-                        .map_err(|err| format!("create {}: {err}", dir.display()))?;
-                    let requested = download_target_path(&remote, &dir.to_string_lossy());
-                    let mut candidate = available_download_path(&requested);
-                    let mut renamed = candidate != requested;
-                    // `available_download_path` 只检查"当时不存在"；用 create_new 落盘，
-                    // 撞上并发创建就重新扫下一个，避免覆盖别人刚写下的文件。
-                    for _ in 0..64 {
-                        match tokio::fs::OpenOptions::new()
-                            .write(true)
-                            .create_new(true)
-                            .open(&candidate)
+                // 与界面手动下载同源：流式分块 + 进度事件 + 可取消。整块 `read` 既把
+                // 整个文件塞进内存，又在传输期间占住命令循环（列目录 / 切目录都得排队）。
+                let sftp = sftp.clone();
+                let handle = handle.clone();
+                let events = events.clone();
+                let id = Uuid::new_v4().to_string();
+                let cancel = Arc::new(AtomicBool::new(false));
+                // 传输列表的「取消」只按 id 广播给所有句柄，不登记就没人响应 (#100)。
+                cancels
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(id.clone(), cancel.clone());
+                let cancels_done = cancels.clone();
+                tokio::spawn(async move {
+                    let result = async {
+                        // 先量尺寸：超限要在开传之前拒掉，而不是下完再丢。
+                        let size = sftp
+                            .metadata(&remote)
                             .await
+                            .map_err(|err| format!("stat {remote}: {err}"))?
+                            .size
+                            .unwrap_or(0);
+                        if size > crate::sftp::MCP_TRANSFER_LIMIT as u64 {
+                            return Err(format!(
+                                "{remote} is larger than the {} MiB MCP limit; use the SFTP panel",
+                                crate::sftp::MCP_TRANSFER_LIMIT / (1024 * 1024)
+                            ));
+                        }
+                        tokio::fs::create_dir_all(&dir)
+                            .await
+                            .map_err(|err| format!("create {}: {err}", dir.display()))?;
+                        let requested = download_target_path(&remote, &dir.to_string_lossy());
+                        // MCP 没有「覆盖 / 保留两者」这个选项，一律避让成 `name (1).ext`。
+                        let candidate = available_download_path(&requested);
+                        let renamed = candidate != requested;
+                        let name = candidate
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| base_name(&remote));
+                        let local = candidate.to_string_lossy().to_string();
+                        match download_impl(
+                            &handle, &remote, &local, &name, &id, &events, &cancel,
+                        )
+                        .await
                         {
-                            Ok(mut file) => {
-                                use tokio::io::AsyncWriteExt;
-                                file.write_all(&data).await.map_err(|err| {
-                                    format!("write {}: {err}", candidate.display())
-                                })?;
-                                file.flush().await.map_err(|err| {
-                                    format!("flush {}: {err}", candidate.display())
-                                })?;
-                                return Ok((candidate, renamed, data.len() as u64));
+                            Ok(true) => {
+                                // `download_impl` 不回报字节数，落盘长度才是实际写入量。
+                                let bytes = tokio::fs::metadata(&local)
+                                    .await
+                                    .map(|m| m.len())
+                                    .unwrap_or(size);
+                                Ok((candidate, renamed, bytes))
                             }
-                            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                                candidate = available_download_path(&requested);
-                                renamed = true;
-                            }
+                            // 取消已由 `download_impl` 发过 state 4，再补 state 2 会把它
+                            // 在列表里翻成「失败」。
+                            Ok(false) => Err(format!("download of {remote} was cancelled")),
                             Err(err) => {
-                                return Err(format!("write {}: {err}", candidate.display()));
+                                emit_transfer(TransferEmit {
+                                    events: &events,
+                                    id: &id,
+                                    name: &name,
+                                    is_upload: false,
+                                    transferred: 0,
+                                    total: 0,
+                                    state: 2,
+                                    msg: &err.to_string(),
+                                });
+                                Err(format!("{err:#}"))
                             }
                         }
                     }
-                    Err("could not find a free download name".to_string())
-                }
-                .await;
-                let _ = reply.send(result);
+                    .await;
+                    let _ = reply.send(result);
+                    cancels_done
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(&id);
+                });
             }
             SftpCommand::McpUpload { local, remote, reply } => {
-                let result = async {
-                    let data = tokio::fs::read(&local)
+                // 同上下载：走界面上传的流水线实现，进度与取消都与手动上传一致。
+                let handle = handle.clone();
+                let events = events.clone();
+                let id = Uuid::new_v4().to_string();
+                let cancel = Arc::new(AtomicBool::new(false));
+                cancels
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(id.clone(), cancel.clone());
+                let cancels_done = cancels.clone();
+                tokio::spawn(async move {
+                    let result = async {
+                        let size = tokio::fs::metadata(&local)
+                            .await
+                            .map_err(|err| format!("stat {}: {err}", local.display()))?
+                            .len();
+                        if size > crate::sftp::MCP_TRANSFER_LIMIT as u64 {
+                            return Err(format!(
+                                "{} is larger than the {} MiB MCP limit; use the SFTP panel",
+                                local.display(),
+                                crate::sftp::MCP_TRANSFER_LIMIT / (1024 * 1024)
+                            ));
+                        }
+                        let name = local
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "upload".to_string());
+                        match upload_pipelined(
+                            &handle, &local, &remote, &name, &id, &events, &cancel,
+                        )
                         .await
-                        .map_err(|err| format!("read {}: {err}", local.display()))?;
-                    if data.len() > crate::sftp::MCP_TRANSFER_LIMIT {
-                        return Err(format!(
-                            "{} is larger than the {} MiB MCP limit; use the SFTP panel",
-                            local.display(),
-                            crate::sftp::MCP_TRANSFER_LIMIT / (1024 * 1024)
-                        ));
+                        {
+                            Ok(true) => Ok(size),
+                            Ok(false) => {
+                                Err(format!("upload of {} was cancelled", local.display()))
+                            }
+                            Err(err) => {
+                                emit_transfer(TransferEmit {
+                                    events: &events,
+                                    id: &id,
+                                    name: &name,
+                                    is_upload: true,
+                                    transferred: 0,
+                                    total: 0,
+                                    state: 2,
+                                    msg: &err.to_string(),
+                                });
+                                Err(format!("{err:#}"))
+                            }
+                        }
                     }
-                    // `SftpSession::write` 只带 `OpenFlags::WRITE`：新建文件会被服务端
-                    // 判成 NoSuchFile，覆盖已有文件时也不会截断，长文件尾部会残留。
-                    // 走 `create`（CREATE | TRUNCATE | WRITE）再整块写。
-                    let mut file = sftp
-                        .create(&remote)
-                        .await
-                        .map_err(|err| format!("create {remote}: {err}"))?;
-                    use tokio::io::AsyncWriteExt;
-                    file.write_all(&data)
-                        .await
-                        .map_err(|err| format!("write {remote}: {err}"))?;
-                    file.flush()
-                        .await
-                        .map_err(|err| format!("flush {remote}: {err}"))?;
-                    let _ = file.shutdown().await;
-                    Ok(data.len() as u64)
-                }
-                .await;
-                let _ = reply.send(result);
+                    .await;
+                    let _ = reply.send(result);
+                    cancels_done
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(&id);
+                });
             }
 
             SftpCommand::RefreshDir(path) => {
