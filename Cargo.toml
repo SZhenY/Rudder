@@ -79,22 +79,23 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sysinfo = { version = "0.39", default-features = false, features = ["disk", "network", "system"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs", "process"] }
-# Pinned to 0.49: RUSTSEC-2026-0154 (an unbounded-allocation DoS in russh's
-# ssh-AGENT frame parsing) is fixed only in >= 0.60.3, which drags in pre-release
-# crypto crates (ed25519-dalek 3.0.0-pre, aes-gcm 0.11.0-rc, 鈥?. Rudder never
-# uses the ssh-agent, so the advisory is not reachable here 鈥?see audit.toml.
-# Revisit the upgrade once russh's deps leave the -rc channel (cf. PR #151).
-# 固定在 0.49：0.50~0.60.3 会引入 pageant ^0.2（windows 0.62，能去掉 0.58 副本），
-# 但整条 RustCrypto 新栈是预发布版（aead 0.6-rc、rsa 0.10-rc、ed25519-dalek 3.0-pre、
-# p256 0.14-rc 等 20 个），认证与签名路径不采用 rc。0.61+ 还额外要求 ssh-key 0.7.0-rc。
-# 结论：等 ssh-key 0.7 与这批 RustCrypto 转正后再一次性升级。
-russh = "0.49"
-ssh-key = "0.6"
+# 历史：曾固定 0.49（RUSTSEC-2026-0154 只在 >=0.60.3 修复，而 0.6x 会带入预发布
+# 加密栈）。现在改为升 0.65 并接受三个 rc 包，理由见下。
+# 0.65：修掉 RUSTSEC-2026-0154（ssh-agent 帧解析的无界分配）与另外几个客户端可触发的
+# CVE；russh-keys 并入 russh::keys，旧代 RustCrypto 整体收敛（aes 0.8 / cbc 0.1 /
+# cipher 0.4 / sha1 0.10 / sha2 0.10 等 27 组重复归并到单一版本，详见分支说明）。
+# pageant 仍在（0.2.5），但只剩一份；旧版带的 windows 0.58 全家已消失。
+# 代价：认证路径接受预发布 crate —— ssh-key 0.7.0-rc.11、rsa 0.10.0-rc.18、pkcs1 0.8.0-rc.4。
+# 默认 feature 会引入 aws-lc-rs（多一条 cmake/NASM 构建链），这里显式改用 ring；
+# des 用于保留 3des-cbc（COMPAT_CIPHER 里有 TRIPLE_DES_CBC），rsa 用于 RSA 密钥。
+russh = { version = "0.65", default-features = false, features = ["ring", "rsa", "flate2", "des"] }
+# 不再直接依赖 ssh-key：统一从 russh::keys 取类型，版本永久跟随 russh。
+# russh 对它是精确 pin（=0.7.0-rc.11），另写一个 0.6/0.7 会解析出第二份 ssh_key，
+# 导致 PublicKey 变成不同类型、known_hosts 全链路类型不匹配。
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 直接取 OS 随机数：rand 0.10 已移除 OsRng，我们只需要系统熵源。
 getrandom = "0.4"
-async-trait = "0.1"
 futures = "0.3"
 # Full xterm-compatible terminal emulator (replaces vt100): Term + Grid +
 # native scrollback/reflow/selection, fed via vte::ansi::Processor.

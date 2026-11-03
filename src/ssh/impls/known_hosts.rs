@@ -15,7 +15,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use ssh_key::{HashAlg, PublicKey};
+use russh::keys::{HashAlg, PublicKey};
 
 /// Result of checking a server key against the store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,7 +161,7 @@ mod tests {
     /// A deterministic ed25519 public key. `Ed25519PublicKey` is a tuple struct
     /// with a public field, so no key generation is needed.
     fn key(seed: u8) -> PublicKey {
-        use ssh_key::public::Ed25519PublicKey;
+        use russh::keys::ssh_key::public::Ed25519PublicKey;
         PublicKey::from(Ed25519PublicKey([seed; 32]))
     }
 
