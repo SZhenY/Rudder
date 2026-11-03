@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.8.1-beta2] - 2026-11-03
+
 ### 新增 / Added
 
 - MCP 工具 19 → 26：`get_host_info`（本机 CPU / 内存 / 磁盘 / 网络）、`kill_process`、
