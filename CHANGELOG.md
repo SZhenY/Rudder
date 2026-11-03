@@ -5,6 +5,52 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- MCP 工具 19 → 26：`get_host_info`（本机 CPU / 内存 / 磁盘 / 网络）、`kill_process`、
+  `get_update_status`、`sftp_mkdir` / `sftp_remove` / `sftp_rename` / `sftp_chmod`；
+  `get_tab_status` 的 `sys` 补齐七节系统详情。
+- 顶栏新增 AI 徽标，点开是当前接入的客户端浮层：逐项权限、展开收起、断开连接。
+  客户端全部断开时徽标与浮层一起收起，授权框关闭后焦点回到终端。
+- MCP 触发的 SFTP 上传 / 下载现在会出现在传输列表：150 ms 进度、可在列表里取消；
+  传输期间该标签页仍可正常列目录、切目录，不再整块占住 SFTP 命令循环。
+
+### 变更 / Changed
+
+- 设置 → AI 按「服务 → 令牌与配置 → 已连接 → 已记住 → 网络 → 审计」重排。
+- 标题栏高度收口为 `Theme.titlebar-height`（30px），主窗口与设置 / 进程 / 系统信息
+  三个子窗口共用；工具条与三个弹层的垂直偏移、终端命中区都由它推导，子窗口标题栏
+  由 36px 收到 30px。
+- 设置 → AI 的 mcp.json 区域高度缩减 20%；服务关闭时不再显示代码框，改为一行提示，
+  「复制配置」同时置灰。
+- `wait_for_output` 与 PTY 通道改为按输出序号变化取快照，输出持续时不再固定间隔
+  重建整屏。
+
+### 修复 / Fixed
+
+- 令牌显示约一秒后自动失效，输入内容被回写覆盖。
+- 状态行重复显示同一个监听地址；局域网网口被误判为丢失；审计降级标记在恢复后不复位。
+
+**Added**: MCP gained seven tools (19 → 26): `get_host_info`, `kill_process`,
+`get_update_status`, and `sftp_mkdir` / `sftp_remove` / `sftp_rename` / `sftp_chmod`, plus the
+full seven-section `sys` block in `get_tab_status`. The top bar now carries an AI badge that opens
+a clients popup with per-permission details and disconnect; the badge and popup collapse when the
+last client leaves. SFTP transfers started by MCP appear in the transfer list with 150 ms progress
+and a working cancel button, and no longer block browsing on that tab.
+
+**Changed**: Settings → AI is reordered into server, token and config, connected, remembered,
+network, and audit sections. Title bar height moved into `Theme.titlebar-height` (30px), shared by
+the main window and the three sub-windows; the toolbar offset, three popup offsets, and the Rust
+hit-testing rect all derive from it (sub-windows went from 36px to 30px). The mcp.json box is 20%
+shorter and is replaced by a one-line hint when the server is off, with the copy button disabled.
+`wait_for_output` and the PTY channel now snapshot on output-sequence changes instead of rebuilding
+the screen on a fixed interval.
+
+**Fixed**: the token sometimes stopped displaying after about a second and typed input could be
+overwritten; the status line repeated the same URL; LAN interfaces were reported missing; the audit
+degraded flag never cleared.
+
+
 ## [0.8.1-beta1] - 2026-11-01
 
 ### 新增 / Added
