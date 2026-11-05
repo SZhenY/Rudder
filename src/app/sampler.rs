@@ -35,13 +35,9 @@ pub(crate) fn spawn_system_sampler(
         slint::TimerMode::Repeated,
         SystemSampler::recommended_interval(),
         move || {
-            // Skip the (non-trivial) sysinfo refresh + sidebar repaint when no one
-            // is looking, and back off to ~5 s when the window is in the background.
-            // A collapsed sidebar hides the graphs entirely, so skip too
-            // (upstream b17da25).
-            if weak.upgrade().map(|w| w.get_sidebar_collapsed()).unwrap_or(false) {
-                return;
-            }
+            // Skip the (non-trivial) sysinfo refresh when no one is looking,
+            // and back off to ~5 s when the window is in the background.
+            // 运行状态已搬进 SFTP 面板，与导航条是否收起无关。
             match tick_activity.get() {
                 WinActivity::Hidden => return,
                 WinActivity::Background => {

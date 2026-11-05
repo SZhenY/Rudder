@@ -209,6 +209,51 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
         });
     }
 
+    // Navigation "Hosts": show the welcome tab in the pane that owns it. The
+    // page state itself is set in Slint before this callback runs.
+    {
+        let weak = window.as_weak();
+        let layout = layout.clone();
+        let content_size = content_size.clone();
+        let tabs_model = tabs_model.clone();
+        let panes_model = panes_model.clone();
+        let splitters_model = splitters_model.clone();
+        window.on_nav_select(move |page: i32| {
+            if page != 0 {
+                return;
+            }
+            // The session list is a separate sidebar in this mode; no tab to select.
+            if weak
+                .upgrade()
+                .map(|w| w.get_welcome_as_sidebar())
+                .unwrap_or(false)
+            {
+                return;
+            }
+            {
+                let mut lay = layout.borrow_mut();
+                if let Some(owner) = lay.leaf_of_tab("welcome") {
+                    lay.focused = owner;
+                    if let Some(l) = lay.leaf_mut(owner) {
+                        l.active = "welcome".into();
+                    }
+                } else {
+                    lay.add_tab("welcome".into());
+                }
+            }
+            if let Some(w) = weak.upgrade() {
+                refresh_panes(
+                    &w,
+                    &layout,
+                    content_size.get(),
+                    &tabs_model,
+                    &panes_model,
+                    &splitters_model,
+                );
+            }
+        });
+    }
+
     // Click anywhere in a pane → focus it (drives which terminal the sidebar and
     // key routing follow). A single pane is always focused, so this is a no-op
     // until splits exist.

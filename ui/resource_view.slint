@@ -1,0 +1,98 @@
+//! 运行状态视图：原侧栏的竖排内容，改挂到 SFTP 面板的「运行状态」页签。
+//!
+//! 只保留竖排形态。面板自己的收起、停靠、拖拽由容器负责，这里只拼数据块；
+//! 内容超出面板高度时整页滚动。
+
+import { Theme } from "theme.slint";
+import { ScrollView } from "std-widgets.slint";
+import { Divider } from "components/surfaces.slint";
+import { StatusBlock, StatsBlock, NetBlock, DiskBlock, DiskInfo } from "sidebar_blocks.slint";
+
+export component ResourceView inherits Rectangle {
+    in property <string> connection-state: @tr("Not connected");
+    in property <string> conn-host;                  // clean IP/host to copy (#192)
+    in property <int> conn-state;                    // 0 gray / 1 green / 2 yellow
+    in property <string> resource-title: @tr("Local resources");
+    in property <float> cpu-percent;
+    in property <float> mem-percent;
+    in property <float> swap-percent;
+    in property <string> mem-detail;
+    in property <string> swap-detail;
+    in property <string> net-top-up;
+    in property <string> net-top-down;
+    in property <[float]> net-top-history;
+    in property <string> net-bot-up;
+    in property <string> net-bot-down;
+    in property <[float]> net-bot-history;
+    in property <[string]> net-ifaces;
+    in property <string> net-selected;
+    in property <bool> net-show-selector;
+    in property <[DiskInfo]> disks;
+    in property <bool> system-info-available;        // connected Linux session only (#268)
+    in property <bool> proc-available;               // a live remote session → process button (#23)
+    in property <string> app-version;
+
+    callback select-net-iface(string);
+    callback show-system-info();
+    callback show-processes();
+    callback copy-host(string);
+
+    background: transparent;
+
+    ScrollView {
+        width: 100%;
+        height: 100%;
+
+        VerticalLayout {
+            padding: 10px;
+            spacing: 10px;
+
+            StatusBlock {
+                embedded: true;
+                conn-state: root.conn-state;
+                connection-state: root.connection-state;
+                conn-host: root.conn-host;
+                copy-host(h) => { root.copy-host(h); }
+            }
+            Divider {}
+            StatsBlock {
+                resource-title: root.resource-title;
+                system-info-available: root.system-info-available;
+                proc-available: root.proc-available;
+                cpu-percent: root.cpu-percent;
+                mem-percent: root.mem-percent;
+                swap-percent: root.swap-percent;
+                mem-detail: root.mem-detail;
+                swap-detail: root.swap-detail;
+                show-system-info() => { root.show-system-info(); }
+                show-processes() => { root.show-processes(); }
+            }
+            Divider {}
+            NetBlock {
+                net-top-up: root.net-top-up;
+                net-top-down: root.net-top-down;
+                net-top-history: root.net-top-history;
+                net-show-selector: root.net-show-selector;
+                net-ifaces: root.net-ifaces;
+                net-selected: root.net-selected;
+                net-bot-up: root.net-bot-up;
+                net-bot-down: root.net-bot-down;
+                net-bot-history: root.net-bot-history;
+                select-net-iface(i) => { root.select-net-iface(i); }
+            }
+            Divider {}
+            // 面板矮时保持可读的最小高度（内部自己滚动），面板高时吃掉剩余空间。
+            DiskBlock {
+                vertical-stretch: 1;
+                min-height: 140px;
+                disks: root.disks;
+            }
+            Text {
+                text: "Rudder v" + root.app-version;
+                color: Theme.text-muted;
+                font-size: Theme.fs-xs;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}

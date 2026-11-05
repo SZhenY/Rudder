@@ -1035,13 +1035,6 @@ pub enum SessionCommand {
     Resize(u32, u32),
     /// Start or pause periodic local/remote resource monitoring for this session.
     SetResourceMonitoring(bool),
-    /// Start a runtime-only SSH tunnel for this connected session (#206).
-    AddTunnel {
-        id: String,
-        forward: crate::config::PortForward,
-    },
-    /// Stop a runtime tunnel created for this connected session (#206).
-    StopTunnel(String),
     /// Terminate one remote process on a short-lived exec channel. Supplying a
     /// password selects the privileged `sudo -S` path; the secret is never
     /// written to the interactive PTY or shell history.
@@ -1365,16 +1358,6 @@ impl SessionHandle {
         let _ = self
             .commands
             .send(SessionCommand::SetResourceMonitoring(enabled));
-    }
-
-    pub fn add_tunnel(&self, id: String, forward: PortForward) {
-        let _ = self
-            .commands
-            .send(SessionCommand::AddTunnel { id, forward });
-    }
-
-    pub fn stop_tunnel(&self, id: String) {
-        let _ = self.commands.send(SessionCommand::StopTunnel(id));
     }
 
     pub fn kill_process(
@@ -2754,30 +2737,6 @@ async fn run_session(
                                 auxiliary_deadline =
                                     Some(tokio::time::Instant::now() + AUX_OPEN_WATCHDOG);
                             }
-                        }
-                    }
-                    Some(SessionCommand::AddTunnel { id, forward }) => {
-                        if forward.kind == "local" || forward.kind == "dynamic" {
-                            runtime_forwards.insert(
-                                id.clone(),
-                                start_runtime_forward(handle.clone(), id, forward, &events),
-                            );
-                            emit_tunnel_update(&runtime_forwards, &events);
-                        } else {
-                            let _ = events.send(SessionEvent::Output(format!(
-                                "\r\n[rudder] {}\r\n",
-                                t("运行时暂不支持新增远程转发 -R", "runtime remote forwarding (-R) is not supported yet")
-                            )));
-                        }
-                    }
-                    Some(SessionCommand::StopTunnel(id)) => {
-                        if let Some(f) = runtime_forwards.get_mut(&id) {
-                            if let Some(task) = f.task.take() {
-                                task.abort();
-                            }
-                            f.info.active = false;
-                            f.info.status = t("已停止", "stopped").to_string();
-                            emit_tunnel_update(&runtime_forwards, &events);
                         }
                     }
                     Some(SessionCommand::KillProcess { pid, root_password, reply }) => {

@@ -1,0 +1,146 @@
+//! 左侧导航条：主机 / Docker / 笔记，底部设置。
+//!
+//! 导航固定在最左，宽度由外层决定；收起时不绘制本组件，只由外层留一条 22px 把手。
+
+import { Theme, AnimationSettings } from "theme.slint";
+import { IconText } from "components/text.slint";
+
+// 一行导航项：图标 + 文案，选中态用主题色 + 淡底。
+component NavRow inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    in property <bool> current: false;
+    callback activated();
+
+    height: 38px;
+    border-radius: Theme.radius-sm;
+    background: root.current ? Theme.state-selected
+              : ta.has-hover ? Theme.state-hover
+              : transparent;
+    border-width: 1px;
+    border-color: root.current ? Theme.state-selected-border : transparent;
+    animate background {
+        duration: ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        accessible-role: button;
+        clicked => { root.activated(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        IconText {
+            text: root.glyph;
+            color: root.current ? Theme.accent : Theme.text-secondary;
+            font-size: 18px;
+            centered: true;
+        }
+        Text {
+            text: root.label;
+            color: root.current ? Theme.text-primary : Theme.text-secondary;
+            font-size: Theme.fs-md;
+            font-weight: root.current ? 600 : 400;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+export component NavPanel inherits Rectangle {
+    // 0 主机 / 3 Docker / 5 笔记（1 是终端，不在导航里直接选）。
+    in property <int> current-page: 0;
+
+    callback page-changed(int);
+    callback settings-clicked();
+    callback collapse-clicked();
+
+    background: Theme.bg-panel;
+    border-width: 0;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 2px;
+
+        // 头部：标题 + 收起按钮。
+        Rectangle {
+            height: 40px;
+            HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 2px;
+                spacing: 6px;
+                Text {
+                    text: "Rudder";
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-md;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Rectangle {
+                    width: 24px;
+                    height: 24px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: Theme.radius-sm;
+                    background: collapse-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: collapse-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: collapse-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        enabled: AnimationSettings.enabled;
+                    }
+                    collapse-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        accessible-role: button;
+                        clicked => { root.collapse-clicked(); }
+                    }
+                    IconText {
+                        text: "\u{E5CB}";   // chevron_left
+                        color: collapse-ta.has-hover ? Theme.text-primary : Theme.text-muted;
+                        font-size: 16px;
+                        centered: true;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+        }
+
+        Rectangle { height: 6px; }
+
+        NavRow {
+            glyph: "\u{E875}";   // dns / server
+            label: @tr("Hosts");
+            current: root.current-page == 0;
+            activated => { root.page-changed(0); }
+        }
+        NavRow {
+            glyph: "\u{E30C}";   // desktop_windows
+            label: "Docker";
+            current: root.current-page == 3;
+            activated => { root.page-changed(3); }
+        }
+        NavRow {
+            glyph: "\u{E873}";   // description / notes
+            label: @tr("Notes");
+            current: root.current-page == 5;
+            activated => { root.page-changed(5); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+        Rectangle { height: 6px; }
+
+        NavRow {
+            glyph: "\u{E8B8}";   // settings
+            label: @tr("Settings");
+            activated => { root.settings-clicked(); }
+        }
+    }
+}

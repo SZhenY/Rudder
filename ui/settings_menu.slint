@@ -1,4 +1,4 @@
-//! 右上角**设置菜单**弹窗：语言切换、导入 / 导出，以及"设置 / 批量导入 / 快捷键 / 关于"四个入口。
+//! 左下角**设置菜单**弹窗：语言切换、导入 / 导出，以及"设置 / 批量导入 / 快捷键 / 关于"四个入口。
 //!
 //! 结构：全窗口透明根 + 背景感应层 + **常驻面板**（`visible` 切换）。
 //!
@@ -54,6 +54,8 @@ export component SettingsMenuPopup inherits Rectangle {
     in property <length> titlebar-inset: 0px;
     in property <length> toolbar-x-off: 0px;
     in property <length> toolbar-y-off: 0px;
+    // 从左侧导航底部的齿轮打开：菜单贴在窗口左下角，不再跟随右上工具栏。
+    in property <bool> anchor-nav: false;
     in property <string> ssh-import-hint;
 
     // ── 动作：由调用点转发（实现仍在 Rust / 窗口）────────────────────
@@ -67,7 +69,7 @@ export component SettingsMenuPopup inherits Rectangle {
     callback open-shortcuts();
     callback open-about();
 
-// --- Settings menu popup (top-right) ----------------------------------
+// --- Settings menu popup (bottom-left of the nav) -------------------------
 // Click-outside-to-close backdrop (same pattern as the download popup).
 // 常驻（靠 visible/enabled 切换），不再用 `if` —— 原因同下载管理器那层：
 // 在事件派发栈上销毁正在处理事件的子树会闪退。
@@ -80,11 +82,12 @@ TouchArea {
 }
 
 Rectangle {
-    // Follow the gear button: it shifts by toolbar-x/y-off when the resource
-    // panel docks right/top, so the menu must shift the same amount or it ends
-    // up floating over the resource panel (#dock).
-    x: parent.width - 196px - toolbar-x-off;
-    y: (custom-titlebar ? Theme.titlebar-height + 40px : 40px + titlebar-inset) + toolbar-y-off;
+    // 非导航锚定时按右上工具栏偏移定位（欢迎侧栏 / 快捷面板占住右/上边缘）。
+    // 导航底部齿轮：贴窗口左下角，高度用菜单自身内容高度反推。
+    x: root.anchor-nav ? 8px : parent.width - 196px - toolbar-x-off;
+    y: root.anchor-nav
+        ? parent.height - menu-vl.preferred-height - 8px
+        : (custom-titlebar ? Theme.titlebar-height + 40px : 40px + titlebar-inset) + toolbar-y-off;
     width: 198px;
     // Size to the menu's content so adding/removing items (or the
     // ~/.ssh/config import hint expanding) never overflows the card (#150-fix).

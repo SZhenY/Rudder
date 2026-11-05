@@ -307,7 +307,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     settings::layout::bind(
         window,
         store,
-        handles,
         &settings::layout::PaneHandles {
             layout: layout.clone(),
             content_size: content_size.clone(),

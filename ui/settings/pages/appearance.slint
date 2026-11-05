@@ -384,8 +384,8 @@ export component AppearancePage inherits VerticalLayout {
             SettingSwitch {
                 label: root.lang-en ? "Hide special partitions" : "隐藏特殊分区";
                 desc: root.lang-en
-                    ? "Hide EFI / swap / temporary pseudo-file-systems and very small partitions in the resource panel."
-                    : "在资源面板中隐藏 EFI / swap / 临时文件系统等伪分区，避免误导。";
+                    ? "Hide EFI / swap / temporary pseudo-file-systems and very small partitions in the status tab."
+                    : "在运行状态页中隐藏 EFI / swap / 临时文件系统等伪分区，避免误导。";
 
                 checked <=> root.hide-special-partitions;
                 toggled(v) => { root.set-hide-special-partitions(v); }

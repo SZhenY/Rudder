@@ -28,36 +28,6 @@ use crate::app::{AppContext, INTERACTIVE_ECHO_WINDOW, clipboard_set_text, conver
 use crate::app::terminal_ui::{apply_terminal_resize, compute_find_matches, history_model, history_preview_model, history_view_model, rebuild_tab_display, refresh_terminal_selection};
 use super::render_tickets::request_tab_render_from_ui;
 
-/// Parse a runtime tunnel forward from the SSH dialog fields (#206).
-/// Returns `None` for unknown kinds or unparseable ports — the caller then
-/// silently ignores the request (no feedback loop for a dialog-only input).
-pub(crate) fn parse_tunnel_forward(
-    kind: &str,
-    name: &str,
-    bind: &str,
-    bind_port: &str,
-    host: &str,
-    host_port: &str,
-) -> Option<crate::config::PortForward> {
-    if kind != "local" && kind != "dynamic" {
-        return None;
-    }
-    let bind_port = bind_port.trim().parse::<u16>().ok()?;
-    let host_port = if kind == "dynamic" {
-        0
-    } else {
-        host_port.trim().parse::<u16>().ok()?
-    };
-    Some(crate::config::PortForward {
-        kind: kind.to_string(),
-        name: name.trim().to_string(),
-        bind_addr: bind.trim().to_string(),
-        bind_port,
-        host: host.trim().to_string(),
-        host_port,
-    })
-}
-
 pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
     // Runtime context for starting / reconnecting a session. Assembled here
     // from the app-wide context rather than passed in twice: the caller used to
@@ -70,47 +40,6 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
     let gates_scroll2 = app.render_gates.clone();
     let store = app.store.clone();
     let last_term_size = app.last_term_size.clone();
-    // Runtime SSH tunnel panel (#206). These tunnels live only for the active
-    // connection; saved session configuration remains unchanged.
-    {
-        let handles_rc = handles.clone();
-        window.on_tunnel_add(
-            move |tab_id: SharedString,
-                  name: SharedString,
-                  kind: SharedString,
-                  bind: SharedString,
-                  bind_port: SharedString,
-                  host: SharedString,
-                  host_port: SharedString| {
-                let Some(forward) = parse_tunnel_forward(
-                    &kind, &name, &bind, &bind_port, &host, &host_port,
-                ) else {
-                    return;
-                };
-                // Non-loopback bind → port is reachable from the LAN; an
-                // unauthenticated dynamic (SOCKS) forward is an open proxy.
-                if forward.bind_addr != "127.0.0.1" && forward.bind_addr != "localhost" {
-                    tracing::warn!(
-                        "runtime tunnel binds non-loopback {}:{} (LAN exposure: {})",
-                        forward.bind_addr,
-                        forward.bind_port,
-                        forward.kind
-                    );
-                }
-                if let Some(handle) = handles_rc.borrow().get(tab_id.as_str()) {
-                    handle.add_tunnel(format!("runtime-{}", uuid::Uuid::new_v4()), forward);
-                }
-            },
-        );
-    }
-    {
-        let handles_rc = handles.clone();
-        window.on_tunnel_stop(move |tab_id: SharedString, tunnel_id: SharedString| {
-            if let Some(handle) = handles_rc.borrow().get(tab_id.as_str()) {
-                handle.stop_tunnel(tunnel_id.to_string());
-            }
-        });
-    }
 
     // --- Command bar (#55): run command + quick-command management ---------
     {
@@ -1457,25 +1386,3 @@ pub(crate) fn redact_key(key: &str) -> String {
     parts.join(",")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // key_input.rs shipped with zero self-contained tests after the stage-D
-    // move (420ab29): the full coverage for `parse_tunnel_forward` /
-    // `redact_key` lives in app.rs's `key_tests` module, which imports the
-    // functions from here. This module anchors the coverage next to the code
-    // and adds cases the app.rs tests don't cover (port/host whitespace).
-
-    #[test]
-    fn parse_tunnel_forward_trims_whitespace_in_bind_and_host() {
-        let f = parse_tunnel_forward(
-            "local", "", "  127.0.0.1  ", " 8080 ", "  db.internal ", " 5432 ",
-        )
-        .unwrap();
-        assert_eq!(f.bind_addr, "127.0.0.1");
-        assert_eq!(f.bind_port, 8080);
-        assert_eq!(f.host, "db.internal");
-        assert_eq!(f.host_port, 5432);
-    }
-}

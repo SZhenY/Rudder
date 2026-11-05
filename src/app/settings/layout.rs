@@ -6,14 +6,12 @@
 //! **启动播种与「还原本页默认」共用它**，保证两条路径不会各写一半。
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use slint::{ComponentHandle, VecModel};
 
 use super::{Store, persist};
 use crate::app::pane_layout::refresh_panes;
-use crate::ssh::SessionHandle;
 use crate::ui::{ AnimationSettings, AppWindow, PaneInfo, SplitterInfo, TabInfo, Theme };
 
 /// 布局迁移需要的窗格与模型句柄（字段全是 `Rc`，克隆廉价）。
@@ -47,7 +45,6 @@ pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     let (sidebar_collapsed, welcome_collapsed) = resolve_collapsed(CollapseInputs {
         sidebar_collapsed: s.sidebar_collapsed().unwrap_or(collapse_sidebar),
         welcome_collapsed: s.welcome_collapsed().unwrap_or(false),
-        sidebar_dock: &sidebar_dock,
         welcome_sidebar_dock: &welcome_sidebar_dock,
         welcome_as_sidebar,
         quick_panel_open,
@@ -114,12 +111,10 @@ pub(crate) fn apply_quick_commands_as_sidebar(w: &AppWindow, store: &Store, v: b
 
 /// 播种 + 注册持久化回调。
 ///
-/// `handles` 用于侧栏折叠时暂停/恢复各会话的资源监控（上游 b17da25）；
 /// `panes` 供 `welcome_as_sidebar` 在侧栏与窗格树之间迁移。
 pub(crate) fn bind(
     window: &AppWindow,
     store: &Store,
-    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
     panes: &PaneHandles,
 ) {
     let layout = &panes.layout;
@@ -207,18 +202,12 @@ pub(crate) fn bind(
     {
         let weak = window.as_weak();
         let store = store.clone();
-        let handles = handles.clone();
         window.on_set_sidebar_collapsed(move |v| {
             persist(&store, |s| {
                 s.set_sidebar_collapsed(v);
             });
             if let Some(w) = weak.upgrade() {
                 w.set_sidebar_collapsed(v);
-            }
-            // Pause resource monitoring for every live session while the
-            // sidebar is hidden; resume when it comes back (upstream b17da25).
-            for handle in handles.borrow().values() {
-                handle.set_resource_monitoring(!v);
             }
         });
     }
@@ -374,7 +363,6 @@ pub(crate) fn reset(w: &AppWindow, store: &Store, panes: &PaneHandles) {
 struct CollapseInputs<'a> {
     sidebar_collapsed: bool,
     welcome_collapsed: bool,
-    sidebar_dock: &'a str,
     welcome_sidebar_dock: &'a str,
     welcome_as_sidebar: bool,
     quick_panel_open: bool,
@@ -382,38 +370,27 @@ struct CollapseInputs<'a> {
     quick_panel_dock: &'a str,
 }
 
-/// 面板收起状态的消解：**同一侧只能有一个展开的面板**，否则两个叠在同一侧。
-///
-/// 抽出成纯函数：这是"哪些面板要收起来"的唯一真相源，四向停靠两两组合都靠它。
+/// 收起状态消解：导航固定在 dock-area 之外，不与欢迎侧栏 / 快捷面板争同一条边，
+/// 它自己的收起状态直接透传；只需处理快捷面板与欢迎侧栏同侧时的冲突。
 fn resolve_collapsed(
     inputs: CollapseInputs<'_>,
 ) -> (bool, bool) {
     let CollapseInputs {
-        mut sidebar_collapsed,
+        sidebar_collapsed,
         mut welcome_collapsed,
-        sidebar_dock,
         welcome_sidebar_dock,
         welcome_as_sidebar,
         quick_panel_open,
         quick_panel_collapsed,
         quick_panel_dock,
     } = inputs;
-    // 欢迎页当侧栏且与侧栏同侧 → 收侧栏（两个都展开会叠在一起）。
-    if welcome_as_sidebar
-        && sidebar_dock == welcome_sidebar_dock
-        && !sidebar_collapsed
-        && !welcome_collapsed
+    // 快捷面板开着且没被手动收起 → 与欢迎侧栏同侧时收欢迎侧栏。
+    if quick_panel_open
+        && !quick_panel_collapsed
+        && welcome_as_sidebar
+        && welcome_sidebar_dock == quick_panel_dock
     {
-        sidebar_collapsed = true;
-    }
-    // 快捷面板开着且没被手动收起 → 谁与它同侧就收谁。
-    if quick_panel_open && !quick_panel_collapsed {
-        if sidebar_dock == quick_panel_dock {
-            sidebar_collapsed = true;
-        }
-        if welcome_as_sidebar && welcome_sidebar_dock == quick_panel_dock {
-            welcome_collapsed = true;
-        }
+        welcome_collapsed = true;
     }
     (sidebar_collapsed, welcome_collapsed)
 }
@@ -422,17 +399,16 @@ fn resolve_collapsed(
 mod tests {
     use super::*;
 
-    /// 默认：两侧各一个面板、都展开、快捷面板关着。
-    fn inputs<'a>(sidebar_dock: &'a str, welcome_dock: &'a str) -> CollapseInputs<'a> {
+    /// 默认：导航与欢迎侧栏都展开、快捷面板关着。
+    fn inputs<'a>(quick_dock: &'a str, welcome_dock: &'a str) -> CollapseInputs<'a> {
         CollapseInputs {
             sidebar_collapsed: false,
             welcome_collapsed: false,
-            sidebar_dock,
             welcome_sidebar_dock: welcome_dock,
             welcome_as_sidebar: true,
             quick_panel_open: false,
             quick_panel_collapsed: false,
-            quick_panel_dock: sidebar_dock,
+            quick_panel_dock: quick_dock,
         }
     }
 
@@ -442,34 +418,28 @@ mod tests {
         assert_eq!((side, welcome), (false, false), "不同侧 → 都保持展开");
     }
 
-    /// 欢迎页当侧栏且**同侧** → 收侧栏（否则两个面板叠在同一侧）。
+    /// 导航在 dock-area 之外，欢迎侧栏停靠同侧也不会把它收起。
     #[test]
-    fn welcome_on_the_same_side_collapses_the_sidebar() {
+    fn welcome_on_the_same_side_keeps_nav_expanded() {
         let (side, welcome) = resolve_collapsed(inputs("left", "left"));
-        assert_eq!((side, welcome), (true, false));
+        assert_eq!((side, welcome), (false, false));
     }
 
-    /// 快捷面板与侧栏同侧 → 收侧栏；与欢迎页同侧 → 收欢迎页；可以同时发生。
+    /// 快捷面板只收与它同侧的欢迎侧栏，导航不参与停靠冲突。
     #[test]
-    fn quick_panel_collapses_whoever_shares_its_side() {
+    fn quick_panel_collapses_the_welcome_sidebar_on_its_side() {
         let mut quick_left = inputs("left", "right");
         quick_left.quick_panel_open = true;
         let (side, welcome) = resolve_collapsed(quick_left);
-        assert_eq!((side, welcome), (true, false), "只收同侧的侧栏");
+        assert_eq!((side, welcome), (false, false), "快捷面板在左、欢迎页在右");
 
-        let mut quick_welcome = inputs("right", "left");
+        let mut quick_welcome = inputs("left", "left");
         quick_welcome.quick_panel_open = true;
-        quick_welcome.quick_panel_dock = "left"; // 与欢迎页同侧，而不是与侧栏同侧
         let (side, welcome) = resolve_collapsed(quick_welcome);
-        assert_eq!((side, welcome), (false, true), "只收同侧的欢迎页");
-
-        let mut all_left = inputs("left", "left");
-        all_left.quick_panel_open = true;
-        let (side, welcome) = resolve_collapsed(all_left);
-        assert_eq!((side, welcome), (true, true), "三个同侧 → 全收");
+        assert_eq!((side, welcome), (false, true), "两者同在左 → 只收欢迎页");
     }
 
-    /// 已经手动收起的面板不再被"同侧冲突"改回来；快捷面板被手动收起时不参与消解。
+    /// 手动收起的面板保持收起；快捷面板自己收着时不参与消解。
     #[test]
     fn manual_collapse_and_closed_quick_panel_are_respected() {
         let mut already = inputs("left", "left");
@@ -477,7 +447,7 @@ mod tests {
         let (side, welcome) = resolve_collapsed(already);
         assert_eq!((side, welcome), (true, false), "已收的保持收起");
 
-        let mut quick_collapsed = inputs("left", "right");
+        let mut quick_collapsed = inputs("left", "left");
         quick_collapsed.quick_panel_open = true;
         quick_collapsed.quick_panel_collapsed = true;
         let (side, welcome) = resolve_collapsed(quick_collapsed);

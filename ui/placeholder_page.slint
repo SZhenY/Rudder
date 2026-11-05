@@ -1,0 +1,45 @@
+//! 导航占位页：Docker / 笔记还没接后端时的空状态。
+
+import { Theme } from "theme.slint";
+import { IconText } from "components/text.slint";
+
+export component PlaceholderPage inherits Rectangle {
+    in property <string> glyph;
+    in property <string> title;
+    in property <string> subtitle;
+
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 8px;
+
+        Rectangle {
+            width: 56px;
+            height: 56px;
+            border-radius: Theme.radius-md;
+            background: Theme.bg-elevated;
+            IconText {
+                text: root.glyph;
+                color: Theme.accent;
+                font-size: 28px;
+                centered: true;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+        Text {
+            text: root.title;
+            color: Theme.text-primary;
+            font-size: Theme.fs-lg;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.subtitle;
+            color: Theme.text-muted;
+            font-size: Theme.fs-sm;
+            horizontal-alignment: center;
+        }
+    }
+}

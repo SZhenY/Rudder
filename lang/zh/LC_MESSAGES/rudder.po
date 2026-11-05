@@ -746,3 +746,15 @@ msgstr "可切换到旧版本"
 
 msgid "Download & switch"
 msgstr "下载并切换"
+
+msgid "Hosts"
+msgstr "主机"
+
+msgid "Notes"
+msgstr "笔记"
+
+msgid "Settings"
+msgstr "设置"
+
+msgid "Planned"
+msgstr "规划中"

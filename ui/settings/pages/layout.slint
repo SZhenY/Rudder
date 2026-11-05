@@ -34,7 +34,7 @@ export component LayoutPage inherits VerticalLayout {
         title-en: "SIDEBARS";
         title-height: 24px;
         SettingSwitch {
-            label: root.lang-en ? "Collapse the resource panel by default" : "默认收起资源视图面板";
+            label: root.lang-en ? "Collapse the navigation by default" : "默认收起左侧导航";
             checked <=> root.collapse-sidebar-default;
             toggled(v) => { root.set-collapse-sidebar-default(v); }
         }

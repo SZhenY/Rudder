@@ -261,16 +261,18 @@ pub(crate) fn app_content_area(win: &AppWindow) -> LogicalRect {
     };
     area.h = size.height as f32 / scale - area.y;
 
+    // 左侧导航在 dock-area 之外固定占左缘，先扣掉它的宽（展开 200 / 收起 22）。
+    let nav = win.get_nav_width();
+    area.x += nav;
+    area.w = (area.w - nav).max(0.0);
+
     if win.get_welcome_as_sidebar() {
         let dock = win.get_welcome_sidebar_dock().to_string();
-        let sidebar_strip_outside = !win.get_welcome_collapsed()
-            && win.get_sidebar_collapsed()
-            && win.get_sidebar_dock().as_str() == dock.as_str();
-        let welcome_taken = (if win.get_welcome_collapsed() {
+        let welcome_taken = if win.get_welcome_collapsed() {
             36.0
         } else {
             win.get_welcome_sidebar_width()
-        }) + if sidebar_strip_outside { 36.0 } else { 0.0 };
+        };
         shrink_edge(
             &mut area.x,
             &mut area.y,
@@ -281,29 +283,12 @@ pub(crate) fn app_content_area(win: &AppWindow) -> LogicalRect {
         );
     }
 
-    let side_dock = win.get_sidebar_dock().to_string();
-    let side_take = if win.get_sidebar_collapsed() {
-        36.0
-    } else if side_dock == "left" || side_dock == "right" {
-        win.get_sidebar_width() + 4.0
-    } else {
-        win.get_sidebar_height() + 4.0
-    };
-    shrink_edge(
-        &mut area.x,
-        &mut area.y,
-        &mut area.w,
-        &mut area.h,
-        &side_dock,
-        side_take,
-    );
     if win.get_quick_panel_open() {
         let quick_dock = win.get_quick_panel_dock().to_string();
         let quick_merged = win.get_quick_panel_collapsed()
-            && ((win.get_welcome_as_sidebar()
-                && win.get_welcome_collapsed()
-                && win.get_welcome_sidebar_dock().as_str() == quick_dock.as_str())
-                || (win.get_sidebar_collapsed() && side_dock.as_str() == quick_dock.as_str()));
+            && win.get_welcome_as_sidebar()
+            && win.get_welcome_collapsed()
+            && win.get_welcome_sidebar_dock().as_str() == quick_dock.as_str();
         if quick_merged {
             return area;
         }
@@ -360,6 +345,10 @@ pub(crate) fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, Lo
 /// 纯 Slint 模型几何，与平台无关 —— 之前只被 Windows 的拖放处理器用到，才挂着
 /// `#[cfg(windows)]` 躲 dead-code 警告；现在非 Windows 的拖放也走这条路径。
 pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect> {
+    // 运行状态页签没有文件列表，拖到这里不该当成上传落点。
+    if win.get_sftp_mode().as_str() != "files" {
+        return None;
+    }
     let (_active, term, term_state) = active_terminal_panel_rects(win)?;
     if term_state.sftp_collapsed {
         return None;

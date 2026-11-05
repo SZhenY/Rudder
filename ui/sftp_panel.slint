@@ -4,6 +4,8 @@ import { TabInfo } from "tabs.slint";
 import { Divider, VDivider } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 import { SftpMenuItem } from "sftp_parts.slint";
+import { ResourceView } from "resource_view.slint";
+import { DiskInfo } from "sidebar_blocks.slint";
 
 
 // ---------------------------------------------------------------------------
@@ -58,7 +60,29 @@ export component SftpPanel inherits Rectangle {
     in property <[TabInfo]> transfer-targets: [];
     in property <string> sort-key: "";
     in property <int> sort-dir: 0; // 0 default / 1 asc / -1 desc
-    in property <[TunnelInfo]> tunnels: [];
+    // --- 运行状态页签的数据（原侧栏，由 AppWindow 逐层透传）-----------------
+    in property <string> connection-state: @tr("Not connected");
+    in property <string> conn-host;
+    in property <int> conn-state;
+    in property <string> resource-title: @tr("Local resources");
+    in property <float> cpu-percent;
+    in property <float> mem-percent;
+    in property <float> swap-percent;
+    in property <string> mem-detail;
+    in property <string> swap-detail;
+    in property <string> net-top-up;
+    in property <string> net-top-down;
+    in property <[float]> net-top-history;
+    in property <string> net-bot-up;
+    in property <string> net-bot-down;
+    in property <[float]> net-bot-history;
+    in property <[string]> net-ifaces;
+    in property <string> net-selected;
+    in property <bool> net-show-selector;
+    in property <[DiskInfo]> disks;
+    in property <bool> system-info-available;
+    in property <bool> proc-available;
+    in property <string> app-version;
     in property <bool> collapsed: false;   // when true only the toolbar shows
     in property <bool> show-tree: true;    // hide the directory tree when narrow (#dock)
     in property <bool> compact: false;     // side-docked + collapsed → render nothing but a clean strip (#dock)
@@ -89,13 +113,7 @@ export component SftpPanel inherits Rectangle {
     property <string> menu-target-name;
     property <bool>   menu-target-is-dir;
     property <int>    menu-target-mode;     // permission bits for the chmod dialog
-    property <string> panel-mode: "files";
-    property <string> tunnel-kind: "local";
-    property <string> tunnel-name: "";
-    property <string> tunnel-bind: "127.0.0.1";
-    property <string> tunnel-bind-port: "1080";
-    property <string> tunnel-host: "127.0.0.1";
-    property <string> tunnel-host-port: "80";
+    in-out property <string> panel-mode: "files";
     // The full toolbar needs roughly 480px once a useful path field is included.
     // Below that, switch deliberately to a two-row compact layout instead of
     // allowing fixed-size controls to squeeze the path and each other (#285).
@@ -120,8 +138,11 @@ export component SftpPanel inherits Rectangle {
     callback edit-external(string);     // open externally + watch/re-upload (#81)
     callback sort-request(string /* name|size|modified */);
     callback clear-sort();
-    callback tunnel-add(string /* name */, string /* kind */, string /* bind */, string /* bind-port */, string /* host */, string /* host-port */);
-    callback tunnel-stop(string /* id */);
+    // 运行状态页签的交互，全部转给 AppWindow 现有的回调。
+    callback select-net-iface(string);
+    callback show-system-info();
+    callback show-processes();
+    callback copy-host(string);
     // Context-menu extensions (#69). The *-request callbacks open dialogs in
     // the app shell; copy-path goes straight to the system clipboard.
     callback rename-request(string /* path */, string /* current name */);
@@ -239,7 +260,7 @@ export component SftpPanel inherits Rectangle {
                         clicked => { root.panel-mode = "files"; }
                     }
                     Text {
-                        text: root.narrow-toolbar ? "\u{E2C7}" : @tr("Files");
+                        text: root.narrow-toolbar ? "\u{E2C7}" : "SFTP";
                         font-family: root.narrow-toolbar ? "Material Icons" : Theme.ui-font-family;
                         color: root.panel-mode == "files" ? #ffffff : Theme.text-secondary;
                         font-size: Theme.fs-xs;
@@ -248,23 +269,23 @@ export component SftpPanel inherits Rectangle {
                     }
                 }
                 Rectangle {
-                    width: root.narrow-toolbar ? 28px : 58px;
+                    width: root.narrow-toolbar ? 28px : 64px;
                     height: 22px;
                     border-radius: Theme.radius-sm;
-                    background: root.panel-mode == "tunnels" ? Theme.accent : (tunnels-tab-ta.has-hover ? Theme.state-hover : transparent);
+                    background: root.panel-mode == "status" ? Theme.accent : (status-tab-ta.has-hover ? Theme.state-hover : transparent);
                     animate background {
-                        duration: root.panel-mode == "tunnels" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                        easing: root.panel-mode == "tunnels" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                        duration: root.panel-mode == "status" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                        easing: root.panel-mode == "status" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
                         enabled: AnimationSettings.enabled;
                     }
-                    tunnels-tab-ta := TouchArea {
+                    status-tab-ta := TouchArea {
                         mouse-cursor: pointer;
-                        clicked => { root.panel-mode = "tunnels"; }
+                        clicked => { root.panel-mode = "status"; }
                     }
                     Text {
-                        text: root.narrow-toolbar ? "\u{E0B6}" : @tr("Tunnels");
+                        text: root.narrow-toolbar ? "\u{E871}" : @tr("Status");
                         font-family: root.narrow-toolbar ? "Material Icons" : Theme.ui-font-family;
-                        color: root.panel-mode == "tunnels" ? #ffffff : Theme.text-secondary;
+                        color: root.panel-mode == "status" ? #ffffff : Theme.text-secondary;
                         font-size: Theme.fs-xs;
                         horizontal-alignment: center;
                         vertical-alignment: center;
@@ -1045,142 +1066,39 @@ export component SftpPanel inherits Rectangle {
             }
         }
 
-        if root.panel-mode == "tunnels" : Rectangle {
+        if root.panel-mode == "status" : ResourceView {
             vertical-stretch: 1;
-            clip: true;
-            background: transparent;
-
-            ScrollView {
-                width: parent.width;
-                height: parent.height;
-                content-width: self.visible-width;
-                content-height: max(self.visible-height, tunnel-body.preferred-height);
-
-                tunnel-body := VerticalLayout {
-                    padding: 10px;
-                    spacing: 8px;
-
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Rectangle {
-                            width: 54px; height: 24px; border-radius: Theme.radius-sm;
-                            background: root.tunnel-kind == "local" ? Theme.accent : (tl-ta.has-hover ? Theme.state-hover : Theme.bg-root);
-                            animate background {
-                                duration: root.tunnel-kind == "local" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                                easing: root.tunnel-kind == "local" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                                enabled: AnimationSettings.enabled;
-                            }
-                            tl-ta := TouchArea { mouse-cursor: pointer; clicked => { root.tunnel-kind = "local"; } }
-                            Text { text: "-L"; color: root.tunnel-kind == "local" ? #ffffff : Theme.text-primary; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                        Rectangle {
-                            width: 54px; height: 24px; border-radius: Theme.radius-sm;
-                            background: root.tunnel-kind == "dynamic" ? Theme.accent : (td-ta.has-hover ? Theme.state-hover : Theme.bg-root);
-                            animate background {
-                                duration: root.tunnel-kind == "dynamic" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                                easing: root.tunnel-kind == "dynamic" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                                enabled: AnimationSettings.enabled;
-                            }
-                            td-ta := TouchArea { mouse-cursor: pointer; clicked => { root.tunnel-kind = "dynamic"; } }
-                            Text { text: "-D"; color: root.tunnel-kind == "dynamic" ? #ffffff : Theme.text-primary; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                        Rectangle { horizontal-stretch: 1; }
-                        Rectangle {
-                            width: 72px; height: 24px; border-radius: Theme.radius-sm;
-                            background: add-tunnel-ta.has-hover ? Theme.accent-hover : Theme.accent;
-                            animate background {
-                                duration: add-tunnel-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                                easing: add-tunnel-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                                enabled: AnimationSettings.enabled;
-                            }
-                            add-tunnel-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => {
-                                    if (root.tunnel-bind-port != "" && (root.tunnel-kind == "dynamic" || (root.tunnel-host != "" && root.tunnel-host-port != ""))) {
-                                        root.tunnel-add(root.tunnel-name, root.tunnel-kind, root.tunnel-bind, root.tunnel-bind-port, root.tunnel-host, root.tunnel-host-port);
-                                    }
-                                }
-                            }
-                            Text { text: @tr("Add"); color: #ffffff; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
-                        }
-                    }
-
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Rectangle {
-                            horizontal-stretch: 1; height: 24px; border-radius: Theme.radius-sm;
-                            background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-name; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
-                        }
-                        Rectangle {
-                            width: 128px; height: 24px; border-radius: Theme.radius-sm;
-                            background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-bind; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
-                        }
-                        Rectangle {
-                            width: 68px; height: 24px; border-radius: Theme.radius-sm;
-                            background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-bind-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
-                        }
-                    }
-
-                    if root.tunnel-kind == "local" : HorizontalLayout {
-                        spacing: 8px;
-                        Rectangle {
-                            horizontal-stretch: 1; height: 24px; border-radius: Theme.radius-sm;
-                            background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-host; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
-                        }
-                        Rectangle {
-                            width: 76px; height: 24px; border-radius: Theme.radius-sm;
-                            background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                            TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-host-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
-                        }
-                    }
-
-                    Divider {}
-
-                    if root.tunnels.length == 0 : Rectangle {
-                        height: 36px;
-                        Text { text: @tr("No tunnels"); color: Theme.text-muted; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
-                    }
-
-                    for tun in root.tunnels : Rectangle {
-                        height: 34px;
-                        border-radius: Theme.radius-sm;
-                        background: tunnel-row-ta.has-hover ? Theme.state-hover : Theme.bg-root.with-alpha(0.42);
-                        animate background {
-                            duration: tunnel-row-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                            easing: tunnel-row-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                            enabled: AnimationSettings.enabled;
-                        }
-                        tunnel-row-ta := TouchArea {}
-                        HorizontalLayout {
-                            padding-left: 8px; padding-right: 8px; spacing: 8px;
-                            Text { text: tun.active ? "●" : "○"; color: tun.active ? #28c76f : Theme.text-muted; width: 14px; font-size: Theme.fs-sm; vertical-alignment: center; horizontal-alignment: center; }
-                            Text { text: tun.kind == "dynamic" ? "-D" : (tun.kind == "remote" ? "-R" : "-L"); color: Theme.text-muted; width: 28px; font-size: Theme.fs-sm; vertical-alignment: center; horizontal-alignment: center; }
-                            Text { text: tun.name; color: Theme.text-primary; width: 120px; font-size: Theme.fs-sm; overflow: elide; vertical-alignment: center; }
-                            Text { text: tun.bind + (tun.target != "" ? " → " + tun.target : ""); color: Theme.text-secondary; horizontal-stretch: 1; font-size: Theme.fs-xs; overflow: elide; vertical-alignment: center; }
-                            Text { text: tun.status; color: tun.active ? Theme.accent : Theme.text-muted; width: 62px; font-size: Theme.fs-xs; overflow: elide; vertical-alignment: center; horizontal-alignment: right; }
-                            Rectangle {
-                                width: 48px; height: 22px; border-radius: Theme.radius-sm;
-                                background: tun.active ? (stop-ta.has-hover ? Theme.danger.with-alpha(0.24) : transparent) : transparent;
-                                animate background {
-                                    duration: tun.active ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                                    easing: tun.active ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                                    enabled: AnimationSettings.enabled;
-                                }
-                                stop-ta := TouchArea { mouse-cursor: tun.active ? pointer : default; clicked => { if (tun.active) { root.tunnel-stop(tun.id); } } }
-                                Text { text: @tr("Stop"); color: tun.active ? Theme.danger : Theme.text-muted; font-size: Theme.fs-xs; horizontal-alignment: center; vertical-alignment: center; }
-                            }
-                        }
-                    }
-                }
-            }
+            connection-state: root.connection-state;
+            conn-host: root.conn-host;
+            conn-state: root.conn-state;
+            resource-title: root.resource-title;
+            cpu-percent: root.cpu-percent;
+            mem-percent: root.mem-percent;
+            swap-percent: root.swap-percent;
+            mem-detail: root.mem-detail;
+            swap-detail: root.swap-detail;
+            net-top-up: root.net-top-up;
+            net-top-down: root.net-top-down;
+            net-top-history: root.net-top-history;
+            net-bot-up: root.net-bot-up;
+            net-bot-down: root.net-bot-down;
+            net-bot-history: root.net-bot-history;
+            net-ifaces: root.net-ifaces;
+            net-selected: root.net-selected;
+            net-show-selector: root.net-show-selector;
+            disks: root.disks;
+            system-info-available: root.system-info-available;
+            proc-available: root.proc-available;
+            app-version: root.app-version;
+            select-net-iface(i) => { root.select-net-iface(i); }
+            show-system-info() => { root.show-system-info(); }
+            show-processes() => { root.show-processes(); }
+            copy-host(h) => { root.copy-host(h); }
         }
 
         // --- Status bar (full width) --------------------------------------
-        Rectangle {
+        // 运行状态页签没有文件操作可报，整条让给内容区（用 if 而非 visible，避免布局仍留 18px）。
+        if root.panel-mode == "files" : Rectangle {
             height: 18px;
             background: Theme.bg-panel-alt;
             Text {

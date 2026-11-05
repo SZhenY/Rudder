@@ -1,6 +1,7 @@
 import { Theme } from "theme.slint";
 import { AnimationSettings } from "theme.slint";
-import { SftpPanel, SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { SftpPanel, SftpEntry, SftpTreeNode } from "sftp_panel.slint";
+import { DiskInfo } from "sidebar_blocks.slint";
 import { TabInfo } from "tabs.slint";
 import { ToolStrip } from "widgets.slint";
 
@@ -102,7 +103,29 @@ export component TerminalView inherits Rectangle {
     in property <string> sftp-sort-key: "";
     in property <int> sftp-sort-dir: 0;
     in property <bool> sftp-available: true;
-    in property <[TunnelInfo]> tunnels: [];
+    // 运行状态页签的数据（原侧栏），只做透传给 SftpPanel。
+    in property <string> connection-state: @tr("Not connected");
+    in property <string> conn-host;
+    in property <int> conn-state;
+    in property <string> resource-title: @tr("Local resources");
+    in property <float> cpu-percent;
+    in property <float> mem-percent;
+    in property <float> swap-percent;
+    in property <string> mem-detail;
+    in property <string> swap-detail;
+    in property <string> net-top-up;
+    in property <string> net-top-down;
+    in property <[float]> net-top-history;
+    in property <string> net-bot-up;
+    in property <string> net-bot-down;
+    in property <[float]> net-bot-history;
+    in property <[string]> net-ifaces;
+    in property <string> net-selected;
+    in property <bool> net-show-selector;
+    in property <[DiskInfo]> disks;
+    in property <bool> system-info-available;
+    in property <bool> proc-available;
+    in property <string> app-version;
 
     // Per-session now (#v0.5): the AppWindow stores these in each TerminalState
     // and writes back via the set-* callbacks, so each tab/pane keeps its own SFTP
@@ -116,6 +139,7 @@ export component TerminalView inherits Rectangle {
 
     // --- SFTP docking (within the terminal area) ---------------------------
     // Which edge of the terminal area the SFTP panel sits on: left|right|top|bottom.
+    in-out property <string> sftp-mode: "files";
     in-out property <string> sftp-dock: "bottom";
     property <bool> sftp-horizontal: root.sftp-dock == "left" || root.sftp-dock == "right";
     // Drag-to-dock snap state (mirrors the resource-panel docking in app.slint).
@@ -205,8 +229,10 @@ export component TerminalView inherits Rectangle {
     callback sftp-edit-external(string);
     callback sftp-sort-request(string);
     callback sftp-clear-sort();
-    callback tunnel-add(string, string, string, string, string, string);
-    callback tunnel-stop(string);
+    // 运行状态页签：转交给 AppWindow 现有的回调。
+    callback select-net-iface(string);
+    callback open-system-info();
+    callback open-processes();
     // Context-menu extensions (#69), forwarded up to the app shell.
     callback sftp-rename-request(string, string);
     callback sftp-chmod-request(string, string, int);
@@ -2089,7 +2115,29 @@ export component TerminalView inherits Rectangle {
             selected-count: root.sftp-selected-count;
             sort-key: root.sftp-sort-key;
             sort-dir: root.sftp-sort-dir;
-            tunnels: root.tunnels;
+            connection-state: root.connection-state;
+            conn-host: root.conn-host;
+            conn-state: root.conn-state;
+            resource-title: root.resource-title;
+            cpu-percent: root.cpu-percent;
+            mem-percent: root.mem-percent;
+            swap-percent: root.swap-percent;
+            mem-detail: root.mem-detail;
+            swap-detail: root.swap-detail;
+            net-top-up: root.net-top-up;
+            net-top-down: root.net-top-down;
+            net-top-history: root.net-top-history;
+            net-bot-up: root.net-bot-up;
+            net-bot-down: root.net-bot-down;
+            net-bot-history: root.net-bot-history;
+            net-ifaces: root.net-ifaces;
+            net-selected: root.net-selected;
+            net-show-selector: root.net-show-selector;
+            disks: root.disks;
+            system-info-available: root.system-info-available;
+            proc-available: root.proc-available;
+            app-version: root.app-version;
+            panel-mode <=> root.sftp-mode;
             toggle-collapsed => {
                 if (root.sftp-collapsed) {
                     // Re-expand; the panel height was preserved while collapsed.
@@ -2118,10 +2166,10 @@ export component TerminalView inherits Rectangle {
             edit-external(path) => { root.sftp-edit-external(path); }
             sort-request(key)   => { root.sftp-sort-request(key); }
             clear-sort()        => { root.sftp-clear-sort(); }
-            tunnel-add(name, kind, bind, bind-port, host, host-port) => {
-                root.tunnel-add(name, kind, bind, bind-port, host, host-port);
-            }
-            tunnel-stop(id)     => { root.tunnel-stop(id); }
+            select-net-iface(i) => { root.select-net-iface(i); }
+            show-system-info()  => { root.open-system-info(); }
+            show-processes()    => { root.open-processes(); }
+            copy-host(h)        => { root.copy-text(h); }
             rename-request(path, name) => { root.sftp-rename-request(path, name); }
             chmod-request(path, name, mode) => { root.sftp-chmod-request(path, name, mode); }
             copy-path(path)     => { root.sftp-copy-path(path); }
