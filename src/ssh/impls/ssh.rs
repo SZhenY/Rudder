@@ -8,12 +8,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use async_trait::async_trait;
 use russh::client::{self, Handle, Handler, Msg};
 use russh::keys::key::PrivateKeyWithHashAlg;
-use russh::keys::{PrivateKey, decode_secret_key, load_secret_key};
+use russh::keys::{HashAlg, PrivateKey, PublicKey, decode_secret_key, load_secret_key};
 use russh::{Channel, ChannelId, ChannelMsg, Disconnect};
-use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
@@ -1907,7 +1905,8 @@ pub(crate) async fn authenticate_session(
             let mut ok = handle
                 .authenticate_password(&user, password.as_str())
                 .await
-                .context("password auth failed")?;
+                .context("password auth failed")?
+                .success();
             if !ok {
                 // russh can't switch auth methods on a handle whose first attempt
                 // already failed (it hangs), so reconnect on a fresh handle before
@@ -1949,12 +1948,12 @@ pub(crate) async fn authenticate_session(
             // RSA keys must be signed with an explicit SHA-2 hash; every other
             // key type carries its own algorithm, so no override is needed.
             let hash = keypair.algorithm().is_rsa().then_some(HashAlg::Sha256);
-            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash)
-                .context("invalid private key / hash algorithm combination")?;
+            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash);
             handle
                 .authenticate_publickey(&user, key_with_hash)
                 .await
                 .context("publickey auth failed")?
+                .success()
         }
     };
 
@@ -2062,7 +2061,22 @@ pub(crate) const COMPAT_CIPHER: &[russh::cipher::Name] = &[
     russh::cipher::TRIPLE_DES_CBC, // legacy fallback
 ];
 
-fn ssh_client_config() -> Arc<client::Config> {
+// MACs offered to the server. russh 0.65 dropped the SHA-1 variants from its
+// defaults (0.49 still had them), so spell the old default list out and keep the
+// legacy tail last: old servers that only speak hmac-sha1 still connect, modern
+// ones never get there (#172).
+pub(crate) const COMPAT_MAC: &[russh::mac::Name] = &[
+    russh::mac::HMAC_SHA512_ETM,
+    russh::mac::HMAC_SHA256_ETM,
+    russh::mac::HMAC_SHA512,
+    russh::mac::HMAC_SHA256,
+    russh::mac::HMAC_SHA1_ETM, // legacy fallback
+    russh::mac::HMAC_SHA1,     // legacy fallback
+];
+
+/// SSH 握手参数：保活间隔与算法优先级。终端、跳板机、SFTP 共用同一份，
+/// 避免某条连接漏掉兼容回退（#160 保活、#172 老服务器算法）。
+pub(crate) fn ssh_client_config() -> Arc<client::Config> {
     Arc::new(client::Config {
         // Keep idle connections alive (#160). The terminal usually has the
         // resource-monitor channel streaming every 2 s, but with shell
@@ -2074,6 +2088,7 @@ fn ssh_client_config() -> Arc<client::Config> {
         preferred: russh::Preferred {
             kex: std::borrow::Cow::Borrowed(COMPAT_KEX),
             cipher: std::borrow::Cow::Borrowed(COMPAT_CIPHER),
+            mac: std::borrow::Cow::Borrowed(COMPAT_MAC),
             ..russh::Preferred::DEFAULT
         },
         ..<_>::default()
@@ -2140,7 +2155,31 @@ pub(crate) fn classify_connect_failure(err: &anyhow::Error) -> String {
         .join(" | ")
         .to_lowercase();
 
-    if joined.contains("https proxy requires tls") {
+    // 算法协商失败用变体匹配：russh 0.65 的 Display 会把双方算法列表整段打出来，
+    // 直接透给用户就是一大串专有名词。这里只保留"哪一类算法"与"服务器提供什么"。
+    if let Some(russh::Error::NoCommonAlgo { kind, theirs, .. }) =
+        err.chain().find_map(|cause| cause.downcast_ref::<russh::Error>())
+    {
+        let title = match kind {
+            russh::AlgorithmKind::Kex => {
+                t("没有双方都支持的密钥交换算法", "No common key-exchange algorithm")
+            }
+            russh::AlgorithmKind::Key => {
+                t("没有双方都支持的主机密钥算法", "No common host-key algorithm")
+            }
+            russh::AlgorithmKind::Cipher => t("没有双方都支持的加密算法", "No common cipher"),
+            russh::AlgorithmKind::Mac => t("没有双方都支持的消息认证算法", "No common MAC"),
+            russh::AlgorithmKind::Compression => {
+                t("没有双方都支持的压缩算法", "No common compression")
+            }
+        };
+        let offered = if theirs.is_empty() {
+            t("服务器未提供任何候选", "none").to_string()
+        } else {
+            theirs.join(", ")
+        };
+        format!("{title}: {} {offered}", t("服务器提供", "server offers"))
+    } else if joined.contains("https proxy requires tls") {
         // Raised by `proxy::connect` for an `https://` proxy. Surfaced here so
         // the user gets the two working alternatives instead of a raw error.
         t(
@@ -3890,7 +3929,7 @@ where
     for _ in 0..16 {
         match res {
             Kb::Success => return Ok(true),
-            Kb::Failure => return Ok(false),
+            Kb::Failure { .. } => return Ok(false),
             Kb::InfoRequest { prompts, .. } => {
                 let mut responses = Vec::with_capacity(prompts.len());
                 for p in &prompts {
@@ -4044,18 +4083,20 @@ pub(crate) async fn resolve_credentials(
     }
 }
 
-#[async_trait]
 impl Handler for ClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        // 0.65 把参数换成"公钥或主机证书"。我们不配置 CA 信任库，证书按它认证的
+        // 那把 key 校验（与 OpenSSH 无 CA 时的行为一致）。
+        let key = server_public_key.public_key();
         Ok(verify_host_key(
             &self.host,
             self.port,
-            server_public_key,
+            &key,
             &self.events,
             self.trust_unknown_host_key,
         )
@@ -4081,16 +4122,22 @@ impl Handler for ClientHandler {
         connected_port: u32,
         _originator_address: &str,
         _originator_port: u32,
+        reply: russh::client::ChannelOpenHandle,
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
         let target = self.remote_forwards.get(&connected_port).cloned();
+        let Some((host, port)) = target else {
+            tracing::warn!("forwarded-tcpip on {connected_address}:{connected_port} with no mapping");
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        };
+        // 0.65 起，入站通道要显式表态：`ChannelOpenHandle` 被 drop 时会自动回
+        // AdministrativelyProhibited。必须在 spawn 之前 accept，否则 -R 静默失效。
+        reply.accept().await;
         let events = self.events.clone();
-        let bind = connected_address.to_string();
         tokio::spawn(async move {
-            let Some((host, port)) = target else {
-                tracing::warn!("forwarded-tcpip on {bind}:{connected_port} with no mapping");
-                return;
-            };
             match tokio::net::TcpStream::connect((host.as_str(), port)).await {
                 Ok(mut tcp) => {
                     let mut stream = channel.into_stream();
@@ -4705,6 +4752,35 @@ mod connect_failure_tests {
 
         let hostkey = classify_connect_failure(&anyhow!("host key verification failed"));
         assert!(hostkey.contains("主机密钥") || hostkey.contains("Host key"));
+    }
+}
+
+#[cfg(test)]
+mod client_config_tests {
+    use super::{COMPAT_CIPHER, COMPAT_KEX, COMPAT_MAC, ssh_client_config};
+
+    /// russh 0.65 的默认 MAC 去掉了 SHA-1（0.49 有）。兼容表必须自带 SHA-1，
+    /// 且排在最后；同时确认这份表真的被送到 Config，而不只是定义着。
+    #[test]
+    fn legacy_fallbacks_reach_the_client_config() {
+        let macs: Vec<&str> = COMPAT_MAC.iter().map(|m| m.as_ref()).collect();
+        assert_eq!(macs.last(), Some(&"hmac-sha1"));
+        assert!(macs.contains(&"hmac-sha1-etm@openssh.com"));
+        assert!(COMPAT_CIPHER.iter().any(|c| c.as_ref() == "3des-cbc"));
+        assert!(
+            COMPAT_KEX
+                .iter()
+                .any(|k| k.as_ref() == "diffie-hellman-group1-sha1")
+        );
+
+        let config = ssh_client_config();
+        assert_eq!(config.preferred.mac.as_ref(), COMPAT_MAC);
+        assert_eq!(config.preferred.kex.as_ref(), COMPAT_KEX);
+        assert_eq!(config.preferred.cipher.as_ref(), COMPAT_CIPHER);
+        assert_eq!(
+            config.keepalive_interval,
+            Some(std::time::Duration::from_secs(30))
+        );
     }
 }
 

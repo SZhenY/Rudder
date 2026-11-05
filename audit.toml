@@ -1,23 +1,13 @@
 # cargo-audit configuration (https://rustsec.org).
 #
-# ── RUSTSEC-2026-0154 — russh "unbounded 32-bit allocation" (DoS), russh < 0.60.3 ──
+# RUSTSEC-2026-0154（russh < 0.60.3，ssh-agent 帧解析的无界分配）曾在这里被忽略：
+# 我们不用 agent，且升级会拖入整条预发布加密栈。现在 russh 已升到 0.65.0，
+# 该 advisory 不再命中，忽略项随之删除。
 #
-# The flaw is in russh's SSH-AGENT frame parsing: it accepts an unchecked frame
-# length from a peer and allocates before validating, so a malicious peer can
-# force a large allocation (denial of service). The fix caps the agent frame at
-# 256 KiB.
+# 当前已知的预发布依赖（有意接受，不是遗漏）：
+#   ssh-key 0.7.0-rc.11、rsa 0.10.0-rc.18、pkcs1 0.8.0-rc.4 —— 由 russh 0.65 精确 pin，
+#   无法在不放弃 RSA 的前提下绕开；理由与取舍写在 Cargo.toml 的 russh 注释里。
 #
-# Rudder does NOT use the ssh-agent in any way — no agent authentication, no
-# agent forwarding (grep the source tree for "agent": the only hits are HTTP
-# "User-Agent" and colour comments). The vulnerable code path is therefore never
-# reached in this binary, so the advisory is not exploitable here.
-#
-# We are deliberately NOT upgrading to the patched russh yet: the only fixed
-# release (>= 0.60.3) pulls in a stack of *pre-release* crypto crates
-# (ed25519-dalek 3.0.0-pre, curve25519-dalek 5.0.0-pre, aes-gcm 0.11.0-rc,
-# ecdsa / elliptic-curve / p256 rc, …). Swapping battle-tested, audited crypto
-# for unaudited release candidates in a production SSH client is a worse trade
-# than this unreachable DoS. Revisit once russh's crypto dependencies leave the
-# -rc / -pre channel; then do the API migration (see PR #151 for the shape of it).
+# 若将来出现新的 advisory，不要直接 ignore：先在 Cargo.toml 注释放结论与依据。
 [advisories]
-ignore = ["RUSTSEC-2026-0154"]
+ignore = []

@@ -18,15 +18,14 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use anyhow::{Context, Result, anyhow};
-use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
 use russh::Disconnect;
 use russh::client::{self, Handler};
 use russh::keys::key::PrivateKeyWithHashAlg;
+use russh::keys::HashAlg;
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::{RawSftpSession, SftpSession};
 use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
-use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use super::transfer::{DownloadConflict, SftpCommand, SftpHandle};
@@ -327,24 +326,9 @@ async fn run_sftp(
         t("SFTP 连接中...", "SFTP connecting...").into(),
     ));
 
-    // Open a dedicated SSH connection for SFTP.
-    let config = Arc::new(client::Config {
-        // Keep the idle SFTP connection alive (#160). Without a keepalive, an idle
-        // SFTP connection (no file ops for a while) gets silently dropped by
-        // NAT / firewall / server idle timeouts; afterwards every operation fails
-        // ("folder read failed"). Send a keepalive every 30 s so traffic never
-        // goes quiet; keepalive_max (default 3) still closes a genuinely dead
-        // connection after ~90 s of unanswered keepalives.
-        keepalive_interval: Some(std::time::Duration::from_secs(30)),
-        // Match the shell connection's algorithm set so SFTP reaches the same
-        // legacy servers (#172) instead of failing with "No common algorithm".
-        preferred: russh::Preferred {
-            kex: std::borrow::Cow::Borrowed(crate::ssh::COMPAT_KEX),
-            cipher: std::borrow::Cow::Borrowed(crate::ssh::COMPAT_CIPHER),
-            ..russh::Preferred::DEFAULT
-        },
-        ..<_>::default()
-    });
+    // Open a dedicated SSH connection for SFTP. Share the terminal's config so
+    // keepalive (#160) and legacy algorithm fallbacks (#172) can't drift apart.
+    let config = crate::ssh::ssh_client_config();
 
     let addr = format!("{}:{}", session.host, session.port);
     // Isolate external-editor files by connection and keep the server in the
@@ -418,7 +402,8 @@ async fn run_sftp(
             let mut ok = handle
                 .authenticate_password(&user, password.as_str())
                 .await
-                .context("sftp password auth failed")?;
+                .context("sftp password auth failed")?
+                .success();
             if !ok {
                 // Match the shell session's fallback: russh can hang if a second
                 // auth method is attempted on the same failed handle, so reconnect
@@ -500,12 +485,12 @@ async fn run_sftp(
             let keypair = crate::ssh::load_session_private_key(&session, pass)?;
             // RSA keys need an explicit SHA-2 hash; other key types don't.
             let hash = keypair.algorithm().is_rsa().then_some(HashAlg::Sha256);
-            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash)
-                .context("invalid private key")?;
+            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash);
             handle
                 .authenticate_publickey(&user, key_with_hash)
                 .await
                 .context("sftp publickey auth failed")?
+                .success()
         }
     };
 
@@ -2824,19 +2809,20 @@ fn sftp_handler(session: &Session, events: &UnboundedSender<SessionEvent>) -> Sf
     }
 }
 
-#[async_trait]
 impl Handler for SftpClientHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        // 0.65 的参数可能是主机证书：我们不用 CA，按证书认证的那把 key 校验。
+        let key = server_public_key.public_key();
         Ok(
             crate::ssh::verify_host_key(
                 &self.host,
                 self.port,
-                server_public_key,
+                &key,
                 &self.events,
                 // SFTP 在 shell 连上之后才连（见 `session_runtime` 的 ready 门），
                 // 那时主机密钥已被记住，正常走 Match；这里不需要也不该再放行未知主机。
