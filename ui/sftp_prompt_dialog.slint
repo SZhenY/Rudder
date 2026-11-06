@@ -3,7 +3,6 @@
 //! 从 `app.slint` 拆出（P4 B 类）：显隐由调用点判断，组件只负责呈现；
 //! 关闭弹窗上抛 `close-requested()`（不直接改窗口状态）。
 
-import { AnimationSettings } from "theme.slint";
 import "fonts/MeatshellMono-Regular.ttf";
 import "fonts/MeatshellMono-Bold.ttf";
 import "fonts/JetBrainsMono-Regular.ttf";
@@ -12,28 +11,8 @@ import "fonts/JetBrainsMono-Italic.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/MaterialIcons-Regular.ttf";
 import { Theme } from "theme.slint";
-import { GroupGap } from "components/surfaces.slint";
-import { Sidebar, DiskInfo } from "sidebar.slint";
-import { TabBar, TabInfo } from "tabs.slint";
-import { Welcome, SessionInfo } from "welcome.slint";
-import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
-import { ConfirmDialog } from "confirm_dialog.slint";
-import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
-import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
-import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
-import { ProcWindow, ProcRow } from "proc_window.slint";
-import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
-import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
-import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
-import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
-import { CloseButton } from "components/buttons.slint";
+import { LineEdit, Button } from "std-widgets.slint";
 import { ModalCard } from "components/surfaces.slint";
-import { IconText } from "components/text.slint";
-import { Label } from "components/text.slint";
-import { WindowTitleBar } from "components/window_shell.slint";
-import { EditorFindResult, FileEditor } from "file_editor.slint";
-import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
 
 export component SftpPromptDialog inherits ModalCard {
     // 显隐由调用点控制：**常驻**，不用 `if` 包着 —— 在事件派发栈上销毁

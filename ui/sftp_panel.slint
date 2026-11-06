@@ -35,16 +35,6 @@ export struct SftpTreeNode {
     has-children: bool,
 }
 
-export struct TunnelInfo {
-    id: string,
-    name: string,
-    kind: string,
-    bind: string,
-    target: string,
-    status: string,
-    active: bool,
-}
-
 // ---------------------------------------------------------------------------
 // SftpPanel — left directory tree + right file listing
 // ---------------------------------------------------------------------------
@@ -84,19 +74,18 @@ export component SftpPanel inherits Rectangle {
     in property <bool> proc-available;
     in property <string> app-version;
     in property <bool> collapsed: false;   // when true only the toolbar shows
-    in property <bool> show-tree: true;    // hide the directory tree when narrow (#dock)
-    in property <bool> compact: false;     // side-docked + collapsed → render nothing but a clean strip (#dock)
-    // Responsive columns: only when docked left/right (narrow, width-adjustable).
-    // Docked top/bottom the panel is wide and can only be resized vertically, so
-    // always show every column there (show-tree is true exactly in that case).
-    // When narrow, drop Size then Modified the moment keeping them would squeeze
-    // the Name column below `name-min` (names start eliding to "…"). Reserved
-    // widths: checkbox+padding+spacing 36px, Size col 76px, Modified 120px.
+    in property <bool> show-tree: true;    // 右侧固定竖排时不显示目录树
+    in property <bool> compact: false;     // 收起进度 > 0.99 时只留一条干净的折叠带
+    /// 折叠进度（0 = 展开，1 = 收起）。面板整体随它淡出，与宽度同一条时间轴。
+    in property <float> fade: 0;
+    // 列宽自适应：面板固定在右侧、宽度可调。窄到文件名开始省略时依次丢掉
+    // Size / Modified 列；`show-tree` 为 true 表示宽布局，所有列都显示。
+    // 预留宽度：复选框 + 内边距 + 间距 36px，Size 列 76px，Modified 列 120px。
     property <length> list-w: root.show-tree ? root.width - 161px : root.width;
     property <length> name-min: 180px;     // narrower than this → start dropping columns
     property <bool> show-size-col: root.show-tree || (root.list-w - 36px - 76px - 120px > root.name-min);
     property <bool> show-modified-col: root.show-tree || (root.list-w - 36px - 120px > root.name-min);
-    // 「类型 / 权限」两列（上游 ed7f231）：只在真的有余量时出现 —— 左/右停靠时本来就窄，
+    // 「类型 / 权限」两列（上游 ed7f231）：只在真的有余量时出现 —— 右侧面板本来就窄，
     // 宁可不显示也不要挤掉文件名（这两列是参考信息，不是操作必需）。预留：Type 56px +
     // Permissions 92px（含 spacing）。
     property <bool> show-fileinfo-cols: root.show-tree
@@ -150,14 +139,13 @@ export component SftpPanel inherits Rectangle {
     callback copy-path(string);
     callback new-folder(string /* parent dir */);
     callback new-file(string /* parent dir */);
-    // Drag-to-dock: empty areas of the panel are a grab handle; coordinates are
-    // reported in window space so the parent can compute the target edge (#dock).
-    callback dock-drag-move(length /* abs-x */, length /* abs-y */);
-    callback dock-drag-end();
-
     // -----------------------------------------------------------------------
     background: Theme.bg-panel;
     clip: true;
+    // 面板整体随折叠进度淡出，与宽度同轴。
+    // `visible` 在淡出结束后关掉渲染（`opacity: 0` 仍会吃点击）。
+    opacity: 1 - root.fade;
+    visible: root.fade < 0.999;
 
     // Keep the editable path bar in sync when the directory changes elsewhere
     // (tree click, file double-click, terminal cd) (#54).
@@ -167,30 +155,8 @@ export component SftpPanel inherits Rectangle {
         root.selected-row = -1;
     }
 
-    // Drag empty space to re-dock; interactive widgets (file list, tree, toolbar
-    // buttons) sit in front and capture their own events (#dock).
-    dock-bg := TouchArea {
-        mouse-cursor: move;
-        moved => {
-            // 只有真的按着这个手柄拖动时才报位置：Slint 在指针只是经过时也会派发 moved，
-            // 那会让面板不按键就跟着鼠标跑（上游 a02d536）。
-            if (self.pressed) {
-                root.dock-drag-move(self.absolute-position.x + self.mouse-x,
-                    self.absolute-position.y + self.mouse-y);
-            }
-        }
-        pointer-event(ev) => {
-            if (ev.kind == PointerEventKind.up) { root.dock-drag-end(); }
-            // 拖拽被系统取消（指针抓取被收回，例如中途弹出窗口）时也要收尾，
-            // 否则面板会一直停在"拖拽中"状态（上游 a02d536）。
-            else if (ev.kind == PointerEventKind.cancel) { root.dock-drag-end(); }
-        }
-    }
-
-    // Hidden entirely when side-docked + collapsed: the horizontal toolbar would
-    // otherwise squish into an unusable vertical strip. `visible` (not `if`) so
-    // ids like path-input stay accessible to handlers. The parent floats a clean
-    // expand button over this (#dock).
+    // 收起态整块隐藏：横向工具栏会被压成不可用的竖条。用 `visible`（不是 `if`）
+    // 让 path-input 这类 id 仍可被回调访问；折叠条由父级浮在上层。
     VerticalLayout {
         visible: !root.compact;
         spacing: 0;
@@ -210,40 +176,6 @@ export component SftpPanel inherits Rectangle {
                 padding-top: 6px;
                 padding-bottom: 6px;
                 spacing: 4px;
-
-                // Dedicated drag handle to re-dock the panel. The toolbar is full
-                // of controls, so dragging "empty space" is unreliable; this grip
-                // is always grabbable and reports window-space coords (#dock).
-                Rectangle {
-                    width: 16px;
-                    y: (parent.height - self.height) / 2;
-                    height: 22px;
-                    grip-ta := TouchArea {
-                        mouse-cursor: move;
-                        moved => {
-                            // 只有真的按着这个手柄拖动时才报位置：Slint 在指针只是经过时也会派发 moved，
-                            // 那会让面板不按键就跟着鼠标跑（上游 a02d536）。
-                            if (self.pressed) {
-                                root.dock-drag-move(self.absolute-position.x + self.mouse-x,
-                                    self.absolute-position.y + self.mouse-y);
-                            }
-                        }
-                        pointer-event(ev) => {
-                            if (ev.kind == PointerEventKind.up) { root.dock-drag-end(); }
-                            // 拖拽被系统取消（指针抓取被收回，例如中途弹出窗口）时也要收尾，
-                            // 否则面板会一直停在"拖拽中"状态（上游 a02d536）。
-                            else if (ev.kind == PointerEventKind.cancel) { root.dock-drag-end(); }
-                        }
-                    }
-                    IconText {
-                        centered: true;
-                        text: "\u{E945}";   // drag_indicator
-                        color: grip-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
-                        font-size: 16px;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
 
                 Rectangle {
                     width: root.narrow-toolbar ? 28px : 48px;
@@ -323,8 +255,10 @@ export component SftpPanel inherits Rectangle {
                 }
 
                 // Copy the current path to the clipboard.
-                Rectangle {
-                    visible: root.panel-mode == "files" && !root.narrow-toolbar;
+                // 用 `if` 而不是 `visible`：Slint 里 `visible: false` **不释放布局空间**，
+                // 这三个按钮会在窄模式下白占 3×24 + 3×4 = 84px，把最右的收起按钮挤出面板
+                // （255px 时第一行最少要 276px）。功能都在 ⋮ 菜单里，销毁无损失。
+                if root.panel-mode == "files" && !root.narrow-toolbar : Rectangle {
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
                     background: copy-ta.has-hover ? Theme.state-hover : transparent;
@@ -348,8 +282,7 @@ export component SftpPanel inherits Rectangle {
                 }
 
                 // Paste a path from the clipboard and jump straight to it.
-                Rectangle {
-                    visible: root.panel-mode == "files" && !root.narrow-toolbar;
+                if root.panel-mode == "files" && !root.narrow-toolbar : Rectangle {
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
                     background: pj-ta.has-hover ? Theme.state-hover : transparent;
@@ -440,8 +373,7 @@ export component SftpPanel inherits Rectangle {
 
                 // Secondary path actions move into an overflow menu in compact
                 // mode so they never compete with the path field for width.
-                compact-more-btn := Rectangle {
-                    visible: root.narrow-toolbar && root.panel-mode == "files";
+                if root.narrow-toolbar && root.panel-mode == "files" : Rectangle {
                     width: 24px;
                     height: 22px;
                     border-radius: Theme.radius-sm;
@@ -541,8 +473,7 @@ export component SftpPanel inherits Rectangle {
                            font-size: Theme.fs-md;}
                 }
 
-                Rectangle {
-                    visible: root.panel-mode == "files" && !root.narrow-toolbar;
+                if root.panel-mode == "files" && !root.narrow-toolbar : Rectangle {
                     width: 24px; height: 22px;
                     border-radius: Theme.radius-sm;
                     background: ref-ta.has-hover ? Theme.state-hover : transparent;
@@ -583,9 +514,8 @@ export component SftpPanel inherits Rectangle {
                 }
                 }
 
-                // Preserve path navigation in the side-docked compact layout by
-                // moving it to a real second layout row. The layout spacing keeps
-                // a stable gutter regardless of first-row alignment/padding.
+                // 窄工具栏下把路径导航挪到第二行，避免把第一行挤变形。
+                // 用 layout spacing 留固定间距，不受首行对齐 / 内边距影响。
                 HorizontalLayout {
                     visible: root.narrow-toolbar && root.panel-mode == "files";
                     height: self.visible ? 22px : 0px;

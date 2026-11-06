@@ -3,13 +3,6 @@
 //! 从 `session_dialog.slint` 拆出（P4）：字段组件与 `SessionDialog` 都要用到它们，
 //! 放在独立类型文件里可避免"搬组件 → 反向依赖对话框文件 → 成环"。
 //! 原文件用 `export { … }` 转出口，外部导入点与生成的 Rust 类型名不变。
-import { Theme } from "theme.slint";
-import { ComboBox } from "std-widgets.slint";
-import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
-import { GroupGap } from "components/surfaces.slint";
-import { FieldLabel, HelpText } from "components/surfaces.slint";
-import { CloseButton } from "components/buttons.slint";
-import { IconText } from "components/text.slint";
 
 export struct PortFwd {
     kind: string,

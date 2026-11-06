@@ -26,8 +26,8 @@ pub(crate) struct SystemSnapshot {
     pub disks: Arc<[(String, u64, u64)]>,
     /// 这份快照的采样时刻。
     ///
-    /// 采样器在侧栏折叠 / 窗口隐藏时会整拍跳过（`sampler.rs`），没有时间戳就
-    /// 无法如实标注"数据有多旧"——MCP 的 `stale` 与远端共用同一套判定。
+    /// 采样器在窗口隐藏时会整拍跳过（`sampler.rs`），没有时间戳就无法如实标注
+    /// "数据有多旧"——MCP 的 `stale` 与远端共用同一套判定。
     pub sampled_at: Option<std::time::Instant>,
 }
 
@@ -68,11 +68,11 @@ pub(crate) struct TabStatus {
     pub(crate) procs: Vec<ProcInfo>,
     pub(crate) sys: SystemDetails,
     /// A local-shell tab (WSL / cmd / PowerShell). These reach the connected
-    /// state but never produce remote resource stats, so the sidebar must fall
+    /// state but never produce remote resource stats, so the resource page falls
     /// back to the local machine's own figures instead of showing zeroes.
     pub(crate) is_local: bool,
     /// 最近一次拿到资源样本的时刻（不落盘）。MCP 的 `get_tab_status` 用它判断
-    /// 数据是否已陈旧 —— 侧栏折叠时采样是暂停的，需要临时开一下再等新样本。
+    /// 数据是否已陈旧 —— 窗口隐藏时采样暂停，恢复后要等新样本。
     pub(crate) last_stats_at: Option<std::time::Instant>,
 }
 

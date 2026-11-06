@@ -62,8 +62,17 @@ pub(crate) fn open_session_tab(
     let tab_id = format!("term-{}", uuid::Uuid::new_v4());
     let tab_title = session.name.clone();
 
-    // Connection label shown in the sidebar / status line, per transport.
+    // Connection label shown in the connection-status dialog, per transport.
     let conn_label = conn_label(&session);
+
+    // 连接状态弹窗：置「连接中」并记住跟踪的 tab。后续 `Connected` / `Closed`
+    // 按 tab-id 匹配，只有"从未成功过"的 Closed 才判失败（掉线不弹失败框）。
+    // 放在这里而不是 `on_connect_session`：复制会话也走同一条路径，行为一致。
+    env.window.set_conn_popup_host(conn_label.clone().into());
+    env.window.set_conn_popup_detail(Default::default());
+    env.window.set_conn_popup_phase(0);
+    env.window.set_conn_popup_tab(tab_id.clone().into());
+    env.window.set_conn_popup_open(true);
     // Serial / Telnet have no SFTP side-channel.
     let has_sftp = session_has_sftp(&session.kind);
 
@@ -132,7 +141,6 @@ pub(crate) fn open_session_tab(
         sftp_sort_key: "".into(),
         sftp_sort_dir: 0,
         sftp_available: has_sftp,
-        tunnels: ModelRc::from(Rc::new(VecModel::<TunnelInfo>::default())),
         sftp_collapsed: !has_sftp || sftp_collapsed_default,
         sftp_panel_height: sftp_h_default,
         sftp_panel_width: sftp_w_default,

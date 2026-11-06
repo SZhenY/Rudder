@@ -134,37 +134,25 @@ impl Default for AppearanceSettings {
     }
 }
 
-/// 布局页：面板停靠 / 折叠 / 尺寸 / 标签页形态。
+/// 布局页：面板折叠态 / 尺寸 / 命令栏显隐 / 标签页形态。
 ///
-/// 这一组大多是**派生状态**：`sidebar_dock` / `welcome_as_sidebar` 一变，
-/// 停靠冲突消解、各面板几何量、窗格树都要跟着重算（见 `apply_layout_prefs`）。
+/// 面板停靠边固定为右侧，配置里只保存尺寸与折叠态；播种走 `apply_layout_prefs`。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LayoutSettings {
     pub collapse_sidebar_default: bool,
     pub collapse_sftp_default: bool,
     pub quick_commands_as_sidebar: bool,
-    pub welcome_as_sidebar: bool,
     pub hide_cmd_bar: bool,
     pub zen_mode: bool,
-    /// 上次的资源侧栏折叠态；None = 回退到 `collapse_sidebar_default`。
+    /// 上次的导航条折叠态；None = 回退到 `collapse_sidebar_default`。
     pub sidebar_collapsed: Option<bool>,
-    pub sidebar_width: f32,
-    pub sidebar_height: f32,
-    /// 资源面板停靠边：left / right / top / bottom。
-    pub sidebar_dock: String,
     pub sftp_panel_width: f32,
     pub sftp_panel_height: f32,
-    pub sftp_dock: String,
     pub quick_panel_open: bool,
     pub quick_panel_collapsed: bool,
     pub quick_panel_width: f32,
     pub quick_panel_height: f32,
-    pub quick_panel_dock: String,
-    pub welcome_sidebar_width: f32,
-    pub welcome_sidebar_dock: String,
-    /// None = 用户尚未显式折叠/展开过欢迎侧栏。
-    pub welcome_collapsed: Option<bool>,
     /// 窗口尺寸（逻辑像素；0 = 未设置 → 用内置默认）。
     pub window_width: f32,
     pub window_height: f32,
@@ -176,29 +164,15 @@ impl Default for LayoutSettings {
             collapse_sidebar_default: false,
             collapse_sftp_default: false,
             quick_commands_as_sidebar: false,
-            welcome_as_sidebar: false,
             hide_cmd_bar: false,
             zen_mode: false,
             sidebar_collapsed: None,
-            sidebar_width: 220.0,
-            sidebar_height: 240.0,
-            // 资源（运行状态）面板停靠边。**必须与 `ui/app.slint` 里
-            // `sidebar-dock` 的声明值一致** —— 二者曾长期分叉（Rust 这里是
-            // "right"、Slint 那里是 "left"），表现为：新装/还原后侧栏跑到右边，
-            // 而 UI 声明的默认是左边。`layout_default_matches_slint_declaration`
-            // 这条测试钉住它。
-            sidebar_dock: "left".to_string(),
             sftp_panel_width: 380.0,
             sftp_panel_height: 220.0,
-            sftp_dock: String::new(),
             quick_panel_open: false,
             quick_panel_collapsed: false,
             quick_panel_width: 260.0,
             quick_panel_height: 220.0,
-            quick_panel_dock: String::new(),
-            welcome_sidebar_width: 240.0,
-            welcome_sidebar_dock: String::new(),
-            welcome_collapsed: None,
             window_width: 0.0,
             window_height: 0.0,
         }

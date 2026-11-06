@@ -41,9 +41,9 @@ pub(crate) struct McpState {
     pub(crate) consent_gate: tokio::sync::Mutex<()>,
     /// 租约 epoch 的全局序号。跨租约单调，在途弹窗不会写到重连后的新会话上。
     pub(crate) epoch_seq: AtomicU64,
-    /// `get_host_info` 的现场采样器。懒创建：只有在 UI 侧栏采样器停摆时才用得上。
+    /// `get_host_info` 的现场采样器。懒创建：只有快照陈旧时才用得上。
     ///
-    /// 不读 `app.local_snap` 就够的原因见 `host_info()`：侧栏折叠时采样整拍跳过，
+    /// 不读 `app.local_snap` 就够的原因见 `host_info()`：窗口隐藏时采样整拍跳过，
     /// 读到的可能是几分钟前的数字。
     pub(crate) local_sampler: std::sync::Arc<Mutex<Option<crate::resource::SystemSampler>>>,
     /// UI 线程不能 await；授权变化后的 `list_changed` 用这个 handle 派发。

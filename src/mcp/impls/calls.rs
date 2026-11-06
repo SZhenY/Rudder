@@ -188,7 +188,7 @@ fn list_tabs(state: &SharedState) -> Value {
 /// 本机（运行 Rudder 的这台机器）的资源快照，不需要 `tab_id`。
 ///
 /// 快照在 2 秒内就直接用 UI 采样器的结果（零成本）；否则用 MCP 自己持有的采样器现采。
-/// 不能只读 `local_snap`：侧栏折叠 / 窗口隐藏时采样会整拍跳过（`sampler.rs`），
+/// 不能只读 `local_snap`：窗口隐藏时采样会整拍跳过（`sampler.rs`），
 /// 读到的可能是几分钟前的数字。
 async fn host_info(state: &SharedState) -> Result<Value, McpError> {
     let fresh = {
@@ -347,7 +347,7 @@ async fn tab_status(state: &SharedState, args: &Value) -> Result<Value, McpError
                 })
                 .collect::<Vec<_>>(),
         });
-        // 与远端共用同一套陈旧判定：采样器在侧栏折叠 / 窗口隐藏时整拍跳过。
+        // 与远端共用同一套陈旧判定：采样器在窗口隐藏时整拍跳过。
         let age_ms = local.sampled_at.map(|at| at.elapsed().as_millis() as u64);
         value["last_sample_ms_ago"] = json!(age_ms);
         value["stale"] = json!(age_ms.map(|ms| ms > 5_000).unwrap_or(true));
@@ -356,7 +356,7 @@ async fn tab_status(state: &SharedState, args: &Value) -> Result<Value, McpError
 
     let mut value = status_json(state, &tab_id);
     // `get_tab_status` 是只读工具：不再临时打开远端采样（那会写会话运行态，
-    // 且恢复判断依赖"侧栏是否折叠"，可能永久留在开启）。数据陈旧就如实标记。
+    // 且恢复判断依赖已删除的侧栏折叠状态，可能永久留在开启）。数据陈旧就如实标记。
     let stale = value
         .get("last_sample_ms_ago")
         .and_then(Value::as_u64)
@@ -1250,7 +1250,7 @@ mod tests {
         assert_eq!(value["memory"]["total_mib"], 16384);
     }
 
-    /// 快照陈旧（侧栏折叠时采样器会整拍跳过）→ 现场采一次，数字必须是真的。
+    /// 快照陈旧（窗口隐藏时采样器会整拍跳过）→ 现场采一次，数字必须是真的。
     #[tokio::test]
     async fn host_info_samples_on_demand_when_the_snapshot_is_stale() {
         let state = state_with_buffer();

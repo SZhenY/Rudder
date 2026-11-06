@@ -17,7 +17,6 @@
 //! 两个必须自己接的坑（细节见根元素处的注释）：`Theme` global **按窗口各自实例化** →
 //! 要逐项同步；macOS 上第二个窗口**不会自动产生首帧** → `show()` 后要 `request_first_frame()`。
 
-import { AnimationSettings } from "theme.slint";
 import "fonts/MeatshellMono-Regular.ttf";
 import "fonts/MeatshellMono-Bold.ttf";
 import "fonts/JetBrainsMono-Regular.ttf";
@@ -26,39 +25,13 @@ import "fonts/JetBrainsMono-Italic.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/MaterialIcons-Regular.ttf";
 import { Theme } from "theme.slint";
-import { GroupGap } from "components/surfaces.slint";
-import { Sidebar, DiskInfo } from "sidebar.slint";
-import { TabBar, TabInfo } from "tabs.slint";
-import { Welcome, SessionInfo } from "welcome.slint";
-import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
-import { ConfirmDialog } from "confirm_dialog.slint";
-import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
-import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
-import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
-import { ProcWindow, ProcRow } from "proc_window.slint";
-import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
+import { ProcWindow } from "proc_window.slint";
+import { SystemInfoWindow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
-import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
-import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
-import { CloseButton } from "components/buttons.slint";
-import { ModalCard } from "components/surfaces.slint";
-import { IconText } from "components/text.slint";
-import { Label } from "components/text.slint";
+import { LineEdit, Palette } from "std-widgets.slint";
+import { Divider } from "components/surfaces.slint";
 import { WindowTitleBar } from "components/window_shell.slint";
-import { EditorFindResult, FileEditor } from "file_editor.slint";
-import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
-import { GroupDialog } from "group_dialog.slint";
-import { QuickGroupDialog } from "quick_group_dialog.slint";
-import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
-import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
-import { ChmodDialog } from "chmod_dialog.slint";
-import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
-import { SettingsMenuPopup } from "settings_menu.slint";
-import { AboutDialog } from "about_dialog.slint";
-import { DockSnapOverlay } from "dock_snap_overlay.slint";
-import { ConfirmOverlays } from "confirm_overlays.slint";
-import { ShortcutsDialog } from "shortcuts_dialog.slint";
 
 export component SettingsWindow inherits Window {
     // Windows / Linux 自绘标题栏（Rust 设 `custom-titlebar = true`），macOS 保留原生
@@ -203,7 +176,6 @@ export component SettingsWindow inherits Window {
     in property <bool> mcp-audit-degraded: false;
     in property <[AuditRow]> mcp-recent-calls;
     in property <[McpCloseRow]> mcp-recent-closes;
-    in-out property <bool> welcome-as-sidebar:false;
     in-out property <string> wsl-new-directory:"~";
     in property <[WslProfileInfo]> wsl-profiles;
 
@@ -276,7 +248,6 @@ export component SettingsWindow inherits Window {
     callback open-mcp-log-dir();
     callback regenerate-mcp-token();
     callback set-wallpaper(string);
-    callback set-welcome-as-sidebar(bool);
     callback webdav-download();
     callback webdav-upload();
 
@@ -373,7 +344,6 @@ export component SettingsWindow inherits Window {
                 webdav-status <=> webdav-status;
                 download-always-ask <=> download-always-ask;
                 reset-page(page) => { root.reset-page(page); }
-                welcome-as-sidebar <=> welcome-as-sidebar;
                 quick-commands-as-sidebar <=> quick-commands-as-sidebar;
                 update-check-enabled <=> update-check-enabled;
                 update-check-status: update-check-status;
@@ -484,7 +454,6 @@ export component SettingsWindow inherits Window {
                 set-mcp-audit-retention(v) => { root.set-mcp-audit-retention(v); }
                 open-mcp-log-dir => { root.open-mcp-log-dir(); }
                 set-download-always-ask(v) => { root.set-download-always-ask(v); }
-                set-welcome-as-sidebar(v) => { root.set-welcome-as-sidebar(v); }
                 set-show-cmd-bar(v) => { root.set-show-cmd-bar(v); }
                 set-quick-commands-as-sidebar(v) => {
                     quick-commands-as-sidebar = v;

@@ -54,8 +54,6 @@ impl SettingsPage {
 /// 注：不派生 `Clone` —— 它持有 `ProcWindow`（Slint 组件句柄不实现 Clone），
 /// 且全项目只构造一次、按引用传给 `reset_page`。
 struct ResetRefs {
-    /// 窗格与模型句柄（布局页还原时做窗格树迁移用）。
-    panes: settings::layout::PaneHandles,
     fonts: FontCatalog,
     /// 泵线程读取的「SFTP 跟随 cd」实时标志。还原必须同时更新它，否则配置与
     /// 界面都变了、**已打开会话的行为却没变** —— 表现为"还原不生效"。
@@ -75,7 +73,7 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
         SettingsPage::Appearance => {
             settings::appearance::reset(w, store, bufs, &refs.fonts, &refs.proc_win)
         }
-        SettingsPage::Layout => settings::layout::reset(w, store, &refs.panes),
+        SettingsPage::Layout => settings::layout::reset(w, store),
         SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
         SettingsPage::Ai => settings::ai::reset(w, store),
     }
@@ -92,7 +90,7 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
 /// （其它偏好下只是读一次配置就返回）。`dark_light::detect()` 实测 ≈ 4.8 ms/次
 /// （20 次 95 ms），5 s 一次约 0.1% 单核 —— 换来"改系统外观 → 界面几秒内跟着变"。
 ///
-/// 定时器**故意不 stop**：它随窗口活到进程结束（与侧栏采样器同一套做法）。
+/// 定时器**故意不 stop**：它随窗口活到进程结束（与系统采样器同一套做法）。
 fn start_system_theme_watcher(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
     let timer = slint::Timer::default();
     let weak = window.as_weak();
@@ -135,7 +133,7 @@ fn start_system_theme_watcher(window: &AppWindow, store: &Store, bufs: &TermBuff
             crate::app::settings_window::resync_if_open(&w);
         },
     );
-    // Timer 被 drop 就停 —— 这里 `leak` 保活（与侧栏采样器同一套做法）。
+    // Timer 被 drop 就停 —— 这里 `leak` 保活（与系统采样器同一套做法）。
     Box::leak(Box::new(timer));
 }
 
@@ -304,17 +302,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     settings::sync::bind(window, store, sessions_model);
     settings::appearance::bind(window, store, bufs, proc_win);
     settings::terminal::bind(window, store, bufs);
-    settings::layout::bind(
-        window,
-        store,
-        &settings::layout::PaneHandles {
-            layout: layout.clone(),
-            content_size: content_size.clone(),
-            tabs_model: tabs_model.clone(),
-            panes_model: panes_model.clone(),
-            splitters_model: splitters_model.clone(),
-        },
-    );
+    settings::layout::bind(window, store);
 
 
     // Toolbar toggle: hide/show the quick-command bar (persisted globally).
@@ -400,13 +388,6 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         let r_store = store.clone();
         let r_bufs = bufs.clone();
         let r_refs = ResetRefs {
-            panes: settings::layout::PaneHandles {
-                layout: layout.clone(),
-                content_size: content_size.clone(),
-                tabs_model: tabs_model.clone(),
-                panes_model: panes_model.clone(),
-                splitters_model: splitters_model.clone(),
-            },
             fonts: fonts.clone(),
             sftp_follow_cd: sftp_follow_cd.clone(),
             // 外观页还原可能改变深浅色（默认壁纸是暗色的），已打开的进程监视窗

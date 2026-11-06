@@ -13,7 +13,7 @@ export component IconButton inherits Rectangle {
     // for plain ASCII glyphs like "+" / "×".
     in property <string> font-family: "";
     in property <length> size: 28px;
-    // 图标字号。默认 Theme.fs-md 与旧实现逐字一致；welcome 的折叠按钮用 16px。
+    // 图标字号。默认 Theme.fs-md 与旧实现一致；各处按需传 Theme.fs-sm 或 18px。
     in property <length> glyph-size: Theme.fs-md;
     in property <brush> fg: Theme.text-secondary;
     in property <brush> fg-hover: Theme.text-primary;
@@ -288,19 +288,11 @@ export component Sparkline inherits Rectangle {
     }
 }
 
-// --- DockExpandButton ------------------------------------------------------
-// The little button shown when a dockable panel is collapsed, anchored to the
-// edge it was docked on (chevron points toward where the panel reopens). Shared
-// by the resource panel and the SFTP panel so they collapse/expand identically.
-// The host is responsible for any reserved gap (e.g. the bottom edge) so this
-// button never overlaps neighbouring chrome (#dock).
-// IDEA-style collapsed tool strip (#v0.5 M5): when a dockable panel is collapsed
-// the host renders this thin bar along the panel's docked edge instead of the
-// panel. It shows the panel's tool icon; clicking re-expands. The host reserves
-// the slot (≈36px) and fills this in; one reusable strip for welcome / resource /
-// SFTP so they all collapse the same way.
+// --- ToolStrip --------------------------------------------------------------
+// 面板收起时贴在右缘的 36px 图标条：显示工具图标，点击重新展开。SFTP 面板与
+// 快捷命令面板共用，折叠/展开表现一致。占位槽由宿主预留，图标条不覆盖其它控件。
 export component ToolStrip inherits Rectangle {
-    in property <string> dock-edge;   // left | right | top | bottom
+    in property <string> dock-edge;   // 固定为 "right"；四边分支待收敛
     in property <string> glyph;       // the panel's tool icon (Material Icons)
     in property <bool> show-second: false;
     in property <string> second-glyph;

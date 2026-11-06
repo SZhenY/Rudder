@@ -359,7 +359,6 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_webdav_status(m.get_webdav_status());
     sw.set_webdav_url(m.get_webdav_url());
     sw.set_webdav_username(m.get_webdav_username());
-    sw.set_welcome_as_sidebar(m.get_welcome_as_sidebar());
     sw.set_wsl_new_directory(m.get_wsl_new_directory());
     sw.set_wsl_profiles(m.get_wsl_profiles());
 }
@@ -459,7 +458,6 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_update_proxy => invoke_set_update_proxy, (a0));
     forward!(sw, m, s, on_set_update_proxy_enabled => invoke_set_update_proxy_enabled, (a0));
     forward!(sw, m, s, on_set_wallpaper => invoke_set_wallpaper, (a0));
-    forward!(sw, m, s, on_set_welcome_as_sidebar => invoke_set_welcome_as_sidebar, (a0));
     forward!(sw, m, s, on_webdav_download => invoke_webdav_download, ());
     forward!(sw, m, s, on_webdav_upload => invoke_webdav_upload, ());
     // AI / MCP

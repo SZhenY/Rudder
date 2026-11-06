@@ -5,18 +5,15 @@
 //! `QuickCmd` 与 `QuickDockPanel` 随块搬走并在原文件转出口，外部导入点不变）。
 import { Theme } from "theme.slint";
 import { AnimationSettings } from "theme.slint";
-import { SftpPanel, SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
-import { TabInfo } from "tabs.slint";
-import { ToolStrip } from "widgets.slint";
 import "fonts/MeatshellMono-Regular.ttf";
 import "fonts/MeatshellMono-Bold.ttf";
 import "fonts/JetBrainsMono-Regular.ttf";
 import "fonts/JetBrainsMono-Bold.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
-import { Divider } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
+import { Divider } from "components/surfaces.slint";
 
 // One saved quick command (#55): a name shown on the chip + the text to send.
 // Grouped like the welcome session list: group-header is non-empty on the first
@@ -76,19 +73,18 @@ export component MenuItem inherits Rectangle {
     }
 }
 
-// Persistent, resizable quick-command panel (#215). It deliberately shares the
-// same model/actions as the command-bar popup; docking only adds another view.
+// 固定在窗口右侧、宽度可调的快捷命令面板 (#215)；与底部命令栏弹窗共用同一套
+// model 与动作。
 export component QuickDockPanel inherits Rectangle {
     in property <[QuickCmd]> commands;
-    in property <string> dock-edge: "right";
     callback activate(string, bool /* send-enter */);
     callback toggle-group(string);
     callback manage();
     callback close();
-    callback dock-drag-move(length, length);
-    callback dock-drag-end();
 
-    background: Theme.bg-panel;
+    // 与内容区同档（`bg-root`：alpha = panel-alpha − 0.44），让主窗口的壁纸透上来。
+    // 原先是 `bg-panel`（alpha = panel-alpha），压在裸壁纸上是一块实色板，与页面割裂。
+    background: Theme.bg-root;
     border-width: 1px;
     border-color: Theme.border-subtle;
     clip: true;
@@ -97,22 +93,7 @@ export component QuickDockPanel inherits Rectangle {
         spacing: 0;
         Rectangle {
             height: 34px;
-            background: Theme.bg-panel-alt;
-            drag-area := TouchArea {
-                mouse-cursor: grab;
-                moved => {
-                    if (self.pressed) {
-                        root.dock-drag-move(self.absolute-position.x + self.mouse-x,
-                                            self.absolute-position.y + self.mouse-y);
-                    }
-                }
-                pointer-event(ev) => {
-                    if (ev.kind == PointerEventKind.up) { root.dock-drag-end(); }
-                    // 拖拽被系统取消（指针抓取被收回，例如中途弹出窗口）时也要收尾，
-                    // 否则面板会一直停在"拖拽中"状态（上游 a02d536）。
-                    else if (ev.kind == PointerEventKind.cancel) { root.dock-drag-end(); }
-                }
-            }
+            background: Theme.bg-root;
             HorizontalLayout {
                 padding-left: 8px; padding-right: 4px; spacing: 6px;
                 IconText {
@@ -138,16 +119,15 @@ export component QuickDockPanel inherits Rectangle {
                     close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.close(); } }
                     IconText {
                         centered: true;
-                        text: root.dock-edge == "right" ? "\u{E5CC}"
-                            : root.dock-edge == "top" ? "\u{E5CE}"
-                            : root.dock-edge == "bottom" ? "\u{E5CF}"
-                            : "\u{E5CB}";
+                        text: "\u{E5CC}";   // 面板固定在右侧，图标恒为「向右收起」
                         color: Theme.text-secondary; font-size: Theme.fs-md;
 
                     }
                 }
             }
         }
+        // 表头与外层同色后需要一条 1px 线分隔（原先靠底色差区分）。
+        Divider {}
 
         Flickable {
             vertical-stretch: 1;
@@ -224,9 +204,11 @@ export component QuickDockPanel inherits Rectangle {
             }
         }
 
+        // 底栏与列表同色，同样需要一条 1px 线。
+        Divider {}
         Rectangle {
             height: 32px;
-            background: manage-ta.has-hover ? Theme.state-hover : Theme.bg-panel-alt;
+            background: manage-ta.has-hover ? Theme.state-hover : Theme.bg-root;
             animate background {
                 duration: manage-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
                 easing: manage-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();

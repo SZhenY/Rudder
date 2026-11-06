@@ -13,33 +13,7 @@ import "fonts/JetBrainsMono-Italic.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/MaterialIcons-Regular.ttf";
 import { Theme } from "theme.slint";
-import { GroupGap } from "components/surfaces.slint";
-import { Sidebar, DiskInfo } from "sidebar.slint";
-import { TabBar, TabInfo } from "tabs.slint";
-import { Welcome, SessionInfo } from "welcome.slint";
-import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
-import { ConfirmDialog } from "confirm_dialog.slint";
-import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
-import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
-import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
-import { ProcWindow, ProcRow } from "proc_window.slint";
-import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
-import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
-import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
-import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
-import { CloseButton } from "components/buttons.slint";
-import { ModalCard } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
-import { Label } from "components/text.slint";
-import { WindowTitleBar } from "components/window_shell.slint";
-import { EditorFindResult, FileEditor } from "file_editor.slint";
-import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
-import { GroupDialog } from "group_dialog.slint";
-import { QuickGroupDialog } from "quick_group_dialog.slint";
-import { SftpPromptDialog } from "sftp_prompt_dialog.slint";
-import { ConfirmCloseDialog } from "confirm_close_dialog.slint";
-import { ChmodDialog } from "chmod_dialog.slint";
 
 export component SettingsMenuPopup inherits Rectangle {
     width: avail-width;
@@ -82,7 +56,7 @@ TouchArea {
 }
 
 Rectangle {
-    // 非导航锚定时按右上工具栏偏移定位（欢迎侧栏 / 快捷面板占住右/上边缘）。
+    // 非导航锚定时按右上工具栏偏移定位（右侧快捷命令面板占位时工具栏整体左移）。
     // 导航底部齿轮：贴窗口左下角，高度用菜单自身内容高度反推。
     x: root.anchor-nav ? 8px : parent.width - 196px - toolbar-x-off;
     y: root.anchor-nav

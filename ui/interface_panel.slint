@@ -57,7 +57,6 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> webdav-accept-invalid-certs;
     in-out property <string> webdav-status;
     in-out property <bool> download-always-ask;
-    in-out property <bool> welcome-as-sidebar;
     in-out property <bool> quick-commands-as-sidebar;
     in-out property <bool> show-cmd-bar;
     in-out property <bool> update-check-enabled;
@@ -198,7 +197,6 @@ export component InterfacePanel inherits Rectangle {
     callback webdav-upload();
     callback webdav-download();
     callback set-download-always-ask(bool);
-    callback set-welcome-as-sidebar(bool);
     callback set-quick-commands-as-sidebar(bool);
     callback set-show-cmd-bar(bool);
     callback set-update-check-enabled(bool);   // startup new-version check (#184)
@@ -261,6 +259,30 @@ export component InterfacePanel inherits Rectangle {
                 x: parent.width - 1px; width: 1px; height: parent.height;
                 background: Theme.border-subtle;
             }
+            // 选中高亮滑轨：整块在项间滑动，而不是每项各画一块再各自淡入淡出
+            // （那样两段颜色没有位移关系，视觉是"交替"不是"移动"）。
+            //
+            // 声明在 `VerticalLayout` **之前** → 绘制在下层，图标 / 文字 / 命中区
+            // 都压在它上面。几何与 `NavItem` 严格重合：
+            //   x = 10                        → VerticalLayout 的 padding
+            //   y = 10 + i × 32               → 行高 30 + 间距 2
+            //   宽 = 168 − 10×2 = 148，与右缘那条 1px 分隔线不重叠
+            Rectangle {
+                x: 10px;
+                y: 10px + root.nav-index(root.nav-page) * 32px;
+                width: 148px;
+                height: 30px;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: Theme.accent-ring;
+                background: Theme.state-selected;
+                // 与主窗口导航滑轨同档（`ui/nav_panel.slint` 的 s-default）。
+                animate y {
+                    duration: AnimationSettings.enter-container();
+                    easing: AnimationSettings.s-default();
+                    enabled: AnimationSettings.enabled;
+                }
+            }
             VerticalLayout {
                 padding: 10px;
                 spacing: 2px;
@@ -306,29 +328,12 @@ export component InterfacePanel inherits Rectangle {
                     clicked => { root.goto-page("ai"); }
                 }
             }
-            // 选中指示器：整列只有这一条，切页时从旧项**滑**到新项（弹簧缓动），
-            // 而不是每项各画一条、各自缩短再各自长出来。
-            // 几何：内边距 10 + 索引 ×（行高 30 + 间距 2）+（30 − 18）/ 2 = 16 + 索引 × 32。
-            Rectangle {
-                x: 13px;
-                y: 16px + root.nav-index(root.nav-page) * 32px;
-                width: 3px;
-                height: 18px;
-                border-radius: 1.5px;
-                background: Theme.accent;
-                animate y {
-                    duration: AnimationSettings.enter-container();
-                    easing: AnimationSettings.s-soft();
-                    enabled: AnimationSettings.enabled;
-                }
-            }
         }
         // --- Right content -------------------------------------------------
         Rectangle {
             horizontal-stretch: 1;
-            // Transparent: the card's single bg-panel frost shows through, so the
-            // settings panel matches the welcome/resource panels and tracks the
-            // wallpaper-opacity slider (items 6/7).
+            // 透明：卡片只铺一层 bg-panel 磨砂，设置页与主窗口内容区同底，
+            // 并跟随壁纸不透明度滑条（items 6/7）。
             background: transparent;
 
             settings-scroll := ScrollView {
@@ -454,13 +459,11 @@ export component InterfacePanel inherits Rectangle {
                             collapse-sidebar-default <=> root.collapse-sidebar-default;
                             lang-en: root.lang-en;
                             quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
-                            welcome-as-sidebar <=> root.welcome-as-sidebar;
                             reset-page(a0) => { root.reset-page(a0); }
                             set-show-cmd-bar(a0) => { root.set-show-cmd-bar(a0); }
                             set-collapse-sftp-default(a0) => { root.set-collapse-sftp-default(a0); }
                             set-collapse-sidebar-default(a0) => { root.set-collapse-sidebar-default(a0); }
                             set-quick-commands-as-sidebar(a0) => { root.set-quick-commands-as-sidebar(a0); }
-                            set-welcome-as-sidebar(a0) => { root.set-welcome-as-sidebar(a0); }
                     }
 
                     if root.ifd-page == "transfer" : TransferPage {
@@ -568,4 +571,3 @@ export component InterfacePanel inherits Rectangle {
         }
     }
 }
-

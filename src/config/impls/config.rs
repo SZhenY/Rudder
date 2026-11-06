@@ -597,22 +597,11 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     ) {
         cfg.appearance.wallpaper = "builtin:dark".to_string();
     }
-    // rev 1: miku / welcome-as-sidebar / right-docked resources / wallpaper overlay.
+    // rev 1: miku / right-docked resources / wallpaper overlay.
     if cfg.defaults_rev < 1 {
         // Overlay still unset -> current default.
         if cfg.appearance.wallpaper_overlay <= 0.0 {
             cfg.appearance.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
-        }
-        // Never enabled the welcome sidebar → enable it.
-        if !cfg.layout.welcome_as_sidebar {
-            cfg.layout.welcome_as_sidebar = true;
-        }
-        // Never moved the resource panel (empty = never explicitly docked).
-        // rev 1 曾把它定为 "right"，但出厂默认（含新装与「还原本页默认」）已经
-        // 回到 "left"：空白停靠边的老配置同样应落到左，否则同一份默认值会有
-        // 两种表现。
-        if cfg.layout.sidebar_dock.trim().is_empty() {
-            cfg.layout.sidebar_dock = "left".to_string();
         }
     }
     // rev 2: settings show wallpaper transparency, while rev 1 accidentally
@@ -647,12 +636,6 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     }
     cfg.defaults_rev = DEFAULTS_REV;
     true
-}
-fn default_sidebar_width() -> f32 {
-    220.0
-}
-fn default_sidebar_height() -> f32 {
-    240.0
 }
 fn default_sftp_width() -> f32 {
     380.0
@@ -982,7 +965,7 @@ pub struct ConfigFile {
     pub command_history: Vec<String>,
     /// One-time default-layout migration marker (#new-user-defaults). 0 = config
     /// predates the migration. `migrate_defaults` bumps it to `DEFAULTS_REV` after
-    /// pushing the new look (default wallpaper / welcome-as-sidebar / right-docked
+    /// pushing the new look (default wallpaper / right-docked
     /// resource panel / wallpaper overlay) to users still sitting on old defaults.
     #[serde(default)]
     pub defaults_rev: u32,
@@ -1364,8 +1347,8 @@ impl ConfigStore {
             pending: false,
             key,
         };
-        // Persist the migration so it runs exactly once (and so a later opt-out —
-        // e.g. turning the welcome sidebar back off — isn't reverted next launch).
+        // Persist the migration so it runs exactly once, so a later opt-out is
+        // not reverted next launch.
         // `split_pending` 同理：老配置在这里被拆成两个文件，只此一次。
         if (migrated || split_pending)
             && let Err(e) = store.save()
@@ -2150,17 +2133,6 @@ impl ConfigStore {
         self.cache.layout.quick_panel_height = height;
     }
 
-    pub fn quick_panel_dock(&self) -> String {
-        match self.cache.layout.quick_panel_dock.trim() {
-            "left" | "right" | "top" | "bottom" => self.cache.layout.quick_panel_dock.clone(),
-            _ => "right".into(),
-        }
-    }
-
-    pub fn set_quick_panel_dock(&mut self, dock: String) {
-        self.cache.layout.quick_panel_dock = dock;
-    }
-
     /// Explicit quick-command groups (#55) — parallels [`groups`](Self::groups).
     pub fn quick_groups(&self) -> &[String] {
         &self.cache.quick_groups
@@ -2246,7 +2218,7 @@ impl ConfigStore {
         }
     }
 
-    /// Collapse the resource sidebar on startup (default false) (#78).
+    /// Collapse the left navigation on startup (default false) (#78).
     pub fn collapse_sidebar_default(&self) -> bool {
         self.cache.layout.collapse_sidebar_default
     }
@@ -2255,81 +2227,12 @@ impl ConfigStore {
         self.cache.layout.collapse_sidebar_default = v;
     }
 
-    /// Persisted sidebar width in logical px. Falls back to the default when the
-    /// stored value is unset/zero (e.g. a config created via `Default`).
-    pub fn sidebar_width(&self) -> f32 {
-        let w = self.cache.layout.sidebar_width;
-        if w <= 0.0 { default_sidebar_width() } else { w }
-    }
-
-    pub fn set_sidebar_width(&mut self, v: f32) {
-        self.cache.layout.sidebar_width = v;
-    }
-
-    /// Resource / SFTP panel docking geometry, persisted across restarts (#dock).
-    /// Sizes fall back to their defaults when unset/zero; docks fall back to a
-    /// sensible edge when the stored string is empty.
-    pub fn sidebar_height(&self) -> f32 {
-        let h = self.cache.layout.sidebar_height;
-        if h <= 0.0 {
-            default_sidebar_height()
-        } else {
-            h
-        }
-    }
-    pub fn set_sidebar_height(&mut self, v: f32) {
-        self.cache.layout.sidebar_height = v;
-    }
-    pub fn sidebar_dock(&self) -> String {
-        // 白名单，与 `quick_panel_dock` 口径一致：配置是用户可手改的，
-        // `"sidebarDock": "garbage"` 以前会一路传进 Slint 的停靠判定 ——
-        // `left/right/top/bottom` 的分支表全不命中，面板会被算到窗口外（布局静默退化）。
-        match self.cache.layout.sidebar_dock.trim() {
-            "right" => "right".into(),
-            "top" => "top".into(),
-            "bottom" => "bottom".into(),
-            _ => "left".into(),
-        }
-    }
-    pub fn set_sidebar_dock(&mut self, v: String) {
-        self.cache.layout.sidebar_dock = v;
-    }
+    /// 上次的导航折叠态；None 表示回退到 `collapse_sidebar_default`。
     pub fn sidebar_collapsed(&self) -> Option<bool> {
         self.cache.layout.sidebar_collapsed
     }
     pub fn set_sidebar_collapsed(&mut self, v: bool) {
         self.cache.layout.sidebar_collapsed = Some(v);
-    }
-    pub fn welcome_as_sidebar(&self) -> bool {
-        self.cache.layout.welcome_as_sidebar
-    }
-    pub fn set_welcome_as_sidebar(&mut self, v: bool) {
-        self.cache.layout.welcome_as_sidebar = v;
-    }
-    pub fn welcome_sidebar_width(&self) -> f32 {
-        let w = self.cache.layout.welcome_sidebar_width;
-        if w <= 0.0 { 240.0 } else { w }
-    }
-    pub fn set_welcome_sidebar_width(&mut self, v: f32) {
-        self.cache.layout.welcome_sidebar_width = v;
-    }
-    pub fn welcome_sidebar_dock(&self) -> String {
-        // 白名单，口径与 `sidebar_dock` 一致（见那里的说明）。
-        match self.cache.layout.welcome_sidebar_dock.trim() {
-            "right" => "right".into(),
-            "top" => "top".into(),
-            "bottom" => "bottom".into(),
-            _ => "left".into(),
-        }
-    }
-    pub fn set_welcome_sidebar_dock(&mut self, v: String) {
-        self.cache.layout.welcome_sidebar_dock = v;
-    }
-    pub fn welcome_collapsed(&self) -> Option<bool> {
-        self.cache.layout.welcome_collapsed
-    }
-    pub fn set_welcome_collapsed(&mut self, v: bool) {
-        self.cache.layout.welcome_collapsed = Some(v);
     }
     /// Whether the startup new-version check is enabled (#184).
     pub fn update_check_enabled(&self) -> bool {
@@ -2566,17 +2469,6 @@ impl ConfigStore {
     }
     pub fn set_sftp_panel_height(&mut self, v: f32) {
         self.cache.layout.sftp_panel_height = v;
-    }
-    pub fn sftp_dock(&self) -> String {
-        let d = self.cache.layout.sftp_dock.trim();
-        if d.is_empty() {
-            "bottom".into()
-        } else {
-            d.to_string()
-        }
-    }
-    pub fn set_sftp_dock(&mut self, v: String) {
-        self.cache.layout.sftp_dock = v;
     }
     /// Last window size in logical px; `(0,0)` means unset (use the default).
     pub fn window_size(&self) -> (f32, f32) {
@@ -4444,6 +4336,8 @@ mod domain_split_compat_tests {
             "animations_disabled": true,
             "defaults_rev": 5
         }"##;
+        // `sidebar_dock` / `welcome_as_sidebar` / `welcome_sidebar_width` 都是已移除的
+        // 字段：老配置里仍有它们，读取必须当未知键忽略而不是报错。
         let cfg: ConfigFile = serde_json::from_str(legacy).expect("老的平铺配置必须仍能读入");
 
         // 每个域都取到了自己的字段。
@@ -4459,8 +4353,6 @@ mod domain_split_compat_tests {
         assert!(cfg.appearance.animations_disabled);
         assert!(cfg.transfer.sftp_no_follow_cd);
         assert_eq!(cfg.transfer.download_dir, "/tmp/dl");
-        assert_eq!(cfg.layout.sidebar_dock, "left");
-        assert_eq!(cfg.layout.welcome_sidebar_width, 321.0);
         assert_eq!(cfg.layout.window_width, 1440.0);
         assert_eq!(cfg.sync.webdav_url, "https://dav.example/x");
         assert!(cfg.update.update_check_disabled);
@@ -4487,7 +4379,6 @@ mod domain_split_compat_tests {
             "scrollback_lines",
             "ui_scale",
             "wallpaper_overlay",
-            "sidebar_dock",
             "download_dir",
             "webdav_url",
             "update_check_disabled",
@@ -4538,50 +4429,16 @@ mod domain_split_compat_tests {
                 a.hide_special_partitions
             );
 
-            assert_eq!(cfg.layout.sidebar_dock, l.sidebar_dock);
             assert_eq!(
                 cfg.layout.collapse_sidebar_default,
                 l.collapse_sidebar_default
             );
-            assert_eq!(cfg.layout.welcome_as_sidebar, l.welcome_as_sidebar);
 
             assert!(!cfg.transfer.sftp_no_follow_cd, "存储取反：默认跟随 cd");
             assert!(!cfg.transfer.download_always_ask);
             assert!(cfg.sync.webdav_url.is_empty());
             assert!(!cfg.update.update_check_disabled, "默认开启启动检查");
         }
-    }
-
-    /// 布局的出厂默认必须与 `ui/app.slint` 声明的默认值一致。
-    ///
-    /// 二者长期分叉过：Rust 的 `LayoutSettings::default()` 是 `"right"`，而 Slint
-    /// 里 `sidebar-dock` 声明的是 `"left"`。因为播种与「还原本页默认」都取 Rust
-    /// 这一侧的值，用户点「还原」后运行状态侧栏就从左边跳到了右边 —— 而 UI 自己
-    /// 声明的默认是左边。默认值只能有一处，这里从外部钉住。
-    #[test]
-    fn layout_default_matches_slint_declaration() {
-        const UI: &str = include_str!("../../../ui/app.slint");
-
-        let declared = UI
-            .lines()
-            .filter(|l| !l.contains("welcome-"))
-            .find_map(|l| {
-                let (_, rest) = l.split_once("sidebar-dock:")?;
-                Some(rest.split('"').nth(1)?.to_string())
-            })
-            .unwrap_or_else(|| {
-                panic!("ui/app.slint 里解析不到 sidebar-dock 的声明值 —— 测试解析逻辑已失效")
-            });
-
-        assert!(
-            matches!(declared.as_str(), "left" | "right" | "top" | "bottom"),
-            "解析到非法的停靠边 {declared:?}"
-        );
-        assert_eq!(
-            LayoutSettings::default().sidebar_dock,
-            declared,
-            "布局出厂默认与 ui/app.slint 声明的 sidebar-dock 不一致 —— 「还原本页默认」会把侧栏挪到另一边"
-        );
     }
 
     /// 还原一页 = 替换该域为默认，且**不影响其它域**。

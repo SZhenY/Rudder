@@ -293,7 +293,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
         });
     }
 
-    // Timer 被 drop 就停 —— 与侧栏采样器同一套做法。
+    // Timer 被 drop 就停 —— 与系统采样器同一套做法。
     Box::leak(Box::new(timer));
 }
 

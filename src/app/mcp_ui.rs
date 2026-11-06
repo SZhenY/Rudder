@@ -655,24 +655,6 @@ fn settings_table() -> &'static [SettingDef] {
                     );
                 },
             },
-            SettingDef {
-                key: "layout.welcome_sidebar",
-                kind: SettingKind::Bool,
-                get: |ui| json!(ui.ctx.store.borrow().welcome_as_sidebar()),
-                set: |ui, value| {
-                    ui.ctx
-                        .store
-                        .borrow_mut()
-                        .set_welcome_as_sidebar(value.as_bool().unwrap_or(false));
-                    Ok(())
-                },
-                apply: |ui, _| {
-                    let enabled = ui.ctx.store.borrow().welcome_as_sidebar();
-                    // 走界面回调：它内部把 Welcome 子树延迟一帧重建（#323），
-                    // 自己只改属性会漏掉这一步。
-                    ui.window.invoke_set_welcome_as_sidebar(enabled);
-                },
-            },
             // ── 更新页其余项 ────────────────────────────────────────────
             SettingDef {
                 key: "update.frequency",
@@ -2111,14 +2093,14 @@ mod tests {
     #[test]
     fn high_risk_settings_match_the_table() {
         let table = settings_table();
-        assert_eq!(table.len(), 33);
+        assert_eq!(table.len(), 32);
         for key in crate::mcp::HIGH_RISK_SETTINGS {
             assert!(
                 table.iter().any(|def| def.key == *key),
                 "高风险键 {key} 不在 settings_table 里"
             );
         }
-        assert_eq!(table.len() - crate::mcp::HIGH_RISK_SETTINGS.len(), 24);
+        assert_eq!(table.len() - crate::mcp::HIGH_RISK_SETTINGS.len(), 23);
     }
 
     #[test]

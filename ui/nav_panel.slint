@@ -1,112 +1,261 @@
-//! 左侧导航条：主机 / Docker / 笔记，底部设置。
+//! 左侧导航：展开 200px（图标 + 文案）· 收起 54px（纯图标条）。
 //!
-//! 导航固定在最左，宽度由外层决定；收起时不绘制本组件，只由外层留一条 22px 把手。
+//! 折叠由 `progress`（0 = 展开，1 = 收起）单向驱动，它是**整个组件唯一的动画进度源**：
+//! 标签位移、透明度、行宽全部从它派生，所以内容退场与外壳收缩在同一条时间轴上。
+//!
+//! 三条不能碰的红线（都踩过）：
+//! 1. 收起时**不要**切换 alignment / padding —— 它们在宽度动画启动的同一帧就跳变，
+//!    图标先"瞬移"再随宽度收缩漂移，两段位移叠起来就是"弹一下"。
+//! 2. 标签**不能当布局子项** —— 宽度动画期间布局逐帧收窄它、Text 随即 elide 逐字
+//!    裁剪，观感是被挤压；而且布局位置会覆盖显式 x，位移根本写不上。
+//! 3. 进度不能用 `collapsed ? 0 : 1` 直接算 —— 只有 0/1 两档时标签会在侧栏还在
+//!    收缩时就消失，剩图标干漂半程。
 
 import { Theme, AnimationSettings } from "theme.slint";
 import { IconText } from "components/text.slint";
 
-// 一行导航项：图标 + 文案，选中态用主题色 + 淡底。
+// 一行：图标 + 文案。折叠时图标不动，只有标签向左滑出并淡出。
 component NavRow inherits Rectangle {
     in property <string> glyph;
     in property <string> label;
     in property <bool> current: false;
+    // 折叠进度 0…1，由 NavPanel 统一传入。
+    in property <float> progress: 0;
+    // 行宽显式传入（跟着外壳宽度动画走）。不能靠布局分配 —— 父级宽度动画期间
+    // 布局重算滞后，选中高亮会等侧栏折完才开始收缩。
+    in property <length> row-w: 184px;
     callback activated();
 
     height: 38px;
-    border-radius: Theme.radius-sm;
-    background: root.current ? Theme.state-selected
-              : ta.has-hover ? Theme.state-hover
-              : transparent;
-    border-width: 1px;
-    border-color: root.current ? Theme.state-selected-border : transparent;
-    animate background {
-        duration: ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-        easing: ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-        enabled: AnimationSettings.enabled;
+    // 不设 clip：标签的右边界 = row-w − 10px，本来就不会溢出；
+    // 外层 nav-shell 已经裁掉了宽度收缩时的多余部分。
+
+    // 悬停 / 按下底色：**选中态已交给 `NavPanel` 的滑轨**，这里只表达指针反馈。
+    // 两者叠加时（滑轨 `state-selected` + 行 `state-hover`）会比选中更亮一档，
+    // 正好是"指针停在当前项上"的效果。
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.row-w;
+        height: parent.height;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+        border-color: ta.has-hover ? Theme.accent-ring : transparent;
+        background: ta.pressed ? Theme.state-press
+                  : ta.has-hover ? Theme.state-hover
+                  : transparent;
+        animate background {
+            duration: ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+            easing: ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+            enabled: AnimationSettings.enabled;
+        }
+        animate border-color {
+            duration: AnimationSettings.enter-state();
+            easing: AnimationSettings.e-standard-decelerate();
+            enabled: AnimationSettings.enabled;
+        }
+    }
+
+    // 图标：**位置与尺寸恒定，不参与折叠动画**。
+    //
+    // ⚠️ 不要用 `x: 10px * (1 - progress)` + `width: ... * progress` 去"平滑过渡"：
+    // 图标中心是 `x + width/2`，两个量反向变化时中心会先被推歪再拉回，
+    // 观感是折叠/展开途中图标向右滑一下又弹回左边。
+    //
+    // 展开态图标中心 = 10 + 9 = 19；收起态行宽 38px 时中心同样是 19 —— 两态同位，
+    // 一个固定值就够。
+    IconText {
+        x: 10px;
+        width: 18px;
+        height: parent.height;
+        text: root.glyph;
+        color: root.current ? Theme.accent : Theme.text-secondary;
+        font-size: 18px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    // 标签：绝对定位 + 向左滑出 + 淡出。
+    // 只滑 10px，让左缘最终与图标右缘齐平 —— 不能滑到 x = 0（会压到图标上，
+    // 中途出现文字叠图标）；剩下的交给淡出与裁剪。
+    Text {
+        x: 38px - root.progress * 10px;
+        width: max(0px, root.row-w - self.x - 10px);
+        height: parent.height;
+        text: root.label;
+        color: root.current ? Theme.text-primary : Theme.text-secondary;
+        font-size: Theme.fs-md;
+        font-weight: root.current ? 600 : 400;
+        vertical-alignment: center;
+        overflow: elide;
+        opacity: 1 - root.progress;
     }
 
     ta := TouchArea {
+        x: 0;
+        y: 0;
+        width: root.row-w;
+        height: parent.height;
         mouse-cursor: pointer;
         accessible-role: button;
         clicked => { root.activated(); }
-    }
-
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        spacing: 10px;
-        IconText {
-            text: root.glyph;
-            color: root.current ? Theme.accent : Theme.text-secondary;
-            font-size: 18px;
-            centered: true;
-        }
-        Text {
-            text: root.label;
-            color: root.current ? Theme.text-primary : Theme.text-secondary;
-            font-size: Theme.fs-md;
-            font-weight: root.current ? 600 : 400;
-            vertical-alignment: center;
-            overflow: elide;
-            horizontal-stretch: 1;
-        }
     }
 }
 
 export component NavPanel inherits Rectangle {
     // 0 主机 / 3 Docker / 5 笔记（1 是终端，不在导航里直接选）。
     in property <int> current-page: 0;
+    in-out property <bool> collapsed: false;
 
     callback page-changed(int);
     callback settings-clicked();
     callback collapse-clicked();
+    callback expand-clicked();
 
-    background: Theme.bg-panel;
+    // 折叠进度：0 = 展开，1 = 收起。**整个侧栏唯一的动画进度源**。
+    // 与 app.slint 里 `animate width` 用完全相同的时长与缓动
+    // （见 AnimationSettings.collapse-duration / collapse-easing）。
+    property <float> progress: root.collapsed ? 1 : 0;
+    animate progress {
+        duration: AnimationSettings.collapse-duration(root.collapsed, 146px);
+        easing: AnimationSettings.collapse-easing();
+        enabled: AnimationSettings.enabled;
+    }
+
+    /// 行索引：0 主机 / 1 Docker / 2 笔记；终端页（1）与设置项没有对应行 → -1。
+    pure function nav-row-index(p: int) -> int {
+        return p == 0 ? 0 : p == 3 ? 1 : p == 5 ? 2 : -1;
+    }
+
+    // 行宽 = 宽度减左右各 8px。显式算出来传给行，不依赖布局分配。
+    property <length> row-w: root.width - 16px;
+
+    background: transparent;
     border-width: 0;
+    // 裁剪交给外层 nav-shell：这里再 clip 一层会让宽度动画每帧多建一个裁剪区。
+
+    // 选中高亮滑轨：整块高亮在行间滑动，替代每行各画一块
+    // （那样切换是"旧的缩短、新的长出来"，没有位移连续感）。
+    //
+    // 声明在 `VerticalLayout` **之前** → 绘制在下层，行的图标 / 文字 / 命中区
+    // 都压在它上面。几何与行严格对齐：
+    //   x = 8                         → VerticalLayout 的 padding
+    //   y = 8 + 38 + 2 + 6 + 2 = 56   → 首行顶
+    //   步长 = 行高 38 + 间距 2 = 40
+    // 宽度直接取 `row-w`，折叠动画期间自动跟随（184 → 38），无需再 animate。
+    Rectangle {
+        x: 8px;
+        y: 56px + max(0, root.nav-row-index(root.current-page)) * 40px;
+        width: root.row-w;
+        height: 38px;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+        border-color: Theme.state-selected-border;
+        background: Theme.state-selected;
+        // 终端页没有对应行：淡出，而不是贴在某一项上但那一项没选中。
+        opacity: root.nav-row-index(root.current-page) < 0 ? 0 : 1;
+        animate y {
+            duration: AnimationSettings.enter-container();
+            easing: AnimationSettings.s-default();
+            enabled: AnimationSettings.enabled;
+        }
+        animate opacity {
+            duration: AnimationSettings.short2();
+            easing: AnimationSettings.e-standard-decelerate();
+            enabled: AnimationSettings.enabled;
+        }
+    }
 
     VerticalLayout {
+        // ⚠ 普通 Rectangle 父级里的 Layout 按**首选尺寸**布局，必须显式铺满 ——
+        // 否则它不跟随宽度动画中的宽度，选中高亮会等动画结束才骤然缩窄。
+        width: 100%;
+        height: 100%;
         padding: 8px;
         spacing: 2px;
 
-        // 头部：标题 + 收起按钮。
+        // 头部：展开态（标题 + 收起按钮）与收起态（展开按钮）**都常驻**，
+        // 靠 opacity 交叉淡化 —— 用 `if` 会导致元素随条件生死，没有过渡。
+        // 两者同为 38px，叠在同一位置，交叉时不会错位。
         Rectangle {
-            height: 40px;
-            HorizontalLayout {
-                padding-left: 4px;
-                padding-right: 2px;
-                spacing: 6px;
-                Text {
-                    text: "Rudder";
-                    color: Theme.text-primary;
-                    font-size: Theme.fs-md;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
+            height: 38px;
+
+            // 展开态
+            Rectangle {
+                width: 100%;
+                height: 100%;
+                opacity: 1 - root.progress;
+                HorizontalLayout {
+                    padding-left: 4px;
+                    // 不留右 padding：收起按钮的右缘要和下方导航项的 38px 高亮块对齐。
+                    padding-right: 0px;
+                    spacing: 6px;
+                    Text {
+                        text: "Rudder";
+                        color: Theme.text-primary;
+                        font-size: Theme.fs-md;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    // 与收起态的展开按钮、以及导航项的选中高亮**同尺寸**（38×38）。
+                    Rectangle {
+                        width: 38px;
+                        height: 38px;
+                        border-radius: Theme.radius-sm;
+                        background: collapse-ta.has-hover ? Theme.state-hover : transparent;
+                        animate background {
+                            duration: AnimationSettings.enter-state();
+                            easing: AnimationSettings.e-enter();
+                            enabled: AnimationSettings.enabled;
+                        }
+                        // 只有真正可见的那一层才吃点击：opacity 0 仍然会拦截事件，
+                        // 必须用 visible 关掉命中测试。
+                        collapse-ta := TouchArea {
+                            visible: root.progress < 0.5;
+                            mouse-cursor: pointer;
+                            accessible-role: button;
+                            clicked => { root.collapse-clicked(); }
+                        }
+                        IconText {
+                            text: "\u{E5CB}";   // chevron_left
+                            color: collapse-ta.has-hover ? Theme.text-primary : Theme.text-muted;
+                            font-size: 18px;
+                            centered: true;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
                 }
-                Rectangle {
-                    width: 24px;
-                    height: 24px;
-                    y: (parent.height - self.height) / 2;
-                    border-radius: Theme.radius-sm;
-                    background: collapse-ta.has-hover ? Theme.state-hover : transparent;
-                    animate background {
-                        duration: collapse-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                        easing: collapse-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                        enabled: AnimationSettings.enabled;
-                    }
-                    collapse-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        accessible-role: button;
-                        clicked => { root.collapse-clicked(); }
-                    }
-                    IconText {
-                        text: "\u{E5CB}";   // chevron_left
-                        color: collapse-ta.has-hover ? Theme.text-primary : Theme.text-muted;
-                        font-size: 16px;
-                        centered: true;
-                        width: parent.width;
-                        height: parent.height;
-                    }
+            }
+
+            // 收起态：与导航项的选中高亮**同尺寸**（38×38，即整行），
+            // 图标与展开态的收起按钮一样是 18px 居中。点击区域同样是整行。
+            Rectangle {
+                width: 100%;
+                height: 100%;
+                opacity: root.progress;
+                border-radius: Theme.radius-sm;
+                background: expand-ta.has-hover ? Theme.state-hover : transparent;
+                animate background {
+                    duration: AnimationSettings.enter-state();
+                    easing: AnimationSettings.e-enter();
+                    enabled: AnimationSettings.enabled;
+                }
+                IconText {
+                    text: "\u{E5CC}";   // chevron_right
+                    color: expand-ta.has-hover ? Theme.accent : Theme.text-muted;
+                    font-size: 18px;
+                    centered: true;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                expand-ta := TouchArea {
+                    visible: root.progress >= 0.5;
+                    mouse-cursor: pointer;
+                    accessible-role: button;
+                    clicked => { root.expand-clicked(); }
                 }
             }
         }
@@ -117,18 +266,24 @@ export component NavPanel inherits Rectangle {
             glyph: "\u{E875}";   // dns / server
             label: @tr("Hosts");
             current: root.current-page == 0;
+            progress: root.progress;
+            row-w: root.row-w;
             activated => { root.page-changed(0); }
         }
         NavRow {
             glyph: "\u{E30C}";   // desktop_windows
             label: "Docker";
             current: root.current-page == 3;
+            progress: root.progress;
+            row-w: root.row-w;
             activated => { root.page-changed(3); }
         }
         NavRow {
             glyph: "\u{E873}";   // description / notes
             label: @tr("Notes");
             current: root.current-page == 5;
+            progress: root.progress;
+            row-w: root.row-w;
             activated => { root.page-changed(5); }
         }
 
@@ -140,6 +295,8 @@ export component NavPanel inherits Rectangle {
         NavRow {
             glyph: "\u{E8B8}";   // settings
             label: @tr("Settings");
+            progress: root.progress;
+            row-w: root.row-w;
             activated => { root.settings-clicked(); }
         }
     }

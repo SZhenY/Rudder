@@ -24,18 +24,15 @@ import "fonts/MaterialIcons-Regular.ttf";
 // (src/fonts.rs), making them selectable in Settings after a restart.
 
 import { Theme } from "theme.slint";
-import { GroupGap } from "components/surfaces.slint";
-import { Sidebar, DiskInfo } from "sidebar.slint";
+import { DiskInfo } from "sidebar_blocks.slint";
 import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
-import { ConfirmDialog } from "confirm_dialog.slint";
-import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
+import { ToolStrip, IconButton } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
-import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
-import { InterfacePanel } from "interface_panel.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
 // `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
@@ -44,18 +41,13 @@ import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, M
 import { SettingsWindow } from "settings_window.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
 export { ProcWindow, SystemInfoWindow, SettingsWindow }
-import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
-import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
-import { CloseButton } from "components/buttons.slint";
-import { ModalCard } from "components/surfaces.slint";
-import { IconText } from "components/text.slint";
-import { Label } from "components/text.slint";
-import { WindowTitleBar } from "components/window_shell.slint";
+import { LineEdit, Button, Palette } from "std-widgets.slint";
 // 「自动更新」对话框：挂在文件末尾只是为了减少改动；设置页改成独立窗口后，"谁压谁"
 // 的层级顾虑已不成立（原文说的是"必须挂在设置遮罩之后"）。
 // 否则会重演横幅那个 bug（设置面板是全窗遮罩，挂在最后，压住一切在它之前的东西）。
 import { McpConsentDialog } from "mcp_consent_dialog.slint";
 import { UpdateDialog } from "update_dialog.slint";
+import { ConnStatusDialog } from "conn_status_dialog.slint";
 import { EditorFindResult, FileEditor } from "file_editor.slint";
 import { QuickCmdManageDialog } from "quick_cmd_manage.slint";
 import { GroupDialog } from "group_dialog.slint";
@@ -67,7 +59,6 @@ import { DownloadManagerPopup, TransferInfo } from "download_manager.slint";
 import { SettingsMenuPopup } from "settings_menu.slint";
 import { McpClientsPopup } from "mcp_clients_popup.slint";
 import { AboutDialog } from "about_dialog.slint";
-import { DockSnapOverlay } from "dock_snap_overlay.slint";
 import { ConfirmOverlays } from "confirm_overlays.slint";
 import { ShortcutsDialog } from "shortcuts_dialog.slint";
 import { FramelessTitleBar } from "custom_titlebar.slint";
@@ -78,7 +69,7 @@ import { RenameDialog } from "rename_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
 export { EditorFindResult }
 
-export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
+export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
 // P5「公共面收敛」第 1 步：把两个全局导出，Rust 才能 `window.global::<Theme>()`
 // 直接读写主题 —— 这样 AppWindow 上那 14 条 `<=> Theme.x` 镜像就不必存在了。
 export { AnimationSettings, Theme }
@@ -117,7 +108,6 @@ export struct TerminalState {
     sftp-sort-key: string,      // ""|"name"|"size"|"modified" (#248)
     sftp-sort-dir: int,         // 0 default / 1 asc / -1 desc (#248)
     sftp-available: bool,       // false for local/serial/telnet sessions
-    tunnels: [TunnelInfo],      // runtime SSH tunnels (#206)
     sftp-collapsed: bool,       // SFTP panel minimised — per session (#v0.5)
     sftp-panel-height: length,  // SFTP panel extent (bottom dock) — per session
     sftp-panel-width: length,   // SFTP panel extent (side dock) — per session
@@ -177,7 +167,7 @@ export component AppWindow inherits Window {
     // ⚠️ 不要在这里塞逗号分隔的字体栈 —— Slint 的 font-family 不做逗号拆分。
     default-font-family: Theme.ui-font-family;
 
-    // --- Sidebar data ------------------------------------------------------
+    // --- Resource status data（运行状态页与连接状态点）---------------------
     in property <string> connection-state: @tr("Not connected");
     in property <string> conn-host;             // clean IP/host for click-to-copy (#192)
     in property <int> conn-state;                       // 0 gray / 1 green / 2 yellow
@@ -237,74 +227,65 @@ export component AppWindow inherits Window {
     callback win-close();
     callback reset-page(string);   // settings: restore page defaults
     callback win-resize(int);     // start an OS resize; arg = direction code
-    in-out property <bool> sidebar-collapsed: false; // 导航条收起（只剩 22px 把手）
+    in-out property <bool> sidebar-collapsed: false; // 导航条收起（44px 图标条）
     callback set-sidebar-collapsed(bool);       // apply + persist
     // 左侧导航当前分区：0 主机 / 3 Docker / 5 笔记（1 = 终端，由标签切换驱动）。
     in-out property <int> nav-page: 0;
+    /// Docker / 笔记页整页接管内容区：标签栏、工具栏、快捷面板这些"终端页专属"
+    /// 的元素全部收起，页面从顶边铺到底边。
+    property <bool> in-dock-page: root.nav-page == 3 || root.nav-page == 5;
+    // Docker / 笔记页整页接管内容区，工具栏与它锚定的浮层都失去依托，必须收起 ——
+    // 否则 Rust 在传输开始时主动打开的下载面板会浮在占位页上（`sftp_callbacks` 多处）。
+    changed nav-page => {
+        if (root.nav-page == 3 || root.nav-page == 5) {
+            root.download-open = false;
+            root.mcp-clients-open = false;
+        }
+    }
     // 点导航项：0 需要把当前 pane 的活动标签切回 welcome，其余只切页面。
     callback nav-select(int);
     // 当前 SFTP 面板页签（"files" / "status"），Rust 侧用来判断是否允许文件拖放。
     in-out property <string> sftp-mode: "files";
-    // 导航宽度：展开 200px，收起只留 22px 把手。out 供 Rust 计算鼠标命中区。
-    out property <length> nav-width: root.sidebar-collapsed ? 22px : 200px;
-    // 以下两项是旧资源侧栏的尺寸，界面不再读取，保留声明以便旧配置继续加载。
-    in-out property <length> sidebar-width: 220px;
-    in-out property <length> sidebar-height: 240px;
-    callback persist-sidebar-width(float /* logical px */);
+    // 导航宽度：展开 200px，收起 54px 图标条。
+    // 54 是算出来的：两侧各 8px 留白 → 行宽 38px，(38 − 18) / 2 = 10px，
+    // 正好与 `NavRow` 里图标的 `x: 10px` 相等，图标在高亮框里像素级居中。
+    // out 供 Rust 计算鼠标命中区。
+    out property <length> nav-width: root.sidebar-collapsed ? 54px : 200px;
 
-    // --- 面板停靠（欢迎侧栏 / 快捷面板）----------------------------------
-    // 导航条固定在最左，不再参与停靠；这里只剩欢迎侧栏与快捷面板。
-    // Which window edge the resource panel is docked to: left|right|top|bottom.
-    in-out property <string> sidebar-dock: "left";
-    // Drag-to-dock state: while a panel's header is dragged, a 4-edge snap
-    // overlay shows and `dock-target` tracks the edge under the cursor.
-    property <bool> panel-dragging;
-    property <float> drag-nx;   // cursor x within the dock area, 0..1
-    property <float> drag-ny;   // cursor y within the dock area, 0..1
-    property <string> dock-target:
-        !root.panel-dragging ? ""
-        : root.drag-nx < 0.22 ? "left"
-        : root.drag-nx > 0.78 ? "right"
-        : root.drag-ny < 0.22 ? "top"
-        : root.drag-ny > 0.78 ? "bottom"
-        : "";
-    callback persist-sidebar-dock(string);
-    // The top-right toolbar icons float over the tab row; when the sidebar docks
-    // top/right it covers that corner, so shift the icons to stay over the tabs.
+    // 导航切页：淡出 → 换页 → 淡入，与设置页 `InterfacePanel` 同一套路。
     //
-    // 两个偏移都是"同一侧两个面板各自占掉多少，再相加"：欢迎侧栏 + 快捷面板。
-    // 导航条现在在 dock-area 之外固定占左缘，不再参与这两条偏移。
-    //
-    // 折叠条宽度：侧栏与快捷面板折叠后都只剩 36px 宽的折叠条（见 CollapseButton）。
-    pure function side-taken(open: bool, dock: string, edge: string, value: length) -> length {
-        return open && dock == edge ? value : 0px;
+    // 页面是 `if` / `visible` 切换的，没有两页并存的交叉淡化空间；改成让**常驻的
+    // 内容容器**（`quick-area`）淡出，换完页再淡入。导航高亮跟着点击即时走，
+    // 不等这 150ms —— 点下去就有反馈，内容随后落位。
+    property <int> nav-pending: 0;
+    property <float> nav-fade: 1.0;
+    property <bool> nav-swapping: false;
+    /// 导航高亮跟**点击**即时走，不等 150ms 的淡出 —— 与设置页 `InterfacePanel`
+    /// 的 `nav-page` 同口径。`NavPanel` 的 `current-page` 绑这个值。
+    property <int> nav-highlight: root.nav-swapping ? root.nav-pending : root.nav-page;
+
+    function nav-goto(p: int) {
+        // 与"目标页"比较而不是与 `nav-page`：淡出途中再点另一项时，
+        // `nav-page` 还是旧值，拿它比较会把这次点击吞掉。
+        if (p == root.nav-highlight) {
+            return;
+        }
+        root.nav-pending = p;
+        root.nav-fade = 0.0;
+        root.nav-swapping = true;
     }
 
-    /// 同一侧的欢迎侧栏是否**已经**折叠成折叠条。
-    /// 快捷面板折叠时靠它判断：折叠条已被别的面板占住时不再叠加第二个 36px。
-    pure function collapsed-bar-taken(edge: string) -> bool {
-        return root.welcome-as-sidebar && root.welcome-collapsed
-            && root.welcome-sidebar-dock == edge;
-    }
-
+    // The top-right toolbar icons float over the tab row; when the quick-command
+    // panel is open (fixed to the right edge) it covers that corner, so shift the icons
+    // to stay over the tabs.
+    //
     // 快捷面板只有真的占位时（有会话 + 未折叠）才把工具栏图标推开；新标签页
     // 上它不显示也不占位，这里跟着不偏移，否则右上角会空出一条竖带。
     property <length> toolbar-x-off:
-        side-taken(root.welcome-as-sidebar, root.welcome-sidebar-dock, "right",
-            root.welcome-sidebar-taken)
-        + side-taken(root.quick-panel-open && root.quick-has-session,
-            root.quick-panel-dock, "right",
-            root.quick-panel-collapsed
-                ? (collapsed-bar-taken("right") ? 0px : 36px)
-                : root.quick-panel-width + 4px);
-    property <length> toolbar-y-off:
-        side-taken(root.welcome-as-sidebar, root.welcome-sidebar-dock, "top",
-            root.welcome-sidebar-taken)
-        + side-taken(root.quick-panel-open && root.quick-has-session,
-            root.quick-panel-dock, "top",
-            root.quick-panel-collapsed
-                ? (collapsed-bar-taken("top") ? 0px : 36px)
-                : root.quick-panel-height + 4px);
+        root.quick-panel-open && root.quick-has-session
+            ? (root.quick-panel-collapsed ? 36px : root.quick-panel-width + 2px)
+            : 0px;
+    property <length> toolbar-y-off: 0px;
     property <length> toolbar-y:
         (root.custom-titlebar ? Theme.titlebar-height + 5px : 5px + root.titlebar-inset) + root.toolbar-y-off;
     in-out property <bool> about-open: false;     // centered About dialog
@@ -492,8 +473,8 @@ export component AppWindow inherits Window {
     // 配置里存的是反向的 hide_cmd_bar，翻转只在 Rust 侧（见 settings/layout.rs）。
     in-out property <bool> show-cmd-bar: true;
     callback set-show-cmd-bar(bool);               // apply + persist
-    // Zen (focus) mode: hide the sidebar and tab strip for a distraction-free
-    // terminal. Toggled by Ctrl+Alt+Z (⌘⌥Z on macOS) and persisted.
+    // Zen (focus) mode: hide the tab strip for a distraction-free terminal.
+    // Toggled by Ctrl+Alt+Z (⌘⌥Z on macOS) and persisted.
     in-out property <bool> zen-mode: false;
     callback set-zen-mode(bool);                   // apply + persist
     callback toggle-zen-key();
@@ -503,9 +484,6 @@ export component AppWindow inherits Window {
     // Collapse-by-default settings + shared SFTP collapse state (#78).
     in-out property <bool> collapse-sidebar-default: false;
     callback set-collapse-sidebar-default(bool);   // apply + persist
-    // Render the welcome/session list as a left sidebar instead of a tab (v0.5).
-    in-out property <bool> welcome-as-sidebar: false;
-    callback set-welcome-as-sidebar(bool);         // apply + persist
     in-out property <bool> update-check-enabled: true;   // startup new-version check (#184)
     callback set-update-check-enabled(bool);       // apply + persist
     callback set-update-channel(string);
@@ -581,18 +559,6 @@ export component AppWindow inherits Window {
     callback add-wsl-profile(string, string, string);
     callback remove-wsl-profile(string);
     callback pick-wsl-directory();
-    // Drag-resizable width of that welcome sidebar (logical px), persisted.
-    in-out property <length> welcome-sidebar-width: 240px;
-    callback persist-welcome-sidebar-width(float);
-    in-out property <string> welcome-sidebar-dock: "left";
-    property <bool> welcome-sidebar-horizontal:
-        root.welcome-sidebar-dock == "left" || root.welcome-sidebar-dock == "right";
-    property <length> welcome-sidebar-taken:
-        root.welcome-collapsed ? 36px : root.welcome-sidebar-width;
-    callback persist-welcome-sidebar-dock(string);
-    // Welcome sidebar collapsed to the edge icon strip (IDEA-style), persisted.
-    in-out property <bool> welcome-collapsed: false;
-    callback set-welcome-collapsed(bool);          // apply + persist
     in-out property <bool> collapse-sftp-default: false;
     callback set-collapse-sftp-default(bool);      // apply + persist
     in-out property <bool> sftp-collapsed: false;       // (legacy global; per-tab now)
@@ -665,8 +631,10 @@ export component AppWindow inherits Window {
     callback webdav-upload();
     callback webdav-download();
     in-out property <length> sftp-panel-height: 220px; // shared; lets Rust locate the drop zone
-    in-out property <length> sftp-panel-width: 380px;  // SFTP extent when docked left/right
-    in-out property <string> sftp-dock: "bottom";      // SFTP dock edge, shared across tabs
+    in-out property <length> sftp-panel-width: 380px;  // 右侧面板宽度
+    // 面板固定在右侧：不再有拖拽入口，这个值不会被改。
+    // 保留属性是因为几何公式里还有几处按停靠边分叉的三目（收敛它们属于单独一轮）。
+    in-out property <string> sftp-dock: "right";
     callback pick-download-dir();            // open a folder picker
     callback open-download-dir();            // reveal the folder in the OS
     callback clear-transfers();              // wipe the transfer history
@@ -689,7 +657,7 @@ export component AppWindow inherits Window {
     // Settings → 手动检查更新 button (#self-update): independent of the
     // startup check toggle, result is shown inline in the settings row.
     in property <string> update-check-status: "";
-    // 失败时的错误链（等宽小字显示在状态行下面）—— 平时为空串，界面上不占位。
+    // 失败时的错误链（等宽小字显示在设置页更新状态行下面）—— 平时为空串，界面上不占位。
     in property <string> update-check-error: "";
     in property <bool> update-checking: false;
     // 更新通道（stable / beta / all）与检查频率、上次检查时间（见 settings/pages/update.slint）。
@@ -700,6 +668,16 @@ export component AppWindow inherits Window {
     // 「自动更新」对话框（取代原顶部横幅）：Rust 在"自动检查发现新版本"或"手动检查发现"
     // 时打开它；用户关掉后可由下一次检查再打开。
     in-out property <bool> update-dialog-open: false;
+    // ── 连接状态弹窗（取代已删除的终端状态行）──────────────────────────────
+    // `phase` 是唯一可靠的状态机：0 连接中 / 1 成功 / 2 失败。
+    // 不要用 `TerminalState.status` 字符串判断 —— 它在连接过程中会被多条
+    // 「经代理连接…」之类的日志覆盖，且失败与掉线共用「已断开 — 」前缀。
+    // `conn-popup-tab` 记住跟踪的 tab，只有"从未成功过"的 Closed 才判失败。
+    in-out property <bool> conn-popup-open: false;
+    in-out property <int> conn-popup-phase: 0;
+    in property <string> conn-popup-host: "";
+    in property <string> conn-popup-detail: "";
+    in property <string> conn-popup-tab: "";
     in property <string> update-notes: "";            // 发布说明（Rust 侧已清洗 + 截断）
     in property <string> update-current-version: "";  // 形如 "v0.7.9"
     in property <string> update-badge: "";            // 通道徽章：正式版 / 测试版
@@ -884,8 +862,8 @@ export component AppWindow inherits Window {
     // Reports the pane-area size to Rust so it can flatten the split tree into
     // absolute pane / splitter rects. Fired whenever the content area resizes.
     callback content-resized(length /* w */, length /* h */);
-    // Asks Rust to recompute the sidebar (status + resources) for whatever tab
-    // is now active.  Fired on every active-tab change, UI- or code-driven.
+    // Asks Rust to recompute the resource stats shown on the status page for
+    // whatever tab is now active.  Fired on every active-tab change.
     callback refresh-sidebar();
     changed active-tab-id => {
         root.refresh-sidebar();
@@ -1025,6 +1003,19 @@ export component AppWindow inherits Window {
         win-minimize() => { root.win-minimize(); }
     }
 
+    // 切页定时器：等淡出走完再换页，然后淡入。动效关闭时间隔归零，不白等。
+    // `running` 绑在 nav-swapping 上，到点置回 false 即停表。
+    nav-swap-timer := Timer {
+        interval: AnimationSettings.enabled ? AnimationSettings.exit-page() : 1ms;
+        running: root.nav-swapping;
+        triggered => {
+            root.nav-page = root.nav-pending;
+            root.nav-select(root.nav-pending);
+            root.nav-fade = 1.0;
+            root.nav-swapping = false;
+        }
+    }
+
         // 导航条固定在最左，工作区占其余宽度；dock-area 内部的停靠几何不再包含导航。
         HorizontalLayout {
         spacing: 0;
@@ -1035,21 +1026,27 @@ export component AppWindow inherits Window {
             height: 100%;
             clip: true;
             background: Theme.bg-panel;
+            // 宽度过渡与 NavPanel 内部的 `progress` 用同一组时长/缓动
+            // （AnimationSettings.collapse-*）—— 两者各写各的会错开。
             animate width {
-                duration: root.sidebar-collapsed ? AnimationSettings.exit-container() : AnimationSettings.enter-container();
-                easing: AnimationSettings.s-soft();
+                duration: AnimationSettings.collapse-duration(root.sidebar-collapsed, 146px);
+                easing: AnimationSettings.collapse-easing();
                 enabled: AnimationSettings.enabled;
             }
 
             NavPanel {
-                visible: !root.sidebar-collapsed;
-                width: 200px;
+                width: 100%;
                 height: 100%;
-                current-page: root.nav-page;
-                page-changed(p) => { root.nav-page = p; root.nav-select(p); }
+                collapsed: root.sidebar-collapsed;
+                current-page: root.nav-highlight;
+                page-changed(p) => { root.nav-goto(p); }
                 collapse-clicked() => {
                     root.sidebar-collapsed = true;
                     root.set-sidebar-collapsed(true);
+                }
+                expand-clicked() => {
+                    root.sidebar-collapsed = false;
+                    root.set-sidebar-collapsed(false);
                 }
                 settings-clicked() => {
                     root.settings-open = !root.settings-open;
@@ -1058,67 +1055,17 @@ export component AppWindow inherits Window {
                     root.ssh-import-hint = "";
                 }
             }
-
-            // 收起后只留 22px 把手：导航本身不绘制，避免被裁成一条竖缝。
-            if root.sidebar-collapsed : Rectangle {
-                width: 22px;
-                height: 100%;
-                background: Theme.bg-panel;
-                nav-handle-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    accessible-role: button;
-                    clicked => {
-                        root.sidebar-collapsed = false;
-                        root.set-sidebar-collapsed(false);
-                    }
-                }
-                IconText {
-                    text: "\u{E5CC}";   // chevron_right
-                    color: nav-handle-ta.has-hover ? Theme.accent : Theme.text-muted;
-                    font-size: 16px;
-                    centered: true;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
         }
 
         // Dock area — fills the rest of the window, right of the navigation.
         dock-area := Rectangle {
         horizontal-stretch: 1;
         vertical-stretch: 1;
-        // Left-edge layout (welcome-as-sidebar mode): a thin always-on icon strip
-        // (IDEA-style) + the welcome/session sidebar (0 when collapsed). The rest
-        // (central terminal) sits to their right in `rest`.
-        // Collapsed-only (M5): the icon strip shows only while collapsed; the
-        // panel itself (welcome-w) only while expanded — one or the other.
-        property <length> welcome-strip: (root.welcome-as-sidebar && root.welcome-collapsed) ? 36px : 0px;
-        property <length> welcome-size: (root.welcome-as-sidebar && !root.welcome-collapsed) ? root.welcome-sidebar-width : 0px;
-        animate welcome-size {
-            duration: (root.welcome-as-sidebar && !root.welcome-collapsed) ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
-            easing: AnimationSettings.s-soft();
-            enabled: AnimationSettings.enabled;
-        }
-        animate welcome-strip {
-            duration: (root.welcome-as-sidebar && root.welcome-collapsed) ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
-            easing: AnimationSettings.s-soft();
-            enabled: AnimationSettings.enabled;
-        }
-        property <length> welcome-taken: welcome-strip + welcome-size;
-        property <bool> welcome-horizontal: root.welcome-sidebar-horizontal;
-        property <bool> welcome-sidebar-dragging;
-        // A collapsed quick-command sidebar joins an existing collapsed strip
-        // on the same edge. Only when no such strip exists does it reserve its
-        // own outermost 36px slot (#215).
-        // 无会话时快捷面板整体不显示，也不该并进别的折叠条（否则折叠条上会多出
-        // 一个点了没反应的快捷命令图标）。
-        property <bool> quick-merge-welcome:
-            root.quick-panel-open && root.quick-panel-collapsed && root.quick-has-session
-            && root.welcome-as-sidebar && root.welcome-collapsed
-            && root.quick-panel-dock == root.welcome-sidebar-dock;
+        // 无会话时快捷面板整体不显示，也不该占位（否则折叠条上会多出一个
+        // 点了没反应的快捷命令图标）。
         property <length> quick-outer-strip:
             root.quick-panel-open && root.quick-panel-collapsed && root.quick-has-session
-                && !dock-area.quick-merge-welcome
+                && !root.in-dock-page
                 ? 36px : 0px;
         property <bool> quick-outer-horizontal:
             root.quick-panel-dock == "left" || root.quick-panel-dock == "right";
@@ -1132,6 +1079,8 @@ export component AppWindow inherits Window {
             root.quick-panel-dock == "bottom" ? dock-area.quick-outer-strip : 0px;
 
         if dock-area.quick-outer-strip > 0px : ToolStrip {
+            // 与展开态面板同底（`QuickDockPanel` 用 `bg-root`），否则折叠/展开切换会跳一档色。
+            background: Theme.bg-root;
             x: root.quick-panel-dock == "right" ? parent.width - parent.quick-outer-strip : 0px;
             y: root.quick-panel-dock == "bottom" ? parent.height - parent.quick-outer-strip : 0px;
             width: parent.quick-outer-horizontal ? parent.quick-outer-strip : parent.width;
@@ -1141,223 +1090,52 @@ export component AppWindow inherits Window {
             tooltip: @tr("Quick commands");
             expand => {
                 root.quick-panel-collapsed = false;
-                if (root.welcome-as-sidebar
-                        && root.welcome-sidebar-dock == root.quick-panel-dock) {
-                    root.welcome-collapsed = true;
-                    root.set-welcome-collapsed(true);
-                }
             }
         }
 
-        // Collapsed welcome → a thin left icon strip (click the icon to re-open).
-        if root.welcome-as-sidebar && root.welcome-collapsed : ToolStrip {
-            x: root.welcome-sidebar-dock == "right"
-                ? parent.width - parent.quick-right - parent.welcome-strip
-                : root.welcome-sidebar-dock == "left" ? parent.quick-left : parent.quick-left;
-            y: root.welcome-sidebar-dock == "bottom"
-                ? parent.height - parent.quick-bottom - parent.welcome-strip
-                : root.welcome-sidebar-dock == "top" ? parent.quick-top : parent.quick-top;
-            width: parent.welcome-horizontal ? parent.welcome-strip
-                : parent.width - parent.quick-left - parent.quick-right;
-            height: parent.welcome-horizontal
-                ? parent.height - parent.quick-top - parent.quick-bottom : parent.welcome-strip;
-            dock-edge: root.welcome-sidebar-dock;
-            glyph: "\u{E88A}";   // session list / welcome
-            show-second: parent.quick-merge-welcome;
-            second-glyph: "\u{E3E7}";
-            show-third: false;
-            third-glyph: "\u{E3E7}";
-            expand => {
-                root.welcome-collapsed = false;
-                root.set-welcome-collapsed(false);
-                if (root.quick-panel-open
-                        && root.quick-panel-dock == root.welcome-sidebar-dock) {
-                    root.quick-panel-collapsed = true;
-                }
-            }
-            expand-second => {
-                root.quick-panel-collapsed = false;
-            }
-            expand-third => { root.quick-panel-collapsed = false; }
-        }
-
-        // Welcome / session list, to the right of the icon strip. Always
-        // rendered so width animates smoothly on collapse (Slint removes
-        // `if`-gated elements instantly, skipping the animation).
-        if root.welcome-as-sidebar : welcome-w := Rectangle {
-            x: root.welcome-sidebar-dock == "right" ? parent.width - parent.quick-right - parent.welcome-size
-             : root.welcome-sidebar-dock == "left" ? parent.quick-left
-             : parent.quick-left;
-            y: root.welcome-sidebar-dock == "bottom" ? parent.height - parent.quick-bottom - parent.welcome-size
-             : root.welcome-sidebar-dock == "top" ? parent.quick-top
-             : parent.quick-top;
-            width: parent.welcome-horizontal ? parent.welcome-size
-                : parent.width - parent.quick-left - parent.quick-right;
-            height: parent.welcome-horizontal
-                ? parent.height - parent.quick-top - parent.quick-bottom : parent.welcome-size;
-            background: Theme.bg-panel;
-            clip: true;
-            // 常驻、用 opacity 淡入淡出（理由同 resource 面板：`if` 会让 animate 失效，
-            // 并在折叠时销毁重建整个会话列表）。
-            Rectangle {
-                visible: self.opacity > 0.001;
-                animate opacity {
-                    duration: !root.welcome-collapsed ? AnimationSettings.enter-page() : AnimationSettings.exit-page();
-                    easing: !root.welcome-collapsed ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                    enabled: AnimationSettings.enabled;
-                }
-                opacity: root.welcome-collapsed ? 0.0 : 1.0;
-                width: parent.width; height: parent.height;
-                Welcome {
-                width: parent.width;
-                height: parent.height;
-                compact: true;
-                dock-edge: root.welcome-sidebar-dock;
-                sessions: root.sessions;
-                import-hint: root.ssh-import-hint;
-                search-query <=> root.host-search-query;
-                search-changed(query) => { root.host-search-changed(query); }
-                collapse => {
-                    root.welcome-collapsed = true;
-                    root.set-welcome-collapsed(true);
-                }
-                dock-drag-move(ax, ay) => {
-                    root.panel-dragging = true;
-                    root.drag-nx = (ax - dock-area.absolute-position.x) / dock-area.width;
-                    root.drag-ny = (ay - dock-area.absolute-position.y) / dock-area.height;
-                }
-                dock-drag-end() => {
-                    if (root.dock-target != "") {
-                        root.welcome-sidebar-dock = root.dock-target;
-                        if (root.quick-panel-open && root.quick-panel-dock == root.dock-target) {
-                            root.quick-panel-collapsed = true;
-                        }
-                        root.persist-welcome-sidebar-dock(root.welcome-sidebar-dock);
-                    }
-                    root.panel-dragging = false;
-                }
-                new-session => { root.new-session-clicked(); }
-                import-ssh-config => { root.import-ssh-config(); }
-                connect-session(id) => { root.connect-session(id); }
-                edit-session(id) => { root.edit-session(id); }
-                duplicate-session(id) => { root.duplicate-session(id); }
-                move-session(id, group) => { root.move-session(id, group); }
-                reorder-session(id, dir) => { root.reorder-session(id, dir); }
-                reorder-end => { root.reorder-session-end(); }
-                toggle-group(group) => { root.toggle-group(group); }
-                new-group => {
-                    root.group-dialog-orig = "";
-                    root.group-dialog-name = "";
-                    root.group-dialog-error = "";
-                    root.group-dialog-open = true;
-                }
-                edit-group(name) => {
-                    root.group-dialog-orig = name;
-                    root.group-dialog-name = name;
-                    root.group-dialog-error = "";
-                    root.group-dialog-open = true;
-                }
-                delete-group(name) => { root.delete-group(name); }
-                remove-session(id) => { root.remove-session(id); }
-            }
-            }
-            Rectangle {
-                x: root.welcome-sidebar-dock == "left" ? parent.width - 1px : 0px;
-                y: root.welcome-sidebar-dock == "top" ? parent.height - 1px : 0px;
-                width: root.welcome-sidebar-horizontal ? 1px : parent.width;
-                height: root.welcome-sidebar-horizontal ? parent.height : 1px;
-                background: Theme.border-subtle;
-            }
-        }
-
-        // Drag the welcome sidebar's right edge to resize it (v0.5 M3b).
-        if root.welcome-as-sidebar && !root.welcome-collapsed : Rectangle {
-            x: root.welcome-sidebar-dock == "left" ? parent.quick-left + parent.welcome-size - 2px
-             : root.welcome-sidebar-dock == "right" ? parent.width - parent.quick-right - parent.welcome-size - 2px
-             : parent.quick-left;
-            y: root.welcome-sidebar-dock == "top" ? parent.quick-top + parent.welcome-size - 2px
-             : root.welcome-sidebar-dock == "bottom" ? parent.height - parent.quick-bottom - parent.welcome-size - 2px
-             : parent.quick-top;
-            width: parent.welcome-horizontal ? 4px
-                : parent.width - parent.quick-left - parent.quick-right;
-            height: parent.welcome-horizontal
-                ? parent.height - parent.quick-top - parent.quick-bottom : 4px;
-            background: ws-split-ta.has-hover || dock-area.welcome-sidebar-dragging
-                ? Theme.accent : transparent;
-            ws-split-ta := TouchArea {
-                mouse-cursor: dock-area.welcome-horizontal ? ew-resize : ns-resize;
-                pointer-event(ev) => {
-                    if (ev.kind == PointerEventKind.down) {
-                        dock-area.welcome-sidebar-dragging = true;
-                    } else if (ev.kind == PointerEventKind.up) {
-                        dock-area.welcome-sidebar-dragging = false;
-                        root.persist-welcome-sidebar-width(root.welcome-sidebar-width / 1px);
-                    }
-                }
-                moved => {
-                    if (dock-area.welcome-sidebar-dragging) {
-                        if (dock-area.welcome-horizontal) {
-                            root.welcome-sidebar-width = clamp(
-                                root.welcome-sidebar-dock == "right"
-                                    ? dock-area.absolute-position.x + dock-area.width
-                                        - (self.absolute-position.x + self.mouse-x)
-                                    : self.absolute-position.x + self.mouse-x
-                                        - dock-area.absolute-position.x,
-                                160px, 480px);
-                        } else {
-                            root.welcome-sidebar-width = clamp(
-                                root.welcome-sidebar-dock == "bottom"
-                                    ? dock-area.absolute-position.y + dock-area.height
-                                        - (self.absolute-position.y + self.mouse-y)
-                                    : self.absolute-position.y + self.mouse-y
-                                        - dock-area.absolute-position.y,
-                                120px, 360px);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Everything except the welcome strip/sidebar and quick panel.
+        // Everything except the quick panel.
         rest := Rectangle {
-        x: (root.welcome-sidebar-dock == "left" ? parent.welcome-taken : 0px)
-            + parent.quick-left;
-        y: (root.welcome-sidebar-dock == "top" ? parent.welcome-taken : 0px)
-            + parent.quick-top;
-        width: parent.width
-            - (parent.welcome-horizontal ? parent.welcome-taken : 0px)
-            - parent.quick-left - parent.quick-right;
+        x: parent.quick-left;
+        y: parent.quick-top;
+        width: parent.width - parent.quick-left - parent.quick-right;
         height: parent.height
-            - (!parent.welcome-horizontal ? parent.welcome-taken : 0px)
             - parent.quick-top - parent.quick-bottom;
 
         // Tabs + terminal content. Clipped so the terminal / SFTP panel can never
-        // bleed (visually or for clicks) onto a panel docked on the bottom or right (#dock).
+        // bleed (visually or for clicks) onto the right-hand quick-command panel.
         quick-area := Rectangle {
             x: 0px;
             y: 0px;
             width: parent.width;
             height: parent.height;
             clip: true;
+            // 导航切页的淡出 / 淡入（与设置页 `InterfacePanel` 同一套路）。
+            // 不做缩放：`quick-area` 是 clip 容器，缩小会先露出容器外的空白；
+            // 终端文字在缩放中还会重光栅化发虚。
+            opacity: root.nav-fade;
+            animate opacity {
+                duration: root.nav-swapping ? AnimationSettings.exit-page() : AnimationSettings.enter-page();
+                easing: root.nav-swapping ? AnimationSettings.e-exit() : AnimationSettings.e-enter();
+                enabled: AnimationSettings.enabled;
+            }
             property <bool> quick-horizontal:
                 root.quick-panel-dock == "left" || root.quick-panel-dock == "right";
             // 开关打开、未折叠，且当前活动标签是真实会话时才显示并占位。
             // 新标签页即使开关是开的也不显示，避免挤压欢迎页。
             property <bool> quick-shown:
-                root.quick-panel-open && !root.quick-panel-collapsed && root.quick-has-session;
-            property <length> quick-w: quick-shown ? root.quick-panel-width : 0px;
-            property <length> quick-h: quick-shown ? root.quick-panel-height : 0px;
-            animate quick-w {
-                duration: quick-shown ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
-                easing: AnimationSettings.s-soft();
+                root.quick-panel-open && !root.quick-panel-collapsed
+                && root.quick-has-session && !root.in-dock-page;
+            // 折叠进度：0 = 展开，1 = 收起。**与左侧导航 / SFTP 面板同一组令牌**，
+            // 宽度、间距、面板透明度全部从它派生 —— 三者同一条时间轴。
+            property <float> quick-progress: quick-shown ? 0 : 1;
+            animate quick-progress {
+                duration: AnimationSettings.collapse-duration(!quick-shown, root.quick-panel-width);
+                easing: AnimationSettings.collapse-easing();
                 enabled: AnimationSettings.enabled;
             }
-            animate quick-h {
-                duration: quick-shown ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
-                easing: AnimationSettings.s-soft();
-                enabled: AnimationSettings.enabled;
-            }
-            property <length> quick-sp: quick-shown ? 4px : 0px;
+            property <length> quick-w: root.quick-panel-width * (1 - quick-progress);
+            property <length> quick-h: root.quick-panel-height * (1 - quick-progress);
+            property <length> quick-sp: 2px * (1 - quick-progress);
 
             central := Rectangle {
             x: parent.quick-shown && root.quick-panel-dock == "left" ? parent.quick-w + parent.quick-sp : 0px;
@@ -1381,17 +1159,17 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                 spacing: 0;
 
-                HorizontalLayout {
+                // Docker / 笔记页整页接管内容区：整行一起塌陷。
+                // ⚠️ 必须用 `if` 而不是 `visible` —— Slint 里 `visible: false`
+                // **不释放布局空间**，这一行仍占 36px；占位层是半透明的，
+                // 于是 36px 边界处会出现一条色差硬边（不是描边）。
+                if !root.zen-mode && root.nav-page != 3 && root.nav-page != 5 : HorizontalLayout {
                 spacing: 0;
-                // (Collapsed resource panel now reserves its own ToolStrip slot in
-                // `rest`, so the tab strip no longer needs a spacer for it.)
                 TabBar {
-                    visible: !root.zen-mode;
                     horizontal-stretch: 1;
                     // Reserve room for the top-right toolbar icons that sit over
                     // this row so tabs don't slide underneath them (#122).
                     reserve-right: pane.reserve-right;
-                    show-new-tab: !root.welcome-as-sidebar;
                     can-merge-pane: root.panes.length > 1;
                     tabs: pane.tabs;
                     active-id: pane.active-id;
@@ -1416,10 +1194,8 @@ export component AppWindow inherits Window {
                 vertical-stretch: 1;
                 background: Theme.bg-root;
 
-                // Empty pane outside welcome-sidebar mode: keep a small hint for
-                // rare empty panes, but do not cover the wallpaper when the
-                // session list is already visible as a sidebar.
-                if pane.tabs.length == 0 && !root.welcome-as-sidebar : Rectangle {
+                // 空窗格只留一行提示文字，不铺底色，主窗口壁纸能透上来。
+                if pane.tabs.length == 0 : Rectangle {
                     width: parent.width;
                     height: parent.height;
                     Text {
@@ -1435,7 +1211,9 @@ export component AppWindow inherits Window {
 
                 // Welcome tab — fill the content area explicitly (some renderers
                 // don't auto-fill, which spread the header/card apart) (#dock).
-                if pane.active-id == "welcome" : Welcome {
+                // Docker / 笔记页激活时销毁内容，让占位层的半透明底透出壁纸
+                // 而不是主机列表。
+                if pane.active-id == "welcome" && root.nav-page != 3 && root.nav-page != 5 : Welcome {
                     width: parent.width;
                     height: parent.height;
                     sessions: root.sessions;
@@ -1473,13 +1251,12 @@ export component AppWindow inherits Window {
                 // allow nesting `if` directly inside a `for`, so we toggle
                 // visibility instead and rely on the layout to overlap them.
                 for term[i] in root.terminals : TerminalView {
-                    visible: term.id == pane.active-id;
+                    visible: term.id == pane.active-id && root.nav-page != 3 && root.nav-page != 5;
                     active: term.id == root.active-tab-id;
                     focus-sequence: root.terminal-focus-sequence;
                     width: term.id == pane.active-id ? parent.width : 0px;
                     height: term.id == pane.active-id ? parent.height : 0px;
                     tab-id: term.id;
-                    status-line: term.status;
                     spans: term.spans;
                     cursor-row: term.cursor-row;
                     cursor-col: term.cursor-col;
@@ -1537,7 +1314,7 @@ export component AppWindow inherits Window {
                     app-version: root.app-version;
                     quick-commands: root.quick-commands;
                     quick-sidebar-enabled: root.quick-commands-as-sidebar;
-                    // Quick 入口按钮只在「快捷命令未停靠为侧栏」时显示。
+                    // Quick 入口按钮只在「快捷命令侧栏未开启」时显示。
                     // 此前误绑 quick-panel-open：布局还原把 as-sidebar 关掉之后，
                     // 侧栏消失而入口按钮仍被隐藏，快捷命令就彻底无法访问了。
                     quick-panel-docked: root.quick-commands-as-sidebar && root.quick-panel-open;
@@ -1564,24 +1341,6 @@ export component AppWindow inherits Window {
                         root.qcm-group = "";
                         root.qcm-edit-index = -1;
                         root.quick-cmd-manage-open = true;
-                    }
-                    quick-dock-drag-move(ax, ay) => {
-                        root.panel-dragging = true;
-                        root.drag-nx = (ax - dock-area.absolute-position.x) / dock-area.width;
-                        root.drag-ny = (ay - dock-area.absolute-position.y) / dock-area.height;
-                    }
-                    quick-dock-drag-end() => {
-                        if (root.dock-target != "") {
-                            root.quick-panel-dock = root.dock-target;
-                            root.quick-panel-open = true;
-                            root.quick-panel-collapsed = false;
-                            if (root.welcome-as-sidebar
-                                    && root.welcome-sidebar-dock == root.dock-target) {
-                                root.welcome-collapsed = true;
-                                root.set-welcome-collapsed(true);
-                            }
-                        }
-                        root.panel-dragging = false;
                     }
                     toggle-quick-group(g) => { root.toggle-quick-group(g); }
                     edit-quick-command(i) => { root.edit-quick-command(i); }
@@ -1710,13 +1469,17 @@ export component AppWindow inherits Window {
             }
 
             }
-            // Docker / 笔记占位页：只盖内容区，标签栏保持可见可点。
+            // Docker / 笔记占位页：标签栏整行塌陷后从顶边铺满内容区。
+            //
+            // 底色用 `bg-root`（壁纸霜化那层），与欢迎页一致，壁纸可见。
+            // welcome / 终端在 `nav-page` 为 3/5 时用 `if` 不渲染，否则半透明底
+            // 会透出主机列表而不是壁纸。
             Rectangle {
                 visible: (root.nav-page == 3 || root.nav-page == 5) && !root.zen-mode;
                 x: 0px;
-                y: 36px;                  // TabBar 行高；zen-mode 下隐藏但仍占位
+                y: 0px;                   // 标签栏已整行塌陷，从顶边起铺
                 width: parent.width;
-                height: max(0px, parent.height - 36px);
+                height: parent.height;
                 background: Theme.bg-root;
 
                 PlaceholderPage {
@@ -1735,24 +1498,27 @@ export component AppWindow inherits Window {
                     title: @tr("Notes");
                     subtitle: @tr("Planned");
                 }
+
+                // 普通 Rectangle 不接收指针事件，点击会漏到下面的分屏手柄 ——
+                // 没有这层，在 Docker / 笔记页上仍能拖动分屏分隔条。
+                TouchArea {}
             }
 
         }
 
         if root.quick-panel-open : QuickDockPanel {
-            // 切到欢迎页时不要瞬间消失：保持元素，靠 quick-w 收窄 + 这里淡出。
-            opacity: parent.quick-shown ? 1.0 : 0.0;
-            animate opacity {
-                duration: parent.quick-shown ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
-                easing: AnimationSettings.e-standard-decelerate();
-                enabled: AnimationSettings.enabled;
-            }
+            // 切到欢迎页 / Docker / 笔记页时不要瞬间消失：保持元素，靠 quick-w 收窄 + 这里淡出。
+            // 与宽度共用 `quick-progress`：原来这里有一条独立的 opacity 动画
+            // （e-standard-decelerate，与尺寸的弹簧不同步），是"内容先暗、外壳后收"
+            // 的根源。现在两者同轴。
+            opacity: 1 - parent.quick-progress;
+            // `opacity: 0` 仍会吃掉点击，淡出走完就停止命中。
+            visible: self.opacity > 0.001;
             x: root.quick-panel-dock == "right" ? parent.width - parent.quick-w : 0px;
             y: root.quick-panel-dock == "bottom" ? parent.height - parent.quick-h : 0px;
             width: parent.quick-horizontal ? parent.quick-w : parent.width;
             height: parent.quick-horizontal ? parent.height : parent.quick-h;
             commands: root.quick-commands;
-            dock-edge: root.quick-panel-dock;
             activate(command, send-enter) => {
                 root.quick-external-command = command;
                 root.quick-external-send-enter = send-enter;
@@ -1767,34 +1533,19 @@ export component AppWindow inherits Window {
                 root.quick-cmd-manage-open = true;
             }
             close => { root.quick-panel-collapsed = true; }
-            dock-drag-move(ax, ay) => {
-                root.panel-dragging = true;
-                root.drag-nx = (ax - dock-area.absolute-position.x) / dock-area.width;
-                root.drag-ny = (ay - dock-area.absolute-position.y) / dock-area.height;
-            }
-            dock-drag-end => {
-                if (root.dock-target != "") {
-                    root.quick-panel-dock = root.dock-target;
-                    if (root.welcome-as-sidebar
-                            && root.welcome-sidebar-dock == root.dock-target) {
-                        root.welcome-collapsed = true;
-                        root.set-welcome-collapsed(true);
-                    }
-                }
-                root.panel-dragging = false;
-            }
         }
 
         Rectangle {
-            visible: root.quick-panel-open && !root.quick-panel-collapsed;
+            visible: root.quick-panel-open && !root.quick-panel-collapsed
+                && !root.in-dock-page;
             x: root.quick-panel-dock == "left" ? parent.quick-w
-             : root.quick-panel-dock == "right" ? parent.width - parent.quick-w - 4px
+             : root.quick-panel-dock == "right" ? parent.width - parent.quick-w - 2px
              : 0px;
             y: root.quick-panel-dock == "top" ? parent.quick-h
-             : root.quick-panel-dock == "bottom" ? parent.height - parent.quick-h - 4px
+             : root.quick-panel-dock == "bottom" ? parent.height - parent.quick-h - 2px
              : 0px;
-            width: parent.quick-horizontal ? 4px : parent.width;
-            height: parent.quick-horizontal ? parent.height : 4px;
+            width: parent.quick-horizontal ? 2px : parent.width;
+            height: parent.quick-horizontal ? parent.height : 2px;
             background: quick-split-ta.has-hover ? Theme.accent : Theme.border-subtle;
             animate background {
                 duration: quick-split-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -1802,8 +1553,9 @@ export component AppWindow inherits Window {
                 enabled: AnimationSettings.enabled;
             }
             quick-split-ta := TouchArea {
-                x: quick-area.quick-horizontal ? -4px : 0px;
-                y: quick-area.quick-horizontal ? 0px : -4px;
+                // 视觉条 2px，命中区 12px（条左右各 5px）。
+                x: quick-area.quick-horizontal ? -5px : 0px;
+                y: quick-area.quick-horizontal ? 0px : -5px;
                 width: quick-area.quick-horizontal ? 12px : parent.width;
                 height: quick-area.quick-horizontal ? parent.height : 12px;
                 mouse-cursor: quick-area.quick-horizontal ? ew-resize : ns-resize;
@@ -1833,14 +1585,6 @@ export component AppWindow inherits Window {
         }
         }
 
-        // Drag-to-dock snap overlay — four edge zones; the one under the cursor
-        // (root.dock-target) lights up. Purely visual (no TouchArea) so the
-        // header's drag keeps receiving move events (#dock).
-    // 已抽成 `ui/dock_snap_overlay.slint`：常驻（内部按 `panel-dragging` 显隐），状态透传。
-    DockSnapOverlay {
-        dock-target : root.dock-target;
-        panel-dragging : root.panel-dragging;
-    }
     }
         }
     }
@@ -1866,6 +1610,9 @@ export component AppWindow inherits Window {
         alignment: end;                            // 靠右
         spacing: 4px;
         padding-right: 8px;
+        // Docker / 笔记页整页接管内容区，工具栏跟着收起 —— 否则会浮在占位页上
+        // 且仍可点。zen-mode 保持既有行为（仍显示）。
+        visible: !root.in-dock-page;
 
         IconButton {
             size: 26px;
@@ -2070,7 +1817,7 @@ export component AppWindow inherits Window {
         custom-titlebar : root.custom-titlebar;
         titlebar-inset : root.titlebar-inset;
         toolbar-x-off : root.toolbar-x-off;
-        toolbar-y-off : root.toolbar-y-off;
+        toolbar-y-off: root.toolbar-y-off;
         close-requested => { root.download-open = false; }
         pick-download-dir() => { root.pick-download-dir(); }
         open-download-dir() => { root.open-download-dir(); }
@@ -2090,7 +1837,7 @@ export component AppWindow inherits Window {
         custom-titlebar : root.custom-titlebar;
         titlebar-inset : root.titlebar-inset;
         toolbar-x-off : root.toolbar-x-off;
-        toolbar-y-off : root.toolbar-y-off;
+        toolbar-y-off: root.toolbar-y-off;
         anchor-nav : true;
         ssh-import-hint : root.ssh-import-hint;
         close-requested => { root.settings-open = false; }
@@ -2340,6 +2087,23 @@ export component AppWindow inherits Window {
         run-update => { root.run-self-update(); }
         restart-app => { root.restart-app(); }
         open-releases => { root.open-update-url(); }
+    }
+
+    // --- 连接状态弹窗 -------------------------------------------------------
+    ConnStatusDialog {
+        open: root.conn-popup-open;
+        phase: root.conn-popup-phase;
+        host: root.conn-popup-host;
+        detail: root.conn-popup-detail;
+        lang-en: root.lang-en;
+        close-requested => { root.conn-popup-open = false; }
+    }
+    // 成功后停一拍再收，让用户看到"连接成功"，而不是一闪而过。
+    // 失败（phase 2）不自动关 —— 等用户读完原因手动关。
+    conn-auto-close := Timer {
+        interval: AnimationSettings.enabled ? 900ms : 1ms;
+        running: root.conn-popup-open && root.conn-popup-phase == 1;
+        triggered => { root.conn-popup-open = false; }
     }
 
     // --- MCP 会话授权确认框 -------------------------------------------------

@@ -308,8 +308,8 @@ export global AnimationSettings {
     /// 交互态（hover 环 / 按下底 / 边框）：进 100 / 退 50
     public pure function enter-state() -> duration { return root.short2(); }
     public pure function exit-state() -> duration { return root.short1(); }
-    /// 容器（下拉 / 面板 / 侧栏 / 指示条）：进 300 / 退 200
-    public pure function enter-container() -> duration { return root.medium2(); }
+    /// 容器（下拉 / 面板 / 侧栏 / 指示条）：进 350 / 退 250
+    public pure function enter-container() -> duration { return root.medium3(); }
     public pure function exit-container() -> duration { return root.medium1(); }
     /// 全屏页面切换（左侧边栏主导航）：表面积大，允许比容器更慢的节奏。
     public pure function enter-screen() -> duration { return root.long1(); }
@@ -320,6 +320,27 @@ export global AnimationSettings {
     /// 页面切换：进 250 / 退 150
     public pure function enter-page() -> duration { return root.medium1(); }
     public pure function exit-page() -> duration { return root.short3(); }
+
+    // ── ⑤ 侧栏 / 面板折叠（时长随位移缩放，成对）──────────────────────────
+    //
+    // 外壳宽度与内部内容的退场**必须用同一组**：两者各写各的时长会错开 ——
+    // 曾出现标签提前 200ms 消失、只剩图标"干漂"半程的观感。
+    //
+    // `travel` 是这次折叠要走的像素距离。弹簧的 `duration` 是**固有频率**
+    // （ω = 2π/T），曲线按 0..1 归一化后再插值 —— 同一 T 下**峰值像素速度正比于
+    // 位移**。三处面板位移 146（导航）/ 260（快捷）/ 344px（SFTP），共用一档会让
+    // 大面板看上去快 2.36 倍。取 T ∝ √位移 折中：速度差压到 1.0 / 1.34 / 1.54，
+    // 长位移又不会拖成"慢动作"（线性缩放要 826ms）。
+    public pure function collapse-duration(collapsed: bool, travel: length) -> duration {
+        return (collapsed ? root.exit-container() : root.enter-container())
+            * sqrt(travel / 146px);
+    }
+    /// 折叠曲线：**两个方向都用柔和弹簧**。
+    ///
+    /// ⚠️ 收起不要用 `e-exit()`（`cubic-bezier(0.3, 0, 0.8, 0.15)`）：它的起步控制点
+    /// 在 0.3，前四分之一时间几乎不动，观感是"点了没反应、然后一顿再冲过去"。
+    /// 弹簧是连续的速度变化，起手就有响应，收起不会显得拖沓。
+    public pure function collapse-easing() -> easing { return root.s-soft(); }
 
     // ── ③ 曲线令牌 ──────────────────────────────────────────────────────
     /// 强调减速（**进入**）：起步快、末尾长距离减速 —— 新内容"落位"
@@ -342,11 +363,11 @@ export global AnimationSettings {
     /// 混用会让"频率"失去意义（弹簧靠 duration 定固有频率），不如直接换曲线。
     public pure function s-none() -> easing { return enabled ? spring(0) : root.e-symmetric(); }
     /// 柔和：大位移（抽屉 / 侧栏 / 面板）
-    public pure function s-soft() -> easing { return enabled ? spring(0.15) : root.e-symmetric(); }
+    public pure function s-soft() -> easing { return enabled ? spring(0.20) : root.e-symmetric(); }
     /// 默认：模态对话框
-    public pure function s-default() -> easing { return enabled ? spring(0.25) : root.e-symmetric(); }
+    public pure function s-default() -> easing { return enabled ? spring(0.30) : root.e-symmetric(); }
     /// 明显：小控件（开关滑块 / 复选框）
-    public pure function s-bouncy() -> easing { return enabled ? spring(0.4) : root.e-symmetric(); }
+    public pure function s-bouncy() -> easing { return enabled ? spring(0.45) : root.e-symmetric(); }
 
     // ── 旧外壳既有曲线（保留，兼容现有调用点；后续 P5 逐组件切换）────────
     /// hover/焦点等短时颜色与边框过渡

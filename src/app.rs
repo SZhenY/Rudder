@@ -358,14 +358,10 @@ impl AppContext {
         window.set_terminals(ModelRc::from(terminals_model.clone()));
 
         // Split-pane layout tree (v0.5). Starts as a single pane owning the
-        // welcome tab; in welcome-as-sidebar mode the session list lives in a
-        // left panel, so the layout starts empty.
-        let welcome_sidebar = store.borrow().welcome_as_sidebar();
-        let layout: Rc<RefCell<crate::layout::Layout>> = Rc::new(RefCell::new(if welcome_sidebar {
-            crate::layout::Layout::new(Vec::new(), String::new())
-        } else {
-            crate::layout::Layout::new(vec!["welcome".into()], "welcome".into())
-        }));
+        // welcome tab.
+        let layout: Rc<RefCell<crate::layout::Layout>> = Rc::new(RefCell::new(
+            crate::layout::Layout::new(vec!["welcome".into()], "welcome".into()),
+        ));
         let content_size: Rc<std::cell::Cell<(f32, f32)>> =
             Rc::new(std::cell::Cell::new((1200.0, 800.0)));
         let panes_model: Rc<VecModel<PaneInfo>> = Rc::new(VecModel::default());

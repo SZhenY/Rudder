@@ -73,13 +73,13 @@ component SingleTab inherits Rectangle {
         moved => {
             if (root.pressing) {
                 // A drag begins once the cursor drifts horizontally OR leaves the
-                // tab vertically (so a straight-down drag to split also counts).
+                // tab vertically; both count as a reorder gesture.
                 if (abs(self.mouse-x - root.grab-offset) > 5px
                         || self.mouse-y < -6px || self.mouse-y > root.height + 6px) {
                     root.dragging = true;
                 }
                 // Reorder within the strip only while the cursor stays on the strip
-                // row; once it drops into a pane body we hand off to drag-to-split.
+                // row; leaving the row keeps the grab but stops reordering.
                 // One slot = the tab's own width + the 2px strip spacing; re-anchor
                 // grab-offset after each hop so the drift resets (no oscillation).
                 if (self.mouse-y > -10px && self.mouse-y < root.height + 10px) {
@@ -212,9 +212,9 @@ export component TabBar inherits Rectangle {
 
     HorizontalLayout {
         padding: 3px;
-        // 右侧为窗口右上角的工具栏图标预留（#122）：原来是末尾一个
-        // `Rectangle { width: root.reserve-right; }` 占位 —— 删掉它也会连带删掉
-        // 它前面那份 spacing(2px)，故一并补回。
+        // 右侧为窗口右上角的工具栏图标预留（#122）：末尾那块
+        // `Rectangle { width: root.reserve-right; }` 占位删掉时会连带删掉
+        // 它前面那份 spacing(2px)，故这里补回。
         padding-right: 3px + 2px + root.reserve-right;
         spacing: 2px;
 

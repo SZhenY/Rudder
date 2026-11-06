@@ -744,7 +744,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
         // no pixel→cell guesswork here.  This keeps full-screen programs like
         // nano from over-counting rows and clipping their bottom shortcut bar.
         // Debounce PTY resizes (#163): a layout reflow (a tab becoming visible,
-        // the SFTP panel docking, a window drag) can momentarily report a
+        // the SFTP panel expanding, a window drag) can momentarily report a
         // near-zero width, which collapses term-cols to its 10-col floor.
         // Applying that to the remote PTY immediately resizes the server to 10
         // columns and reflows vt100 — garbling running output (e.g. a `git clone`

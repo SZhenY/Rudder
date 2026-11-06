@@ -1276,7 +1276,7 @@ fn normalize_move_group(group: &str) -> Option<String> {
     }
 }
 
-/// 侧边栏 / 状态行里的连接标签（按传输类型区分）。
+/// 连接状态弹窗里显示的连接标签（按传输类型区分）。
 pub(super) fn conn_label(session: &Session) -> String {
     match &session.kind {
         SessionKind::Ssh => format!("{}@{}", session.user, session.host),

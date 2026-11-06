@@ -77,7 +77,6 @@ export component TerminalView inherits Rectangle {
     in property <bool> quick-external-send-enter;
     in property <int> quick-external-sequence;
     in property <string> tab-id;
-    in property <string> status-line: @tr("Not connected");
     in property <[TermSpan]> spans;     // coloured runs of the visible screen
     in property <int> cursor-row;       // cursor cell (grid coords)
     in property <int> cursor-col;
@@ -131,28 +130,28 @@ export component TerminalView inherits Rectangle {
     // and writes back via the set-* callbacks, so each tab/pane keeps its own SFTP
     // size + collapse state (resizing/collapsing one no longer affects the others).
     in property <length> sftp-panel-height: 220px;
-    in property <length> sftp-panel-width: 380px;     // extent when docked left/right
+    in property <length> sftp-panel-width: 380px;     // 右侧面板宽度
     in property <bool>   sftp-collapsed: false;       // SFTP panel minimised (toolbar only)
+
+    // 折叠进度：0 = 展开，1 = 收起。**与左侧导航、快捷面板同一组令牌、同一套结构** ——
+    // 宽度、内容淡出、折叠条、间距全部从它派生，所以它们在同一条时间轴上。
+    property <float> sftp-progress: root.sftp-collapsed ? 1 : 0;
+    animate sftp-progress {
+        duration: AnimationSettings.collapse-duration(
+            root.sftp-collapsed, max(255px, root.sftp-panel-width) - 36px);
+        easing: AnimationSettings.collapse-easing();
+        enabled: AnimationSettings.enabled;
+    }
     callback set-sftp-panel-height(length);
     callback set-sftp-panel-width(length);
     callback set-sftp-collapsed(bool);
 
-    // --- SFTP docking (within the terminal area) ---------------------------
-    // Which edge of the terminal area the SFTP panel sits on: left|right|top|bottom.
+    // --- SFTP 面板（固定在终端右侧）---------------------------------------
+    // 停靠边不再可配置；`sftp-dock` / `sftp-horizontal` 是为几何公式里的四边三目
+    // 保留的常量，收敛这些三目属于单独一轮改动。
     in-out property <string> sftp-mode: "files";
-    in-out property <string> sftp-dock: "bottom";
-    property <bool> sftp-horizontal: root.sftp-dock == "left" || root.sftp-dock == "right";
-    // Drag-to-dock snap state (mirrors the resource-panel docking in app.slint).
-    property <bool> sftp-panel-dragging;
-    property <float> sftp-drag-nx;
-    property <float> sftp-drag-ny;
-    property <string> sftp-dock-target:
-        !root.sftp-panel-dragging ? ""
-        : root.sftp-drag-nx < 0.22 ? "left"
-        : root.sftp-drag-nx > 0.78 ? "right"
-        : root.sftp-drag-ny < 0.22 ? "top"
-        : root.sftp-drag-ny > 0.78 ? "bottom"
-        : "";
+    in-out property <string> sftp-dock: "right";
+    property <bool> sftp-horizontal: true;
 
     // Command bar (#55): quick commands + input box + history (all shared/global,
     // fed from Rust); send-to-all is a per-tab toggle.
@@ -192,8 +191,6 @@ export component TerminalView inherits Rectangle {
     property <int> history-selected: 0;
     callback run-command(string /* cmd */, bool /* to-all */);
     callback manage-quick-commands();          // open the add/edit/delete dialog
-    callback quick-dock-drag-move(length, length);
-    callback quick-dock-drag-end();
     callback toggle-quick-group(string /* group */);  // collapse/expand a group (#55)
     // Right-click management on the popup, mirroring the welcome session list (#55).
     callback edit-quick-command(int /* index */);
@@ -361,25 +358,26 @@ export component TerminalView inherits Rectangle {
     // mismatched cell-w garbles the grid.  Keep them derived from one source.)
     property <length> cell-w: max(1px, cell-probe.preferred-width / 50);
     property <length> cell-h: max(1px, cell-probe.preferred-height);
-    // Usable text box = root.width minus the 10px left/right padding of
+    // Usable text box = root.width minus the 5px left/right padding of
     // output-text; usable height = key-capture height minus the 8px top pad.
     // The old 16px bottom focus-recovery strip was redundant once body-touch
     // covered the full output and visibly stole one terminal row.
     //
-    // When SFTP is docked left or right (horizontal), the actual terminal
-    // visible area is narrower than root.width by the SFTP panel width + gap.
-    // If term-cols is computed from root.width, btop/htop render at the larger
-    // virtual width but Slint clips the right side → display cut off (#dock).
-    // SFTP left/right dock occupies terminal width even when collapsed
-    // (36 px tool-strip vs expanded panel+gap).
+    // SFTP 面板固定在右侧，终端可视宽度要扣掉面板宽（收起时是 36px 折叠条）。
+    // 按 root.width 算 term-cols 会让 btop/htop 按更大的虚拟宽度排版，右侧被裁掉。
+    // 面板与终端之间不再留间隙 —— 分隔条直接压在终端右内边距上，右侧留白
+    // 才与左侧的 5px 一致。
+    // 非 SFTP 会话（本地终端 / 串口 / Telnet）不占位：面板与折叠条都不渲染，
+    // 返回 36px 只会白留一条空带并少算列数。
     property <length> term-sftp-overhead:
-        (root.sftp-dock == "left" || root.sftp-dock == "right")
-            ? (root.sftp-collapsed ? 36px : max(300px, root.sftp-panel-width) + 6px)
+        (root.sftp-dock == "left" || root.sftp-dock == "right") && root.sftp-available
+            ? (root.sftp-collapsed ? 36px : max(255px, root.sftp-panel-width))
             : 0px;
     property <length> term-available-w: root.width - root.term-sftp-overhead;
-    // `- 1` 列是安全边距：cell-w 来自 50 字符探针的平均值，逐字符的推进误差会随列数
-    // 累积 —— 算出的列数偏大时远端会在最后一列换行，表现为换行错位 / TUI 花屏。
-    property <float> term-cols: max(10, floor((root.term-available-w - 20px) / cell-w) - 1);
+    // `- 0.5` 列是安全边距：cell-w 来自 50 字符探针的平均值，长连续文本按真实字距
+    // 排布会相对网格累积漂移。留整列太保守（右侧白多一个字符宽），留半列
+    // （≈3.9px）足够覆盖实测漂移，同时把右侧余量压到 0.5~1.5 列。
+    property <float> term-cols: max(10, floor((root.term-available-w - 10px) / cell-w - 0.5));
     property <float> term-rows: max(5,  floor((key-capture.height - 8px) / cell-h));
     // Only resize the PTY while this tab is visible.  Inactive tabs are laid
     // out at width 0 (→ term-cols collapses to 10); resizing the remote to 10
@@ -452,63 +450,39 @@ export component TerminalView inherits Rectangle {
     VerticalLayout {
         spacing: 0;
 
-        // --- Status strip ---------------------------------------------------
-        Rectangle {
-            height: 24px;
-            background: Theme.bg-panel-alt;
-            HorizontalLayout {
-                padding-left: 10px; padding-right: 10px;
-                Text {
-                    text: root.status-line;
-                    color: Theme.text-secondary;
-                    font-size: Theme.fs-xs;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-                // Alt-screen indicator only.  IMPORTANT: never put cell-w / cell-h
-                // (a Text's preferred-size) inside another Text's `text` — doing so
-                // makes Slint compute one text layout *inside* another, which
-                // re-enters parley's FontContext RefCell and panics ("already
-                // borrowed").  A plain bool flag is safe.
-                if root.is-alt-screen : Text {
-                    text: "[ALT]";
-                    color: Theme.success;
-                    font-size: Theme.fs-xs;
-                    vertical-alignment: center;
-                }
-            }
-        }
+        // 状态行（原「已连接 user@host」24px 条）已移除：这块横向空间让给终端，
+        // 连接信息改由标签页状态点与连接状态弹窗承载。
 
-        // SFTP docking region — terminal + command-bar (central) on one side,
-        // the SFTP panel docked to the chosen edge. Absolute geometry, mirroring
-        // the resource-panel dock area in app.slint (#dock).
+        // dock-region：终端 + 命令栏居中，SFTP 面板固定在右缘；绝对定位几何，
+        // 与主窗口快捷面板的 dock-area 同一套算法。
         dock-region := Rectangle {
         vertical-stretch: 1;
         // sf-taken / sf-h-taken SNAP — used by terminal layout (no animation,
         // so the terminal doesn't jump while the panel slides).
         // sf-viz / sf-h-viz ANIMATE — used by the SFTP panel and splitter.
-        property <length> sf-taken: root.sftp-collapsed ? 36px
-            : root.sftp-horizontal ? max(300px, root.sftp-panel-width)
+        // 四种量在 `sftp-available == false` 时一律归零：此时面板与折叠条都不渲染，
+        // 留 36px 只会在右侧白占一条空带。
+        property <length> sf-taken: !root.sftp-available ? 0px
+            : root.sftp-collapsed ? 36px
+            : root.sftp-horizontal ? max(255px, root.sftp-panel-width)
             : root.sftp-panel-width;
-        property <length> sf-viz: sf-taken;
-        animate sf-viz {
-            duration: !root.sftp-collapsed ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
-            easing: AnimationSettings.s-soft();
-            enabled: AnimationSettings.enabled;
-        }
-        property <length> sf-h-taken: root.sftp-collapsed ? 36px : root.sftp-panel-height;
-        property <length> sf-h-viz: sf-h-taken;
-        animate sf-h-viz {
-            duration: !root.sftp-collapsed ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
-            easing: AnimationSettings.s-soft();
-            enabled: AnimationSettings.enabled;
-        }
-        property <length> sp:   root.sftp-collapsed ? 0px : 6px;
+        property <length> sf-h-taken: !root.sftp-available ? 0px
+            : root.sftp-collapsed ? 36px
+            : root.sftp-panel-height;
+
+        // 面板与分隔条读这个（从进度插值）。`sf-taken` 仍保持跳变语义：
+        // `central` 与 `term-cols` 读它，终端在第 0 帧就定宽，避免动画期间
+        // 逐帧重排远端 PTY。
+        property <length> sf-viz: !root.sftp-available ? 0px
+            : max(255px, root.sftp-panel-width)
+            + (36px - max(255px, root.sftp-panel-width)) * root.sftp-progress;
+        property <length> sf-h-viz: !root.sftp-available ? 0px
+            : root.sftp-panel-height + (36px - root.sftp-panel-height) * root.sftp-progress;
         central := Rectangle {
-            x: root.sftp-dock == "left" ? parent.sf-taken + parent.sp : 0px;
-            y: root.sftp-dock == "top"  ? parent.sf-h-taken + parent.sp : 0px;
-            width:  root.sftp-horizontal ? parent.width - parent.sf-taken - parent.sp : parent.width;
-            height: root.sftp-horizontal ? parent.height : parent.height - parent.sf-h-taken - parent.sp;
+            x: root.sftp-dock == "left" ? parent.sf-taken : 0px;
+            y: root.sftp-dock == "top"  ? parent.sf-h-taken : 0px;
+            width:  root.sftp-horizontal ? parent.width - parent.sf-taken : parent.width;
+            height: root.sftp-horizontal ? parent.height : parent.height - parent.sf-h-taken;
             clip: true;
             VerticalLayout {
             spacing: 0;
@@ -570,9 +544,9 @@ export component TerminalView inherits Rectangle {
                     // measured Consolas cell size — no per-line layout needed,
                     // which keeps the model flat (a single `for`).
                     Rectangle {
-                        x: 10px;
+                        x: 5px;
                         y: 8px;
-                        width: parent.width - 20px;
+                        width: parent.width - 10px;
                         height: flickable.content-height - 8px;
 
                         // Click-to-focus over the whole terminal body.  Without
@@ -1029,7 +1003,7 @@ export component TerminalView inherits Rectangle {
                 // participating in layout or exposing a second I-beam hit area.
                 // Following the VT cursor also places native IME candidate UI near
                 // the actual insertion point.
-                x: 10px + max(0, root.cursor-col) * root.cell-w;
+                x: 5px + max(0, root.cursor-col) * root.cell-w;
                 y: 8px + max(0, root.cursor-row) * root.cell-h;
                 width: 1px;
                 height: 1px;
@@ -1288,8 +1262,8 @@ export component TerminalView inherits Rectangle {
                 padding-top: 4px; padding-bottom: 4px;
                 spacing: 6px;
 
-                // Quick-command toggle. Once the sidebar has been docked, the
-                // sidebar/icon strip becomes its only entry point (#215).
+                // Quick-command toggle. Once the right-hand sidebar is enabled,
+                // the sidebar/icon strip becomes its only entry point (#215).
                 if !root.quick-panel-docked : Rectangle {
                     width: qc-row.preferred-width + 16px;
                     border-radius: Theme.radius-sm;
@@ -1784,20 +1758,8 @@ export component TerminalView inherits Rectangle {
                                         enabled: AnimationSettings.enabled;
                                     }
                                     quick-grip := TouchArea {
-                                        mouse-cursor: grab;
-                                        moved => {
-                                            if (self.pressed) {
-                                                root.quick-dock-drag-move(
-                                                    self.absolute-position.x + self.mouse-x,
-                                                    self.absolute-position.y + self.mouse-y);
-                                            }
-                                        }
-                                        pointer-event(ev) => {
-                                            if (ev.kind == PointerEventKind.up) {
-                                                root.quick-open = false;
-                                                root.quick-dock-drag-end();
-                                            }
-                                        }
+                                        mouse-cursor: pointer;
+                                        clicked => { root.quick-open = false; }
                                     }
                                     IconText {
                                         centered: true;
@@ -2028,24 +1990,25 @@ export component TerminalView inherits Rectangle {
             }
         }
 
-        // --- SFTP resize splitter (orientation follows the dock edge) -------
+        // --- SFTP resize splitter（固定在右缘，竖向）--------------------------
         Rectangle {
             visible: root.sftp-available && !root.sftp-collapsed;   // gone when collapsed (like the resource splitter)
             x: root.sftp-dock == "left"   ? parent.sf-viz
-             : root.sftp-dock == "right"  ? parent.width - parent.sf-viz - 4px
+             : root.sftp-dock == "right"  ? parent.width - parent.sf-viz - 2px
              : 0px;
             y: root.sftp-dock == "top"    ? parent.sf-h-viz
-             : root.sftp-dock == "bottom" ? parent.height - parent.sf-h-viz - 4px
+             : root.sftp-dock == "bottom" ? parent.height - parent.sf-h-viz - 2px
              : 0px;
-            width:  root.sftp-horizontal ? 4px : parent.width;
-            height: root.sftp-horizontal ? parent.height : 4px;
+            width:  root.sftp-horizontal ? 2px : parent.width;
+            height: root.sftp-horizontal ? parent.height : 2px;
             background: divider-ta.has-hover || root.sftp-dragging
                 ? Theme.accent : Theme.border-subtle;
             divider-ta := TouchArea {
                 // Hit area extends a few px past the thin visual bar so it's easy
                 // to grab without landing on the terminal / SFTP edge.
-                x: root.sftp-horizontal ? -4px : 0px;
-                y: root.sftp-horizontal ? 0px : -4px;
+                // 视觉条 2px，命中区 12px（条左右各 5px）。
+                x: root.sftp-horizontal ? -5px : 0px;
+                y: root.sftp-horizontal ? 0px : -5px;
                 width:  root.sftp-horizontal ? 12px : parent.width;
                 height: root.sftp-horizontal ? parent.height : 12px;
                 mouse-cursor: root.sftp-horizontal ? ew-resize : ns-resize;
@@ -2057,21 +2020,20 @@ export component TerminalView inherits Rectangle {
                         root.sftp-dragging = false;
                     }
                 }
-                // Direct tracking: the panel's docked edge follows the cursor's
-                // position within the (stable) dock-region — no deltas, so no
-                // moving-frame / accumulation issues. NOTE: `parent` here is the
-                // thin splitter Rectangle, so refer to `dock-region` explicitly
-                // for the region's size/origin (#dock).
+                // 直接跟随：面板宽度取光标在（稳定的）dock-region 内的位置，
+                // 不做增量累加，避免移动参考系带来的漂移。注意这里的 `parent`
+                // 是那条细分隔条 Rectangle，区域尺寸要显式引用 `dock-region`。
                 moved => {
                     if (root.sftp-dragging) {
                         if (root.sftp-horizontal) {
-                            // Floor matches SftpPanel's compact two-row toolbar;
-                            // narrower widths make the path field and actions unusable.
+                            // 下限 255px = 原 300 的 85%。两行紧凑工具栏首行的固定
+                            // 控件合计约 188px（页签 2×28 + 四个 24px 按钮 + 间距 +
+                            // 内边距），255 时仍有余量；再窄路径输入框就不可用了。
                             root.set-sftp-panel-width(clamp(
                                 root.sftp-dock == "right"
                                     ? dock-region.width - ((self.absolute-position.x + self.mouse-x) - dock-region.absolute-position.x)
                                     : (self.absolute-position.x + self.mouse-x) - dock-region.absolute-position.x,
-                                300px, max(310px, dock-region.width - 200px)));
+                                255px, max(310px, dock-region.width - 200px)));
                         } else {
                             root.set-sftp-panel-height(clamp(
                                 root.sftp-dock == "bottom"
@@ -2084,7 +2046,7 @@ export component TerminalView inherits Rectangle {
             }
         }
 
-        // --- SFTP panel — positioned on the docked edge ---------------------
+        // --- SFTP panel — 固定在右缘 ---------------------------------------
         if root.sftp-available : SftpPanel {
             x: root.sftp-dock == "right"  ? parent.width - parent.sf-viz : 0px;
             y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h-viz : 0px;
@@ -2092,18 +2054,9 @@ export component TerminalView inherits Rectangle {
             height: root.sftp-horizontal ? parent.height : parent.sf-h-viz;
             clip: true;                     // prevent content from bleeding into central area
             show-tree: !root.sftp-horizontal;   // hide the tree when narrow (vertical)
-            compact: root.sftp-collapsed;  // hide content for all dock edges when collapsed
-            dock-drag-move(ax, ay) => {
-                root.sftp-panel-dragging = true;
-                root.sftp-drag-nx = (ax - dock-region.absolute-position.x) / dock-region.width;
-                root.sftp-drag-ny = (ay - dock-region.absolute-position.y) / dock-region.height;
-            }
-            dock-drag-end() => {
-                if (root.sftp-dock-target != "") {
-                    root.sftp-dock = root.sftp-dock-target;
-                }
-                root.sftp-panel-dragging = false;
-            }
+            // 布局切换等到进度末尾（>0.99）才发生，避免动画第一帧就重排成紧凑模式。
+            compact: root.sftp-progress > 0.99;
+            fade: root.sftp-progress;
             collapsed:     root.sftp-collapsed;
             current-tab-id: root.tab-id;
             current-path:  root.sftp-path;
@@ -2177,39 +2130,19 @@ export component TerminalView inherits Rectangle {
             new-file(dir)       => { root.sftp-new-file(dir); }
         }
 
-        // Drag-to-dock snap overlay — four edge zones; the one under the cursor
-        // (sftp-dock-target) lights up. Purely visual (#dock).
-        if root.sftp-panel-dragging : Rectangle {
-            x: 0; y: 0; width: parent.width; height: parent.height;
-            Rectangle {
-                x: 0; y: 0; width: parent.width * 0.22; height: parent.height;
-                background: root.sftp-dock-target == "left" ? Theme.accent.with-alpha(0.35) : Theme.accent.with-alpha(0.10);
-                border-width: root.sftp-dock-target == "left" ? 2px : 0px; border-color: Theme.accent;
-            }
-            Rectangle {
-                x: parent.width * 0.78; y: 0; width: parent.width * 0.22; height: parent.height;
-                background: root.sftp-dock-target == "right" ? Theme.accent.with-alpha(0.35) : Theme.accent.with-alpha(0.10);
-                border-width: root.sftp-dock-target == "right" ? 2px : 0px; border-color: Theme.accent;
-            }
-            Rectangle {
-                x: 0; y: 0; width: parent.width; height: parent.height * 0.22;
-                background: root.sftp-dock-target == "top" ? Theme.accent.with-alpha(0.35) : Theme.accent.with-alpha(0.10);
-                border-width: root.sftp-dock-target == "top" ? 2px : 0px; border-color: Theme.accent;
-            }
-            Rectangle {
-                x: 0; y: parent.height * 0.78; width: parent.width; height: parent.height * 0.22;
-                background: root.sftp-dock-target == "bottom" ? Theme.accent.with-alpha(0.35) : Theme.accent.with-alpha(0.10);
-                border-width: root.sftp-dock-target == "bottom" ? 2px : 0px; border-color: Theme.accent;
-            }
-        }
-
-        // Collapsed → a ToolStrip icon bar at the docked edge (M5), filling the
-        // 36px slot the panel shrank to; click the icon to re-expand.
-        if root.sftp-collapsed : ToolStrip {
-            x: root.sftp-dock == "right"  ? parent.width - parent.sf-viz : 0px;
-            y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h-viz : 0px;
-            width:  root.sftp-horizontal ? parent.sf-viz : parent.width;
-            height: root.sftp-horizontal ? parent.height : parent.sf-h-viz;
+        // 收起时右缘留 36px 的 ToolStrip 图标条，点击重新展开面板。
+        // 折叠条**常驻**、随进度淡入 —— 用 `if` 门控会让它在折叠一开始就
+        // "啪"地出现，与还在收缩的宽度对不上。
+        ToolStrip {
+            opacity: root.sftp-progress;
+            // `opacity: 0` 仍会吃掉点击，淡出后直接不渲染。
+            // 同时必须有 SFTP 能力：本地终端 / 串口 / Telnet 的 `sftp_collapsed`
+            // 播种为 true，只看进度会在右侧永久立一条 36px 的禁用条。
+            visible: root.sftp-progress > 0.001 && root.sftp-available;
+            x: parent.width - 36px;
+            y: 0px;
+            width: 36px;
+            height: parent.height;
             dock-edge: root.sftp-dock;
             glyph: "\u{E2C7}";   // folder — SFTP
             tooltip: root.sftp-available ? "SFTP" : @tr("SFTP not available");

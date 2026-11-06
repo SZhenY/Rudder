@@ -18,26 +18,11 @@ import "fonts/JetBrainsMono-Italic.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/MaterialIcons-Regular.ttf";
 import { Theme } from "theme.slint";
-import { GroupGap } from "components/surfaces.slint";
-import { Sidebar, DiskInfo } from "sidebar.slint";
-import { TabBar, TabInfo } from "tabs.slint";
-import { Welcome, SessionInfo } from "welcome.slint";
-import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
-import { ConfirmDialog } from "confirm_dialog.slint";
-import { LabeledInput, PrimaryButton, GhostButton, ToolStrip, IconButton } from "widgets.slint";
-import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
-import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
-import { ProcWindow, ProcRow } from "proc_window.slint";
-import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
-import { InterfacePanel } from "interface_panel.slint";
-import { OutputRuleItem, WslProfileInfo } from "settings/types.slint";
-import { LineEdit, Button, ScrollView, CheckBox, Palette, ListView } from "std-widgets.slint";
-import { Divider, VDivider, FieldLabel } from "components/surfaces.slint";
+import { TerminalView } from "terminal_view.slint";
+import { ScrollView } from "std-widgets.slint";
+import { Divider, VDivider } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
-import { ModalCard } from "components/surfaces.slint";
-import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
-import { WindowTitleBar } from "components/window_shell.slint";
 
 // match count (so the bar can show "3" even when the query no longer matches).
 export struct EditorFindResult {

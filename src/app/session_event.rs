@@ -100,6 +100,11 @@ pub(super) fn apply_session_event_to_window<'a>(
         SessionEvent::Connected => {
             update_tab(&|t| t.connected = true);
             update_terminal(&|t| t.status = crate::i18n::t("已连接", "Connected").into());
+            // 连接状态弹窗：只认自己跟踪的那条 tab（连接失败后 phase 会是 2，
+            // 再成功时重新置 1 也合理 —— 比如重连成功）。
+            if win.get_conn_popup_tab().as_str() == tab_id {
+                win.set_conn_popup_phase(1);
+            }
             // Poisoned lock → skip the status update rather than abort the
             // process (release builds use panic = "abort").
             if let Ok(mut s) = statuses.lock()
@@ -136,6 +141,12 @@ pub(super) fn apply_session_event_to_window<'a>(
             update_terminal(&|t| {
                 t.status = format!("{} — {reason}", crate::i18n::t("已断开", "Disconnected")).into()
             });
+            // 连接状态弹窗：只有**从未成功过**才判失败（phase 仍是 0）。
+            // 连上之后掉线走终端里的红色提示，不弹失败框。
+            if win.get_conn_popup_tab().as_str() == tab_id && win.get_conn_popup_phase() == 0 {
+                win.set_conn_popup_detail(reason.clone().into());
+                win.set_conn_popup_phase(2);
+            }
             if let Ok(mut s) = statuses.lock()
             && let Some(st) = s.get_mut(tab_id)
             {
@@ -200,30 +211,6 @@ pub(super) fn apply_session_event_to_window<'a>(
                 refresh_sidebar(win, statuses, local, local_net_hist);
             }
         }
-        SessionEvent::TunnelUpdate(rows) => {
-            let items = rows
-                .into_iter()
-                .map(|r| TunnelInfo {
-                    id: r.id.into(),
-                    name: r.name.into(),
-                    kind: r.kind.clone().into(),
-                    bind: format!("{}:{}", r.bind_addr, r.bind_port).into(),
-                    target: if r.kind == "dynamic" {
-                        "SOCKS5".into()
-                    } else if r.host.is_empty() || r.host_port == 0 {
-                        "".into()
-                    } else {
-                        format!("{}:{}", r.host, r.host_port).into()
-                    },
-                    status: r.status.into(),
-                    active: r.active,
-                })
-                .collect::<Vec<_>>();
-            update_terminal(&|t| {
-                t.tunnels = ModelRc::from(std::rc::Rc::new(VecModel::from(items.clone())));
-            });
-        }
-
         // --- SFTP events ---------------------------------------------------
         SessionEvent::CwdChanged(path) => {
             // Just update the displayed path; the pump thread already sent

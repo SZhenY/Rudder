@@ -1,13 +1,10 @@
-//! 侧栏的**区块组件**：状态行、网络图、CPU/内存/交换、网络、磁盘。
+//! 运行状态页的**区块组件**：状态行、网络图、CPU/内存/交换、网络、磁盘。
 //!
-//! 从 `sidebar.slint` 拆出（P4）：这些组件都有完整的 `in property` / `callback` 接口，
-//! 只通过参数与外界通信，因此是**逐字搬运**（仅把 `component X` 改成 `export component X`
-//! 以便被 `sidebar.slint` 导入，并保留 `DiskInfo` 的导出）。
-//! `Sidebar` 自身留在原文件，负责把所有区块拼起来。
+//! 这些组件都有完整的 `in property` / `callback` 接口，只通过参数与外界通信。
+//! 使用方：`resource_view.slint`（运行状态页）与 `sftp_panel.slint` 的页签面板。
 
 import { Theme, AnimationSettings } from "theme.slint";
 import { Sparkline } from "widgets.slint";
-import { Divider, VDivider } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 
 // One filesystem row for the disk-usage panel.
@@ -110,7 +107,7 @@ export component NetGraph inherits VerticalLayout {
     callback iface-selected(string);
 
     // Stay at preferred height; without this the inherited VerticalLayout grabs
-    // a stretch share of the sidebar and balloons the sparkline into blank space.
+    // a stretch share of the status page and balloons the sparkline into blank space.
     vertical-stretch: 0;
     spacing: 3px;
 
@@ -225,42 +222,15 @@ export component NetGraph inherits VerticalLayout {
 }
 
 // --- Reusable sections -----------------------------------------------------
-// Each block is self-contained so the sidebar can lay them out vertically (when
-// docked left/right) or horizontally (docked top/bottom) without duplicating
-// their internals (#dock).
+// 每个区块自包含，运行状态页把它们竖排铺开，不需要为不同布局重复实现。
 
-// Status header — also the drag handle (a grip TouchArea behind the texts) and
-// home of the collapse button, so collapsing follows the panel to any edge.
+// 状态区块：连接状态点 + 标题 + 可点击复制的主机地址。
 export component StatusBlock inherits Rectangle {
     in property <int> conn-state;
     in property <string> connection-state;
     in property <string> conn-host;        // clean IP/host to copy ("" = not clickable) (#192)
-    in property <string> collapse-icon;   // chevron pointing toward the docked edge
-    // 嵌在别的面板里（SFTP 面板的运行状态页签）：收起按钮与拖拽手柄由外层负责。
-    in property <bool> embedded: false;
-    callback dock-drag-move(length, length);
-    callback dock-drag-end();
-    callback collapse();
     callback copy-host(string);
     property <bool> copied;                // shows a brief "Copied" badge after a click
-    TouchArea {
-        enabled: !root.embedded;
-        mouse-cursor: root.embedded ? default : move;
-        moved => {
-            // 只有真的按着这个手柄拖动时才报位置：Slint 在指针只是经过时也会派发 moved，
-            // 那会让面板不按键就跟着鼠标跑（上游 a02d536）。
-            if (self.pressed) {
-                root.dock-drag-move(self.absolute-position.x + self.mouse-x,
-                    self.absolute-position.y + self.mouse-y);
-            }
-        }
-        pointer-event(ev) => {
-            if (ev.kind == PointerEventKind.up) { root.dock-drag-end(); }
-            // 拖拽被系统取消（指针抓取被收回，例如中途弹出窗口）时也要收尾，
-            // 否则面板会一直停在"拖拽中"状态（上游 a02d536）。
-            else if (ev.kind == PointerEventKind.cancel) { root.dock-drag-end(); }
-        }
-    }
     VerticalLayout {
         spacing: 4px;
         HorizontalLayout {
@@ -277,24 +247,6 @@ export component StatusBlock inherits Rectangle {
                    font-size: Theme.fs-md; font-weight: 600;
                    vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
-            // Collapse button — sits in front of the drag grip so it takes the click.
-            Rectangle {
-                visible: !root.embedded;
-                width: 18px; height: 18px;
-                y: (parent.height - self.height) / 2;
-                border-radius: Theme.radius-sm;
-                background: cl-ta.has-hover ? Theme.state-hover : transparent;
-                animate background {
-                    duration: cl-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                    easing: cl-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                    enabled: AnimationSettings.enabled;
-                }
-                cl-ta := TouchArea { mouse-cursor: pointer; clicked => { root.collapse(); } }
-                IconText { text: root.collapse-icon;
-                       centered: true;
-                       font-size: 14px; color: Theme.text-secondary;
-}
-            }
         }
         // IP / host line — click to copy (#192). Only interactive when there's a
         // real host (skips the "Not connected" placeholder). Hover gives a hand
@@ -502,7 +454,3 @@ export component DiskBlock inherits Rectangle {
                text: tip-path; color: Theme.text-primary; font-size: Theme.fs-xs; overflow: elide; }
     }
 }
-
-// --- Sidebar ---------------------------------------------------------------
-// Left-hand panel showing local machine health, mimicking FinalShell's
-// @tr("Status") column but kept minimal for the v0.1 baseline.

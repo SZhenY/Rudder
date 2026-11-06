@@ -4,7 +4,7 @@
 // 属性与回调，由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发 —— 页面内部
 // 因此可以保持与改造前逐字一致。
 
-import { SettingRow, SettingSwitch } from "../chrome.slint";
+import { SettingSwitch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
 
@@ -14,13 +14,11 @@ export component LayoutPage inherits VerticalLayout {
     in-out property <bool> collapse-sidebar-default;
     in property <bool> lang-en;
     in-out property <bool> quick-commands-as-sidebar;
-    in-out property <bool> welcome-as-sidebar;
     callback reset-page(string);
     callback set-show-cmd-bar(bool);
     callback set-collapse-sftp-default(bool);
     callback set-collapse-sidebar-default(bool);
     callback set-quick-commands-as-sidebar(bool);
-    callback set-welcome-as-sidebar(bool);
 
     padding-left: 20px;
     padding-right: 20px;
@@ -49,22 +47,12 @@ export component LayoutPage inherits VerticalLayout {
         SettingSwitch {
             label: root.lang-en ? "Quick commands as a sidebar" : "快捷命令作为侧栏";
             desc: root.lang-en
-                ? "Allows the quick-command popup to be dragged to a window edge. After docking, use the sidebar or its collapsed icon."
-                : "允许把快捷命令弹窗拖到窗口边缘；停靠后通过侧栏或收起图标使用。";
+                ? "Show the quick-command panel docked to the right edge of the window."
+                : "在窗口右侧显示快捷命令面板。";
             show-divider: false;
             checked <=> root.quick-commands-as-sidebar;
             toggled(v) => { root.set-quick-commands-as-sidebar(v); }
         }
-        SettingSwitch {
-            label: root.lang-en ? "Show the welcome page as a sidebar" : "欢迎页设为侧栏";
-            desc: root.lang-en
-                ? "Dock the session list on the left instead of a \"New tab\" tab; opened sessions fill the center."
-                : "把会话列表停靠在左侧,不再用「新标签页」标签;打开的会话占据中央区域。";
-            show-divider: false;
-            checked <=> root.welcome-as-sidebar;
-            toggled(v) => { root.set-welcome-as-sidebar(v); }
-        }
-            
     }
     SettingsSection {
         section-id: "layout.cmd-bar";

@@ -9,23 +9,30 @@ export component PlaceholderPage inherits Rectangle {
     in property <string> subtitle;
 
     background: transparent;
+    width: 100%;
+    height: 100%;
 
     VerticalLayout {
         alignment: center;
         spacing: 8px;
 
-        Rectangle {
-            width: 56px;
+        // 固定宽度的图标块不会在交叉轴上自动居中，外面套一层布局来做。
+        HorizontalLayout {
             height: 56px;
-            border-radius: Theme.radius-md;
-            background: Theme.bg-elevated;
-            IconText {
-                text: root.glyph;
-                color: Theme.accent;
-                font-size: 28px;
-                centered: true;
-                width: parent.width;
-                height: parent.height;
+            alignment: center;
+            Rectangle {
+                width: 56px;
+                height: 56px;
+                border-radius: Theme.radius-md;
+                background: Theme.bg-elevated;
+                IconText {
+                    text: root.glyph;
+                    color: Theme.accent;
+                    font-size: 28px;
+                    centered: true;
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
         }
         Text {

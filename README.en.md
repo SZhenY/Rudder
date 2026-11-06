@@ -155,7 +155,6 @@ rudder/
 │   ├── app.slint            # top-level window
 │   ├── theme.slint          # design tokens
 │   ├── widgets.slint        # reusable buttons / inputs / sparkline
-│   ├── sidebar.slint        # left-hand system monitor panel
 │   ├── tabs.slint           # top tab bar
 │   ├── welcome.slint        # welcome page / quick connect
 │   ├── session_dialog.slint # new / edit session dialog

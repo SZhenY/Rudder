@@ -355,7 +355,7 @@ fn conn_state_code(state: u8) -> i32 {
     }
 }
 
-/// 状态行文案：已连接只显示主机；已断开加后缀；其余显示「连接中 <主机>」。
+/// 运行状态页的连接文案：已连接只显示主机；已断开加后缀；其余显示「连接中 <主机>」。
 fn connection_label(state: u8, host: &str) -> String {
     if state == 1 {
         host.to_string()

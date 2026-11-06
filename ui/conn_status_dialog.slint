@@ -1,0 +1,113 @@
+//! **连接状态弹窗**：点连接后立刻出现，成功自动收起，失败留下原因等用户关闭。
+//!
+//! 为什么需要它：终端状态行（「已连接 user@host」24px 条）已移除，连接反馈
+//! 改由这个一次性提示承载。`phase` 由 Rust 在 `open_session_tab` / `Connected` /
+//! `Closed` 三处写入 —— 字符串形态的 `TerminalState.status` 不能当状态机用：
+//! 连接中会被「经代理连接 …」「经跳板机连接 …」覆盖，失败与掉线又共用
+//! 「已断开 — 」前缀。
+//!
+//! 尺寸刻意做小：`auto-height` 随内容，连接中/成功只占两行（约 90px 高）。
+
+import "fonts/MeatshellMono-Regular.ttf";
+import "fonts/MeatshellMono-Bold.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-Bold.ttf";
+import "fonts/JetBrainsMono-Italic.ttf";
+import "fonts/JetBrainsMono-ExtraLight.ttf";
+import "fonts/MaterialIcons-Regular.ttf";
+import { Theme } from "theme.slint";
+import { ModalCard } from "components/surfaces.slint";
+import { CloseButton } from "components/buttons.slint";
+import { IconText } from "components/text.slint";
+
+export component ConnStatusDialog inherits ModalCard {
+    // 常驻 + visible 切换，不用 `if` 包着 —— 在事件派发栈上销毁子树会闪退。
+    in property <bool> open: false;
+    /// 0 = 连接中 / 1 = 成功 / 2 = 失败
+    in property <int> phase: 0;
+    /// 连接目标，形如 `user@host:22`
+    in property <string> host: "";
+    /// 失败原因（Rust 侧 `classify_connect_failure` 产出的人话文案）
+    in property <string> detail: "";
+    in property <bool> lang-en: false;
+    callback close-requested();
+
+    visible: open;
+    active: open;                              // 关闭时不吞整窗点击
+    card-width: min(400px, root.width - 40px);
+    auto-height: true;                         // 高度随内容，不做成大框
+    radius: Theme.radius-lg;
+    body-padding: 16px;
+    spacing: 10px;
+    dismissed() => { root.close-requested(); }
+
+    property <brush> tone:
+        root.phase == 1 ? Theme.success
+        : root.phase == 2 ? Theme.danger
+        : Theme.accent;
+    property <string> glyph:
+        root.phase == 1 ? "\u{E5CA}"           // check
+        : root.phase == 2 ? "\u{E5CD}"         // close
+        : "\u{E5D5}";                          // sync
+    property <string> heading:
+        root.phase == 1 ? (root.lang-en ? "Connected" : "连接成功")
+        : root.phase == 2 ? (root.lang-en ? "Connection failed" : "连接失败")
+        : (root.lang-en ? "Connecting…" : "正在连接…");
+
+    // 标题行：状态图标 + 标题，右上角关闭按钮。
+    // 固定 36px：不给 `preferred-height` 留循环依赖的空间（父高反推子高、
+    // 子高又依赖父宽）。
+    Rectangle {
+        height: 36px;
+        HorizontalLayout {
+            padding-right: 30px;               // 给右上角关闭按钮让位
+            spacing: 8px;
+            IconText {
+                width: 20px;
+                text: root.glyph;
+                color: root.tone;
+                font-size: 20px;
+                centered: true;
+            }
+            Text {
+                text: root.heading;
+                color: Theme.text-primary;
+                font-size: Theme.fs-lg;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+        }
+        CloseButton {
+            x: parent.width - self.width;
+            y: (parent.height - self.height) / 2;
+            glyph-size: Theme.fs-sm;
+            clicked => { root.close-requested(); }
+        }
+    }
+
+    // 连接目标。始终显示 —— 失败时用户要靠它认出是哪台机器。
+    Text {
+        text: root.host;
+        color: Theme.text-secondary;
+        font-size: Theme.fs-sm;
+        overflow: elide;
+    }
+
+    // 失败原因：最长有六七十字（主机密钥校验失败那条），封顶 110px 后裁切，
+    // 不让一个错误信息把窗口撑到半屏。用 `if` 条件渲染：连接中 / 成功态不该
+    // 留下空白（`visible:false` 仍占布局空间）。
+    // 外层限高而不是给 Text 绑 `height: self.preferred-height`（自引用）。
+    if root.phase == 2 && root.detail != "" : Rectangle {
+        height: min(reason-text.preferred-height, 110px);
+        clip: true;
+        reason-text := Text {
+            width: parent.width;
+            text: root.detail;
+            color: Theme.text-muted;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+    }
+}

@@ -1,7 +1,6 @@
 import { Theme, AnimationSettings } from "theme.slint";
-import { PrimaryButton, GhostButton, IconButton } from "widgets.slint";
+import { PrimaryButton, IconButton } from "widgets.slint";
 import { ScrollView } from "std-widgets.slint";
-import { Divider } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 import { SessionInfo, SessionRow } from "welcome_rows.slint";
 // SessionInfo 从这里搬走了，但对外仍是本文件的导出（外部导入点不变）。
@@ -37,25 +36,16 @@ export component Welcome inherits Rectangle {
     callback remove-session(string);
     callback search-changed(string);
     callback cycle-tab(bool /* reverse */);
-    // Compact mode (welcome-as-sidebar): drop the big title/tagline header and
-    // tighten padding so the session list fits a narrow docked panel (#v0.5).
-    in property <bool> compact;
-    in property <string> dock-edge: "left";
-    // Collapse the sidebar to the edge icon strip (compact mode only) (#v0.5 M5).
-    callback collapse();
-    callback dock-drag-move(length, length);
-    callback dock-drag-end();
 
     background: Theme.bg-root;
 
     // The regular welcome page is itself a tab. When Ctrl+Tab wraps from the
     // last terminal to this page, keep the shortcut chain alive so the next
-    // press can continue to the first terminal (#294). The compact welcome
-    // sidebar must never take focus away from an active terminal. Windows
-    // AccessKit may instantiate this conditional scope while walking the
-    // accessibility tree, so defer focus to the next event-loop turn instead of
-    // re-entering Slint's winit adapter from `init` (#323).
-    if !root.compact : welcome-key-scope := FocusScope {
+    // press can continue to the first terminal (#294). Windows AccessKit may
+    // instantiate this scope while walking the accessibility tree, so defer
+    // focus to the next event-loop turn instead of re-entering Slint's winit
+    // adapter from `init` (#323).
+    welcome-key-scope := FocusScope {
         property <bool> focus-pending: false;
         init => { self.focus-pending = true; }
         Timer {
@@ -78,14 +68,13 @@ export component Welcome inherits Rectangle {
     }
 
     VerticalLayout {
-        padding: root.compact ? 12px : 24px;
-        spacing: root.compact ? 12px : 20px;
+        padding: 24px;
+        spacing: 20px;
 
         // Header (title + tagline) — pinned to the top at its natural height so
         // it can't grab the stretch space and spread apart (seen on macOS); the
-        // quick-connect card below takes all the remaining height (#dock). Hidden
-        // in compact/sidebar mode.
-        if !root.compact : VerticalLayout {
+        // quick-connect card below takes all the remaining height.
+        VerticalLayout {
             vertical-stretch: 0;
             alignment: start;
             spacing: 4px;
@@ -119,39 +108,8 @@ export component Welcome inherits Rectangle {
 
                 Rectangle {
                     height: header-row.preferred-height;
-                    TouchArea {
-                        enabled: root.compact;
-                        mouse-cursor: move;
-                        moved => {
-                            // 只有真的按着这个手柄拖动时才报位置：Slint 在指针只是经过时也会派发 moved，
-                            // 那会让面板不按键就跟着鼠标跑（上游 a02d536）。
-                            if (self.pressed) {
-                                root.dock-drag-move(self.absolute-position.x + self.mouse-x,
-                                    self.absolute-position.y + self.mouse-y);
-                            }
-                        }
-                        pointer-event(ev) => {
-                            if (ev.kind == PointerEventKind.up) { root.dock-drag-end(); }
-                            // 拖拽被系统取消（指针抓取被收回，例如中途弹出窗口）时也要收尾，
-                            // 否则面板会一直停在"拖拽中"状态（上游 a02d536）。
-                            else if (ev.kind == PointerEventKind.cancel) { root.dock-drag-end(); }
-                        }
-                    }
                     header-row := HorizontalLayout {
                         spacing: 8px;
-                        // 折叠按钮：与工具栏图标按钮同一套实现（IconButton）。
-                        // 注意逐项对齐旧 CollapseButton 的实现细节：24×24、图标 16px、
-                        // 图标色不随 hover 变（所以 tint-on-hover: false）。
-                        if root.compact && root.dock-edge != "left" : IconButton {
-                            size: 24px;
-                            glyph-size: 16px;
-                            font-family: "Material Icons";
-                            tint-on-hover: false;
-                            glyph: root.dock-edge == "right" ? "\u{E5CC}"
-                                 : root.dock-edge == "top" ? "\u{E5CE}"
-                                 : "\u{E5CF}";
-                            clicked => { root.collapse(); }
-                        }
                         Text {
                             text: @tr("Quick connect");
                             color: Theme.text-primary;
@@ -160,29 +118,17 @@ export component Welcome inherits Rectangle {
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                         }
-                        if root.compact && root.dock-edge == "left" : IconButton {
-                            size: 24px;
-                            glyph-size: 16px;
-                            font-family: "Material Icons";
-                            tint-on-hover: false;
-                            glyph: "\u{E5CB}";
-                            clicked => { root.collapse(); }
-                        }
                         Text {
                             text: root.import-hint;
                             color: Theme.text-muted;
                             font-size: Theme.fs-sm;
                             vertical-alignment: center;
                         }
-                        if !root.compact : PrimaryButton {
+                        PrimaryButton {
                             text: @tr("+ New session");
                             clicked => { root.new-session(); }
                         }
                     }
-                }
-                if root.compact : PrimaryButton {
-                    text: @tr("+ New session");
-                    clicked => { root.new-session(); }
                 }
 
                 // Filter saved and built-in sessions by display name or host.
@@ -459,7 +405,6 @@ export component Welcome inherits Rectangle {
                         }
                         if session.id != "" && !session.collapsed : SessionRow {
                             session: session;
-                            compact: root.compact;
                             all-sessions: root.sessions;
                             // Drag-reorder is meaningless while the list is a
                             // filtered subset, and system rows can't move.

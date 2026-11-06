@@ -164,31 +164,24 @@ pub(crate) fn terminal_wheel_hit(
     y: f32,
 ) -> Option<TerminalWheelHit> {
     let (active, term, term_state) = active_terminal_panel_rects(win)?;
-    let mut term_x = term.x;
-    let mut term_y = term.y;
+    let term_x = term.x;
+    let term_y = term.y;
     let mut term_w = term.w;
     let mut term_h = term.h;
 
-    // TerminalView starts with a 24px status line, then the SFTP dock-region.
-    term_y += 24.0;
-    term_h = (term_h - 24.0).max(0.0);
+    // 状态行已移除（`ui/terminal_view.slint`）：dock-region 直接从 pane 顶边开始。
 
-    let sftp_dock = win.get_sftp_dock().to_string();
-    let sftp_take = if term_state.sftp_collapsed {
+    // SFTP 面板固定在右侧：终端可用宽度直接扣掉它（折叠时只剩 36px 折叠条）。
+    // 非 SFTP 会话不扣 —— 与 Slint 的 `sf-taken` 门控保持一致。
+    // 面板与终端之间没有间隙（分隔条压在终端的右内边距上），所以不额外加常数。
+    let sftp_take = if !term_state.sftp_available {
+        0.0
+    } else if term_state.sftp_collapsed {
         36.0
-    } else if sftp_dock == "left" || sftp_dock == "right" {
-        term_state.sftp_panel_width + 4.0
     } else {
-        term_state.sftp_panel_height + 4.0
+        term_state.sftp_panel_width
     };
-    shrink_edge(
-        &mut term_x,
-        &mut term_y,
-        &mut term_w,
-        &mut term_h,
-        &sftp_dock,
-        sftp_take,
-    );
+    term_w = (term_w - sftp_take).max(0.0);
 
     // Leave the command bar to TextInput/history handling; wheel fallback is for
     // terminal output only.
@@ -220,23 +213,6 @@ pub(crate) fn terminal_wheel_hit(
     })
 }
 
-pub(crate) fn shrink_edge(x: &mut f32, y: &mut f32, w: &mut f32, h: &mut f32, dock: &str, amount: f32) {
-    let amount = amount.max(0.0);
-    match dock {
-        "left" => {
-            *x += amount;
-            *w = (*w - amount).max(0.0);
-        }
-        "right" => *w = (*w - amount).max(0.0),
-        "top" => {
-            *y += amount;
-            *h = (*h - amount).max(0.0);
-        }
-        "bottom" => *h = (*h - amount).max(0.0),
-        _ => {}
-    }
-}
-
 pub(crate) fn contains_logical(rect: LogicalRect, x: f32, y: f32) -> bool {
     x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
 }
@@ -261,52 +237,19 @@ pub(crate) fn app_content_area(win: &AppWindow) -> LogicalRect {
     };
     area.h = size.height as f32 / scale - area.y;
 
-    // 左侧导航在 dock-area 之外固定占左缘，先扣掉它的宽（展开 200 / 收起 22）。
+    // 左侧导航在 dock-area 之外固定占左缘，先扣掉它的宽（展开 200 / 收起 54）。
     let nav = win.get_nav_width();
     area.x += nav;
     area.w = (area.w - nav).max(0.0);
 
-    if win.get_welcome_as_sidebar() {
-        let dock = win.get_welcome_sidebar_dock().to_string();
-        let welcome_taken = if win.get_welcome_collapsed() {
-            36.0
-        } else {
-            win.get_welcome_sidebar_width()
-        };
-        shrink_edge(
-            &mut area.x,
-            &mut area.y,
-            &mut area.w,
-            &mut area.h,
-            &dock,
-            welcome_taken,
-        );
-    }
-
+    // 快捷命令面板固定在右侧。
     if win.get_quick_panel_open() {
-        let quick_dock = win.get_quick_panel_dock().to_string();
-        let quick_merged = win.get_quick_panel_collapsed()
-            && win.get_welcome_as_sidebar()
-            && win.get_welcome_collapsed()
-            && win.get_welcome_sidebar_dock().as_str() == quick_dock.as_str();
-        if quick_merged {
-            return area;
-        }
         let quick_take = if win.get_quick_panel_collapsed() {
             36.0
-        } else if quick_dock == "left" || quick_dock == "right" {
-            win.get_quick_panel_width() + 4.0
         } else {
-            win.get_quick_panel_height() + 4.0
+            win.get_quick_panel_width() + 2.0
         };
-        shrink_edge(
-            &mut area.x,
-            &mut area.y,
-            &mut area.w,
-            &mut area.h,
-            &quick_dock,
-            quick_take,
-        );
+        area.w = (area.w - quick_take).max(0.0);
     }
     area
 }
@@ -314,6 +257,11 @@ pub(crate) fn app_content_area(win: &AppWindow) -> LogicalRect {
 pub(crate) fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, LogicalRect, TerminalState)> {
     let active = win.get_active_tab_id().to_string();
     if active.is_empty() || active == "welcome" {
+        return None;
+    }
+    // Docker / 笔记页整页接管内容区：标签栏与终端都已隐藏，算出来的矩形是错的。
+    // 不拦会让该页的滚轮喂给看不见的终端、拖文件进窗口触发一次不可见的上传。
+    if matches!(win.get_nav_page(), 3 | 5) {
         return None;
     }
 
@@ -332,9 +280,10 @@ pub(crate) fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, Lo
         active,
         LogicalRect {
             x: area.x + pane.x,
-            y: area.y + pane.y + 40.0,
+            // 标签栏 36px（`ui/tabs.slint` 的 height），不是旧的 40（36 + 4）。
+            y: area.y + pane.y + 36.0,
             w: pane.w,
-            h: (pane.h - 40.0).max(0.0),
+            h: (pane.h - 36.0).max(0.0),
         },
         term_state,
     ))
@@ -354,44 +303,31 @@ pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect>
         return None;
     }
 
-    // TerminalView starts with a 24px connection-status line; SFTP docks inside
-    // the remaining dock-region. This mirrors ui/terminal_view.slint.
+    // 状态行已移除，dock-region 覆盖整个 term 矩形（与 ui/terminal_view.slint 一致）。
     let dock_region = LogicalRect {
         x: term.x,
-        y: term.y + 24.0,
+        y: term.y,
         w: term.w,
-        h: (term.h - 24.0).max(0.0),
+        h: term.h,
     };
-    let dock = win.get_sftp_dock().to_string();
+    // 面板固定在右侧、不显示目录树：占满 dock-region 的高度，宽度取面板宽。
     let mut panel = LogicalRect {
-        x: dock_region.x,
+        x: dock_region.x + (dock_region.w - term_state.sftp_panel_width).max(0.0),
         y: dock_region.y,
-        w: if dock == "left" || dock == "right" {
-            term_state.sftp_panel_width
-        } else {
-            dock_region.w
-        },
-        h: if dock == "left" || dock == "right" {
-            dock_region.h
-        } else {
-            term_state.sftp_panel_height
-        },
+        w: term_state.sftp_panel_width,
+        h: dock_region.h,
     };
-    if dock == "right" {
-        panel.x = dock_region.x + (dock_region.w - panel.w).max(0.0);
-    } else if dock == "bottom" {
-        panel.y = dock_region.y + (dock_region.h - panel.h).max(0.0);
-    }
 
-    // SftpPanel layout: toolbar 34, then file headers 20 + separator 1; when the
-    // tree is shown (top/bottom docks), the file list starts after tree 160 + sep.
-    let show_tree = dock != "left" && dock != "right";
-    panel.y += 34.0 + 20.0 + 1.0;
-    panel.h = (panel.h - 34.0 - 20.0 - 1.0).max(0.0);
-    if show_tree {
-        panel.x += 160.0 + 1.0;
-        panel.w = (panel.w - 160.0 - 1.0).max(0.0);
-    }
+    // SftpPanel layout: toolbar, then file headers 20 + separator 1.
+    // 工具栏高度随 `narrow-toolbar` 变化（`ui/sftp_panel.slint`）：宽度 < 480px
+    // （含 255 下限）时是两行 62px，不是 34px。写死 34 会让落点偏高 28px。
+    let toolbar_h = if term_state.sftp_panel_width < 480.0 {
+        62.0
+    } else {
+        34.0
+    };
+    panel.y += toolbar_h + 20.0 + 1.0;
+    panel.h = (panel.h - toolbar_h - 20.0 - 1.0).max(0.0);
     Some(panel)
 }
 
@@ -500,7 +436,6 @@ fn handle_file_drop_at(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,49 +444,6 @@ mod tests {
         LogicalRect { x, y, w, h }
     }
 
-    /// 四种停靠边各自让出空间的方向（left/top 还要把起点挪开）。
-    #[test]
-    fn shrink_edge_shrinks_per_dock_side() {
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "left", 8.0);
-        assert_eq!((x, y, w, h), (18.0, 20.0, 92.0, 50.0), "left：起点右移 + 减宽");
-
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "right", 8.0);
-        assert_eq!((x, y, w, h), (10.0, 20.0, 92.0, 50.0), "right：只减宽");
-
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "top", 8.0);
-        assert_eq!((x, y, w, h), (10.0, 28.0, 100.0, 42.0), "top：起点下移 + 减高");
-
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "bottom", 8.0);
-        assert_eq!((x, y, w, h), (10.0, 20.0, 100.0, 42.0), "bottom：只减高");
-    }
-
-    /// 未知停靠值不动（停靠边是配置里的字符串，拼错不应被当成某个方向）。
-    #[test]
-    fn shrink_edge_ignores_unknown_dock() {
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "center", 8.0);
-        assert_eq!((x, y, w, h), (10.0, 20.0, 100.0, 50.0));
-    }
-
-    /// 负的 amount 视作 0；缩过头时宽高夹在 0（不能出现负数 —— 后面要拿它算
-    /// 单元格宽高，负值会传染成 NaN）。
-    #[test]
-    fn shrink_edge_clamps_amount_and_dimensions() {
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "left", -5.0);
-        assert_eq!((x, w), (10.0, 100.0), "负数 = 不缩");
-
-        let (mut x, mut y, mut w, mut h) = (10.0, 20.0, 100.0, 50.0);
-        shrink_edge(&mut x, &mut y, &mut w, &mut h, "left", 500.0);
-        assert_eq!(w, 0.0, "宽度缩到 0 为止");
-        assert_eq!(x, 510.0, "起点仍按 amount 移动（被夹的只是宽高）");
-    }
-
-    /// 命中判定是**闭区间**：正好落在右/下边缘也算命中。
     #[test]
     fn contains_logical_includes_the_border() {
         let r = rect(10.0, 20.0, 100.0, 50.0);

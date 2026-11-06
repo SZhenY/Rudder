@@ -1,10 +1,8 @@
 //! 欢迎页的**会话行**与 `SessionInfo` 结构体。
 //!
-//! 从 `welcome.slint` 拆出（P4）：`SessionRow` 自带完整接口（`session` / `compact`
+//! 从 `welcome.slint` 拆出（P4）：`SessionRow` 自带完整接口（`session`
 //! + 9 个 callback），逐字搬运；`SessionInfo` 随行搬走并在原文件转出口。
 import { Theme, AnimationSettings } from "theme.slint";
-import { PrimaryButton, GhostButton, IconButton } from "widgets.slint";
-import { ScrollView } from "std-widgets.slint";
 import { Divider } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
 
@@ -25,7 +23,6 @@ export struct SessionInfo {
 // --- SessionRow ------------------------------------------------------------
 export component SessionRow inherits Rectangle {
     in property <SessionInfo> session;
-    in property <bool> compact;
     callback connect();
     callback edit();
     callback duplicate();
@@ -57,7 +54,7 @@ export component SessionRow inherits Rectangle {
     property <bool> grab-dragging: false;
     property <length> grab-y;
 
-    height: root.compact ? 44px : 36px;
+    height: 36px;
 
     // Remember where the right-click landed so the popup can appear there.
     property <length> ctx-x;
@@ -282,7 +279,7 @@ export component SessionRow inherits Rectangle {
     HorizontalLayout {
         padding-left: 10px;
         padding-right: 10px;
-        spacing: root.compact ? 8px : 12px;
+        spacing: 12px;
 
         Rectangle {
             width: 18px; height: 18px;
@@ -297,28 +294,7 @@ export component SessionRow inherits Rectangle {
             }
         }
 
-        // Compact (sidebar) mode: two-line row so user@host:port stays visible
-        // instead of being clipped by the fixed-width columns (#339).
-        if root.compact : VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 1px;
-            Text {
-                text: session.name;
-                color: Theme.text-primary;
-                font-size: Theme.fs-sm;
-                overflow: elide;
-            }
-            Text {
-                text: session.builtin ? session.host
-                    : (session.user != "" ? session.user + "@" : "")
-                        + (session.port > 0 ? session.host + ":" + session.port : session.host);
-                color: Theme.text-muted;
-                font-size: Theme.fs-xs;
-                overflow: elide;
-            }
-        }
-        if !root.compact : Text {
+        Text {
             text: session.name;
             color: Theme.text-primary;
             font-size: Theme.fs-md;
@@ -326,7 +302,7 @@ export component SessionRow inherits Rectangle {
             width: 180px;
             overflow: elide;
         }
-        if !root.compact : Text {
+        Text {
             text: session.port > 0 ? session.host + ":" + session.port : session.host;
             color: Theme.text-secondary;
             font-size: Theme.fs-sm;
@@ -334,7 +310,7 @@ export component SessionRow inherits Rectangle {
             width: 180px;
             overflow: elide;
         }
-        if !root.compact : Text {
+        Text {
             text: session.user;
             color: Theme.text-secondary;
             font-size: Theme.fs-sm;

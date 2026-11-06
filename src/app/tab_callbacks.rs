@@ -175,15 +175,6 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
         let panes_model = panes_model.clone();
         let splitters_model = splitters_model.clone();
         window.on_pane_new_tab(move |pane_id: i32| {
-            // In welcome-as-sidebar mode there is no welcome tab — the session list
-            // lives in the left panel, so "+" has nothing to open.
-            if weak
-                .upgrade()
-                .map(|w| w.get_welcome_as_sidebar())
-                .unwrap_or(false)
-            {
-                return;
-            }
             {
                 let mut lay = layout.borrow_mut();
                 if let Some(owner) = lay.leaf_of_tab("welcome") {
@@ -220,14 +211,6 @@ pub(super) fn wire_tab_callbacks(window: &AppWindow, ctx: &AppContext) {
         let splitters_model = splitters_model.clone();
         window.on_nav_select(move |page: i32| {
             if page != 0 {
-                return;
-            }
-            // The session list is a separate sidebar in this mode; no tab to select.
-            if weak
-                .upgrade()
-                .map(|w| w.get_welcome_as_sidebar())
-                .unwrap_or(false)
-            {
                 return;
             }
             {

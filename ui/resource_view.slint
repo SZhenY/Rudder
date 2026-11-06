@@ -1,6 +1,6 @@
-//! 运行状态视图：原侧栏的竖排内容，改挂到 SFTP 面板的「运行状态」页签。
+//! 运行状态视图：竖排的资源数据块，挂在 SFTP 面板的「运行状态」页签。
 //!
-//! 只保留竖排形态。面板自己的收起、停靠、拖拽由容器负责，这里只拼数据块；
+//! 只保留竖排形态。面板的收起与宽度由容器负责，这里只拼数据块；
 //! 内容超出面板高度时整页滚动。
 
 import { Theme } from "theme.slint";
@@ -48,7 +48,6 @@ export component ResourceView inherits Rectangle {
             spacing: 10px;
 
             StatusBlock {
-                embedded: true;
                 conn-state: root.conn-state;
                 connection-state: root.connection-state;
                 conn-host: root.conn-host;

@@ -26,18 +26,18 @@ export component NavItem inherits Rectangle {
     border-radius: 6px;
     // 1px 描边常驻（未选中时透明）：换成"选中才 1px"会让整行内容在切换时抖 1px。
     border-width: 1px;
-    border-color: root.active ? Theme.accent-ring : transparent;
-    background: root.active ? Theme.state-selected : (ta.has-hover ? Theme.state-hover : transparent);
-    // 选中走容器档 + 弹簧（与侧栏展开同一档缓动）；hover 仍是 100/50 的快反馈。
+    // 选中态由 `InterfacePanel` 的**滑轨**负责（整块滑动），这里只表达指针反馈。
+    // 两者叠加时（滑轨 state-selected + 行 state-hover）比选中更亮一档，
+    // 正好是"指针停在这一项上"的效果。
+    border-color: ta.has-hover ? Theme.accent-ring : transparent;
+    background: ta.has-hover ? Theme.state-hover : transparent;
     animate background {
-        duration: root.active ? AnimationSettings.enter-container()
-            : (ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state());
-        easing: root.active ? AnimationSettings.s-soft()
-            : (ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit());
+        duration: ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
         enabled: AnimationSettings.enabled;
     }
     animate border-color {
-        duration: root.active ? AnimationSettings.enter-container() : AnimationSettings.exit-container();
+        duration: AnimationSettings.enter-state();
         easing: AnimationSettings.e-standard-decelerate();
         enabled: AnimationSettings.enabled;
     }

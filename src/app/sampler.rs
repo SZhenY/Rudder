@@ -1,4 +1,4 @@
-//! 1 Hz system sampler for the sidebar (CPU / mem / swap / network graphs).
+//! 1 Hz system sampler for the resource status page (CPU / mem / swap / network graphs).
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -12,8 +12,8 @@ use crate::ui::AppWindow;
 use super::{push_ring, refresh_sidebar, WinActivity};
 
 /// Spawn the 1 Hz system sampler: refreshes CPU/mem/swap and both network
-/// graphs for the sidebar. Backs off to ~5 s when the window is unfocused and
-/// pauses entirely while hidden or when the sidebar is collapsed.
+/// graphs for the resource status page. Backs off to ~5 s when the window is
+/// unfocused and pauses entirely while hidden.
 pub(crate) fn spawn_system_sampler(
     window: &AppWindow,
     tab_statuses: &TabStatuses,
@@ -65,8 +65,8 @@ pub(crate) fn spawn_system_sampler(
             if let Ok(mut net) = tick_net.lock() {
                 push_ring(&mut net, snap.net_bytes_per_sec as f32);
             }
-            // Stash the local sample; the sidebar shows it on the welcome tab
-            // and in the bottom network graph.
+            // Stash the local sample; the status page shows it on the welcome
+            // tab and in the bottom network graph.
             if let Ok(mut local) = tick_local.lock() {
                 *local = snap.clone();
             }
@@ -77,7 +77,7 @@ pub(crate) fn spawn_system_sampler(
                 .upgrade()
                 .map(|w| refresh_sidebar(&w, &tick_statuses, &tick_local, &tick_net))
                 .unwrap_or_default();
-            // 侧栏的观测点：默认不打印，RUST_LOG=rudder::perf=debug 时每趟一行。
+            // 运行状态页的观测点：默认不打印，RUST_LOG=rudder::perf=debug 时每趟一行。
             // `replaced` = 模型身份被换掉的次数（目标 0）；`written` / `unchanged` 是就地写
             // 模型的结果 —— 磁盘那 9 个不刷新的 tick 应该落在 `unchanged` 上。
             tracing::debug!(
@@ -87,7 +87,7 @@ pub(crate) fn spawn_system_sampler(
                 replaced = stats.replaced,
                 written = stats.written,
                 unchanged = stats.unchanged,
-                "sidebar tick"
+                "resource tick"
             );
         },
     );

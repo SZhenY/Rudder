@@ -1202,20 +1202,6 @@ pub struct SystemDetails {
     pub filesystems: Vec<(String, String, String, String, String)>,
 }
 
-/// One SSH tunnel row shown in the runtime tunnel panel (#206).
-#[derive(Debug, Clone)]
-pub struct RuntimeTunnelInfo {
-    pub id: String,
-    pub name: String,
-    pub kind: String,
-    pub bind_addr: String,
-    pub bind_port: u16,
-    pub host: String,
-    pub host_port: u16,
-    pub active: bool,
-    pub status: String,
-}
-
 /// Events emitted back to the UI thread.
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
@@ -1293,9 +1279,6 @@ pub enum SessionEvent {
     /// A command the user ran in the terminal, captured via the shell hook
     /// (OSC 697) so it can join the command-box history (#113).
     CommandRan(String),
-
-    /// Runtime tunnel state changed (#206).
-    TunnelUpdate(Vec<RuntimeTunnelInfo>),
 
     // --- SFTP events -------------------------------------------------------
     /// The shell's current working directory changed (parsed from OSC 7).
@@ -1700,11 +1683,6 @@ pub fn spawn_session(
     )
 }
 
-struct RuntimeForward {
-    info: RuntimeTunnelInfo,
-    task: Option<JoinHandle<()>>,
-}
-
 fn normalized_bind_addr(f: &PortForward) -> String {
     let bind = f.bind_addr.trim();
     if bind.is_empty() {
@@ -1714,66 +1692,29 @@ fn normalized_bind_addr(f: &PortForward) -> String {
     }
 }
 
-fn tunnel_label(f: &PortForward) -> String {
-    if !f.name.trim().is_empty() {
-        return f.name.trim().to_string();
-    }
-    match f.kind.as_str() {
-        "local" => format!("-L {}:{}", normalized_bind_addr(f), f.bind_port),
-        "remote" => format!("-R {}:{}", normalized_bind_addr(f), f.bind_port),
-        "dynamic" => format!("-D {}:{}", normalized_bind_addr(f), f.bind_port),
-        _ => format!("{} {}:{}", f.kind, normalized_bind_addr(f), f.bind_port),
-    }
-}
-
-fn tunnel_info(id: String, f: &PortForward, active: bool, status: &str) -> RuntimeTunnelInfo {
-    RuntimeTunnelInfo {
-        id,
-        name: tunnel_label(f),
-        kind: f.kind.clone(),
-        bind_addr: normalized_bind_addr(f),
-        bind_port: f.bind_port,
-        host: f.host.trim().to_string(),
-        host_port: f.host_port,
-        active,
-        status: status.to_string(),
-    }
-}
-
-fn emit_tunnel_update(
-    forwards: &std::collections::HashMap<String, RuntimeForward>,
-    events: &UnboundedSender<SessionEvent>,
-) {
-    let mut rows: Vec<RuntimeTunnelInfo> = forwards.values().map(|f| f.info.clone()).collect();
-    rows.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-    let _ = events.send(SessionEvent::TunnelUpdate(rows));
-}
-
 fn start_runtime_forward(
     handle: Arc<Handle<ClientHandler>>,
-    id: String,
     forward: PortForward,
     events: &UnboundedSender<SessionEvent>,
-) -> RuntimeForward {
-    let info = tunnel_info(id, &forward, true, t("运行中", "running"));
-    let task = match forward.kind.as_str() {
+) -> Option<JoinHandle<()>> {
+    let bind_addr = normalized_bind_addr(&forward);
+    match forward.kind.as_str() {
         "local" => Some(crate::tunnel::spawn_local(
             handle,
-            info.bind_addr.clone(),
-            info.bind_port,
-            info.host.clone(),
-            info.host_port,
+            bind_addr,
+            forward.bind_port,
+            forward.host.trim().to_string(),
+            forward.host_port,
             events.clone(),
         )),
         "dynamic" => Some(crate::tunnel::spawn_dynamic(
             handle,
-            info.bind_addr.clone(),
-            info.bind_port,
+            bind_addr,
+            forward.bind_port,
             events.clone(),
         )),
         _ => None,
-    };
-    RuntimeForward { info, task }
+    }
 }
 
 /// Open an SSH transport to the session's host (directly or via a SOCKS5 / HTTP
@@ -2476,46 +2417,20 @@ async fn run_session(
     // takes &mut self); the server then opens channels back, serviced in the
     // handler. Then wrap the handle in an Arc so the local/dynamic listener
     // tasks can share it (russh's Handle isn't Clone, but its methods are &self).
-    let mut runtime_forwards: std::collections::HashMap<String, RuntimeForward> =
-        std::collections::HashMap::new();
-    for (idx, f) in session
-        .forwards
-        .iter()
-        .enumerate()
-        .filter(|(_, f)| f.kind == "remote")
-    {
-        let bind = if f.bind_addr.trim().is_empty() {
-            "127.0.0.1".to_string()
-        } else {
-            f.bind_addr.trim().to_string()
-        };
-        let id = format!("config-{idx}");
+    for f in session.forwards.iter().filter(|f| f.kind == "remote") {
+        let bind = normalized_bind_addr(f);
         match handle.tcpip_forward(bind.clone(), f.bind_port as u32).await {
             Ok(_) => {
                 let _ = events.send(SessionEvent::Output(format!(
                     "\r\n[rudder] -R {bind}:{} → {}:{}\r\n",
                     f.bind_port, f.host, f.host_port
                 )));
-                runtime_forwards.insert(
-                    id.clone(),
-                    RuntimeForward {
-                        info: tunnel_info(id, f, true, t("运行中", "running")),
-                        task: None,
-                    },
-                );
             }
             Err(e) => {
                 let _ = events.send(SessionEvent::Output(format!(
                     "\r\n[rudder] -R {bind}:{} 请求失败 / request failed: {e}\r\n",
                     f.bind_port
                 )));
-                runtime_forwards.insert(
-                    id.clone(),
-                    RuntimeForward {
-                        info: tunnel_info(id, f, false, t("启动失败", "failed")),
-                        task: None,
-                    },
-                );
             }
         }
     }
@@ -2546,19 +2461,16 @@ async fn run_session(
     let mut first_terminal_output = true;
     // Local (-L) and dynamic (-D) listen client-side; their tasks are aborted
     // on session exit.
-    for (idx, f) in session.forwards.iter().enumerate() {
-        match f.kind.as_str() {
-            "local" | "dynamic" => {
-                let id = format!("config-{idx}");
-                runtime_forwards.insert(
-                    id.clone(),
-                    start_runtime_forward(handle.clone(), id, f.clone(), &events),
-                );
-            }
-            _ => {}
+    let mut runtime_forwards: Vec<JoinHandle<()>> = Vec::new();
+    for f in session
+        .forwards
+        .iter()
+        .filter(|f| matches!(f.kind.as_str(), "local" | "dynamic"))
+    {
+        if let Some(task) = start_runtime_forward(handle.clone(), f.clone(), &events) {
+            runtime_forwards.push(task);
         }
     }
-    emit_tunnel_update(&runtime_forwards, &events);
 
     // Per-session charset codecs (#338): the decoders must live across packets
     // because a multibyte character can be split between two data messages.
@@ -3360,10 +3272,8 @@ async fn run_session(
 
     // Tear down any port-forward listeners (#56); -R forwards die with the
     // session's disconnect below.
-    for f in runtime_forwards.into_values() {
-        if let Some(task) = f.task {
-            task.abort();
-        }
+    for task in runtime_forwards {
+        task.abort();
     }
 
     let _ = handle

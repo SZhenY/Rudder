@@ -243,12 +243,10 @@ rudder/
 ├── build.rs                     # Slint 编译 + 依赖版本生成
 ├── ui/                          # Slint 界面定义（重型块都在各自文件里）
 │   ├── app.slint                # 顶层窗口：装配标题栏 / 主体 / 覆盖层
-│   ├── terminal_view.slint      # 终端视图 + SFTP dock
+│   ├── terminal_view.slint      # 终端视图 + 右侧 SFTP 面板
 │   ├── terminal_parts.slint     # 终端相关的可复用部件
 │   ├── sftp_panel.slint         # SFTP 文件浏览面板
 │   ├── sftp_parts.slint         #   面板内的行 / 列表部件
-│   ├── sidebar.slint            # 左侧系统监控面板（外壳 + 折叠）
-│   ├── sidebar_body.slint       #   侧栏正文（资源 / 进程）
 │   ├── sidebar_blocks.slint     #   侧栏行块（网速 / 磁盘 / 进程行等）
 │   ├── tabs.slint               # 顶部标签栏
 │   ├── welcome.slint            # 欢迎页 / 快速连接
@@ -285,7 +283,6 @@ rudder/
 │   ├── update_banner.slint      # 更新提示横幅
 │   ├── file_editor.slint        # 内置文件查看 / 编辑器
 │   ├── confirm_close_dialog.slint  # 关闭活动会话前的确认
-│   ├── dock_snap_overlay.slint  # 拖拽停靠时的吸附指示层
 │   └── fonts/                   # 内嵌字体
 ├── lang/                        # 国际化
 │   ├── zh/                      # 简体中文
