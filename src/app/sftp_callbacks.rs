@@ -127,6 +127,8 @@ pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
                 cwd.remove(&tab_id);
             }
             let mut listing_replaced = false;
+            // 懒启动会话：手动导航同样视为"要用 SFTP"。
+            crate::sftp::want_sftp(&tab_id, Some(resolved.clone()));
             if let Ok(handles) = sftp_handles.lock()
                 && let Some(h) = handles.get(&tab_id)
             {
@@ -314,6 +316,8 @@ pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
         window.on_sftp_refresh(move |tab_id: SharedString, path: SharedString| {
             let tab_id = tab_id.to_string();
             let path = path.to_string();
+            // 懒启动会话：展开面板/手动刷新是第一次真正需要 SFTP 的时机。
+            crate::sftp::want_sftp(&tab_id, Some(path.clone()));
             if let Ok(handles) = sftp_handles.lock()
                 && let Some(h) = handles.get(&tab_id)
             {

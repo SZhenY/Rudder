@@ -32,6 +32,9 @@ thread_local! {
 /// 壁纸淡化期间只推壁纸派生色（wp-accent / wp-tint / wp-base），
 /// 让设置窗口和主窗口一起变，而不是等主窗口淡完再跳一次。
 pub(super) fn sync_wallpaper_ramp(main: &AppWindow) {
+    if !is_open() {
+        return;
+    }
     SETTINGS_WEAK.with(|s| {
         let weak = s.borrow().clone();
         if let Some(sw) = weak.and_then(|w| w.upgrade()) {
@@ -43,15 +46,24 @@ pub(super) fn sync_wallpaper_ramp(main: &AppWindow) {
     });
 }
 
-/// 设置窗口是否开着。
+/// 设置窗口是否真的可见。
 ///
-/// 后台 1 Hz 的 MCP 状态刷新用它跳过"只服务设置页"的重活（配置片段序列化）。
-/// 顶部徽标用的客户端数不在此列 —— 那个窗口关着也要更新。
+/// 这里判的是**可见性**而不是"窗口对象是否存在"：设置在启动时就建好并常驻，
+/// 用 `is_some()` 会让后台 1 Hz 的 MCP 刷新永远跳过不了重活（配置序列化 +
+/// 20 多项回显）。最小化时 `is_visible()` 也是 false，恢复后下一拍补齐。
 pub(super) fn is_open() -> bool {
-    SETTINGS_WEAK.with(|s| s.borrow().clone().and_then(|w| w.upgrade()).is_some())
+    SETTINGS_WEAK.with(|s| {
+        s.borrow()
+            .clone()
+            .and_then(|w| w.upgrade())
+            .is_some_and(|w| w.window().is_visible())
+    })
 }
 
 pub(super) fn resync_if_open(main: &AppWindow) {
+    if !is_open() {
+        return;
+    }
     SETTINGS_WEAK.with(|s| {
         let weak = s.borrow().clone();
         if let Some(sw) = weak.and_then(|w| w.upgrade()) {
@@ -240,6 +252,9 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
 
 /// 打开设置窗口：播种主窗口当前值 → 同步主题 → `show()` → 首帧补救三连。
 pub(super) fn open_settings_window(m: &AppWindow, sw: &SettingsWindow) {
+    // 字体选择器列表首次打开才构建：`fontdb` 要扫描全部系统字体，启动期不需要。
+    // 必须在 `seed_settings_window` 之前，后者从主窗口拷贝这批属性。
+    super::settings_ui::ensure_font_pickers(m);
     // `AnimationSettings` 是每个窗口一份的全局：设置窗那份不会自动跟主窗口同步，
     // 不同步的话「动画」开关每次开窗都显示出厂默认（true），与配置不符。
     sw.global::<AnimationSettings>()

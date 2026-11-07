@@ -203,6 +203,8 @@ pub(crate) fn close_tab(env: &TabEnv<'_>, id: &str) -> bool {
     }
     // Drop any display-name override so a fresh connect starts clean.
     env.tab_titles.borrow_mut().remove(id);
+    // 这条会话缓存的凭据（含口令）只在本次连接内有效，关标签即释放。
+    crate::app::auth_dialogs::forget_session_credential(id);
     if let Some(handle) = env.handles.borrow_mut().remove(id) {
         handle.close();
     }
@@ -215,6 +217,8 @@ pub(crate) fn close_tab(env: &TabEnv<'_>, id: &str) -> bool {
     {
         sftp.close();
     }
+    // 懒启动的 launcher 持有 Session 与事件通道，关标签一并释放。
+    crate::sftp::forget_sftp_launcher(id);
     if let Ok(mut cwd) = env.sftp_last_cwd.lock() {
         cwd.remove(id);
     }

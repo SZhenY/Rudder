@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use uuid::Uuid;
@@ -244,6 +244,142 @@ pub fn spawn_sftp(
         }
     });
     SftpHandle { commands: cmd_tx }
+}
+
+// ---------------------------------------------------------------------------
+// 按需连接
+// ---------------------------------------------------------------------------
+
+static LAUNCHERS: OnceLock<Mutex<HashMap<String, Arc<SftpLauncher>>>> = OnceLock::new();
+
+fn launchers() -> &'static Mutex<HashMap<String, Arc<SftpLauncher>>> {
+    LAUNCHERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 一个标签页的"待启动 SFTP"：只有用户真的用文件面板时才发起第二条 SSH 连接。
+///
+/// 展开面板（`collapse_sftp_default = true` 的会话）或手动刷新/导航时触发；
+/// 连接建立前到达的请求先记下路径，连上后立刻列该目录。
+pub(crate) struct SftpLauncher {
+    tab_id: String,
+    runtime: tokio::runtime::Handle,
+    handles: super::transfer::SftpHandles,
+    last_cwd: super::transfer::SftpLastCwd,
+    session: Mutex<Option<(Session, Option<Session>)>>,
+    events: UnboundedSender<SessionEvent>,
+    connected: AtomicBool,
+    wanted: AtomicBool,
+    started: AtomicBool,
+    pending: Mutex<Option<String>>,
+}
+
+impl SftpLauncher {
+    fn want(&self, path: Option<String>) {
+        if let Some(path) = path
+            && let Ok(mut slot) = self.pending.lock()
+        {
+            *slot = Some(path);
+        }
+        self.wanted.store(true, Ordering::SeqCst);
+        if self.connected.load(Ordering::SeqCst) {
+            self.start();
+        }
+    }
+
+    /// PTY 报 Connected 后调用；若此前已经有人请求过，立刻开连。
+    pub(crate) fn mark_connected(&self) {
+        self.connected.store(true, Ordering::SeqCst);
+        if self.wanted.load(Ordering::SeqCst) {
+            self.start();
+        }
+    }
+
+    fn start(&self) {
+        if self.started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let Some((session, jump)) = self.session.lock().ok().and_then(|mut slot| slot.take())
+        else {
+            return;
+        };
+        // 懒启动时面板可能已经展开，给一条状态提示，避免几秒空白。
+        let _ = self.events.send(SessionEvent::SftpStatus(
+            t("正在连接文件服务…", "Connecting to the file service…").to_string(),
+        ));
+        let handle = spawn_sftp(&self.runtime, session, jump, self.events.clone());
+        // 优先用请求里带的路径，其次用面板跟随到的 cwd，最后退回 "."。
+        let path = self
+            .pending
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take())
+            .or_else(|| {
+                self.last_cwd
+                    .lock()
+                    .ok()
+                    .and_then(|map| map.get(&self.tab_id).cloned())
+            })
+            .unwrap_or_else(|| ".".to_string());
+        handle.list_dir(path);
+        if let Ok(mut handles) = self.handles.lock() {
+            handles.insert(self.tab_id.clone(), handle);
+        }
+    }
+}
+
+/// 登记一个懒启动的 SFTP。替换同标签的旧 launcher（重连场景）。
+pub(crate) fn register_sftp_launcher(
+    tab_id: &str,
+    runtime: tokio::runtime::Handle,
+    handles: super::transfer::SftpHandles,
+    last_cwd: super::transfer::SftpLastCwd,
+    session: Session,
+    jump: Option<Session>,
+    events: UnboundedSender<SessionEvent>,
+) {
+    let launcher = Arc::new(SftpLauncher {
+        tab_id: tab_id.to_string(),
+        runtime,
+        handles,
+        last_cwd,
+        session: Mutex::new(Some((session, jump))),
+        events,
+        connected: AtomicBool::new(false),
+        wanted: AtomicBool::new(false),
+        started: AtomicBool::new(false),
+        pending: Mutex::new(None),
+    });
+    if let Ok(mut map) = launchers().lock() {
+        map.insert(tab_id.to_string(), launcher);
+    }
+}
+
+/// 请求某个标签的 SFTP：未启动则启动（等 PTY Connected），已启动则只更新路径。
+pub(crate) fn want_sftp(tab_id: &str, path: Option<String>) {
+    let launcher = launchers()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(tab_id).cloned());
+    if let Some(launcher) = launcher {
+        launcher.want(path);
+    }
+}
+
+pub(crate) fn sftp_launcher_connected(tab_id: &str) {
+    let launcher = launchers()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(tab_id).cloned());
+    if let Some(launcher) = launcher {
+        launcher.mark_connected();
+    }
+}
+
+/// 关标签/断线时丢弃 launcher：它持有的 Session 与事件通道一起释放。
+pub(crate) fn forget_sftp_launcher(tab_id: &str) {
+    if let Ok(mut map) = launchers().lock() {
+        map.remove(tab_id);
+    }
 }
 
 // ---------------------------------------------------------------------------

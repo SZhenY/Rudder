@@ -20,7 +20,7 @@ use crate::terminal::TermBuffers;
 use crate::ui::{ AccentPreset, AnimationSettings, AppWindow, ProcWindow, Theme };
 
 /// 播种 + 注册持久化回调。
-pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_win: &ProcWindow) {
+pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
     {
         let store = store.clone();
         let weak = window.as_weak();
@@ -152,7 +152,6 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         let weak = window.as_weak();
         let store = store.clone();
         let bufs_wp = bufs.clone();
-        let proc_weak = proc_win.as_weak();
         window.on_set_wallpaper(move |label: SharedString| {
             // 下拉里的一项 = 主题（跟随系统 / 深色 / 浅色）或一张上传的图片。
             let (theme, file) = wallpaper_choice_of_label(label.as_str());
@@ -185,12 +184,12 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             reset_cursor_to_follow(&w, &store);
             w.set_accent_mode(store.borrow().theme_pref().into());
             publish_wallpaper_choices(&w, &store);
-            if let Some(p) = proc_weak.upgrade() {
+            if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
                 sync_proc_theme(&w, &p);
                 // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
                 crate::app::settings_window::resync_if_open(&w);
             }
-            schedule_post_fade_sync(&w, &store, &proc_weak);
+            schedule_post_fade_sync(&w, &store, &crate::app::sub_windows::proc_weak());
         });
     }
 
@@ -198,7 +197,6 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         let weak = window.as_weak();
         let store = store.clone();
         let bufs_wp = bufs.clone();
-        let proc_weak = proc_win.as_weak();
         window.on_pick_wallpaper_file(move || {
             let picked = rfd::FileDialog::new()
                 .set_title(t("上传壁纸", "Upload wallpaper"))
@@ -224,12 +222,12 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
                 });
                 // 刚落盘的文件要立刻出现在下拉里并被选中。
                 publish_wallpaper_choices(&w, &store);
-                if let Some(p) = proc_weak.upgrade() {
+                if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
                     sync_proc_theme(&w, &p);
                     // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
                     crate::app::settings_window::resync_if_open(&w);
                 }
-                schedule_post_fade_sync(&w, &store, &proc_weak);
+                schedule_post_fade_sync(&w, &store, &crate::app::sub_windows::proc_weak());
             } else {
                 persist(&store, |s| {
                     s.set_wallpaper(id.clone());
@@ -274,7 +272,6 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
         let weak = window.as_weak();
         let store = store.clone();
         let bufs_mode = bufs.clone();
-        let proc_weak = proc_win.as_weak();
         window.on_set_appearance_mode(move |mode: SharedString| {
             let normalized = match mode.as_str() {
                 "dark" | "light" => mode.to_string(),
@@ -291,7 +288,7 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers, proc_w
             let cursor = store.borrow().terminal_cursor_color().to_string();
             super::terminal::apply_cursor_color(&w, &cursor);
             w.set_accent_mode(normalized.into());
-            if let Some(p) = proc_weak.upgrade() {
+            if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
                 sync_proc_theme(&w, &p);
                 // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
                 crate::app::settings_window::resync_if_open(&w);
@@ -647,7 +644,7 @@ impl PostFadeSync {
         let Some(w) = weak.upgrade() else { return };
         // 淡化进行中：逐帧把主窗口的壁纸派生色推给设置窗口，两边同步变化。
         crate::app::settings_window::sync_wallpaper_ramp(&w);
-        if let Some(p) = proc_weak.upgrade() {
+        if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
             sync_proc_theme(&w, &p);
         }
         // 约 512ms（32 帧）淡化结束，再补一次完整同步（hex / 名称 / 光标）。

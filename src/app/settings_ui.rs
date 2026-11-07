@@ -51,16 +51,11 @@ impl SettingsPage {
 ///
 /// 存在的意义是把「一项设置的全部落点」集中起来：除了配置字段与控件属性，
 /// 还有派生 UI 状态（字体选择器索引）、运行时镜像（SFTP 跟随标志）等。
-/// 注：不派生 `Clone` —— 它持有 `ProcWindow`（Slint 组件句柄不实现 Clone），
-/// 且全项目只构造一次、按引用传给 `reset_page`。
+/// 注：不派生 `Clone`，全项目只构造一次、按引用传给 `reset_page`。
 struct ResetRefs {
-    fonts: FontCatalog,
     /// 泵线程读取的「SFTP 跟随 cd」实时标志。还原必须同时更新它，否则配置与
     /// 界面都变了、**已打开会话的行为却没变** —— 表现为"还原不生效"。
     sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
-    /// 进程监视窗：外观页还原可能改变深浅色，已打开的窗口要跟着换肤。
-    /// 存 `Weak` 而非强引用 —— 组件句柄不实现 `Clone`，且不该由它延长窗口寿命。
-    proc_win: slint::Weak<crate::ui::ProcWindow>,
 }
 
 fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs, page: &str) {
@@ -68,10 +63,12 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
         tracing::warn!("reset-page: unknown settings page {page:?}");
         return;
     };
+    // 还原按钮只在设置页里，此时字体列表必然已经构建过；这里是廉价 Rc 拷贝。
+    let fonts = ensure_font_pickers(w);
     match page {
-        SettingsPage::Terminal => settings::terminal::reset(w, store, bufs, &refs.fonts),
+        SettingsPage::Terminal => settings::terminal::reset(w, store, bufs, &fonts),
         SettingsPage::Appearance => {
-            settings::appearance::reset(w, store, bufs, &refs.fonts, &refs.proc_win)
+            settings::appearance::reset(w, store, bufs, &fonts, &crate::app::sub_windows::proc_weak())
         }
         SettingsPage::Layout => settings::layout::reset(w, store),
         SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
@@ -137,11 +134,57 @@ fn start_system_theme_watcher(window: &AppWindow, store: &Store, bufs: &TermBuff
     Box::leak(Box::new(timer));
 }
 
-pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &AppContext) {
+thread_local! {
+    /// 外置字体目录注册后得到的家族名（启动只注册，不建列表）。
+    static EXTERNAL_FONTS: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// 字体选择器条目表；首次打开设置页才构建（`fontdb` 全量扫描）。
+    static FONT_CATALOG: std::cell::RefCell<Option<FontCatalog>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 构建（或复用）字体选择器列表。首次调用扫描系统字体，之后只拷贝 `Rc`。
+pub(super) fn ensure_font_pickers(window: &AppWindow) -> FontCatalog {
+    if let Some(catalog) = FONT_CATALOG.with(|slot| slot.borrow().clone()) {
+        return catalog;
+    }
+    let external = EXTERNAL_FONTS.with(|slot| slot.borrow().clone());
+    let (font_labels, font_entries) = font_choices(&external, true);
+    window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(font_labels))));
+    // 界面字体列表最前面补一项「跟随系统（自动）」= 出厂默认（空串）的显示项。
+    // 没有它时，选择器只能显示"字体栈里第一个可枚举的家族"—— macOS 上那是
+    // Helvetica Neue，而实际首选是 SF Pro Text，显示与事实不符。
+    let (mut ui_labels, mut ui_entries) = font_choices(&external, false);
+    ui_labels.insert(0, crate::app::fonts_ui::auto_font_label().into());
+    ui_entries.insert(0, crate::app::FontEntry::Auto);
+    window.set_ui_fonts(ModelRc::from(Rc::new(VecModel::from(ui_labels))));
+    let catalog = FontCatalog {
+        term: Rc::new(font_entries),
+        ui: Rc::new(ui_entries),
+    };
+    let (saved_family, ui_stored) = HISTORY_STORE.with(|store| {
+        store
+            .borrow()
+            .as_ref()
+            .map(|store| {
+                let store = store.borrow();
+                (
+                    store.font_family().to_string(),
+                    store.ui_font_family().to_string(),
+                )
+            })
+            .unwrap_or_default()
+    });
+    window.set_term_font_index(catalog.term_index(&saved_family));
+    window.set_ui_font_index(catalog.ui_index(&ui_stored));
+    FONT_CATALOG.with(|slot| *slot.borrow_mut() = Some(catalog.clone()));
+    catalog
+}
+
+pub(super) fn seed_settings(window: &AppWindow, ctx: &AppContext) {
     let AppContext {
         store,
         bufs,
-        tab_statuses,
         layout,
         panes_model,
         splitters_model,
@@ -149,9 +192,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         tabs_model,
         sessions_model,
         content_size,
-        handles,
         sftp_follow_cd,
-        runtime,
         pending_window_size_restore,
         ..
     } = ctx;
@@ -252,41 +293,17 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
     window.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
     // Runtime font loading: fonts dropped into the fonts dir (Windows:
     // <exe_dir>/config/fonts; macOS/Linux: per-user config dir) are registered
-    // with Slint's shared collection and become selectable below — large CJK
-    // families like Maple Mono no longer need to be embedded at build time.
+    // with Slint's shared collection so a saved external family renders from the
+    // first frame. The picker lists themselves are built on first settings open:
+    // `font_choices` scans every system font with fontdb, which startup doesn't
+    // need (see `ensure_font_pickers`).
     let fonts_dirs = crate::fonts::external_fonts_dirs();
     tracing::info!(
         "external fonts dirs: {}",
         fonts_dirs.iter().map(|d| d.display().to_string()).collect::<Vec<_>>().join(", ")
     );
     let external_fonts = crate::fonts::load_external_fonts(&fonts_dirs);
-    // Populate the font pickers: embedded first, external next, system families
-    // last, each labelled with its source.
-    let (font_labels, font_entries) = font_choices(&external_fonts, true);
-    window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(font_labels))));
-    let (mut ui_labels, mut ui_entries) = font_choices(&external_fonts, false);
-    // 界面字体列表最前面补一项「跟随系统（自动）」= 出厂默认（空串）的显示项。
-    // 没有它时，选择器只能显示"字体栈里第一个可枚举的家族"—— macOS 上那是
-    // Helvetica Neue，而实际首选是 SF Pro Text，显示与事实不符。
-    ui_labels.insert(0, crate::app::fonts_ui::auto_font_label().into());
-    ui_entries.insert(0, crate::app::FontEntry::Auto);
-    window.set_ui_fonts(ModelRc::from(Rc::new(VecModel::from(ui_labels))));
-    // 索引换算统一走 FontCatalog，启动播种与「还原本页默认」共用同一套规则
-    // —— 否则还原时极易漏掉索引，导致选择器停在旧项、显示与实际字体不符。
-    let fonts = FontCatalog {
-        term: Rc::new(font_entries),
-        ui: Rc::new(ui_entries),
-    };
-    let saved_family = store.borrow().font_family().to_string();
-    window.set_term_font_index(fonts.term_index(&saved_family));
-    // 索引必须与「实际生效的字体」对应：未设置时 `ui_font_family()` 返回空串，
-    // 而真正生效的是平台默认（一个字体栈）。用解析后的值换算，才能与「还原本页
-    // 默认」走到同一个结果 —— 否则启动显示与还原显示会不一致。
-    // 索引按**存储值**算：空串 = auto → 「跟随系统（自动）」条目。
-    // （用解析后的字体栈去算索引会落到"栈里第一个可枚举的家族" —— macOS 上是
-    // Helvetica Neue，而实际状态是 auto。显示文本仍用解析后的字体栈。）
-    let ui_stored = store.borrow().ui_font_family().to_string();
-    window.set_ui_font_index(fonts.ui_index(&ui_stored));
+    EXTERNAL_FONTS.with(|slot| *slot.borrow_mut() = external_fonts);
 
     // Command bar (#55): seed quick commands + history from the config. Groups
     // start collapsed by default (#55).
@@ -300,7 +317,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
 
     settings::transfer::bind(window, store, sftp_follow_cd);
     settings::sync::bind(window, store, sessions_model);
-    settings::appearance::bind(window, store, bufs, proc_win);
+    settings::appearance::bind(window, store, bufs);
     settings::terminal::bind(window, store, bufs);
     settings::layout::bind(window, store);
 
@@ -388,11 +405,9 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         let r_store = store.clone();
         let r_bufs = bufs.clone();
         let r_refs = ResetRefs {
-            fonts: fonts.clone(),
             sftp_follow_cd: sftp_follow_cd.clone(),
             // 外观页还原可能改变深浅色（默认壁纸是暗色的），已打开的进程监视窗
             // 要跟着换肤 —— 与用户手动选壁纸走同一条同步路径。
-            proc_win: proc_win.as_weak(),
         };
         window.on_reset_page(move |page: slint::SharedString| {
             let Some(w) = weak.upgrade() else { return };
@@ -513,86 +528,7 @@ pub(super) fn seed_settings(window: &AppWindow, proc_win: &ProcWindow, ctx: &App
         });
     }
 
-    {
-        let proc_weak = proc_win.as_weak();
-        let handles = handles.clone();
-        let statuses = tab_statuses.clone();
-        let runtime = runtime.clone();
-        proc_win.on_terminate_process(
-            move |tab_id: SharedString, pid: SharedString, password: SharedString| {
-                let tab_id = tab_id.to_string();
-                let Ok(pid) = pid.parse::<u32>() else {
-                    set_process_action_error(&proc_weak, t("无效的 PID", "Invalid PID"));
-                    return;
-                };
 
-                // Re-check the source tab, PID, and owner against the latest sample;
-                // the main window may have switched tabs since the menu was opened.
-                let ownership = {
-                    let states = statuses.lock().unwrap_or_else(|e| e.into_inner());
-                    states.get(&tab_id).map_or_else(
-                        || Err(t("当前会话不可用", "The current session is unavailable")),
-                        |status| {
-                            status
-                                .procs
-                                .iter()
-                                .find(|p| p.pid == pid)
-                                .map(|process| process_needs_root(&status.user, &process.user))
-                                .ok_or_else(|| t("进程已退出", "The process has already exited"))
-                        },
-                    )
-                };
-                let needs_root = match ownership {
-                    Ok(value) => value,
-                    Err(message) => {
-                        set_process_action_error(&proc_weak, message);
-                        return;
-                    }
-                };
-                if needs_root && password.is_empty() {
-                    set_process_action_error(
-                        &proc_weak,
-                        t(
-                            "请输入管理员（sudo）密码",
-                            "Enter the administrator (sudo) password",
-                        ),
-                    );
-                    return;
-                }
-
-                let root_password =
-                    needs_root.then(|| crate::config::Secret::new(password.to_string()));
-                let response = handles
-                    .borrow()
-                    .get(&tab_id)
-                    .map(|handle| handle.kill_process(pid, root_password));
-                let Some(response) = response else {
-                    set_process_action_error(
-                        &proc_weak,
-                        t("SSH 会话不可用", "The SSH session is unavailable"),
-                    );
-                    return;
-                };
-
-                let done_weak = proc_weak.clone();
-                runtime.spawn(async move {
-                    let result = response
-                        .await
-                        .unwrap_or_else(|_| crate::ssh::ProcessKillResult {
-                            success: false,
-                            message: t("SSH 会话已关闭", "The SSH session has closed").to_string(),
-                        });
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(pw) = done_weak.upgrade() {
-                            pw.set_action_busy(false);
-                            pw.set_action_error(!result.success);
-                            pw.set_action_status(result.message.into());
-                        }
-                    });
-                });
-            },
-        );
-    }
 }
 
 #[cfg(test)]

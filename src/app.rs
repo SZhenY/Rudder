@@ -211,6 +211,7 @@ mod sampler;
 mod settings;
 mod settings_ui;
 mod settings_window;
+mod sub_windows;
 mod window_chrome;
 use window_chrome::wire_window_chrome;
 use sampler::spawn_system_sampler;
@@ -324,7 +325,15 @@ pub(crate) struct AppContext {
 
 impl AppContext {
     pub(crate) fn new(config: ConfigStore, window: AppWindow) -> anyhow::Result<Self> {
-        let runtime = Arc::new(Runtime::new().context("failed to start tokio runtime")?);
+        // SSH / SFTP / MCP 都是 I/O 型任务，2 个 worker 足够；默认按核数起线程会
+        // 多预留数份 2 MiB 栈。真遇到并发传输瓶颈再调大。
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .context("failed to start tokio runtime")?,
+        );
         let store = Rc::new(RefCell::new(config));
         // Reachable from the Slint-thread event handler for recording terminal
         // commands into history (#113).
@@ -539,248 +548,61 @@ pub fn run() -> Result<()> {
     window.set_sys_swap_rows(ModelRc::from(sys_swap_model.clone()));
     window.set_sys_network_rows(ModelRc::from(sys_network_model.clone()));
     window.set_sys_filesystem_rows(ModelRc::from(sys_filesystem_model.clone()));
-    let proc_win = ProcWindow::new().context("failed to build process window")?;
-    proc_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
-    apply_chrome_on_first_frame(&proc_win);
-    proc_win.set_proc_list(ModelRc::from(proc_rows_model.clone()));
-    let sys_win = SystemInfoWindow::new().context("failed to build system info window")?;
-    sys_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
-    apply_chrome_on_first_frame(&sys_win);
-    sys_win.set_metrics(ModelRc::from(sys_metrics_model.clone()));
-    sys_win.set_nets(ModelRc::from(sys_net_rows_model.clone()));
-    sys_win.set_overview_rows(ModelRc::from(sys_overview_model.clone()));
-    sys_win.set_cpu_info_rows(ModelRc::from(sys_cpu_info_model.clone()));
-    sys_win.set_gpu_info_rows(ModelRc::from(sys_gpu_info_model.clone()));
-    sys_win.set_cpu_usage_rows(ModelRc::from(sys_cpu_usage_model.clone()));
-    sys_win.set_memory_rows(ModelRc::from(sys_memory_model.clone()));
-    sys_win.set_swap_rows(ModelRc::from(sys_swap_model.clone()));
-    sys_win.set_network_rows(ModelRc::from(sys_network_model.clone()));
-    sys_win.set_filesystem_rows(ModelRc::from(sys_filesystem_model.clone()));
+    // 进程窗也按需创建：行模型留在主窗口，组件树与第二套 wgpu 设备首次点击才建。
     {
-        // ✕ hides the window (data keeps flowing into the shared model).
-        let weak = proc_win.as_weak();
-        proc_win.on_request_close(move || {
-            if let Some(w) = weak.upgrade() {
-                let _ = w.hide();
-            }
-        });
-    }
-    {
-        proc_win.on_copy_pid(move |pid: SharedString| {
-            let text = pid.to_string();
-            std::thread::spawn(move || clipboard_set_text(text));
-        });
-    }
-    {
-        // 自绘标题栏拖动：交给窗口系统，并补一次合成的指针释放 —— Linux 的 WM /
-        // 合成器可能吃掉 up 事件，Slint 若一直抓着指针就会卡在移动光标状态。
-        let weak = proc_win.as_weak();
-        proc_win.on_win_drag(move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_window();
-                });
-                schedule_slint_pointer_ungrab(weak.clone());
-            }
-        });
-    }
-    {
-        // Bottom-right resize grip.
-        use i_slint_backend_winit::winit::window::ResizeDirection;
-        let weak = proc_win.as_weak();
-        proc_win.on_win_resize_se(move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_resize_window(ResizeDirection::SouthEast);
-                });
-                schedule_slint_pointer_ungrab(weak.clone());
-            }
-        });
-    }
-    {
-        // The sidebar "Processes" button shows / focuses the window.
         let win_weak = window.as_weak();
-        let proc_weak = proc_win.as_weak();
+        let rows = proc_rows_model.clone();
+        let proc_ctx = ctx.clone();
         window.on_open_processes(move || {
-            let (Some(main), Some(pw)) = (win_weak.upgrade(), proc_weak.upgrade()) else {
-                return;
-            };
-            pw.set_host(main.get_connection_state());
-            sync_proc_theme(&main, &pw);
-            // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-            crate::app::settings_window::resync_if_open(&main);
-            let _ = pw.show();
-            place_process_window(&main, &pw);
-            // 首帧：macOS 上新映射的第二个窗口**不会自动产生首次渲染事件**，而 Slint 的布局
-            // 是"渲染时惰性计算"的 —— 不请求重绘就永远没有内容，直到外部原因（用户拖动窗口
-            // 边缘）送来一次 Resized 才补上。`request_redraw` 就是 Slint 为此提供的 API。
-            // 按 0 / 50 / 200ms 请求三次：首次可能早于窗口映射完成而被 winit 丢弃。
-            // 注意：**不是**改尺寸 —— 那只是把用户"拖一下边缘"的动作自动化。
-            request_first_frame(pw.window());
-            let f1 = pw.as_weak();
-            slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
-                if let Some(w) = f1.upgrade() {
-                    request_first_frame(w.window());
-                }
-            });
-            let f2 = pw.as_weak();
-            slint::Timer::single_shot(std::time::Duration::from_millis(200), move || {
-                if let Some(w) = f2.upgrade() {
-                    request_first_frame(w.window());
-                }
-            });
-            // 窗口出现在最前（`show()` 已让它可见，这里再确认一次焦点）。
-            pw.window().with_winit_window(|ww| ww.focus_window());
-        });
-    }
-    {
-        let weak = sys_win.as_weak();
-        sys_win.on_request_close(move || {
-            if let Some(w) = weak.upgrade() {
-                let _ = w.hide();
+            if let Some(main) = win_weak.upgrade() {
+                sub_windows::show_process(&main, &rows, &proc_ctx);
             }
         });
     }
-    {
-        // 自绘标题栏拖动：交给窗口系统，并补一次合成的指针释放 —— Linux 的 WM /
-        // 合成器可能吃掉 up 事件，Slint 若一直抓着指针就会卡在移动光标状态。
-        let weak = sys_win.as_weak();
-        sys_win.on_win_drag(move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_window();
-                });
-                schedule_slint_pointer_ungrab(weak.clone());
-            }
-        });
-    }
-    {
-        use i_slint_backend_winit::winit::window::ResizeDirection;
-        let weak = sys_win.as_weak();
-        sys_win.on_win_resize_se(move || {
-            if let Some(w) = weak.upgrade() {
-                w.window().with_winit_window(|ww| {
-                    let _ = ww.drag_resize_window(ResizeDirection::SouthEast);
-                });
-                schedule_slint_pointer_ungrab(weak.clone());
-            }
-        });
-    }
+
+    // 系统信息窗按需创建：这里只登记共享模型与打开回调，组件树首次点击才建。
+    let sys_models = Rc::new(sub_windows::SysModels {
+        metrics: sys_metrics_model.clone(),
+        nets: sys_net_rows_model.clone(),
+        overview: sys_overview_model.clone(),
+        cpu_info: sys_cpu_info_model.clone(),
+        gpu_info: sys_gpu_info_model.clone(),
+        cpu_usage: sys_cpu_usage_model.clone(),
+        memory: sys_memory_model.clone(),
+        swap: sys_swap_model.clone(),
+        network: sys_network_model.clone(),
+        filesystem: sys_filesystem_model.clone(),
+    });
     {
         let win_weak = window.as_weak();
-        let sys_weak = sys_win.as_weak();
+        let models = sys_models.clone();
         window.on_open_system_info(move || {
-            let (Some(main), Some(sw)) = (win_weak.upgrade(), sys_weak.upgrade()) else {
-                return;
-            };
-            // Detailed system information is remote-only. Keep this guard even
-            // though the sidebar hides/disables its affordance when unavailable.
-            if !main.get_system_info_available() {
-                return;
+            if let Some(main) = win_weak.upgrade() {
+                sub_windows::show_system_info(&main, &models);
             }
-            sw.set_host(main.get_conn_host());
-            sw.set_connection_state(main.get_connection_state());
-            sw.set_resource_title(main.get_resource_title());
-            sync_system_info_theme(&main, &sw);
-            let _ = sw.show();
-            place_system_info_window(&main, &sw);
-            // 首帧：macOS 上新映射的第二个窗口（同进程窗口）**不会自动产生首次渲染事件**，而 Slint 的布局
-            // 是"渲染时惰性计算"的 —— 不请求重绘就永远没有内容，直到外部原因（用户拖动窗口
-            // 边缘）送来一次 Resized 才补上。`request_redraw` 就是 Slint 为此提供的 API。
-            // 按 0 / 50 / 200ms 请求三次：首次可能早于窗口映射完成而被 winit 丢弃。
-            // 注意：**不是**改尺寸 —— 那只是把用户"拖一下边缘"的动作自动化。
-            request_first_frame(sw.window());
-            let f1 = sw.as_weak();
-            slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
-                if let Some(w) = f1.upgrade() {
-                    request_first_frame(w.window());
-                }
-            });
-            let f2 = sw.as_weak();
-            slint::Timer::single_shot(std::time::Duration::from_millis(200), move || {
-                if let Some(w) = f2.upgrade() {
-                    request_first_frame(w.window());
-                }
-            });
-            // 与进程窗口一致：`show()` 已让窗口可见，这里确认焦点。
-            sw.window().with_winit_window(|ww| ww.focus_window());
         });
     }
 
     // ── 设置窗口（独立 root 窗口，原生标题栏）───────────────────────────────
     //
-    // 为什么是独立 root 而不是覆盖层：只有真窗口才拿得到各平台的原生边框（原生关闭按钮 /
-    // 拖动 / 缩放），而且设置打开期间主窗口**不再参与重绘**。它的两条代价都在
-    // `settings_window` 模块里处理了：`Theme` 逐项同步 + macOS 首帧补救。
-    let settings_win = SettingsWindow::new().context("failed to build settings window")?;
-    settings_window::wire_settings_window(&window.as_weak(), &settings_win);
-    // Windows / Linux 自绘标题栏（macOS 保留原生红黄绿），与进程窗口 / 系统信息窗口一致。
-    settings_win.set_custom_titlebar(cfg!(not(target_os = "macos")));
-    apply_chrome_on_first_frame(&settings_win);
+    // 首次打开才创建：设置窗含 TerminalPage 整棵树，启动期不需要。关闭仍只 hide，
+    // 复用同一实例；`wire_settings_window` 在工厂里接一次回调。
     {
-        // 自绘标题栏的拖动。
-        let sw = settings_win.as_weak();
-        settings_win.on_win_drag(move || {
-            if let Some(w) = sw.upgrade() {
-                w.window().with_winit_window(|ww| {
-                    if let Err(e) = ww.drag_window() {
-                        tracing::warn!("settings drag_window failed: {e}");
-                    }
-                });
-                // 与主窗口一致：系统模态循环会吃掉随后的 up 事件，补合成释放。
-                schedule_slint_pointer_ungrab(sw.clone());
-            }
-        });
-    }
-    {
-        // 右下角缩放抓手（无边框窗口没有系统缩放边缘）。
-        let sw = settings_win.as_weak();
-        settings_win.on_win_resize_se(move || {
-            if let Some(w) = sw.upgrade() {
-                use i_slint_backend_winit::winit::window::ResizeDirection;
-                w.window().with_winit_window(|ww| {
-                    if let Err(e) = ww.drag_resize_window(ResizeDirection::SouthEast) {
-                        tracing::warn!("settings drag_resize_window failed: {e}");
-                    }
-                });
-                schedule_slint_pointer_ungrab(sw.clone());
-            }
-        });
-    }
-    {
-        // 关闭：原生 ✕ 与窗口内的 Esc 都走这里（Esc 由 Slint 侧 `close-requested` 上抛）。
-        let sw = settings_win.as_weak();
-        let main = window.as_weak();
-        settings_win.on_close_requested(move || {
-            if let Some(sw) = sw.upgrade() {
-                settings_window::close_settings_window(&sw);
-            }
-            if let Some(m) = main.upgrade() {
-                m.set_interface_open(false);
-            }
-        });
-    }
-    {
-        // 打开 / 关闭：窗口在 Rust 手里，Slint 侧只发一个信号。打开时**无条件**重新播种 +
-        // `show()` —— 即使上一次是被系统 ✕ 关掉的（那种情况下 `interface-open` 可能还留着
-        // true，因为 Slint 默认只把窗口藏起来），下次照样能打开。
-        let sw = settings_win.as_weak();
         let main = window.as_weak();
         window.on_toggle_interface_settings(move |open: bool| {
-            let (Some(sw), Some(m)) = (sw.upgrade(), main.upgrade()) else {
-                return;
-            };
+            let Some(m) = main.upgrade() else { return };
             if open {
+                let Some(sw) = sub_windows::ensure_settings(&m) else { return };
                 settings_window::open_settings_window(&m, &sw);
                 m.set_interface_open(true);
             } else {
-                settings_window::close_settings_window(&sw);
+                sub_windows::release_settings();
                 m.set_interface_open(false);
             }
         });
     }
 
-    settings_ui::seed_settings(&window, &proc_win, &ctx);
+    settings_ui::seed_settings(&window, &ctx);
 
 
     // --- Wire callbacks --------------------------------------------------
@@ -793,10 +615,28 @@ pub fn run() -> Result<()> {
         let statuses = tab_statuses.clone();
         let local = local_snap.clone();
         let net = local_net_hist.clone();
+        let monitor_handles = handles.clone();
+        let monitor_store = store.clone();
+        let monitor_tab = Rc::new(Cell::new(String::new()));
+        let monitor_all = Rc::new(Cell::new(false));
         window.on_refresh_sidebar(move || {
-            if let Some(w) = weak.upgrade() {
-                refresh_sidebar(&w, &statuses, &local, &net);
+            let Some(w) = weak.upgrade() else { return };
+            // 远端监控默认只开活动标签：3 条 exec 通道（750ms/1.5s/2.5s）在非活动标签
+            // 上纯属浪费。MCP 启用时保持全量 —— 它的工具可能读任意标签的状态。
+            let active = w.get_active_tab_id().to_string();
+            let all = monitor_store.borrow().mcp_enabled();
+            if all != monitor_all.get() || monitor_tab.replace(active.clone()) != active {
+                monitor_all.set(all);
+                if let Ok(handles) = monitor_handles.try_borrow() {
+                    for (id, handle) in handles.iter() {
+                        handle.set_resource_monitoring(all || id == &active);
+                    }
+                } else {
+                    // 句柄表正被别处借用：清掉记录，下一次 refresh 再试。
+                    monitor_tab.set(String::new());
+                }
             }
+            refresh_sidebar(&w, &statuses, &local, &net);
         });
     }
 
@@ -864,7 +704,6 @@ pub fn run() -> Result<()> {
         let weak = window.as_weak();
         let store = store.clone();
         let bufs_theme = bufs.clone();
-        let proc_weak = proc_win.as_weak();
         window.on_toggle_theme(move || {
             let Some(w) = weak.upgrade() else { return };
             let next_dark = !w.global::<Theme>().get_dark();
@@ -874,7 +713,7 @@ pub fn run() -> Result<()> {
                 &w,
                 &store,
                 &bufs_theme,
-                &proc_weak,
+                &sub_windows::proc_weak(),
                 next_dark,
             );
         });
@@ -1355,8 +1194,6 @@ pub fn run() -> Result<()> {
     // Confirm-close dialog "Close" → actually quit the event loop (#88).
     {
         let weak = window.as_weak();
-        let proc_weak = proc_win.as_weak();
-        let sys_weak = sys_win.as_weak();
         let cc_store = store.clone();
         let close_handles = handles.clone();
         let close_sftp_handles = sftp_handles.clone();
@@ -1372,12 +1209,8 @@ pub fn run() -> Result<()> {
                 save_layout(&w, &cc_store);
                 let _ = w.hide();
             }
-            if let Some(w) = proc_weak.upgrade() {
-                let _ = w.hide();
-            }
-            if let Some(w) = sys_weak.upgrade() {
-                let _ = w.hide();
-            }
+            sub_windows::hide_process();
+            sub_windows::hide_system_info();
             // 设置窗口是独立 root 窗口 —— 它自己就足以让事件循环继续活着。主窗口关了而它
             // 还开着的话，用户看到的就是"程序关了、设置还挂在桌面上"，所以这里一并收掉。
             settings_window::close_if_open();

@@ -114,10 +114,9 @@ pub(crate) fn audit_degraded() -> bool {
 
 /// 按配置起服务。已有一份在跑就先停掉（改端口 / 改网口走同一条路径）。
 pub(crate) fn start(rt: &Handle, snapshot: McpConfigSnapshot, app: AppHandles) {
-    // 审计线程与保留天数：线程只起一次；天数放在热更新之前设，改完立刻生效，
-    // 不用等到下次重绑监听。
+    // 审计线程与保留天数：保留天数先设，改完立刻生效，不用等下次重绑监听。
+    // 线程本身延后到真正启用服务时再起（`record` 自带 `init`），MCP 关闭时零线程。
     super::audit::set_retention(snapshot.audit.retention_days);
-    super::audit::init();
 
     // 监听面没变就只换配置：权限位与令牌的改动不该掐断已经连上的客户端。
     {
@@ -144,6 +143,8 @@ pub(crate) fn start(rt: &Handle, snapshot: McpConfigSnapshot, app: AppHandles) {
     if !snapshot.enabled {
         return;
     }
+    // 启用后才起审计写盘线程；关闭 MCP 时不留常驻线程与通道。
+    super::audit::init();
     let state: SharedState = Arc::new(McpState::new(snapshot, app, rt.clone()));
     let cancel = CancellationToken::new();
     if let Ok(mut slot) = active().lock() {

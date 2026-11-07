@@ -24,7 +24,7 @@ const RING_CAPACITY: usize = 200;
 /// AI 页"最近断开"保留的条数。
 const CLOSE_CAPACITY: usize = 16;
 /// 待写队列容量：突发流量下够撑一阵，满了就丢。
-const CHANNEL_CAPACITY: usize = 1024;
+const CHANNEL_CAPACITY: usize = 128;
 /// 单日文件上限。
 const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
 

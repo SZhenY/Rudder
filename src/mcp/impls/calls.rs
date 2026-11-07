@@ -995,22 +995,32 @@ async fn read_capped<R: tokio::io::AsyncRead + Unpin>(
 
 /// 取该标签页的 SFTP 通道发一条命令。`SftpHandle` 不是 `Clone`，所以闭包里发完
 /// 立刻释放表锁，再在锁外等结果 —— 不能把 UI 线程要用的表锁按住等传输。
-fn with_sftp<T>(
+async fn with_sftp<T>(
     state: &SharedState,
     tab_id: &str,
     send: impl FnOnce(&crate::sftp::SftpHandle) -> tokio::sync::oneshot::Receiver<T>,
 ) -> Result<tokio::sync::oneshot::Receiver<T>, McpError> {
-    let handles = state
-        .app
-        .sftp_handles
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    let Some(handle) = handles.get(tab_id) else {
-        return Err(McpError::NotSupported(
-            "this tab has no SFTP channel; only SSH sessions have one",
-        ));
-    };
-    Ok(send(handle))
+    // 懒启动的会话此时还没有第二条 SSH 连接：先登记需求，再等通道出现（最长 2s）。
+    crate::sftp::want_sftp(tab_id, None);
+    let mut send = Some(send);
+    for _ in 0..40 {
+        {
+            let handles = state
+                .app
+                .sftp_handles
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
+            if let Some(handle) = handles.get(tab_id)
+                && let Some(send) = send.take()
+            {
+                return Ok(send(handle));
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Err(McpError::NotSupported(
+        "SFTP channel is still connecting; retry shortly",
+    ))
 }
 
 /// 列目录超时：目录很大时 30 秒仍不够属于异常，交给客户端重试。
@@ -1051,7 +1061,7 @@ fn parse_mode(raw: &str) -> Result<u32, McpError> {
 async fn sftp_mkdir(state: &SharedState, args: &Value) -> Result<Value, McpError> {
     let tab_id = str_arg(args, "tab_id")?;
     let path = str_arg(args, "path")?;
-    let receiver = with_sftp(state, &tab_id, |handle| handle.mcp_mkdir(path.clone()))?;
+    let receiver = with_sftp(state, &tab_id, |handle| handle.mcp_mkdir(path.clone())).await?;
     await_sftp_mutation(receiver).await?;
     Ok(json!({ "tab_id": tab_id, "path": path, "created": true }))
 }
@@ -1062,7 +1072,7 @@ async fn sftp_remove(state: &SharedState, args: &Value) -> Result<Value, McpErro
     let recursive = bool_arg(args, "recursive", false);
     let receiver = with_sftp(state, &tab_id, |handle| {
         handle.mcp_remove(path.clone(), recursive)
-    })?;
+    }).await?;
     await_sftp_mutation(receiver).await?;
     Ok(json!({
         "tab_id": tab_id,
@@ -1078,7 +1088,7 @@ async fn sftp_rename(state: &SharedState, args: &Value) -> Result<Value, McpErro
     let to = str_arg(args, "to")?;
     let receiver = with_sftp(state, &tab_id, |handle| {
         handle.mcp_rename(from.clone(), to.clone())
-    })?;
+    }).await?;
     await_sftp_mutation(receiver).await?;
     Ok(json!({ "tab_id": tab_id, "from": from, "to": to, "renamed": true }))
 }
@@ -1087,7 +1097,7 @@ async fn sftp_chmod(state: &SharedState, args: &Value) -> Result<Value, McpError
     let tab_id = str_arg(args, "tab_id")?;
     let path = str_arg(args, "path")?;
     let mode = parse_mode(&str_arg(args, "mode")?)?;
-    let receiver = with_sftp(state, &tab_id, |handle| handle.mcp_chmod(path.clone(), mode))?;
+    let receiver = with_sftp(state, &tab_id, |handle| handle.mcp_chmod(path.clone(), mode)).await?;
     await_sftp_mutation(receiver).await?;
     Ok(json!({
         "tab_id": tab_id,
@@ -1100,7 +1110,7 @@ async fn sftp_chmod(state: &SharedState, args: &Value) -> Result<Value, McpError
 async fn sftp_list(state: &SharedState, args: &Value) -> Result<Value, McpError> {
     let tab_id = str_arg(args, "tab_id")?;
     let path = opt_str_arg(args, "path").unwrap_or_else(|| "/".to_string());
-    let receiver = with_sftp(state, &tab_id, |handle| handle.mcp_list(path.clone()))?;
+    let receiver = with_sftp(state, &tab_id, |handle| handle.mcp_list(path.clone())).await?;
     // 与变更类一致：SFTP worker 是串行的，一个卡住不回的列目录会占着并发许可
     // 直到调用方的总超时。
     let mut entries = tokio::time::timeout(SFTP_LIST_TIMEOUT, receiver)
@@ -1139,7 +1149,7 @@ async fn sftp_download(state: &SharedState, args: &Value) -> Result<Value, McpEr
     // 固定写到传输管理配置的下载目录；不再接受任意 local_path。
     let dir = crate::app::mcp_ui::download_dir().await?;
     let receiver =
-        with_sftp(state, &tab_id, |handle| handle.mcp_download_auto(remote.clone(), dir))?;
+        with_sftp(state, &tab_id, |handle| handle.mcp_download_auto(remote.clone(), dir)).await?;
     let (local_path, renamed, bytes) = tokio::time::timeout(SFTP_TRANSFER_TIMEOUT, receiver)
         .await
         .map_err(|_| McpError::TransferFailed("下载超时（300 秒）".to_string()))?
@@ -1160,7 +1170,7 @@ async fn sftp_upload(state: &SharedState, args: &Value) -> Result<Value, McpErro
     let remote = str_arg(args, "remote_path")?;
     let local_path = std::path::PathBuf::from(&local);
     let receiver =
-        with_sftp(state, &tab_id, |handle| handle.mcp_upload(local_path, remote.clone()))?;
+        with_sftp(state, &tab_id, |handle| handle.mcp_upload(local_path, remote.clone())).await?;
     let bytes = tokio::time::timeout(SFTP_TRANSFER_TIMEOUT, receiver)
         .await
         .map_err(|_| McpError::TransferFailed("上传超时（300 秒）".to_string()))?

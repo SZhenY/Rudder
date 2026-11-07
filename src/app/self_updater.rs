@@ -22,6 +22,23 @@ use anyhow::{Context, Result, anyhow};
 const REPO_OWNER: &str = "SZhenY";
 const REPO_NAME: &str = "Rudder";
 
+/// GitHub `/releases?per_page=30` 的整包上限。正常 300 KB~1 MB，2 MiB 只拦异常响应。
+const MAX_RELEASES_BODY: u64 = 2 * 1024 * 1024;
+/// `CHANGELOG.md` 整份上限（当前约 340 KB）。
+const MAX_CHANGELOG_BODY: u64 = 1024 * 1024;
+
+/// 读 HTTP body 时先卡上限：异常响应（或被劫持的代理）不能把几十 MB 拉进内存。
+fn read_body_capped(resp: reqwest::blocking::Response, limit: u64, what: &str) -> Result<String> {
+    let mut buf = Vec::new();
+    resp.take(limit + 1)
+        .read_to_end(&mut buf)
+        .with_context(|| format!("read {what} response"))?;
+    if buf.len() as u64 > limit {
+        anyhow::bail!("{what} response exceeds {limit} bytes");
+    }
+    String::from_utf8(buf).with_context(|| format!("decode {what} response"))
+}
+
 /// 一个可用的更新：版本号 + 待下载资产。
 #[derive(Debug, Clone)]
 pub(crate) struct UpdateCandidate {
@@ -306,15 +323,14 @@ pub(crate) fn fetch_channel_release(channel: &str) -> Result<Option<serde_json::
     let client = super::update_net::current()
         .client()
         .map_err(|e| anyhow!("{e}"))?;
-    let body = client
+    let resp = client
         .get(&url)
         .timeout(std::time::Duration::from_secs(20))
         .send()
         .map_err(|e| anyhow!("{}", super::update_net::describe(&e)))?
         .error_for_status()
-        .map_err(|e| anyhow!("{}", super::update_net::describe(&e)))?
-        .text()
-        .context("read releases response")?;
+        .map_err(|e| anyhow!("{}", super::update_net::describe(&e)))?;
+    let body = read_body_capped(resp, MAX_RELEASES_BODY, "releases")?;
     let json: serde_json::Value =
         serde_json::from_str(&body).context("parse releases response")?;
     if channel == "stable" {
@@ -1333,7 +1349,13 @@ fn fetch_changelog(tag: &str) -> Option<String> {
         .timeout(std::time::Duration::from_secs(15))
         .send()
     {
-        Ok(resp) => resp.text().ok(),
+        Ok(resp) => {
+            let mut text = String::new();
+            resp.take(MAX_CHANGELOG_BODY)
+                .read_to_string(&mut text)
+                .ok()
+                .map(|_| text)
+        }
         Err(e) => {
             tracing::debug!(
                 "update notes: fetching CHANGELOG failed: {}",

@@ -144,6 +144,12 @@ export component TerminalView inherits Rectangle {
     }
     callback set-sftp-panel-height(length);
     callback set-sftp-panel-width(length);
+    // 展开文件面板时刷新一次：懒启动的会话要等到这一刻才发起第二条 SSH 连接。
+    changed sftp-collapsed => {
+        if (!root.sftp-collapsed && root.sftp-available) {
+            root.sftp-refresh(root.sftp-path);
+        }
+    }
     callback set-sftp-collapsed(bool);
 
     // --- SFTP 面板（固定在终端右侧）---------------------------------------

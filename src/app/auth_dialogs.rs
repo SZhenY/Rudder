@@ -1,5 +1,12 @@
 use super::*;
 
+/// 会话关闭时清掉该会话缓存的凭据（含口令），避免运行期只增不减。
+pub(crate) fn forget_session_credential(session_id: &str) {
+    CRED_DECIDED.with(|d| {
+        d.borrow_mut().remove(session_id);
+    });
+}
+
 pub(super) fn hostkey_dialog_text(
     host: &str,
     port: u16,
@@ -98,9 +105,15 @@ pub(super) fn resolve_front_hostkey(win: &AppWindow, accept: bool) {
             // "Unknown server key" until the app was restarted (#152). A reject now
             // only fails the current attempt; the next connect prompts again.
             if accept {
+                let key = format!("{}:{}", p.host, p.port);
                 HOSTKEY_DECIDED.with(|d| {
-                    d.borrow_mut()
-                        .insert(format!("{}:{}", p.host, p.port), true);
+                    let mut map = d.borrow_mut();
+                    // 按 host:port 记忆的运行期缓存：只增不减会攒下所有连过的机器。
+                    // 到上限整体作废，代价只是重新确认一次。
+                    if map.len() >= 64 && !map.contains_key(&key) {
+                        map.clear();
+                    }
+                    map.insert(key, true);
                 });
             }
             for r in &p.responders {
@@ -194,8 +207,13 @@ pub(super) fn resolve_front_cred(win: &AppWindow, accept: bool) {
             // again (same class of bug as #152 on the host-key path).
             if let Some(accepted) = &reply {
                 CRED_DECIDED.with(|d| {
-                    d.borrow_mut()
-                        .insert(p.session_id.clone(), SecretCred::from_reply(accepted));
+                    let mut map = d.borrow_mut();
+                    // 每条记录含口令（`Secret`）。上限 16 条，超出整体作废；
+                    // 正常路径在关标签时由 `forget_session_credential` 逐条清掉。
+                    if map.len() >= 16 && !map.contains_key(&p.session_id) {
+                        map.clear();
+                    }
+                    map.insert(p.session_id.clone(), SecretCred::from_reply(accepted));
                 });
             }
             if let Some((ref u, ref pw, true)) = reply {

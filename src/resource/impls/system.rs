@@ -22,8 +22,11 @@ const DISK_REFRESH_EVERY: u32 = 10;
 
 impl SystemSampler {
     pub fn new() -> Self {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        // 只要 CPU / 内存 / 交换：`sample()` 从不读进程表，`new_all()` 会把几百个
+        // `Process`（含 cmd/exe/environ）全量拉进来并常驻。
+        let mut sys = System::new();
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
         let nets = Networks::new_with_refreshed_list();
         let last_rx_total = nets.values().map(|d| d.total_received()).sum();
         let last_tx_total = nets.values().map(|d| d.total_transmitted()).sum();

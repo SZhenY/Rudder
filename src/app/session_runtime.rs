@@ -55,31 +55,46 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         ),
     };
     let terminal_reply_tx = handle.commands.clone();
-    // 运行状态挂在 SFTP 面板里，连接后照常采样，不受导航条收起影响。
-    handle.set_resource_monitoring(true);
+    // 连接后先不开远端监控：默认只有活动标签需要（由 `refresh-sidebar` 处理器打开），
+    // 非活动标签的 3 条 exec 通道（750ms/1.5s/2.5s）纯属浪费。MCP 启用时该处理器
+    // 会保持全量打开，避免它的工具读到未更新的标签状态。
+    handle.set_resource_monitoring(false);
     ctx.handles.borrow_mut().insert(tab_id.to_string(), handle);
 
-    // Separate SFTP connection for the same session (SSH only). It waits for
-    // the interactive PTY to report Connected so a second SSH handshake cannot
-    // contend with terminal startup on the same host/network path.
-    let (sftp_evt_tx, sftp_ready_tx) = if has_sftp {
+    // 文件面板默认折叠的会话：先不建第二条 SSH 连接，等面板展开/手动刷新再连。
+    // 默认展开的会话保持原行为（连上 PTY 后立即建 SFTP），用户无感。
+    let lazy_sftp = has_sftp && ctx.store.borrow().collapse_sftp_default();
+    let (sftp_evt_rx, sftp_ready_tx) = if has_sftp {
         let (sftp_tx, sftp_rx) = tokio::sync::mpsc::unbounded_channel::<SessionEvent>();
-        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
-        let sftp_runtime = ctx.runtime.clone();
-        let sftp_task_runtime = sftp_runtime.clone();
-        let sftp_handles = ctx.sftp_handles.clone();
-        let sftp_tab_id = tab_id.to_string();
-        sftp_runtime.spawn(async move {
-            if ready_rx.await.is_err() {
-                return;
-            }
-            tokio::task::yield_now().await;
-            let sftp_handle = spawn_sftp(sftp_task_runtime.handle(), session, jump, sftp_tx);
-            if let Ok(mut handles) = sftp_handles.lock() {
-                handles.insert(sftp_tab_id, sftp_handle);
-            }
-        });
-        (Some(sftp_rx), Some(ready_tx))
+        if lazy_sftp {
+            crate::sftp::register_sftp_launcher(
+                tab_id,
+                ctx.runtime.handle().clone(),
+                ctx.sftp_handles.clone(),
+                ctx.sftp_last_cwd.clone(),
+                session,
+                jump,
+                sftp_tx,
+            );
+            (Some(sftp_rx), None)
+        } else {
+            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+            let sftp_runtime = ctx.runtime.clone();
+            let sftp_task_runtime = sftp_runtime.clone();
+            let sftp_handles = ctx.sftp_handles.clone();
+            let sftp_tab_id = tab_id.to_string();
+            sftp_runtime.spawn(async move {
+                if ready_rx.await.is_err() {
+                    return;
+                }
+                tokio::task::yield_now().await;
+                let sftp_handle = spawn_sftp(sftp_task_runtime.handle(), session, jump, sftp_tx);
+                if let Ok(mut handles) = sftp_handles.lock() {
+                    handles.insert(sftp_tab_id, sftp_handle);
+                }
+            });
+            (Some(sftp_rx), Some(ready_tx))
+        }
     } else {
         (None, None)
     };
@@ -100,6 +115,7 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         std::thread::spawn(move || {
             let mut shell_rx = rx;
             let mut sftp_ready_tx = sftp_ready_tx;
+            let lazy_sftp_pump = lazy_sftp;
             let mut cwd_debounce: Option<tokio::task::JoinHandle<()>> = None;
             // Reusable scratch so a fast firehose doesn't reallocate every batch.
             let mut drained: Vec<SessionEvent> = Vec::new();
@@ -135,6 +151,9 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                         SessionEvent::Connected => {
                             if let Some(ready) = sftp_ready_tx.take() {
                                 let _ = ready.send(());
+                            }
+                            if lazy_sftp_pump {
+                                crate::sftp::sftp_launcher_connected(&tab_id_pump);
                             }
                             ui_batch.push(SessionEvent::Connected);
                         }
@@ -298,7 +317,7 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
     }
 
     // --- SFTP event pump (separate thread, SSH only) ---
-    if let Some(sftp_evt_tx) = sftp_evt_tx {
+    if let Some(sftp_evt_rx) = sftp_evt_rx {
         let weak_sftp = ctx.weak.clone();
         let bufs_sftp = ctx.bufs.clone();
         let tab_id_sftp = tab_id.to_string();
@@ -307,7 +326,7 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         let net_sftp = ctx.local_net_hist.clone();
         let gates_sftp = ctx.render_gates.clone();
         std::thread::spawn(move || {
-            let mut sftp_rx = sftp_evt_tx;
+            let mut sftp_rx = sftp_evt_rx;
             let mut drained: Vec<SessionEvent> = Vec::new();
             loop {
                 match sftp_rx.blocking_recv() {

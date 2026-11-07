@@ -405,24 +405,47 @@ fn publish_status(window: &AppWindow, store: &Store, clients: &Rc<VecModel<McpCl
             Vec::new(),
         )
     };
-    window.set_mcp_status(text.into());
-    window.set_mcp_status_error(error.into());
-    window.set_mcp_urls(ModelRc::from(Rc::new(VecModel::from(
-        urls.into_iter().map(SharedString::from).collect::<Vec<_>>(),
-    ))));
-    // 顶部徽标用的是 `mcp-client-count`，设置窗关着也得刷，所以客户端列表不跳过。
+    if window.get_mcp_status().as_str() != text.as_str() {
+        window.set_mcp_status(text.into());
+    }
+    if window.get_mcp_status_error().as_str() != error.as_str() {
+        window.set_mcp_status_error(error.into());
+    }
+    publish_urls(window, urls);
+    // 顶部徽标与客户端浮层都读 `mcp-clients`，设置窗关着也要刷新。
     publish_clients(window, clients);
-    publish_recent_calls(window);
-    publish_recent_closes(window);
-    publish_grants(window, store);
+    // 以下只服务设置页：窗口不可见时整段跳过，开窗时 `sync_settings_reflected` 会灌一次。
+    let visible = crate::app::settings_window::is_open();
+    if visible {
+        publish_recent_calls(window);
+        publish_recent_closes(window);
+        publish_grants(window, store);
+    }
     // 配置片段与回显只服务设置页：窗口没开时不每秒把整份设置序列化两遍。
-    if crate::app::settings_window::is_open() || !JSON_PUBLISHED.with(|flag| flag.get()) {
+    if visible || !JSON_PUBLISHED.with(|flag| flag.get()) {
         // 服务起来后监听地址才算得出来（局域网网口尤其），配置片段跟着刷。
         window.set_mcp_json(client_config(store, false).into());
         window.set_mcp_json_masked(client_config(store, true).into());
         JSON_PUBLISHED.with(|flag| flag.set(true));
         crate::app::settings_window::resync_if_open(window);
     }
+}
+
+/// 监听地址列表：逐行比较后再写，避免每秒新建一个 VecModel。
+fn publish_urls(window: &AppWindow, urls: Vec<String>) {
+    let current = window.get_mcp_urls();
+    let unchanged = current.row_count() == urls.len()
+        && urls.iter().enumerate().all(|(index, url)| {
+            current
+                .row_data(index)
+                .is_some_and(|row| row.as_str() == url)
+        });
+    if unchanged {
+        return;
+    }
+    window.set_mcp_urls(ModelRc::from(Rc::new(VecModel::from(
+        urls.into_iter().map(SharedString::from).collect::<Vec<_>>(),
+    ))));
 }
 
 /// 客户端列表：每个客户端先一行 header，再跟 12 行权限开关。
@@ -432,10 +455,6 @@ fn publish_status(window: &AppWindow, store: &Store, clients: &Rc<VecModel<McpCl
 /// 卡片副标题用的会话短标识 —— 同名同版本的两个客户端靠它区分。
 fn session_tag(session_id: &str) -> String {
     format!("#{}", session_id.chars().take(6).collect::<String>())
-}
-
-fn client_rows(en: bool) -> Vec<McpClientRow> {
-    session_rows(en, &crate::mcp::sessions_info())
 }
 
 /// 纯逻辑，便于单测：两条同名会话必须产出两组可区分的行。
@@ -646,8 +665,52 @@ fn granted_summary(perms: &crate::mcp::Permissions, en: bool) -> String {
     parts.join(" · ")
 }
 
+thread_local! {
+    /// 上次发布时的客户端列表签名。`u64::MAX` 保证首次一定重建。
+    static LAST_CLIENTS_SIG: std::cell::Cell<u64> = const { std::cell::Cell::new(u64::MAX) };
+}
+
+/// 客户端列表的廉价签名：只在会话集合、权限位或分钟级时长变化时重写模型。
+///
+/// 秒级时长故意按分钟参与签名：否则每秒必变，"跳过重建"永远不成立。
+fn clients_signature(en: bool, sessions: &[crate::mcp::McpSessionInfo]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    en.hash(&mut hasher);
+    // `sessions_info` 来自 HashMap，迭代顺序不稳定；先按 session id 排序再算。
+    let mut ordered: Vec<&crate::mcp::McpSessionInfo> = sessions.iter().collect();
+    ordered.sort_by(|a, b| a.session_id.cmp(&b.session_id));
+    ordered.len().hash(&mut hasher);
+    for session in ordered {
+        session.session_id.hash(&mut hasher);
+        session.client.hash(&mut hasher);
+        session.connected_wall.hash(&mut hasher);
+        (session.connected_secs / 60).hash(&mut hasher);
+        session.peer_ip.hash(&mut hasher);
+        session.client_id.hash(&mut hasher);
+        session.trusted.hash(&mut hasher);
+        let mut mask = 0u16;
+        for (index, bit) in crate::mcp::PERMISSION_BITS.iter().enumerate() {
+            if session.granted.allows(bit.key) {
+                mask |= 1 << index;
+            }
+        }
+        mask.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 fn publish_clients(window: &AppWindow, clients: &Rc<VecModel<McpClientRow>>) {
-    let rows = client_rows(window.get_lang_en());
+    let en = window.get_lang_en();
+    let sessions = crate::mcp::sessions_info();
+    let expected_rows = sessions.len() * (1 + crate::mcp::PERMISSION_BITS.len());
+    let sig = clients_signature(en, &sessions);
+    let unchanged = LAST_CLIENTS_SIG.with(|slot| slot.get() == sig)
+        && clients.row_count() == expected_rows;
+    if unchanged {
+        return;
+    }
+    let rows = session_rows(en, &sessions);
     // 行数没变就逐行更新，别整表替换（否则开关会被重建，动画丢失）。
     if clients.row_count() == rows.len() {
         for (index, row) in rows.into_iter().enumerate() {
@@ -660,15 +723,9 @@ fn publish_clients(window: &AppWindow, clients: &Rc<VecModel<McpClientRow>>) {
     let alive: HashSet<String> = rows_header_ids(clients.as_ref());
     EXPANDED_SESSIONS.with(|set| set.borrow_mut().retain(|id| alive.contains(id)));
     window.set_mcp_clients(ModelRc::from(clients.clone()));
-    // 顶部栏徽标：直接从建好的行里数 header，避免为拿计数再调一次 `sessions_info()`。
-    let online = (0..clients.row_count())
-        .filter(|index| {
-            clients
-                .row_data(*index)
-                .is_some_and(|row| row.kind == "header")
-        })
-        .count();
-    window.set_mcp_client_count(online as i32);
+    // 顶部栏徽标直接取会话数，不必再遍历一次行模型。
+    window.set_mcp_client_count(sessions.len() as i32);
+    LAST_CLIENTS_SIG.with(|slot| slot.set(sig));
 }
 
 /// 当前模型里还活着的 session id（header 行）。

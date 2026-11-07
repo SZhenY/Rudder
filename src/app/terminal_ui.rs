@@ -522,6 +522,10 @@ pub(super) fn apply_wallpaper(
                         && WALLPAPER_SEQ.load(std::sync::atomic::Ordering::SeqCst) == seq
                     {
                         w.global::<Theme>().set_wallpaper_fading(false);
+                        // 旧图只在 400ms 交叉淡化期间需要；这里不清的话，每次换壁纸都会
+                        // 永久多留一份完整图像（CPU 缓冲 + 每个显示窗口的纹理）。
+                        w.global::<Theme>()
+                            .set_wallpaper_prev(slint::Image::default());
                     }
                 });
             }
