@@ -294,7 +294,7 @@ pub(crate) fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, Lo
 /// 纯 Slint 模型几何，与平台无关 —— 之前只被 Windows 的拖放处理器用到，才挂着
 /// `#[cfg(windows)]` 躲 dead-code 警告；现在非 Windows 的拖放也走这条路径。
 pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect> {
-    // 运行状态页签没有文件列表，拖到这里不该当成上传落点。
+    // 状态页与隧道页没有文件列表，拖到这里不该当成上传落点。
     if win.get_sftp_mode().as_str() != "files" {
         return None;
     }

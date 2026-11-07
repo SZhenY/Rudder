@@ -174,6 +174,7 @@ pub(crate) fn refresh_panes(
         && window.get_active_tab_id().as_str() != fp.active.as_str()
     {
         window.set_active_tab_id(fp.active.clone().into());
+        window.invoke_refresh_sidebar();
     }
 }
 

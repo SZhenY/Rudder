@@ -141,6 +141,7 @@ pub(crate) fn open_session_tab(
         sftp_sort_key: "".into(),
         sftp_sort_dir: 0,
         sftp_available: has_sftp,
+        tunnels: ModelRc::from(Rc::new(VecModel::<TunnelInfo>::default())),
         sftp_collapsed: !has_sftp || sftp_collapsed_default,
         sftp_panel_height: sftp_h_default,
         sftp_panel_width: sftp_w_default,

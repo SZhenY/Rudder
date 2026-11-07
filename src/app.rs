@@ -498,8 +498,7 @@ pub fn run() -> Result<()> {
     // Windows the icon comes from the embedded .ico, so this is a no-op there.)
     let _ = slint::set_xdg_app_id("rudder");
 
-    // Show the crate version (from Cargo.toml at compile time) in the sidebar,
-    // so the footer never drifts out of sync with the actual build.
+    // Show the crate version (from Cargo.toml at compile time) in the About dialog.
     window.set_app_version(env!("CARGO_PKG_VERSION").into());
 
     // Set the window icon from the PNG embedded in the binary so the dock
@@ -1898,7 +1897,7 @@ fn parent_path(path: &str) -> String {
 #[cfg(test)]
 mod key_tests {
     use super::*;
-    use crate::app::key_input::redact_key;
+    use crate::app::key_input::{parse_tunnel_forward, redact_key};
 
     #[test]
     fn windows_process_key_ctrl_release_keeps_physical_side() {
@@ -2177,6 +2176,32 @@ mod key_tests {
         assert!(mixed.contains("printable redacted"));
         // Multi-byte printable chars count individually.
         assert_eq!(redact_key("密码"), "<2 printable redacted>");
+    }
+
+    #[test]
+    fn parse_tunnel_forward_validates_fields() {
+        let f = parse_tunnel_forward(
+            "local", "  web  ", " 127.0.0.1 ", "8080", "db.internal", "5432",
+        )
+        .unwrap();
+        assert_eq!(f.kind, "local");
+        assert_eq!(f.name, "web");
+        assert_eq!(f.bind_addr, "127.0.0.1");
+        assert_eq!(f.bind_port, 8080);
+        assert_eq!(f.host, "db.internal");
+        assert_eq!(f.host_port, 5432);
+
+        let d = parse_tunnel_forward(
+            "dynamic", "socks", "0.0.0.0", "1080", "", "ignored",
+        )
+        .unwrap();
+        assert_eq!(d.kind, "dynamic");
+        assert_eq!(d.host_port, 0);
+
+        assert!(parse_tunnel_forward("remote", "x", "h", "1", "h", "2").is_none());
+        assert!(parse_tunnel_forward("local", "x", "h", "abc", "h", "2").is_none());
+        assert!(parse_tunnel_forward("local", "x", "h", "8080", "h", "x").is_none());
+        assert!(parse_tunnel_forward("local", "x", "h", "65536", "h", "2").is_none());
     }
 
     #[test]

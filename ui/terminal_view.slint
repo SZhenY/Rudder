@@ -1,6 +1,6 @@
 import { Theme } from "theme.slint";
 import { AnimationSettings } from "theme.slint";
-import { SftpPanel, SftpEntry, SftpTreeNode } from "sftp_panel.slint";
+import { SftpPanel, SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { DiskInfo } from "sidebar_blocks.slint";
 import { TabInfo } from "tabs.slint";
 import { ToolStrip } from "widgets.slint";
@@ -102,6 +102,7 @@ export component TerminalView inherits Rectangle {
     in property <string> sftp-sort-key: "";
     in property <int> sftp-sort-dir: 0;
     in property <bool> sftp-available: true;
+    in property <[TunnelInfo]> tunnels: [];
     // 运行状态页签的数据（原侧栏），只做透传给 SftpPanel。
     in property <string> connection-state: @tr("Not connected");
     in property <string> conn-host;
@@ -124,7 +125,6 @@ export component TerminalView inherits Rectangle {
     in property <[DiskInfo]> disks;
     in property <bool> system-info-available;
     in property <bool> proc-available;
-    in property <string> app-version;
 
     // Per-session now (#v0.5): the AppWindow stores these in each TerminalState
     // and writes back via the set-* callbacks, so each tab/pane keeps its own SFTP
@@ -149,7 +149,7 @@ export component TerminalView inherits Rectangle {
     // --- SFTP 面板（固定在终端右侧）---------------------------------------
     // 停靠边不再可配置；`sftp-dock` / `sftp-horizontal` 是为几何公式里的四边三目
     // 保留的常量，收敛这些三目属于单独一轮改动。
-    in-out property <string> sftp-mode: "files";
+    in-out property <string> sftp-mode: "status";
     in-out property <string> sftp-dock: "right";
     property <bool> sftp-horizontal: true;
 
@@ -208,6 +208,8 @@ export component TerminalView inherits Rectangle {
     callback send-key(string, bool, bool, bool);
     callback cycle-tab(bool /* reverse */);
     callback terminal-resize(float, float);
+    callback tunnel-add(string, string, string, string, string, string);
+    callback tunnel-stop(string);
     callback sftp-navigate(string);
     callback sftp-download(string);
     callback sftp-upload-clicked(string, bool);
@@ -2027,7 +2029,7 @@ export component TerminalView inherits Rectangle {
                     if (root.sftp-dragging) {
                         if (root.sftp-horizontal) {
                             // 下限 255px = 原 300 的 85%。两行紧凑工具栏首行的固定
-                            // 控件合计约 188px（页签 2×28 + 四个 24px 按钮 + 间距 +
+                            // 控件合计约 220px（页签 3×28 + 四个 24px 按钮 + 间距 +
                             // 内边距），255 时仍有余量；再窄路径输入框就不可用了。
                             root.set-sftp-panel-width(clamp(
                                 root.sftp-dock == "right"
@@ -2089,7 +2091,7 @@ export component TerminalView inherits Rectangle {
             disks: root.disks;
             system-info-available: root.system-info-available;
             proc-available: root.proc-available;
-            app-version: root.app-version;
+            tunnels: root.tunnels;
             panel-mode <=> root.sftp-mode;
             toggle-collapsed => {
                 if (root.sftp-collapsed) {
@@ -2123,6 +2125,10 @@ export component TerminalView inherits Rectangle {
             show-system-info()  => { root.open-system-info(); }
             show-processes()    => { root.open-processes(); }
             copy-host(h)        => { root.copy-text(h); }
+            tunnel-add(name, kind, bind, bind-port, host, host-port) => {
+                root.tunnel-add(name, kind, bind, bind-port, host, host-port);
+            }
+            tunnel-stop(id)     => { root.tunnel-stop(id); }
             rename-request(path, name) => { root.sftp-rename-request(path, name); }
             chmod-request(path, name, mode) => { root.sftp-chmod-request(path, name, mode); }
             copy-path(path)     => { root.sftp-copy-path(path); }

@@ -616,7 +616,7 @@ msgid "No matching sessions"
 msgstr "无匹配会话"
 
 msgid "No tunnels"
-msgstr "无隔管"
+msgstr "无隧道"
 
 msgid "Overview"
 msgstr "概览"
@@ -679,7 +679,7 @@ msgid "Total"
 msgstr "总计"
 
 msgid "Tunnels"
-msgstr "隔管"
+msgstr "隧道"
 
 msgid "UTF-8"
 msgstr "UTF-8"

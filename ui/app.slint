@@ -30,7 +30,7 @@ import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ToolStrip, IconButton } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
-import { SftpEntry, SftpTreeNode } from "sftp_panel.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
@@ -69,7 +69,7 @@ import { RenameDialog } from "rename_dialog.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
 export { EditorFindResult }
 
-export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
+export { SessionInfo, SessionDraft, TabInfo, SftpEntry, SftpTreeNode, TunnelInfo, QuickCmd, PortFwd, TriggerDraft, WslProfileInfo }
 // P5「公共面收敛」第 1 步：把两个全局导出，Rust 才能 `window.global::<Theme>()`
 // 直接读写主题 —— 这样 AppWindow 上那 14 条 `<=> Theme.x` 镜像就不必存在了。
 export { AnimationSettings, Theme }
@@ -111,6 +111,7 @@ export struct TerminalState {
     sftp-collapsed: bool,       // SFTP panel minimised — per session (#v0.5)
     sftp-panel-height: length,  // SFTP panel extent (bottom dock) — per session
     sftp-panel-width: length,   // SFTP panel extent (side dock) — per session
+    tunnels: [TunnelInfo],      // runtime SSH tunnels (#206)
 }
 
 // One leaf pane of the split layout (v0.5). Geometry (x/y/w/h) is computed in Rust
@@ -244,35 +245,31 @@ export component AppWindow inherits Window {
     }
     // 点导航项：0 需要把当前 pane 的活动标签切回 welcome，其余只切页面。
     callback nav-select(int);
-    // 当前 SFTP 面板页签（"files" / "status"），Rust 侧用来判断是否允许文件拖放。
-    in-out property <string> sftp-mode: "files";
+    // SFTP 面板页签（"status" / "files" / "tunnels"）。默认 status；Rust 仅在 files 时把面板作为拖放落点。
+    in-out property <string> sftp-mode: "status";
     // 导航宽度：展开 200px，收起 54px 图标条。
     // 54 是算出来的：两侧各 8px 留白 → 行宽 38px，(38 − 18) / 2 = 10px，
     // 正好与 `NavRow` 里图标的 `x: 10px` 相等，图标在高亮框里像素级居中。
     // out 供 Rust 计算鼠标命中区。
     out property <length> nav-width: root.sidebar-collapsed ? 54px : 200px;
 
-    // 导航切页：淡出 → 换页 → 淡入，与设置页 `InterfacePanel` 同一套路。
-    //
-    // 页面是 `if` / `visible` 切换的，没有两页并存的交叉淡化空间；改成让**常驻的
-    // 内容容器**（`quick-area`）淡出，换完页再淡入。导航高亮跟着点击即时走，
-    // 不等这 150ms —— 点下去就有反馈，内容随后落位。
-    property <int> nav-pending: 0;
+    // 导航切页只做一次短淡入：换页即时落位，nav-fade 从 0.85 回到 1。
     property <float> nav-fade: 1.0;
     property <bool> nav-swapping: false;
-    /// 导航高亮跟**点击**即时走，不等 150ms 的淡出 —— 与设置页 `InterfacePanel`
-    /// 的 `nav-page` 同口径。`NavPanel` 的 `current-page` 绑这个值。
-    property <int> nav-highlight: root.nav-swapping ? root.nav-pending : root.nav-page;
+    /// 导航高亮跟点击即时走。`NavPanel` 的 `current-page` 绑这个值。
+    property <int> nav-highlight: root.nav-page;
 
     function nav-goto(p: int) {
-        // 与"目标页"比较而不是与 `nav-page`：淡出途中再点另一项时，
-        // `nav-page` 还是旧值，拿它比较会把这次点击吞掉。
-        if (p == root.nav-highlight) {
+        // 与已落位的 nav-page 比较：连点两个不同项时第二次不会被吞掉。
+        if (p == root.nav-page) {
             return;
         }
-        root.nav-pending = p;
-        root.nav-fade = 0.0;
-        root.nav-swapping = true;
+        root.nav-page = p;
+        root.nav-select(p);
+        if (AnimationSettings.enabled) {
+            root.nav-swapping = true;
+            root.nav-fade = 0.85;
+        }
     }
 
     // The top-right toolbar icons float over the tab row; when the quick-command
@@ -678,6 +675,12 @@ export component AppWindow inherits Window {
     in property <string> conn-popup-host: "";
     in property <string> conn-popup-detail: "";
     in property <string> conn-popup-tab: "";
+    // 握手期三类提示打开时让位，关掉后自动恢复；open 与自动关闭定时器共用。
+    property <bool> conn-popup-visible:
+        root.conn-popup-open
+        && !root.hostkey-prompt-open
+        && !root.cred-prompt-open
+        && !root.mfa-prompt-open;
     in property <string> update-notes: "";            // 发布说明（Rust 侧已清洗 + 截断）
     in property <string> update-current-version: "";  // 形如 "v0.7.9"
     in property <string> update-badge: "";            // 通道徽章：正式版 / 测试版
@@ -878,6 +881,10 @@ export component AppWindow inherits Window {
     // Notifies Rust of a PTY resize (pixel dimensions; Rust converts to cols/rows).
     callback terminal-resize(string /* tab-id */, float /* width-px */, float /* height-px */);
 
+    // 运行时隧道表单：带 tab-id 转给对应会话。
+    callback tunnel-add(string /* tab-id */, string /* name */, string /* kind */, string /* bind */, string /* bind-port */, string /* host */, string /* host-port */);
+    callback tunnel-stop(string /* tab-id */, string /* tunnel-id */);
+
     // --- SFTP callbacks ---------------------------------------------------
     // Navigate to a new remote directory (or ".." to go up).
     callback sftp-navigate(string /* tab-id */, string /* path */);
@@ -1003,16 +1010,14 @@ export component AppWindow inherits Window {
         win-minimize() => { root.win-minimize(); }
     }
 
-    // 切页定时器：等淡出走完再换页，然后淡入。动效关闭时间隔归零，不白等。
-    // `running` 绑在 nav-swapping 上，到点置回 false 即停表。
+    // 切页定时器：等一帧让 nav-fade 低值生效，再触发淡入。
+    // 先关 nav-swapping 再改 nav-fade，否则淡出动画会重新出现。
     nav-swap-timer := Timer {
-        interval: AnimationSettings.enabled ? AnimationSettings.exit-page() : 1ms;
+        interval: 1ms;
         running: root.nav-swapping;
         triggered => {
-            root.nav-page = root.nav-pending;
-            root.nav-select(root.nav-pending);
-            root.nav-fade = 1.0;
             root.nav-swapping = false;
+            root.nav-fade = 1.0;
         }
     }
 
@@ -1079,8 +1084,8 @@ export component AppWindow inherits Window {
             root.quick-panel-dock == "bottom" ? dock-area.quick-outer-strip : 0px;
 
         if dock-area.quick-outer-strip > 0px : ToolStrip {
-            // 与展开态面板同底（`QuickDockPanel` 用 `bg-root`），否则折叠/展开切换会跳一档色。
-            background: Theme.bg-root;
+            // 与展开态面板同底（`QuickDockPanel` 用 `term-bg`），否则折叠/展开切换会跳一档色。
+            background: Theme.term-bg;
             x: root.quick-panel-dock == "right" ? parent.width - parent.quick-outer-strip : 0px;
             y: root.quick-panel-dock == "bottom" ? parent.height - parent.quick-outer-strip : 0px;
             width: parent.quick-outer-horizontal ? parent.quick-outer-strip : parent.width;
@@ -1101,6 +1106,17 @@ export component AppWindow inherits Window {
         height: parent.height
             - parent.quick-top - parent.quick-bottom;
 
+        // 切页过渡底板：只在淡入期间压住壁纸，静态不绘制。
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            background: Theme.term-bg;
+            opacity: 1.0 - root.nav-fade;
+            visible: root.nav-fade < 0.999;
+        }
+
         // Tabs + terminal content. Clipped so the terminal / SFTP panel can never
         // bleed (visually or for clicks) onto the right-hand quick-command panel.
         quick-area := Rectangle {
@@ -1109,14 +1125,14 @@ export component AppWindow inherits Window {
             width: parent.width;
             height: parent.height;
             clip: true;
-            // 导航切页的淡出 / 淡入（与设置页 `InterfacePanel` 同一套路）。
+            // 导航切页只做短淡入：nav-swapping 期间关掉动画，让 nav-fade 瞬落低值。
             // 不做缩放：`quick-area` 是 clip 容器，缩小会先露出容器外的空白；
             // 终端文字在缩放中还会重光栅化发虚。
             opacity: root.nav-fade;
             animate opacity {
-                duration: root.nav-swapping ? AnimationSettings.exit-page() : AnimationSettings.enter-page();
-                easing: root.nav-swapping ? AnimationSettings.e-exit() : AnimationSettings.e-enter();
-                enabled: AnimationSettings.enabled;
+                duration: AnimationSettings.short4();
+                easing: AnimationSettings.e-enter();
+                enabled: AnimationSettings.enabled && !root.nav-swapping;
             }
             property <bool> quick-horizontal:
                 root.quick-panel-dock == "left" || root.quick-panel-dock == "right";
@@ -1135,7 +1151,7 @@ export component AppWindow inherits Window {
             }
             property <length> quick-w: root.quick-panel-width * (1 - quick-progress);
             property <length> quick-h: root.quick-panel-height * (1 - quick-progress);
-            property <length> quick-sp: 2px * (1 - quick-progress);
+            property <length> quick-sp: 0px;
 
             central := Rectangle {
             x: parent.quick-shown && root.quick-panel-dock == "left" ? parent.quick-w + parent.quick-sp : 0px;
@@ -1282,6 +1298,7 @@ export component AppWindow inherits Window {
                     set-sftp-collapsed(v) => { root.set-pane-sftp-collapsed(term.id, v); }
                     sftp-path: term.sftp-path;
                     sftp-entries: term.sftp-entries;
+                    tunnels: term.tunnels;
                     sftp-status: term.sftp-status;
                     sftp-loading: term.sftp-loading;
                     sftp-tree-nodes: term.sftp-tree-nodes;
@@ -1311,7 +1328,6 @@ export component AppWindow inherits Window {
                     disks: root.disks;
                     system-info-available: root.system-info-available;
                     proc-available: root.proc-available;
-                    app-version: root.app-version;
                     quick-commands: root.quick-commands;
                     quick-sidebar-enabled: root.quick-commands-as-sidebar;
                     // Quick 入口按钮只在「快捷命令侧栏未开启」时显示。
@@ -1328,6 +1344,10 @@ export component AppWindow inherits Window {
                     history-view: root.history-view;
                     history-preview: root.history-preview;
                     run-command(cmd, all) => { root.run-command(term.id, cmd, all); }
+                    tunnel-add(name, kind, bind, bind-port, host, host-port) => {
+                        root.tunnel-add(term.id, name, kind, bind, bind-port, host, host-port);
+                    }
+                    tunnel-stop(id) => { root.tunnel-stop(term.id, id); }
                     copy-text(t) => { root.copy-text(t); }
                     select-net-iface(i) => { root.select-net-iface(i); }
                     open-system-info() => { root.open-system-info(); }
@@ -1546,7 +1566,7 @@ export component AppWindow inherits Window {
              : 0px;
             width: parent.quick-horizontal ? 2px : parent.width;
             height: parent.quick-horizontal ? parent.height : 2px;
-            background: quick-split-ta.has-hover ? Theme.accent : Theme.border-subtle;
+            background: quick-split-ta.has-hover ? Theme.accent : transparent;
             animate background {
                 duration: quick-split-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
                 easing: quick-split-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
@@ -2091,7 +2111,7 @@ export component AppWindow inherits Window {
 
     // --- 连接状态弹窗 -------------------------------------------------------
     ConnStatusDialog {
-        open: root.conn-popup-open;
+        open: root.conn-popup-visible;
         phase: root.conn-popup-phase;
         host: root.conn-popup-host;
         detail: root.conn-popup-detail;
@@ -2102,7 +2122,7 @@ export component AppWindow inherits Window {
     // 失败（phase 2）不自动关 —— 等用户读完原因手动关。
     conn-auto-close := Timer {
         interval: AnimationSettings.enabled ? 900ms : 1ms;
-        running: root.conn-popup-open && root.conn-popup-phase == 1;
+        running: root.conn-popup-visible && root.conn-popup-phase == 1;
         triggered => { root.conn-popup-open = false; }
     }
 

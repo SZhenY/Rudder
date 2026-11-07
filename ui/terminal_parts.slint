@@ -13,7 +13,6 @@ import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
 import { IconText } from "components/text.slint";
 import { Label } from "components/text.slint";
-import { Divider } from "components/surfaces.slint";
 
 // One saved quick command (#55): a name shown on the chip + the text to send.
 // Grouped like the welcome session list: group-header is non-empty on the first
@@ -82,18 +81,15 @@ export component QuickDockPanel inherits Rectangle {
     callback manage();
     callback close();
 
-    // 与内容区同档（`bg-root`：alpha = panel-alpha − 0.44），让主窗口的壁纸透上来。
-    // 原先是 `bg-panel`（alpha = panel-alpha），压在裸壁纸上是一块实色板，与页面割裂。
-    background: Theme.bg-root;
-    border-width: 1px;
-    border-color: Theme.border-subtle;
+    // 与终端内容区同底（term-bg），右侧连成一整块连续板。
+    background: Theme.term-bg;
     clip: true;
 
     VerticalLayout {
         spacing: 0;
         Rectangle {
             height: 34px;
-            background: Theme.bg-root;
+            background: transparent;
             HorizontalLayout {
                 padding-left: 8px; padding-right: 4px; spacing: 6px;
                 IconText {
@@ -126,8 +122,6 @@ export component QuickDockPanel inherits Rectangle {
                 }
             }
         }
-        // 表头与外层同色后需要一条 1px 线分隔（原先靠底色差区分）。
-        Divider {}
 
         Flickable {
             vertical-stretch: 1;
@@ -204,11 +198,9 @@ export component QuickDockPanel inherits Rectangle {
             }
         }
 
-        // 底栏与列表同色，同样需要一条 1px 线。
-        Divider {}
         Rectangle {
             height: 32px;
-            background: manage-ta.has-hover ? Theme.state-hover : Theme.bg-root;
+            background: manage-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
                 duration: manage-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
                 easing: manage-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();

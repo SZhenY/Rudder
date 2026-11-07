@@ -3,7 +3,6 @@
 //! 只保留竖排形态。面板的收起与宽度由容器负责，这里只拼数据块；
 //! 内容超出面板高度时整页滚动。
 
-import { Theme } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Divider } from "components/surfaces.slint";
 import { StatusBlock, StatsBlock, NetBlock, DiskBlock, DiskInfo } from "sidebar_blocks.slint";
@@ -30,7 +29,6 @@ export component ResourceView inherits Rectangle {
     in property <[DiskInfo]> disks;
     in property <bool> system-info-available;        // connected Linux session only (#268)
     in property <bool> proc-available;               // a live remote session → process button (#23)
-    in property <string> app-version;
 
     callback select-net-iface(string);
     callback show-system-info();
@@ -85,12 +83,6 @@ export component ResourceView inherits Rectangle {
                 vertical-stretch: 1;
                 min-height: 140px;
                 disks: root.disks;
-            }
-            Text {
-                text: "Rudder v" + root.app-version;
-                color: Theme.text-muted;
-                font-size: Theme.fs-xs;
-                horizontal-alignment: center;
             }
         }
     }
