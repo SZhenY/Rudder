@@ -250,6 +250,8 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
 
 /// 打开设置窗口：播种主窗口当前值 → 同步主题 → `show()` → 首帧补救三连。
 pub(super) fn open_settings_window(m: &AppWindow, sw: &SettingsWindow) {
+    // 开窗算一次活动，作废已排期的归还工作集。
+    super::mem::note_activity();
     // 字体选择器列表首次打开才构建：`fontdb` 要扫描全部系统字体，启动期不需要。
     // 必须在 `seed_settings_window` 之前，后者从主窗口拷贝这批属性。
     super::settings_ui::ensure_font_pickers(m);
@@ -272,13 +274,20 @@ pub(super) fn open_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_mcp_token_visible(false);
     sync_settings_theme(m, sw);
     let _ = sw.show();
+    // 摆到主窗口正中；必须 `show()` 之后，那时才有 `outer_size`。
+    super::resource_ui::place_settings_window(m, sw);
     sw.window().with_winit_window(|ww| ww.focus_window());
     // 首帧：0 / 50 / 200ms 各请求一次（首次可能早于窗口映射完成而被 winit 丢弃）。
     request_first_frame(sw.window());
     keep_only_close_button(sw.window());
     let f1 = sw.as_weak();
+    let m1 = m.as_weak();
     Timer::single_shot(Duration::from_millis(50), move || {
         if let Some(w) = f1.upgrade() {
+            // 再校一次：`show()` 当下的 `outer_size` 可能还是请求值。
+            if let Some(m) = m1.upgrade() {
+                super::resource_ui::place_settings_window(&m, &w);
+            }
             request_first_frame(w.window());
             // 首帧补救的同时再藏一次：`show()` 当下窗口可能还没映射完，
             // 那一刻取不到 `NSWindow`（取不到就跳过，所以这里补两轮）。
@@ -294,10 +303,14 @@ pub(super) fn open_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     });
 }
 
-/// 关闭设置窗口。窗口**只隐藏不销毁** —— 所以没有 `#323/#343` 那类
-/// "在事件派发栈上销毁子树"的风险；下次打开 `show()` 即可。
+/// 关闭设置窗口。销毁由 `sub_windows::release_settings` 完成。
 pub(super) fn close_settings_window(sw: &SettingsWindow) {
     let _ = sw.hide();
+}
+
+/// 清掉登记表里的弱引用。
+pub(super) fn forget_handle() {
+    SETTINGS_WEAK.with(|slot| *slot.borrow_mut() = None);
 }
 
 /// 主窗口关闭 / 退出时，把设置窗口一起收掉（不需要持有句柄，走登记表）。

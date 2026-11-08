@@ -421,6 +421,9 @@ const AUXILIARY_CHANNEL_TIMEOUT: std::time::Duration = std::time::Duration::from
 /// `channel.wait()` 会一直挂着（会话假死）。
 const AUX_OPEN_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// 会话收尾（`eof` / `disconnect`）的等待上限，网络半死时不再一直挂着。
+const CLOSE_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
 async fn auxiliary_timeout<F, T>(
     timeout: std::time::Duration,
     future: F,
@@ -2836,7 +2839,7 @@ async fn run_session(
                         );
                     }
                     Some(SessionCommand::Close) | None => {
-                        let _ = channel.eof().await;
+                        let _ = tokio::time::timeout(CLOSE_GRACE, channel.eof()).await;
                         break;
                     }
                 }
@@ -3402,9 +3405,20 @@ async fn run_session(
     }
     let _ = events.send(SessionEvent::TunnelUpdate(Vec::new()));
 
-    let _ = handle
-        .disconnect(Disconnect::ByApplication, "bye", "")
-        .await;
+    // 网络半死时 `disconnect` 等不到确认，超时直接放弃。
+    if tokio::time::timeout(
+        CLOSE_GRACE,
+        handle.disconnect(Disconnect::ByApplication, "bye", ""),
+    )
+    .await
+    .is_err()
+    {
+        tracing::warn!(
+            "ssh disconnect timed out ({}@{})",
+            session.user,
+            session.host
+        );
+    }
     // The shell pump loop only exits when the channel closes / EOFs (incl. a
     // peer/bastion-initiated disconnect), so record it for #86 diagnostics.
     tracing::warn!("ssh connection closed ({}@{})", session.user, session.host);

@@ -858,7 +858,14 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                         if duplicate {
                             continue;
                         }
-                        applied.borrow_mut().insert(tab.clone(), (cols, rows));
+                        {
+                            // 只做去重，不清理；够长就整体丢弃（代价是重下发一次尺寸）。
+                            let mut applied_map = applied.borrow_mut();
+                            if applied_map.len() >= 256 && !applied_map.contains_key(&tab) {
+                                applied_map.clear();
+                            }
+                            applied_map.insert(tab.clone(), (cols, rows));
+                        }
                         tracing::debug!("terminal_resize tab={} cols={} rows={}", tab, cols, rows);
                         apply_terminal_resize(&handles, &bufs, &last, &tab, cols, rows);
                         // Re-render so the reflowed (or resized) grid shows at once

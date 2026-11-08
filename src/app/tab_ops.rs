@@ -61,6 +61,8 @@ pub(crate) fn open_session_tab(
     let session_id = session.id.clone();
     let tab_id = format!("term-{}", uuid::Uuid::new_v4());
     let tab_title = session.name.clone();
+    // 新标签算一次活动：刚排期的"归还工作集"就此作废，免得刚建连就缺页。
+    crate::app::mem::note_activity();
 
     // Connection label shown in the connection-status dialog, per transport.
     let conn_label = conn_label(&session);
@@ -203,8 +205,6 @@ pub(crate) fn close_tab(env: &TabEnv<'_>, id: &str) -> bool {
     }
     // Drop any display-name override so a fresh connect starts clean.
     env.tab_titles.borrow_mut().remove(id);
-    // 这条会话缓存的凭据（含口令）只在本次连接内有效，关标签即释放。
-    crate::app::auth_dialogs::forget_session_credential(id);
     if let Some(handle) = env.handles.borrow_mut().remove(id) {
         handle.close();
     }
@@ -240,9 +240,19 @@ pub(crate) fn close_tab(env: &TabEnv<'_>, id: &str) -> bool {
     // The status entry carries the tab's process list, network history and disk
     // rows. Nothing else in the app removes one, so leaving it behind would
     // retain all of that for the rest of the process run.
-    if let Ok(mut statuses) = env.tab_statuses.lock() {
-        statuses.remove(id);
+    //
+    // 凭据表按 session_id 存，用状态里的 session_id 清掉。
+    let session_id = env
+        .tab_statuses
+        .lock()
+        .ok()
+        .and_then(|mut statuses| statuses.remove(id))
+        .map(|status| status.session_id);
+    if let Some(session_id) = session_id {
+        crate::app::auth_dialogs::forget_session_credential(&session_id);
     }
+    // 没有状态条目时按 tab_id 兜底。
+    crate::app::auth_dialogs::forget_session_credential(id);
 
     // Remove from tabs + terminals models.
     let tab_index = (0..env.tabs_model.row_count()).find(|index| {
@@ -273,5 +283,9 @@ pub(crate) fn close_tab(env: &TabEnv<'_>, id: &str) -> bool {
         env.panes_model,
         env.splitters_model,
     );
+    // 页仍留在 NT 堆段里，安静几秒后归还工作集。
+    if tab_index.is_some() {
+        crate::app::mem::trim_after_close();
+    }
     tab_index.is_some()
 }

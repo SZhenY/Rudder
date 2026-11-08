@@ -380,6 +380,64 @@ pub(super) fn place_process_window(main: &AppWindow, process: &ProcWindow) {
     });
 }
 
+/// 设置窗口居中：优先与主窗口同心，主窗口贴边放不下时退回屏幕正中。
+/// 按物理像素算（`outer_size` / `outer_position` 同一坐标系），跨 DPI 屏也成立。
+pub(super) fn place_settings_window(main: &AppWindow, sw: &SettingsWindow) {
+    use i_slint_backend_winit::winit::dpi::PhysicalPosition;
+
+    const EDGE: i32 = 8;
+
+    // 主窗口外框 + 所在屏幕；最小化后 `outer_position` 是哨兵值，跳过。
+    // 闭包不能把借用带出来 → 只取数字。
+    let Some((parent, monitor)) = main.window().with_winit_window(|ww| {
+        let parent = if ww.is_minimized().unwrap_or(false) {
+            None
+        } else {
+            ww.outer_position().ok().map(|p| {
+                let size = ww.outer_size();
+                (p.x, p.y, size.width as i32, size.height as i32)
+            })
+        };
+        let monitor = ww
+            .current_monitor()
+            .or_else(|| ww.primary_monitor())
+            .map(|m| {
+                let pos = m.position();
+                let size = m.size();
+                (pos.x, pos.y, size.width as i32, size.height as i32)
+            });
+        (parent, monitor)
+    }) else {
+        return;
+    };
+    let Some((mon_x, mon_y, mon_w, mon_h)) = monitor else {
+        return;
+    };
+
+    sw.window().with_winit_window(|ww| {
+        let size = ww.outer_size();
+        let (w, h) = (size.width as i32, size.height as i32);
+        // 屏幕正中；屏幕比窗口还小时贴左上角，不做负偏移。
+        let fallback = (
+            mon_x + (mon_w - w).max(0) / 2,
+            mon_y + (mon_h - h).max(0) / 2,
+        );
+        let (x, y) = match parent {
+            Some((px, py, pw, ph)) => {
+                let (cx, cy) = (px + (pw - w) / 2, py + (ph - h) / 2);
+                let inside = cx >= mon_x + EDGE
+                    && cy >= mon_y + EDGE
+                    && cx + w <= mon_x + mon_w - EDGE
+                    && cy + h <= mon_y + mon_h - EDGE;
+                if inside { (cx, cy) } else { fallback }
+            }
+            None => fallback,
+        };
+        // 位置只能走 winit（Slint 没有这个 API）。
+        ww.set_outer_position(PhysicalPosition::new(x, y));
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

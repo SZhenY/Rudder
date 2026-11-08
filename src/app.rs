@@ -208,6 +208,7 @@ mod fonts_ui;
 mod updater;
 mod update_net;
 mod sampler;
+mod mem;
 mod settings;
 mod settings_ui;
 mod settings_window;

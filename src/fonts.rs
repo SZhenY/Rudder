@@ -107,36 +107,47 @@ pub(crate) fn family_names_in(font_path: &Path) -> Vec<String> {
     names
 }
 
+/// 系统字体家族名单：`(等宽, 全部)`。开一次设置要建两个选择器，扫描结果缓存一份，
+/// 不再各扫一遍 `load_system_fonts()`（一次运行内系统字体不会变）。
+static SYSTEM_FAMILY_LISTS: std::sync::OnceLock<(Vec<String>, Vec<String>)> =
+    std::sync::OnceLock::new();
+
+fn system_family_lists() -> &'static (Vec<String>, Vec<String>) {
+    SYSTEM_FAMILY_LISTS.get_or_init(|| {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        let mut mono: Vec<String> = Vec::new();
+        let mut all: Vec<String> = Vec::new();
+        for face in db.faces() {
+            let Some((name, _)) = face.families.first() else {
+                continue;
+            };
+            all.push(name.clone());
+            if face.monospaced {
+                mono.push(name.clone());
+            }
+        }
+        for names in [&mut mono, &mut all] {
+            names.sort_unstable();
+            names.dedup();
+        }
+        (mono, all)
+    })
+}
+
 /// Monospace families installed on the system, for the Settings font picker.
 /// Sorted, deduplicated. Slint's fontique collection already contains the
 /// system fonts, so choosing one only sets the family name — no registration
 /// needed.
 pub(crate) fn system_monospace_families() -> Vec<String> {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
-    let mut names: Vec<String> = db
-        .faces()
-        .filter(|f| f.monospaced)
-        .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
-        .collect();
-    names.sort();
-    names.dedup();
-    names
+    system_family_lists().0.clone()
 }
 
 /// All families installed on the system (not limited to monospace), for the
 /// UI font picker. The UI can use proportional fonts since its text is
 /// naturally laid out (not grid-aligned like terminal cells).
 pub(crate) fn system_families() -> Vec<String> {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
-    let mut names: Vec<String> = db
-        .faces()
-        .filter_map(|f| f.families.first().map(|(n, _)| n.clone()))
-        .collect();
-    names.sort();
-    names.dedup();
-    names
+    system_family_lists().1.clone()
 }
 
 /// Ensure the fonts dir exists and register every font file in it with

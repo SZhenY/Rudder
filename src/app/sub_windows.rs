@@ -436,7 +436,10 @@ pub(super) fn release_settings() {
     let sw = SETTINGS.with(|slot| slot.borrow_mut().take());
     if let Some(sw) = sw {
         let _ = sw.hide();
+        super::settings_window::forget_handle();
         drop_after_tick(KIND_SETTINGS, PendingWindow::Settings(sw));
+        // 整套 wgpu 设备已随窗口销毁，安静几秒后把工作集还给系统。
+        super::mem::trim_after_close();
     }
 }
 
