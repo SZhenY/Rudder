@@ -101,8 +101,7 @@ pub(super) fn debounced_save(store: &Store) {
     PENDING_FLUSH.with(|slot| *slot.borrow_mut() = Some(timer));
 }
 
-/// 字体选择器的条目表。枚举系统字体（fontdb）代价不低，所以启动时算一次，
-/// 「还原本页默认」需要把 family 反查回选择器索引时复用它 —— 不能每次重枚举。
+/// 字体选择器条目表，首次打开设置页时构建并缓存。
 #[derive(Clone)]
 pub(super) struct FontCatalog {
     pub(super) term: Rc<Vec<FontEntry>>,

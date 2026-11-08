@@ -1,5 +1,11 @@
 use super::*;
 
+thread_local! {
+    /// HOSTKEY_DECIDED 的插入顺序，用于到上限时淘汰最旧一条。
+    static HOSTKEY_ORDER: std::cell::RefCell<std::collections::VecDeque<String>> =
+        const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
 /// 会话关闭时清掉该会话缓存的凭据（含口令），避免运行期只增不减。
 pub(crate) fn forget_session_credential(session_id: &str) {
     CRED_DECIDED.with(|d| {
@@ -109,11 +115,26 @@ pub(super) fn resolve_front_hostkey(win: &AppWindow, accept: bool) {
                 HOSTKEY_DECIDED.with(|d| {
                     let mut map = d.borrow_mut();
                     // 按 host:port 记忆的运行期缓存：只增不减会攒下所有连过的机器。
-                    // 到上限整体作废，代价只是重新确认一次。
-                    if map.len() >= 64 && !map.contains_key(&key) {
-                        map.clear();
+                    // 到上限只淘汰最旧一条。
+                    if !map.contains_key(&key) {
+                        if map.len() >= 64 {
+                            // 跳过已移除的键。
+                            let victim = HOSTKEY_ORDER.with(|order| {
+                                let mut order = order.borrow_mut();
+                                while let Some(oldest) = order.pop_front() {
+                                    if map.contains_key(&oldest) {
+                                        return Some(oldest);
+                                    }
+                                }
+                                None
+                            });
+                            if let Some(victim) = victim {
+                                map.remove(&victim);
+                            }
+                        }
+                        map.insert(key.clone(), true);
+                        HOSTKEY_ORDER.with(|order| order.borrow_mut().push_back(key));
                     }
-                    map.insert(key, true);
                 });
             }
             for r in &p.responders {

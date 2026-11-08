@@ -1349,13 +1349,14 @@ fn fetch_changelog(tag: &str) -> Option<String> {
         .timeout(std::time::Duration::from_secs(15))
         .send()
     {
-        Ok(resp) => {
-            let mut text = String::new();
-            resp.take(MAX_CHANGELOG_BODY)
-                .read_to_string(&mut text)
-                .ok()
-                .map(|_| text)
-        }
+        Ok(resp) => match read_body_capped(resp, MAX_CHANGELOG_BODY, "changelog") {
+            // 与 releases 共用有上限读取，超限报错而非静默截断。
+            Ok(text) => Some(text),
+            Err(e) => {
+                tracing::debug!("update notes: {e:#}");
+                None
+            }
+        },
         Err(e) => {
             tracing::debug!(
                 "update notes: fetching CHANGELOG failed: {}",

@@ -48,9 +48,7 @@ pub(super) fn sync_wallpaper_ramp(main: &AppWindow) {
 
 /// 设置窗口是否真的可见。
 ///
-/// 这里判的是**可见性**而不是"窗口对象是否存在"：设置在启动时就建好并常驻，
-/// 用 `is_some()` 会让后台 1 Hz 的 MCP 刷新永远跳过不了重活（配置序列化 +
-/// 20 多项回显）。最小化时 `is_visible()` 也是 false，恢复后下一拍补齐。
+/// 判可见性：hide 后对象仍在，跳过后台 1 Hz 的重活。
 pub(super) fn is_open() -> bool {
     SETTINGS_WEAK.with(|s| {
         s.borrow()

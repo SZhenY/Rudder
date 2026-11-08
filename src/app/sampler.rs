@@ -11,6 +11,12 @@ use crate::ui::AppWindow;
 
 use super::{push_ring, refresh_sidebar, WinActivity};
 
+thread_local! {
+    /// 1 Hz 系统采样定时器，显式持有以保活。
+    static SYSTEM_SAMPLER_TIMER: std::cell::RefCell<Option<slint::Timer>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// Spawn the 1 Hz system sampler: refreshes CPU/mem/swap and both network
 /// graphs for the resource status page. Backs off to ~5 s when the window is
 /// unfocused and pauses entirely while hidden.
@@ -91,9 +97,7 @@ pub(crate) fn spawn_system_sampler(
             );
         },
     );
-    // Keep the timer alive for the entire event loop by parking it on a
-    // leaked Box. Slint timers drop themselves on Drop, and we don't want
-    // that here.
-    Box::leak(Box::new(timer));
+    // 存入 thread_local 保活。
+    SYSTEM_SAMPLER_TIMER.with(|slot| *slot.borrow_mut() = Some(timer));
 
 }

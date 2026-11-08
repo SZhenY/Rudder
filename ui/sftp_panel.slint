@@ -45,6 +45,40 @@ export struct TunnelInfo {
     active: bool,
 }
 
+// PanelTab — 三个页签的共用组件。
+
+component PanelTab inherits Rectangle {
+    in property <string> mode;
+    in property <string> panel-mode;
+    in property <bool> narrow;
+    in property <length> tab-width;
+    in property <string> glyph;
+    in property <string> label;
+    callback activate();
+
+    width: root.narrow ? 28px : root.tab-width;
+    height: 22px;
+    border-radius: Theme.radius-sm;
+    background: root.panel-mode == root.mode ? Theme.accent : (tab-ta.has-hover ? Theme.state-hover : transparent);
+    animate background {
+        duration: root.panel-mode == root.mode ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: root.panel-mode == root.mode ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    tab-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.activate(); }
+    }
+    Text {
+        text: root.narrow ? root.glyph : root.label;
+        font-family: root.narrow ? "Material Icons" : Theme.ui-font-family;
+        color: root.panel-mode == root.mode ? #ffffff : Theme.text-secondary;
+        font-size: Theme.fs-xs;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // SftpPanel — left directory tree + right file listing
 // ---------------------------------------------------------------------------
@@ -195,74 +229,32 @@ export component SftpPanel inherits Rectangle {
                 padding-bottom: 6px;
                 spacing: 4px;
 
-                Rectangle {
-                    width: root.narrow-toolbar ? 28px : 64px;
-                    height: 22px;
-                    border-radius: Theme.radius-sm;
-                    background: root.panel-mode == "status" ? Theme.accent : (status-tab-ta.has-hover ? Theme.state-hover : transparent);
-                    animate background {
-                        duration: root.panel-mode == "status" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                        easing: root.panel-mode == "status" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                        enabled: AnimationSettings.enabled;
-                    }
-                    status-tab-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.panel-mode = "status"; }
-                    }
-                    Text {
-                        text: root.narrow-toolbar ? "\u{E871}" : @tr("Status");
-                        font-family: root.narrow-toolbar ? "Material Icons" : Theme.ui-font-family;
-                        color: root.panel-mode == "status" ? #ffffff : Theme.text-secondary;
-                        font-size: Theme.fs-xs;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                PanelTab {
+                    mode: "status";
+                    panel-mode: root.panel-mode;
+                    narrow: root.narrow-toolbar;
+                    tab-width: 64px;
+                    glyph: "\u{E871}";
+                    label: @tr("Status");
+                    activate() => { root.panel-mode = "status"; }
                 }
-                Rectangle {
-                    width: root.narrow-toolbar ? 28px : 48px;
-                    height: 22px;
-                    border-radius: Theme.radius-sm;
-                    background: root.panel-mode == "files" ? Theme.accent : (files-tab-ta.has-hover ? Theme.state-hover : transparent);
-                    animate background {
-                        duration: root.panel-mode == "files" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                        easing: root.panel-mode == "files" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                        enabled: AnimationSettings.enabled;
-                    }
-                    files-tab-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.panel-mode = "files"; }
-                    }
-                    Text {
-                        text: root.narrow-toolbar ? "\u{E2C7}" : "SFTP";
-                        font-family: root.narrow-toolbar ? "Material Icons" : Theme.ui-font-family;
-                        color: root.panel-mode == "files" ? #ffffff : Theme.text-secondary;
-                        font-size: Theme.fs-xs;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                PanelTab {
+                    mode: "files";
+                    panel-mode: root.panel-mode;
+                    narrow: root.narrow-toolbar;
+                    tab-width: 48px;
+                    glyph: "\u{E2C7}";
+                    label: "SFTP";
+                    activate() => { root.panel-mode = "files"; }
                 }
-                Rectangle {
-                    width: root.narrow-toolbar ? 28px : 58px;
-                    height: 22px;
-                    border-radius: Theme.radius-sm;
-                    background: root.panel-mode == "tunnels" ? Theme.accent : (tunnels-tab-ta.has-hover ? Theme.state-hover : transparent);
-                    animate background {
-                        duration: root.panel-mode == "tunnels" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                        easing: root.panel-mode == "tunnels" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                        enabled: AnimationSettings.enabled;
-                    }
-                    tunnels-tab-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.panel-mode = "tunnels"; }
-                    }
-                    Text {
-                        text: root.narrow-toolbar ? "\u{E0B6}" : @tr("Tunnels");
-                        font-family: root.narrow-toolbar ? "Material Icons" : Theme.ui-font-family;
-                        color: root.panel-mode == "tunnels" ? #ffffff : Theme.text-secondary;
-                        font-size: Theme.fs-xs;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                PanelTab {
+                    mode: "tunnels";
+                    panel-mode: root.panel-mode;
+                    narrow: root.narrow-toolbar;
+                    tab-width: 58px;
+                    glyph: "\u{E0B6}";
+                    label: @tr("Tunnels");
+                    activate() => { root.panel-mode = "tunnels"; }
                 }
 
                 // 窄工具栏：状态、SFTP、隧道三个页签在左，操作按钮靠右；路径占第二行。

@@ -130,8 +130,8 @@ fn start_system_theme_watcher(window: &AppWindow, store: &Store, bufs: &TermBuff
             crate::app::settings_window::resync_if_open(&w);
         },
     );
-    // Timer 被 drop 就停 —— 这里 `leak` 保活（与系统采样器同一套做法）。
-    Box::leak(Box::new(timer));
+    // 存入 thread_local 保活。
+    SYSTEM_THEME_TIMER.with(|slot| *slot.borrow_mut() = Some(timer));
 }
 
 thread_local! {
@@ -140,6 +140,9 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
     /// 字体选择器条目表；首次打开设置页才构建（`fontdb` 全量扫描）。
     static FONT_CATALOG: std::cell::RefCell<Option<FontCatalog>> =
+        const { std::cell::RefCell::new(None) };
+    /// 外观轮询定时器，显式持有以保活。
+    static SYSTEM_THEME_TIMER: std::cell::RefCell<Option<slint::Timer>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -502,7 +505,14 @@ pub(super) fn seed_settings(window: &AppWindow, ctx: &AppContext) {
     {
         let terminals_model = terminals_model.clone();
         window.on_set_pane_sftp_collapsed(move |tab_id: SharedString, v: bool| {
+            let id = tab_id.to_string();
             update_terminal_row(&terminals_model, &tab_id, |r| r.sftp_collapsed = v);
+            // 折叠 5 秒后断开；窗口内展开取消。
+            if v {
+                crate::sftp::schedule_sftp_release(&id);
+            } else {
+                crate::sftp::cancel_sftp_release(&id);
+            }
         });
     }
     {

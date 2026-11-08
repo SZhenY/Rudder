@@ -13,6 +13,9 @@ export component PlaceholderPage inherits Rectangle {
     height: 100%;
 
     VerticalLayout {
+        // 铺满根 Rectangle，`alignment: center` 才能在整个页面高度上垂直居中。
+        width: 100%;
+        height: 100%;
         alignment: center;
         spacing: 8px;
 

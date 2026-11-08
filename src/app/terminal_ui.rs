@@ -556,11 +556,15 @@ pub(super) fn apply_wallpaper(
             window.set_custom_wallpaper_name(name.into());
         }
         None => {
-            // 关掉壁纸：作废在途的淡化定时器，立即撤 prev 图，恢复主题深浅档。
+            // 关掉壁纸：作废在途的淡化定时器，恢复主题深浅档。
             WALLPAPER_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             window.global::<Theme>().set_wallpaper_fading(false);
             window.global::<Theme>().set_wallpaper_fade_opacity(0.0);
-            window.global::<Theme>().set_wallpaper_active(false);
+            // SEQ 递增会判废清空定时器，这里自己清两张图。
+            let theme = window.global::<Theme>();
+            theme.set_wallpaper_prev(slint::Image::default());
+            theme.set_wallpaper(slint::Image::default());
+            theme.set_wallpaper_active(false);
             window.set_current_wallpaper("".into());
             window.set_custom_wallpaper_name("".into());
             apply_dark_mode(window, bufs, theme_pref_is_dark(store));

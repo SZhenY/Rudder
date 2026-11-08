@@ -2,6 +2,13 @@ use super::window_geometry::active_sftp_path;
 use super::*;
 use crate::sftp::DownloadConflict;
 
+thread_local! {
+    /// 同 tab 的刷新去重表：`(path, 时刻)`，50ms 内合并。
+    static LAST_SFTP_REFRESH: std::cell::RefCell<
+        std::collections::HashMap<String, (String, std::time::Instant)>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 /// Ask what to do when a download would overwrite an existing local file.
 /// Returns `None` when the user cancels the download. Resolved here, in the UI
 /// thread, so the transfer task never has to block on a modal prompt.
@@ -316,6 +323,25 @@ pub(super) fn wire_sftp_callbacks(window: &AppWindow, ctx: &AppContext) {
         window.on_sftp_refresh(move |tab_id: SharedString, path: SharedString| {
             let tab_id = tab_id.to_string();
             let path = path.to_string();
+            // 合并同一帧内多 pane 的重复刷新。
+            let now = std::time::Instant::now();
+            let duplicate = LAST_SFTP_REFRESH.with(|last| {
+                let mut last = last.borrow_mut();
+                last.retain(|_, (_, at)| {
+                    now.duration_since(*at) < std::time::Duration::from_secs(2)
+                });
+                if let Some((prev_path, prev_at)) = last.get(&tab_id)
+                    && prev_path == &path
+                    && now.duration_since(*prev_at) < std::time::Duration::from_millis(50)
+                {
+                    return true;
+                }
+                last.insert(tab_id.clone(), (path.clone(), now));
+                false
+            });
+            if duplicate {
+                return;
+            }
             // 懒启动会话：展开面板/手动刷新是第一次真正需要 SFTP 的时机。
             crate::sftp::want_sftp(&tab_id, Some(path.clone()));
             if let Ok(handles) = sftp_handles.lock()

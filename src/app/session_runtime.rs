@@ -64,20 +64,88 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
     // 文件面板默认折叠的会话：先不建第二条 SSH 连接，等面板展开/手动刷新再连。
     // 默认展开的会话保持原行为（连上 PTY 后立即建 SFTP），用户无感。
     let lazy_sftp = has_sftp && ctx.store.borrow().collapse_sftp_default();
-    let (sftp_evt_rx, sftp_ready_tx) = if has_sftp {
+    let sftp_ready_tx = if has_sftp {
         let (sftp_tx, sftp_rx) = tokio::sync::mpsc::unbounded_channel::<SessionEvent>();
+        // 事件 pump 延迟到首次用到 SFTP 时才起线程。
+        type SftpRx = tokio::sync::mpsc::UnboundedReceiver<SessionEvent>;
+        let pump: crate::sftp::SftpPumpStarter = {
+            let ctx_weak = ctx.weak.clone();
+            let ctx_bufs = ctx.bufs.clone();
+            let ctx_tid = tab_id.to_string();
+            let ctx_statuses = ctx.tab_statuses.clone();
+            let ctx_local = ctx.local_snap.clone();
+            let ctx_net = ctx.local_net_hist.clone();
+            let ctx_gates = ctx.render_gates.clone();
+            std::sync::Arc::new(move |mut rx: SftpRx| {
+                let weak_sftp = ctx_weak.clone();
+                let bufs_sftp = ctx_bufs.clone();
+                let tab_id_sftp = ctx_tid.clone();
+                let statuses_sftp = ctx_statuses.clone();
+                let local_sftp = ctx_local.clone();
+                let net_sftp = ctx_net.clone();
+                let gates_sftp = ctx_gates.clone();
+                std::thread::spawn(move || {
+                    let mut drained: Vec<SessionEvent> = Vec::new();
+                    loop {
+                        match rx.blocking_recv() {
+                            None => break,
+                            Some(first) => drained.push(first),
+                        }
+                        const SFTP_DRAIN_CAP: usize = 256;
+                        while drained.len() < SFTP_DRAIN_CAP {
+                            match rx.try_recv() {
+                                Ok(evt) => drained.push(evt),
+                                Err(_) => break,
+                            }
+                        }
+                        let ui_batch: Vec<SessionEvent> = std::mem::take(&mut drained);
+                        if ui_batch.is_empty() {
+                            continue;
+                        }
+                        let weak_s = weak_sftp.clone();
+                        let tid = tab_id_sftp.clone();
+                        let bufs_s = bufs_sftp.clone();
+                        let st_s = statuses_sftp.clone();
+                        let lc_s = local_sftp.clone();
+                        let nh_s = net_sftp.clone();
+                        let gates_s = gates_sftp.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(win) = weak_s.upgrade() {
+                                for sftp_evt in ui_batch {
+                                    apply_session_event_to_window(
+                                        &win,
+                                        &tid,
+                                        sftp_evt,
+                                        &SessionResources {
+                                            bufs: &bufs_s,
+                                            gates: &gates_s,
+                                            statuses: &st_s,
+                                            local: &lc_s,
+                                            local_net_hist: &nh_s,
+                                        },
+                                    );
+                                }
+                            }
+                        });
+                    }
+                });
+            })
+        };
         if lazy_sftp {
-            crate::sftp::register_sftp_launcher(
-                tab_id,
-                ctx.runtime.handle().clone(),
-                ctx.sftp_handles.clone(),
-                ctx.sftp_last_cwd.clone(),
+            crate::sftp::register_sftp_launcher(crate::sftp::SftpLaunchParams {
+                tab_id: tab_id.to_string(),
+                runtime: ctx.runtime.handle().clone(),
+                handles: ctx.sftp_handles.clone(),
+                last_cwd: ctx.sftp_last_cwd.clone(),
                 session,
                 jump,
-                sftp_tx,
-            );
-            (Some(sftp_rx), None)
+                events: sftp_tx,
+                events_rx: sftp_rx,
+                pump_starter: pump,
+            });
+            None
         } else {
+            pump(sftp_rx);
             let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
             let sftp_runtime = ctx.runtime.clone();
             let sftp_task_runtime = sftp_runtime.clone();
@@ -93,10 +161,10 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                     handles.insert(sftp_tab_id, sftp_handle);
                 }
             });
-            (Some(sftp_rx), Some(ready_tx))
+            Some(ready_tx)
         }
     } else {
-        (None, None)
+        None
     };
 
     // --- Shell event pump (dedicated thread) ---
@@ -307,63 +375,6 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                                     statuses: &st_evt,
                                     local: &lc_evt,
                                     local_net_hist: &nh_evt,
-                                },
-                            );
-                        }
-                    }
-                });
-            }
-        });
-    }
-
-    // --- SFTP event pump (separate thread, SSH only) ---
-    if let Some(sftp_evt_rx) = sftp_evt_rx {
-        let weak_sftp = ctx.weak.clone();
-        let bufs_sftp = ctx.bufs.clone();
-        let tab_id_sftp = tab_id.to_string();
-        let statuses_sftp = ctx.tab_statuses.clone();
-        let local_sftp = ctx.local_snap.clone();
-        let net_sftp = ctx.local_net_hist.clone();
-        let gates_sftp = ctx.render_gates.clone();
-        std::thread::spawn(move || {
-            let mut sftp_rx = sftp_evt_rx;
-            let mut drained: Vec<SessionEvent> = Vec::new();
-            loop {
-                match sftp_rx.blocking_recv() {
-                    None => break,
-                    Some(first) => drained.push(first),
-                }
-                const SFTP_DRAIN_CAP: usize = 256;
-                while drained.len() < SFTP_DRAIN_CAP {
-                    match sftp_rx.try_recv() {
-                        Ok(evt) => drained.push(evt),
-                        Err(_) => break,
-                    }
-                }
-                let ui_batch: Vec<SessionEvent> = std::mem::take(&mut drained);
-                if ui_batch.is_empty() {
-                    continue;
-                }
-                let weak_s = weak_sftp.clone();
-                let tid = tab_id_sftp.clone();
-                let bufs_s = bufs_sftp.clone();
-                let st_s = statuses_sftp.clone();
-                let lc_s = local_sftp.clone();
-                let nh_s = net_sftp.clone();
-                let gates_s = gates_sftp.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(win) = weak_s.upgrade() {
-                        for sftp_evt in ui_batch {
-                            apply_session_event_to_window(
-                                &win,
-                                &tid,
-                                sftp_evt,
-                                &SessionResources {
-                                    bufs: &bufs_s,
-                                    gates: &gates_s,
-                                    statuses: &st_s,
-                                    local: &lc_s,
-                                    local_net_hist: &nh_s,
                                 },
                             );
                         }

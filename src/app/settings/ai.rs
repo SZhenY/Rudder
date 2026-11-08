@@ -24,6 +24,12 @@ thread_local! {
     static EXPANDED_SESSIONS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
+thread_local! {
+    /// MCP 状态轮询定时器，显式持有以保活。
+    static MCP_STATUS_TIMER: RefCell<Option<slint::Timer>> =
+        const { RefCell::new(None) };
+}
+
 pub(crate) fn bind(window: &AppWindow, store: &Store) {
     let ifaces = Rc::new(VecModel::<McpIface>::default());
     let clients = Rc::new(VecModel::<McpClientRow>::default());
@@ -293,8 +299,8 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
         });
     }
 
-    // Timer 被 drop 就停 —— 与系统采样器同一套做法。
-    Box::leak(Box::new(timer));
+    // 存入 thread_local 保活。
+    MCP_STATUS_TIMER.with(|slot| *slot.borrow_mut() = Some(timer));
 }
 
 pub(crate) fn apply(store: &Store) {
@@ -370,6 +376,9 @@ thread_local! {
 fn publish_status(window: &AppWindow, store: &Store, clients: &Rc<VecModel<McpClientRow>>) {
     let enabled = store.borrow().mcp_enabled();
     let status = crate::mcp::status();
+    // status.error 稍后被 move，先取出这两个状态。
+    let status_has_error = status.error.is_some() || status.error_kind.is_some();
+    let status_running = status.running;
     let (text, error, urls) = if status.error.is_some() || status.error_kind.is_some() {
         // 标题按类别翻译，细节（地址 / 系统错误）原样跟在后面。
         let title = match status.error_kind {
@@ -413,7 +422,16 @@ fn publish_status(window: &AppWindow, store: &Store, clients: &Rc<VecModel<McpCl
     }
     publish_urls(window, urls);
     // 顶部徽标与客户端浮层都读 `mcp-clients`，设置窗关着也要刷新。
-    publish_clients(window, clients);
+    // 空闲时跳过 publish_clients 的重活；状态行、错误与 URL 仍照常刷新。
+    let clients_idle = CLIENTS_PUBLISHED.with(|flag| flag.get())
+        && !enabled
+        && !status_running
+        && !status_has_error
+        && clients.row_count() == 0
+        && window.get_mcp_client_count() == 0;
+    if !clients_idle {
+        publish_clients(window, clients);
+    }
     // 以下只服务设置页：窗口不可见时整段跳过，开窗时 `sync_settings_reflected` 会灌一次。
     let visible = crate::app::settings_window::is_open();
     if visible {
@@ -668,6 +686,8 @@ fn granted_summary(perms: &crate::mcp::Permissions, en: bool) -> String {
 thread_local! {
     /// 上次发布时的客户端列表签名。`u64::MAX` 保证首次一定重建。
     static LAST_CLIENTS_SIG: std::cell::Cell<u64> = const { std::cell::Cell::new(u64::MAX) };
+    /// 首次发布必须执行，用于把 clients 模型句柄挂到窗口。
+    static CLIENTS_PUBLISHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// 客户端列表的廉价签名：只在会话集合、权限位或分钟级时长变化时重写模型。
@@ -689,7 +709,7 @@ fn clients_signature(en: bool, sessions: &[crate::mcp::McpSessionInfo]) -> u64 {
         session.peer_ip.hash(&mut hasher);
         session.client_id.hash(&mut hasher);
         session.trusted.hash(&mut hasher);
-        let mut mask = 0u16;
+        let mut mask = 0u64;
         for (index, bit) in crate::mcp::PERMISSION_BITS.iter().enumerate() {
             if session.granted.allows(bit.key) {
                 mask |= 1 << index;
@@ -726,6 +746,7 @@ fn publish_clients(window: &AppWindow, clients: &Rc<VecModel<McpClientRow>>) {
     // 顶部栏徽标直接取会话数，不必再遍历一次行模型。
     window.set_mcp_client_count(sessions.len() as i32);
     LAST_CLIENTS_SIG.with(|slot| slot.set(sig));
+    CLIENTS_PUBLISHED.with(|flag| flag.set(true));
 }
 
 /// 当前模型里还活着的 session id（header 行）。

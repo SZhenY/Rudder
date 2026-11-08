@@ -11,9 +11,9 @@ use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
-use std::sync::{Mutex, OnceLock};
 
 use serde_json::{Value, json};
 
@@ -28,20 +28,24 @@ const CHANNEL_CAPACITY: usize = 128;
 /// 单日文件上限。
 const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
 
-static TX: OnceLock<Option<SyncSender<Value>>> = OnceLock::new();
-static RING: OnceLock<Mutex<VecDeque<AuditEntry>>> = OnceLock::new();
-static CLOSES: OnceLock<Mutex<VecDeque<SessionCloseEntry>>> = OnceLock::new();
+/// 可 take 的发送端：stop 后写盘线程退出，init 可重建。
+static TX: Mutex<Option<SyncSender<Value>>> = Mutex::new(None);
+static RING: Mutex<VecDeque<AuditEntry>> = Mutex::new(VecDeque::new());
+static CLOSES: Mutex<VecDeque<SessionCloseEntry>> = Mutex::new(VecDeque::new());
 static DEGRADED: AtomicBool = AtomicBool::new(false);
+/// 通道满而丢弃的记录数（只增）。丢过就是丢过，写盘恢复也不能把它抹掉。
+static DROPPED: AtomicU64 = AtomicU64::new(0);
+static DROPPED_WARNED: AtomicBool = AtomicBool::new(false);
 /// 「最近调用」环的版本号，每次写入 +1。UI 每秒轮询时先比它，没变就不必
 /// 把 200 条整份 clone 出来再丢掉。
 static RING_REV: AtomicU64 = AtomicU64::new(0);
 
 fn ring() -> &'static Mutex<VecDeque<AuditEntry>> {
-    RING.get_or_init(|| Mutex::new(VecDeque::with_capacity(RING_CAPACITY)))
+    &RING
 }
 
 fn close_ring() -> &'static Mutex<VecDeque<SessionCloseEntry>> {
-    CLOSES.get_or_init(|| Mutex::new(VecDeque::with_capacity(CLOSE_CAPACITY)))
+    &CLOSES
 }
 
 /// 有界环形缓冲的标准写法：满了丢最旧的，再追加。
@@ -52,20 +56,54 @@ fn push_capped<T>(ring: &mut VecDeque<T>, capacity: usize, item: T) {
     ring.push_back(item);
 }
 
-/// 起写线程（幂等）。`enabled == false` 时也要起 —— 开关可能在会话中途被打开。
+/// 起写线程（幂等）。开关可能在会话中途被打开，所以 `record` 也会按需调它。
 pub(super) fn init() {
-    TX.get_or_init(|| {
-        let (tx, rx) = sync_channel(CHANNEL_CAPACITY);
-        let spawned = std::thread::Builder::new()
-            .name("rudder-mcp-audit".to_string())
-            .spawn(move || drain(rx));
-        if spawned.is_err() {
-            tracing::warn!("mcp audit: writer thread failed to start; audit disabled");
+    let mut slot = TX.lock().unwrap_or_else(|err| err.into_inner());
+    if slot.is_some() {
+        return;
+    }
+    let (tx, rx) = sync_channel(CHANNEL_CAPACITY);
+    let spawned = std::thread::Builder::new()
+        .name("rudder-mcp-audit".to_string())
+        .spawn(move || drain(rx));
+    if spawned.is_err() {
+        tracing::warn!("mcp audit: writer thread failed to start; audit disabled");
+        DEGRADED.store(true, Ordering::Relaxed);
+        return;
+    }
+    *slot = Some(tx);
+}
+
+/// MCP 关闭时释放写盘线程、通道与内存环。
+pub(super) fn stop() {
+    let taken = TX.lock().unwrap_or_else(|err| err.into_inner()).take();
+    drop(taken);
+    *ring().lock().unwrap_or_else(|err| err.into_inner()) = VecDeque::new();
+    *close_ring().lock().unwrap_or_else(|err| err.into_inner()) = VecDeque::new();
+    RING_REV.fetch_add(1, Ordering::Relaxed);
+}
+
+/// 非阻塞投递，结果处理放在锁外。
+fn send_capped(record: Value) {
+    let sent = {
+        let slot = TX.lock().unwrap_or_else(|err| err.into_inner());
+        slot.as_ref().map(|tx| tx.try_send(record))
+    };
+    match sent {
+        None | Some(Ok(())) => {}
+        // 队列满：记录没落盘，计入 DROPPED。
+        Some(Err(TrySendError::Full(_))) => note_dropped(),
+        Some(Err(TrySendError::Disconnected(_))) => {
             DEGRADED.store(true, Ordering::Relaxed);
-            return None;
         }
-        Some(tx)
-    });
+    }
+}
+
+fn note_dropped() {
+    DROPPED.fetch_add(1, Ordering::Relaxed);
+    if !DROPPED_WARNED.swap(true, Ordering::Relaxed) {
+        tracing::warn!("mcp audit: channel full, records dropped; audit degraded");
+    }
 }
 
 /// 记一条。`record` 是整条 JSON（写文件），`entry` 是最小集（给界面）。
@@ -76,18 +114,8 @@ pub(super) fn record(record: Value, entry: AuditEntry) {
         RING_REV.fetch_add(1, Ordering::Relaxed);
     }
     init();
-    let Some(Some(tx)) = TX.get() else {
-        return;
-    };
-    match tx.try_send(record) {
-        Ok(()) => {}
-        // 通道满了就丢这条：审计绝不阻塞工具调用。丢弃数不再单独计数 —— 没有人读它，
-        // 真正的降级信号是下面的 `DEGRADED`（写盘线程挂了）。
-        Err(TrySendError::Full(_)) => {}
-        Err(TrySendError::Disconnected(_)) => {
-            DEGRADED.store(true, Ordering::Relaxed);
-        }
-    }
+    // 队列满就丢，不阻塞调用方。
+    send_capped(record);
 }
 
 /// 记一条"会话结束"进内存环。**不受 `audit.enabled` 影响** —— 这是运行期的界面状态，
@@ -106,10 +134,7 @@ pub(super) fn recent_closes() -> Vec<SessionCloseEntry> {
 /// 只写文件，不进环形缓冲（会话事件用）。
 pub(super) fn record_only(record: Value) {
     init();
-    let Some(Some(tx)) = TX.get() else {
-        return;
-    };
-    let _ = tx.try_send(record);
+    send_capped(record);
 }
 
 /// 「最近调用」环的版本号。变了才有必要重新取内容。
@@ -122,9 +147,9 @@ pub(super) fn recent() -> Vec<AuditEntry> {
     ring.iter().rev().cloned().collect()
 }
 
-/// 是否处于降级（写盘失败 / 线程没起来 / 队列断过）。
+/// 是否处于降级（写盘失败 / 线程没起来 / 队列断过 / 丢过记录）。
 pub(super) fn degraded() -> bool {
-    DEGRADED.load(Ordering::Relaxed)
+    DEGRADED.load(Ordering::Relaxed) || DROPPED.load(Ordering::Relaxed) > 0
 }
 
 fn drain(rx: Receiver<Value>) {

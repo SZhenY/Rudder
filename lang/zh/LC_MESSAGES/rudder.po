@@ -547,7 +547,7 @@ msgid "Add trigger"
 msgstr "添加触发器"
 
 msgid "Advanced (encoding, proxy, tunnels)"
-msgstr "高级（编码、代理、隔管）"
+msgstr "高级（编码、代理、隧道）"
 
 msgid "Available"
 msgstr "可用"

@@ -59,7 +59,8 @@ export component IconButton inherits Rectangle {
             iteration-count: -1;
             direction: alternate;
             easing: AnimationSettings.breathing();
-            enabled: AnimationSettings.enabled;
+            // 失焦时停止呼吸动画。
+            enabled: AnimationSettings.enabled && Theme.window-focused;
         }
     }
 
@@ -292,7 +293,6 @@ export component Sparkline inherits Rectangle {
 // 面板收起时贴在右缘的 36px 图标条：显示工具图标，点击重新展开。SFTP 面板与
 // 快捷命令面板共用，折叠/展开表现一致。占位槽由宿主预留，图标条不覆盖其它控件。
 export component ToolStrip inherits Rectangle {
-    in property <string> dock-edge;   // 固定为 "right"；四边分支待收敛
     in property <string> glyph;       // the panel's tool icon (Material Icons)
     in property <bool> show-second: false;
     in property <string> second-glyph;
@@ -303,23 +303,22 @@ export component ToolStrip inherits Rectangle {
     callback expand();
     callback expand-second();
     callback expand-third();
-    property <bool> horizontal: root.dock-edge == "top" || root.dock-edge == "bottom";
 
     background: Theme.bg-panel-alt;
     // Hairline on the inner edge (facing the central content).
     Rectangle {
-        x: root.dock-edge == "left" ? parent.width - self.width : 0px;
-        y: root.dock-edge == "top" ? parent.height - self.height : 0px;
-        width: root.horizontal ? parent.width : 1px;
-        height: root.horizontal ? 1px : parent.height;
+        x: 0px;
+        y: 0px;
+        width: 1px;
+        height: parent.height;
         background: Theme.border-subtle;
     }
     // Tool icon, hugging the strip's near corner.
     Rectangle {
         width: 30px;
         height: 30px;
-        x: root.horizontal ? 4px : (parent.width - self.width) / 2;
-        y: root.horizontal ? (parent.height - self.height) / 2 : 4px;
+        x: (parent.width - self.width) / 2;
+        y: 4px;
         border-radius: Theme.radius-sm;
           background: root.enabled && ta.has-hover ? Theme.state-hover : transparent;
           animate background {
@@ -348,8 +347,8 @@ export component ToolStrip inherits Rectangle {
     if root.show-second : Rectangle {
         width: 30px;
         height: 30px;
-        x: root.horizontal ? 38px : (parent.width - self.width) / 2;
-        y: root.horizontal ? (parent.height - self.height) / 2 : 38px;
+        x: (parent.width - self.width) / 2;
+        y: 38px;
         border-radius: Theme.radius-sm;
         background: ta2.has-hover ? Theme.state-hover : transparent;
         animate background {
@@ -373,8 +372,8 @@ export component ToolStrip inherits Rectangle {
     if root.show-third : Rectangle {
         width: 30px;
         height: 30px;
-        x: root.horizontal ? 72px : (parent.width - self.width) / 2;
-        y: root.horizontal ? (parent.height - self.height) / 2 : 72px;
+        x: (parent.width - self.width) / 2;
+        y: 72px;
         border-radius: Theme.radius-sm;
         background: ta3.has-hover ? Theme.state-hover : transparent;
         animate background {

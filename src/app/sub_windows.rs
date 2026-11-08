@@ -1,11 +1,11 @@
-//! 子窗口的按需创建与隐藏。
+//! 子窗口的按需创建与延迟销毁。
 //!
 //! 进程窗 / 系统信息窗 / 设置窗原先在启动时全部 `new()`，但其中只有主窗口在
 //! 首帧是必须的：另外三个各自带一整棵 Slint 组件树（设置窗还含 TerminalPage）。
-//! 这里把"创建 + 接回调"收进工厂，首次打开时才执行；关闭仍只 hide，不销毁
-//! （避免在事件派发栈上 drop 正在处理事件的子树，#323/#343）。
+//! 首次打开才创建；关闭时 hide，下一轮事件循环再销毁（#323/#343）。
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use slint::{ComponentHandle, ModelRc, VecModel};
@@ -42,6 +42,43 @@ thread_local! {
     static SYS: RefCell<Option<Rc<SystemInfoWindow>>> = const { RefCell::new(None) };
     static PROC: RefCell<Option<Rc<ProcWindow>>> = const { RefCell::new(None) };
     static SETTINGS: RefCell<Option<Rc<SettingsWindow>>> = const { RefCell::new(None) };
+    /// 已 hide、等下一轮事件循环 drop 的窗口，按类型一个槽。
+    static PENDING: RefCell<HashMap<&'static str, PendingSlot>> = RefCell::new(HashMap::new());
+}
+
+const KIND_PROC: &str = "proc";
+const KIND_SYS: &str = "sys";
+const KIND_SETTINGS: &str = "settings";
+
+/// 延迟销毁中的窗口。三种窗口不同型，用枚举装进同一张表。
+enum PendingWindow {
+    Proc(Rc<ProcWindow>),
+    Sys(Rc<SystemInfoWindow>),
+    Settings(Rc<SettingsWindow>),
+}
+
+type PendingSlot = Rc<RefCell<Option<PendingWindow>>>;
+
+/// 延迟销毁；reopen 时从槽里取回窗口复用。
+fn drop_after_tick(kind: &'static str, window: PendingWindow) {
+    let slot: PendingSlot = Rc::new(RefCell::new(Some(window)));
+    PENDING.with(|pending| {
+        pending.borrow_mut().insert(kind, slot.clone());
+    });
+    let callback_slot = slot.clone();
+    slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+        PENDING.with(|pending| {
+            pending.borrow_mut().remove(kind);
+        });
+        // 未被取走才真正销毁。
+        drop(callback_slot.borrow_mut().take());
+    });
+}
+
+/// reopen：撤销尚未触发的延迟销毁并取回窗口。
+fn take_pending(kind: &'static str) -> Option<PendingWindow> {
+    let slot = PENDING.with(|pending| pending.borrow_mut().remove(kind))?;
+    slot.borrow_mut().take()
 }
 
 /// 已创建的进程窗弱引用；未创建时返回默认（不可升级）的 `Weak`。
@@ -62,6 +99,11 @@ pub(super) fn ensure_process(
     ctx: &AppContext,
 ) -> Option<Rc<ProcWindow>> {
     if let Some(proc) = PROC.with(|slot| slot.borrow().clone()) {
+        return Some(proc);
+    }
+    // 关闭后一帧内又打开：撤销待触发的销毁，复用旧组件树。
+    if let Some(PendingWindow::Proc(proc)) = take_pending(KIND_PROC) {
+        PROC.with(|slot| *slot.borrow_mut() = Some(proc.clone()));
         return Some(proc);
     }
     let proc = match ProcWindow::new() {
@@ -248,7 +290,7 @@ pub(super) fn release_process() {
     let proc = PROC.with(|slot| slot.borrow_mut().take());
     if let Some(proc) = proc {
         let _ = proc.hide();
-        drop_after_tick(proc);
+        drop_after_tick(KIND_PROC, PendingWindow::Proc(proc));
     }
 }
 
@@ -258,6 +300,10 @@ pub(super) fn ensure_system_info(
     models: &SysModels,
 ) -> Option<Rc<SystemInfoWindow>> {
     if let Some(sys) = SYS.with(|slot| slot.borrow().clone()) {
+        return Some(sys);
+    }
+    if let Some(PendingWindow::Sys(sys)) = take_pending(KIND_SYS) {
+        SYS.with(|slot| *slot.borrow_mut() = Some(sys.clone()));
         return Some(sys);
     }
     let sys = match SystemInfoWindow::new() {
@@ -307,7 +353,7 @@ pub(super) fn ensure_system_info(
     Some(sys)
 }
 
-/// 系统信息窗当前是否已创建（用于退出时统一隐藏）。
+/// 隐藏系统信息窗（退出时统一调用）；窗口尚未创建时什么都不做。
 pub(super) fn hide_system_info() {
     SYS.with(|slot| {
         if let Some(sys) = slot.borrow().as_ref() {
@@ -322,17 +368,17 @@ pub(super) fn release_system_info() {
     let sys = SYS.with(|slot| slot.borrow_mut().take());
     if let Some(sys) = sys {
         let _ = sys.hide();
-        drop_after_tick(sys);
+        drop_after_tick(KIND_SYS, PendingWindow::Sys(sys));
     }
-}
-
-fn drop_after_tick<T: 'static>(handle: Rc<T>) {
-    slint::Timer::single_shot(std::time::Duration::ZERO, move || drop(handle));
 }
 
 /// 首次打开设置窗时创建并接好回调；之后直接复用。
 pub(super) fn ensure_settings(main: &AppWindow) -> Option<Rc<SettingsWindow>> {
     if let Some(sw) = SETTINGS.with(|slot| slot.borrow().clone()) {
+        return Some(sw);
+    }
+    if let Some(PendingWindow::Settings(sw)) = take_pending(KIND_SETTINGS) {
+        SETTINGS.with(|slot| *slot.borrow_mut() = Some(sw.clone()));
         return Some(sw);
     }
     let sw = match SettingsWindow::new() {
@@ -390,7 +436,7 @@ pub(super) fn release_settings() {
     let sw = SETTINGS.with(|slot| slot.borrow_mut().take());
     if let Some(sw) = sw {
         let _ = sw.hide();
-        drop_after_tick(sw);
+        drop_after_tick(KIND_SETTINGS, PendingWindow::Settings(sw));
     }
 }
 

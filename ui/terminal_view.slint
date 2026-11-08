@@ -146,18 +146,16 @@ export component TerminalView inherits Rectangle {
     callback set-sftp-panel-width(length);
     // 展开文件面板时刷新一次：懒启动的会话要等到这一刻才发起第二条 SSH 连接。
     changed sftp-collapsed => {
-        if (!root.sftp-collapsed && root.sftp-available) {
+        // 只有可见实例才发刷新。
+        if (root.visible && !root.sftp-collapsed && root.sftp-available) {
             root.sftp-refresh(root.sftp-path);
         }
     }
     callback set-sftp-collapsed(bool);
 
     // --- SFTP 面板（固定在终端右侧）---------------------------------------
-    // 停靠边不再可配置；`sftp-dock` / `sftp-horizontal` 是为几何公式里的四边三目
-    // 保留的常量，收敛这些三目属于单独一轮改动。
+    // 停靠边与方向已收敛为「右缘固定、水平方向」，四边三目不再保留。
     in-out property <string> sftp-mode: "status";
-    in-out property <string> sftp-dock: "right";
-    property <bool> sftp-horizontal: true;
 
     // Command bar (#55): quick commands + input box + history (all shared/global,
     // fed from Rust); send-to-all is a per-tab toggle.
@@ -377,10 +375,9 @@ export component TerminalView inherits Rectangle {
     // 才与左侧的 5px 一致。
     // 非 SFTP 会话（本地终端 / 串口 / Telnet）不占位：面板与折叠条都不渲染，
     // 返回 36px 只会白留一条空带并少算列数。
-    property <length> term-sftp-overhead:
-        (root.sftp-dock == "left" || root.sftp-dock == "right") && root.sftp-available
-            ? (root.sftp-collapsed ? 36px : max(255px, root.sftp-panel-width))
-            : 0px;
+    property <length> term-sftp-overhead: root.sftp-available
+        ? (root.sftp-collapsed ? 36px : max(255px, root.sftp-panel-width))
+        : 0px;
     property <length> term-available-w: root.width - root.term-sftp-overhead;
     // `- 0.5` 列是安全边距：cell-w 来自 50 字符探针的平均值，长连续文本按真实字距
     // 排布会相对网格累积漂移。留整列太保守（右侧白多一个字符宽），留半列
@@ -465,32 +462,20 @@ export component TerminalView inherits Rectangle {
         // 与主窗口快捷面板的 dock-area 同一套算法。
         dock-region := Rectangle {
         vertical-stretch: 1;
-        // sf-taken / sf-h-taken SNAP — used by terminal layout (no animation,
-        // so the terminal doesn't jump while the panel slides).
-        // sf-viz / sf-h-viz ANIMATE — used by the SFTP panel and splitter.
-        // 四种量在 `sftp-available == false` 时一律归零：此时面板与折叠条都不渲染，
-        // 留 36px 只会在右侧白占一条空带。
+        // 右缘固定：sf-taken 用于定宽，sf-viz 用于动画。
         property <length> sf-taken: !root.sftp-available ? 0px
             : root.sftp-collapsed ? 36px
-            : root.sftp-horizontal ? max(255px, root.sftp-panel-width)
-            : root.sftp-panel-width;
-        property <length> sf-h-taken: !root.sftp-available ? 0px
-            : root.sftp-collapsed ? 36px
-            : root.sftp-panel-height;
+            : max(255px, root.sftp-panel-width);
 
-        // 面板与分隔条读这个（从进度插值）。`sf-taken` 仍保持跳变语义：
-        // `central` 与 `term-cols` 读它，终端在第 0 帧就定宽，避免动画期间
-        // 逐帧重排远端 PTY。
+        // 面板与分隔条读 sf-viz。
         property <length> sf-viz: !root.sftp-available ? 0px
             : max(255px, root.sftp-panel-width)
             + (36px - max(255px, root.sftp-panel-width)) * root.sftp-progress;
-        property <length> sf-h-viz: !root.sftp-available ? 0px
-            : root.sftp-panel-height + (36px - root.sftp-panel-height) * root.sftp-progress;
         central := Rectangle {
-            x: root.sftp-dock == "left" ? parent.sf-taken : 0px;
-            y: root.sftp-dock == "top"  ? parent.sf-h-taken : 0px;
-            width:  root.sftp-horizontal ? parent.width - parent.sf-taken : parent.width;
-            height: root.sftp-horizontal ? parent.height : parent.height - parent.sf-h-taken;
+            x: 0px;
+            y: 0px;
+            width:  parent.width - parent.sf-taken;
+            height: parent.height;
             clip: true;
             VerticalLayout {
             spacing: 0;
@@ -510,9 +495,8 @@ export component TerminalView inherits Rectangle {
             init => { root.focus-pending = true; }
 
             Timer {
-                // Stop blinking (and thus repainting) when the window isn't
-                // focused — an idle background terminal should cost ~0 CPU (#127).
-                running: ime-input.has-focus && Theme.window-focused;
+                // 失焦或不可见时停止光标闪烁 (#127)。
+                running: root.visible && ime-input.has-focus && Theme.window-focused;
                 interval: 530ms;
                 triggered => { key-capture.cursor-blink = !key-capture.cursor-blink; }
             }
@@ -2001,25 +1985,21 @@ export component TerminalView inherits Rectangle {
         // --- SFTP resize splitter（固定在右缘，竖向）--------------------------
         Rectangle {
             visible: root.sftp-available && !root.sftp-collapsed;   // gone when collapsed (like the resource splitter)
-            x: root.sftp-dock == "left"   ? parent.sf-viz
-             : root.sftp-dock == "right"  ? parent.width - parent.sf-viz - 2px
-             : 0px;
-            y: root.sftp-dock == "top"    ? parent.sf-h-viz
-             : root.sftp-dock == "bottom" ? parent.height - parent.sf-h-viz - 2px
-             : 0px;
-            width:  root.sftp-horizontal ? 2px : parent.width;
-            height: root.sftp-horizontal ? parent.height : 2px;
+            x: parent.width - parent.sf-viz - 2px;
+            y: 0px;
+            width:  2px;
+            height: parent.height;
             background: divider-ta.has-hover || root.sftp-dragging
                 ? Theme.accent : Theme.border-subtle;
             divider-ta := TouchArea {
                 // Hit area extends a few px past the thin visual bar so it's easy
                 // to grab without landing on the terminal / SFTP edge.
                 // 视觉条 2px，命中区 12px（条左右各 5px）。
-                x: root.sftp-horizontal ? -5px : 0px;
-                y: root.sftp-horizontal ? 0px : -5px;
-                width:  root.sftp-horizontal ? 12px : parent.width;
-                height: root.sftp-horizontal ? parent.height : 12px;
-                mouse-cursor: root.sftp-horizontal ? ew-resize : ns-resize;
+                x: -5px;
+                y: 0px;
+                width:  12px;
+                height: parent.height;
+                mouse-cursor: ew-resize;
                 pointer-event(ev) => {
                     if (ev.kind == PointerEventKind.down) {
                         root.sftp-dragging = true;
@@ -2033,22 +2013,11 @@ export component TerminalView inherits Rectangle {
                 // 是那条细分隔条 Rectangle，区域尺寸要显式引用 `dock-region`。
                 moved => {
                     if (root.sftp-dragging) {
-                        if (root.sftp-horizontal) {
-                            // 下限 255px = 原 300 的 85%。两行紧凑工具栏首行的固定
-                            // 控件合计约 220px（页签 3×28 + 四个 24px 按钮 + 间距 +
-                            // 内边距），255 时仍有余量；再窄路径输入框就不可用了。
-                            root.set-sftp-panel-width(clamp(
-                                root.sftp-dock == "right"
-                                    ? dock-region.width - ((self.absolute-position.x + self.mouse-x) - dock-region.absolute-position.x)
-                                    : (self.absolute-position.x + self.mouse-x) - dock-region.absolute-position.x,
-                                255px, max(310px, dock-region.width - 200px)));
-                        } else {
-                            root.set-sftp-panel-height(clamp(
-                                root.sftp-dock == "bottom"
-                                    ? dock-region.height - ((self.absolute-position.y + self.mouse-y) - dock-region.absolute-position.y)
-                                    : (self.absolute-position.y + self.mouse-y) - dock-region.absolute-position.y,
-                                60px, max(80px, dock-region.height - 80px)));
-                        }
+                        // 下限 255px，保证工具栏控件放得下。
+                        root.set-sftp-panel-width(clamp(
+                            dock-region.width - ((self.absolute-position.x + self.mouse-x)
+                                - dock-region.absolute-position.x),
+                            255px, max(310px, dock-region.width - 200px)));
                     }
                 }
             }
@@ -2056,12 +2025,12 @@ export component TerminalView inherits Rectangle {
 
         // --- SFTP panel — 固定在右缘 ---------------------------------------
         if root.sftp-available : SftpPanel {
-            x: root.sftp-dock == "right"  ? parent.width - parent.sf-viz : 0px;
-            y: root.sftp-dock == "bottom" ? parent.height - parent.sf-h-viz : 0px;
-            width:  root.sftp-horizontal ? parent.sf-viz : parent.width;
-            height: root.sftp-horizontal ? parent.height : parent.sf-h-viz;
+            x: parent.width - parent.sf-viz;
+            y: 0px;
+            width:  parent.sf-viz;
+            height: parent.height;
             clip: true;                     // prevent content from bleeding into central area
-            show-tree: !root.sftp-horizontal;   // hide the tree when narrow (vertical)
+            show-tree: false;               // 面板固定在右缘且始终够宽，无需窄栏树形
             // 布局切换等到进度末尾（>0.99）才发生，避免动画第一帧就重排成紧凑模式。
             compact: root.sftp-progress > 0.99;
             fade: root.sftp-progress;
@@ -2155,7 +2124,6 @@ export component TerminalView inherits Rectangle {
             y: 0px;
             width: 36px;
             height: parent.height;
-            dock-edge: root.sftp-dock;
             glyph: "\u{E2C7}";   // folder — SFTP
             tooltip: root.sftp-available ? "SFTP" : @tr("SFTP not available");
             enabled: root.sftp-available;

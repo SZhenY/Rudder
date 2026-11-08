@@ -115,7 +115,7 @@ pub(crate) fn audit_degraded() -> bool {
 /// 按配置起服务。已有一份在跑就先停掉（改端口 / 改网口走同一条路径）。
 pub(crate) fn start(rt: &Handle, snapshot: McpConfigSnapshot, app: AppHandles) {
     // 审计线程与保留天数：保留天数先设，改完立刻生效，不用等下次重绑监听。
-    // 线程本身延后到真正启用服务时再起（`record` 自带 `init`），MCP 关闭时零线程。
+    // 写盘线程按需起；关闭 MCP 时释放，再有事件才重建。
     super::audit::set_retention(snapshot.audit.retention_days);
 
     // 监听面没变就只换配置：权限位与令牌的改动不该掐断已经连上的客户端。
@@ -141,6 +141,7 @@ pub(crate) fn start(rt: &Handle, snapshot: McpConfigSnapshot, app: AppHandles) {
     }
     stop();
     if !snapshot.enabled {
+        super::audit::stop();
         return;
     }
     // 启用后才起审计写盘线程；关闭 MCP 时不留常驻线程与通道。

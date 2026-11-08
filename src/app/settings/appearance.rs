@@ -186,9 +186,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             publish_wallpaper_choices(&w, &store);
             if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
                 sync_proc_theme(&w, &p);
-                // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-                crate::app::settings_window::resync_if_open(&w);
             }
+            // 设置窗也要同步；不能放进上面的 if let。
+            crate::app::settings_window::resync_if_open(&w);
             schedule_post_fade_sync(&w, &store, &crate::app::sub_windows::proc_weak());
         });
     }
@@ -224,9 +224,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
                 publish_wallpaper_choices(&w, &store);
                 if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
                     sync_proc_theme(&w, &p);
-                    // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-                    crate::app::settings_window::resync_if_open(&w);
                 }
+                // 设置窗也要同步；不能放进上面的 if let。
+                crate::app::settings_window::resync_if_open(&w);
                 schedule_post_fade_sync(&w, &store, &crate::app::sub_windows::proc_weak());
             } else {
                 persist(&store, |s| {
@@ -290,9 +290,9 @@ pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
             w.set_accent_mode(normalized.into());
             if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
                 sync_proc_theme(&w, &p);
-                // 设置窗口是独立窗口 → 外面改了主题也顺手刷它一遍（见 settings_window::resync_if_open）。
-                crate::app::settings_window::resync_if_open(&w);
             }
+            // 设置窗也要同步；不能放进上面的 if let。
+            crate::app::settings_window::resync_if_open(&w);
         });
     }
 

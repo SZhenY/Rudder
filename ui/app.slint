@@ -318,7 +318,6 @@ export component AppWindow inherits Window {
         root.active-tab-id != "welcome" && root.active-tab-id != "";
     in-out property <length> quick-panel-width: 260px;
     in-out property <length> quick-panel-height: 220px;
-    in-out property <string> quick-panel-dock: "right";
     property <string> quick-external-command;
     property <bool> quick-external-send-enter;
     property <int> quick-external-sequence;
@@ -414,12 +413,11 @@ export component AppWindow inherits Window {
     in-out property <int> ui-font-index: 0;           // picker selection into ui-fonts
     callback set-ui-font(string);
     callback upload-ui-font();                      // 上传字体（复制进 config/fonts）                  // persist UI font choice
-    // 设置窗口是否打开。窗口本身由下面用 `if` 创建 / 销毁（不再是常驻覆盖层），
-    // 所以这里只剩一个布尔量：旧的 `ifd-*`（自写拖动 / 缩放 / 居中）全部退休
-    // —— 拖动、缩放、边框、阴影都交给系统窗口管理器。
+    // 设置窗口是否打开。它是 Rust 侧的独立 root 窗口，由 `ensure_settings` 首次
+    // 打开时创建、`release_settings` 关闭后延迟销毁；Slint 这里只说「要开 / 要关」。
+    // 拖动、缩放、边框、阴影都交给系统窗口管理器，旧的 `ifd-*`（自写拖动 /
+    // 缩放 / 居中）已全部退休。
     in-out property <bool> interface-open: false;  // Interface settings window
-    // 设置窗口是 Rust 侧的独立 root 窗口 → Slint 这里只说"要开/要关"，窗口由 Rust
-    // `show()` / `hide()` 操作（只隐藏不销毁，所以没有 `#323/#343` 那类风险）。
     callback toggle-interface-settings(bool);
     callback set-term-font(string);                // apply + persist font family
     callback set-term-font-size(int);              // apply + persist font size (px)
@@ -629,9 +627,6 @@ export component AppWindow inherits Window {
     callback webdav-download();
     in-out property <length> sftp-panel-height: 220px; // shared; lets Rust locate the drop zone
     in-out property <length> sftp-panel-width: 380px;  // 右侧面板宽度
-    // 面板固定在右侧：不再有拖拽入口，这个值不会被改。
-    // 保留属性是因为几何公式里还有几处按停靠边分叉的三目（收敛它们属于单独一轮）。
-    in-out property <string> sftp-dock: "right";
     callback pick-download-dir();            // open a folder picker
     callback open-download-dir();            // reveal the folder in the OS
     callback clear-transfers();              // wipe the transfer history
@@ -1072,25 +1067,19 @@ export component AppWindow inherits Window {
             root.quick-panel-open && root.quick-panel-collapsed && root.quick-has-session
                 && !root.in-dock-page
                 ? 36px : 0px;
-        property <bool> quick-outer-horizontal:
-            root.quick-panel-dock == "left" || root.quick-panel-dock == "right";
-        property <length> quick-left:
-            root.quick-panel-dock == "left" ? dock-area.quick-outer-strip : 0px;
-        property <length> quick-right:
-            root.quick-panel-dock == "right" ? dock-area.quick-outer-strip : 0px;
-        property <length> quick-top:
-            root.quick-panel-dock == "top" ? dock-area.quick-outer-strip : 0px;
-        property <length> quick-bottom:
-            root.quick-panel-dock == "bottom" ? dock-area.quick-outer-strip : 0px;
+        // 快捷面板固定贴右缘：四边几何已收敛，只保留右侧留白。
+        property <length> quick-left: 0px;
+        property <length> quick-right: dock-area.quick-outer-strip;
+        property <length> quick-top: 0px;
+        property <length> quick-bottom: 0px;
 
         if dock-area.quick-outer-strip > 0px : ToolStrip {
             // 与展开态面板同底（`QuickDockPanel` 用 `term-bg`），否则折叠/展开切换会跳一档色。
             background: Theme.term-bg;
-            x: root.quick-panel-dock == "right" ? parent.width - parent.quick-outer-strip : 0px;
-            y: root.quick-panel-dock == "bottom" ? parent.height - parent.quick-outer-strip : 0px;
-            width: parent.quick-outer-horizontal ? parent.quick-outer-strip : parent.width;
-            height: parent.quick-outer-horizontal ? parent.height : parent.quick-outer-strip;
-            dock-edge: root.quick-panel-dock;
+            x: parent.width - parent.quick-outer-strip;
+            y: 0px;
+            width: parent.quick-outer-strip;
+            height: parent.height;
             glyph: "\u{E3E7}";
             tooltip: @tr("Quick commands");
             expand => {
@@ -1107,14 +1096,15 @@ export component AppWindow inherits Window {
             - parent.quick-top - parent.quick-bottom;
 
         // 切页过渡底板：只在淡入期间压住壁纸，静态不绘制。
+        // 读动画后的 quick-area.opacity，避免底板提前消失。
         Rectangle {
             x: 0px;
             y: 0px;
             width: parent.width;
             height: parent.height;
             background: Theme.term-bg;
-            opacity: 1.0 - root.nav-fade;
-            visible: root.nav-fade < 0.999;
+            opacity: 1.0 - quick-area.opacity;
+            visible: quick-area.opacity < 0.999;
         }
 
         // Tabs + terminal content. Clipped so the terminal / SFTP panel can never
@@ -1134,8 +1124,6 @@ export component AppWindow inherits Window {
                 easing: AnimationSettings.e-enter();
                 enabled: AnimationSettings.enabled && !root.nav-swapping;
             }
-            property <bool> quick-horizontal:
-                root.quick-panel-dock == "left" || root.quick-panel-dock == "right";
             // 开关打开、未折叠，且当前活动标签是真实会话时才显示并占位。
             // 新标签页即使开关是开的也不显示，避免挤压欢迎页。
             property <bool> quick-shown:
@@ -1154,12 +1142,11 @@ export component AppWindow inherits Window {
             property <length> quick-sp: 0px;
 
             central := Rectangle {
-            x: parent.quick-shown && root.quick-panel-dock == "left" ? parent.quick-w + parent.quick-sp : 0px;
-            y: parent.quick-shown && root.quick-panel-dock == "top" ? parent.quick-h + parent.quick-sp : 0px;
-            width: parent.quick-shown && parent.quick-horizontal
+            x: 0px;
+            y: 0px;
+            width: parent.quick-shown
                 ? parent.width - parent.quick-w - parent.quick-sp : parent.width;
-            height: parent.quick-shown && !parent.quick-horizontal
-                ? parent.height - parent.quick-h - parent.quick-sp : parent.height;
+            height: parent.height;
             clip: true;
             // Split-pane area (v0.5): panes tile this rect; each pane has its own
             // tab strip + active terminal / welcome. Rust flattens the split tree
@@ -1262,189 +1249,190 @@ export component AppWindow inherits Window {
                     cycle-tab(reverse) => { root.cycle-tab(reverse); }
                 }
 
-                // Terminal tabs — one TerminalView per terminal state. Only
-                // the one matching `active-tab-id` is visible. Slint doesn't
-                // allow nesting `if` directly inside a `for`, so we toggle
-                // visibility instead and rely on the layout to overlap them.
-                for term[i] in root.terminals : TerminalView {
-                    visible: term.id == pane.active-id && root.nav-page != 3 && root.nav-page != 5;
-                    active: term.id == root.active-tab-id;
-                    focus-sequence: root.terminal-focus-sequence;
-                    width: term.id == pane.active-id ? parent.width : 0px;
-                    height: term.id == pane.active-id ? parent.height : 0px;
-                    tab-id: term.id;
-                    spans: term.spans;
-                    cursor-row: term.cursor-row;
-                    cursor-col: term.cursor-col;
-                    cursor-style: root.term-cursor-style;
-                    cursor-color: root.term-cursor-color;
-                    rows-used: term.rows-used;
-                    scroll-max: term.scroll-max;
-                    scroll-offset: term.scroll-offset;
-                    is-alt-screen: term.is-alt-screen;
-                    mouse-tracked: term.mouse-tracked;
-                    terminal-mouse(kind, button, col, row) => {
-                        root.terminal-mouse(term.id, kind, button, col, row);
+                // 每个 pane 只实例化活动终端；切页保留组件树以免重建。
+                for term in root.terminals : Rectangle {
+                    property <bool> shown: term.id == pane.active-id;
+                    width: shown ? parent.width : 0px;
+                    height: shown ? parent.height : 0px;
+                    if shown : TerminalView {
+                        visible: root.nav-page != 3 && root.nav-page != 5;
+                        active: term.id == root.active-tab-id;
+                        focus-sequence: root.terminal-focus-sequence;
+                        width: parent.width;
+                        height: parent.height;
+                        tab-id: term.id;
+                        spans: term.spans;
+                        cursor-row: term.cursor-row;
+                        cursor-col: term.cursor-col;
+                        cursor-style: root.term-cursor-style;
+                        cursor-color: root.term-cursor-color;
+                        rows-used: term.rows-used;
+                        scroll-max: term.scroll-max;
+                        scroll-offset: term.scroll-offset;
+                        is-alt-screen: term.is-alt-screen;
+                        mouse-tracked: term.mouse-tracked;
+                        terminal-mouse(kind, button, col, row) => {
+                            root.terminal-mouse(term.id, kind, button, col, row);
+                        }
+                        find-matches: term.find-matches;
+                        selection: term.selection;
+                        sftp-panel-height: term.sftp-panel-height;
+                        set-sftp-panel-height(v) => { root.set-pane-sftp-height(term.id, v); }
+                        sftp-panel-width: term.sftp-panel-width;
+                        set-sftp-panel-width(v) => { root.set-pane-sftp-width(term.id, v); }
+                        sftp-mode <=> root.sftp-mode;
+                        sftp-collapsed: term.sftp-collapsed;
+                        set-sftp-collapsed(v) => { root.set-pane-sftp-collapsed(term.id, v); }
+                        sftp-path: term.sftp-path;
+                        sftp-entries: term.sftp-entries;
+                        tunnels: term.tunnels;
+                        sftp-status: term.sftp-status;
+                        sftp-loading: term.sftp-loading;
+                        sftp-tree-nodes: term.sftp-tree-nodes;
+                        sftp-transfer-targets: root.tabs;
+                        sftp-selected-count: term.sftp-selected-count;
+                        sftp-sort-key: term.sftp-sort-key;
+                        sftp-sort-dir: term.sftp-sort-dir;
+                        sftp-available: term.sftp-available;
+                        connection-state: root.connection-state;
+                        conn-host: root.conn-host;
+                        conn-state: root.conn-state;
+                        resource-title: root.resource-title;
+                        cpu-percent: root.cpu-percent;
+                        mem-percent: root.mem-percent;
+                        swap-percent: root.swap-percent;
+                        mem-detail: root.mem-detail;
+                        swap-detail: root.swap-detail;
+                        net-top-up: root.net-top-up;
+                        net-top-down: root.net-top-down;
+                        net-top-history: root.net-top-history;
+                        net-bot-up: root.net-bot-up;
+                        net-bot-down: root.net-bot-down;
+                        net-bot-history: root.net-bot-history;
+                        net-ifaces: root.net-ifaces;
+                        net-selected: root.net-selected;
+                        net-show-selector: root.net-show-selector;
+                        disks: root.disks;
+                        system-info-available: root.system-info-available;
+                        proc-available: root.proc-available;
+                        quick-commands: root.quick-commands;
+                        quick-sidebar-enabled: root.quick-commands-as-sidebar;
+                        // Quick 入口按钮只在「快捷命令侧栏未开启」时显示。
+                        // 此前误绑 quick-panel-open：布局还原把 as-sidebar 关掉之后，
+                        // 侧栏消失而入口按钮仍被隐藏，快捷命令就彻底无法访问了。
+                        quick-panel-docked: root.quick-commands-as-sidebar && root.quick-panel-open;
+                        cmd-bar-hidden: !root.show-cmd-bar;
+                        // Per-session zoom override wins over the global size.
+                        term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : Theme.term-font-size / 1px;
+                        quick-external-command: root.quick-external-command;
+                        quick-external-send-enter: root.quick-external-send-enter;
+                        quick-external-sequence: root.quick-external-sequence;
+                        command-history: root.command-history;
+                        history-view: root.history-view;
+                        history-preview: root.history-preview;
+                        run-command(cmd, all) => { root.run-command(term.id, cmd, all); }
+                        tunnel-add(name, kind, bind, bind-port, host, host-port) => {
+                            root.tunnel-add(term.id, name, kind, bind, bind-port, host, host-port);
+                        }
+                        tunnel-stop(id) => { root.tunnel-stop(term.id, id); }
+                        copy-text(t) => { root.copy-text(t); }
+                        select-net-iface(i) => { root.select-net-iface(i); }
+                        open-system-info() => { root.open-system-info(); }
+                        open-processes() => { root.open-processes(); }
+                        delete-history(i) => { root.delete-history(i); }
+                        delete-history-cmd(c) => { root.delete-history-cmd(c); }
+                        search-history(q) => { root.search-history(q); }
+                        manage-quick-commands() => {
+                            root.qcm-name = "";
+                            root.qcm-command = "";
+                            root.qcm-group = "";
+                            root.qcm-edit-index = -1;
+                            root.quick-cmd-manage-open = true;
+                        }
+                        toggle-quick-group(g) => { root.toggle-quick-group(g); }
+                        edit-quick-command(i) => { root.edit-quick-command(i); }
+                        duplicate-quick-command(i) => { root.duplicate-quick-command(i); }
+                        delete-quick-command(i) => { root.delete-quick-command(i); }
+                        move-quick-command(i, g) => { root.move-quick-command(i, g); }
+                        new-quick-group() => { root.qcg-orig = ""; root.qcg-name = ""; root.qcg-open = true; }
+                        rename-quick-group(g) => { root.qcg-orig = g; root.qcg-name = g; root.qcg-open = true; }
+                        delete-quick-group(g) => { root.delete-quick-group(g); }
+                        send-key(key, ctrl, alt, shift) => { root.send-key(term.id, key, ctrl, alt, shift) }
+                        cycle-tab(reverse) => { root.cycle-tab(reverse); }
+                        terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
+                        sftp-navigate(path) => { root.sftp-navigate(term.id, path); }
+                        sftp-download(path) => { root.sftp-download(term.id, path); }
+                        sftp-upload-clicked(dir, folder) => { root.sftp-upload-clicked(term.id, dir, folder); }
+                        sftp-refresh(path) => { root.sftp-refresh(term.id, path); }
+                        sftp-tree-expand(path) => { root.sftp-tree-expand(term.id, path); }
+                        sftp-toggle-select(i) => { root.sftp-toggle-select(term.id, i); }
+                        sftp-download-selected() => { root.sftp-download-selected(term.id); }
+                        sftp-copy-to-target(path, target) => { root.sftp-copy-to-target(term.id, path, target); }
+                        sftp-copy-selected-to-target(target) => { root.sftp-copy-selected-to-target(term.id, target); }
+                        // Confirm before deleting the checked entries (#100), reusing
+                        // the delete-confirm dialog in batch mode.
+                        sftp-delete-selected() => {
+                            root.confirm-delete-tab = term.id;
+                            root.confirm-delete-batch = true;
+                            root.confirm-delete-path = root.lang-en ? "the selected items" : "选中的项目";
+                            root.confirm-delete-open = true;
+                        }
+                        // Gate delete behind an in-app confirmation (#28): stash the
+                        // target and open the modal; the real delete fires on confirm.
+                        sftp-delete(path) => {
+                            root.confirm-delete-tab = term.id;
+                            root.confirm-delete-path = path;
+                            root.confirm-delete-open = true;
+                        }
+                        sftp-view(path) => { root.sftp-view(term.id, path); }
+                        sftp-edit(path) => { root.sftp-edit(term.id, path); }
+                        sftp-open-external(path) => { root.sftp-open-external(term.id, path); }
+                        sftp-edit-external(path) => { root.sftp-edit-external(term.id, path); }
+                        sftp-sort-request(key) => { root.sftp-sort-request(term.id, key); }
+                        sftp-clear-sort() => { root.sftp-clear-sort(term.id); }
+                        // #69 context-menu extensions → shared prompt dialog.
+                        sftp-rename-request(path, name) => {
+                            root.sftp-prompt-kind = "rename";
+                            root.sftp-prompt-tab = term.id;
+                            root.sftp-prompt-target = path;
+                            root.sftp-prompt-value = name;
+                            root.sftp-prompt-open = true;
+                        }
+                        sftp-chmod-request(path, name, mode) => {
+                            root.sftp-chmod-open(term.id, path, name, mode);
+                        }
+                        sftp-copy-path(path) => { root.sftp-copy-path(path); }
+                        sftp-new-folder(dir) => {
+                            root.sftp-prompt-kind = "mkdir";
+                            root.sftp-prompt-tab = term.id;
+                            root.sftp-prompt-target = dir;
+                            root.sftp-prompt-value = "";
+                            root.sftp-prompt-open = true;
+                        }
+                        sftp-new-file(dir) => {
+                            root.sftp-prompt-kind = "touch";
+                            root.sftp-prompt-tab = term.id;
+                            root.sftp-prompt-target = dir;
+                            root.sftp-prompt-value = "";
+                            root.sftp-prompt-open = true;
+                        }
+                        paste-from-clipboard() => { root.paste-from-clipboard(term.id); }
+                        copy-terminal-text() => { root.copy-terminal-text(term.id); }
+                        clear-terminal() => { root.clear-terminal(term.id); }
+                        find-query-changed(q) => { root.find-query-changed(term.id, q); }
+                        find-next() => { root.find-next(term.id); }
+                        find-prev() => { root.find-prev(term.id); }
+                        terminal-scroll(d) => { root.terminal-scroll(term.id, d); }
+                        terminal-wheel(d, c, r) => { root.terminal-wheel(term.id, d, c, r); }
+                        terminal-scroll-to(o) => { root.terminal-scroll-to(term.id, o); }
+                        terminal-scrollback-key(key) => { root.terminal-scrollback-key(term.id, key) }
+                        select-start(r, c, lh, ctrl, shift) => { root.term-select-start(term.id, r, c, lh, ctrl, shift); }
+                        select-word(r, c) => { root.term-select-word(term.id, r, c); }
+                        select-line(r, c) => { root.term-select-line(term.id, r, c); }
+                        select-update(r, c, lh) => { root.term-select-update(term.id, r, c, lh); }
+                        select-end() => { root.term-select-end(term.id); }
+                        select-autoscroll(dir) => { root.term-select-autoscroll(term.id, dir); }
                     }
-                    find-matches: term.find-matches;
-                    selection: term.selection;
-                    sftp-panel-height: term.sftp-panel-height;
-                    set-sftp-panel-height(v) => { root.set-pane-sftp-height(term.id, v); }
-                    sftp-panel-width: term.sftp-panel-width;
-                    set-sftp-panel-width(v) => { root.set-pane-sftp-width(term.id, v); }
-                    sftp-dock <=> root.sftp-dock;
-                    sftp-mode <=> root.sftp-mode;
-                    sftp-collapsed: term.sftp-collapsed;
-                    set-sftp-collapsed(v) => { root.set-pane-sftp-collapsed(term.id, v); }
-                    sftp-path: term.sftp-path;
-                    sftp-entries: term.sftp-entries;
-                    tunnels: term.tunnels;
-                    sftp-status: term.sftp-status;
-                    sftp-loading: term.sftp-loading;
-                    sftp-tree-nodes: term.sftp-tree-nodes;
-                    sftp-transfer-targets: root.tabs;
-                    sftp-selected-count: term.sftp-selected-count;
-                    sftp-sort-key: term.sftp-sort-key;
-                    sftp-sort-dir: term.sftp-sort-dir;
-                    sftp-available: term.sftp-available;
-                    connection-state: root.connection-state;
-                    conn-host: root.conn-host;
-                    conn-state: root.conn-state;
-                    resource-title: root.resource-title;
-                    cpu-percent: root.cpu-percent;
-                    mem-percent: root.mem-percent;
-                    swap-percent: root.swap-percent;
-                    mem-detail: root.mem-detail;
-                    swap-detail: root.swap-detail;
-                    net-top-up: root.net-top-up;
-                    net-top-down: root.net-top-down;
-                    net-top-history: root.net-top-history;
-                    net-bot-up: root.net-bot-up;
-                    net-bot-down: root.net-bot-down;
-                    net-bot-history: root.net-bot-history;
-                    net-ifaces: root.net-ifaces;
-                    net-selected: root.net-selected;
-                    net-show-selector: root.net-show-selector;
-                    disks: root.disks;
-                    system-info-available: root.system-info-available;
-                    proc-available: root.proc-available;
-                    quick-commands: root.quick-commands;
-                    quick-sidebar-enabled: root.quick-commands-as-sidebar;
-                    // Quick 入口按钮只在「快捷命令侧栏未开启」时显示。
-                    // 此前误绑 quick-panel-open：布局还原把 as-sidebar 关掉之后，
-                    // 侧栏消失而入口按钮仍被隐藏，快捷命令就彻底无法访问了。
-                    quick-panel-docked: root.quick-commands-as-sidebar && root.quick-panel-open;
-                    cmd-bar-hidden: !root.show-cmd-bar;
-                    // Per-session zoom override wins over the global size.
-                    term-font-size-px: term.font-size > 0 ? term.font-size * 1.0 : Theme.term-font-size / 1px;
-                    quick-external-command: root.quick-external-command;
-                    quick-external-send-enter: root.quick-external-send-enter;
-                    quick-external-sequence: root.quick-external-sequence;
-                    command-history: root.command-history;
-                    history-view: root.history-view;
-                    history-preview: root.history-preview;
-                    run-command(cmd, all) => { root.run-command(term.id, cmd, all); }
-                    tunnel-add(name, kind, bind, bind-port, host, host-port) => {
-                        root.tunnel-add(term.id, name, kind, bind, bind-port, host, host-port);
-                    }
-                    tunnel-stop(id) => { root.tunnel-stop(term.id, id); }
-                    copy-text(t) => { root.copy-text(t); }
-                    select-net-iface(i) => { root.select-net-iface(i); }
-                    open-system-info() => { root.open-system-info(); }
-                    open-processes() => { root.open-processes(); }
-                    delete-history(i) => { root.delete-history(i); }
-                    delete-history-cmd(c) => { root.delete-history-cmd(c); }
-                    search-history(q) => { root.search-history(q); }
-                    manage-quick-commands() => {
-                        root.qcm-name = "";
-                        root.qcm-command = "";
-                        root.qcm-group = "";
-                        root.qcm-edit-index = -1;
-                        root.quick-cmd-manage-open = true;
-                    }
-                    toggle-quick-group(g) => { root.toggle-quick-group(g); }
-                    edit-quick-command(i) => { root.edit-quick-command(i); }
-                    duplicate-quick-command(i) => { root.duplicate-quick-command(i); }
-                    delete-quick-command(i) => { root.delete-quick-command(i); }
-                    move-quick-command(i, g) => { root.move-quick-command(i, g); }
-                    new-quick-group() => { root.qcg-orig = ""; root.qcg-name = ""; root.qcg-open = true; }
-                    rename-quick-group(g) => { root.qcg-orig = g; root.qcg-name = g; root.qcg-open = true; }
-                    delete-quick-group(g) => { root.delete-quick-group(g); }
-                    send-key(key, ctrl, alt, shift) => { root.send-key(term.id, key, ctrl, alt, shift) }
-                    cycle-tab(reverse) => { root.cycle-tab(reverse); }
-                    terminal-resize(w, h) => { root.terminal-resize(term.id, w, h) }
-                    sftp-navigate(path) => { root.sftp-navigate(term.id, path); }
-                    sftp-download(path) => { root.sftp-download(term.id, path); }
-                    sftp-upload-clicked(dir, folder) => { root.sftp-upload-clicked(term.id, dir, folder); }
-                    sftp-refresh(path) => { root.sftp-refresh(term.id, path); }
-                    sftp-tree-expand(path) => { root.sftp-tree-expand(term.id, path); }
-                    sftp-toggle-select(i) => { root.sftp-toggle-select(term.id, i); }
-                    sftp-download-selected() => { root.sftp-download-selected(term.id); }
-                    sftp-copy-to-target(path, target) => { root.sftp-copy-to-target(term.id, path, target); }
-                    sftp-copy-selected-to-target(target) => { root.sftp-copy-selected-to-target(term.id, target); }
-                    // Confirm before deleting the checked entries (#100), reusing
-                    // the delete-confirm dialog in batch mode.
-                    sftp-delete-selected() => {
-                        root.confirm-delete-tab = term.id;
-                        root.confirm-delete-batch = true;
-                        root.confirm-delete-path = root.lang-en ? "the selected items" : "选中的项目";
-                        root.confirm-delete-open = true;
-                    }
-                    // Gate delete behind an in-app confirmation (#28): stash the
-                    // target and open the modal; the real delete fires on confirm.
-                    sftp-delete(path) => {
-                        root.confirm-delete-tab = term.id;
-                        root.confirm-delete-path = path;
-                        root.confirm-delete-open = true;
-                    }
-                    sftp-view(path) => { root.sftp-view(term.id, path); }
-                    sftp-edit(path) => { root.sftp-edit(term.id, path); }
-                    sftp-open-external(path) => { root.sftp-open-external(term.id, path); }
-                    sftp-edit-external(path) => { root.sftp-edit-external(term.id, path); }
-                    sftp-sort-request(key) => { root.sftp-sort-request(term.id, key); }
-                    sftp-clear-sort() => { root.sftp-clear-sort(term.id); }
-                    // #69 context-menu extensions → shared prompt dialog.
-                    sftp-rename-request(path, name) => {
-                        root.sftp-prompt-kind = "rename";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = path;
-                        root.sftp-prompt-value = name;
-                        root.sftp-prompt-open = true;
-                    }
-                    sftp-chmod-request(path, name, mode) => {
-                        root.sftp-chmod-open(term.id, path, name, mode);
-                    }
-                    sftp-copy-path(path) => { root.sftp-copy-path(path); }
-                    sftp-new-folder(dir) => {
-                        root.sftp-prompt-kind = "mkdir";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = dir;
-                        root.sftp-prompt-value = "";
-                        root.sftp-prompt-open = true;
-                    }
-                    sftp-new-file(dir) => {
-                        root.sftp-prompt-kind = "touch";
-                        root.sftp-prompt-tab = term.id;
-                        root.sftp-prompt-target = dir;
-                        root.sftp-prompt-value = "";
-                        root.sftp-prompt-open = true;
-                    }
-                    paste-from-clipboard() => { root.paste-from-clipboard(term.id); }
-                    copy-terminal-text() => { root.copy-terminal-text(term.id); }
-                    clear-terminal() => { root.clear-terminal(term.id); }
-                    find-query-changed(q) => { root.find-query-changed(term.id, q); }
-                    find-next() => { root.find-next(term.id); }
-                    find-prev() => { root.find-prev(term.id); }
-                    terminal-scroll(d) => { root.terminal-scroll(term.id, d); }
-                    terminal-wheel(d, c, r) => { root.terminal-wheel(term.id, d, c, r); }
-                    terminal-scroll-to(o) => { root.terminal-scroll-to(term.id, o); }
-                    terminal-scrollback-key(key) => { root.terminal-scrollback-key(term.id, key) }
-                    select-start(r, c, lh, ctrl, shift) => { root.term-select-start(term.id, r, c, lh, ctrl, shift); }
-                    select-word(r, c) => { root.term-select-word(term.id, r, c); }
-                    select-line(r, c) => { root.term-select-line(term.id, r, c); }
-                    select-update(r, c, lh) => { root.term-select-update(term.id, r, c, lh); }
-                    select-end() => { root.term-select-end(term.id); }
-                    select-autoscroll(dir) => { root.term-select-autoscroll(term.id, dir); }
                 }
 
                 // Windows may show the terminal model being reconstructed when
@@ -1534,10 +1522,10 @@ export component AppWindow inherits Window {
             opacity: 1 - parent.quick-progress;
             // `opacity: 0` 仍会吃掉点击，淡出走完就停止命中。
             visible: self.opacity > 0.001;
-            x: root.quick-panel-dock == "right" ? parent.width - parent.quick-w : 0px;
-            y: root.quick-panel-dock == "bottom" ? parent.height - parent.quick-h : 0px;
-            width: parent.quick-horizontal ? parent.quick-w : parent.width;
-            height: parent.quick-horizontal ? parent.height : parent.quick-h;
+            x: parent.width - parent.quick-w;
+            y: 0px;
+            width: parent.quick-w;
+            height: parent.height;
             commands: root.quick-commands;
             activate(command, send-enter) => {
                 root.quick-external-command = command;
@@ -1558,14 +1546,10 @@ export component AppWindow inherits Window {
         Rectangle {
             visible: root.quick-panel-open && !root.quick-panel-collapsed
                 && !root.in-dock-page;
-            x: root.quick-panel-dock == "left" ? parent.quick-w
-             : root.quick-panel-dock == "right" ? parent.width - parent.quick-w - 2px
-             : 0px;
-            y: root.quick-panel-dock == "top" ? parent.quick-h
-             : root.quick-panel-dock == "bottom" ? parent.height - parent.quick-h - 2px
-             : 0px;
-            width: parent.quick-horizontal ? 2px : parent.width;
-            height: parent.quick-horizontal ? parent.height : 2px;
+            x: parent.width - parent.quick-w - 2px;
+            y: 0px;
+            width: 2px;
+            height: parent.height;
             background: quick-split-ta.has-hover ? Theme.accent : transparent;
             animate background {
                 duration: quick-split-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -1574,30 +1558,17 @@ export component AppWindow inherits Window {
             }
             quick-split-ta := TouchArea {
                 // 视觉条 2px，命中区 12px（条左右各 5px）。
-                x: quick-area.quick-horizontal ? -5px : 0px;
-                y: quick-area.quick-horizontal ? 0px : -5px;
-                width: quick-area.quick-horizontal ? 12px : parent.width;
-                height: quick-area.quick-horizontal ? parent.height : 12px;
-                mouse-cursor: quick-area.quick-horizontal ? ew-resize : ns-resize;
+                x: -5px;
+                y: 0px;
+                width: 12px;
+                height: parent.height;
+                mouse-cursor: ew-resize;
                 moved => {
                     if (self.pressed) {
-                        if (quick-area.quick-horizontal) {
-                            root.quick-panel-width = clamp(
-                                root.quick-panel-dock == "right"
-                                    ? quick-area.width - ((self.absolute-position.x + self.mouse-x)
-                                        - quick-area.absolute-position.x)
-                                    : (self.absolute-position.x + self.mouse-x)
-                                        - quick-area.absolute-position.x,
-                                180px, max(200px, quick-area.width - 240px));
-                        } else {
-                            root.quick-panel-height = clamp(
-                                root.quick-panel-dock == "bottom"
-                                    ? quick-area.height - ((self.absolute-position.y + self.mouse-y)
-                                        - quick-area.absolute-position.y)
-                                    : (self.absolute-position.y + self.mouse-y)
-                                        - quick-area.absolute-position.y,
-                                120px, max(140px, quick-area.height - 160px));
-                        }
+                        root.quick-panel-width = clamp(
+                            quick-area.width - ((self.absolute-position.x + self.mouse-x)
+                                - quick-area.absolute-position.x),
+                            180px, max(200px, quick-area.width - 240px));
                     }
                 }
             }
@@ -1795,9 +1766,6 @@ export component AppWindow inherits Window {
         editor-find-step(content, query, current, reverse) => { root.editor-find-step(content, query, current, reverse); }
         editor-replace-all(query, replacement) => { root.editor-replace-all(query, replacement); }
     }
-    // --- Rename-session dialog ----------------------------------------------
-    // Tab context menu → Rename: a display-name override for one open session.
-    // Submitting an empty name restores the saved session name.
     // --- Rename-session dialog ----------------------------------------------
     // Tab context menu → Rename: a display-name override for one open session.
     // Submitting an empty name restores the saved session name.

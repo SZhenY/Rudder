@@ -820,6 +820,9 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
         // transient bad value never reaches the server.
         let pending_size: Rc<RefCell<HashMap<String, (u32, u32)>>> =
             Rc::new(RefCell::new(HashMap::new()));
+        // 按 tab 记住上次下发的尺寸，合并一次缩放里的重复上报。
+        let last_applied_size: Rc<RefCell<HashMap<String, (u32, u32)>>> =
+            Rc::new(RefCell::new(HashMap::new()));
         let resize_debounce = Rc::new(slint::Timer::default());
         window.on_terminal_resize(move |tab_id: SharedString, cols_f: f32, rows_f: f32| {
             // A hidden terminal (inactive tab, or a split sibling not currently
@@ -837,6 +840,7 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 .borrow_mut()
                 .insert(tab_id.to_string(), (cols, rows));
             let pending = pending_size.clone();
+            let applied = last_applied_size.clone();
             let handles = handles.clone();
             let bufs = bufs_resize.clone();
             let last = last_term_size.clone();
@@ -849,6 +853,12 @@ pub(crate) fn wire_key_input(window: &AppWindow, app: &AppContext) {
                 move || {
                     let settled: Vec<(String, (u32, u32))> = pending.borrow_mut().drain().collect();
                     for (tab, (cols, rows)) in settled {
+                        // 尺寸未变则不再下发 PTY。
+                        let duplicate = applied.borrow().get(&tab).copied() == Some((cols, rows));
+                        if duplicate {
+                            continue;
+                        }
+                        applied.borrow_mut().insert(tab.clone(), (cols, rows));
                         tracing::debug!("terminal_resize tab={} cols={} rows={}", tab, cols, rows);
                         apply_terminal_resize(&handles, &bufs, &last, &tab, cols, rows);
                         // Re-render so the reflowed (or resized) grid shows at once
