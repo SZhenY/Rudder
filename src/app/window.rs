@@ -622,6 +622,8 @@ mod auto_renderer_tests {
 
 #[cfg(test)]
 mod titlebar_drag_tests {
+    use crate::app::contract_sources::{WINDOW_SHELL_SLINT, none_contains, sources_contain};
+
     /// 标题栏拖动必须**先上膛、拖过阈值才交给系统**（`armed-drag` + 6px）。
     ///
     /// 为什么盯着这条：按下即 drag 会让系统接管指针，第一次点击的 up 不再派发，
@@ -630,18 +632,17 @@ mod titlebar_drag_tests {
     /// Slint 1.18 的 `WindowMoveArea` 走的是"抓走指针"那条路，所以这里用它替代不了。
     #[test]
     fn titlebar_drag_is_armed_before_handing_over_to_the_system() {
-        let src = include_str!("../../ui/components/window_shell.slint");
         assert!(
-            src.contains("armed-drag"),
+            sources_contain(WINDOW_SHELL_SLINT, "armed-drag"),
             "标题栏拖动必须保留 armed-drag（否则双击最大化失效）"
         );
         assert!(
-            src.contains("> 6px"),
+            sources_contain(WINDOW_SHELL_SLINT, "> 6px"),
             "拖动必须在位移超过 6px 后才交给系统（阈值被删就意味着按下即拖）"
         );
         // 注释里会提到 `WindowMoveArea`（解释为什么不用它），所以只认**元素声明**。
         assert!(
-            !src.contains("WindowMoveArea {"),
+            none_contains(WINDOW_SHELL_SLINT, "WindowMoveArea {"),
             "WindowMoveArea 会抓走指针、顶掉双击最大化，别在标题栏里用它"
         );
     }

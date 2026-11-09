@@ -214,6 +214,8 @@ mod settings_ui;
 mod settings_window;
 mod sub_windows;
 mod window_chrome;
+#[cfg(test)]
+mod contract_sources;
 use window_chrome::wire_window_chrome;
 use sampler::spawn_system_sampler;
 use updater::wire_update_check;

@@ -1,0 +1,43 @@
+import { Theme, AnimationSettings } from "../../theme.slint";
+import { IconText } from "../../components/text.slint";
+
+export component WallpaperSwatch inherits Rectangle {
+    in property <bool> selected;
+    callback clicked();
+    width: 120px;
+    height: 74px;
+    border-radius: 8px;
+    border-width: root.selected ? 3px : 1px;
+    border-color: root.selected ? Theme.state-selected-border : Theme.border-strong;
+    clip: true;
+    animate border-color {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-width {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+    @children
+    if root.selected : Rectangle {
+        x: parent.width - self.width - 5px;
+        y: 5px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: Theme.accent;
+        IconText {
+            centered: true;
+            text: "\u{E5CA}"; // check
+color: white; font-size: 13px * Theme.panel-font;
+            width: 100%; height: 100%;
+
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

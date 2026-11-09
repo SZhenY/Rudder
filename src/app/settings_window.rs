@@ -507,6 +507,8 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
 
 #[cfg(test)]
 mod sync_guard_tests {
+    use crate::app::contract_sources::{SETTINGS_WINDOW_RS, fn_body_in, mutable_theme_props};
+
     /// `Theme` 是**按窗口一份实例**，设置窗口靠 `sync_settings_theme` 逐项拷贝。
     /// 这份清单漏过两次（`accent-custom`、`panel-font`），所以用测试盯住：
     /// theme.slint 里每个 `in-out property` 都必须有对应的 setter，或在白名单里说明原因。
@@ -524,14 +526,9 @@ mod sync_guard_tests {
             "window-focused",
         ];
 
-        let src = include_str!("settings_window.rs");
-        let start = src
-            .find("fn sync_settings_theme")
-            .expect("sync_settings_theme 不见了");
-        let end = start + src[start..].find("\n}").expect("函数体结束位置找不到");
-        let body = &src[start..end];
+        let body = fn_body_in(SETTINGS_WINDOW_RS, "sync_settings_theme");
 
-        for prop in mutable_theme_props(include_str!("../../ui/theme.slint")) {
+        for prop in mutable_theme_props() {
             if ALLOWED_MISSING.contains(&prop.as_str()) {
                 continue;
             }
@@ -541,22 +538,6 @@ mod sync_guard_tests {
                 "Theme 属性 {prop} 没有同步到设置窗口：在 sync_settings_theme 里补 {setter}(..)"
             );
         }
-    }
-
-    /// 取 `export global Theme { .. }` 里的 `in-out property` 名（运行期可变的那批）。
-    fn mutable_theme_props(theme: &str) -> Vec<String> {
-        let start = theme
-            .find("export global Theme {")
-            .expect("Theme 全局不见了");
-        let end = start + theme[start..].find("\n}").expect("Theme 全局未闭合");
-        theme[start..end]
-            .lines()
-            .filter_map(|line| {
-                let rest = line.trim().strip_prefix("in-out property <")?;
-                let name = rest.split('>').nth(1)?.split([':', ';']).next()?.trim();
-                (!name.is_empty()).then(|| name.to_string())
-            })
-            .collect()
     }
 
     /// kebab-case → setter 名；两处根属性与 Theme 里同名属性不同名，单独映射。

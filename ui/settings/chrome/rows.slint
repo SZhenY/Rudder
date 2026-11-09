@@ -1,0 +1,219 @@
+import { Theme, AnimationSettings } from "../../theme.slint";
+import { Divider, VDivider } from "../../components/surfaces.slint";
+import { IconText } from "../../components/text.slint";
+import { StateSurface } from "../../components/interactive.slint";
+
+export component NavItem inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+    height: 30px;
+    border-radius: 6px;
+    // 1px 描边常驻（未选中时透明）：换成"选中才 1px"会让整行内容在切换时抖 1px。
+    border-width: 1px;
+    // 选中态由 `InterfacePanel` 的**滑轨**负责（整块滑动），这里只表达指针反馈。
+    // 两者叠加时（滑轨 state-selected + 行 state-hover）比选中更亮一档，
+    // 正好是"指针停在这一项上"的效果。
+    border-color: ta.has-hover ? Theme.accent-ring : transparent;
+    background: ta.has-hover ? Theme.state-hover : transparent;
+    animate background {
+        duration: ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-color {
+        duration: AnimationSettings.enter-state();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        spacing: 9px;
+        IconText { text: root.icon;
+               color: root.active ? Theme.accent : Theme.text-secondary;
+               font-size: 15px * Theme.panel-font; vertical-alignment: center; }
+        Text { text: root.label;
+               color: root.active ? Theme.accent : Theme.text-secondary;
+               font-weight: root.active ? 600 : 400;
+               font-size: 13px * Theme.panel-font; vertical-alignment: center; horizontal-stretch: 1; }
+    }
+}
+
+// Small muted group heading (字体 / 预览 / SFTP …).
+export component SectionHeader inherits Text {
+    font-size: 11px * Theme.panel-font;
+    font-weight: 700;
+    color: Theme.text-muted;
+    vertical-alignment: center;
+}
+
+// A settings row: label (+ optional description) on the left, a control slot on
+// the right via @children. Right-aligned and vertically centered.
+export component SettingRow inherits Rectangle {
+    in property <string> label;
+    in property <string> desc;
+    in property <bool> show-divider: true;
+    VerticalLayout {
+        HorizontalLayout {
+            spacing: 14px;
+            padding-top: 9px;
+            padding-bottom: 9px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 3px;
+                Text { text: root.label; font-size: 13px * Theme.panel-font; color: Theme.text-primary; }
+                if root.desc != "" : Text { text: root.desc; font-size: 11px * Theme.panel-font;
+                        color: Theme.text-muted; wrap: word-wrap;
+                        line-height-factor: 1.3; max-lines: 2; }
+            }
+            VerticalLayout {
+                alignment: center;
+                @children
+            }
+        }
+        if root.show-divider : Divider {}
+    }
+}
+
+/// 自绘胶囊开关（40×22）：轨道 + 滑块。设置行与「自定义规则」行共用同一份，
+/// 保证主题色与动画节奏一致。
+///
+/// ⚠️ 不用官方 std-widgets 的 `Switch`：fluent 风格里 `Palette.accent-background` 是
+/// **派生属性**（`accentify(#0078D4)`，跟随系统强调色），官方开关的"开"态因此永远是
+/// 自己那套蓝，换「配色」时它是设置页里最扎眼的一处死角。
+export component ToggleSwitch inherits Rectangle {
+    in-out property <bool> checked;
+    /// false = 置灰且不响应点击（用于"上级开关关闭时，下级不可操作"）。
+    in-out property <bool> interactive: true;
+    /// true = 值由模型/外部提供（`checked` 是一条单向绑定），点击只发意图，
+    /// 不在本地改 `checked` —— 就地赋值会把那条绑定拆掉，之后模型再变就传不进来。
+    in-out property <bool> mirror: false;
+    callback toggled(bool);
+
+    width: 40px;
+    height: 22px;
+    border-radius: 11px;
+    border-width: 1px;
+    border-color: root.checked ? Theme.accent : Theme.border-strong;
+    background: root.checked ? Theme.accent : Theme.bg-hover;
+    // 胶囊开关比普通交互态慢一档：滑块要跟着走完，100/50 会先到位、
+    // 滑块还在路上，看着像"壳先变、珠后到"。这里取 150/100。
+    animate background {
+        duration: root.checked ? AnimationSettings.short3() : AnimationSettings.short2();
+        easing: root.checked ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    animate border-color {
+        duration: root.checked ? AnimationSettings.short3() : AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
+        enabled: AnimationSettings.enabled;
+    }
+
+    knob := Rectangle {
+        x: root.checked ? parent.width - self.width - 3px : 3px;
+        y: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: root.checked ? #ffffff : Theme.text-secondary;
+        // 250ms：比交互态的 100ms 明显慢，又不到容器档的 300ms。
+        animate x {
+            duration: AnimationSettings.medium1();
+            easing: AnimationSettings.s-bouncy();
+            enabled: AnimationSettings.enabled;
+        }
+    }
+
+    opacity: root.interactive ? 1 : 0.45;
+    animate opacity {
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+
+    switch-ta := TouchArea {
+        mouse-cursor: root.interactive ? pointer : default;
+        clicked => {
+            if (!root.interactive) {
+                return;
+            }
+            if (root.mirror) {
+                // 只发意图：真正的值由调用方写回模型，绑定保持完好 —— 模型变化
+                // （例如总开关关闭）才能一路传到这里，并触发 150/250ms 的过渡。
+                root.toggled(!root.checked);
+            } else {
+                root.checked = !root.checked;
+                root.toggled(root.checked);
+            }
+        }
+    }
+}
+
+/// 「说明 + 开关」的设置行：`SettingRow` 加一个开关（元素落在基类的 `@children` 槽里），
+/// `label` / `desc` / `show-divider` 的用法与普通 `SettingRow` 一致。
+export component SettingSwitch inherits SettingRow {
+    in-out property <bool> checked;
+    in-out property <bool> interactive: true;
+    in-out property <bool> mirror: false;
+    callback toggled(bool);
+
+    ToggleSwitch {
+        checked <=> root.checked;
+        interactive: root.interactive;
+        mirror: root.mirror;
+        toggled(v) => { root.toggled(v); }
+    }
+}
+
+// 注：不再自绘 Switch —— 改用官方 std-widgets 的 `Switch`（`checked` 双向绑定 +
+// `toggled()` 无参回调）。自绘版存在的理由是"on 显示态 + 父级持有状态"，而官方版
+// `checked <=> root.x` 同样满足"状态归 Rust 侧 config"，且外观/无障碍由官方维护。
+
+
+// [- value +] stepper. Display-only `value`; emits the clamped new value.
+export component Stepper inherits Rectangle {
+    in property <int> value;
+    in property <int> minimum: 0;
+    in property <int> maximum: 100;
+    in property <int> step: 1;
+    in property <string> unit;
+    callback changed(int);
+    width: 112px;
+    height: 26px;
+    border-radius: 6px;
+    background: Theme.bg-elevated;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    clip: true;
+    HorizontalLayout {
+        StateSurface {
+            width: 30px;
+            radius: 0px;
+            clicked => { root.changed(max(root.minimum, root.value - root.step)); }
+            IconText { text: "\u{E15B}";font-size: 14px * Theme.panel-font;
+                   centered: true;
+                   color: Theme.text-secondary;}
+        }
+        VDivider {}
+        Text { text: root.value + root.unit; horizontal-stretch: 1;
+               font-size: 12px * Theme.panel-font; color: Theme.text-primary;
+               horizontal-alignment: center; vertical-alignment: center; }
+        VDivider {}
+        StateSurface {
+            width: 30px;
+            radius: 0px;
+            clicked => { root.changed(min(root.maximum, root.value + root.step)); }
+            IconText { text: "\u{E145}";font-size: 14px * Theme.panel-font;
+                   centered: true;
+                   color: Theme.text-secondary;}
+        }
+    }
+}
+
+// Compact cursor-shape choice with a live visual sample (#275).

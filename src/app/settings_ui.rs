@@ -545,28 +545,7 @@ mod tests {
     /// 因此解析目标随之改为 `page-id:`。写错（或按钮被删）会让集合变化，
     /// 下面的测试就会失败 —— 不会静默放过。
     fn reset_page_ids_from_ui() -> std::collections::BTreeSet<String> {
-        // 阶段 B 之后还原按钮随页面搬进了 `ui/settings/pages/*.slint`，
-        // 因此要扫的是**页面文件**而不是 interface_panel.slint。
-        const PAGES: &[&str] = &[
-            include_str!("../../ui/settings/pages/terminal.slint"),
-            include_str!("../../ui/settings/pages/appearance.slint"),
-            include_str!("../../ui/settings/pages/layout.slint"),
-            include_str!("../../ui/settings/pages/transfer.slint"),
-        ];
-        let mut ids = std::collections::BTreeSet::new();
-        for line in PAGES.iter().flat_map(|src| src.lines()) {
-            let Some((_, rest)) = line.split_once("page-id:") else {
-                continue;
-            };
-            let Some((_, after_quote)) = rest.split_once('"') else {
-                continue;
-            };
-            let Some((id, _)) = after_quote.split_once('"') else {
-                continue;
-            };
-            ids.insert(id.to_string());
-        }
-        ids
+        crate::app::contract_sources::reset_page_ids()
     }
 
     /// 每一页的「还原本页默认」按钮都必须在 `reset_page` 里有对应分支。
@@ -664,7 +643,10 @@ mod tests {
 
 #[cfg(test)]
 mod wiring_tests {
-
+    use crate::app::contract_sources::{
+        PAGE_RUST, PAGE_SLINT, THEME_SLINT, fn_body_in, props_in_all, sources_contain,
+        sources_for,
+    };
 
     /// UI 上位于本页、但**有意不由还原处理**的属性。每一条都要写清原因。
     const UI_ONLY: &[&str] = &[
@@ -718,39 +700,6 @@ mod wiring_tests {
         kebab.replace('-', "_")
     }
 
-    /// 一段 Slint 源码里 **root.<prop>** 形式的属性引用（排除回调调用）。
-    ///
-    /// 阶段 B 把设置页拆成独立文件之后，「这一页绑定了哪些设置」的权威来源就是
-    /// **页面文件本身**：`interface_panel.slint` 里对应位置只剩转发绑定
-    /// （`xxx <=> root.xxx`），不再能反映页面的真实内容。
-    fn props_in(src: &str) -> std::collections::BTreeSet<String> {
-        let mut out = std::collections::BTreeSet::new();
-        let mut from = 0;
-        while let Some(i) = src[from..].find("root.") {
-            let s = from + i + "root.".len();
-            let name: String = src[s..]
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
-                .collect();
-            // 后接 '(' 的是回调调用，不是属性引用。
-            let is_call = src[s + name.len()..].starts_with('(');
-            let advance = s + name.len().max(1);
-            if !name.is_empty() && !is_call {
-                out.insert(name);
-            }
-            from = advance;
-        }
-        out
-    }
-
-    fn fn_body(src: &str, name: &str) -> String {
-        let sig = format!("fn {name}(");
-        let start = src.find(&sig).unwrap_or_else(|| panic!("找不到函数 {name}"));
-        let rest = &src[start..];
-        let end = rest.find("\n}\n").map(|i| i + 3).unwrap_or(rest.len());
-        rest[..end].to_string()
-    }
-
     /// **每页还原必须覆盖该页绑定的每一个设置属性。**
     ///
     /// 锁的是一类真实 bug：还原只写了配置字段与控件属性，漏掉派生状态 ——
@@ -758,31 +707,11 @@ mod wiring_tests {
     /// 它们的共同特征是"UI 显示已还原、实际没生效"，人工 review 极难发现。
     #[test]
     fn every_page_property_is_covered_by_its_reset() {
-        // 每页给出：还原逻辑所在的 Rust 文件、以及**页面本身的 Slint 文件**。
-        // 路径写错会 panic（明确的失败，不会静默放过）。
-        let pages = [
-            ("terminal",
-             include_str!("settings/terminal.rs"),
-             include_str!("../../ui/settings/pages/terminal.slint"),
-             "reset"),
-            ("appearance",
-             include_str!("settings/appearance.rs"),
-             include_str!("../../ui/settings/pages/appearance.slint"),
-             "reset"),
-            ("layout",
-             include_str!("settings/layout.rs"),
-             include_str!("../../ui/settings/pages/layout.slint"),
-             "reset"),
-            ("transfer",
-             include_str!("settings/transfer.rs"),
-             include_str!("../../ui/settings/pages/transfer.slint"),
-             "reset"),
-        ];
-
+        // 每页的还原逻辑与页面文件都由 contract_sources 统一登记。
         let mut uncovered = Vec::new();
-        for (page, src, page_src, reset_fn) in pages {
-            let body = fn_body(src, reset_fn);
-            for prop in props_in(page_src) {
+        for (page, rust_sources) in PAGE_RUST {
+            let body = fn_body_in(rust_sources, "reset");
+            for prop in props_in_all(sources_for(PAGE_SLINT, page)) {
                 if UI_ONLY.contains(&prop.as_str())
                     || NOT_RESET_BY_DESIGN.iter().any(|(p, _)| *p == prop)
                     || COVERED_BY_HELPER.iter().any(|(p, _)| *p == prop)
@@ -804,14 +733,9 @@ mod wiring_tests {
     /// 防漏：页面文件必须真的解析出属性（解析逻辑失效时要立刻发现）。
     #[test]
     fn allowlists_only_mention_pages_that_exist() {
-        for (page, src) in [
-            ("terminal", include_str!("../../ui/settings/pages/terminal.slint")),
-            ("appearance", include_str!("../../ui/settings/pages/appearance.slint")),
-            ("layout", include_str!("../../ui/settings/pages/layout.slint")),
-            ("transfer", include_str!("../../ui/settings/pages/transfer.slint")),
-        ] {
+        for (page, sources) in PAGE_SLINT {
             assert!(
-                !props_in(src).is_empty(),
+                !props_in_all(sources).is_empty(),
                 "{page} 页解析不到任何属性 —— 测试的解析逻辑已失效"
             );
         }
@@ -823,11 +747,10 @@ mod wiring_tests {
     /// 一处分叉就会出现"色块是蓝的、界面不是"这种没人会去查的差异。
     #[test]
     fn default_accent_matches_theme_slint() {
-        let theme = include_str!("../../ui/theme.slint");
         let (dark, light) = crate::app::settings::appearance::ACCENT_DEFAULT;
         let expected = format!("accent-default: dark ? {dark} : {light}");
         assert!(
-            theme.contains(&expected),
+            sources_contain(THEME_SLINT, &expected),
             "theme.slint 里找不到 `{expected}` —— 出厂默认蓝与色表已经分叉"
         );
     }
@@ -838,13 +761,13 @@ mod wiring_tests {
     /// 表现是"选了浅色主题，面板是浅的、窗口底色还是深的"。
     #[test]
     fn wallpaper_switch_matches_ui() {
-        let page = include_str!("../../ui/settings/pages/appearance.slint");
+        let page = sources_for(PAGE_SLINT, "appearance");
         let expected = format!(
             "wallpaper-enabled: {}",
             crate::app::settings::appearance::WALLPAPER_UI_ENABLED
         );
         assert!(
-            page.contains(&expected),
+            sources_contain(page, &expected),
             "appearance.slint 里的 `{expected}` 与 Rust 的 WALLPAPER_UI_ENABLED 不一致"
         );
     }
