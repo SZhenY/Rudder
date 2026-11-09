@@ -38,27 +38,22 @@ pub(crate) fn resolve_ui_font_family() -> slint::SharedString {
         return chosen.into();
     }
 
-    // Diagnostic / escape hatch (#129): force a specific UI font without a rebuild.
-    // e.g. MEATSHELL_UI_FONT="Meatshell Mono" to test whether the embedded font
-    // renders when system fonts don't. Empty value is ignored.
-    if let Some(f) = std::env::var_os("MEATSHELL_UI_FONT") {
+    // 免重编强制指定界面字体族。空值忽略；设置里显式选过的字体优先于此处。
+    if let Some(f) = std::env::var_os("RUDDER_UI_FONT") {
         let f = f.to_string_lossy().into_owned();
         if !f.trim().is_empty() {
-            tracing::debug!(font = %f, "ui-font: overridden via MEATSHELL_UI_FONT");
+            tracing::debug!(font = %f, "ui-font: overridden via RUDDER_UI_FONT");
             return f.into();
         }
     }
 
-    // auto（空串）：返回空串 —— Slint 会用它自己的平台默认字体，这正是「跟随系统」
-    // 的语义，渲染结果与平台上任何原生应用一致；中文/emoji 走 parley 的逐脚本回退。
-    //
-    // 唯一例外：系统字体库一个面都枚举不到（#129 的老场景）时，平台默认同样解析不出
-    // 来，改用内嵌的 Meatshell Mono 兜底 —— 它一定能解析，至少不会整窗无字。
+    // 空串 = 跟随系统：Slint 用平台默认字体，中文/emoji 走 parley 逐脚本回退。
+    // 系统字体库枚举不到任何面时改用内嵌 JetBrains Mono，避免整窗无字。
     if system_fonts_available() {
         "".into()
     } else {
-        tracing::warn!("ui-font: no system fonts enumerated — using embedded 'Meatshell Mono'");
-        "Meatshell Mono".into()
+        tracing::warn!("ui-font: no system fonts enumerated — using embedded 'JetBrains Mono'");
+        "JetBrains Mono".into()
     }
 }
 
@@ -76,15 +71,10 @@ fn explicit_ui_family(saved: &str) -> Option<String> {
     }
 }
 
-/// 系统字体库能否枚举到字体 —— `false` 时连平台默认字体都不可靠（#129 的老场景）。
+/// 系统字体库能否枚举到任意 face。中文覆盖交给 parley 按脚本回退，这里不挑 CJK 家族。
 ///
-/// 注意这**不是**"有没有中文字体"：中文覆盖现在交给 parley 按脚本回退，不再需要
-/// 我们挑一个 CJK 家族写进 `font-family`。这里只判断字体库本身是否可用。
-///
-/// macOS 历史（#129）：某些 macOS 26 机器上 PingFang/Hiragino 能枚举到、但光栅化
-/// 出来是空白，Heiti/Songti 正常。那种情况本函数返回 `true`（字体库可用，坏的是
-/// 个别家族），当时的绕法是"优先挑 Heiti"—— 随着回退策略交给 parley，这个候选表
-/// 已不存在；若将来又出现整窗空白，先查这里，再看 `MEATSHELL_UI_FONT` 逃生口。
+/// 字体库不可用时改用内嵌 JetBrains Mono，避免整窗无字。排查整窗空白先看这里，
+/// 再用 `RUDDER_UI_FONT` 指定一个可渲染的家族。
 fn system_fonts_available() -> bool {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -98,7 +88,6 @@ fn system_fonts_available() -> bool {
 /// ```text
 /// ▍内嵌字体
 ///   JetBrains Mono
-///   Meatshell Mono
 /// ▍外置字体
 ///   Maple Mono Normal NL NF CN
 /// ▍系统字体
@@ -143,9 +132,7 @@ pub(crate) fn font_choices(
     // Embedded first, external (registered from the fonts dir) next,
     // system monospace families last — highest priority wins on duplicates.
     push_header(t("内嵌字体", "Embedded fonts"), &mut labels, &mut entries);
-    for family in ["JetBrains Mono", "Meatshell Mono"] {
-        push_family(family, &mut labels, &mut entries, &mut known);
-    }
+    push_family("JetBrains Mono", &mut labels, &mut entries, &mut known);
     push_header(t("外置字体", "External fonts"), &mut labels, &mut entries);
     for family in external {
         push_family(family, &mut labels, &mut entries, &mut known);

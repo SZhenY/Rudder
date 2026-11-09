@@ -45,9 +45,6 @@ pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     {
         w.global::<AnimationSettings>().set_speed(f.clamp(0.1, 10.0));
     }
-    if collapse_sftp {
-        w.set_sftp_collapsed(true);
-    }
 }
 
 /// 开关快捷命令侧栏：持久化、同步主窗口、开合面板、刷新设置窗口。

@@ -18,7 +18,7 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-# gh 在本仓库默认指向上游 meatshell，必须显式给仓库；CI 里 GITHUB_REPOSITORY 已就绪。
+# gh 默认指向上游仓库，必须显式给仓库；CI 里 GITHUB_REPOSITORY 已就绪。
 REPO="${GITHUB_REPOSITORY:-SZhenY/Rudder}"
 
 TAG="${1:-}"

@@ -531,9 +531,9 @@ pub const UPDATE_FREQUENCIES: [&str; 6] = [
 ];
 
 /// Bump when `migrate_defaults` gains a new one-time default-layout change.
-// rev 6 = A 方案（回滚上限治理）的迁移植入点：`migrate_defaults` 在 `rev >= DEFAULTS_REV`
-// 时直接早退，所以新增迁移必须同时把这个版本号 +1，否则迁移块永远不会执行。
-pub const DEFAULTS_REV: u32 = 6;
+/// `migrate_defaults` 在 `rev >= DEFAULTS_REV` 时早退，新增迁移必须同时把版本号 +1。
+// rev 7 = 移除内嵌 Meatshell Mono 后，把仍指向它的字体配置改回出厂默认。
+pub const DEFAULTS_REV: u32 = 7;
 
 /// 回滚行数的**常规**上限（A 方案）。默认值仍是 5 000 行，所以这项只约束"手动填大数"。
 pub const SCROLLBACK_MAX: usize = 100_000;
@@ -552,7 +552,7 @@ const PREVIOUS_DEFAULT_WALLPAPER_OVERLAY_015: f32 = 0.85;
 const DEFAULT_WALLPAPER_TRANSPARENCY: f32 = 0.30;
 pub(crate) const DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - DEFAULT_WALLPAPER_TRANSPARENCY;
 
-/// MCP 服务的出厂端口。与上游 meatshell 的 Streamable HTTP 默认值一致，
+/// MCP 服务的出厂端口。与上游实现的 Streamable HTTP 默认值一致，
 /// 避开 8080/3000 这类常被别的开发服务器占用的口。
 pub(crate) const DEFAULT_MCP_PORT: u16 = 8765;
 
@@ -633,6 +633,15 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     // （`set_large_scrollback(false)`）本身会把现值收回上限，所以条件之后不会再成立。
     if cfg.terminal.scrollback_lines > SCROLLBACK_MAX {
         cfg.terminal.large_scrollback = true;
+    }
+    // rev 7：内嵌字体已移除，把仍指向它的存储值改回出厂默认；其它值不动。
+    if cfg.defaults_rev < 7 {
+        if cfg.terminal.font_family == "Meatshell Mono" {
+            cfg.terminal.font_family = "JetBrains Mono".to_string();
+        }
+        if cfg.appearance.ui_font_family == "Meatshell Mono" {
+            cfg.appearance.ui_font_family = String::new();
+        }
     }
     cfg.defaults_rev = DEFAULTS_REV;
     true
@@ -3661,6 +3670,78 @@ mod tests {
         };
         assert!(migrate_defaults(&mut custom));
         assert!((custom.appearance.wallpaper_overlay - 0.95).abs() < f32::EPSILON);
+    }
+
+    // ── rev 7：内嵌 Meatshell Mono 移除后的字体配置迁移 ──────────────────────
+
+    fn font_cfg(rev: u32, term: &str, ui: &str) -> ConfigFile {
+        let mut cfg = ConfigFile {
+            defaults_rev: rev,
+            ..ConfigFile::default()
+        };
+        cfg.terminal.font_family = term.to_string();
+        cfg.appearance.ui_font_family = ui.to_string();
+        cfg
+    }
+
+    #[test]
+    fn font_migration_rewrites_only_exact_meatshell_values() {
+        let mut cfg = font_cfg(6, "Meatshell Mono", "Meatshell Mono");
+        assert!(migrate_defaults(&mut cfg));
+        assert_eq!(cfg.terminal.font_family.as_str(), "JetBrains Mono");
+        assert!(cfg.appearance.ui_font_family.is_empty());
+        assert_eq!(cfg.defaults_rev, DEFAULTS_REV);
+    }
+
+    #[test]
+    fn font_migration_preserves_other_user_choices() {
+        let mut cfg = font_cfg(6, "Maple Mono NF CN", "Helvetica Neue");
+        assert!(migrate_defaults(&mut cfg));
+        assert_eq!(cfg.terminal.font_family.as_str(), "Maple Mono NF CN");
+        assert_eq!(cfg.appearance.ui_font_family.as_str(), "Helvetica Neue");
+    }
+
+    #[test]
+    fn font_migration_runs_once_and_never_reverts_later_choices() {
+        let mut cfg = font_cfg(6, "Meatshell Mono", "Meatshell Mono");
+        assert!(migrate_defaults(&mut cfg));
+        cfg.terminal.font_family = "Meatshell Mono".to_string();
+        assert!(!migrate_defaults(&mut cfg));
+        assert_eq!(cfg.terminal.font_family.as_str(), "Meatshell Mono");
+    }
+
+    #[test]
+    fn font_migration_ignores_near_miss_values() {
+        for value in [
+            "Meatshell Mono Extra",
+            " meatshell mono",
+            "Meatshell Mono ",
+        ] {
+            let mut cfg = font_cfg(6, value, value);
+            assert!(migrate_defaults(&mut cfg));
+            assert_eq!(cfg.terminal.font_family.as_str(), value);
+            assert_eq!(cfg.appearance.ui_font_family.as_str(), value);
+        }
+    }
+
+    #[test]
+    fn rev6_upgrade_leaves_other_settings_untouched() {
+        let mut cfg = font_cfg(6, "JetBrains Mono", "");
+        cfg.appearance.wallpaper_overlay = 0.95;
+        cfg.terminal.scrollback_lines = 50_000;
+        assert!(migrate_defaults(&mut cfg));
+        assert!((cfg.appearance.wallpaper_overlay - 0.95).abs() < f32::EPSILON);
+        assert_eq!(cfg.terminal.scrollback_lines, 50_000);
+        assert!(!cfg.terminal.large_scrollback);
+    }
+
+    #[test]
+    fn fresh_config_skips_font_migration() {
+        let mut cfg = fresh_config();
+        assert_eq!(cfg.defaults_rev, DEFAULTS_REV);
+        assert!(!migrate_defaults(&mut cfg));
+        assert_eq!(cfg.terminal.font_family.as_str(), "JetBrains Mono");
+        assert!(cfg.appearance.ui_font_family.is_empty());
     }
 
     #[test]

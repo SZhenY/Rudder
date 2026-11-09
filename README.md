@@ -109,15 +109,15 @@ open /Applications/rudder.app
 - [x] 自定义输出高亮规则（关键词或正则、颜色、区分大小写、整行），规则可单独启停
 - [x] 回滚缓冲上限可调：常规 10 万行，需要检索超长输出时可开启「大回滚缓冲区」（最高 100 万行）
 - [x] 沉浸壁纸（内置简约·浅 / 暗，支持自定义图片）+ 主题色随壁纸派生
-- [x] 平台字体栈：界面自动使用平台默认字体（macOS SF Pro Text → Helvetica Neue + Heiti SC、Windows Segoe UI + DengXian、Linux Ubuntu/Cantarell + Noto Sans CJK），终端默认 JetBrains Mono（含暗淡文本的 ExtraLight 变体）；额外字体可放入字体目录，见[自定义字体](#自定义字体外置字体)
+- [x] 界面跟随系统平台默认字体（单个家族名，中文 / emoji 由 parley 逐脚本回退），终端默认 JetBrains Mono（含暗淡文本的 ExtraLight 变体）；额外字体可放入字体目录，见[自定义字体](#自定义字体外置字体)
 - [x] Windows on ARM64（zip + MSI 安装包）
 - [x] 平台视觉适配：macOS 更圆润的圆角 / 悬浮细滚动条 / 柔和卡片阴影，统一自绘风格
 - [x] **渲染档位只有「GPU / 软件」两档**：GPU 走 wgpu（macOS Metal / Windows D3D12 / Linux
   Vulkan），Windows / Linux 首次启动自动探测，没有可用 GPU 时自动落到软件渲染
 
 彩色 emoji 图形来自 [Twemoji](https://github.com/jdecked/twemoji)，按
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 使用；完整署名见
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 使用；内嵌字体与图标字体的许可
+一并见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ### 计划中
 
@@ -152,7 +152,7 @@ macOS 另有一个**只读的备用位置**：`Rudder.app/Contents/MacOS/rudder/
 - **终端字体**：设置 → 终端 → 终端字体（内嵌 + 外置 + 系统**等宽**字体）
 - **界面字体**：设置 → 外观 → 界面字体（内嵌 + 外置 + 系统**全部**字体）
 
-下拉框按来源分三段：`▍内嵌字体`（JetBrains Mono / Meatshell Mono）、
+下拉框按来源分三段：`▍内嵌字体`（JetBrains Mono）、
 `▍外置字体`（你放进去的）、`▍系统字体`（系统已安装的）。
 
 几个要知道的点：
@@ -162,10 +162,13 @@ macOS 另有一个**只读的备用位置**：`Rudder.app/Contents/MacOS/rudder/
 - 同名家族只出现一次，优先级 **内嵌 > 外置 > 系统** —— 放入同名文件可以覆盖内嵌字体那一项。
 - 终端字体列表里**外置字体不做等宽过滤**（只有系统字体过滤）。放进比例字体也能选中，
   但终端按网格排版，显示会很难看。
-- **外置字体不会被自动选用**：界面字体的默认值是平台字体栈，需要在设置里手动选择。
-- **暗淡文本（SGR-2）取的是 `字体名 + " Thin"`** 这个家族，不是字重。想让暗淡文本有真正的
-  细体效果，要一并放入该字体的 Thin 字重；像 Maple Mono 这种 Thin 单独成家族的
+- **外置字体不会被自动选用**：界面字体默认值是「跟随系统（自动）」，需要在设置里手动选择。
+- **暗淡文本（SGR-2）切换的是字体家族，不是字重**：内嵌 `JetBrains Mono` 用独立家族
+  `JetBrains Mono ExtraLight`；外置字体取 `字体名 + " Thin"`。想让外置字体的暗淡文本有
+  真正的细体效果，要一并放入该字体的 Thin 字重；像 Maple Mono 这种 Thin 单独成家族的
   （`Maple Mono Normal NL NF CN Thin`），它会作为**另一个条目**出现在列表里，属正常。
+- 排查字体渲染问题时可用 `RUDDER_UI_FONT=<家族名>` 免重编强制指定界面字体；空值忽略，
+  设置里显式选过的字体优先于该变量。
 
 ### 终端里的中文
 

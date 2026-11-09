@@ -394,10 +394,10 @@ fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
 /// foreground colour: faint text is drawn at reduced opacity, concealed text
 /// at full transparency (its background fill still shows).
 ///
-/// DIM is mostly a *weight* change these days: the UI switches the span to
-/// the font's " Thin" variant (see terminal_view.slint), so the alpha here is
-/// a gentle 0.85 rather than a heavy 0.55 — heavy translucency made faint
-/// text look washed out.
+/// DIM is expressed as a family switch: embedded JetBrains Mono uses the
+/// "JetBrains Mono ExtraLight" family, other fonts use "<family> Thin"
+/// (see terminal_view.slint). The alpha here is a gentle 0.85 rather than a
+/// heavy 0.55 — heavy translucency made faint text look washed out.
 fn vt_apply_attr_alpha(color: slint::Color, dim: bool, hidden: bool) -> slint::Color {
     if hidden {
         color.with_alpha(0.0)

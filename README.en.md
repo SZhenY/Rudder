@@ -112,13 +112,14 @@ open /Applications/rudder.app
 - [x] SFTP download resume (cancelled/failed transfers keep the partial file and auto-resume)
 - [x] Double-click word / triple-click line selection; find navigation with Enter / Shift+Enter
 - [x] Immersive wallpapers (built-in Minimal Light / Dark, custom image upload) with theme colors derived from the wallpaper
-- [x] Platform font stacks: UI uses platform default fonts (macOS SF Pro/PingFang, Windows Segoe UI/YaHei, Linux Ubuntu/Cantarell/Noto); terminal defaults to JetBrains Mono (with an ExtraLight variant for dim text)
+- [x] UI follows the platform default font (a single family; CJK and emoji fall back by script through parley); terminal defaults to JetBrains Mono (with an ExtraLight variant for dim text)
 - [x] Windows on ARM64 (zip + MSI installer)
 - [x] Platform visual adaptation: larger corner radii / hover scrollbars / softer card shadows on macOS, in one unified custom style
 
 Color emoji graphics are provided by [Twemoji](https://github.com/jdecked/twemoji)
-under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). See
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full attribution.
+under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Licenses for the
+embedded fonts and icon font are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ### Planned
 
@@ -171,6 +172,8 @@ rudder/
 
 - Slint widgets use a strict layout DSL; after editing a `.slint` file,
   `cargo check` is the fastest feedback loop.
+- `RUDDER_UI_FONT=<family>` forces a UI font without a rebuild when diagnosing
+  font rendering. Empty values are ignored; an explicit choice in Settings wins.
 - The application event loop is single-threaded (required by Slint); all
   cross-thread UI updates go through `slint::invoke_from_event_loop` callbacks.
 - SSH / SFTP share the `known_hosts` verification path: first contact asks for

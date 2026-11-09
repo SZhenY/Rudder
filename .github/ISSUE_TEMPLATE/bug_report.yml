@@ -1,11 +1,11 @@
 name: 问题反馈 / Bug report
-description: 报告 MeatShell 中可复现的问题，并提供定位问题所需的环境信息
+description: 报告 Rudder 中可复现的问题，并提供定位问题所需的环境信息
 title: "[Bug]: "
 body:
   - type: markdown
     attributes:
       value: |
-        感谢你帮助改进 MeatShell！
+        感谢你帮助改进 Rudder！
 
         提交前请先搜索现有 Issue，避免重复报告。请勿粘贴密码、私钥、访问令牌等敏感信息；日志和截图中的敏感内容也请先打码。
 
@@ -47,10 +47,10 @@ body:
       required: true
 
   - type: input
-    id: meatshell_version
+    id: rudder_version
     attributes:
-      label: MeatShell 版本
-      description: 可查看窗口右下角的版本号，或运行 `meatshell --version`。
+      label: Rudder 版本
+      description: 可查看窗口右下角的版本号，或运行 `rudder --version`。
       placeholder: 例如：0.6.7
     validations:
       required: true

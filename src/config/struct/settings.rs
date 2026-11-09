@@ -95,9 +95,9 @@ pub struct AppearanceSettings {
     /// "两个都有值"这种需要额外裁决的状态（rayburst 也是一份 `colorScheme` + 一份
     /// `customColorScheme`，靠约定消歧；这里直接用取值本身区分）。
     pub accent: String,
-    /// 平台渲染后端；空 = 平台默认（macOS → femtovg）。
+    /// 平台渲染后端；空 = 平台默认（GPU 优先，探测失败时落软件渲染）。
     pub renderer_mode: String,
-    /// 界面字体族；空 = 按平台自动探测 CJK 字体。
+    /// 界面字体族；空 = 跟随系统平台默认字体，缺字由 parley 按脚本回退。
     pub ui_font_family: String,
     /// 全局界面缩放百分比（0 = 100）。
     pub ui_scale: u32,

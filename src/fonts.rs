@@ -16,8 +16,8 @@
 //! - **macOS / Linux**: keep the original per-user OS config dir
 //!   (`~/.config/rudder/rudder/fonts` etc.).
 //!
-//! The embedded set stays minimal: JetBrains Mono (Regular/Bold/Italic) +
-//! Meatshell Mono (Regular/Bold) + Material Icons.
+//! The embedded set stays minimal: JetBrains Mono
+//! (Regular/Bold/Italic/ExtraLight) + Material Icons.
 
 use std::path::{Path, PathBuf};
 

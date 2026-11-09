@@ -5,18 +5,13 @@ import { DiskInfo } from "sidebar_blocks.slint";
 import { TabInfo } from "tabs.slint";
 import { ToolStrip } from "widgets.slint";
 
-// Embed the terminal fonts here too so the cell-probe Text below measures
-// with the CORRECT font (the built-in Meatshell Mono), not a system fallback.
-// Font imports in app.slint are globally available in theory, but some Slint
-// builds only register them in the entry-point file's component tree; importing
-// them here guarantees the probe uses Meatshell Mono for its width calc.
-import "fonts/MeatshellMono-Regular.ttf";
-import "fonts/MeatshellMono-Bold.ttf";
+// Register the terminal fonts here too: some Slint builds only register fonts
+// in the entry-point component tree, and the cell-probe must measure with the
+// configured terminal font instead of a system fallback.
 // JetBrains Mono is the default term-font-family and the cell-probe measures
-// *its* advance width when configured, so all three variants must be
-// registered here too — otherwise the probe silently falls back to a system
-// font and the column grid drifts. The Italic face is what SGR 3 (italic)
-// matches via Slint's font-variant lookup.
+// its advance width, so all four faces must be registered here too — otherwise
+// the probe falls back to a system font and the column grid drifts. The Italic
+// face is what SGR 3 (italic) matches via Slint's font-variant lookup.
 import "fonts/JetBrainsMono-Regular.ttf";
 import "fonts/JetBrainsMono-Bold.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
@@ -44,7 +39,7 @@ export struct TermSpan {
     fg: color,
     bg: color,
     bold: bool,
-    dim: bool,      // SGR 2 — rendered with the font's " Thin" variant + 0.85 alpha
+    dim: bool,      // SGR 2 — "JetBrains Mono ExtraLight" or "<family> Thin" + 0.85 alpha
     italic: bool,
     // underline style: 0=none 1=single 2=double 3=curly 4=dotted 5=dashed
     // (curly/dotted/dashed fall back to a single line — Slint has no
@@ -326,8 +321,8 @@ export component TerminalView inherits Rectangle {
     property <bool>   sftp-dragging:     false;
 
     // --- Real cell-size measurement ----------------------------------------
-    // A hidden Text rendered with the exact terminal font reports the true
-    // Consolas cell width/height for the current font size.  We derive the PTY
+    // A hidden Text rendered with the exact terminal font reports the real
+    // cell width/height for the current font size. We derive the PTY
     // column/row counts from these measured cells instead of guessing 8×16px,
     // so full-screen programs (nano/vim) get an accurate row count and their
     // bottom shortcut bar is no longer clipped off the visible area.
@@ -336,10 +331,9 @@ export component TerminalView inherits Rectangle {
     // advance, which would make absolutely-positioned spans drift apart.  The
     // average advance over a long run (side bearings amortised) is accurate.
     // Cell-size probe: must be RENDERED (opacity:0, not visible:false) so Slint
-    // resolves the correct embedded font before computing preferred-width/height.
-    // visible:false can skip font loading and fall back to a system font (e.g.
-    // Consolas ~6.5 px/char instead of Meatshell Mono ~7.6 px/char), giving a
-    // cell-w that is too narrow and a term-cols that is too large.
+    // resolves the embedded terminal font before computing preferred-size.
+    // visible:false can skip font loading and fall back to a system font with a
+    // different advance width, giving a wrong cell-w and term-cols.
     click-timer := Timer {
         interval: 450ms;
         running: root.click-streak > 0;
@@ -533,7 +527,7 @@ export component TerminalView inherits Rectangle {
 
                     // The terminal grid.  Each coloured run is placed with
                     // absolute coordinates derived from its (row, col) and the
-                    // measured Consolas cell size — no per-line layout needed,
+                    // measured cell size — no per-line layout needed,
                     // which keeps the model flat (a single `for`).
                     Rectangle {
                         x: 5px;
@@ -735,9 +729,9 @@ export component TerminalView inherits Rectangle {
                                 // otherwise (e.g. Maple Mono CN) they keep the
                                 // terminal font so Chinese text inherits the
                                 // italic / thin variants too.
-                                // SGR 2 (dim) switches to the family's " Thin"
-                                // variant (MapleMono ships Thin as its own
-                                // family) for a genuine light-weight look.
+                                // SGR 2 (dim) switches the family: embedded
+                                // JetBrains Mono -> "JetBrains Mono ExtraLight",
+                                // other families -> "<family> Thin".
                                 font-family: (span.cjk && !Theme.term-font-cjk) ? root.ff-cjk
                                            : span.dim ? root.ff-dim
                                            : root.ff-normal;

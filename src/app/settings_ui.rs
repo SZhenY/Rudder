@@ -155,8 +155,6 @@ pub(super) fn ensure_font_pickers(window: &AppWindow) -> FontCatalog {
     let (font_labels, font_entries) = font_choices(&external, true);
     window.set_term_fonts(ModelRc::from(Rc::new(VecModel::from(font_labels))));
     // 界面字体列表最前面补一项「跟随系统（自动）」= 出厂默认（空串）的显示项。
-    // 没有它时，选择器只能显示"字体栈里第一个可枚举的家族"—— macOS 上那是
-    // Helvetica Neue，而实际首选是 SF Pro Text，显示与事实不符。
     let (mut ui_labels, mut ui_entries) = font_choices(&external, false);
     ui_labels.insert(0, crate::app::fonts_ui::auto_font_label().into());
     ui_entries.insert(0, crate::app::FontEntry::Auto);
@@ -283,16 +281,10 @@ pub(super) fn seed_settings(window: &AppWindow, ctx: &AppContext) {
     }
 
     start_system_theme_watcher(window, store, bufs);
-    // Editable inputs (e.g. the SFTP path bar) need a CJK-capable font: the
-    // embedded mono font has no Chinese glyphs and native TextInput doesn't
-    // glyph-fallback like Text does, so typed Chinese would render as tofu (#54).
-    //
-    // We must NOT hard-code one system font name: on macOS 26 (Tahoe) fontdb
-    // failed to register "PingFang SC", so the UI default font resolved to nothing
-    // and *all* text vanished (#129) — icons survived only because they use an
-    // embedded font. Instead probe what fontdb actually loaded and pick the first
-    // resolvable CJK family, falling back to the embedded "Meatshell Mono" so the
-    // window is never fully blank even when the system font DB is unreadable.
+    // Editable inputs need a CJK-capable font: native TextInput doesn't
+    // glyph-fallback like Text does (#54). An empty ui-font-family lets Slint
+    // use the platform default; resolve_ui_font_family falls back to embedded
+    // JetBrains Mono when no system font registers, so text never vanishes (#129).
     window.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
     // Runtime font loading: fonts dropped into the fonts dir (Windows:
     // <exe_dir>/config/fonts; macOS/Linux: per-user config dir) are registered
@@ -617,7 +609,6 @@ mod tests {
             term: Rc::new(vec![
                 FontEntry::Header("内嵌字体"),
                 FontEntry::Family("JetBrains Mono".into()),
-                FontEntry::Family("Meatshell Mono".into()),
             ]),
             ui: Rc::new(vec![
                 FontEntry::Header("内嵌字体"),

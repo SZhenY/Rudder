@@ -166,7 +166,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 
 # ── MCP server（进程内，供外部 AI agent 通过 HTTP 操作本程序）──
-# 固定在 2.2：上游 meatshell 已验证这套组合（server + streamable-http 传输）；
+# 固定在 2.2：已验证这套组合（server + streamable-http 传输）；
 # 2.x 的 API 跨小版本仍会动，升级要连同 handler 一起改。
 rmcp = { version = "=2.2.0", default-features = false, features = [
     "server", "transport-streamable-http-server",

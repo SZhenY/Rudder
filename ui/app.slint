@@ -1,18 +1,7 @@
 // Embedded cross-platform fonts (compile-time): terminal monospace + UI icons.
 import { AnimationSettings } from "theme.slint";
-// Embedding means Windows / Linux / macOS all render the same glyphs without
-// relying on Consolas / Segoe MDL2 Assets being installed.
-//
-// "Meatshell Mono" is Cascadia Mono re-named to a unique family (#114): full
-//   box-drawing + block-elements + braille (needed by htop/btop graphs). The
-//   original "Cascadia Mono" name collides with the system font family, so on a
-//   machine without Cascadia installed (e.g. Win11 Home) the OS font matcher
-//   substituted a glyph-poor fallback and box/braille rendered as tofu. A unique
-//   name (like Material Icons) can't be shadowed, so the embedded font is always
-//   used.
-// Material Icons: open-source icon font replacing Windows-only Segoe MDL2 Assets.
-import "fonts/MeatshellMono-Regular.ttf";
-import "fonts/MeatshellMono-Bold.ttf";
+// JetBrains Mono (Regular/Bold/Italic/ExtraLight) is the default terminal font;
+// Material Icons provides the UI icons. Neither depends on a system font.
 import "fonts/JetBrainsMono-Regular.ttf";
 import "fonts/JetBrainsMono-Bold.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
@@ -556,7 +545,6 @@ export component AppWindow inherits Window {
     callback pick-wsl-directory();
     in-out property <bool> collapse-sftp-default: false;
     callback set-collapse-sftp-default(bool);      // apply + persist
-    in-out property <bool> sftp-collapsed: false;       // (legacy global; per-tab now)
     // Per-session SFTP state: persist the collapse + sizes into that tab's
     // TerminalState so split panes / other tabs keep their own (#v0.5).
     callback set-pane-sftp-collapsed(string /* tab-id */, bool);

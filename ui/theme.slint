@@ -192,22 +192,21 @@ export global Theme {
     out property <length> fs-lg: 15px * root.ui-scale;
     out property <length> fs-xl: 18px * root.ui-scale;
 
-    // Embedded glyph-complete monospace (Cascadia Mono under a unique name, #114).
-    out property <string> font-mono: "Meatshell Mono";
+    // Embedded monospace for IP / command / log text.
+    out property <string> font-mono: "JetBrains Mono";
 
-    // UI (sans) font for editable inputs. The embedded mono font has no CJK
-    // glyphs and native TextInput doesn't glyph-fallback like Text does, so
-    // typing Chinese into a bare TextInput renders tofu. Rust sets this to a
-    // CJK-capable system font on startup (empty = platform default).
+    // UI (sans) font for editable inputs. Rust passes the single family the
+    // user selected; empty = platform default, missing glyphs fall back by
+    // script through parley. The embedded mono font has no CJK glyphs.
     in-out property <string> ui-font-family: "";
 
     // Terminal font — user-configurable via Interface settings, set by Rust
     // from the config on startup. cell size in terminal_view derives from these.
     // Default: "JetBrains Mono" (embedded). Large CJK fonts (e.g. Maple Mono,
     // ~20 MB/weight) are NOT embedded; users drop them into the fonts dir and
-    // they become selectable here after a restart. If the chosen family has a
-    // "… Thin" sub-family, the SGR-2 dim styling switches to it for a genuine
-    // light-weight look (#dim-thin).
+    // they become selectable here after a restart. SGR-2 dim switches the
+    // family: embedded JetBrains Mono uses "JetBrains Mono ExtraLight", other
+    // families use "<family> Thin" when that sub-family exists.
     in-out property <string> term-font-family: "JetBrains Mono";
     // True when the active terminal font covers CJK glyphs (Rust probes the
     // family name for CN/SC/TC/JP/KR/CJK/Han tags). CJK terminal spans then

@@ -284,27 +284,29 @@ pub(super) fn tuple5_rows(rows: &[(String, String, String, String, String)]) -> 
 }
 
 pub(super) fn sync_proc_theme(main: &AppWindow, proc: &ProcWindow) {
-    proc.set_dark_mode(main.global::<Theme>().get_dark());
-    proc.set_ui_scale(main.global::<Theme>().get_ui_scale());
-    proc.set_ui_font_family(main.global::<Theme>().get_ui_font_family());
+    let t = main.global::<Theme>();
+    proc.set_dark_mode(t.get_dark());
+    proc.set_ui_scale(t.get_ui_scale());
+    proc.set_ui_font_family(t.get_ui_font_family());
     // Mirror the immersive wallpaper so the detached window shares the frosted
     // backdrop instead of a flat panel.
-    proc.set_wallpaper_img(main.global::<Theme>().get_wallpaper());
-    proc.set_wallpaper_active(main.global::<Theme>().get_wallpaper_active());
-    proc.set_wp_accent(main.global::<Theme>().get_wp_accent());
-    proc.set_wp_tint(main.global::<Theme>().get_wp_tint());
-    proc.set_wp_base(main.global::<Theme>().get_wp_base());
+    proc.set_wallpaper_img(t.get_wallpaper());
+    proc.set_wallpaper_active(t.get_wallpaper_active());
+    proc.set_wp_accent(t.get_wp_accent());
+    proc.set_wp_tint(t.get_wp_tint());
+    proc.set_wp_base(t.get_wp_base());
 }
 
 pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
-    sys.set_dark_mode(main.global::<Theme>().get_dark());
-    sys.set_ui_scale(main.global::<Theme>().get_ui_scale());
-    sys.set_ui_font_family(main.global::<Theme>().get_ui_font_family());
-    sys.set_wallpaper_img(main.global::<Theme>().get_wallpaper());
-    sys.set_wallpaper_active(main.global::<Theme>().get_wallpaper_active());
-    sys.set_wp_accent(main.global::<Theme>().get_wp_accent());
-    sys.set_wp_tint(main.global::<Theme>().get_wp_tint());
-    sys.set_wp_base(main.global::<Theme>().get_wp_base());
+    let t = main.global::<Theme>();
+    sys.set_dark_mode(t.get_dark());
+    sys.set_ui_scale(t.get_ui_scale());
+    sys.set_ui_font_family(t.get_ui_font_family());
+    sys.set_wallpaper_img(t.get_wallpaper());
+    sys.set_wallpaper_active(t.get_wallpaper_active());
+    sys.set_wp_accent(t.get_wp_accent());
+    sys.set_wp_tint(t.get_wp_tint());
+    sys.set_wp_base(t.get_wp_base());
 }
 
 /// 让子窗口真正画出第一帧。

@@ -2471,9 +2471,8 @@ mod font_choice_tests {
         assert!(matches!(&entries[0], FontEntry::Header("内嵌字体")));
         assert!(labels[0].as_str().starts_with("▍"));
         assert!(matches!(&entries[1], FontEntry::Family(f) if f == "JetBrains Mono"));
-        assert!(matches!(&entries[2], FontEntry::Family(f) if f == "Meatshell Mono"));
-        assert!(matches!(&entries[3], FontEntry::Header("外置字体")));
-        assert!(matches!(&entries[4], FontEntry::Family(f) if f == "外部字体 A"));
+        assert!(matches!(&entries[2], FontEntry::Header("外置字体")));
+        assert!(matches!(&entries[3], FontEntry::Family(f) if f == "外部字体 A"));
         // The last header is the system group.
         let last_header = entries
             .iter()
