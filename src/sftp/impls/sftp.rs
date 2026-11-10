@@ -35,26 +35,26 @@ use crate::ssh::{RemoteEntry, RemoteTreeNode, SessionEvent};
 
 
 
-#[path = "sftp/handles.rs"] mod handles;
-#[path = "sftp/launcher.rs"] mod launcher;
+#[path = "handles.rs"] mod handles;
+#[path = "launcher.rs"] mod launcher;
 pub(crate) use launcher::*;
-#[path = "sftp/tree.rs"] mod tree;
+#[path = "tree.rs"] mod tree;
 pub(crate) use tree::*;
-#[path = "sftp/editor.rs"] mod editor;
+#[path = "editor.rs"] mod editor;
 pub(crate) use editor::*;
-#[path = "sftp/remote.rs"] mod remote;
+#[path = "remote.rs"] mod remote;
 pub(crate) use remote::*;
-#[path = "sftp/paths.rs"] mod paths;
+#[path = "paths.rs"] mod paths;
 pub(crate) use paths::*;
-#[path = "sftp/listing.rs"] mod listing;
+#[path = "listing.rs"] mod listing;
 pub(crate) use listing::*;
-#[path = "sftp/download.rs"] mod download;
+#[path = "download.rs"] mod download;
 pub(crate) use download::*;
-#[path = "sftp/dir_ops.rs"] mod dir_ops;
+#[path = "dir_ops.rs"] mod dir_ops;
 pub(crate) use dir_ops::*;
-#[path = "sftp/upload.rs"] mod upload;
+#[path = "upload.rs"] mod upload;
 pub(crate) use upload::*;
-#[path = "sftp/handler.rs"] mod handler;
+#[path = "handler.rs"] mod handler;
 pub(crate) use handler::*;
 
 #[cfg(test)]

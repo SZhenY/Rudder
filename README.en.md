@@ -162,7 +162,10 @@ rudder/
 │   └── terminal_view.slint  # terminal view (v0.1 line-buffered)
 └── src/
     ├── main.rs
-    ├── app.rs               # UI ↔ backend bridge
+    ├── app/
+    │   ├── mod.rs           # UI ↔ backend bridge entry
+    │   ├── impls/           # callbacks and runtime logic
+    │   └── struct/          # shared state types (AppContext, SecretCred)
     ├── config.rs            # session JSON persistence
     ├── system.rs            # CPU / memory / network sampling
     └── ssh.rs               # SSH session worker

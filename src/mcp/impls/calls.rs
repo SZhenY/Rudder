@@ -108,13 +108,13 @@ pub(super) async fn call(
     }
 }
 
-#[path = "calls/status.rs"] mod status;
+#[path = "calls_status.rs"] mod status;
 pub(crate) use status::*;
-#[path = "calls/terminal.rs"] mod terminal;
+#[path = "calls_terminal.rs"] mod terminal;
 pub(crate) use terminal::*;
-#[path = "calls/exec.rs"] mod exec;
+#[path = "calls_exec.rs"] mod exec;
 pub(crate) use exec::*;
-#[path = "calls/sftp.rs"] mod sftp;
+#[path = "calls_sftp.rs"] mod sftp;
 pub(crate) use sftp::*;
 
 #[cfg(test)]

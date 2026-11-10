@@ -5,6 +5,13 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 变更 / Changed
+
+- 模块目录统一为 `mod.rs` + `impls/` + `struct/`：`src/app.rs` 改为 `src/app/mod.rs`，
+  回调与运行逻辑移入 `impls/`，共享状态类型（`AppContext` / `SecretCred` / `WinActivity`）
+  移入 `struct/`；SSH、SFTP、MCP、配置、终端渲染的临时片段目录展平到各自 `impls/`，
+  SSH 数据类型移入 `struct/model.rs`。仅移动文件与补再导出，函数体与行为未改。
+
 ## [0.8.1-beta2] - 2026-11-03
 
 ### 新增 / Added

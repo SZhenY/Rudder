@@ -19,19 +19,19 @@ use crate::config::{AuthMethod, PortForward, Secret, Session, SessionTrigger};
 use crate::i18n::t;
 
 
-#[path = "ssh/helpers.rs"] mod helpers;
+#[path = "helpers.rs"] mod helpers;
 pub(crate) use helpers::*;
-#[path = "ssh/format.rs"] mod format;
+#[path = "format.rs"] mod format;
 pub(crate) use format::*;
-#[path = "ssh/prompt.rs"] mod prompt;
+#[path = "prompt.rs"] mod prompt;
 pub(crate) use prompt::*;
-#[path = "ssh/model.rs"] mod model;
+#[path = "../struct/model.rs"] mod model;
 pub(crate) use model::*;
-#[path = "ssh/ops.rs"] mod ops;
+#[path = "ops.rs"] mod ops;
 pub(crate) use ops::*;
-#[path = "ssh/monitor.rs"] mod monitor;
+#[path = "monitor.rs"] mod monitor;
 pub(crate) use monitor::*;
-#[path = "ssh/handler.rs"] mod handler;
+#[path = "handler.rs"] mod handler;
 pub(crate) use handler::*;
 
 #[cfg(test)]

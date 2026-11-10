@@ -2318,9 +2318,9 @@ impl ConfigStore {
 
 }
 
-#[path = "config_store/mcp.rs"] mod mcp;
-#[path = "config_store/groups.rs"] mod groups;
-#[path = "config_store/export.rs"] mod export;
+#[path = "store_mcp.rs"] mod mcp;
+#[path = "store_groups.rs"] mod groups;
+#[path = "store_export.rs"] mod export;
 
 #[cfg(test)]
 #[path = "config_tests.rs"]

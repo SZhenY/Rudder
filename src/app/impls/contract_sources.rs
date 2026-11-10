@@ -6,19 +6,19 @@ use std::collections::BTreeSet;
 pub(crate) const PAGE_SLINT: &[(&str, &[&str])] = &[
     (
         "terminal",
-        &[include_str!("../../ui/settings/pages/terminal.slint")],
+        &[include_str!("../../../ui/settings/pages/terminal.slint")],
     ),
     (
         "appearance",
-        &[include_str!("../../ui/settings/pages/appearance.slint")],
+        &[include_str!("../../../ui/settings/pages/appearance.slint")],
     ),
     (
         "layout",
-        &[include_str!("../../ui/settings/pages/layout.slint")],
+        &[include_str!("../../../ui/settings/pages/layout.slint")],
     ),
     (
         "transfer",
-        &[include_str!("../../ui/settings/pages/transfer.slint")],
+        &[include_str!("../../../ui/settings/pages/transfer.slint")],
     ),
 ];
 
@@ -30,9 +30,9 @@ pub(crate) const PAGE_RUST: &[(&str, &[&str])] = &[
     ("transfer", &[include_str!("settings/transfer.rs")]),
 ];
 
-pub(crate) const THEME_SLINT: &[&str] = &[include_str!("../../ui/theme.slint")];
+pub(crate) const THEME_SLINT: &[&str] = &[include_str!("../../../ui/theme.slint")];
 pub(crate) const WINDOW_SHELL_SLINT: &[&str] =
-    &[include_str!("../../ui/components/window_shell.slint")];
+    &[include_str!("../../../ui/components/window_shell.slint")];
 pub(crate) const SETTINGS_WINDOW_RS: &[&str] = &[include_str!("settings_window.rs")];
 
 pub(crate) fn sources_for(

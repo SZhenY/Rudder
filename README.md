@@ -292,8 +292,10 @@ rudder/
 │   └── en/                      # English
 └── src/
     ├── main.rs                  # 入口
-    ├── app.rs                   # UI ↔ 后端桥接（核心控制器）
-    ├── app/                     # 桥接层拆出的回调模块（会话、设置页、自更新…）
+    ├── app/
+    │   ├── mod.rs               # UI ↔ 后端桥接入口（核心控制器）
+    │   ├── impls/               # 回调与运行逻辑（会话、设置页、自更新、工具栏…）
+    │   └── struct/              # AppContext / SecretCred / WinActivity 等共享类型
     ├── terminal/                # 终端模拟子系统
     │   └── impls/
     │       ├── vt_adapter.rs    # alacritty_terminal 封装

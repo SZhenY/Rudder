@@ -3,7 +3,7 @@ use super::*;
 #[cfg(target_os = "linux")]
 pub(super) fn set_window_icon(window: &AppWindow) {
     use i_slint_backend_winit::winit::window::Icon;
-    const ICON_PNG: &[u8] = include_bytes!("../../assets/icon@512.png");
+    const ICON_PNG: &[u8] = include_bytes!("../../../assets/icon@512.png");
     let Ok(img) = image::load_from_memory(ICON_PNG) else {
         return;
     };

@@ -8,13 +8,13 @@ use std::collections::HashMap;
 
 
 
-#[path = "presentation/highlight.rs"] mod highlight;
+#[path = "presentation_highlight.rs"] mod highlight;
 pub(crate) use highlight::*;
-#[path = "presentation/emoji.rs"] mod emoji;
+#[path = "presentation_emoji.rs"] mod emoji;
 pub(crate) use emoji::*;
-#[path = "presentation/runs.rs"] mod runs;
+#[path = "presentation_runs.rs"] mod runs;
 pub(crate) use runs::*;
-#[path = "presentation/colors.rs"] mod colors;
+#[path = "presentation_colors.rs"] mod colors;
 pub(crate) use colors::*;
 
 #[cfg(test)]
