@@ -19,6 +19,8 @@ import { StateSurface } from "components/interactive.slint";
 import { IconText } from "components/text.slint";
 import { ScrollView } from "std-widgets.slint";
 
+import { DialogActions } from "components/dialog_actions.slint";
+
 export component McpConsentDialog inherits Rectangle {
     in-out property <bool> is-open: false;
     in property <bool> lang-en;
@@ -378,23 +380,11 @@ export component McpConsentDialog inherits Rectangle {
                 }
             }
 
-            HorizontalLayout {
-                alignment: end;
-                spacing: 8px;
-
-                GhostButton {
-                    text: root.lang-en ? "Deny" : "拒绝接入";
-                    clicked => {
-                        root.reject();
-                    }
-                }
-
-                PrimaryButton {
-                    text: root.lang-en ? "Allow" : "允许接入";
-                    clicked => {
-                        root.accept();
-                    }
-                }
+            DialogActions {
+                cancel-text: root.lang-en ? "Deny" : "拒绝接入";
+                ok-text: root.lang-en ? "Allow" : "允许接入";
+                cancelled => { root.reject(); }
+                confirmed => { root.accept(); }
             }
         }
 

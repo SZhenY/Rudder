@@ -11,6 +11,8 @@ import { Theme } from "theme.slint";
 import { PrimaryButton, GhostButton } from "widgets.slint";
 import { ModalCard } from "components/surfaces.slint";
 
+import { DialogActions } from "components/dialog_actions.slint";
+
 export component RenameDialog inherits ModalCard {
     // 显隐由调用点控制：**常驻**，不用 `if` 包着 —— 在事件派发栈上销毁
     // 正在处理事件的子树会闪退（#323/#343）。
@@ -63,16 +65,10 @@ export component RenameDialog inherits ModalCard {
             accepted => { root.rename-tab(tab-rename-id, tab-rename-value); }
         }
     }
-    HorizontalLayout {
-        alignment: end;
-        spacing: 8px;
-        GhostButton {
-            text: lang-en ? "Cancel" : "取消";
-            clicked => { root.close-requested(); }
-        }
-        PrimaryButton {
-            text: lang-en ? "Rename" : "重命名";
-            clicked => { root.rename-tab(tab-rename-id, tab-rename-value); }
-        }
+    DialogActions {
+        cancel-text: lang-en ? "Cancel" : "取消";
+        ok-text: lang-en ? "Rename" : "重命名";
+        cancelled => { root.close-requested(); }
+        confirmed => { root.rename-tab(tab-rename-id, tab-rename-value); }
     }
 }

@@ -107,6 +107,15 @@ mod sftp_ui;
 mod sidebar;
 #[path = "impls/tab_callbacks.rs"]
 mod tab_callbacks;
+#[path = "impls/tab_callbacks_navigation.rs"]
+mod tab_callbacks_navigation;
+pub(crate) use tab_callbacks_navigation::*;
+#[path = "impls/tab_callbacks_lifecycle.rs"]
+mod tab_callbacks_lifecycle;
+pub(crate) use tab_callbacks_lifecycle::*;
+#[path = "impls/tab_callbacks_panes.rs"]
+mod tab_callbacks_panes;
+pub(crate) use tab_callbacks_panes::*;
 #[path = "impls/tab_ops.rs"]
 mod tab_ops;
 #[path = "impls/terminal_ui.rs"]

@@ -10,3 +10,7 @@ pub(crate) mod proxy;
 pub(crate) mod ssh_config;
 
 pub(crate) use imp::*;
+
+#[cfg(test)]
+#[path = "impls/ops_leaf_tests.rs"]
+mod ops_leaf_tests;

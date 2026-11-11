@@ -1,0 +1,417 @@
+// SFTP 面板顶栏：三个页签、可编辑路径、复制/上传/下载/删除/刷新与窄模式折叠菜单。
+import { Theme, AnimationSettings } from "../theme.slint";
+import { SftpMenuItem } from "../sftp_parts.slint";
+import { IconText } from "../components/text.slint";
+
+component PanelTab inherits Rectangle {
+    in property <string> mode;
+    in property <string> panel-mode;
+    in property <bool> narrow;
+    in property <length> tab-width;
+    in property <string> glyph;
+    in property <string> label;
+    callback activate();
+
+    width: root.narrow ? 28px : root.tab-width;
+    height: 22px;
+    border-radius: Theme.radius-sm;
+    background: root.panel-mode == root.mode ? Theme.accent : (tab-ta.has-hover ? Theme.state-hover : transparent);
+    animate background {
+        duration: root.panel-mode == root.mode ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: root.panel-mode == root.mode ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+    tab-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.activate(); }
+    }
+    Text {
+        text: root.narrow ? root.glyph : root.label;
+        font-family: root.narrow ? "Material Icons" : Theme.ui-font-family;
+        color: root.panel-mode == root.mode ? #ffffff : Theme.text-secondary;
+        font-size: Theme.fs-xs;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component SftpToolbar inherits Rectangle {
+    in property <string> current-path: "/";
+    in property <bool> narrow-toolbar: false;
+    in-out property <string> panel-mode: "status";
+    in property <bool> collapsed: false;
+    in property <int> selected-count: 0;
+    callback navigate(string);
+    callback refresh(string);
+    callback upload-clicked(string, bool);
+    callback download-selected();
+    callback delete-selected();
+    callback toggle-collapsed();
+
+    // 目录在别处变化（树点击、双击、终端 cd）时同步两个路径输入框（#54）。
+    changed current-path => {
+        path-input.text = root.current-path;
+        compact-path-input.text = root.current-path;
+    }
+    height: root.narrow-toolbar && root.panel-mode == "files" ? 62px : 34px;
+    background: Theme.bg-panel-alt;
+
+    VerticalLayout {
+        spacing: 6px;
+
+        HorizontalLayout {
+        height: 34px;
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 4px;
+
+        PanelTab {
+            mode: "status";
+            panel-mode: root.panel-mode;
+            narrow: root.narrow-toolbar;
+            tab-width: 64px;
+            glyph: "\u{E871}";
+            label: @tr("Status");
+            activate() => { root.panel-mode = "status"; }
+        }
+        PanelTab {
+            mode: "files";
+            panel-mode: root.panel-mode;
+            narrow: root.narrow-toolbar;
+            tab-width: 48px;
+            glyph: "\u{E2C7}";
+            label: "SFTP";
+            activate() => { root.panel-mode = "files"; }
+        }
+        PanelTab {
+            mode: "tunnels";
+            panel-mode: root.panel-mode;
+            narrow: root.narrow-toolbar;
+            tab-width: 58px;
+            glyph: "\u{E0B6}";
+            label: @tr("Tunnels");
+            activate() => { root.panel-mode = "tunnels"; }
+        }
+
+        // 窄工具栏：状态、SFTP、隧道三个页签在左，操作按钮靠右；路径占第二行。
+        if root.narrow-toolbar : Rectangle { horizontal-stretch: 1; }
+
+        // Editable path bar: type or paste a path and press Enter to
+        // jump there; copy / paste-jump buttons sit right after it (#54).
+        Rectangle {
+            visible: root.panel-mode == "files" && !root.narrow-toolbar;
+            horizontal-stretch: 1;
+            height: 22px;
+            border-radius: Theme.radius-sm;
+            background: Theme.bg-root;
+            border-width: 1px;
+            border-color: path-input.has-focus ? Theme.accent : Theme.border-subtle;
+            path-input := TextInput {
+                input-method-hints: Theme.plain-input-hints;
+                x: 6px;
+                width: parent.width - 12px;
+                height: parent.height;
+                text: root.current-path;
+                color: Theme.text-primary;
+                // CJK-capable font so typed Chinese isn't tofu (#54).
+                font-family: Theme.ui-font-family;
+                font-size: Theme.fs-sm;
+                vertical-alignment: center;
+                single-line: true;
+                accepted => { root.navigate(self.text); }
+            }
+        }
+
+        // Copy the current path to the clipboard.
+        // 用 `if` 而不是 `visible`：Slint 里 `visible: false` **不释放布局空间**，
+        // 这三个按钮会在窄模式下白占 3×24 + 3×4 = 84px，把最右的收起按钮挤出面板
+        // （255px 时第一行最少要 276px）。功能都在 ⋮ 菜单里，销毁无损失。
+        if root.panel-mode == "files" && !root.narrow-toolbar : Rectangle {
+            width: 24px; height: 22px;
+            border-radius: Theme.radius-sm;
+            background: copy-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: copy-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: copy-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            copy-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    path-input.select-all();
+                    path-input.copy();
+                    path-input.clear-selection();
+                }
+            }
+            IconText { text: "\u{E14D}";
+                   centered: true;
+                   color: Theme.text-secondary; font-size: Theme.fs-sm;
+}
+        }
+
+        // Paste a path from the clipboard and jump straight to it.
+        if root.panel-mode == "files" && !root.narrow-toolbar : Rectangle {
+            width: 24px; height: 22px;
+            border-radius: Theme.radius-sm;
+            background: pj-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: pj-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: pj-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            pj-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    path-input.select-all();
+                    path-input.paste();
+                    root.navigate(path-input.text);
+                }
+            }
+            IconText { text: "\u{E14F}";
+                   centered: true;
+                   color: Theme.text-secondary; font-size: Theme.fs-sm;
+}
+        }
+
+        // Parent navigation stays a fixed toolbar action in the compact
+        // layout too: it is the primary way to move around, and burying
+        // it in the ⋮ menu forces an extra click on every step up.
+        up-btn := Rectangle {
+            visible: root.panel-mode == "files";
+            width: 24px; height: 22px;
+            border-radius: Theme.radius-sm;
+            background: up-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: up-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: up-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            up-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.navigate(".."); }
+            }
+            Text { text: "↑"; color: Theme.text-secondary; font-size: Theme.fs-md;
+                   horizontal-alignment: center; vertical-alignment: center; }
+        }
+
+        // Upload: a small menu offers file vs folder (#85). The remote
+        // SFTP upload handles both — only the local picker differs.
+        ul-btn := Rectangle {
+            visible: root.panel-mode == "files";
+            width: root.narrow-toolbar ? 24px : 52px; height: 22px;
+            border-radius: Theme.radius-sm;
+            background: ul-ta.has-hover ? Theme.accent-hover : Theme.accent;
+            animate background {
+                duration: ul-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: ul-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            ul-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { ul-menu.show(); }
+            }
+            Text { text: root.narrow-toolbar ? "↑" : @tr("Upload"); color: #ffffff; font-size: Theme.fs-sm;
+                   horizontal-alignment: center; vertical-alignment: center; }
+            ul-menu := PopupWindow {
+                x: 0; y: parent.height + 2px;
+                width: 124px;
+                height: 2 * 27px + 8px;
+                Rectangle {
+                    background: Theme.bg-panel;
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: Theme.border-strong;
+                    drop-shadow-blur: Theme.shadow-popup-blur;
+                    drop-shadow-color: Theme.shadow-popup-color;
+                    VerticalLayout {
+                        padding: 4px;
+                        spacing: 1px;
+                        SftpMenuItem {
+                            label: @tr("Upload file");
+                            clicked => { root.upload-clicked(root.current-path, false); }
+                        }
+                        SftpMenuItem {
+                            label: @tr("Upload folder");
+                            clicked => { root.upload-clicked(root.current-path, true); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Secondary path actions move into an overflow menu in compact
+        // mode so they never compete with the path field for width.
+        if root.narrow-toolbar && root.panel-mode == "files" : Rectangle {
+            width: 24px;
+            height: 22px;
+            border-radius: Theme.radius-sm;
+            background: compact-more-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: compact-more-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: compact-more-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            compact-more-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { compact-more-menu.show(); }
+            }
+            IconText {
+                centered: true;
+                text: "\u{E5D4}";
+                color: Theme.text-secondary;
+                font-size: Theme.fs-md;
+            }
+            compact-more-menu := PopupWindow {
+                x: parent.width - self.width;
+                y: parent.height + 2px;
+                width: 142px;
+                height: 4 * 27px + 8px;
+                Rectangle {
+                    background: Theme.bg-panel;
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: Theme.border-strong;
+                    drop-shadow-blur: Theme.shadow-popup-blur;
+                    drop-shadow-color: Theme.shadow-popup-color;
+                    VerticalLayout {
+                        padding: 4px;
+                        spacing: 1px;
+                        SftpMenuItem {
+                            label: @tr("Up one level");
+                            clicked => { root.navigate(".."); }
+                        }
+                        SftpMenuItem {
+                            label: @tr("Copy path");
+                            clicked => {
+                                compact-path-input.select-all();
+                                compact-path-input.copy();
+                                compact-path-input.clear-selection();
+                            }
+                        }
+                        SftpMenuItem {
+                            label: @tr("Paste and go");
+                            clicked => {
+                                compact-path-input.select-all();
+                                compact-path-input.paste();
+                                root.navigate(compact-path-input.text);
+                            }
+                        }
+                        SftpMenuItem {
+                            label: @tr("Refresh");
+                            clicked => { root.refresh(root.current-path); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Batch actions on checked entries — only when something's checked (#100).
+        if root.panel-mode == "files" && root.selected-count > 0 && !root.narrow-toolbar : Text {
+            text: "✓" + root.selected-count;
+            color: Theme.accent;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+        }
+        if root.panel-mode == "files" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
+            width: 24px; height: 22px;
+            border-radius: Theme.radius-sm;
+            background: dls-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: dls-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: dls-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            dls-ta := TouchArea { mouse-cursor: pointer; clicked => { root.download-selected(); } }
+            IconText { text: "\u{E2C4}";color: Theme.text-secondary;
+                   centered: true;
+                   font-size: Theme.fs-md;}
+        }
+        if root.panel-mode == "files" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
+            width: 24px; height: 22px;
+            border-radius: Theme.radius-sm;
+            background: dels-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
+            animate background {
+                duration: dels-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: dels-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            dels-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-selected(); } }
+            IconText { text: "\u{E872}";color: Theme.danger;
+                   centered: true;
+                   font-size: Theme.fs-md;}
+        }
+
+        if root.panel-mode == "files" && !root.narrow-toolbar : Rectangle {
+            width: 24px; height: 22px;
+            border-radius: Theme.radius-sm;
+            background: ref-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: ref-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: ref-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            ref-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.refresh(root.current-path); }
+            }
+            IconText { text: "\u{E5D5}";
+                   centered: true;
+                   color: Theme.text-secondary; font-size: Theme.fs-sm;
+}
+        }
+
+        // Minimise / restore the SFTP panel (#41).
+        Rectangle {
+            width: 24px; height: 22px;
+            border-radius: Theme.radius-sm;
+            background: min-ta.has-hover ? Theme.state-hover : transparent;
+            animate background {
+                duration: min-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                easing: min-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                enabled: AnimationSettings.enabled;
+            }
+            min-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.toggle-collapsed(); }
+            }
+            // expand_less (▲, restore) when collapsed, expand_more (▼) otherwise.
+            IconText { text: root.collapsed ? "\u{E5CE}" : "\u{E5CF}";
+                   centered: true;
+                   color: Theme.text-secondary; font-size: Theme.fs-md;
+}
+        }
+        }
+
+        // 窄工具栏下把路径导航挪到第二行，避免把第一行挤变形。
+        // 用 layout spacing 留固定间距，不受首行对齐 / 内边距影响。
+        HorizontalLayout {
+            visible: root.narrow-toolbar && root.panel-mode == "files";
+            height: self.visible ? 22px : 0px;
+            padding-left: 6px;
+            padding-right: 6px;
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 22px;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-root;
+                border-width: 1px;
+                border-color: compact-path-input.has-focus ? Theme.accent : Theme.border-subtle;
+                compact-path-input := TextInput {
+                    input-method-hints: Theme.plain-input-hints;
+                    x: 6px;
+                    width: parent.width - 12px;
+                    height: parent.height;
+                    text: root.current-path;
+                    color: Theme.text-primary;
+                    font-family: Theme.ui-font-family;
+                    font-size: Theme.fs-sm;
+                    vertical-alignment: center;
+                    single-line: true;
+                    accepted => { root.navigate(self.text); }
+                }
+            }
+        }
+    }
+}

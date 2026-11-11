@@ -55,6 +55,8 @@ import { TitlebarInsetStrip } from "titlebar_inset_strip.slint";
 import { NavPanel } from "nav_panel.slint";
 import { PlaceholderPage } from "placeholder_page.slint";
 import { RenameDialog } from "rename_dialog.slint";
+import { AppBackdrop } from "app_backdrop.slint";
+import { AppToolbar } from "app_toolbar.slint";
 // EditorFindResult 随编辑器组件搬走了，对外仍是 app.slint 的导出。
 export { EditorFindResult }
 
@@ -944,25 +946,7 @@ export component AppWindow inherits Window {
 
     // Immersive wallpaper layer — painted behind everything, filling the window.
     // Panels/terminal frost over it (see Theme.frost). Only present when active.
-    if Theme.wallpaper-active : Image {
-        x: 0; y: 0;
-        width: parent.width;
-        height: parent.height;
-        source: Theme.wallpaper;
-        image-fit: cover;
-    }
-    // 交叉淡化：换壁纸时旧图盖在上层，opacity 由 Rust 时序驱动 1→0（400ms）。
-    // 与 Rust 的 FADE_START/LEN(30/400ms)+480ms 撤层成套；「界面动画」关闭时 Rust
-    // 不置 fading，本层不出现。
-    if Theme.wallpaper-fading : Image {
-        x: 0; y: 0;
-        width: parent.width;
-        height: parent.height;
-        source: Theme.wallpaper-prev;
-        image-fit: cover;
-        opacity: Theme.wallpaper-fade-opacity;
-        animate opacity { duration: 400ms; easing: AnimationSettings.e-standard-decelerate(); enabled: AnimationSettings.enabled; }
-    }
+    backdrop := AppBackdrop {}
 
     VerticalLayout {
         spacing: 0;
@@ -1577,109 +1561,24 @@ export component AppWindow inherits Window {
     // `root.width - <34|64|94|124|154>px - root.toolbar-x-off`。
     // 旧写法里这五个数字是"按钮宽 26px + 间隙 4px"推出来的（含右侧 8px 边距），
     // 加/删一个按钮就要重算全部偏移。书写顺序 = 视觉顺序（左 → 右）。
-    HorizontalLayout {
-        // ⚠️ 关键是**右边界** = `root.width - root.toolbar-x-off`（右侧面板展开时整体左移）。
-        // 这里踩过坑：写成 `x: root.toolbar-x-off; width: root.width - root.toolbar-x-off`
-        // 会让右边界落到 `x + width == root.width`，于是图标**溢出到右侧状态栏里**。
-        // 左边界无关紧要（内容右对齐、盒子无背景、不拦截点击），取 0 即可。
+    toolbar := AppToolbar {
         x: 0px;
         y: root.toolbar-y;
         width: root.width - root.toolbar-x-off;
-        height: 26px;
-        alignment: end;                            // 靠右
-        spacing: 4px;
-        padding-right: 8px;
-        // Docker / 笔记页整页接管内容区，工具栏跟着收起 —— 否则会浮在占位页上
-        // 且仍可点。zen-mode 保持既有行为（仍显示）。
-        visible: !root.in-dock-page;
-
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: "\u{E86F}";   // Material "code" — command bar
-            fg: root.show-cmd-bar ? Theme.accent : Theme.text-secondary;
-            active: root.show-cmd-bar;
-            tooltip: root.lang-en
-                ? (root.show-cmd-bar ? "Hide command bar" : "Show command bar")
-                : (root.show-cmd-bar ? "隐藏命令栏" : "显示命令栏");
-            clicked => { root.show-cmd-bar = !root.show-cmd-bar; root.set-show-cmd-bar(root.show-cmd-bar); }
-        }
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: "\u{E627}";
-            fg: root.sync-input ? Theme.accent : Theme.text-secondary;
-            active: root.sync-input;
-            tooltip: root.lang-en
-                ? (root.sync-input ? "Sync input: ON" : "Sync input")
-                : (root.sync-input ? "会话同步：开" : "会话同步");
-            clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
-        }
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: Theme.dark ? "\u{E518}" : "\u{E51C}";
-            fg: Theme.dark ? #f5c542 : #5856d6;
-            tooltip: root.lang-en ? "Toggle theme" : "切换主题";
-            clicked => { root.toggle-theme(); }
-        }
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: "\u{E25D}";   // quick commands
-            fg: root.quick-commands-as-sidebar ? Theme.accent : Theme.text-secondary;
-            active: root.quick-commands-as-sidebar;
-            tooltip: root.lang-en
-                ? (root.quick-commands-as-sidebar ? "Hide quick-command sidebar" : "Show quick-command sidebar")
-                : (root.quick-commands-as-sidebar ? "隐藏快捷命令侧栏" : "显示快捷命令侧栏");
-            clicked => { root.toggle-quick-sidebar(); }
-        }
-        IconButton {
-            size: 26px;
-            font-family: "Material Icons";
-            tint-on-hover: false;
-            glyph: "\u{E5D5}";   // swap_vert — transfer manager (up/down)
-            tooltip: root.lang-en ? "Transfers manager" : "传输管理";
-            active: root.download-open;
-            // Breathe while any transfer is running (driven from Rust).
-            breathe: root.has-active-transfers;
-            clicked => { root.download-open = !root.download-open; root.settings-open = false; root.mcp-clients-open = false; }
-        }
-        // AI 接入徽标：设置之外唯一能感知"有 agent 连着"的地方。
-        // 包一层做交叉轴居中：26px 的行里放 20px 徽标，不包就贴顶 6px。
-        // 包装层 stretch 默认 0、首选宽 40px，右侧齿轮与 8px 边距都不受影响。
-        if root.mcp-client-count > 0 : VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 40px;
-                height: 20px;
-                border-radius: Theme.radius-sm;
-                background: Theme.state-selected;
-                border-width: 1px;
-                border-color: Theme.state-selected-border;
-                Text {
-                    text: "AI " + root.mcp-client-count;
-                    color: Theme.accent;
-                    font-size: Theme.fs-xs;
-                    font-weight: 700;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                // 点开客户端浮层（不是设置菜单）：这里是"谁连着"的最短路径。
-                TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.mcp-clients-open = !root.mcp-clients-open;
-                        root.settings-open = false;
-                        root.download-open = false;
-                    }
-                }
-            }
-        }
+        show-cmd-bar <=> root.show-cmd-bar;
+        sync-input <=> root.sync-input;
+        quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
+        download-open <=> root.download-open;
+        settings-open <=> root.settings-open;
+        mcp-clients-open <=> root.mcp-clients-open;
+        has-active-transfers <=> root.has-active-transfers;
+        lang-en <=> root.lang-en;
+        mcp-client-count: root.mcp-client-count;
+        in-dock-page: root.in-dock-page;
+        set-show-cmd-bar(v) => { root.set-show-cmd-bar(v); }
+        set-sync-input(v) => { root.set-sync-input(v); }
+        toggle-theme() => { root.toggle-theme(); }
+        toggle-quick-sidebar() => { root.toggle-quick-sidebar(); }
     }
 
     // Frameless resize edges (#119): thin hit-zones that start an OS-level

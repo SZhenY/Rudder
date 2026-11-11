@@ -13,6 +13,7 @@ import { Theme } from "theme.slint";
 import { ConfirmDialog } from "confirm_dialog.slint";
 import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
 import { CheckBox } from "std-widgets.slint";
+import { DialogActions } from "components/dialog_actions.slint";
 
 export component ConfirmOverlays inherits Rectangle {
     width: 100%;
@@ -202,19 +203,12 @@ Rectangle {
                 font-size: Theme.fs-md;
             }
         }
-        HorizontalLayout {
-            alignment: end;
-            spacing: 8px;
-            GhostButton {
-                text: @tr("Cancel");
-                clicked => { batch-import-open = false; }
-            }
-            PrimaryButton {
-                text: lang-en ? "Import" : "导入";
-                clicked => {
-                    root.batch-import-confirm(batch-import-text);
-                    batch-import-open = false;
-                }
+        DialogActions {
+            ok-text: lang-en ? "Import" : "导入";
+            cancelled => { batch-import-open = false; }
+            confirmed => {
+                root.batch-import-confirm(batch-import-text);
+                batch-import-open = false;
             }
         }
     }
@@ -277,17 +271,10 @@ Rectangle {
             text: @tr("Remember for this session");
             checked <=> cred-remember;
         }
-        HorizontalLayout {
-            alignment: end;
-            spacing: 8px;
-            GhostButton {
-                text: @tr("Cancel");
-                clicked => { root.cred-reject(); }
-            }
-            PrimaryButton {
-                text: @tr("Connect");
-                clicked => { root.cred-accept(); }
-            }
+        DialogActions {
+            ok-text: @tr("Connect");
+            cancelled => { root.cred-reject(); }
+            confirmed => { root.cred-accept(); }
         }
     }
 }
@@ -350,17 +337,10 @@ Rectangle {
             accepted => { root.mfa-submit(); }   // Enter submits
             canceled => { root.mfa-cancel(); }   // Esc cancels (#140-3)
         }
-        HorizontalLayout {
-            alignment: end;
-            spacing: 8px;
-            GhostButton {
-                text: @tr("Cancel");
-                clicked => { root.mfa-cancel(); }
-            }
-            PrimaryButton {
-                text: lang-en ? "Verify" : "验证";
-                clicked => { root.mfa-submit(); }
-            }
+        DialogActions {
+            ok-text: lang-en ? "Verify" : "验证";
+            cancelled => { root.mfa-cancel(); }
+            confirmed => { root.mfa-submit(); }
         }
     }
 }

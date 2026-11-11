@@ -1,5 +1,16 @@
 use super::*;
 
+const CHUNK: usize = 32 * 1024;
+const MAX_INFLIGHT: usize = 32; // ~1 MB outstanding hides the RTT
+
+fn chunk_len(total: u64, off: u64) -> usize {
+    ((total - off) as usize).min(CHUNK)
+}
+
+fn should_keep_partial(written: u64) -> bool {
+    written > 0
+}
+
 /// Download a remote file over a dedicated, *pipelined* raw SFTP channel.
 ///
 /// The high-level reader issues one READ and waits for the reply before the
@@ -21,9 +32,6 @@ pub(crate) async fn download_impl(
     cancel: &Arc<AtomicBool>,
 ) -> Result<bool> {
     use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-
-    const CHUNK: usize = 32 * 1024;
-    const MAX_INFLIGHT: usize = 32; // ~1 MB outstanding hides the RTT
 
     let channel = handle
         .channel_open_session()
@@ -94,7 +102,7 @@ pub(crate) async fn download_impl(
             // Top up the pipeline with fresh READ requests.
             while !cancelled && err.is_none() && next_off < total && inflight.len() < MAX_INFLIGHT {
                 let off = next_off;
-                let want = ((total - off) as usize).min(CHUNK);
+                let want = chunk_len(total, off);
                 next_off += want as u64;
                 let raw2 = raw.clone();
                 let h = fhandle.clone();
@@ -202,7 +210,7 @@ pub(crate) async fn download_impl(
     // written: the next download of the same remote resumes from the current
     // length (#resume-download). Only a zero-byte stub is cleaned up.
     let written = done + continue_from;
-    let partial_kept = written > 0;
+    let partial_kept = should_keep_partial(written);
 
     if let Some(e) = err {
         drop(local_file);
@@ -245,3 +253,7 @@ pub(crate) async fn download_impl(
     });
     Ok(true)
 }
+
+#[cfg(test)]
+#[path = "download_leaf_tests.rs"]
+mod download_leaf_tests;

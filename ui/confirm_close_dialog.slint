@@ -12,6 +12,8 @@ import "fonts/MaterialIcons-Regular.ttf";
 import { Theme } from "theme.slint";
 import { PrimaryButton, GhostButton } from "widgets.slint";
 
+import { DialogActions } from "components/dialog_actions.slint";
+
 export component ConfirmCloseDialog inherits Rectangle {
     // 显隐由调用点控制：**常驻**，不用 `if` 包着 —— 在事件派发栈上销毁
     // 正在处理事件的子树会闪退（#323/#343）。关闭时不绘制也不参与命中。
@@ -76,17 +78,11 @@ export component ConfirmCloseDialog inherits Rectangle {
                 line-height-factor: 1.3;
             }
             Rectangle { vertical-stretch: 1; }
-            HorizontalLayout {
-                alignment: end;
-                spacing: 8px;
-                GhostButton {
-                    text: lang-en ? "Cancel" : "取消";
-                    clicked => { root.close-requested(); }
-                }
-                PrimaryButton {
-                    text: lang-en ? "Close" : "关闭";
-                    clicked => { root.confirm-close-yes(); }
-                }
+            DialogActions {
+                cancel-text: lang-en ? "Cancel" : "取消";
+                ok-text: lang-en ? "Close" : "关闭";
+                cancelled => { root.close-requested(); }
+                confirmed => { root.confirm-close-yes(); }
             }
         }
     }

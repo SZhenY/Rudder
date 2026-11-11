@@ -1,0 +1,91 @@
+// SFTP 目录树：缩进层级 + 展开/折叠，点击即跳转。
+import { Theme } from "../theme.slint";
+import { ScrollView } from "std-widgets.slint";
+import { Divider } from "../components/surfaces.slint";
+
+export struct SftpTreeNode {
+    path: string,
+    name: string,
+    depth: int,
+    expanded: bool,
+    has-children: bool,
+}
+
+export component SftpTree inherits VerticalLayout {
+    in property <string> current-path: "/";
+    in property <[SftpTreeNode]> tree-nodes: [];
+    callback tree-expand(string);
+        width: 160px;
+        spacing: 0;
+
+        // Tree header
+        Rectangle {
+            height: 20px;
+            background: Theme.bg-root;
+            Text {
+                x: 8px;
+                text: @tr("Directory tree");
+                color: Theme.text-muted;
+                font-size: Theme.fs-xs;
+                vertical-alignment: center;
+                height: parent.height;
+            }
+        }
+        Divider {}
+
+        // Tree list with scrollbar
+        ScrollView {
+            vertical-stretch: 1;
+
+            tree-list := VerticalLayout {
+                spacing: 0;
+
+                for node[i] in root.tree-nodes : Rectangle {
+                    height: 22px;
+                    background: node-ta.has-hover
+                        ? Theme.state-hover
+                        : (node.path == root.current-path
+                            ? Theme.accent-solid.with-alpha(0.19)
+                            : (mod(i, 2) == 0 ? transparent : #ffffff08));
+
+                    node-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.tree-expand(node.path); }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 0;
+                        padding-top: 1px;
+                        // 树深度缩进：原来靠首个子元素 `Rectangle { width: depth * 12px }`
+                        // 占位（该布局 spacing 为 0，故 padding-left 与之逐字等价）
+                        padding-left: node.depth * 12px;
+
+
+                        // Expand/collapse arrow
+                        Text {
+                            width: 14px;
+                            text: node.has-children
+                                ? (node.expanded ? "▼" : "▶")
+                                : " ";
+                            color: Theme.text-muted;
+                            font-size: 9px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        // Folder name
+                        Text {
+                            text: node.depth == 0 ? "/" : node.name;
+                            color: node.path == root.current-path
+                                ? Theme.accent
+                                : Theme.text-primary;
+                            font-size: Theme.fs-sm;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+}

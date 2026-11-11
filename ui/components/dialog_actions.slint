@@ -1,0 +1,23 @@
+// 对话框底部按钮行（取消 + 确认）。对齐、间距、按钮顺序与被替换的旧内联写法逐字对应。
+
+import { GhostButton, PrimaryButton } from "../widgets.slint";
+
+export component DialogActions inherits HorizontalLayout {
+    in property <string> cancel-text: @tr("Cancel");
+    in property <string> ok-text;
+    callback cancelled();
+    callback confirmed();
+
+    alignment: end;
+    spacing: 8px;
+
+    GhostButton {
+        text: root.cancel-text;
+        clicked => { root.cancelled(); }
+    }
+
+    PrimaryButton {
+        text: root.ok-text;
+        clicked => { root.confirmed(); }
+    }
+}
