@@ -5,12 +5,38 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- 沉浸壁纸支持 16K 原图：解码前读图头，超过 1.5 亿像素（如 16384×16384）时回落内置壁纸并写警告日志；解码后先降采样到 2560 再转 RGBA，省掉全尺寸 RGBA 拷贝。
+- 配置、导入 JSON 与私钥的读取加大小上限（64 / 64 / 2 MiB）；超限时日志写明路径、实际字节与上限，界面收到同一句错误。
+
 ### 变更 / Changed
 
-- 模块目录统一为 `mod.rs` + `impls/` + `struct/`：`src/app.rs` 改为 `src/app/mod.rs`，
-  回调与运行逻辑移入 `impls/`，共享状态类型（`AppContext` / `SecretCred` / `WinActivity`）
-  移入 `struct/`；SSH、SFTP、MCP、配置、终端渲染的临时片段目录展平到各自 `impls/`，
-  SSH 数据类型移入 `struct/model.rs`。仅移动文件与补再导出，函数体与行为未改。
+- 终端输出改为 16 MiB 全局字节预算背压：SSH、本地 shell、串口、Telnet 的读循环在积压超预算时暂停拉取，`yes` / `cat 大文件` 满速输出不再让内存无界增长，代价是积压时显示延迟变大。
+- 关闭标签页时把该会话全部在飞 SFTP 传输的取消标志置位，传输自行退出并保留半截文件；刷新目录时已展开的树目录改为 4 路并发重列。
+- 终端热路径：ESC 扫描改 memchr / memmem，跨块 `CSI 3J` 检测只保留 3 字节滚动尾部；CJK 字素跳过 emoji 查表，未命中不再进 LRU；SFTP 排序预计算小写名；历史下拉的视图列与预览列合并为一次过滤。彩色档 `flood_profile` 压测 ingest p50 2640 → 2237 µs（−15.3%）。
+- 左侧改为可折叠导航栏，运行状态并入 SFTP 面板、侧栏三页签，恢复隧道管理，移除拖拽停靠。
+- 内嵌字体删去 Meatshell Mono，只保留 JetBrains Mono（Regular / Bold / Italic / ExtraLight）与 Material Icons；终端默认 JetBrains Mono，界面跟随系统默认字体；诊断环境变量改名 `RUDDER_UI_FONT`。
+- 模块目录统一为 `mod.rs` + `impls/` + `struct/`；超大函数拆成片段，4 个巨型 Slint 组件拆出子组件。清理 32 个未用 import、47 个未用元素 id 与 26 处失效注释。
+
+### 修复 / Fixed
+
+- 子窗口关闭后显存不回落：改为懒创建、关闭时释放整套 wgpu 设备；MCP 刷新加可见性门控。
+- 设置窗口不居中；状态栏重复刷新。
+- 关闭窗口或渲染栅栏卡住时，输出预算的记账不再残留导致其它会话停止输出。
+
+### 依赖 / Toolchain
+
+- `russh` 升到 0.65，`ssh-key` 改由 `russh::keys` 导出。
+- CI 的 MSI 步骤改按 `Cargo.toml` 版本判断预发布，预发布版不再产 MSI。
+
+**Added**: Custom wallpapers accept 16K sources. The decoder reads image headers first, rejects anything above 150M pixels (e.g. 16384x16384) with a warning and falls back to a built-in wallpaper, then downsamples to 2560 before converting to RGBA. Config, import JSON and private-key reads are capped at 64 / 64 / 2 MiB; exceeding a cap logs the path, actual size and limit and returns the same message to the UI.
+
+**Changed**: Terminal output uses a process-wide 16 MiB byte budget with backpressure. SSH, local shell, serial and Telnet readers stop pulling while the queue is full, so `yes` or `cat` on a large file cannot grow memory without bound; the trade-off is added display latency under backlog. Closing a tab cancels all in-flight SFTP transfers (partial files are kept), and expanded tree directories are re-listed four at a time. On the hot path, ESC scans use memchr/memmem, cross-chunk `CSI 3J` detection keeps only a 3-byte rolling tail, CJK graphemes skip the emoji lookup, SFTP sorting precomputes lowercase names, and the history dropdown filters once for both columns: `flood_profile` ingest p50 went from 2640 to 2237 us (-15.3%). The left rail is now a collapsible navigation bar, resource status moved into the SFTP panel, and dock-by-drag was removed. Meatshell Mono was dropped in favour of JetBrains Mono + Material Icons; the diagnostic variable is now `RUDDER_UI_FONT`. Module layout converged on `mod.rs` + `impls/` + `struct/`, with oversized functions and four giant Slint components split up; 32 unused imports, 47 unused element ids and 26 stale comments were removed.
+
+**Fixed**: Sub-windows are created lazily and release their whole wgpu device on close, so GPU memory drops back; MCP refreshes are gated on visibility. The settings window is centred and the sidebar no longer refreshes twice per tick. A stuck render gate no longer leaves stale output-budget accounting that would stall other sessions.
+
+**Toolchain**: `russh` 0.65 with `ssh-key` re-exported from `russh::keys`; the CI MSI step now reads `Cargo.toml` to decide prerelease builds.
 
 ## [0.8.1-beta2] - 2026-11-03
 
