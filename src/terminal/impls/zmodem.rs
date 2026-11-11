@@ -238,12 +238,12 @@ pub async fn receive(
         .await;
     }
 
-    let _ = events.send(SessionEvent::Output(format!(
+    let _ = crate::output_budget::emit_output(events, format!(
         "\r\n[rudder] {} {} → {}\r\n",
         received,
         t("个文件已通过 sz 下载到", "file(s) downloaded via sz to"),
         dest.display()
-    )));
+    ));
     // Hand back any trailing bytes (the shell prompt) so the caller can display
     // them instead of the receiver swallowing them.
     Ok(rx.buf.drain(..).collect())

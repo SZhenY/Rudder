@@ -96,21 +96,29 @@ pub(super) fn history_view_rows(history: &[String], query: &str) -> Vec<SharedSt
         .collect()
 }
 
-pub(crate) fn history_view_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
-    let rows = history_view_rows(store.command_history(), query);
-    ModelRc::from(Rc::new(VecModel::from(rows)))
-}
-
-/// 与 [`history_view_model`] 逐项对齐的**显示用**单行预览（上游 9725617）。
-///
-/// 历史上一条命令可能是多行（heredoc / 连续的命令），而历史行是固定 28px 高 —— 多行文本
-/// 会溢出到相邻行。列表只显示压缩后的单行版本；回填 / ▶ 运行 / 复制仍用原始字符串。
-pub(crate) fn history_preview_model(store: &ConfigStore, query: &str) -> ModelRc<SharedString> {
-    let rows: Vec<SharedString> = history_view_rows(store.command_history(), query)
-        .into_iter()
+/// Filter once and build both dropdown columns so search keystrokes do not
+/// scan the whole command history twice.
+pub(crate) fn history_view_pair(
+    history: &[String],
+    query: &str,
+) -> (Vec<SharedString>, Vec<SharedString>) {
+    let rows = history_view_rows(history, query);
+    let preview: Vec<SharedString> = rows
+        .iter()
         .map(|row| crate::app::quick_commands::command_preview(row.as_str()).into())
         .collect();
-    ModelRc::from(Rc::new(VecModel::from(rows)))
+    (rows, preview)
+}
+
+pub(crate) fn history_view_models(
+    store: &ConfigStore,
+    query: &str,
+) -> (ModelRc<SharedString>, ModelRc<SharedString>) {
+    let (rows, preview) = history_view_pair(store.command_history(), query);
+    (
+        ModelRc::from(Rc::new(VecModel::from(rows))),
+        ModelRc::from(Rc::new(VecModel::from(preview))),
+    )
 }
 
 pub(crate) fn compute_find_matches(rows: &[String], query: &str) -> Vec<TermMatch> {
@@ -451,7 +459,7 @@ pub(super) fn apply_wallpaper(
     id: &str,
     apply_builtin_theme: bool,
 ) {
-    // 壁纸分区暂时关闭时（见 `WALLPAPER_UI_ENABLED`）整体按"没有壁纸"处理。
+    // 若编译期开关 `WALLPAPER_UI_ENABLED` 置 false，整体按"没有壁纸"处理。
     let id = if crate::app::settings::appearance::WALLPAPER_UI_ENABLED {
         id
     } else {

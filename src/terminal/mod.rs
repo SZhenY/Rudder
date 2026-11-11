@@ -56,7 +56,7 @@ pub(crate) use output_highlight::{compile_output_rules, highlight_color_index};
 pub(crate) use presentation::{highlight_plain_output, merge_runs, render_term_span};
 #[cfg(test)]
 pub(crate) use presentation::{log_level_marker, text_cell_width};
-pub(crate) use render::{RAW_CAP, build_line, build_row, cell_prefix, refresh_overlines};
+pub(crate) use render::{build_line, build_row, cell_prefix, refresh_overlines};
 #[cfg(any(target_os = "windows", test))]
 pub(crate) use state::CtrlKeySide;
 pub(crate) use state::{

@@ -178,7 +178,7 @@ export component SftpToolbar inherits Rectangle {
         // Parent navigation stays a fixed toolbar action in the compact
         // layout too: it is the primary way to move around, and burying
         // it in the ⋮ menu forces an extra click on every step up.
-        up-btn := Rectangle {
+        Rectangle {
             visible: root.panel-mode == "files";
             width: 24px; height: 22px;
             border-radius: Theme.radius-sm;
@@ -198,7 +198,7 @@ export component SftpToolbar inherits Rectangle {
 
         // Upload: a small menu offers file vs folder (#85). The remote
         // SFTP upload handles both — only the local picker differs.
-        ul-btn := Rectangle {
+        Rectangle {
             visible: root.panel-mode == "files";
             width: root.narrow-toolbar ? 24px : 52px; height: 22px;
             border-radius: Theme.radius-sm;

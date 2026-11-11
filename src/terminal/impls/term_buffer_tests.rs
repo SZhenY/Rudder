@@ -174,7 +174,7 @@ x1b[21munder\x1b[4:2m\x1b[38;2;53;100;200mtrue\x1b[0m tail";
             displayed_text: Vec::new(),
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
-            raw: std::collections::VecDeque::new(),
+            raw_tail: Vec::new(),
             frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
@@ -329,7 +329,7 @@ x1b[21munder\x1b[4:2m\x1b[38;2;53;100;200mtrue\x1b[0m tail";
     /// **ingest（每 64 KiB 块）** 与 **render（每块之后一帧）** 的时间分布 —— 用来定位
     /// "忽快忽慢"到底是解析侧的长尾，还是渲染侧的。
     ///
-    /// 真实参数：SSH 侧把相邻输出合并到 64 KiB 再交给 `ingest`（`app.rs::OUTPUT_MERGE_BYTE_CAP`），
+    /// 真实参数：SSH 侧把相邻输出合并到 64 KiB 再交给 `ingest`（`term_buffers::OUTPUT_MERGE_BYTE_CAP`），
     /// 每块之后 UI 侧渲染一帧。
     ///
     ///     cargo test --release -- --ignored --nocapture flood_profile
@@ -581,7 +581,7 @@ x1b[21munder\x1b[4:2m\x1b[38;2;53;100;200mtrue\x1b[0m tail";
             displayed_text: Vec::new(),
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
-            raw: std::collections::VecDeque::new(),
+            raw_tail: Vec::new(),
             frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
@@ -677,7 +677,6 @@ x1b[21munder\x1b[4:2m\x1b[38;2;53;100;200mtrue\x1b[0m tail";
 mod real_file_overline_verify {
     use super::super::*;
     use crate::terminal::{CsiState, OutputHighlightPreset, build_line, new_term};
-    use std::collections::VecDeque;
 
     #[test]
     fn real_chars_file_overline_renders_when_scrolled_back() {
@@ -703,7 +702,7 @@ mod real_file_overline_verify {
             displayed_text: Vec::new(),
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
-            raw: VecDeque::new(),
+            raw_tail: Vec::new(),
             frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
@@ -765,7 +764,7 @@ mod render_path_cube_tests {
             displayed_text: Vec::new(),
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
-            raw: std::collections::VecDeque::new(),
+            raw_tail: Vec::new(),
             frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),

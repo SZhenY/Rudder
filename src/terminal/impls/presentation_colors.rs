@@ -1,4 +1,5 @@
 use super::*;
+pub(crate) use crate::color::{hsl_to_rgb, rgb_to_hsl};
 
 /// True if a terminal span contains any CJK character — ideograph, kana, or
 /// (crucially) CJK punctuation like 、。，. The mono terminal font has no CJK
@@ -217,67 +218,6 @@ pub(crate) fn lighten_dark_bg(r: u8, g: u8, b: u8) -> (u8, u8, u8) {
     hsl_to_rgb(h, new_s, new_l)
 }
 
-pub(crate) fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
-    let r = r as f32 / 255.0;
-    let g = g as f32 / 255.0;
-    let b = b as f32 / 255.0;
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let l = (max + min) / 2.0;
-    if (max - min).abs() < 1e-6 {
-        return (0.0, 0.0, l);
-    }
-    let d = max - min;
-    let s = if l > 0.5 {
-        d / (2.0 - max - min)
-    } else {
-        d / (max + min)
-    };
-    let h = if (max - r).abs() < 1e-6 {
-        (g - b) / d + if g < b { 6.0 } else { 0.0 }
-    } else if (max - g).abs() < 1e-6 {
-        (b - r) / d + 2.0
-    } else {
-        (r - g) / d + 4.0
-    } / 6.0;
-    (h, s, l)
-}
-
-pub(crate) fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
-    if s < 1e-6 {
-        let v = (l * 255.0).round() as u8;
-        return (v, v, v);
-    }
-    let q = if l < 0.5 {
-        l * (1.0 + s)
-    } else {
-        l + s - l * s
-    };
-    let p = 2.0 * l - q;
-    let hue = |mut t: f32| -> f32 {
-        if t < 0.0 {
-            t += 1.0;
-        }
-        if t > 1.0 {
-            t -= 1.0;
-        }
-        if t < 1.0 / 6.0 {
-            return p + (q - p) * 6.0 * t;
-        }
-        if t < 0.5 {
-            return q;
-        }
-        if t < 2.0 / 3.0 {
-            return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
-        }
-        p
-    };
-    (
-        (hue(h + 1.0 / 3.0) * 255.0).round() as u8,
-        (hue(h) * 255.0).round() as u8,
-        (hue(h - 1.0 / 3.0) * 255.0).round() as u8,
-    )
-}
 
 /// Map an xterm-256 palette index to RGB (16 ANSI + 6×6×6 cube + grayscale).
 pub(crate) fn idx_to_rgb(i: u8, bold: bool, is_dark: bool) -> (u8, u8, u8) {

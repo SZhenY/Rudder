@@ -269,9 +269,9 @@ impl Handler for ClientHandler {
                     let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
                 }
                 Err(e) => {
-                    let _ = events.send(SessionEvent::Output(format!(
+                    let _ = crate::output_budget::emit_output(&events, format!(
                         "\r\n[rudder] -R {host}:{port} 连接失败 / connect failed: {e}\r\n"
-                    )));
+                    ));
                 }
             }
         });

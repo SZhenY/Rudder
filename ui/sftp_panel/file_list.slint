@@ -75,7 +75,7 @@ export component SftpFileList inherits VerticalLayout {
                 padding-left: 32px; padding-right: 8px; spacing: 8px;
                 Rectangle {
                     horizontal-stretch: 1;
-                    header-name-ta := TouchArea {
+                    TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.sort-request("name"); }
                     }
@@ -90,7 +90,7 @@ export component SftpFileList inherits VerticalLayout {
                 }
                 if root.show-size-col : Rectangle {
                     width: 72px;
-                    header-size-ta := TouchArea {
+                    TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.sort-request("size"); }
                     }
@@ -105,7 +105,7 @@ export component SftpFileList inherits VerticalLayout {
                 }
                 if root.show-modified-col : Rectangle {
                     width: 116px;
-                    header-modified-ta := TouchArea {
+                    TouchArea {
                         mouse-cursor: pointer;
                         clicked => { root.sort-request("modified"); }
                     }
@@ -222,7 +222,7 @@ export component SftpFileList inherits VerticalLayout {
                                 border-width: 1px;
                                 border-color: entry.selected ? Theme.accent : Theme.border-strong;
                                 background: entry.selected ? Theme.accent : transparent;
-                                cb-ta := TouchArea {
+                                TouchArea {
                                     mouse-cursor: pointer;
                                     clicked => { root.toggle-select(i); }
                                 }
@@ -282,7 +282,7 @@ export component SftpFileList inherits VerticalLayout {
                     ws := Rectangle {
                         vertical-stretch: 1;
                         min-height: 24px;
-                        ws-ta := TouchArea {
+                        TouchArea {
                             pointer-event(ev) => {
                                 if (ev.kind == PointerEventKind.down
                                         && ev.button == PointerEventButton.right) {

@@ -16,7 +16,7 @@ if Theme.wallpaper-active : Image {
 }
 
 // 交叉淡化：换壁纸时旧图盖在上层，opacity 由 Rust 时序驱动 1→0（400ms）。
-// 与 Rust 的 FADE_START/LEN(30/400ms)+480ms 撤层成套；「界面动画」关闭时 Rust
+// 与 Rust 的 FADE_START_MS/FADE_LEN_MS（30/400ms）+480ms 撤层成套；「界面动画」关闭时 Rust
 // 不置 fading，本层不出现。
 if Theme.wallpaper-fading : Image {
     x: 0; y: 0;

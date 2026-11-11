@@ -70,7 +70,6 @@ fn mark_check_started(window: &AppWindow, store: &Store) {
     window.set_update_last_check(format_last_check(now).into());
 }
 
-/// Wire the in-app update-check banner (#48): download opens the releases page.
 #[path = "updater_links.rs"] mod updater_links;
 #[path = "updater_check.rs"] mod updater_check;
 #[path = "updater_transfers.rs"] mod updater_transfers;

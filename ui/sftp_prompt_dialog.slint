@@ -52,7 +52,7 @@ export component SftpPromptDialog inherits ModalCard {
         color: Theme.text-secondary;
         font-size: Theme.fs-sm;
     }
-    sp-input := LineEdit {
+    LineEdit {
         text <=> sftp-prompt-value;
         font-family: Theme.ui-font-family; // CJK-capable (#54)
         placeholder-text: sftp-prompt-kind == "chmod" ? "755" : "";

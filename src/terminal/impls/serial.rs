@@ -33,9 +33,10 @@ pub fn spawn_serial_session(
     let (evt_tx, evt_rx) = mpsc::unbounded_channel::<SessionEvent>();
 
     let evt_for_task = evt_tx.clone();
+    let task_runtime = runtime.clone();
     // 丢弃 `JoinHandle` = detach（tokio 语义）：任务照常运行。
     runtime.spawn(async move {
-        if let Err(err) = run_serial(session, cmd_rx, evt_for_task.clone()).await {
+        if let Err(err) = run_serial(task_runtime, session, cmd_rx, evt_for_task.clone()).await {
             let _ = evt_for_task.send(SessionEvent::Closed(format!("{err:#}")));
         }
     });
@@ -79,6 +80,7 @@ fn parse_flow(s: &str) -> FlowControl {
 }
 
 async fn run_serial(
+    runtime: tokio::runtime::Handle,
     session: Session,
     mut commands: UnboundedReceiver<SessionCommand>,
     events: UnboundedSender<SessionEvent>,
@@ -143,17 +145,19 @@ async fn run_serial(
     let running = Arc::new(AtomicBool::new(true));
     let reader_running = running.clone();
     let reader_events = events.clone();
+    let reader_runtime = runtime;
     let reader_handle = std::thread::spawn(move || {
         let mut port = port;
         let mut buf = [0u8; 4096];
         while reader_running.load(Ordering::Relaxed) {
+            crate::output_budget::wait_for_drain_blocking(&reader_runtime);
             match port.read(&mut buf) {
                 // 0 字节 = 设备端已关闭（EOF 语义）。继续循环会变成 100 % CPU 的忙旋
                 // （telnet / local 的读循环都在这条分支上退出）。
                 Ok(0) => break,
                 Ok(n) => {
                     let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-                    if reader_events.send(SessionEvent::Output(text)).is_err() {
+                    if !crate::output_budget::emit_output(&reader_events, text) {
                         break;
                     }
                 }

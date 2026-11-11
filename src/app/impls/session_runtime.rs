@@ -263,6 +263,10 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                             ui_batch.push(SessionEvent::CwdChanged(cwd));
                         }
                         SessionEvent::Output(chunk) => {
+                            // Bytes leave the budget when the event leaves the
+                            // channel, not after ingest: a render gate stuck
+                            // during shutdown must not strand the accounting.
+                            crate::output_budget::release(chunk.len());
                             // Merge with the immediately preceding Output so the
                             // whole run is one vt100 ingest + one render. Only
                             // *adjacent* chunks merge, so byte order (and any
@@ -290,13 +294,6 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                 // Keep each Output event atomic: TermBuffer detects full-screen
                 // redraw sequences within one ingest call, so artificial byte
                 // splits could corrupt scrollback when they bisect such a refresh.
-                let mut remaining_output_bytes: usize = ui_batch
-                    .iter()
-                    .map(|event| match event {
-                        SessionEvent::Output(chunk) => chunk.len(),
-                        _ => 0,
-                    })
-                    .sum();
                 let has_immediate_ui_events = ui_batch.iter().any(event_requires_immediate_ui);
                 let mut dirty_since_request = false;
                 let mut ui_only: Vec<SessionEvent> = Vec::with_capacity(ui_batch.len());
@@ -312,8 +309,6 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                             if !reply.is_empty() {
                                 let _ = terminal_reply_tx.send(SessionCommand::RawInput(reply));
                             }
-                            remaining_output_bytes =
-                                remaining_output_bytes.saturating_sub(chunk_len);
                             dirty_since_request = true;
 
                             if record_ingested_chunk(chunk_len, &mut ingested_since_checkpoint) {
@@ -325,15 +320,10 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                                 );
                                 dirty_since_request = false;
 
-                                // The event channel is intentionally unbounded
-                                // today. Waiting while a large backlog exists would
-                                // only move bytes from the terminal buffer into that
-                                // channel and inflate memory, so catch up first and
-                                // pace once the stream's tail is within reach.
-                                if !has_immediate_ui_events
-                                    && remaining_output_bytes <= PACED_LOCAL_BACKLOG_LIMIT
-                                    && shell_rx.len() <= PACED_QUEUE_EVENT_LIMIT
-                                {
+                                // Output bytes are budgeted in output_budget: the
+                                // pumps stop reading once the queue is full, so
+                                // waiting for the frame no longer inflates memory.
+                                if !has_immediate_ui_events {
                                     wait_for_ui_flush(ticket);
                                 }
                             }

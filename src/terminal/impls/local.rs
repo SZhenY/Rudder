@@ -26,9 +26,11 @@ pub fn spawn_local_session(
     let (evt_tx, evt_rx) = mpsc::unbounded_channel::<SessionEvent>();
 
     let evt_for_task = evt_tx.clone();
+    let task_runtime = runtime.clone();
     // 丢弃 `JoinHandle` = detach（tokio 语义）：任务照常运行。
     runtime.spawn(async move {
         if let Err(err) = run_local(
+            task_runtime,
             session,
             cmd_rx,
             evt_for_task.clone(),
@@ -48,6 +50,7 @@ pub fn spawn_local_session(
 }
 
 async fn run_local(
+    runtime: tokio::runtime::Handle,
     session: Session,
     mut commands: UnboundedReceiver<SessionCommand>,
     events: UnboundedSender<SessionEvent>,
@@ -102,9 +105,11 @@ async fn run_local(
 
     {
         let reader_events = events.clone();
+        let reader_runtime = runtime;
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
+                crate::output_budget::wait_for_drain_blocking(&reader_runtime);
                 match reader.read(&mut buf) {
                     Ok(0) => {
                         let _ = reader_events.send(SessionEvent::Closed(
@@ -114,7 +119,7 @@ async fn run_local(
                     }
                     Ok(n) => {
                         let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-                        if reader_events.send(SessionEvent::Output(text)).is_err() {
+                        if !crate::output_budget::emit_output(&reader_events, text) {
                             break;
                         }
                     }

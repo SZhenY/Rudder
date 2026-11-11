@@ -10,11 +10,6 @@ pub(crate) const OUTPUT_MERGE_BYTE_CAP: usize = 64 * 1024;
 pub(crate) const INGEST_FRAME_BUDGET: usize = 64 * 1024;
 
 
-/// Do not deliberately pace a pump while a large unbounded-channel backlog is
-/// already present. It catches up first, then paces the tail of the stream.
-pub(crate) const PACED_LOCAL_BACKLOG_LIMIT: usize = 1024 * 1024;
-pub(crate) const PACED_QUEUE_EVENT_LIMIT: usize = 256;
-
 pub(crate) const INTERACTIVE_ECHO_WINDOW: std::time::Duration = std::time::Duration::from_millis(180);
 
 pub(crate) fn term_buf(bufs: &TermBuffers, tab_id: &str) -> Option<TermBufferHandle> {

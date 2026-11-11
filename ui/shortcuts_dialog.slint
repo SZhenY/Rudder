@@ -21,7 +21,7 @@ component ShortcutRow inherits Rectangle {
         spacing: 10px;
         Rectangle {
             width: 116px;
-            chip := Rectangle {
+            Rectangle {
                 x: 0;
                 y: (parent.height - self.height) / 2;
                 width: min(parent.width, kt.preferred-width + 16px);

@@ -75,7 +75,7 @@ pub(super) fn resync_if_open(main: &AppWindow) {
 
 /// 与主窗口的 `Theme` global 同步（Slint 的 global 是每个窗口一份实例）。
 ///
-/// 10 个值：前 8 个抄 `sync_proc_theme` 的口径（含 `is-mac` —— `proc_window.slint:169`
+/// 10 个值：前 8 个抄 `sync_proc_theme` 的口径（含 `is-mac` —— `proc_window.slint:175`
 /// 留着一条血泪注释：子窗口里 `Theme.is-mac` 恒为 false，而设置页的更新频道文案与圆角
 /// 尺寸都依赖它）；后 2 个是主题色，不同步的话这个窗口的按钮 / 选中态会退回默认蓝。
 pub(super) fn sync_settings_theme(m: &AppWindow, sw: &SettingsWindow) {

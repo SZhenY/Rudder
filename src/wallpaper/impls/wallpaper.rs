@@ -9,6 +9,8 @@
 //! so the whole UI can recolour itself to match the image ("immersive" mode).
 
 use slint::{Image, Rgba8Pixel, SharedPixelBuffer};
+use crate::color::{hsl_to_rgb, rgb_to_hsl};
+use image::GenericImageView as _;
 use std::path::{Path, PathBuf};
 
 // ── 用户壁纸目录（与字体目录**并排**：`config/wallpapers`）────────────────────
@@ -45,6 +47,23 @@ const H: u32 = 1000;
 /// Cap the long edge of a decoded custom wallpaper so a huge photo doesn't pin
 /// a whole 6000px texture in GPU memory.
 const MAX_EDGE: u32 = 2560;
+
+/// Largest source image accepted for decoding. Covers 16K (16384x8640 = 141.6 MP)
+/// while still rejecting decompression bombs and square 16384x16384 (268 MP).
+const MAX_DECODE_PIXELS: u64 = 150_000_000;
+/// `image`'s default max_alloc is 512 MiB, which would reject a 16K RGBA PNG.
+const MAX_DECODE_ALLOC: u64 = 768 * 1024 * 1024;
+
+/// Reject dimensions that would make a full-size decode unsafe.
+fn check_decode_dimensions(w: u32, h: u32) -> Result<(), String> {
+    let pixels = u64::from(w) * u64::from(h);
+    if pixels > MAX_DECODE_PIXELS {
+        return Err(format!(
+            "{w}x{h} ({pixels} pixels) exceeds the {MAX_DECODE_PIXELS} pixel limit"
+        ));
+    }
+    Ok(())
+}
 
 /// Colours derived from a wallpaper, pushed into the Theme global so panels,
 /// accent and backgrounds harmonise with the image.
@@ -141,23 +160,45 @@ fn render_builtin(dark: bool) -> SharedPixelBuffer<Rgba8Pixel> {
 // ── Custom wallpapers ─────────────────────────────────────────────────────────
 
 fn decode_custom(path: &str) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
-    Some(to_buffer(image::open(path).ok()?.to_rgba8()))
+    let (w, h) = image::ImageReader::open(path)
+        .ok()?
+        .with_guessed_format()
+        .ok()?
+        .into_dimensions()
+        .ok()?;
+    if let Err(reason) = check_decode_dimensions(w, h) {
+        tracing::warn!("refusing to decode wallpaper {path}: {reason}");
+        return None;
+    }
+    let mut reader = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?;
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(MAX_DECODE_ALLOC);
+    reader.limits(limits);
+    match reader.decode() {
+        Ok(img) => Some(to_buffer(img)),
+        Err(err) => {
+            tracing::warn!("failed to decode wallpaper {path}: {err:#}");
+            None
+        }
+    }
 }
 
 
 
-/// Downscale an oversized decoded image (preserving aspect; the UI covers it)
-/// and pack it into a Slint pixel buffer.
-fn to_buffer(img: image::RgbaImage) -> SharedPixelBuffer<Rgba8Pixel> {
+/// Downscale before converting to RGBA: the full-size RGBA copy alone is
+/// 566 MB for a 16K image. Resizing in the source colour space keeps the peak
+/// at the decoded buffer plus the small output image.
+fn to_buffer(img: image::DynamicImage) -> SharedPixelBuffer<Rgba8Pixel> {
     let (w, h) = img.dimensions();
     let img = if w.max(h) > MAX_EDGE {
         let scale = MAX_EDGE as f32 / w.max(h) as f32;
         let nw = ((w as f32 * scale) as u32).max(1);
         let nh = ((h as f32 * scale) as u32).max(1);
-        image::imageops::resize(&img, nw, nh, image::imageops::FilterType::Triangle)
+        img.resize_exact(nw, nh, image::imageops::FilterType::Triangle)
     } else {
         img
     };
+    let img = img.to_rgba8();
     let (w, h) = img.dimensions();
     let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(w, h);
     buf.make_mut_bytes().copy_from_slice(img.as_raw());
@@ -289,69 +330,6 @@ fn split_complementary_accent(
     hsl_to_rgb(hue, sat, light)
 }
 
-fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
-    let (r, g, b) = (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let l = (max + min) / 2.0;
-    if (max - min).abs() < f32::EPSILON {
-        return (0.0, 0.0, l); // achromatic
-    }
-    let d = max - min;
-    let s = if l > 0.5 {
-        d / (2.0 - max - min)
-    } else {
-        d / (max + min)
-    };
-    let h = if max == r {
-        (g - b) / d + if g < b { 6.0 } else { 0.0 }
-    } else if max == g {
-        (b - r) / d + 2.0
-    } else {
-        (r - g) / d + 4.0
-    } / 6.0;
-    (h, s, l)
-}
-
-fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
-    if s.abs() < f32::EPSILON {
-        let v = (l * 255.0).round() as u8;
-        return (v, v, v);
-    }
-    let q = if l < 0.5 {
-        l * (1.0 + s)
-    } else {
-        l + s - l * s
-    };
-    let p = 2.0 * l - q;
-    let r = hue_to_rgb(p, q, h + 1.0 / 3.0);
-    let g = hue_to_rgb(p, q, h);
-    let b = hue_to_rgb(p, q, h - 1.0 / 3.0);
-    (
-        (r * 255.0).round() as u8,
-        (g * 255.0).round() as u8,
-        (b * 255.0).round() as u8,
-    )
-}
-
-fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
-    if t < 0.0 {
-        t += 1.0;
-    }
-    if t > 1.0 {
-        t -= 1.0;
-    }
-    if t < 1.0 / 6.0 {
-        p + (q - p) * 6.0 * t
-    } else if t < 1.0 / 2.0 {
-        q
-    } else if t < 2.0 / 3.0 {
-        p + (q - p) * (2.0 / 3.0 - t) * 6.0
-    } else {
-        p
-    }
-}
-
 fn lerp(a: u8, b: u8, t: f32) -> u8 {
     (a as f32 + (b as f32 - a as f32) * t)
         .round()
@@ -428,5 +406,21 @@ mod tests {
         // 两个桶各占一半：取到的主导桶必然是纯黑或纯白，亮度贴边（不是中间灰）。
         let (_h, _s, l) = rgb_to_hsl(p.tint.0, p.tint.1, p.tint.2);
         assert!(l < 0.05 || l > 0.95, "dominant lightness {l}");
+    }
+
+    #[test]
+    fn decode_limit_accepts_16k_wallpapers() {
+        assert!(check_decode_dimensions(16384, 8640).is_ok());
+        assert!(check_decode_dimensions(15360, 8640).is_ok());
+        assert!(check_decode_dimensions(16384, 8192).is_ok());
+    }
+
+    #[test]
+    fn decode_limit_rejects_oversized_images_with_details() {
+        let err = check_decode_dimensions(20000, 20000).unwrap_err();
+        assert!(err.contains("20000x20000"), "missing dimensions: {err}");
+        assert!(err.contains("400000000 pixels"), "missing pixel count: {err}");
+        assert!(err.contains("150000000"), "missing limit: {err}");
+        assert!(check_decode_dimensions(16384, 16384).is_err());
     }
 }

@@ -4,6 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod color;
 mod config;
 mod files;
 mod fonts;
@@ -11,6 +12,7 @@ mod i18n;
 mod layout;
 mod logging;
 mod mcp;
+mod output_budget;
 mod resource;
 mod session;
 mod sftp;

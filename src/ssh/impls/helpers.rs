@@ -120,38 +120,28 @@ pub(crate) fn load_session_private_key(session: &Session, pass: &str) -> Result<
         .strip_suffix(".pub")
         .map(str::to_string)
         .unwrap_or(normalised);
-    if Path::new(&key_path)
+    let key = Path::new(&key_path);
+    if key
         .extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("ppk"))
     {
-        let raw = std::fs::read(&key_path)
-            .with_context(|| format!("failed to read PuTTY key {key_path}"))?;
+        let raw = crate::files::read_file_capped(
+            key,
+            crate::files::MAX_KEY_BYTES,
+            "private key",
+        )
+        .with_context(|| format!("failed to read PuTTY key {key_path}"))?;
         return crate::ssh::ppk::decode_ppk(&raw, pass.unwrap_or_default())
             .with_context(|| format!("failed to load PuTTY key {key_path}"));
     }
-    load_secret_key(Path::new(&key_path), pass)
+    // russh reads the key itself; guard the size before handing it the path.
+    crate::files::check_file_size(key, crate::files::MAX_KEY_BYTES, "private key")?;
+    load_secret_key(key, pass)
         .with_context(|| format!("failed to load key {key_path}"))
 }
 
-/// Format a byte count with the given 1024-based unit suffixes. The first
-/// unit is rendered as an integer; ≥TB sizes (when more than 4 units exist)
-/// get two decimals, everything else one.
-pub(crate) fn format_bytes_units(bytes: u64, units: &[&str]) -> String {
-    let mut value = bytes as f64;
-    let mut idx = 0;
-    while value >= 1024.0 && idx < units.len() - 1 {
-        value /= 1024.0;
-        idx += 1;
-    }
-    if idx == 0 {
-        format!("{} {}", bytes, units[0])
-    } else if units.len() > 4 && idx >= 4 {
-        format!("{:.2} {}", value, units[idx])
-    } else {
-        format!("{:.1} {}", value, units[idx])
-    }
-}
+pub(crate) use crate::files::format_bytes_units;
 
 /// Format a byte count as a human-readable string.
 pub fn format_size(bytes: u64) -> String {

@@ -78,12 +78,12 @@ export component ProcWindow inherits Window {
     icon: @image-url("../assets/icon.png");
     // Theme is a *per-window* global, so a detached window keeps the compile-time
     // defaults (dark) unless Rust mirrors the main window's theme/scale/font here.
-    // These two-way bindings give Rust one knob per setting (see sync in app.rs).
+    // These two-way bindings give Rust one knob per setting (see sync in app/mod.rs).
     in-out property <bool> dark-mode <=> Theme.dark;
     in-out property <float> ui-scale <=> Theme.ui-scale;
     in-out property <string> ui-font-family <=> Theme.ui-font-family;
     // Immersive wallpaper — mirrored from the main window so this detached window
-    // gets the same frosted-glass backdrop (synced in app.rs::sync_proc_theme).
+    // gets the same frosted-glass backdrop (synced in settings_window.rs::sync_proc_theme).
     in-out property <image> wallpaper-img <=> Theme.wallpaper;
     in-out property <bool> wallpaper-active <=> Theme.wallpaper-active;
     in-out property <color> wp-accent <=> Theme.wp-accent;
@@ -121,7 +121,7 @@ export component ProcWindow inherits Window {
 
     // Create the confirmation dialog only after the context-menu click event
     // has fully completed, preventing pointer-up fall-through on any backend.
-    terminate-dialog-timer := Timer {
+    Timer {
         interval: 0ms;
         running: root.terminate-dialog-pending;
         triggered => {
@@ -235,7 +235,7 @@ export component ProcWindow inherits Window {
                         border-radius: 2px;
                         clip: true;
 
-                        row-touch := TouchArea {
+                        TouchArea {
                             pointer-event(e) => {
                                 // Open on button release. Opening on `down` lets the
                                 // matching `up` hit the newly-created popup/dialog

@@ -106,8 +106,11 @@ impl ConfigStore {
 
     /// Import sessions from a Rudder or FinalShell JSON export file.
     pub fn import_from(&mut self, path: &Path) -> Result<(usize, usize)> {
-        let raw = fs::read_to_string(path)
-            .with_context(|| format!("failed to read {}", path.display()))?;
+        let raw = crate::files::read_string_capped(
+            path,
+            crate::files::MAX_IMPORT_BYTES,
+            "session import",
+        )?;
         self.import_json(&raw)
     }
 }

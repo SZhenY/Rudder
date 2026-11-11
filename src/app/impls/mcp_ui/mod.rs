@@ -525,17 +525,24 @@ pub(crate) async fn set_settings(
 // ── 主机增删改 ──────────────────────────────────────────────────────────
 
 /// 新增或修改一个保存的主机。`session_id` 为空 = 新建。
-pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
-    call(TAB_TIMEOUT, move |ui| {
-        let mut store = ui.ctx.store.borrow_mut();
-        let existing = args
-            .get("session_id")
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-            .and_then(|id| store.get(id).cloned());
-        let created = existing.is_none();
-        let mut session = existing.unwrap_or_else(Session::new_empty);
+/// Draft produced by `upsert_host` before it touches the store. Keeping the
+/// validation pure makes every rejection branch testable without the UI bridge.
+struct HostDraft {
+    session: Session,
+    created: bool,
+}
 
+fn build_host_draft(existing: Option<Session>, args: &Value) -> Result<HostDraft, McpError> {
+    let created = existing.is_none();
+    let mut session = existing.unwrap_or_else(Session::new_empty);
+    apply_host_fields(&mut session, args, created)?;
+    finalize_host(&mut session)?;
+    Ok(HostDraft { session, created })
+}
+
+/// Overlay JSON fields onto the draft. Missing keys keep the stored value;
+/// explicitly empty strings clear it where documented.
+fn apply_host_fields(session: &mut Session, args: &Value, created: bool) -> Result<(), McpError> {
         if let Some(value) = args.get("name").and_then(Value::as_str) {
             session.name = value.trim().to_string();
         }
@@ -774,6 +781,11 @@ pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
             }
             session.triggers = triggers;
         }
+    Ok(())
+}
+
+/// Fill type-dependent defaults and reject incomplete drafts.
+fn finalize_host(session: &mut Session) -> Result<(), McpError> {
         // 按类型校验必填项：SSH/Telnet 要主机，串口要设备名，本地会话都不需要。
         match session.kind {
             SessionKind::Ssh | SessionKind::Telnet => {
@@ -808,7 +820,21 @@ pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
                 _ => format!("{}@{}", session.user, session.host),
             };
         }
+    Ok(())
+}
 
+pub(crate) async fn upsert_host(args: Value) -> Result<Value, McpError> {
+    call(TAB_TIMEOUT, move |ui| {
+        let mut store = ui.ctx.store.borrow_mut();
+        let existing = args
+            .get("session_id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .and_then(|id| store.get(id).cloned());
+
+        let draft = build_host_draft(existing, &args)?;
+        let created = draft.created;
+        let session = draft.session;
         let session_id = session.id.clone();
         store.upsert(session);
         store.save_logging();
@@ -1520,3 +1546,7 @@ mod consent_row_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "host_draft_tests.rs"]
+mod host_draft_tests;

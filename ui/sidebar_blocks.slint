@@ -254,7 +254,7 @@ export component StatusBlock inherits Rectangle {
         HorizontalLayout {
             spacing: 6px;
             alignment: start;
-            ip-wrap := Rectangle {
+            Rectangle {
                 width: ip-txt.preferred-width + (root.conn-host != "" ? 10px : 0px);
                 height: ip-txt.preferred-height + 4px;
                 border-radius: Theme.radius-sm;

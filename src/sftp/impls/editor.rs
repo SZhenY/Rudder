@@ -2,7 +2,7 @@ use super::*;
 
 pub(crate) const MAX_BUILTIN_EDITOR_BYTES: usize = 512 * 1024;
 /// 内置编辑器的行数上限。从 20 000 收到 10 000（上游 96cb659）：我们的行号栏是**一整个
-/// O(N) 字符串 + 一次全量排版**（`src/app.rs` 的 editor gutter），比上游的原生行号更怕
+/// O(N) 字符串 + 一次全量排版**（`ui/file_editor.slint` 的 editor gutter），比上游的原生行号更怕
 /// 大文件，先卡在更保守的线上。
 pub(crate) const MAX_BUILTIN_EDITOR_LINES: usize = 10_000;
 pub(crate) const MAX_BUILTIN_EDITOR_LINE_BYTES: usize = 64 * 1024;

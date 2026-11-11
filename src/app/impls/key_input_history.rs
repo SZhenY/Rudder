@@ -13,8 +13,9 @@ pub(super) fn wire_key_history(window: &AppWindow, app: &AppContext) {
         window.on_search_history(move |query: SharedString| {
             *hist_query.borrow_mut() = query.to_string();
             if let Some(w) = weak.upgrade() {
-                w.set_history_view(history_view_model(&store_rc.borrow(), &query));
-                w.set_history_preview(history_preview_model(&store_rc.borrow(), &query));
+                let (view, preview) = history_view_models(&store_rc.borrow(), &query);
+                w.set_history_view(view);
+                w.set_history_preview(preview);
             }
         });
     }
@@ -35,8 +36,9 @@ pub(super) fn wire_key_history(window: &AppWindow, app: &AppContext) {
             if let Some(w) = weak.upgrade() {
                 let s = store_rc.borrow();
                 w.set_command_history(history_model(&s));
-                w.set_history_view(history_view_model(&s, &hist_query.borrow()));
-                w.set_history_preview(history_preview_model(&s, &hist_query.borrow()));
+                let (view, preview) = history_view_models(&s, &hist_query.borrow());
+                w.set_history_view(view);
+                w.set_history_preview(preview);
             }
         });
     }

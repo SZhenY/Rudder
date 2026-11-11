@@ -43,6 +43,171 @@ fn write_disks(stats: &mut SidebarStats, win: &AppWindow, disks: &[(String, u64,
     );
 }
 
+use crate::resource::SystemSnapshot;
+
+/// 本机快照的显示值：一次格式化供顶部/底部网络图、CPU/内存条与系统信息表共用。
+struct LocalResourceView {
+    cpu_percent: f32,
+    mem_percent: f32,
+    swap_percent: f32,
+    mem_detail: String,
+    swap_detail: String,
+    net_up: String,
+    net_down: String,
+}
+
+fn local_resource_view(snap: &SystemSnapshot) -> LocalResourceView {
+    LocalResourceView {
+        cpu_percent: snap.cpu_percent,
+        mem_percent: snap.mem_percent,
+        swap_percent: snap.swap_percent,
+        mem_detail: format_mem(snap.mem_used_mib, snap.mem_total_mib),
+        swap_detail: format_mem(snap.swap_used_mib, snap.swap_total_mib),
+        net_up: format_bytes_per_sec(snap.net_tx_per_sec),
+        net_down: format_bytes_per_sec(snap.net_rx_per_sec),
+    }
+}
+
+/// 顶部图回落本机、清掉网卡下拉、显示本机文件系统。
+fn set_top_local(
+    win: &AppWindow,
+    stats: &mut SidebarStats,
+    snap: &SystemSnapshot,
+    scaled: &[f32],
+    view: &LocalResourceView,
+) {
+    win.set_net_top_up(view.net_up.clone().into());
+    win.set_net_top_down(view.net_down.clone().into());
+    let top = win.get_net_top_history();
+    write_model(stats, &top, scaled, || graph_model(scaled), |m| {
+        win.set_net_top_history(m)
+    });
+    win.set_net_show_selector(false);
+    win.set_net_selected("".into());
+    // 本机没有网卡下拉列表：只在"上一轮写的是远端列表"时清一次，不再每秒塞一个新模型。
+    if win.get_net_ifaces().row_count() > 0 {
+        win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
+    }
+    write_disks(stats, win, &snap.disks);
+}
+
+fn show_local_res(win: &AppWindow, view: &LocalResourceView) {
+    win.set_resource_title(t("本机资源", "Local resources").into());
+    win.set_cpu_percent(view.cpu_percent);
+    win.set_mem_percent(view.mem_percent);
+    win.set_swap_percent(view.swap_percent);
+    win.set_mem_detail(view.mem_detail.clone().into());
+    win.set_swap_detail(view.swap_detail.clone().into());
+}
+
+fn clear_stats(win: &AppWindow) {
+    win.set_cpu_percent(0.0);
+    win.set_mem_percent(0.0);
+    win.set_swap_percent(0.0);
+    win.set_mem_detail("".into());
+    win.set_swap_detail("".into());
+}
+
+/// Process monitor (#23) lives in a shared model (the AppWindow and the
+/// detachable ProcWindow point at the same VecModel), so mutate it in place
+/// instead of replacing it — replacing would break the sharing.
+fn set_procs(win: &AppWindow, procs: &[ProcInfo], current_user: &str, tab_id: &str) {
+    if let Some(vm) = win
+        .get_proc_list()
+        .as_any()
+        .downcast_ref::<VecModel<ProcRow>>()
+    {
+        apply_rows(vm, proc_rows(procs, current_user, tab_id));
+    }
+}
+
+/// 系统信息表的一次写入量：把原先逐个透传的 7 个值收成一个参数。
+struct SystemModelValues {
+    cpu: f32,
+    mem: f32,
+    swap: f32,
+    mem_detail: SharedString,
+    swap_detail: SharedString,
+    nets: Vec<SysNetRow>,
+    sys: SystemDetails,
+}
+
+impl SystemModelValues {
+    fn empty() -> Self {
+        Self {
+            cpu: 0.0,
+            mem: 0.0,
+            swap: 0.0,
+            mem_detail: "".into(),
+            swap_detail: "".into(),
+            nets: Vec::new(),
+            sys: SystemDetails::default(),
+        }
+    }
+}
+
+fn set_system_models(win: &AppWindow, v: SystemModelValues) {
+    let SystemModelValues {
+        cpu,
+        mem,
+        swap,
+        mem_detail,
+        swap_detail,
+        nets,
+        sys,
+    } = v;
+    if let Some(vm) = win.get_sys_metrics().as_any().downcast_ref::<VecModel<SysMetricRow>>() {
+        apply_rows(vm, metric_rows(cpu, mem, swap, mem_detail, swap_detail));
+    }
+    if let Some(vm) = win.get_sys_net_rows().as_any().downcast_ref::<VecModel<SysNetRow>>() {
+        apply_rows(vm, nets);
+    }
+    if let Some(vm) = win.get_sys_overview_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
+        apply_rows(vm, pairs_to_overview_rows(&sys.overview));
+    }
+    if let Some(vm) = win.get_sys_cpu_info_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
+        apply_rows(vm, pairs_to_one_row(&sys.cpu_info));
+    }
+    if let Some(vm) = win.get_sys_gpu_info_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
+        apply_rows(vm, pairs_to_rows(&sys.gpu_info, 4));
+    }
+    if let Some(vm) = win.get_sys_cpu_usage_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
+        apply_rows(vm, cpu_usage_detail_rows(&sys.cpu_usage));
+    }
+    if let Some(vm) = win.get_sys_memory_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
+        apply_rows(vm, pairs_to_one_row(&sys.memory));
+    }
+    if let Some(vm) = win.get_sys_swap_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
+        apply_rows(vm, pairs_to_one_row(&sys.swap));
+    }
+    if let Some(vm) = win.get_sys_network_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
+        apply_rows(vm, tuple5_rows(&sys.networks));
+    }
+    if let Some(vm) = win.get_sys_filesystem_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
+        apply_rows(vm, tuple5_rows(&sys.filesystems));
+    }
+}
+
+/// 本机自身的数据：本地 shell 标签与欢迎页都没有远端统计可显示。
+fn show_local_system_models(win: &AppWindow, view: &LocalResourceView) {
+    set_system_models(
+        win,
+        SystemModelValues {
+            cpu: view.cpu_percent,
+            mem: view.mem_percent,
+            swap: view.swap_percent,
+            mem_detail: view.mem_detail.clone().into(),
+            swap_detail: view.swap_detail.clone().into(),
+            nets: vec![SysNetRow {
+                name: t("本机", "Local").into(),
+                up: view.net_up.clone().into(),
+                down: view.net_down.clone().into(),
+            }],
+            sys: SystemDetails::default(),
+        },
+    );
+}
+
 pub(super) fn refresh_sidebar(
     win: &AppWindow,
     statuses: &TabStatuses,
@@ -50,17 +215,17 @@ pub(super) fn refresh_sidebar(
     local_net_hist: &NetHist,
 ) -> SidebarStats {
     let mut stats = SidebarStats::default();
-    let pct = |used: u64, total: u64| usage_pct(used, total);
     // A poisoned lock must not take the client down — release builds use
     // panic = "abort". Skip this refresh pass instead; the sampler will
     // publish a fresh snapshot on the next tick.
     let Ok(snap) = local.lock().map(|s| s.clone()) else {
         return SidebarStats::default();
     };
+    let view = local_resource_view(&snap);
 
     // --- Bottom network graph: always the local machine --------------------
-    win.set_net_bot_up(format_bytes_per_sec(snap.net_tx_per_sec).into());
-    win.set_net_bot_down(format_bytes_per_sec(snap.net_rx_per_sec).into());
+    win.set_net_bot_up(view.net_up.clone().into());
+    win.set_net_bot_down(view.net_down.clone().into());
     // 先取历史（锁内只做纯计算），**出锁之后**才碰 Slint 属性 —— 写属性可能重入 UI 代码。
     // 归一化只算一次：上下两个图共用同一个环形缓冲。
     let Ok(scaled) = local_net_hist.lock().map(|h| normalize(&h)) else {
@@ -71,149 +236,6 @@ pub(super) fn refresh_sidebar(
         win.set_net_bot_history(m)
     });
 
-    let set_top_local = |win: &AppWindow, stats: &mut SidebarStats| {
-        win.set_net_top_up(format_bytes_per_sec(snap.net_tx_per_sec).into());
-        win.set_net_top_down(format_bytes_per_sec(snap.net_rx_per_sec).into());
-        let top = win.get_net_top_history();
-        write_model(stats, &top, &scaled, || graph_model(&scaled), |m| {
-            win.set_net_top_history(m)
-        });
-        win.set_net_show_selector(false);
-        win.set_net_selected("".into());
-        // 本机没有网卡下拉列表：只在"上一轮写的是远端列表"时清一次，不再每秒塞一个新模型。
-        if win.get_net_ifaces().row_count() > 0 {
-            win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
-        }
-        // Non-connected tabs show the local machine's filesystems.
-        write_disks(stats, win, &snap.disks);
-    };
-    let show_local_res = |win: &AppWindow| {
-        win.set_resource_title(t("本机资源", "Local resources").into());
-        win.set_cpu_percent(snap.cpu_percent);
-        win.set_mem_percent(snap.mem_percent);
-        win.set_swap_percent(snap.swap_percent);
-        win.set_mem_detail(format_mem(snap.mem_used_mib, snap.mem_total_mib).into());
-        win.set_swap_detail(format_mem(snap.swap_used_mib, snap.swap_total_mib).into());
-    };
-    let clear_stats = |win: &AppWindow| {
-        win.set_cpu_percent(0.0);
-        win.set_mem_percent(0.0);
-        win.set_swap_percent(0.0);
-        win.set_mem_detail("".into());
-        win.set_swap_detail("".into());
-    };
-
-    // Process monitor (#23) lives in a shared model (the AppWindow and the
-    // detachable ProcWindow point at the same VecModel), so mutate it in place
-    // instead of replacing it — replacing would break the sharing. Only a live
-    // remote session has process data; default to empty and let the connected
-    // branch below fill it in.
-    let set_procs = |win: &AppWindow, procs: &[ProcInfo], current_user: &str, tab_id: &str| {
-        if let Some(vm) = win
-            .get_proc_list()
-            .as_any()
-            .downcast_ref::<VecModel<ProcRow>>()
-        {
-            apply_rows(vm, proc_rows(procs, current_user, tab_id));
-        }
-    };
-    let set_system_models = |win: &AppWindow,
-                             cpu: f32,
-                             mem: f32,
-                             swap: f32,
-                             mem_detail: SharedString,
-                             swap_detail: SharedString,
-                             nets: Vec<SysNetRow>,
-                             sys: SystemDetails| {
-        if let Some(vm) = win
-            .get_sys_metrics()
-            .as_any()
-            .downcast_ref::<VecModel<SysMetricRow>>()
-        {
-            apply_rows(vm, metric_rows(cpu, mem, swap, mem_detail, swap_detail));
-        }
-        if let Some(vm) = win
-            .get_sys_net_rows()
-            .as_any()
-            .downcast_ref::<VecModel<SysNetRow>>()
-        {
-            apply_rows(vm, nets);
-        }
-        if let Some(vm) = win
-            .get_sys_overview_rows()
-            .as_any()
-            .downcast_ref::<VecModel<SysInfoRow>>()
-        {
-            apply_rows(vm, pairs_to_overview_rows(&sys.overview));
-        }
-        if let Some(vm) = win
-            .get_sys_cpu_info_rows()
-            .as_any()
-            .downcast_ref::<VecModel<SysInfoRow>>()
-        {
-            apply_rows(vm, pairs_to_one_row(&sys.cpu_info));
-        }
-        if let Some(vm) = win
-            .get_sys_gpu_info_rows()
-            .as_any()
-            .downcast_ref::<VecModel<SysInfoRow>>()
-        {
-            apply_rows(vm, pairs_to_rows(&sys.gpu_info, 4));
-        }
-        if let Some(vm) = win
-            .get_sys_cpu_usage_rows()
-            .as_any()
-            .downcast_ref::<VecModel<SysInfoRow>>()
-        {
-            apply_rows(vm, cpu_usage_detail_rows(&sys.cpu_usage));
-        }
-        if let Some(vm) = win
-            .get_sys_memory_rows()
-            .as_any()
-            .downcast_ref::<VecModel<SysInfoRow>>()
-        {
-            apply_rows(vm, pairs_to_one_row(&sys.memory));
-        }
-        if let Some(vm) = win
-            .get_sys_swap_rows()
-            .as_any()
-            .downcast_ref::<VecModel<SysInfoRow>>()
-        {
-            apply_rows(vm, pairs_to_one_row(&sys.swap));
-        }
-        if let Some(vm) = win
-            .get_sys_network_rows()
-            .as_any()
-            .downcast_ref::<VecModel<SysInfoRow>>()
-        {
-            apply_rows(vm, tuple5_rows(&sys.networks));
-        }
-        if let Some(vm) = win
-            .get_sys_filesystem_rows()
-            .as_any()
-            .downcast_ref::<VecModel<SysInfoRow>>()
-        {
-            apply_rows(vm, tuple5_rows(&sys.filesystems));
-        }
-    };
-    // The local machine's own figures: used both by a local-shell tab and by
-    // the welcome tab, neither of which has remote stats to show.
-    let show_local_system_models = |win: &AppWindow| {
-        set_system_models(
-            win,
-            snap.cpu_percent,
-            snap.mem_percent,
-            snap.swap_percent,
-            format_mem(snap.mem_used_mib, snap.mem_total_mib).into(),
-            format_mem(snap.swap_used_mib, snap.swap_total_mib).into(),
-            vec![SysNetRow {
-                name: t("本机", "Local").into(),
-                up: format_bytes_per_sec(snap.net_tx_per_sec).into(),
-                down: format_bytes_per_sec(snap.net_rx_per_sec).into(),
-            }],
-            SystemDetails::default(),
-        );
-    };
     win.set_proc_available(false);
     win.set_system_info_available(false);
     set_procs(win, &[], "", "");
@@ -233,9 +255,9 @@ pub(super) fn refresh_sidebar(
             win.set_conn_state(conn_state_code(st.state));
             win.set_connection_state(connection_label(st.state, &st.host).into());
             win.set_conn_host(conn_ip(&st.host).into());
-            show_local_res(win);
-            set_top_local(win, &mut stats);
-            show_local_system_models(win);
+            show_local_res(win, &view);
+            set_top_local(win, &mut stats, &snap, &scaled, &view);
+            show_local_system_models(win, &view);
         }
         // A live session tab → remote resources + remote NIC on top.
         Some(st) if st.state == 1 => {
@@ -244,8 +266,8 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             win.set_cpu_percent(st.cpu);
-            win.set_mem_percent(pct(st.mem_used_kib, st.mem_total_kib));
-            win.set_swap_percent(pct(st.swap_used_kib, st.swap_total_kib));
+            win.set_mem_percent(usage_pct(st.mem_used_kib, st.mem_total_kib));
+            win.set_swap_percent(usage_pct(st.swap_used_kib, st.swap_total_kib));
             win.set_mem_detail(format_mem(st.mem_used_kib / 1024, st.mem_total_kib / 1024).into());
             win.set_swap_detail(
                 format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
@@ -276,13 +298,15 @@ pub(super) fn refresh_sidebar(
             set_procs(win, &st.procs, &st.user, &active);
             set_system_models(
                 win,
-                st.cpu,
-                pct(st.mem_used_kib, st.mem_total_kib),
-                pct(st.swap_used_kib, st.swap_total_kib),
-                format_mem(st.mem_used_kib / 1024, st.mem_total_kib / 1024).into(),
-                format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
-                net_rows(&st.net),
-                st.sys.clone(),
+                SystemModelValues {
+                    cpu: st.cpu,
+                    mem: usage_pct(st.mem_used_kib, st.mem_total_kib),
+                    swap: usage_pct(st.swap_used_kib, st.swap_total_kib),
+                    mem_detail: format_mem(st.mem_used_kib / 1024, st.mem_total_kib / 1024).into(),
+                    swap_detail: format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
+                    nets: net_rows(&st.net),
+                    sys: st.sys.clone(),
+                },
             );
         }
         // Disconnected / timed-out session.
@@ -292,17 +316,8 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_top_local(win, &mut stats);
-            set_system_models(
-                win,
-                0.0,
-                0.0,
-                0.0,
-                "".into(),
-                "".into(),
-                Vec::new(),
-                SystemDetails::default(),
-            );
+            set_top_local(win, &mut stats, &snap, &scaled, &view);
+            set_system_models(win, SystemModelValues::empty());
         }
         // Still connecting.
         Some(st) => {
@@ -311,26 +326,17 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_top_local(win, &mut stats);
-            set_system_models(
-                win,
-                0.0,
-                0.0,
-                0.0,
-                "".into(),
-                "".into(),
-                Vec::new(),
-                SystemDetails::default(),
-            );
+            set_top_local(win, &mut stats, &snap, &scaled, &view);
+            set_system_models(win, SystemModelValues::empty());
         }
         // Welcome tab (or unknown) → local machine top + bottom.
         None => {
             win.set_conn_state(0);
             win.set_connection_state(t("未连接", "Not connected").into());
             win.set_conn_host("".into());
-            show_local_res(win);
-            set_top_local(win, &mut stats);
-            show_local_system_models(win);
+            show_local_res(win, &view);
+            set_top_local(win, &mut stats, &snap, &scaled, &view);
+            show_local_system_models(win, &view);
         }
     }
     stats
@@ -401,4 +407,30 @@ mod tests {
             format!("{} nas", t("连接中", "Connecting"))
         );
     }
+    #[test]
+    fn local_resource_view_maps_fields_without_swapping_them() {
+        let snap = crate::resource::SystemSnapshot {
+            cpu_percent: 0.25,
+            mem_percent: 0.5,
+            swap_percent: 0.75,
+            mem_used_mib: 1024,
+            mem_total_mib: 4096,
+            swap_used_mib: 1,
+            swap_total_mib: 2048,
+            net_tx_per_sec: 1000,
+            net_rx_per_sec: 9_000_000,
+            ..Default::default()
+        };
+        let v = local_resource_view(&snap);
+        assert_eq!(v.cpu_percent, 0.25);
+        assert_eq!(v.mem_percent, 0.5);
+        assert_eq!(v.swap_percent, 0.75);
+        assert_eq!(v.mem_detail, format_mem(1024, 4096));
+        assert_eq!(v.swap_detail, format_mem(1, 2048));
+        assert_eq!(v.net_up, format_bytes_per_sec(1000));
+        assert_eq!(v.net_down, format_bytes_per_sec(9_000_000));
+        assert_ne!(v.net_up, v.net_down, "tx/rx must not be swapped");
+        assert_ne!(v.mem_detail, v.swap_detail, "mem/swap must not be swapped");
+    }
+
 }

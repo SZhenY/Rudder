@@ -1,4 +1,4 @@
-//! Session-lifecycle callback wiring, extracted from `app.rs` (refactor plan
+//! Session-lifecycle callback dispatch; groups live in `session_callbacks_*.rs` (refactor plan
 //! stage D step 2). Slint-thread-only: connects every `on_*` session event
 //! (connect / disconnect / resize / rename / triggers …) to session state.
 

@@ -78,7 +78,7 @@ export component ConfirmDialog inherits Rectangle {
 
     // Enter confirms, but only where the caller opted in. The scope takes focus
     // as soon as the dialog becomes visible so no extra click is needed.
-    confirm-key-scope := FocusScope {
+    FocusScope {
         focus-on-click: false;
         focus-on-tab-navigation: false;
         property <bool> active: root.visible && root.confirm-on-enter;

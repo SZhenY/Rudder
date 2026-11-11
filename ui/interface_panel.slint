@@ -32,7 +32,7 @@ export component InterfacePanel inherits Rectangle {
     in property <[string]> ui-fonts;        // all font families for UI picker
     in-out property <int> ui-font-index: 0;     // UI font picker selection
     callback set-ui-font(string);
-    callback upload-ui-font();                    // 上传字体（复制进 config/fonts）            // persist UI font choice
+    callback upload-ui-font();                    // 上传字体（复制进 config/fonts）
     in property <length> term-font-size;
     in-out property <bool> term-font-bold;
     in-out property <string> term-cursor-style: "block";
@@ -147,7 +147,7 @@ export component InterfacePanel inherits Rectangle {
 
     // 单次定时器：等淡出快走完再换页，然后淡入。动效关闭时间隔归零，不白等。
     // `running` 绑在 page-swapping 上，到点置回 false 即停表（Timer 每 interval 都会触发）。
-    swap-timer := Timer {
+    Timer {
         interval: AnimationSettings.enabled ? 130ms : 1ms;
         running: root.page-swapping;
         triggered => {

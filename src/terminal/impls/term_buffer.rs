@@ -1,5 +1,5 @@
 use crate::terminal::{
-    BuiltScreen, CsiState, FrameStats, HistSpan, MouseReport, OverlineRange, RAW_CAP, RenderedLine,
+    BuiltScreen, CsiState, FrameStats, HistSpan, MouseReport, OverlineRange, RenderedLine,
     ScrollLine, ScrollbackKey, TermBuffer, TextSnapshot, build_line, build_row, cursor_pos,
     highlight_plain_output, is_alt, merge_runs, process_bytes, refresh_overlines, render_term_span,
     resize_term, term_size,
@@ -65,7 +65,7 @@ impl TermBuffer {
             csi_state: CsiState::Normal,
             csi_pending: Vec::new(),
             mouse_tracked: false,
-            raw: std::collections::VecDeque::new(),
+            raw_tail: Vec::new(),
             frame_stats: Default::default(),
             rendered: Vec::new(),
             scroll_cache: std::collections::HashMap::new(),
@@ -95,7 +95,7 @@ impl TermBuffer {
         self.displayed_text.clear();
         self.view_offset = 0;
         self.term.selection = None;
-        self.raw.clear();
+        self.raw_tail.clear();
     }
 
     /// Handle a local scrollback-navigation key (Home / End / PageUp / PageDown).
@@ -388,35 +388,38 @@ impl TermBuffer {
         // vte treats HVP (`ESC [ … f`) identically to CUP (`ESC [ … H`), so no
         // rewrite is needed — pass the stream through as-is.
         // 没有 ESC 的块占终端流量的绝大多数（普通日志、`seq` 输出…）：它既不可能含
-        // `CSI 3 J`，也不可能续上上一块的半截序列 —— 所以"留存进 raw + 反向扫描"整段可以跳过。
-        // （`raw` 只在检测 `CSI 3 J` 时被读；`!self.raw.is_empty()` 覆盖"上一块留了半截"的情况。）
+        // `CSI 3 J`，也不可能续上上一块的半截序列 —— 所以整段探测可以跳过。
+        // `CSI 3 J` (erase saved lines) can be split across SSH reads (#319).
+        // Only the last three bytes of the previous chunk can begin such a
+        // sequence, so keep that tail instead of buffering the whole stream.
         let has_esc = memchr::memchr(b'\x1b', input).is_some();
-        if has_esc || !self.raw.is_empty() {
-            // Retain the stream, capped, so a split `CSI 3 J` is still caught (#319).
-            self.raw.extend(input.iter().copied());
-        // CSI 3 J means "erase saved lines". The vt100 crate clears its own
-        // scrollback, but Rudder maintains a separate rendered history and a
-        // raw replay stream for resize reflow. Drop both sides of that history,
-        // including when the CSI sequence was split across SSH reads (#319).
-            let erase_saved_through = {
-                let raw = self.raw.make_contiguous();
-                raw.windows(4)
-                    .rposition(|window| window == b"\x1b[3J")
-                    .map(|position| position + 4)
-            };
-            if let Some(end) = erase_saved_through {
-            self.raw.drain(..end);
-            // ⚠️ 这里必须连 `scroll_cache` 一起失效（B1.1 的同类漏项）：缓存按**回滚行号**
-            // 索引，而 `CSI 3 J` 把回滚整个清空、后面的行号全部前移 —— 旧条目会以"行号相同、
-            // plain 文本相同"命中，把上一批内容的着色贴到新内容上。`bump_render_gen()`
-            // 同时清 `rendered`（原本那行删除）。
-            self.bump_render_gen();
-            self.drop_scroll_cache();
+        if has_esc || !self.raw_tail.is_empty() {
+            let mut split = Vec::with_capacity(self.raw_tail.len() + 3);
+            split.extend_from_slice(&self.raw_tail);
+            split.extend_from_slice(&input[..input.len().min(3)]);
+            let erase_saved = memchr::memmem::find(&split, b"\x1b[3J").is_some()
+                || memchr::memmem::find(input, b"\x1b[3J").is_some();
+            // Rolling tail: last three bytes of (previous tail + this chunk),
+            // so a sequence split over three chunks is still detected.
+            if input.len() >= 3 {
+                self.raw_tail.clear();
+                self.raw_tail.extend_from_slice(&input[input.len() - 3..]);
+            } else {
+                let mut tail = std::mem::take(&mut self.raw_tail);
+                tail.extend_from_slice(input);
+                if tail.len() > 3 {
+                    tail.drain(..tail.len() - 3);
+                }
+                self.raw_tail = tail;
+            }
+            if erase_saved {
+                self.raw_tail.clear();
+                self.bump_render_gen();
+                self.drop_scroll_cache();
                 self.view_offset = 0;
                 self.term.selection = None;
                 self.clear_overlines();
             }
-            self.cap_raw();
         }
         // 以前这里先 `input.to_vec()` 再解析 —— 一次没有任何作用的整块拷贝（流的重写不在这里做）。
         self.ingest_chunk(input);
@@ -499,9 +502,9 @@ impl TermBuffer {
         // 这三处 `windows(..)` 全扫只为判断"整屏重绘"这个启发式 —— 没有 ESC 的块不可能命中。
         let (has_cursor_home, has_erase_display) = if memchr::memchr(b'\x1b', bytes).is_some() {
             (
-                bytes.windows(3).any(|w| w == b"\x1b[H"),
-                bytes.windows(4).any(|w| w == b"\x1b[2J")
-                    || bytes.windows(3).any(|w| w == b"\x1b[J"),
+                memchr::memmem::find(bytes, b"\x1b[H").is_some(),
+                memchr::memmem::find(bytes, b"\x1b[2J").is_some()
+                    || memchr::memmem::find(bytes, b"\x1b[J").is_some(),
             )
         } else {
             (false, false)
@@ -571,7 +574,7 @@ impl TermBuffer {
     ///
     /// 判据用的是 [`sgr_probe`]，与 `apply_sgr` 的分类规则同源（有测试对照）。
     fn route_chunk(&mut self, bytes: &[u8]) {
-        if !bytes.contains(&0x1b) {
+        if memchr::memchr(b'\x1b', bytes).is_none() {
             // 没有 ESC：不可能有 53 / 21，也没有半截序列。
             process_bytes(&mut self.processor, &mut self.term, bytes);
             return;
@@ -792,19 +795,6 @@ fn ingest_segments_inner(&mut self, bytes: &[u8]) {
         self.overline_ranges.clear();
     }
 
-    fn cap_raw(&mut self) {
-        if self.raw.len() <= RAW_CAP {
-            return;
-        }
-        let overflow = self.raw.len() - RAW_CAP;
-        self.raw.drain(0..overflow);
-        while let Some(&b) = self.raw.front() {
-            self.raw.pop_front();
-            if b == b'\n' {
-                break;
-            }
-        }
-    }
 
     pub(crate) fn reflow(&mut self, new_rows: u16, new_cols: u16) {
         let was_scrolled = self.view_offset > 0;
@@ -867,99 +857,122 @@ fn ingest_segments_inner(&mut self, bytes: &[u8]) {
 
         // Ensure the cache matches the current grid size.
         self.rendered.resize(rows as usize, None);
-
-        // --- Live view (also alt-screen): render the current grid -----------
         if alt || self.view_offset == 0 {
-            // 每帧重置；本分支结束时写回 self.frame_stats（见字段文档）。
-            let mut stats = FrameStats::default();
-            let mut spans = Vec::with_capacity(rows as usize * 6);
-            let mut displayed = Vec::with_capacity(rows as usize);
-            let mut last_content = 0i32;
-            for r in 0..rows {
-                let (plain, runs, _wrapped) = build_row(&self.term, r, cols, &self.overline_ranges);
-                // Compare the cache against a borrowed slice first: allocating a
-                // `String` for every row on every frame is pure waste when the
-                // row is unchanged (24–50 rows × 10–30 fps). The owned copy is
-                // only built where it is actually stored (`displayed_text`).
-                let display_key = plain.trim_end();
+            self.render_live_view(rows, cols, cur_row, cur_col, alt)
+        } else {
+            self.render_scrolled_view(rows, cols)
+        }
+    }
 
-                // Reuse cached spans when the plain text is identical.
-                // Reuse cached runs when plain text is identical, only
-                // re-running render_term_span to produce the final TermSpan
-                // slice (which contains non-Send slint::Image references).
-                // The cached runs are re-checked against the *current*
-                // overline ranges: a row can be rewritten with identical
-                // visible text but a new SGR-53 range (or a range pruned by
-                // the cap), and stale flags must not stick.
-                let line_spans: Vec<_> = if let Some(ref cached) = self.rendered[r as usize] {
-                    // The plain-text key alone is not enough: a program can
-                    // rewrite the row with identical text but different SGR
-                    // attributes (highlight bars, colour changes) — comparing
-                    // the freshly built runs too keeps such restyles visible
-                    // (#cache-style-key).
-                    if cached.plain_key == display_key
-                        && cached.raw_runs == runs
-                        && cached.highlighted != alt
-                    {
-                        stats.reused += 1;
-                        let runs = merge_runs(&refresh_overlines(
+    /// Live view (also alt-screen): render the current grid row by row.
+    fn render_live_view(
+        &mut self,
+        rows: u16,
+        cols: u16,
+        cur_row: u16,
+        cur_col: u16,
+        alt: bool,
+    ) -> BuiltScreen {
+        // 每帧重置；本分支结束时写回 self.frame_stats（见字段文档）。
+        let mut stats = FrameStats::default();
+        let mut spans = Vec::with_capacity(rows as usize * 6);
+        let mut displayed = Vec::with_capacity(rows as usize);
+        let mut last_content = 0i32;
+        for r in 0..rows {
+            let (plain, runs, _wrapped) = build_row(&self.term, r, cols, &self.overline_ranges);
+            // Compare the cache against a borrowed slice first: allocating a
+            // `String` for every row on every frame is pure waste when the
+            // row is unchanged (24–50 rows × 10–30 fps). The owned copy is
+            // only built where it is actually stored (`displayed_text`).
+            let display_key = plain.trim_end();
+
+            // Reuse cached spans when the plain text is identical.
+            // Reuse cached runs when plain text is identical, only
+            // re-running render_term_span to produce the final TermSpan
+            // slice (which contains non-Send slint::Image references).
+            // The cached runs are re-checked against the *current*
+            // overline ranges: a row can be rewritten with identical
+            // visible text but a new SGR-53 range (or a range pruned by
+            // the cap), and stale flags must not stick.
+            let line_spans: Vec<_> = if let Some(ref cached) = self.rendered[r as usize] {
+                // The plain-text key alone is not enough: a program can
+                // rewrite the row with identical text but different SGR
+                // attributes (highlight bars, colour changes) — comparing
+                // the freshly built runs too keeps such restyles visible
+                // (#cache-style-key).
+                if cached.plain_key == display_key
+                    && cached.raw_runs == runs
+                    && cached.highlighted != alt
+                {
+                    stats.reused += 1;
+                    if self.overline_ranges.is_empty() {
+                        cached
+                            .merged
+                            .iter()
+                            .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
+                            .collect()
+                    } else {
+                        merge_runs(&refresh_overlines(
                             &cached.runs,
                             &self.overline_ranges,
                             &self.term,
                             r as i32,
-                        ));
-                        runs.iter()
-                            .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
-                            .collect()
-                    } else {
-                        stats.rebuilt += 1;
-                        self.build_spans(r as i32, display_key, &runs, alt)
+                        ))
+                        .iter()
+                        .flat_map(|hs| render_term_span(hs, r as i32, self.is_dark))
+                        .collect()
                     }
                 } else {
                     stats.rebuilt += 1;
                     self.build_spans(r as i32, display_key, &runs, alt)
-                };
-
-                if !line_spans.is_empty() {
-                    last_content = r as i32;
                 }
-                spans.extend(line_spans);
-                displayed.push(display_key.to_string());
-            }
-            self.displayed_text = displayed;
-            // B1.3：回到实时视图后行缓存不再被读取，连续几帧没有回滚就释放它。
-            if self.scroll_cache.is_empty() {
-                self.scroll_live_frames = 0;
-            } else if self.scroll_live_frames < SCROLL_LIVE_GRACE {
-                self.scroll_live_frames += 1;
             } else {
-                // 这是**最常走**的一条废弃路径（每次滚动回看结束都命中一次），
-                // 也是 0.5 MB 桶数组真正回到分配器的地方。
-                self.drop_scroll_cache();
-                self.render_gen = self.render_gen.wrapping_add(1);
-                self.scroll_live_frames = 0;
-            }
-            let rows_used = if alt { rows as i32 } else { last_content + 1 };
-            self.frame_stats = stats;
-            return BuiltScreen {
-                mouse_tracked: self.mouse_tracked,
-                spans,
-                cursor_row: cur_row as i32,
-                cursor_col: cur_col as i32,
-                rows_used,
-                is_alt: alt,
-                scroll_max: if alt {
-                    0
-                } else {
-                    (self
-                        .term
-                        .total_lines()
-                        .saturating_sub(self.term.screen_lines())) as i32
-                },
-                scroll_offset: 0,
+                stats.rebuilt += 1;
+                self.build_spans(r as i32, display_key, &runs, alt)
             };
-        }
 
+            if !line_spans.is_empty() {
+                last_content = r as i32;
+            }
+            spans.extend(line_spans);
+            displayed.push(display_key.to_string());
+        }
+        self.displayed_text = displayed;
+        // B1.3：回到实时视图后行缓存不再被读取，连续几帧没有回滚就释放它。
+        if self.scroll_cache.is_empty() {
+            self.scroll_live_frames = 0;
+        } else if self.scroll_live_frames < SCROLL_LIVE_GRACE {
+            self.scroll_live_frames += 1;
+        } else {
+            // 这是**最常走**的一条废弃路径（每次滚动回看结束都命中一次），
+            // 也是 0.5 MB 桶数组真正回到分配器的地方。
+            self.drop_scroll_cache();
+            self.render_gen = self.render_gen.wrapping_add(1);
+            self.scroll_live_frames = 0;
+        }
+        let rows_used = if alt { rows as i32 } else { last_content + 1 };
+        self.frame_stats = stats;
+        BuiltScreen {
+            mouse_tracked: self.mouse_tracked,
+            spans,
+            cursor_row: cur_row as i32,
+            cursor_col: cur_col as i32,
+            rows_used,
+            is_alt: alt,
+            scroll_max: if alt {
+                0
+            } else {
+                (self
+                    .term
+                    .total_lines()
+                    .saturating_sub(self.term.screen_lines())) as i32
+            },
+            scroll_offset: 0,
+        }
+    }
+
+    /// Scrolled view: read directly from alacritty's native scrollback grid.
+    fn render_scrolled_view(&mut self, rows: u16, cols: u16) -> BuiltScreen {
         // --- Scrolled view: read directly from alacritty's native scrollback
         //     grid via negative Line indices.  No separate rendered history —
         //     build_line() lazily converts raw Cells as needed, and the
@@ -989,15 +1002,14 @@ fn ingest_segments_inner(&mut self, bytes: &[u8]) {
 
             // `hit` resolves the immutable borrow before the mutable
             // `scroll_cache.insert` below, so the two can coexist here.
-            let hit = self
-                .scroll_cache
-                .get(&line_no)
-                .is_some_and(|c| c.generation == generation && c.plain_key == display);
-            if hit {
-                let cached = &self.scroll_cache[&line_no];
+            // 一次查找：命中后直接借用，不再二次索引。
+            if let Some(cached) = self.scroll_cache.get(&line_no) {
                 // 文本相同还不够：相对行号可能落到"文本一样、样式不同"的另一行上，必须比对
                 // 高亮前的 runs；overlines 也要按**当前**区间重新切（同 live 路径的理由）。
-                if cached.raw_runs == runs {
+                if cached.generation == generation
+                    && cached.plain_key == display
+                    && cached.raw_runs == runs
+                {
                     let refreshed = refresh_overlines(
                         &cached.runs,
                         &self.overline_ranges,
@@ -1054,7 +1066,6 @@ fn ingest_segments_inner(&mut self, bytes: &[u8]) {
             scroll_offset: vo as i32,
         }
     }
-
     /// Build spans for one live row, update the render cache, and return them.
     fn build_spans(
         &mut self,
@@ -1074,7 +1085,8 @@ fn ingest_segments_inner(&mut self, bytes: &[u8]) {
                 &self.custom_highlight_rules,
             )
         };
-        let spans: Vec<_> = merge_runs(&runs)
+        let merged = merge_runs(&runs);
+        let spans: Vec<_> = merged
             .iter()
             .flat_map(|hs| render_term_span(hs, row, self.is_dark))
             .collect();
@@ -1082,6 +1094,7 @@ fn ingest_segments_inner(&mut self, bytes: &[u8]) {
             plain_key: plain_key.to_string(),
             raw_runs,
             runs,
+            merged,
             highlighted: !alt,
         });
         spans

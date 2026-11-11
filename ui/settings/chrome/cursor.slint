@@ -80,7 +80,7 @@ export component CursorPaletteSwatch inherits Rectangle {
         easing: AnimationSettings.e-standard-decelerate();
         enabled: AnimationSettings.enabled;
     }
-    swatch-ta := TouchArea {
+    TouchArea {
         mouse-cursor: pointer;
         clicked => { root.chosen(root.hex); }
     }
@@ -156,12 +156,12 @@ export component CursorColorInput inherits Rectangle {
         border-width: 1px;
         border-color: Theme.border-strong;
         background: root.preview-color;
-        color-button := TouchArea {
+        TouchArea {
             mouse-cursor: pointer;
             clicked => { color-picker.show(); }
         }
     }
-    color-input := TextInput {
+    TextInput {
         input-method-hints: Theme.plain-input-hints;
         x: 34px;
         width: parent.width - 41px;
@@ -243,7 +243,7 @@ export component CursorColorInput inherits Rectangle {
                 // 行高由色相条自己（34px）与右侧预览（34px）决定，本来就不需要居中。
                 HorizontalLayout {
                     spacing: 10px;
-                    hue-bar := Rectangle {
+                    Rectangle {
                         height: 34px;
                         // ⚠️ 布局里也**不能**写 `width: 100%`：那表示"占满整个布局宽度"，
                         // 右侧的圆形预览会被挤出面板（`horizontal-stretch` 才会给它让位）。

@@ -1,14 +1,14 @@
 //! Settings seeding: push the saved configuration into the Slint properties and
 //! register the `on_set_*` callbacks that persist later edits back to the store.
 //!
-//! Extracted from `app.rs` (refactor plan stage A4). Slint-thread-only: every
+//! Extracted from `app/mod.rs` (refactor plan stage A4). Slint-thread-only: every
 //! callback here runs on the UI thread and only touches `ConfigStore` + the
 //! window's properties.
 //!
 //! This is a straight move of the section that used to sit between "process
 //! monitor window" and "Wire callbacks" in `run()`.
 
-// Everything this section needs was already in scope in `app.rs`; reuse that
+// Everything this section needs was already in scope in `app/mod.rs`; reuse that
 // namespace rather than re-deriving a long import list by hand.
 use super::*;
 use crate::ui::{ Theme };
@@ -303,8 +303,9 @@ pub(super) fn seed_settings(window: &AppWindow, ctx: &AppContext) {
         &all_quick_group_names(&store.borrow()),
     ));
     window.set_command_history(history_model(&store.borrow()));
-    window.set_history_view(history_view_model(&store.borrow(), "")); // #101
-    window.set_history_preview(history_preview_model(&store.borrow(), ""));
+    let (view, preview) = history_view_models(&store.borrow(), ""); // #101
+    window.set_history_view(view);
+    window.set_history_preview(preview);
 
     settings::transfer::bind(window, store, sftp_follow_cd);
     settings::sync::bind(window, store, sessions_model);
@@ -524,7 +525,7 @@ mod wiring_tests {
         // 主题（深浅）档位的**显示名**：真正参与还原的是配置里的 `theme_pref`，
         // 这三个只是"值 ↔ 界面文字"映射用的常量，随语言变化。
         "lbl-system", "lbl-dark", "lbl-light",
-        // 壁纸分区的临时开关：编译期常量（置回 true 即恢复），不是设置项。
+        // 壁纸分区的编译期总开关，当前开启；不是设置项。
         "wallpaper-enabled",
         // 一次性瞬态
         "renderer-restart-required",

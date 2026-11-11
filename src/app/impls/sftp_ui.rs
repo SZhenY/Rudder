@@ -35,44 +35,58 @@ pub(super) fn sorted_sftp_entries_from_model(
 pub(super) fn sort_sftp_entries(entries: &mut [SftpEntry], key: &str, dir: i32) {
     use std::cmp::Ordering;
 
-    let name_cmp = |a: &SftpEntry, b: &SftpEntry| natural_name_cmp(&a.name, &b.name);
-    let default_cmp = |a: &SftpEntry, b: &SftpEntry| match (a.is_dir, b.is_dir) {
+    // The comparator runs O(n log n) times; computing lowercase names once
+    // removes two String allocations from every comparison.
+    let lower: Vec<String> = entries.iter().map(|e| e.name.to_lowercase()).collect();
+    let snapshot: Vec<SftpEntry> = entries.to_vec();
+    let name_cmp = |a: usize, b: usize| {
+        natural_ascii_cmp(&lower[a], &lower[b])
+            .then_with(|| snapshot[a].name.cmp(&snapshot[b].name))
+    };
+    let default_cmp = |a: usize, b: usize| match (snapshot[a].is_dir, snapshot[b].is_dir) {
         (true, false) => Ordering::Less,
         (false, true) => Ordering::Greater,
         _ => name_cmp(a, b),
     };
 
+    let mut order: Vec<usize> = (0..entries.len()).collect();
     if dir == 0 || key.is_empty() {
-        entries.sort_by(default_cmp);
-        return;
+        order.sort_unstable_by(|&a, &b| default_cmp(a, b));
+    } else {
+        order.sort_unstable_by(|&a, &b| {
+            let group = match (snapshot[a].is_dir, snapshot[b].is_dir) {
+                (true, false) => Ordering::Less,
+                (false, true) => Ordering::Greater,
+                _ => Ordering::Equal,
+            };
+            if group != Ordering::Equal {
+                return group;
+            }
+            let ord = match key {
+                "size" => snapshot[a]
+                    .size_bytes
+                    .partial_cmp(&snapshot[b].size_bytes)
+                    .unwrap_or(Ordering::Equal)
+                    .then_with(|| default_cmp(a, b)),
+                "modified" => snapshot[a]
+                    .modified_ts
+                    .partial_cmp(&snapshot[b].modified_ts)
+                    .unwrap_or(Ordering::Equal)
+                    .then_with(|| default_cmp(a, b)),
+                // default_cmp falls back to name_cmp, so a second name_cmp
+                // here would just repeat the same comparison.
+                _ => name_cmp(a, b),
+            };
+            if dir < 0 { ord.reverse() } else { ord }
+        });
     }
-
-    entries.sort_by(|a, b| {
-        let group = match (a.is_dir, b.is_dir) {
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-            _ => Ordering::Equal,
-        };
-        if group != Ordering::Equal {
-            return group;
-        }
-        let ord = match key {
-            "size" => a
-                .size_bytes
-                .partial_cmp(&b.size_bytes)
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| default_cmp(a, b)),
-            "modified" => a
-                .modified_ts
-                .partial_cmp(&b.modified_ts)
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| default_cmp(a, b)),
-            _ => name_cmp(a, b).then_with(|| default_cmp(a, b)),
-        };
-        if dir < 0 { ord.reverse() } else { ord }
-    });
+    for (dst, src) in order.into_iter().enumerate() {
+        entries[dst] = snapshot[src].clone();
+    }
 }
 
+/// Legacy comparator, kept as the oracle for `sort_sftp_entries`.
+#[cfg(test)]
 pub(super) fn natural_name_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     natural_ascii_cmp(&a.to_lowercase(), &b.to_lowercase()).then_with(|| a.cmp(b))
 }
@@ -285,5 +299,25 @@ mod tests {
         ];
         sort_sftp_entries(&mut rows, "size", 1);
         assert_eq!(names(&rows), vec!["a.txt", "z.txt"]);
+    }
+
+    /// The precomputed-name sort must produce exactly the legacy comparator's
+    /// order (including case-insensitive natural sort and directory grouping).
+    #[test]
+    fn sort_matches_legacy_name_comparator() {
+        let mut rows = vec![
+            entry("File10", false, 1.0),
+            entry("file2", false, 1.0),
+            entry("FILE1", false, 1.0),
+            entry("adir", true, 1.0),
+        ];
+        let mut legacy = rows.clone();
+        legacy.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            _ => natural_name_cmp(&a.name, &b.name),
+        });
+        sort_sftp_entries(&mut rows, "", 0);
+        assert_eq!(names(&rows), names(&legacy));
     }
 }

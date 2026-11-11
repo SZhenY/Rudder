@@ -1,8 +1,8 @@
-//! 版本号解析与"测试版"判定（原在 `app.rs` 里，与启动接线混在一起）。
+//! 版本号解析与"测试版"判定（原在 `app/mod.rs` 里，与启动接线混在一起）。
 //!
 //! 这些是纯函数：`updater` / `self_updater` 与更新检查都靠它们排序版本、判断
 //! 当前是不是 alpha/beta/rc 构建（测试版不自动更新，见 updater 的策略）。
-//! 搬出 app.rs 后由 app.rs 重新导出（`pub(crate) use version::{…}`），
+//! 搬出后由 `app/mod.rs` 重新导出（`pub(crate) use version::{…}`），
 //! 调用点（`crate::app::parse_version` 等）路径不变。
 
 /// Split a stored proxy URL into `(type, host:port)` for the session dialog.

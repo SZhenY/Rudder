@@ -47,7 +47,7 @@ export component IconButton inherits Rectangle {
     // 脉冲层（移植自 app.slint 的本地 IconBtn）。⚠️ 必须用 `visible` + `opacity` 翻转，
     // **不能**写成 `if root.breathe { … }`：Slint 的 animate 只在**已存在**元素的属性变化时
     // 触发，`if` 新建的层会带着初始 opacity 出现、永远不动（原注释记录了这一点）。
-    breathe-layer := Rectangle {
+    Rectangle {
         x: 0px; y: 0px;
         width: 100%; height: 100%;
         border-radius: Theme.radius-sm;
@@ -215,7 +215,7 @@ export component LabeledInput inherits VerticalLayout {
     // layout binding is still being evaluated, which trips the runtime's
     // recursion guard. Defer focus until the next event-loop turn, after layout.
     init => { root.focus-pending = root.auto-focus; }
-    focus-timer := Timer {
+    Timer {
         interval: 0ms;
         running: root.focus-pending;
         triggered => {

@@ -84,13 +84,13 @@ export component QuickCmdManageDialog inherits ModalCard {
 
     // Add / edit form: name + group (optional) + command.
     Text { text: @tr("Name"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
-    qcm-name-in := LineEdit {
+    LineEdit {
         text <=> qcm-name;
         font-family: Theme.ui-font-family;
         placeholder-text: @tr("e.g. tail log");
     }
     Text { text: @tr("Group (optional)"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
-    qcm-group-in := LineEdit {
+    LineEdit {
         text <=> qcm-group;
         font-family: Theme.ui-font-family;
         placeholder-text: @tr("leave empty → default");
@@ -263,7 +263,7 @@ export component QuickCmdManageDialog inherits ModalCard {
                     background: Theme.bg-root;
                     property <length> ctx-x;
                     property <length> ctx-y;
-                    item-ta := TouchArea {
+                    TouchArea {
                         clicked => { }  // grab so right-click pointer-events register inside the Flickable
                         pointer-event(e) => {
                             if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {

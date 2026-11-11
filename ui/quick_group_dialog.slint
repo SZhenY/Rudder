@@ -40,7 +40,7 @@ export component QuickGroupDialog inherits ModalCard {
         font-weight: 700;
     }
     Text { text: @tr("Group name"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
-    qcg-input := LineEdit {
+    LineEdit {
         text <=> qcg-name;
         font-family: Theme.ui-font-family;
         placeholder-text: @tr("Group name");

@@ -81,7 +81,7 @@ export component ModalCard inherits Rectangle {
     height: 100%;
     background: root.backdrop;
     // 遮罩本身吞掉点击：点击遮罩即 dismissed，卡片内部的点击被 card 自己吞掉。
-    backdrop-ta := TouchArea {
+    TouchArea {
         enabled: root.active;
         clicked => { root.dismissed(); }
     }

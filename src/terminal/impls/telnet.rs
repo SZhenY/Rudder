@@ -165,6 +165,7 @@ async fn run_telnet(
     let mut buf = [0u8; 4096];
 
     loop {
+        crate::output_budget::wait_for_drain().await;
         tokio::select! {
             cmd = commands.recv() => {
                 match cmd {
@@ -215,7 +216,7 @@ async fn run_telnet(
                         }
                         if !data.is_empty() {
                             let text = String::from_utf8_lossy(&data).into_owned();
-                            let _ = events.send(SessionEvent::Output(text));
+                            let _ = crate::output_budget::emit_output(&events, text);
                         }
                     }
                     Err(e) => {

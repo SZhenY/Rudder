@@ -5,8 +5,12 @@ pub(super) fn push_ring(buf: &mut Vec<f32>, val: f32) {
     if buf.len() != NET_HISTORY_LEN {
         *buf = vec![0.0; NET_HISTORY_LEN];
     }
-    buf.remove(0);
-    buf.push(val);
+    // `remove(0)` would shrink and re-grow the Vec on every sample; shifting
+    // in place keeps the length (and the allocation) untouched.
+    buf.copy_within(1.., 0);
+    if let Some(last) = buf.last_mut() {
+        *last = val;
+    }
 }
 
 /// 折线图归一化：除以峰值（峰值从 1.0 起算，所以低流量不会被拉满整图）。

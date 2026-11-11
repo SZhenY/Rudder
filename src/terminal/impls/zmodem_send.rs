@@ -90,11 +90,11 @@ pub(crate) async fn send(
         io.buf.push_front(first_prompt_byte);
     }
 
-    let _ = events.send(SessionEvent::Output(format!(
+    let _ = crate::output_budget::emit_output(events, format!(
         "\r\n[rudder] {} {}\r\n",
         files.len(),
         t("个文件已通过 rz 上传", "file(s) uploaded via rz")
-    )));
+    ));
     Ok(io.buf.drain(..).collect())
 }
 

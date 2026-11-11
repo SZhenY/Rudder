@@ -39,13 +39,13 @@ export component SettingsWindow inherits Window {
     //
     // 1. `Theme` global **是按窗口各自实例化的，不是共享的** ✗ → 必须像 `ProcWindow`
     //    那样逐项同步过去（见下面那组 `<=> Theme.*` + Rust 的 `sync_settings_theme`）。
-    //    仓库里还留着一条血泪注释（`proc_window.slint:169`）：子窗口里 `Theme.is-mac`
+    //    仓库里还留着一条血泪注释（`proc_window.slint:175`）：子窗口里 `Theme.is-mac`
     //    恒为 false —— 所以 `is-mac` 也要一起同步（设置页的更新频道文案与圆角尺寸都
     //    依赖它）。主题色同理（`accent-overridden` / `accent-seed`），否则这个窗口里
     //    按钮与选中态会退回默认蓝 ✗。
     // 2. macOS 上新映射的第二个窗口**不会自动产生首帧**（表现：只有标题栏、没有内容，
     //    拉伸一下才出来）→ Rust 侧 `show()` 之后要 `request_first_frame()`，照
-    //    `app.rs:597` 那套"连续三个 tick 各补一次"的补救来。
+    //    `resource_ui::request_first_frame` 那套"连续三个 tick 各补一次"的补救来。
     // ⚠️ 用 min/preferred，**不要**写 `width:`/`height:`：那样 Slint 推导出的
     // min == max，`window_is_resizable()` 直接判 false → winit 调
     // `set_resizable(false)` → 样式里没有 WS_SIZEBOX → 系统的缩放循环不会启动，
@@ -84,7 +84,7 @@ export component SettingsWindow inherits Window {
     // `Palette` 和 `Theme` 一样是**按窗口各自实例**的 ✗ —— 不同步的话，这个窗口里的
     // 官方控件（下拉框展开后的列表、LineEdit、滚动条）会退回平台浅色 ✗，
     // 就是"下拉框不如原来好看"的那一半原因。
-    // 写法照抄 `app.slint:371-373`：`changed` 只认**本地**属性名，所以用一条单向派生的
+    // 写法照抄 `app.slint:366-369`：`changed` 只认**本地**属性名，所以用一条单向派生的
     // 本地属性当触发器（随 `Theme.dark` 变化，Rust 不去写它），再在 `changed` 里同步。
     property <bool> dark-mode-watch: Theme.dark;
     init => { Palette.color-scheme = dark-mode-watch ? ColorScheme.dark : ColorScheme.light; }

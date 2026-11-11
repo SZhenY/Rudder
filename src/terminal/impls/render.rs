@@ -10,8 +10,6 @@ use crate::terminal::{
 
 /// Small window of retained bytes for split-ESC[3J detection (no longer
 /// needed for resize reflow — alacritty handles that natively).
-pub(crate) const RAW_CAP: usize = 256;
-
 /// Tab stop interval in columns, matching alacritty's `INITIAL_TABSTOPS`.
 const TAB_SPACES: i32 = 8;
 

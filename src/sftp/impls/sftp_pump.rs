@@ -271,7 +271,17 @@ pub(crate) async fn run_sftp(
     // --- Command loop -------------------------------------------------------
     while let Some(cmd) = commands.recv().await {
         match cmd {
-            SftpCommand::Close => break,
+            SftpCommand::Close => {
+                // Flip every in-flight transfer flag before leaving the loop.
+                // These tasks hold Arc<SftpSession> plus pipeline buffers and
+                // would otherwise keep writing to disk after the tab is gone.
+                // Each task polls its flag, exits on its own and keeps the
+                // partial file per the existing cancel policy (#100).
+                for flag in cancels.lock().unwrap_or_else(|e| e.into_inner()).values() {
+                    flag.store(true, Ordering::Relaxed);
+                }
+                break;
+            }
 
             SftpCommand::ListDir(path) => {
                 emit_panel_dir(&sftp, &events, &path).await;
@@ -512,8 +522,23 @@ pub(crate) async fn run_sftp(
                 // whose parent no longer lists them are simply never walked by
                 // build_tree_nodes, so they drop out on the rebuild.
                 let expanded: Vec<String> = tree_expanded.iter().cloned().collect();
-                for dir in expanded {
-                    let dirs = list_dirs_only_impl(&sftp, &dir).await.unwrap_or_default();
+                // Expanded directories are independent reads on the same SSH
+                // channel; four at a time keeps the tree rebuild to a couple of
+                // round trips without piling up requests (#189).
+                use futures::StreamExt as _;
+                let fetched: Vec<(String, Vec<(String, String)>)> =
+                    futures::stream::iter(expanded)
+                        .map(|dir| {
+                            let sftp = sftp.clone();
+                            async move {
+                                let dirs = list_dirs_only_impl(&sftp, &dir).await.unwrap_or_default();
+                                (dir, dirs)
+                            }
+                        })
+                        .buffer_unordered(4)
+                        .collect()
+                        .await;
+                for (dir, dirs) in fetched {
                     tree_dirs.insert(dir, dirs);
                 }
                 emit_tree(&tree_dirs, &tree_expanded, &events);

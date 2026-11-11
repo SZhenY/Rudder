@@ -3,7 +3,7 @@ use super::*;
 pub(super) fn wire_update_links(window: &AppWindow) {
     // 「自动更新」对话框里「当前版本 → 新版本」那行的左半边：编译期版本，写一次就够。
     window.set_update_current_version(format!("v{}", env!("CARGO_PKG_VERSION")).into());
-    // "Download" on the banner opens the latest-release page in the browser.
+    // "Download" in the update dialog opens the latest-release page in the browser.
     window.on_open_update_url(move || {
         let url = "https://github.com/SZhenY/Rudder/releases/latest";
         #[cfg(windows)]
@@ -24,7 +24,7 @@ pub(super) fn wire_update_links(window: &AppWindow) {
         let _ = std::process::Command::new("xdg-open").arg(url).spawn();
     });
     // Query the GitHub releases API on a background thread; if a newer version
-    // exists, flip the banner on. Best-effort: any network/parse error is
+    // exists, flip `update-available` on. Best-effort: any network/parse error is
     // silently ignored and the app keeps working on the current version.
     //
     // 三件事都听设置：「自动检查更新」开关（关掉就完全不发请求，#184）、

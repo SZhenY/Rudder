@@ -42,7 +42,7 @@ export component GroupDialog inherits ModalCard {
         font-weight: 700;
     }
     FieldLabel { text: @tr("Group name"); }
-    ge-input := LineEdit {
+    LineEdit {
         text <=> group-dialog-name;
         font-family: Theme.ui-font-family; // CJK-capable (#54)
         placeholder-text: @tr("Group name");

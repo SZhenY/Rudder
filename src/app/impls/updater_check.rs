@@ -23,7 +23,7 @@ pub(super) fn wire_update_checks(window: &AppWindow, ctx: &AppContext) {
             mark_check_started(window, store);
             let weak = window.as_weak();
             std::thread::spawn(move || {
-                // 失败静默（沿用既有策略）：只影响横幅，不改时间戳。
+                // 失败静默（沿用既有策略）：只影响界面提示，不改时间戳。
                 let Ok(Some(json)) = crate::app::self_updater::fetch_channel_release(&channel)
                 else {
                     return;

@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::terminal::state::ATerm;
 use crate::terminal::{TermColor, UnderlineStyle};
 
-/// Global OSC 52 toggle — set by app.rs on startup / config change.
+/// Global OSC 52 toggle — set from `settings_ui.rs` and `terminal_bind_output.rs`.
 pub static OSC52_ENABLED: AtomicBool = AtomicBool::new(true);
 
 /// Single background writer for OSC 52 clipboard payloads.
@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn scrollback_limit_above_100k_is_honored() {
         // The settings panel allows up to 1_000_000 scrollback lines
-        // (config.rs clamps to 100..=1_000_000 and app.rs validates the
+        // (config.rs clamps to 100..=1_000_000 and settings_ui.rs validates the
         // input). Regression guard: the configured limit must reach
         // alacritty's grid verbatim — nothing may silently cap history at
         // 100_000 lines.

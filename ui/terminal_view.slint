@@ -16,9 +16,7 @@ import "fonts/JetBrainsMono-Regular.ttf";
 import "fonts/JetBrainsMono-Bold.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/JetBrainsMono-Italic.ttf";
-import { Divider } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
-import { Label } from "components/text.slint";
 import { QuickCmd, MenuItem, QuickDockPanel } from "terminal_parts.slint";
 import { CommandBar } from "terminal_view/command_bar.slint";
 // QuickCmd 从这里搬走了，但对外仍是本文件的导出（外部导入点不变）。
@@ -333,7 +331,7 @@ export component TerminalView inherits Rectangle {
     // resolves the embedded terminal font before computing preferred-size.
     // visible:false can skip font loading and fall back to a system font with a
     // different advance width, giving a wrong cell-w and term-cols.
-    click-timer := Timer {
+    Timer {
         interval: 450ms;
         running: root.click-streak > 0;
         triggered => { root.click-streak = 0; }
@@ -434,7 +432,7 @@ export component TerminalView inherits Rectangle {
         }
     }
 
-    focus-defer-timer := Timer {
+    Timer {
         interval: 0ms;
         running: root.focus-pending;
         triggered => {
@@ -831,7 +829,7 @@ export component TerminalView inherits Rectangle {
                         // the older body TouchArea below the spans, so keep the
                         // terminal's click/select/wheel handling above all text
                         // while leaving the visual output untouched (#198).
-                        body-touch-overlay := TouchArea {
+                        TouchArea {
                             x: 0px;
                             y: 0px;
                             width: parent.width;
@@ -1148,7 +1146,7 @@ export component TerminalView inherits Rectangle {
 
                 // Let the popup click and the conditional component's first
                 // layout pass finish before asking the platform for focus.
-                find-focus-timer := Timer {
+                Timer {
                     interval: 0ms;
                     running: root.find-focus-pending;
                     triggered => {

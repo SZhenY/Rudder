@@ -375,7 +375,7 @@ fn migrate_temp_legacy(tmp: &Path, portable: &Path) {
 }
 
 fn sessions_file_has_connections(path: &Path) -> bool {
-    let Ok(raw) = fs::read_to_string(path) else {
+    let Ok(raw) = crate::files::read_string_capped(path, crate::files::MAX_CONFIG_BYTES, "session config") else {
         return false;
     };
     serde_json::from_str::<ConfigFile>(&raw)
@@ -1314,8 +1314,11 @@ impl ConfigStore {
 
         let mut migrated = false;
         let mut cache = if path.exists() {
-            let raw = fs::read_to_string(&path)
-                .with_context(|| format!("failed to read {}", path.display()))?;
+            let raw = crate::files::read_string_capped(
+                &path,
+                crate::files::MAX_CONFIG_BYTES,
+                "session config",
+            )?;
             match serde_json::from_str::<ConfigFile>(&raw) {
                 Ok(cfg) => cfg,
                 Err(err) => {
@@ -1369,7 +1372,11 @@ impl ConfigStore {
 
     /// 读 `settings.json`。坏文件与 `sessions.json` 一视同仁：改名留档，回落默认。
     fn read_settings_file(path: &Path) -> Option<SettingsFile> {
-        let raw = match fs::read_to_string(path) {
+        let raw = match crate::files::read_string_capped(
+            path,
+            crate::files::MAX_CONFIG_BYTES,
+            "settings file",
+        ) {
             Ok(raw) => raw,
             Err(e) => {
                 tracing::warn!("failed to read {}: {e}", path.display());

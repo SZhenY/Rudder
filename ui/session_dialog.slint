@@ -1,20 +1,12 @@
-import { Theme, AnimationSettings } from "theme.slint";
-import { ComboBox } from "std-widgets.slint";
-import { LabeledInput, PrimaryButton, GhostButton } from "widgets.slint";
-import { GroupGap } from "components/surfaces.slint";
-import { FieldLabel, HelpText } from "components/surfaces.slint";
+import { Theme } from "theme.slint";
 import { CloseButton } from "components/buttons.slint";
-import { IconText } from "components/text.slint";
 import { SessionDraft, PortFwd, TriggerDraft } from "session_types.slint";
-import { SegOption, PortForwardRow, TriggerRow, GroupCombo, JumpCombo } from "dialog_fields.slint";
 import { SessionForm } from "session_dialog/form.slint";
 // PortFwd / TriggerDraft / SessionDraft 从这里搬走了，但对外仍是本文件的导出。
 export { PortFwd, TriggerDraft, SessionDraft }
 
 
 
-// One SSH port-forward row shown in the session dialog (#56). `summary` is a
-// ready-to-display line like "-L 127.0.0.1:8080 → host:80".
 // Modal dialog for creating / editing a session (SSH / Serial / Telnet).
 // The dialog is purely presentational — it stores values in mutable
 // properties and emits `submit` / `cancel` callbacks up to the main window.

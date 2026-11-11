@@ -271,10 +271,10 @@ pub(crate) async fn run_session(
         let id = format!("config-{idx}");
         match handle.tcpip_forward(bind.clone(), f.bind_port as u32).await {
             Ok(_) => {
-                let _ = events.send(SessionEvent::Output(format!(
+                let _ = crate::output_budget::emit_output(&events, format!(
                     "\r\n[rudder] -R {bind}:{} → {}:{}\r\n",
                     f.bind_port, f.host, f.host_port
-                )));
+                ));
                 runtime_forwards.insert(
                     id.clone(),
                     RuntimeForward {
@@ -284,10 +284,10 @@ pub(crate) async fn run_session(
                 );
             }
             Err(e) => {
-                let _ = events.send(SessionEvent::Output(format!(
+                let _ = crate::output_budget::emit_output(&events, format!(
                     "\r\n[rudder] -R {bind}:{} 请求失败 / request failed: {e}\r\n",
                     f.bind_port
-                )));
+                ));
                 runtime_forwards.insert(
                     id.clone(),
                     RuntimeForward {
@@ -351,6 +351,9 @@ pub(crate) async fn run_session(
 
     // --- Main pump ------------------------------------------------------
     loop {
+        // Stop pulling from the PTY while the UI is behind, so a `yes`/`cat`
+        // firehose cannot grow the event queue without bound.
+        crate::output_budget::wait_for_drain().await;
         tokio::select! {
             _ = async {
                 match auxiliary_deadline {
@@ -566,10 +569,10 @@ pub(crate) async fn run_session(
                             );
                             emit_tunnel_update(&runtime_forwards, &events);
                         } else {
-                            let _ = events.send(SessionEvent::Output(format!(
+                            let _ = crate::output_budget::emit_output(&events, format!(
                                 "\r\n[rudder] {}\r\n",
                                 t("运行时暂不支持新增远程转发 -R", "runtime remote forwarding (-R) is not supported yet")
-                            )));
+                            ));
                         }
                     }
                     Some(SessionCommand::StopTunnel(id)) => {
@@ -662,7 +665,7 @@ pub(crate) async fn run_session(
                     }
                 }
                 if !buf.is_empty() {
-                    let _ = events.send(SessionEvent::Output(buf));
+                    let _ = crate::output_budget::emit_output(&events, buf);
                 }
             }
             // ⚠️ #264：后台任务正在开 exec 通道时**不能**轮询主 PTY 的
@@ -707,14 +710,14 @@ pub(crate) async fn run_session(
                                     .unwrap_or_default();
                                     if files.is_empty() {
                                         let _ = channel.data(&ZMODEM_CANCEL[..]).await;
-                                        let _ = events.send(SessionEvent::Output(format!(
+                                        let _ = crate::output_budget::emit_output(&events, format!(
                                             "\r\n[rudder] {}\r\n",
                                             t("已取消 rz 上传", "rz upload cancelled")
-                                        )));
+                                        ));
                                         zmodem_done_at = Some(std::time::Instant::now());
                                         continue;
                                     }
-                                    let _ = events.send(SessionEvent::Output(format!(
+                                    let _ = crate::output_budget::emit_output(&events, format!(
                                         "\r\n[rudder] {} {}...\r\n",
                                         t("开始上传", "Uploading"),
                                         files
@@ -723,7 +726,7 @@ pub(crate) async fn run_session(
                                             .map(|name| name.to_string_lossy())
                                             .collect::<Vec<_>>()
                                             .join(", ")
-                                    )));
+                                    ));
                                     crate::terminal::zmodem::send(&mut channel, &data, &files, &events)
                                         .await
                                 }
@@ -740,13 +743,13 @@ pub(crate) async fn run_session(
                                             let _ =
                                                 events.send(SessionEvent::CwdChanged(cwd));
                                         }
-                                        let _ = events.send(SessionEvent::Output(text));
+                                        let _ = crate::output_budget::emit_output(&events, text);
                                     }
                                 }
                                 Err(e) => {
                                     tracing::warn!("zmodem {direction:?} failed: {e:#}");
                                     let _ = channel.data(&ZMODEM_CANCEL[..]).await;
-                                    let _ = events.send(SessionEvent::Output(format!(
+                                    let _ = crate::output_budget::emit_output(&events, format!(
                                         "\r\n[rudder] {}: {e:#}\r\n",
                                         match direction {
                                             ZmodemDirection::Download => t(
@@ -758,7 +761,7 @@ pub(crate) async fn run_session(
                                                 "ZMODEM upload failed; cancelled",
                                             ),
                                         }
-                                    )));
+                                    ));
                                 }
                             }
                             continue;
@@ -826,7 +829,7 @@ pub(crate) async fn run_session(
                             if let Some(pos) = prompt_cut {
                                 painted.truncate(pos);
                             }
-                            let _ = events.send(SessionEvent::Output(painted));
+                            let _ = crate::output_budget::emit_output(&events, painted);
                             let _ = channel.data(prompt_setup.as_bytes()).await;
                             continue;
                         }
@@ -1009,7 +1012,7 @@ pub(crate) async fn run_session(
                             }
                         }
 
-                        let _ = events.send(SessionEvent::Output(text));
+                        let _ = crate::output_budget::emit_output(&events, text);
                     }
                     Some(ChannelMsg::ExtendedData { data, ext: _ }) => {
                         let text = extended_decoder.decode(&data);
@@ -1023,7 +1026,7 @@ pub(crate) async fn run_session(
                                 tracing::warn!("session trigger response failed: {error}");
                             }
                         }
-                        let _ = events.send(SessionEvent::Output(text));
+                        let _ = crate::output_budget::emit_output(&events, text);
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         let _ = events.send(SessionEvent::Status(

@@ -11,7 +11,7 @@ thread_local! {
     /// least-recently-used half is evicted — terminal access is dominated by
     /// re-drawing the on-screen set every frame, so recency tracks the actual
     /// working set. A monotonically increasing tick stamps each hit.
-    static TWEMOJI_CACHE: RefCell<HashMap<String, (Option<slint::Image>, u64)>> =
+    static TWEMOJI_CACHE: RefCell<HashMap<String, (slint::Image, u64)>> =
         RefCell::new(HashMap::new());
     static TWEMOJI_TICK: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
@@ -24,7 +24,31 @@ thread_local! {
 /// 那由 B1.7（切走标签页时清空其 span 模型）解决。
 pub(crate) const TWEMOJI_CACHE_CAP: usize = 128;
 
+/// CJK ideographs, kana, Hangul and fullwidth ASCII are never emoji. Every
+/// grapheme on a Chinese/Japanese screen goes through `twemoji_image`, so this
+/// short-circuit avoids a HashMap lookup (and a cache miss) per glyph per frame.
+fn is_non_emoji_cjk(grapheme: &str) -> bool {
+    // ZWJ sequences, variation selectors and keycaps can promote a base char
+    // to an emoji; never short-circuit those.
+    if grapheme
+        .chars()
+        .any(|c| matches!(c, '\u{fe0f}' | '\u{fe0e}' | '\u{200d}' | '\u{20e3}'))
+    {
+        return false;
+    }
+    let Some(first) = grapheme.chars().next() else {
+        return false;
+    };
+    matches!(first as u32,
+        0x2E80..=0x2EFF | 0x2F00..=0x2FDF | 0x3005 | 0x3007
+        | 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF
+        | 0xF900..=0xFAFF | 0xAC00..=0xD7AF | 0xFF01..=0xFF5E)
+}
+
 pub(crate) fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
+    if is_non_emoji_cjk(grapheme) {
+        return None;
+    }
     TWEMOJI_TICK.with(|t| t.set(t.get() + 1));
     let now = TWEMOJI_TICK.with(|t| t.get());
     TWEMOJI_CACHE.with(|cache| {
@@ -32,7 +56,7 @@ pub(crate) fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
             let mut cache = cache.borrow_mut();
             if let Some((image, last_use)) = cache.get_mut(grapheme) {
                 *last_use = now; // touch for LRU bookkeeping
-                return image.clone();
+                return Some(image.clone());
             }
         }
 
@@ -59,6 +83,10 @@ pub(crate) fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
                 pixels.make_mut_bytes().copy_from_slice(rgba.as_raw());
                 slint::Image::from_rgba8(pixels)
             });
+        // A negative result is not cached: `from_emoji` is already a cheap
+        // lookup, and caching every distinct CJK glyph would thrash the LRU
+        // (clone 128 keys + sort + remove half) on every frame.
+        let image = image?;
         let mut cache = cache.borrow_mut();
         if cache.len() >= TWEMOJI_CACHE_CAP {
             // Evict the least-recently-used half, not all: a full clear makes
@@ -76,6 +104,6 @@ pub(crate) fn twemoji_image(grapheme: &str) -> Option<slint::Image> {
             }
         }
         cache.insert(grapheme.to_string(), (image.clone(), now));
-        image
+        Some(image)
     })
 }

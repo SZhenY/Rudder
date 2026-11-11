@@ -17,7 +17,7 @@ import { DiskInfo } from "sidebar_blocks.slint";
 import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
-import { ToolStrip, IconButton } from "widgets.slint";
+import { ToolStrip } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
@@ -69,9 +69,6 @@ export { AnimationSettings, Theme }
 // Per-terminal view-model exposed to Rust. A TabInfo has the metadata; the
 // TerminalState carries the streaming log + status line. Kept as a parallel
 // model so opening/closing tabs doesn't churn the log strings.
-// One file-transfer record shown in the download manager.
-// ProcRow now lives in proc_window.slint (the detachable process window).
-
 export struct TerminalState {
     id: string,
     status: string,
@@ -403,7 +400,7 @@ export component AppWindow inherits Window {
     in property <[string]> ui-fonts;              // all families for UI font picker
     in-out property <int> ui-font-index: 0;           // picker selection into ui-fonts
     callback set-ui-font(string);
-    callback upload-ui-font();                      // 上传字体（复制进 config/fonts）                  // persist UI font choice
+    callback upload-ui-font();                      // 上传字体（复制进 config/fonts）
     // 设置窗口是否打开。它是 Rust 侧的独立 root 窗口，由 `ensure_settings` 首次
     // 打开时创建、`release_settings` 关闭后延迟销毁；Slint 这里只说「要开 / 要关」。
     // 拖动、缩放、边框、阴影都交给系统窗口管理器，旧的 `ifd-*`（自写拖动 /
@@ -979,7 +976,7 @@ export component AppWindow inherits Window {
 
     // 切页定时器：等一帧让 nav-fade 低值生效，再触发淡入。
     // 先关 nav-swapping 再改 nav-fade，否则淡出动画会重新出现。
-    nav-swap-timer := Timer {
+    Timer {
         interval: 1ms;
         running: root.nav-swapping;
         triggered => {
@@ -993,7 +990,7 @@ export component AppWindow inherits Window {
         spacing: 0;
         vertical-stretch: 1;
 
-        nav-shell := Rectangle {
+        Rectangle {
             width: root.nav-width;
             height: 100%;
             clip: true;
@@ -1113,7 +1110,7 @@ export component AppWindow inherits Window {
             property <length> quick-h: root.quick-panel-height * (1 - quick-progress);
             property <length> quick-sp: 0px;
 
-            central := Rectangle {
+            Rectangle {
             x: 0px;
             y: 0px;
             width: parent.quick-shown
@@ -1700,8 +1697,6 @@ export component AppWindow inherits Window {
         cancel-transfer(id) => { root.cancel-transfer(id); }
     }
 
-    // Process monitor is now ProcWindow (a detachable top-level window); the
-    // former in-app overlay was removed in favour of a real OS window (#23).
     // --- Settings menu popup (bottom-left, opened from the nav gear) ------
     // 已抽成 `ui/settings_menu.slint`：**常驻**（面板内部用 `visible` 切换），状态透传 + 动作转发。
     SettingsMenuPopup {
@@ -1975,7 +1970,7 @@ export component AppWindow inherits Window {
     }
     // 成功后停一拍再收，让用户看到"连接成功"，而不是一闪而过。
     // 失败（phase 2）不自动关 —— 等用户读完原因手动关。
-    conn-auto-close := Timer {
+    Timer {
         interval: AnimationSettings.enabled ? 900ms : 1ms;
         running: root.conn-popup-visible && root.conn-popup-phase == 1;
         triggered => { root.conn-popup-open = false; }

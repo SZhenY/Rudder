@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
 
 use alacritty_terminal::event::VoidListener;
@@ -38,7 +38,8 @@ pub(crate) struct TermBuffer {
     /// forwarded to the PTY instead of starting a local drag-selection, so
     /// btop/htop/mc can be operated with the mouse (upstream d8eff40).
     pub(crate) mouse_tracked: bool,
-    pub(crate) raw: VecDeque<u8>,
+    /// Last three raw bytes, kept only to detect a `CSI 3 J` split across SSH reads.
+    pub(crate) raw_tail: Vec<u8>,
     /// Row-level render cache: Some(line) when the live grid row has not
     /// changed since the last render, None for cold/invalidated rows.
     /// 上一帧实时视口的构建统计（阶段 0 的测量基础）。
@@ -124,6 +125,8 @@ pub(crate) struct RenderedLine {
     pub(crate) raw_runs: Vec<HistSpan>,
     /// 高亮后的 runs（真正用来产出 `TermSpan` 的那份）。
     pub(crate) runs: Vec<HistSpan>,
+    /// `merge_runs(&runs)` 的结果；无 overline 时命中缓存直接复用，避免每帧两次整表克隆。
+    pub(crate) merged: Vec<HistSpan>,
     /// 这份条目是在"跑高亮"的模式下建的吗 —— alt-screen 不跑高亮，退出 alt 后旧条目不能复用，
     /// 否则文本与原始样式恰好相同的行会命中"未高亮"的版本（高亮丢失）。
     pub(crate) highlighted: bool,

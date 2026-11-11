@@ -28,53 +28,40 @@ pub(crate) fn parse_process_block(block: &str) -> (String, Vec<ProcInfo>) {
     (current_user, procs)
 }
 
-/// Parse one monitor sample (a block of `/proc/stat` cpu line + `/proc/meminfo`
-/// fields) into a [`SessionEvent::ResourceStats`].
-///
-/// CPU usage needs two consecutive `/proc/stat` snapshots; `prev` carries the
-/// previous (total, idle) jiffies across calls.  The first sample therefore
-/// reports 0% (no baseline yet).
-pub(crate) fn parse_monitor_block(
-    block: &str,
-    prev: &mut Option<(u64, u64)>,
-    prev_net: &mut std::collections::HashMap<String, (u64, u64)>,
-    prev_net_at: &mut std::time::Instant,
-) -> Option<SessionEvent> {
-    let mut cpu_total = 0u64;
-    let mut cpu_idle = 0u64;
-    let mut have_cpu = false;
-    let mut mem_total = 0u64;
-    let mut mem_avail = 0u64;
-    let mut mem_buffers = 0u64;
-    let mut mem_cached = 0u64;
-    let mut swap_total = 0u64;
-    let mut swap_free = 0u64;
-    let mut cpu_nums: Vec<u64> = Vec::new();
-    // Raw /proc/net/dev counters this sample: iface -> (rx_bytes, tx_bytes).
-    let mut net_now: Vec<(String, u64, u64)> = Vec::new();
-    // Filesystems from `df -kP`: (mount, available_bytes, total_bytes).
-    let mut disks: Vec<(String, u64, u64)> = Vec::new();
-    // Dedup duplicate filesystems before they reach the panel (#38): NAS boxes
-    // (FNOS …) report the same underlying volume dozens of times — one Docker
-    // overlay mount per container layer, all with identical size. Like dropping rows
-    // into a Set: skip a (total, available) we've already shown. `df` lists the real
-    // mount first, so that's the one kept.
-    let mut seen_fs: std::collections::HashSet<(u64, u64)> = std::collections::HashSet::new();
-    let mut sys_kv: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    // The sample is split into sections by `echo` markers; everything before the
-    // first marker is the cpu/mem/net block.
+/// One parsed monitor block. Splitting collection from rate calculation
+/// keeps the echo-marker sections testable without fabricating jiffy history.
+#[derive(Default)]
+struct MonitorSample {
+    cpu_total: u64,
+    cpu_idle: u64,
+    have_cpu: bool,
+    mem_total: u64,
+    mem_avail: u64,
+    mem_buffers: u64,
+    mem_cached: u64,
+    swap_total: u64,
+    swap_free: u64,
+    cpu_nums: Vec<u64>,
+    net_now: Vec<(String, u64, u64)>,
+    disks: Vec<(String, u64, u64)>,
+    seen_fs: std::collections::HashSet<(u64, u64)>,
+    sys_kv: std::collections::HashMap<String, String>,
+}
+
+/// Cap interfaces / filesystems per sample so a hostile server cannot flood
+/// the parser and sidebar with fabricated rows (#27).
+const MAX_MON_ENTRIES: usize = 64;
+
+fn collect_monitor_sample(block: &str) -> MonitorSample {
+    let mut s = MonitorSample::default();
+    // Sections are split by `echo` markers; lines before the first marker
+    // belong to the cpu/mem/net block.
     enum Section {
         Top,
         Df,
         Sys,
     }
     let mut section = Section::Top;
-
-    // Cap how many interfaces / filesystems we accept from one sample
-    // so a hostile server can't flood the parser and sidebar with fabricated rows
-    // (#27). No real machine has anywhere near this many.
-    const MAX_MON_ENTRIES: usize = 64;
-
     for line in block.lines() {
         if line == "__DF__" {
             section = Section::Df;
@@ -86,21 +73,21 @@ pub(crate) fn parse_monitor_block(
         }
         match section {
             Section::Df => {
-                if disks.len() < MAX_MON_ENTRIES
+                if s.disks.len() < MAX_MON_ENTRIES
                     && let Some((mount, avail, total)) = parse_df_line(line)
                 {
                     // Set-style dedup: skip a filesystem whose (total, available)
                     // we've already added — collapses the dozens of identical
                     // Docker overlay mounts a NAS reports down to one row (#38).
-                    if seen_fs.insert((total, avail)) {
-                        disks.push((mount, avail, total));
+                    if s.seen_fs.insert((total, avail)) {
+                        s.disks.push((mount, avail, total));
                     }
                 }
                 continue;
             }
             Section::Sys => {
                 if let Some((k, v)) = line.split_once('=') {
-                    sys_kv.insert(k.trim().to_string(), v.trim().to_string());
+                    s.sys_kv.insert(k.trim().to_string(), v.trim().to_string());
                 }
                 continue;
             }
@@ -115,29 +102,61 @@ pub(crate) fn parse_monitor_block(
             if nums.len() >= 4 {
                 // Saturating arithmetic: a server can send arbitrary jiffy
                 // values, and a plain sum/add would panic on overflow in debug.
-                cpu_total = nums.iter().copied().fold(0u64, u64::saturating_add);
-                cpu_idle = nums[3].saturating_add(nums.get(4).copied().unwrap_or(0)); // idle + iowait
-                have_cpu = true;
-                cpu_nums = nums;
+                s.cpu_total = nums.iter().copied().fold(0u64, u64::saturating_add);
+                s.cpu_idle = nums[3].saturating_add(nums.get(4).copied().unwrap_or(0)); // idle + iowait
+                s.have_cpu = true;
+                s.cpu_nums = nums;
             }
         } else if let Some(v) = line.strip_prefix("MemTotal:") {
-            mem_total = parse_meminfo_kib(v);
+            s.mem_total = parse_meminfo_kib(v);
         } else if let Some(v) = line.strip_prefix("MemAvailable:") {
-            mem_avail = parse_meminfo_kib(v);
+            s.mem_avail = parse_meminfo_kib(v);
         } else if let Some(v) = line.strip_prefix("Buffers:") {
-            mem_buffers = parse_meminfo_kib(v);
+            s.mem_buffers = parse_meminfo_kib(v);
         } else if let Some(v) = line.strip_prefix("Cached:") {
-            mem_cached = parse_meminfo_kib(v);
+            s.mem_cached = parse_meminfo_kib(v);
         } else if let Some(v) = line.strip_prefix("SwapTotal:") {
-            swap_total = parse_meminfo_kib(v);
+            s.swap_total = parse_meminfo_kib(v);
         } else if let Some(v) = line.strip_prefix("SwapFree:") {
-            swap_free = parse_meminfo_kib(v);
-        } else if net_now.len() < MAX_MON_ENTRIES
+            s.swap_free = parse_meminfo_kib(v);
+        } else if s.net_now.len() < MAX_MON_ENTRIES
             && let Some((iface, counters)) = parse_net_dev_line(line)
         {
-            net_now.push((iface, counters.0, counters.1));
+            s.net_now.push((iface, counters.0, counters.1));
         }
     }
+
+    s
+}
+
+/// Parse one monitor sample (a block of `/proc/stat` cpu line + `/proc/meminfo`
+/// fields) into a [`SessionEvent::ResourceStats`].
+///
+/// CPU usage needs two consecutive `/proc/stat` snapshots; `prev` carries the
+/// previous (total, idle) jiffies across calls.  The first sample therefore
+/// reports 0% (no baseline yet).
+pub(crate) fn parse_monitor_block(
+    block: &str,
+    prev: &mut Option<(u64, u64)>,
+    prev_net: &mut std::collections::HashMap<String, (u64, u64)>,
+    prev_net_at: &mut std::time::Instant,
+) -> Option<SessionEvent> {
+    let MonitorSample {
+        cpu_total,
+        cpu_idle,
+        have_cpu,
+        mem_total,
+        mem_avail,
+        mem_buffers,
+        mem_cached,
+        swap_total,
+        swap_free,
+        cpu_nums,
+        net_now,
+        disks,
+        seen_fs: _,
+        sys_kv,
+    } = collect_monitor_sample(block);
 
     // Convert raw byte counters into per-second rates using the previous sample.
     let now = std::time::Instant::now();
@@ -457,3 +476,7 @@ pub(crate) fn parse_net_dev_line(line: &str) -> Option<(String, (u64, u64))> {
     }
     Some((iface.to_string(), (nums[0], nums[8])))
 }
+
+#[cfg(test)]
+#[path = "monitor_sample_tests.rs"]
+mod monitor_sample_tests;

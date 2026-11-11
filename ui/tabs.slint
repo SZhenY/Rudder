@@ -116,7 +116,7 @@ component SingleTab inherits Rectangle {
                 : (info.connected ? Theme.success : Theme.warning);
         }
 
-        title-text := Text {
+        Text {
             text: info.title;
             color: active ? Theme.text-primary : Theme.text-secondary;
             font-size: info.title_len > 24 ? 9px * Theme.ui-scale
