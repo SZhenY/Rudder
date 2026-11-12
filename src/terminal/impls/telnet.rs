@@ -127,7 +127,7 @@ async fn run_telnet(
     )));
 
     // Direct, or tunnel through a SOCKS5 / HTTP proxy (reuses issue #7 plumbing).
-    let stream = match crate::ssh::proxy::resolve_session(&session) {
+    let stream = match crate::ssh::proxy::resolve_session(&session)? {
         Some(p) => {
             let _ = events.send(SessionEvent::Status(format!(
                 "{} {} → {}",

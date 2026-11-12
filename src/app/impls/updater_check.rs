@@ -1,5 +1,20 @@
 use super::*;
 
+/// 自动检查只提示"升级"：降级 / 切换只在手动检查里出现（原逻辑是 `latest > cur`）。
+fn auto_notice(candidate: &crate::app::self_updater::UpdateCandidate) -> Option<(String, String)> {
+    if candidate.is_switch {
+        tracing::info!(
+            "auto update: {} is a downgrade/switch, not prompting",
+            candidate.version
+        );
+        return None;
+    }
+    // UI 显示的是 `v0.8.2` 这个形状（`ui/app.slint` 的 `update-version`）。
+    let tag = format!("v{}", candidate.version);
+    let badge = version_badge(&tag);
+    Some((tag, badge))
+}
+
 pub(super) fn wire_update_checks(window: &AppWindow, ctx: &AppContext) {
     let store = &ctx.store;
 
@@ -23,29 +38,50 @@ pub(super) fn wire_update_checks(window: &AppWindow, ctx: &AppContext) {
             mark_check_started(window, store);
             let weak = window.as_weak();
             std::thread::spawn(move || {
-                // 失败静默（沿用既有策略）：只影响界面提示，不改时间戳。
-                let Ok(Some(json)) = crate::app::self_updater::fetch_channel_release(&channel)
-                else {
+                let current =
+                    crate::app::parse_version(env!("CARGO_PKG_VERSION")).unwrap_or((0, 0, 0, 0, 0));
+                // 复用与「手动下载」同一条 lookup：它自带平台资产匹配。三种非候选
+                // 结局都静默，只留日志 —— 发版瞬间资产没传完不该弹窗。
+                use crate::app::self_updater::UpdateLookup;
+                let candidate =
+                    match crate::app::self_updater::latest_update(current, &channel) {
+                        Ok(UpdateLookup::Found(c)) => c,
+                        Ok(UpdateLookup::UpToDate) => {
+                            tracing::info!(channel = %channel, "auto update: up to date");
+                            return;
+                        }
+                        Ok(UpdateLookup::NoAssetForPlatform { version }) => {
+                            tracing::info!(
+                                channel = %channel,
+                                %version,
+                                "auto update: no asset for this platform"
+                            );
+                            return;
+                        }
+                        Ok(UpdateLookup::NoMsiForPlatform { version }) => {
+                            tracing::info!(
+                                channel = %channel,
+                                %version,
+                                "auto update: no MSI for this platform"
+                            );
+                            return;
+                        }
+                        Err(e) => {
+                            tracing::info!("auto update check failed: {e:#}");
+                            return;
+                        }
+                    };
+                let Some((tag, badge)) = auto_notice(&candidate) else {
                     return;
                 };
-                let tag = json["tag_name"].as_str().unwrap_or("").to_string();
-                let newer = matches!(
-                    (parse_version(&tag), parse_version(env!("CARGO_PKG_VERSION"))),
-                    (Some(latest), Some(cur)) if latest > cur
-                );
-                if !newer {
-                    return;
-                }
-                let badge = version_badge(&tag);
-                // 发布说明：优先该 tag 的 CHANGELOG 段落（中英对照），否则 release body。
-                let notes = crate::app::self_updater::notes_for(
-                    &tag,
-                    json["body"].as_str().unwrap_or_default(),
-                );
+                let notes = candidate.notes;
                 let _ = weak.upgrade_in_event_loop(move |w| {
                     w.set_update_version(tag.into());
                     w.set_update_badge(badge.into());
                     w.set_update_notes(notes.into());
+                    // 与手动检查对齐：上一次失败 / 降级态不能污染这一次的对话框标题。
+                    w.set_update_downgrade(false);
+                    w.set_update_state(0);
                     w.set_update_available(true);
                     // 自动检查也一样要弹「自动更新」对话框：用户此刻可能正开着设置面板，
                     // 而对话框挂在设置遮罩之后，压得住。
@@ -88,15 +124,44 @@ pub(super) fn wire_update_checks(window: &AppWindow, ctx: &AppContext) {
                     0.0,
                     crate::i18n::t("正在检查更新…", "Checking for updates…").to_string(),
                 );
+                use crate::app::self_updater::UpdateLookup;
                 let cand = match crate::app::self_updater::latest_update(current, &channel) {
-                    Ok(Some(c)) => c,
-                    Ok(None) => {
+                    Ok(UpdateLookup::Found(c)) => c,
+                    Ok(UpdateLookup::UpToDate) => {
                         // 5 = "无需更新"，与 4（失败）分开：对话框标题跟着状态走，
                         // 借用失败档会显示成"更新失败"，可实际上什么都没坏。
                         set(
                             5,
                             0.0,
                             crate::i18n::t("已是最新版本", "Already up to date").to_string(),
+                        );
+                        return;
+                    }
+                    Ok(UpdateLookup::NoAssetForPlatform { version }) => {
+                        set(
+                            6,
+                            0.0,
+                            format!(
+                                "v{version} {}",
+                                crate::i18n::t(
+                                    "暂未提供本平台的安装包（可能仍在构建），请稍后再试或到发布页手动下载",
+                                    "has no package for this platform yet (it may still be building) — try again later or use the release page"
+                                )
+                            ),
+                        );
+                        return;
+                    }
+                    Ok(UpdateLookup::NoMsiForPlatform { version }) => {
+                        set(
+                            6,
+                            0.0,
+                            format!(
+                                "v{version} {}",
+                                crate::i18n::t(
+                                    "未提供 MSI 安装包（预发布版不产 MSI），请改用便携版或等待正式版",
+                                    "ships no MSI (pre-releases do not) — use the portable build or wait for the stable release"
+                                )
+                            ),
                         );
                         return;
                     }
@@ -266,8 +331,9 @@ pub(super) fn wire_update_checks(window: &AppWindow, ctx: &AppContext) {
                 );
                 let current =
                     crate::app::parse_version(env!("CARGO_PKG_VERSION")).unwrap_or((0, 0, 0, 0, 0));
+                use crate::app::self_updater::UpdateLookup;
                 match crate::app::self_updater::latest_update(current, &check_channel) {
-                    Ok(Some(c)) => {
+                    Ok(UpdateLookup::Found(c)) => {
                         let v = format!("v{}", c.version);
                         // 切回旧版时说"发现新版本"会误导，措辞分开。
                         let status = if c.is_switch {
@@ -284,10 +350,30 @@ pub(super) fn wire_update_checks(window: &AppWindow, ctx: &AppContext) {
                             Some((v, version_badge(&c.version), c.notes, c.is_switch)),
                         );
                     }
-                    Ok(None) => {
+                    Ok(UpdateLookup::UpToDate) => {
                         set(
                             false,
                             crate::i18n::t("已是最新版本", "Already up to date").to_string(),
+                            None,
+                        );
+                    }
+                    Ok(UpdateLookup::NoAssetForPlatform { version }) => {
+                        set(
+                            false,
+                            format!(
+                                "v{version} {}",
+                                crate::i18n::t("暂无本平台安装包", "no package for this platform")
+                            ),
+                            None,
+                        );
+                    }
+                    Ok(UpdateLookup::NoMsiForPlatform { version }) => {
+                        set(
+                            false,
+                            format!(
+                                "v{version} {}",
+                                crate::i18n::t("未提供 MSI 安装包", "ships no MSI")
+                            ),
                             None,
                         );
                     }
@@ -341,5 +427,38 @@ pub(super) fn wire_update_checks(window: &AppWindow, ctx: &AppContext) {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod auto_notice_tests {
+    use super::auto_notice;
+    use crate::app::self_updater::UpdateCandidate;
+
+    fn candidate(version: &str, is_switch: bool) -> UpdateCandidate {
+        UpdateCandidate {
+            version: version.to_string(),
+            asset_name: String::new(),
+            download_url: String::new(),
+            notes: String::new(),
+            is_switch,
+            is_msi: false,
+        }
+    }
+
+    #[test]
+    fn auto_check_stays_upgrade_only() {
+        assert!(auto_notice(&candidate("0.8.2", true)).is_none());
+    }
+
+    #[test]
+    fn auto_notice_restores_the_v_prefix_and_badge() {
+        let (tag, badge) = auto_notice(&candidate("0.8.3", false)).expect("notice");
+        assert_eq!(tag, "v0.8.3");
+        assert_eq!(badge, crate::i18n::t("正式版", "Stable").to_string());
+
+        let (tag, badge) = auto_notice(&candidate("0.8.3-beta1", false)).expect("notice");
+        assert_eq!(tag, "v0.8.3-beta1");
+        assert_eq!(badge, crate::i18n::t("测试版", "Beta").to_string());
     }
 }

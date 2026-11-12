@@ -7,7 +7,7 @@ use slint::{ComponentHandle as _, ModelRc, SharedString, VecModel};
 use crate::ui::{AppWindow, TransferInfo};
 
 use super::settings::{Store, persist};
-use super::{AppContext, parse_version, DEP_VERSIONS};
+use super::{AppContext, DEP_VERSIONS};
 
 /// 「检查频率」对应的最小间隔；`None` = 每次启动都查（`startup`）。
 ///

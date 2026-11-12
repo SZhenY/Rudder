@@ -54,8 +54,9 @@ pub(crate) fn import_file(src: &Path, dest_dir: &Path) -> Option<PathBuf> {
 pub(crate) const MAX_CONFIG_BYTES: u64 = 64 * 1024 * 1024;
 /// User-selected import JSON gets the same budget.
 pub(crate) const MAX_IMPORT_BYTES: u64 = 64 * 1024 * 1024;
-/// Private keys are small text/binary blobs; 2 MiB covers every real key type.
-pub(crate) const MAX_KEY_BYTES: u64 = 2 * 1024 * 1024;
+/// Private keys are small text/binary blobs; 8 MiB covers every real key type
+/// (including PPK v3 comments and large-integer serialisation).
+pub(crate) const MAX_KEY_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Format a byte count with the given 1024-based unit suffixes. The first
 /// unit is rendered as an integer; >=TB sizes (when more than 4 units exist)

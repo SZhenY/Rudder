@@ -313,6 +313,11 @@ pub(super) fn forget_handle() {
     SETTINGS_WEAK.with(|slot| *slot.borrow_mut() = None);
 }
 
+/// 重新登记弱引用：延迟销毁槽被取回复用时，登记表已被 `forget_handle` 清空。
+pub(super) fn remember_handle(sw: &SettingsWindow) {
+    SETTINGS_WEAK.with(|slot| *slot.borrow_mut() = Some(sw.as_weak()));
+}
+
 /// 主窗口关闭 / 退出时，把设置窗口一起收掉（不需要持有句柄，走登记表）。
 ///
 /// 为什么需要：设置窗口是**独立 root 窗口**，它自己就足以让事件循环继续活着 —— 主窗口关掉

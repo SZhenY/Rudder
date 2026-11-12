@@ -737,3 +737,6 @@ msgstr "Older version available"
 
 msgid "Download & switch"
 msgstr "Download & switch"
+
+msgid "No package for this platform"
+msgstr "No package for this platform"

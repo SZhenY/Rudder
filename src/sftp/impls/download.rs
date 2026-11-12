@@ -11,6 +11,42 @@ fn should_keep_partial(written: u64) -> bool {
     written > 0
 }
 
+/// Sidecar marker written next to a partial download. Without it a same-named
+/// local file cannot be proven to be the same remote object, and appending to
+/// it would silently corrupt the result.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PartialMark {
+    remote: String,
+    size: u64,
+    mtime: u32,
+}
+
+const PARTIAL_SUFFIX: &str = ".rudderpart";
+
+fn partial_marker_path(local: &str) -> String {
+    format!("{local}{PARTIAL_SUFFIX}")
+}
+
+/// Resume only when the marker proves the remote path, size and mtime all match
+/// and the local file is shorter than the remote one.
+fn resume_offset(
+    local_len: Option<u64>,
+    total: u64,
+    mark: Option<&PartialMark>,
+    remote: &str,
+    mtime: u32,
+) -> u64 {
+    let Some(len) = local_len else { return 0 };
+    let Some(mark) = mark else { return 0 };
+    if total == 0 || len == 0 || len >= total {
+        return 0;
+    }
+    if mark.remote != remote || mark.size != total || mark.mtime != mtime {
+        return 0;
+    }
+    len
+}
+
 /// Download a remote file over a dedicated, *pipelined* raw SFTP channel.
 ///
 /// The high-level reader issues one READ and waits for the reply before the
@@ -44,26 +80,29 @@ pub(crate) async fn download_impl(
     let raw = Arc::new(RawSftpSession::new(channel.into_stream()));
     raw.init().await.context("sftp download handshake")?;
 
-    let total = raw
-        .stat(remote)
-        .await
-        .ok()
-        .and_then(|a| a.attrs.size)
-        .unwrap_or(0);
+    let stat = raw.stat(remote).await.ok();
+    let total = stat.as_ref().and_then(|a| a.attrs.size).unwrap_or(0);
+    let mtime = stat.as_ref().and_then(|a| a.attrs.mtime).unwrap_or(0);
     let fhandle = raw
         .open(remote, OpenFlags::READ, FileAttributes::default())
         .await
         .with_context(|| format!("open remote {remote}"))?
         .handle;
 
-    // Resume support (#resume-download): the read pipeline is offset-based,
-    // so when a partial local file already exists (smaller than the remote
-    // size) we continue from its current length instead of re-downloading.
-    // A full-size existing file is re-created as usual.
-    let continue_from = match tokio::fs::metadata(local).await {
-        Ok(m) if m.is_file() && total > 0 && m.len() < total => m.len(),
-        _ => 0,
-    };
+    // Resume support (#resume-download): only a sidecar marker that matches the
+    // remote path, size and mtime proves the local file is our own partial.
+    // A same-named file from another source must be overwritten from byte 0.
+    let mark_path = partial_marker_path(local);
+    let mark = tokio::fs::read_to_string(&mark_path)
+        .await
+        .ok()
+        .and_then(|s| serde_json::from_str::<PartialMark>(&s).ok());
+    let local_len = tokio::fs::metadata(local)
+        .await
+        .ok()
+        .filter(|m| m.is_file())
+        .map(|m| m.len());
+    let continue_from = resume_offset(local_len, total, mark.as_ref(), remote, mtime);
     let mut local_file = if continue_from > 0 {
         tokio::fs::OpenOptions::new()
             .write(true)
@@ -75,6 +114,21 @@ pub(crate) async fn download_impl(
             .await
             .with_context(|| format!("create local {local}"))?
     };
+
+    // Record the marker before the first byte: a cancelled transfer must leave
+    // behind enough identity for the next attempt to resume safely.
+    if total > 0 {
+        let body = serde_json::to_vec(&PartialMark {
+            remote: remote.to_string(),
+            size: total,
+            mtime,
+        })
+        .unwrap_or_default();
+        if let Err(e) = tokio::fs::write(&mark_path, body).await {
+            // Losing the marker only costs resume-ability, not correctness.
+            tracing::debug!("download: cannot write resume marker {mark_path}: {e}");
+        }
+    }
 
     emit_transfer(TransferEmit {
         events,
@@ -209,13 +263,16 @@ pub(crate) async fn download_impl(
     // Partial files are deliberately KEPT on error/cancel when any byte was
     // written: the next download of the same remote resumes from the current
     // length (#resume-download). Only a zero-byte stub is cleaned up.
-    let written = done + continue_from;
+    // `done` already starts at `continue_from`: adding it again double-counted
+    // the resumed prefix in the transfer row.
+    let written = done;
     let partial_kept = should_keep_partial(written);
 
     if let Some(e) = err {
         drop(local_file);
         if !partial_kept {
             let _ = tokio::fs::remove_file(local).await;
+            let _ = tokio::fs::remove_file(&mark_path).await;
         }
         return Err(e);
     }
@@ -223,6 +280,7 @@ pub(crate) async fn download_impl(
         drop(local_file);
         if !partial_kept {
             let _ = tokio::fs::remove_file(local).await;
+            let _ = tokio::fs::remove_file(&mark_path).await;
         }
         emit_transfer(TransferEmit {
             events,
@@ -241,6 +299,7 @@ pub(crate) async fn download_impl(
         return Ok(false);
     }
     local_file.flush().await.context("flush local file")?;
+    let _ = tokio::fs::remove_file(&mark_path).await;
     emit_transfer(TransferEmit {
         events,
         id,

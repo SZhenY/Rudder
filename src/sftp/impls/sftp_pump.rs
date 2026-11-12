@@ -53,7 +53,7 @@ pub(crate) async fn run_sftp(
         }
         None => {
             _jump_keepalive = None;
-            match crate::ssh::proxy::resolve_session(&session) {
+            match crate::ssh::proxy::resolve_session(&session)? {
                 Some(p) => {
                     let stream = crate::ssh::proxy::connect(&p, &session.host, session.port)
                         .await
@@ -111,7 +111,7 @@ pub(crate) async fn run_sftp(
                     }
                     None => {
                         _jump_keepalive = None;
-                        match crate::ssh::proxy::resolve_session(&session) {
+                        match crate::ssh::proxy::resolve_session(&session)? {
                             Some(p) => {
                                 let stream =
                                     crate::ssh::proxy::connect(&p, &session.host, session.port)
@@ -1326,9 +1326,10 @@ pub(crate) async fn run_sftp(
                     error,
                 });
             }
-            SftpCommand::WriteText { remote, content } => {
+            SftpCommand::WriteText { remote, content, reply } => {
                 let name = base_name(&remote);
-                match write_text_file(&sftp, &remote, &content).await {
+                let result = write_text_file(&sftp, &remote, &content).await;
+                match &result {
                     Ok(_) => {
                         let _ = events.send(SessionEvent::SftpStatus(format!(
                             "{}: {}",
@@ -1343,6 +1344,8 @@ pub(crate) async fn run_sftp(
                         )));
                     }
                 }
+                // UI 可能已经关掉编辑器 / 关掉标签：接收端被丢弃就忽略。
+                let _ = reply.send(result.map_err(|e| format!("{e:#}")));
             }
         }
     }

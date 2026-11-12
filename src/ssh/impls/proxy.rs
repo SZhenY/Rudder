@@ -56,22 +56,52 @@ impl std::fmt::Debug for ProxyConfig {
     }
 }
 
-/// Resolve the proxy for a session: the explicit `session_proxy` string if set,
-/// otherwise the `ALL_PROXY` / `all_proxy` environment variable.  Returns `None`
-/// for a direct connection.
-pub fn resolve(session_proxy: &str) -> Option<ProxyConfig> {
+/// 代理串解析失败的标记：`classify_connect_failure` 用它给出专门文案。
+pub(crate) const PARSE_MARKER: &str = "proxy-url-invalid";
+
+fn parse_error(text: &str) -> anyhow::Error {
+    // 绝不回显 URL 本身：userinfo 里可能有密码。
+    anyhow!("{text} ({PARSE_MARKER})")
+}
+
+/// 纯内层：把「会话代理 / 环境代理」两来源解析成配置。
+///
+/// 非法串**不静默直连**：用户以为流量走了代理、实际没有，比直接报错危险得多。
+fn resolve_inner(
+    session_proxy: &str,
+    env_proxy: Option<&str>,
+) -> Result<Option<ProxyConfig>> {
     let s = session_proxy.trim();
     if !s.is_empty() {
-        return parse(s);
+        return match parse(s) {
+            Some(cfg) => Ok(Some(cfg)),
+            None => Err(parse_error(crate::i18n::t(
+                "会话代理地址无法解析：只支持 socks5:// 或 http://host:port",
+                "Cannot parse the session proxy URL: use socks5:// or http://host:port",
+            ))),
+        };
     }
-    for var in ["ALL_PROXY", "all_proxy"] {
-        if let Ok(v) = std::env::var(var)
-            && !v.trim().is_empty()
-        {
-            return parse(v.trim());
-        }
+    match env_proxy.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(v) => match parse(v) {
+            Some(cfg) => Ok(Some(cfg)),
+            None => Err(parse_error(crate::i18n::t(
+                "环境变量里的代理地址无法解析（ALL_PROXY/all_proxy）：请改成 socks5:// 或 http://host:port，或清空该变量",
+                "The proxy in ALL_PROXY/all_proxy cannot be parsed: use socks5:// or http://host:port, or unset it",
+            ))),
+        },
+        None => Ok(None),
     }
-    None
+}
+
+/// Resolve the proxy for a session: the explicit `session_proxy` string if set,
+/// otherwise the `ALL_PROXY` / `all_proxy` environment variable. `Ok(None)`
+/// means a direct connection; a malformed value is an error, never a silent
+/// fallback.
+pub fn resolve(session_proxy: &str) -> Result<Option<ProxyConfig>> {
+    let env = ["ALL_PROXY", "all_proxy"]
+        .iter()
+        .find_map(|var| std::env::var(var).ok().filter(|v| !v.trim().is_empty()));
+    resolve_inner(session_proxy, env.as_deref())
 }
 
 /// Resolve the proxy for a saved session.
@@ -79,13 +109,15 @@ pub fn resolve(session_proxy: &str) -> Option<ProxyConfig> {
 /// 凭据有两个来源，URL userinfo 优先（老配置），其次是 `proxy_user` /
 /// `proxy_pass` 两个独立字段。密码单独存一份的意义在于：把它从 URL 里摘出来
 /// 之后才能按密码字段加密落盘，而不是明文躺在 sessions.json 里。
-pub fn resolve_session(session: &crate::config::Session) -> Option<ProxyConfig> {
-    let mut cfg = resolve(&session.proxy)?;
+pub fn resolve_session(session: &crate::config::Session) -> Result<Option<ProxyConfig>> {
+    let Some(mut cfg) = resolve(&session.proxy)? else {
+        return Ok(None);
+    };
     // 只有会话自己配了代理才套用这两个字段；走 $ALL_PROXY 时它们是无关的。
     if cfg.auth.is_none() && !session.proxy.trim().is_empty() && !session.proxy_user.is_empty() {
         cfg.auth = Some((session.proxy_user.clone(), session.proxy_pass.clone()));
     }
-    Some(cfg)
+    Ok(Some(cfg))
 }
 
 /// Parse a proxy URL: `scheme://[user:pass@]host:port`.
@@ -285,7 +317,7 @@ mod tests {
         session.proxy_user = "bob".into();
         session.proxy_pass = crate::config::Secret::new("s3cret");
 
-        let cfg = resolve_session(&session).unwrap();
+        let cfg = resolve_session(&session).unwrap().unwrap();
         let (user, pass) = cfg.auth.as_ref().expect("credentials missing");
         assert_eq!(user, "bob");
         assert_eq!(pass.as_str(), "s3cret");
@@ -301,7 +333,7 @@ mod tests {
         session.proxy_user = "bob".into();
         session.proxy_pass = crate::config::Secret::new("s3cret");
 
-        let cfg = resolve_session(&session).unwrap();
+        let cfg = resolve_session(&session).unwrap().unwrap();
         let (user, pass) = cfg.auth.as_ref().expect("credentials missing");
         assert_eq!(user, "urlu");
         assert_eq!(pass.as_str(), "urlp");
@@ -314,8 +346,42 @@ mod tests {
         session.proxy_user = "bob".into();
         session.proxy_pass = crate::config::Secret::new("s3cret");
         if std::env::var("ALL_PROXY").is_err() && std::env::var("all_proxy").is_err() {
-            assert!(resolve_session(&session).is_none());
+            assert!(resolve_session(&session).unwrap().is_none());
         }
+    }
+
+    #[test]
+    fn invalid_session_proxy_is_an_error_not_a_direct_connection() {
+        let err = resolve_inner("ftp://proxy.local:21", None).unwrap_err();
+        assert!(err.to_string().contains(PARSE_MARKER), "{err}");
+    }
+
+    #[test]
+    fn invalid_env_proxy_is_an_error() {
+        let err = resolve_inner("", Some("socks4://proxy.local:1080")).unwrap_err();
+        assert!(err.to_string().contains(PARSE_MARKER), "{err}");
+    }
+
+    #[test]
+    fn valid_session_proxy_wins_over_env() {
+        let cfg = resolve_inner("socks5://a.local:1080", Some("http://b.local:8080"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(describe(&cfg), "socks5://a.local:1080");
+    }
+
+    #[test]
+    fn no_proxy_anywhere_is_a_direct_connection() {
+        assert!(resolve_inner("", None).unwrap().is_none());
+        assert!(resolve_inner("   ", Some("  ")).unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_error_never_echoes_credentials() {
+        let err = resolve_inner("ftp://bob:supersecret@proxy.local:21", None).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains(PARSE_MARKER), "{text}");
+        assert!(!text.contains("supersecret"), "leaked credentials: {text}");
     }
 
     use std::sync::{Arc, Mutex};

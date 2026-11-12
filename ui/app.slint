@@ -681,6 +681,7 @@ export component AppWindow inherits Window {
     in-out property <string> editor-content;  // text, two-way with the input
     in-out property <bool> editor-readonly;   // view = true, edit = false
     in-out property <bool> editor-dirty: false; // edited since load
+    in-out property <string> editor-status;     // 保存状态 / 失败原因（红字显示在标题栏）
     // Set when the editor opens; the deferred timer focuses the text on the
     // next tick instead of from `init` (see the timer below, #386).
     property <bool> editor-focus-pending: false;
@@ -1641,6 +1642,7 @@ export component AppWindow inherits Window {
         editor-find-query <=> root.editor-find-query;
         editor-replace-text <=> root.editor-replace-text;
         editor-dirty <=> root.editor-dirty;
+        editor-status: root.editor-status;
         editor-match-count <=> root.editor-match-count;
         editor-find-position <=> root.editor-find-position;
         save-file => { root.save-file(); }

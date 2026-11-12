@@ -11,7 +11,7 @@
 > - **Native Reflow**: replaced raw byte-stream replay with `Term::resize`, preventing output truncation on window resize
 > - **Render caching**: row-level `RenderedLine` cache skips regex highlight rebuild on static screens
 > - **Code reduction**: net -57 lines, removed `prev` / `prev_display_offset` and other redundant fields
-> - **Output backpressure**: SSH / local / serial / Telnet share a 16 MiB output budget, so memory stays bounded under a firehose
+> - **Output backpressure**: SSH / local / serial / Telnet share a 64 MiB output budget, so memory stays bounded under a firehose
 > - **Hot path**: ESC scans use memchr / memmem, CJK graphemes skip the emoji lookup, `flood_profile` ingest p50 -15%
 > - **Resource ceilings**: 16K wallpaper decode gate, size caps on config / key reads, in-flight transfers cancelled on tab close
 
@@ -114,8 +114,8 @@ open /Applications/rudder.app
 - [x] **Readable connection-failure reasons**: auth failure / timeout / refused / unreachable / DNS / host-key mismatch, each with next-step guidance
 - [x] SFTP download resume (cancelled/failed transfers keep the partial file and auto-resume)
 - [x] Double-click word / triple-click line selection; find navigation with Enter / Shift+Enter
-- [x] Immersive wallpapers (built-in Minimal Light / Dark, custom image upload up to 16K / 150M pixels) with theme colors derived from the wallpaper
-- [x] **Output budget & read caps**: 16 MiB terminal output budget, 64 / 2 MiB caps on config and private-key reads, oversized files log their actual size
+- [x] Immersive wallpapers (built-in Minimal Light / Dark, custom image upload up to 16384×16384) with theme colors derived from the wallpaper
+- [x] **Output budget & read caps**: 64 MiB terminal output budget, 64 / 8 MiB caps on config and private-key reads, oversized files log their actual size
 - [x] UI follows the platform default font (a single family; CJK and emoji fall back by script through parley); terminal defaults to JetBrains Mono (with an ExtraLight variant for dim text)
 - [x] Windows on ARM64 (zip + MSI installer)
 - [x] Platform visual adaptation: larger corner radii / hover scrollbars / softer card shadows on macOS, in one unified custom style

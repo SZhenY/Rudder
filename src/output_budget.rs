@@ -14,8 +14,9 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::ssh::SessionEvent;
 
-/// One Output event is capped at 64 KiB, so 16 MiB is at most 256 queued chunks.
-pub(crate) const OUTPUT_QUEUE_BYTE_BUDGET: usize = 16 * 1024 * 1024;
+/// One Output event is capped at 64 KiB, so 64 MiB is at most 1024 queued chunks.
+/// The budget is process-wide: every session shares it.
+pub(crate) const OUTPUT_QUEUE_BYTE_BUDGET: usize = 64 * 1024 * 1024;
 
 /// Fallback poll interval: `notify_waiters` can miss a waiter that has not yet
 /// been polled, so a bounded re-check guarantees progress.

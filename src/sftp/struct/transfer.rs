@@ -74,7 +74,12 @@ pub enum SftpCommand {
     /// Read a remote file's text for the built-in viewer/editor (#70).
     ReadText { remote: String, edit: bool },
     /// Overwrite a remote file with text from the built-in editor (#70).
-    WriteText { remote: String, content: String },
+    WriteText {
+        remote: String,
+        content: String,
+        /// 一次性回执：成功才允许清 dirty / 关窗。
+        reply: oneshot::Sender<Result<(), String>>,
+    },
     /// Gracefully shut down the SFTP worker.
     /// MCP：列目录，结果直接回给调用方（不经过界面）。
     McpList {

@@ -51,7 +51,14 @@ pub(crate) fn recover_render_failure(
         .env(RENDER_FALLBACK_ENV, "1")
         .spawn()
     {
-        Ok(_) => None,
+        Ok(child) => {
+            // 旧进程窗口已销毁、新进程还没出窗时，任务管理器会短暂只看到进程。
+            tracing::warn!(
+                pid = child.id(),
+                "renderer fallback: relaunched with software rendering"
+            );
+            None
+        }
         Err(e) => Some(anyhow::anyhow!(
             "event loop exited with error: {err}; relaunch failed: {e}"
         )),

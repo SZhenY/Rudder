@@ -125,11 +125,26 @@ fn accept_any_tls_config() -> Option<rustls::ClientConfig> {
     )
 }
 
+/// 错误体只留前 64 KiB：错误页可能是整站 HTML，摘要只用前 240 字符。
+const MAX_ERROR_BODY: usize = 64 * 1024;
+
+fn error_body_snippet(bytes: &[u8]) -> String {
+    let slice = &bytes[..bytes.len().min(MAX_ERROR_BODY)];
+    String::from_utf8_lossy(slice).into_owned()
+}
+
+fn read_error_body(resp: reqwest::blocking::Response) -> String {
+    use std::io::Read as _;
+    let mut buf = Vec::new();
+    let _ = resp.take(MAX_ERROR_BODY as u64).read_to_end(&mut buf);
+    error_body_snippet(&buf)
+}
+
 /// 非 2xx 的响应 → 带状态码与响应体片段的错误（400/405 有专门文案）。
 pub(super) fn webdav_status_error(resp: reqwest::blocking::Response) -> anyhow::Error {
     let status = resp.status().as_u16();
     let url = resp.url().to_string();
-    let body = resp.text().unwrap_or_default();
+    let body = read_error_body(resp);
     webdav_status_message(status, &url, body.trim())
 }
 
@@ -427,5 +442,21 @@ mod tests {
         assert!(webdav_parent_dirs("https://nas:5006/all/").is_empty(), "只有一层目录");
         assert!(webdav_parent_dirs("not a url").is_empty(), "没有 scheme");
         assert!(webdav_parent_dirs("https://nas").is_empty(), "没有路径段");
+    }
+}
+
+#[cfg(test)]
+mod error_body_tests {
+    use super::error_body_snippet;
+
+    #[test]
+    fn short_error_bodies_are_kept_verbatim() {
+        assert_eq!(error_body_snippet(b"not found"), "not found");
+    }
+
+    #[test]
+    fn oversized_error_bodies_are_truncated() {
+        let big = vec![b'x'; 64 * 1024 + 100];
+        assert_eq!(error_body_snippet(&big).len(), 64 * 1024);
     }
 }

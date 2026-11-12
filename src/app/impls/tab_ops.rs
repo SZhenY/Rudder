@@ -283,9 +283,9 @@ pub(crate) fn close_tab(env: &TabEnv<'_>, id: &str) -> bool {
         env.panes_model,
         env.splitters_model,
     );
-    // 页仍留在 NT 堆段里，安静几秒后归还工作集。
+    // 关标签只回收该标签的堆页；主窗口仍在前台，不裁剪进程工作集。
     if tab_index.is_some() {
-        crate::app::mem::trim_after_close();
+        crate::app::mem::reclaim_after_release(crate::app::mem::ReclaimReason::TabClosed);
     }
     tab_index.is_some()
 }

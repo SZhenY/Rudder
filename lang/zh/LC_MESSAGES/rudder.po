@@ -758,3 +758,6 @@ msgstr "设置"
 
 msgid "Planned"
 msgstr "规划中"
+
+msgid "No package for this platform"
+msgstr "本平台暂无安装包"

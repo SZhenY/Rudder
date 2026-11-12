@@ -7,6 +7,12 @@ pub fn run_renderer_probe(mode: &str) -> Result<()> {
 }
 
 pub fn run() -> Result<()> {
+    // 启动阶段日志只走 stderr：文件层是 warn，release 又没有控制台。
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        pid = std::process::id(),
+        "startup: run() entered"
+    );
     // 自更新留下的旧 exe（Windows 上运行中删不掉，只能改名）在这里清掉。
     self_updater::cleanup_leftover_binaries();
 
@@ -47,9 +53,13 @@ pub fn run() -> Result<()> {
     // Stage C: the roots are built by AppContext::new and re-exported as
     // locals here so the rest of run() (and its closures) keep their names;
     // a later step can thread `ctx` directly.
+    tracing::info!(renderer = config.renderer_mode(), "startup: renderer resolved");
     // The window must exist before the context so the UI models can be wired
     // to it inside AppContext::new.
     let window = AppWindow::new().context("failed to build Slint window")?;
+    tracing::info!("startup: main window created");
+    // 子窗口关闭后要把键盘焦点交还主窗口。
+    sub_windows::watch_main_window(window.as_weak());
     // Wrapped in `Rc` so the same context can be handed to the `wire_*`
     // functions instead of each one re-declaring its own field list.
     let ctx = Rc::new(AppContext::new(config, window.clone_strong())?);
@@ -161,16 +171,32 @@ pub fn run() -> Result<()> {
 
     // ── 设置窗口（独立 root 窗口，原生标题栏）───────────────────────────────
     //
-    // 首次打开才创建：设置窗含 TerminalPage 整棵树，启动期不需要。关闭仍只 hide，
-    // 复用同一实例；`wire_settings_window` 在工厂里接一次回调。
+    // 首次打开才创建：设置窗含 TerminalPage 整棵树，启动期不需要。关闭时销毁，
+    // 下次打开重建；`wire_settings_window` 在工厂里接一次回调。
     {
         let main = window.as_weak();
         window.on_toggle_interface_settings(move |open: bool| {
             let Some(m) = main.upgrade() else { return };
             if open {
-                let Some(sw) = sub_windows::ensure_settings(&m) else { return };
-                settings_window::open_settings_window(&m, &sw);
-                m.set_interface_open(true);
+                match sub_windows::ensure_settings(&m) {
+                    Ok(sw) => {
+                        settings_window::open_settings_window(&m, &sw);
+                        m.set_interface_open(true);
+                    }
+                    Err(err) => {
+                        m.set_interface_open(false);
+                        // 复用连接状态弹窗做一次性提示；真实的连接提示正在显示时不要抢占。
+                        if !m.get_conn_popup_open() {
+                            m.set_conn_popup_host(
+                                crate::i18n::t("无法打开“设置”窗口", "Could not open Settings")
+                                    .into(),
+                            );
+                            m.set_conn_popup_detail(err.into());
+                            m.set_conn_popup_phase(3);
+                            m.set_conn_popup_open(true);
+                        }
+                    }
+                }
             } else {
                 sub_windows::release_settings();
                 m.set_interface_open(false);
@@ -195,6 +221,7 @@ pub fn run() -> Result<()> {
         let monitor_store = store.clone();
         let monitor_tab = Rc::new(Cell::new(String::new()));
         let monitor_all = Rc::new(Cell::new(false));
+        let reclaim_bufs = bufs.clone();
         window.on_refresh_sidebar(move || {
             let Some(w) = weak.upgrade() else { return };
             // 远端监控默认只开活动标签：3 条 exec 通道（750ms/1.5s/2.5s）在非活动标签
@@ -213,6 +240,8 @@ pub fn run() -> Result<()> {
                 }
             }
             refresh_sidebar(&w, &statuses, &local, &net);
+            // 所有「活动标签变化」都汇到这里：回收不可见标签的 span/emoji 模型。
+            crate::app::terminal_ui::reclaim_offscreen_terminal_models(&w, &reclaim_bufs);
         });
     }
 
@@ -443,6 +472,30 @@ pub fn run() -> Result<()> {
     // Terminal do). The winit event handler below updates this; the blink reads
     // Theme.window-focused.
     let activity = Rc::new(std::cell::Cell::new(WinActivity::Active));
+    // 工作集裁剪只在整个应用持续隐藏、没有会话与传输时执行；状态在 UI 线程读取。
+    {
+        let obs_weak = window.as_weak();
+        let obs_handles = handles.clone();
+        let obs_activity = activity.clone();
+        super::mem::spawn_idle_observer(move || {
+            let Some(win) = obs_weak.upgrade() else {
+                // 主窗口已销毁：按「仍有活动」处理，退出前不做裁剪。
+                return super::mem::TrimSnapshot {
+                    activity: obs_activity.get(),
+                    has_visible_window: true,
+                    live_sessions: true,
+                    active_transfers: true,
+                };
+            };
+            super::mem::TrimSnapshot {
+                activity: obs_activity.get(),
+                // 主窗口的可见性由 activity 表达；winit 最小化时 is_visible 仍可能为 true。
+                has_visible_window: sub_windows::any_visible(),
+                live_sessions: !obs_handles.borrow().is_empty(),
+                active_transfers: win.get_has_active_transfers(),
+            }
+        });
+    }
     // Once the user confirms shutdown, every subsequent native/custom close
     // request must pass through without reopening the modal. Windows Installer
     // and Restart Manager may issue more than one close request while replacing
@@ -479,6 +532,7 @@ pub fn run() -> Result<()> {
             .on_winit_window_event(move |_slint_window, event| {
                 if !chrome_done {
                     chrome_done = true;
+                    tracing::info!("startup: first window event");
                     if let Some(win) = weak.upgrade() {
                         apply_window_chrome(win.window());
                     }

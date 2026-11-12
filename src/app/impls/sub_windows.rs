@@ -44,6 +44,21 @@ thread_local! {
     static SETTINGS: RefCell<Option<Rc<SettingsWindow>>> = const { RefCell::new(None) };
     /// 已 hide、等下一轮事件循环 drop 的窗口，按类型一个槽。
     static PENDING: RefCell<HashMap<&'static str, PendingSlot>> = RefCell::new(HashMap::new());
+    /// 主窗口弱引用，供关闭子窗口后归还键盘焦点。
+    static MAIN_WEAK: RefCell<Option<slint::Weak<AppWindow>>> = const { RefCell::new(None) };
+}
+
+/// 登记主窗口弱引用；`run()` 建窗后调用一次。
+pub(super) fn watch_main_window(weak: slint::Weak<AppWindow>) {
+    MAIN_WEAK.with(|slot| *slot.borrow_mut() = Some(weak));
+}
+
+/// 子窗口关闭后把焦点交还主窗口，恢复 1Hz 采样与光标闪烁的激活态。
+fn refocus_main_window() {
+    let weak = MAIN_WEAK.with(|slot| slot.borrow().clone());
+    if let Some(main) = weak.and_then(|w| w.upgrade()) {
+        main.window().with_winit_window(|ww| ww.focus_window());
+    }
 }
 
 const KIND_PROC: &str = "proc";
@@ -81,6 +96,23 @@ fn take_pending(kind: &'static str) -> Option<PendingWindow> {
     slot.borrow_mut().take()
 }
 
+/// 任一子窗口仍可见。深度空闲裁剪前用它确认没有窗口在用。
+pub(super) fn any_visible() -> bool {
+    SETTINGS.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|w| w.window().is_visible())
+    }) || PROC.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|w| w.window().is_visible())
+    }) || SYS.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|w| w.window().is_visible())
+    })
+}
+
 /// 已创建的进程窗弱引用；未创建时返回默认（不可升级）的 `Weak`。
 /// 外观回调在**触发时**取它，而不是注册时捕获，这样后创建的窗口也能同步到主题。
 pub(super) fn proc_weak() -> slint::Weak<ProcWindow> {
@@ -109,7 +141,7 @@ pub(super) fn ensure_process(
     let proc = match ProcWindow::new() {
         Ok(proc) => Rc::new(proc),
         Err(err) => {
-            tracing::warn!("failed to build process window: {err}");
+            tracing::error!("failed to build process window: {err}");
             return None;
         }
     };
@@ -117,6 +149,10 @@ pub(super) fn ensure_process(
     super::apply_chrome_on_first_frame(proc.as_ref());
     proc.set_proc_list(ModelRc::from(rows.clone()));
     proc.on_request_close(release_process);
+    proc.window().on_close_requested(|| {
+        release_process();
+        slint::CloseRequestResponse::HideWindow
+    });
     {
         proc.on_copy_pid(move |pid: slint::SharedString| {
             let text = pid.to_string();
@@ -291,6 +327,8 @@ pub(super) fn release_process() {
     if let Some(proc) = proc {
         let _ = proc.hide();
         drop_after_tick(KIND_PROC, PendingWindow::Proc(proc));
+        super::mem::reclaim_after_release(super::mem::ReclaimReason::SubWindowClosed);
+        refocus_main_window();
     }
 }
 
@@ -309,7 +347,7 @@ pub(super) fn ensure_system_info(
     let sys = match SystemInfoWindow::new() {
         Ok(sys) => Rc::new(sys),
         Err(err) => {
-            tracing::warn!("failed to build system info window: {err}");
+            tracing::error!("failed to build system info window: {err}");
             return None;
         }
     };
@@ -326,6 +364,10 @@ pub(super) fn ensure_system_info(
     sys.set_network_rows(ModelRc::from(models.network.clone()));
     sys.set_filesystem_rows(ModelRc::from(models.filesystem.clone()));
     sys.on_request_close(release_system_info);
+    sys.window().on_close_requested(|| {
+        release_system_info();
+        slint::CloseRequestResponse::HideWindow
+    });
     {
         let weak = sys.as_weak();
         sys.on_win_drag(move || {
@@ -369,23 +411,29 @@ pub(super) fn release_system_info() {
     if let Some(sys) = sys {
         let _ = sys.hide();
         drop_after_tick(KIND_SYS, PendingWindow::Sys(sys));
+        super::mem::reclaim_after_release(super::mem::ReclaimReason::SubWindowClosed);
+        refocus_main_window();
     }
 }
 
 /// 首次打开设置窗时创建并接好回调；之后直接复用。
-pub(super) fn ensure_settings(main: &AppWindow) -> Option<Rc<SettingsWindow>> {
+///
+/// 失败返回错误文本而不是 `Option`：调用方要能给用户一次提示，否则"点设置没反应"
+/// 没有任何线索（`error.log` 在用户机器上没人看）。
+pub(super) fn ensure_settings(main: &AppWindow) -> Result<Rc<SettingsWindow>, String> {
     if let Some(sw) = SETTINGS.with(|slot| slot.borrow().clone()) {
-        return Some(sw);
+        return Ok(sw);
     }
     if let Some(PendingWindow::Settings(sw)) = take_pending(KIND_SETTINGS) {
+        settings_window::remember_handle(&sw);
         SETTINGS.with(|slot| *slot.borrow_mut() = Some(sw.clone()));
-        return Some(sw);
+        return Ok(sw);
     }
     let sw = match SettingsWindow::new() {
         Ok(sw) => Rc::new(sw),
         Err(err) => {
-            tracing::warn!("failed to build settings window: {err}");
-            return None;
+            tracing::error!("failed to build settings window: {err}");
+            return Err(err.to_string());
         }
     };
     settings_window::wire_settings_window(&main.as_weak(), &sw);
@@ -420,15 +468,27 @@ pub(super) fn ensure_settings(main: &AppWindow) -> Option<Rc<SettingsWindow>> {
     }
     {
         let main_weak = main.as_weak();
-        sw.on_close_requested(move || {
-            release_settings();
-            if let Some(m) = main_weak.upgrade() {
-                m.set_interface_open(false);
-            }
+        sw.on_close_requested(move || close_settings(&main_weak));
+    }
+    {
+        // 系统级关窗（Alt+F4 / 原生标题栏）不经过组件的 close-requested，
+        // 不接这条就只 hide，整套 wgpu 设备会一直留在进程里。
+        let main_weak = main.as_weak();
+        sw.window().on_close_requested(move || {
+            close_settings(&main_weak);
+            slint::CloseRequestResponse::HideWindow
         });
     }
     SETTINGS.with(|slot| *slot.borrow_mut() = Some(sw.clone()));
-    Some(sw)
+    Ok(sw)
+}
+
+/// 设置窗的统一关闭入口：组件级与窗口级回调共用，重复调用由 `take()` 幂等吸收。
+fn close_settings(main_weak: &slint::Weak<AppWindow>) {
+    release_settings();
+    if let Some(m) = main_weak.upgrade() {
+        m.set_interface_open(false);
+    }
 }
 
 /// 关闭设置窗并归还 wgpu 设备；销毁时机见 `release_system_info`。
@@ -438,8 +498,9 @@ pub(super) fn release_settings() {
         let _ = sw.hide();
         super::settings_window::forget_handle();
         drop_after_tick(KIND_SETTINGS, PendingWindow::Settings(sw));
-        // 整套 wgpu 设备已随窗口销毁，安静几秒后把工作集还给系统。
-        super::mem::trim_after_close();
+        // wgpu 设备随窗口销毁；只回收堆页，主窗口仍可见，不裁剪进程工作集。
+        super::mem::reclaim_after_release(super::mem::ReclaimReason::SubWindowClosed);
+        refocus_main_window();
     }
 }
 

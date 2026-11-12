@@ -117,29 +117,75 @@ pub(super) fn resolve_auto_renderer_mode(
 /// 根本跑不到，"自动"的表现就是窗口打不开。这里用子进程实测，它无法作弊。
 ///
 /// 探测进程用 `--probe-renderer=wgpu` 启动，而 `wgpu` 这条取值不会再探测，所以不会递归。
+///
+/// 子进程必须有硬超时：它和主进程同名、没有窗口，一旦 GPU 驱动卡在初始化，主进程就
+/// 永远停在建窗之前 —— 任务管理器里是"有进程、没窗口"。
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 fn gpu_renderer_probe_passes() -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
+    let started = std::time::Instant::now();
+    tracing::info!(pid = std::process::id(), "startup: gpu probe start");
     // stdout 要**读走**：探测进程会在里面写"适配器是 GPU 还是 CPU 型"，那是判断
     // "有没有显卡"的第二条依据（第一条是退出码 —— 那一帧真的画出来了）。
-    let Ok(output) = std::process::Command::new(exe)
+    let mut child = match std::process::Command::new(exe)
         .arg("--probe-renderer=wgpu")
         // 探测的是 femtovg 本身，不受外部 SLINT_BACKEND 影响。
         .env("SLINT_BACKEND", "winit-femtovg-wgpu")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .output()
-    else {
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(err) => {
+            tracing::warn!("auto renderer: probe spawn failed: {err}");
+            return false;
+        }
+    };
+    // 只轮询退出状态；输出在退出后由 `wait_with_output` 一次收走。探测输出
+    // 只有十几行（< 1 KB），远小于管道缓冲，不存在写满阻塞的前提。
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {}
+            Err(err) => {
+                tracing::warn!("auto renderer: probe wait failed: {err}");
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+        if started.elapsed() >= PROBE_TIMEOUT {
+            // 先 kill 再 wait：否则 Windows 上句柄不回收，Unix 上留僵尸。
+            let _ = child.kill();
+            let _ = child.wait();
+            tracing::warn!(
+                timeout_secs = PROBE_TIMEOUT.as_secs(),
+                "auto renderer: probe timed out, falling back to software"
+            );
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let Ok(output) = child.wait_with_output() else {
         return false;
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines().filter(|l| l.starts_with("probe-adapter=")) {
         tracing::info!(adapter = line, "auto renderer: probe enumerated an adapter");
     }
-    probe_conclusion(output.status.success(), &stdout)
+    let ok = probe_conclusion(output.status.success(), &stdout);
+    tracing::info!(
+        ok,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "startup: gpu probe finished"
+    );
+    ok
 }
 
 /// 探测结论：**真 GPU**（不是 WARP / lavapipe 这类 CPU 适配器）**且**这一帧真的渲染出来了。

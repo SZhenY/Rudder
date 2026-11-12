@@ -146,10 +146,17 @@ impl SftpHandle {
     pub fn read_text(&self, remote: String, edit: bool) {
         let _ = self.commands.send(SftpCommand::ReadText { remote, edit });
     }
-    pub fn write_text(&self, remote: String, content: String) {
-        let _ = self
-            .commands
-            .send(SftpCommand::WriteText { remote, content });
+    /// 返回一次性回执的接收端；`None` = worker 已退出（会话已断）。
+    pub fn write_text(
+        &self,
+        remote: String,
+        content: String,
+    ) -> Option<tokio::sync::oneshot::Receiver<Result<(), String>>> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        self.commands
+            .send(SftpCommand::WriteText { remote, content, reply })
+            .ok()
+            .map(|()| rx)
     }
     pub fn close(&self) {
         let _ = self.commands.send(SftpCommand::Close);

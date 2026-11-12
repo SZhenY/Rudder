@@ -2,6 +2,59 @@ use super::*;
 use crate::ui::Theme;
 use crate::ui::AnimationSettings;
 
+/// 把模型行分成「可见但模型为空（需要重建）」与「不可见且仍有模型（需要清空）」。
+/// 纯函数，便于测试切换标签时的分组判断。
+fn split_reclaim_rows(
+    rows: &[(String, bool)],
+    visible: &std::collections::HashSet<String>,
+) -> (Vec<usize>, Vec<usize>) {
+    let mut reveal = Vec::new();
+    let mut clear = Vec::new();
+    for (i, (id, has_models)) in rows.iter().enumerate() {
+        if visible.contains(id) {
+            if !has_models {
+                reveal.push(i);
+            }
+        } else if *has_models {
+            clear.push(i);
+        }
+    }
+    (reveal, clear)
+}
+
+/// 切走的标签把三类渲染模型清空（`TermSpan` 里挂着解码后的 emoji 位图，一屏还有
+/// 上千个 span）。屏幕内容在 `TermBuffer` 里，切回时 `rebuild_tab_display` 能原样
+/// 算回来，所以这是纯缓存回收。可见但模型为空的标签就地补一次重建。
+pub(crate) fn reclaim_offscreen_terminal_models(win: &AppWindow, bufs: &TermBuffers) {
+    let visible = visible_tab_ids(win);
+    let terminals = win.get_terminals();
+    let Some(model) = terminals.as_any().downcast_ref::<VecModel<TerminalState>>() else {
+        return;
+    };
+    let mut rows = Vec::with_capacity(model.row_count());
+    for i in 0..model.row_count() {
+        let Some(row) = model.row_data(i) else { continue };
+        let has_models = row.spans.row_count() > 0
+            || row.find_matches.row_count() > 0
+            || row.selection.row_count() > 0;
+        rows.push((row.id.to_string(), has_models));
+    }
+    let (reveal, clear) = split_reclaim_rows(&rows, &visible);
+    for i in clear {
+        if let Some(mut row) = model.row_data(i) {
+            row.spans = ModelRc::from(Rc::new(VecModel::<TermSpan>::default()));
+            row.find_matches = ModelRc::from(Rc::new(VecModel::<TermMatch>::default()));
+            row.selection = ModelRc::from(Rc::new(VecModel::<TermMatch>::default()));
+            model.set_row_data(i, row);
+        }
+    }
+    for i in reveal {
+        if let Some(id) = rows.get(i).map(|(id, _)| id.clone()) {
+            rebuild_tab_display(win, bufs, &id);
+        }
+    }
+}
+
 pub(crate) fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
     let rows: Vec<SharedString> = store
         .command_history()
@@ -748,5 +801,42 @@ mod tests {
         assert_eq!(conn_ip("a@b@c"), "c", "只取最后一段");
         assert_eq!(conn_ip("  root@10.0.0.5  "), "10.0.0.5", "两端空白应去掉");
         assert_eq!(conn_ip(""), "");
+    }
+}
+
+#[cfg(test)]
+mod reclaim_tests {
+    use super::split_reclaim_rows;
+    use std::collections::HashSet;
+
+    fn rows(spec: &[(&str, bool)]) -> Vec<(String, bool)> {
+        spec.iter().map(|(id, has)| ((*id).to_string(), *has)).collect()
+    }
+
+    fn visible(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn visible_rows_with_models_are_left_alone() {
+        let (reveal, clear) = split_reclaim_rows(&rows(&[("a", true)]), &visible(&["a"]));
+        assert!(reveal.is_empty());
+        assert!(clear.is_empty());
+    }
+
+    #[test]
+    fn hidden_rows_with_models_are_cleared() {
+        let (reveal, clear) =
+            split_reclaim_rows(&rows(&[("a", true), ("b", true), ("c", false)]), &visible(&["a"]));
+        assert!(reveal.is_empty());
+        assert_eq!(clear, vec![1]);
+    }
+
+    #[test]
+    fn visible_rows_without_models_are_rebuilt() {
+        let (reveal, clear) =
+            split_reclaim_rows(&rows(&[("a", false), ("b", true)]), &visible(&["a"]));
+        assert_eq!(reveal, vec![0]);
+        assert_eq!(clear, vec![1]);
     }
 }

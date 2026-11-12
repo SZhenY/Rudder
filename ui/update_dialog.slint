@@ -30,7 +30,7 @@ export component UpdateDialog inherits Rectangle {
     in property <string> new-version: "";
     /// 发布说明（release body，已由 Rust 侧清洗/截断；空串则不显示那块）。
     in property <string> notes: "";
-    /// 0 空闲 / 1 下载中 / 2 安装中 / 3 已安装待重启 / 4 失败 / 5 无需更新。
+    /// 0 空闲 / 1 下载中 / 2 安装中 / 3 已安装待重启 / 4 失败 / 5 无需更新 / 6 本平台暂无包。
     in property <int> update-state: 0;
     /// 目标版本比本机**低**（降级 / 切换通道）：换标题、换按钮、换成警示色。
     /// 例：本机 `v0.7.9-beta1` 切到「正式版」，而正式版最新是 `v0.7.9`。
@@ -53,7 +53,9 @@ export component UpdateDialog inherits Rectangle {
             ? @tr("Update failed")
             : update-state == 5
                 ? @tr("Already up to date")
-                : (update-state == 1 || update-state == 2)
+                : update-state == 6
+                    ? @tr("No package for this platform")
+                    : (update-state == 1 || update-state == 2)
                     ? @tr("Updating…")
                     : root.downgrade
                         ? @tr("Older version available")
@@ -62,7 +64,7 @@ export component UpdateDialog inherits Rectangle {
         ? Theme.success
         : update-state == 4
             ? Theme.danger
-            : root.downgrade
+            : (update-state == 6 || root.downgrade)
                 ? Theme.warning
                 : Theme.accent;
     // 进度条只在下载/安装时有意义（3/4 态只在状态行说话）。

@@ -305,3 +305,134 @@ fn macos_bundle_is_resolved_from_exe() {
         None
     );
 }
+
+/// 构造一份最小 release JSON：只放测试关心的 `tag_name` 与 `assets`。
+fn release(tag: &str, assets: &[&'static str]) -> serde_json::Value {
+    serde_json::json!({
+        "tag_name": tag,
+        "body": "",
+        "assets": assets
+            .iter()
+            .map(|name| serde_json::json!({
+                "name": name,
+                "browser_download_url": format!("https://example.invalid/{name}"),
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+#[test]
+fn missing_platform_asset_yields_no_candidate() {
+    // 发版后 CI 只传完 macOS：Windows 客户端不应弹提示。
+    let json = release("v0.8.3", &["rudder-v0.8.3-macos-aarch64.zip"]);
+    let current = crate::app::parse_version("v0.8.2").unwrap();
+    assert!(
+        candidate_from_release(
+            &json,
+            current,
+            "stable",
+            AssetTarget { os: "windows", arch: "x86_64", glibc: None, msi: false },
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn matching_asset_yields_candidate_with_download_url() {
+    let json = release("v0.8.3", &RELEASE_ASSETS);
+    let current = crate::app::parse_version("v0.8.2").unwrap();
+    let candidate = candidate_from_release(
+        &json,
+        current,
+        "stable",
+        AssetTarget { os: "windows", arch: "x86_64", glibc: None, msi: false },
+    )
+    .expect("candidate");
+    assert_eq!(candidate.version, "0.8.3");
+    assert!(
+        candidate.asset_name.ends_with("windows-x86_64.zip"),
+        "{}",
+        candidate.asset_name
+    );
+    assert!(candidate.download_url.ends_with(&candidate.asset_name));
+    assert!(!candidate.is_switch);
+    assert!(!candidate.is_msi);
+}
+
+#[test]
+fn beta_channel_never_offers_a_downgrade() {
+    let json = release("v0.8.2", &RELEASE_ASSETS);
+    let current = crate::app::parse_version("v0.8.3").unwrap();
+    let target = || AssetTarget { os: "windows", arch: "x86_64", glibc: None, msi: false };
+    assert!(candidate_from_release(&json, current, "beta", target()).is_none());
+    let stable = candidate_from_release(&json, current, "stable", target())
+        .expect("stable offers a switch");
+    assert!(stable.is_switch);
+}
+
+fn target_windows() -> AssetTarget<'static> {
+    AssetTarget { os: "windows", arch: "x86_64", glibc: None, msi: false }
+}
+
+#[test]
+fn lookup_release_reports_no_asset_for_platform() {
+    let json = release("v0.8.3", &["rudder-v0.8.3-macos-aarch64.zip"]);
+    let current = crate::app::parse_version("v0.8.2").unwrap();
+    let got = lookup_release(&json, current, "stable", target_windows());
+    assert!(
+        matches!(&got, UpdateLookup::NoAssetForPlatform { version } if version == "0.8.3"),
+        "{got:?}"
+    );
+}
+
+#[test]
+fn lookup_release_reports_missing_msi() {
+    let json = release("v0.8.3", &["rudder-v0.8.3-windows-x86_64.zip"]);
+    let current = crate::app::parse_version("v0.8.2").unwrap();
+    let got = lookup_release(
+        &json,
+        current,
+        "stable",
+        AssetTarget { os: "windows", arch: "x86_64", glibc: None, msi: true },
+    );
+    assert!(
+        matches!(&got, UpdateLookup::NoMsiForPlatform { version } if version == "0.8.3"),
+        "{got:?}"
+    );
+}
+
+#[test]
+fn lookup_release_says_up_to_date_for_same_version() {
+    let json = release("v0.8.2", &RELEASE_ASSETS);
+    let current = crate::app::parse_version("v0.8.2").unwrap();
+    let got = lookup_release(&json, current, "stable", target_windows());
+    assert!(matches!(got, UpdateLookup::UpToDate), "{got:?}");
+}
+
+#[test]
+fn lookup_release_finds_a_candidate() {
+    let json = release("v0.8.3", &RELEASE_ASSETS);
+    let current = crate::app::parse_version("v0.8.2").unwrap();
+    let got = lookup_release(&json, current, "stable", target_windows());
+    match got {
+        UpdateLookup::Found(c) => assert_eq!(c.version, "0.8.3"),
+        other => panic!("expected Found, got {other:?}"),
+    }
+}
+
+#[test]
+fn missing_arch_asset_is_reported_as_no_asset() {
+    // 有 zip，但只有 x86_64：aarch64 客户端必须看到 "无本平台包"，而不是 "已是最新"。
+    let json = release("v0.8.3", &["rudder-v0.8.3-windows-x86_64.zip"]);
+    let current = crate::app::parse_version("v0.8.2").unwrap();
+    let got = lookup_release(
+        &json,
+        current,
+        "stable",
+        AssetTarget { os: "windows", arch: "aarch64", glibc: None, msi: false },
+    );
+    assert!(
+        matches!(&got, UpdateLookup::NoAssetForPlatform { version } if version == "0.8.3"),
+        "{got:?}"
+    );
+}

@@ -21,7 +21,7 @@ import { IconText } from "components/text.slint";
 export component ConnStatusDialog inherits ModalCard {
     // 常驻 + visible 切换，不用 `if` 包着 —— 在事件派发栈上销毁子树会闪退。
     in property <bool> open: false;
-    /// 0 = 连接中 / 1 = 成功 / 2 = 失败
+    /// 0 = 连接中 / 1 = 成功 / 2 = 失败 / 3 = 通用提示（非连接类错误）
     in property <int> phase: 0;
     /// 连接目标，形如 `user@host:22`
     in property <string> host: "";
@@ -46,10 +46,12 @@ export component ConnStatusDialog inherits ModalCard {
     property <string> glyph:
         root.phase == 1 ? "\u{E5CA}"           // check
         : root.phase == 2 ? "\u{E5CD}"         // close
+        : root.phase == 3 ? "\u{E88E}"         // info
         : "\u{E5D5}";                          // sync
     property <string> heading:
         root.phase == 1 ? (root.lang-en ? "Connected" : "连接成功")
         : root.phase == 2 ? (root.lang-en ? "Connection failed" : "连接失败")
+        : root.phase == 3 ? (root.lang-en ? "Notice" : "提示")
         : (root.lang-en ? "Connecting…" : "正在连接…");
 
     // 标题行：状态图标 + 标题，右上角关闭按钮。
@@ -97,7 +99,7 @@ export component ConnStatusDialog inherits ModalCard {
     // 不让一个错误信息把窗口撑到半屏。用 `if` 条件渲染：连接中 / 成功态不该
     // 留下空白（`visible:false` 仍占布局空间）。
     // 外层限高而不是给 Text 绑 `height: self.preferred-height`（自引用）。
-    if root.phase == 2 && root.detail != "" : Rectangle {
+    if root.phase >= 2 && root.detail != "" : Rectangle {
         height: min(reason-text.preferred-height, 110px);
         clip: true;
         reason-text := Text {

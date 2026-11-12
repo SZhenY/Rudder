@@ -439,7 +439,7 @@ pub(crate) async fn connect_ssh(
     }
 
     // Connect directly, or tunnel through a SOCKS5 / HTTP proxy (issue #7).
-    let handle = match crate::ssh::proxy::resolve_session(session) {
+    let handle = match crate::ssh::proxy::resolve_session(session)? {
         Some(p) => {
             let _ = events.send(SessionEvent::Status(format!(
                 "{} {} → {}",
@@ -781,6 +781,13 @@ pub(crate) fn classify_connect_failure(err: &anyhow::Error) -> String {
             theirs.join(", ")
         };
         format!("{title}: {} {offered}", t("服务器提供", "server offers"))
+    } else if joined.contains(crate::ssh::proxy::PARSE_MARKER) {
+        // 非法代理串：不能让它落到下面的 DNS / 超时分支去误导排查方向。
+        t(
+            "代理地址无法解析：请到会话设置里检查代理格式（socks5:// 或 http://host:port）",
+            "Cannot parse the proxy URL: check the session's proxy setting (socks5:// or http://host:port)",
+        )
+        .to_string()
     } else if joined.contains("https proxy requires tls") {
         // Raised by `proxy::connect` for an `https://` proxy. Surfaced here so
         // the user gets the two working alternatives instead of a raw error.

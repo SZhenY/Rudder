@@ -44,25 +44,45 @@ pub(crate) fn import_wallpaper_file(src: &Path) -> Option<PathBuf> {
 const W: u32 = 1600;
 const H: u32 = 1000;
 
-/// Cap the long edge of a decoded custom wallpaper so a huge photo doesn't pin
-/// a whole 6000px texture in GPU memory.
-const MAX_EDGE: u32 = 2560;
+/// Long edge of a decoded custom wallpaper. 4K on a 4K display is 1:1; anything
+/// larger only burns GPU memory.
+const MAX_EDGE: u32 = 3840;
 
-/// Largest source image accepted for decoding. Covers 16K (16384x8640 = 141.6 MP)
-/// while still rejecting decompression bombs and square 16384x16384 (268 MP).
-const MAX_DECODE_PIXELS: u64 = 150_000_000;
+/// Largest source edge accepted for decoding: 16384×16384 (268 MP, 1 GiB as
+/// RGBA8). A single edge cap is equivalent to a pixel cap here and keeps the
+/// rejection message unambiguous.
+const MAX_SOURCE_EDGE: u32 = 16384;
+
 /// `image`'s default max_alloc is 512 MiB, which would reject a 16K RGBA PNG.
-const MAX_DECODE_ALLOC: u64 = 768 * 1024 * 1024;
+/// 16384² RGBA8 is exactly 1 GiB; leave 512 MiB for the decoder's own scratch
+/// buffers (`Limits` is a decreasing budget).
+const MAX_DECODE_ALLOC: u64 = 1536 * 1024 * 1024;
 
 /// Reject dimensions that would make a full-size decode unsafe.
 fn check_decode_dimensions(w: u32, h: u32) -> Result<(), String> {
-    let pixels = u64::from(w) * u64::from(h);
-    if pixels > MAX_DECODE_PIXELS {
+    if w > MAX_SOURCE_EDGE || h > MAX_SOURCE_EDGE {
         return Err(format!(
-            "{w}x{h} ({pixels} pixels) exceeds the {MAX_DECODE_PIXELS} pixel limit"
+            "{w}x{h} exceeds the {MAX_SOURCE_EDGE}px edge limit"
         ));
     }
     Ok(())
+}
+
+/// Long-edge-capped dimensions (round, at least 1px, never upscale).
+fn scaled_dims_for(w: u32, h: u32, edge: u32) -> (u32, u32) {
+    let long = w.max(h);
+    if long <= edge {
+        return (w.max(1), h.max(1));
+    }
+    let scale = f64::from(edge) / f64::from(long);
+    (
+        (f64::from(w) * scale).round().max(1.0) as u32,
+        (f64::from(h) * scale).round().max(1.0) as u32,
+    )
+}
+
+fn scaled_dims(w: u32, h: u32) -> (u32, u32) {
+    scaled_dims_for(w, h, MAX_EDGE)
 }
 
 /// Colours derived from a wallpaper, pushed into the Theme global so panels,
@@ -185,23 +205,27 @@ fn decode_custom(path: &str) -> Option<SharedPixelBuffer<Rgba8Pixel>> {
 
 
 
-/// Downscale before converting to RGBA: the full-size RGBA copy alone is
-/// 566 MB for a 16K image. Resizing in the source colour space keeps the peak
-/// at the decoded buffer plus the small output image.
+/// Downscale before converting to RGBA. Two stages keep the peak at the decoded
+/// buffer plus one intermediate: `thumbnail` is an area average with no scratch
+/// allocation, then Lanczos3 finishes the last 2×. A single `resize_exact` from
+/// 16384² would allocate a 960 MiB Rgba32F intermediate, pushing the peak from
+/// ~1.2 GiB to ~2.0 GiB.
 fn to_buffer(img: image::DynamicImage) -> SharedPixelBuffer<Rgba8Pixel> {
     let (w, h) = img.dimensions();
-    let img = if w.max(h) > MAX_EDGE {
-        let scale = MAX_EDGE as f32 / w.max(h) as f32;
-        let nw = ((w as f32 * scale) as u32).max(1);
-        let nh = ((h as f32 * scale) as u32).max(1);
-        img.resize_exact(nw, nh, image::imageops::FilterType::Triangle)
-    } else {
+    let (nw, nh) = scaled_dims(w, h);
+    let img = if (w, h) == (nw, nh) {
         img
+    } else if w.max(h) > MAX_EDGE * 2 {
+        let (mw, mh) = scaled_dims_for(w, h, MAX_EDGE * 2);
+        img.thumbnail_exact(mw, mh)
+            .resize_exact(nw, nh, image::imageops::FilterType::Lanczos3)
+    } else {
+        img.resize_exact(nw, nh, image::imageops::FilterType::Lanczos3)
     };
-    let img = img.to_rgba8();
-    let (w, h) = img.dimensions();
+    let rgba = img.into_rgba8();
+    let (w, h) = rgba.dimensions();
     let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(w, h);
-    buf.make_mut_bytes().copy_from_slice(img.as_raw());
+    buf.make_mut_bytes().copy_from_slice(rgba.as_raw());
     buf
 }
 
@@ -409,18 +433,41 @@ mod tests {
     }
 
     #[test]
-    fn decode_limit_accepts_16k_wallpapers() {
+    fn decode_limit_accepts_16k_and_square_wallpapers() {
+        assert!(check_decode_dimensions(16384, 16384).is_ok());
         assert!(check_decode_dimensions(16384, 8640).is_ok());
         assert!(check_decode_dimensions(15360, 8640).is_ok());
-        assert!(check_decode_dimensions(16384, 8192).is_ok());
+        assert!(check_decode_dimensions(16384, 100).is_ok());
     }
 
     #[test]
     fn decode_limit_rejects_oversized_images_with_details() {
-        let err = check_decode_dimensions(20000, 20000).unwrap_err();
-        assert!(err.contains("20000x20000"), "missing dimensions: {err}");
-        assert!(err.contains("400000000 pixels"), "missing pixel count: {err}");
-        assert!(err.contains("150000000"), "missing limit: {err}");
-        assert!(check_decode_dimensions(16384, 16384).is_err());
+        let err = check_decode_dimensions(16385, 100).unwrap_err();
+        assert!(err.contains("16385x100"), "missing dimensions: {err}");
+        assert!(err.contains("16384px"), "missing limit: {err}");
+        assert!(check_decode_dimensions(20000, 20000).is_err());
+        assert!(check_decode_dimensions(16384, 16385).is_err());
+    }
+
+    #[test]
+    fn scaled_dims_keeps_small_images_untouched() {
+        assert_eq!(scaled_dims(3840, 2160), (3840, 2160));
+        assert_eq!(scaled_dims(100, 50), (100, 50));
+    }
+
+    #[test]
+    fn scaled_dims_caps_the_long_edge() {
+        assert_eq!(scaled_dims(7680, 4320), (3840, 2160));
+        assert_eq!(scaled_dims(16384, 16384), (3840, 3840));
+        assert_eq!(scaled_dims(16384, 9216), (3840, 2160));
+        assert_eq!(scaled_dims(10000, 500), (3840, 192));
+    }
+
+    #[test]
+    fn intermediate_dims_are_twice_the_target_and_never_upscale() {
+        assert_eq!(scaled_dims_for(16384, 16384, MAX_EDGE * 2), (7680, 7680));
+        assert_eq!(scaled_dims_for(16384, 9216, MAX_EDGE * 2), (7680, 4320));
+        assert_eq!(scaled_dims_for(20000, 1000, MAX_EDGE * 2), (7680, 384));
+        assert_eq!(scaled_dims_for(1000, 500, MAX_EDGE * 2), (1000, 500));
     }
 }

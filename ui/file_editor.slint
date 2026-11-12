@@ -3,7 +3,7 @@
 //! 不泄漏给下面的终端。
 //!
 //! 从 `app.slint` 拆出（P4 B 类）。接口分三档：
-//! * **状态** —— Rust 真正读写的 9 项：3 个 `in`（只读）+ 6 个 `in-out`（组件内也会改，
+//! * **状态** —— Rust 真正读写的 10 项：4 个 `in`（只读）+ 6 个 `in-out`（组件内也会改，
 //!   与 `TextInput` 双向绑定或记录脏标记/找词进度）；
 //! * **动作** —— 6 个 callback，实现在 Rust（`sftp_callbacks.rs`），调用点转发；
 //! * **私有状态** —— 13 项拖拽/缩放几何与焦点标记，窗口从不访问，随块搬入并标 `private`。
@@ -47,6 +47,8 @@ export component FileEditor inherits Rectangle {
     in-out property <bool> editor-dirty: false;        // 编辑过 → 关闭前先上传
     in-out property <int> editor-match-count: 0;
     in-out property <int> editor-find-position: -1;
+    /// 保存状态 / 失败原因；非空时在标题栏显示红字。
+    in property <string> editor-status: "";
 
     // ── 动作：实现在 Rust（`sftp_callbacks.rs`），调用点转发 ────────────────
     callback save-file();                     // Ctrl+S / Save button (edit only)
@@ -160,6 +162,14 @@ export component FileEditor inherits Rectangle {
                             font-weight: 600;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        if editor-status != "" : Text {
+                            text: editor-status;
+                            color: Theme.danger;
+                            font-size: Theme.fs-sm;
+                            width: 180px;
+                            vertical-alignment: center;
                             overflow: elide;
                         }
                         if !editor-readonly : Rectangle {
