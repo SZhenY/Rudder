@@ -45,6 +45,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Ensure tag matches Cargo package version
         if: startsWith(github.ref, 'refs/tags/')
@@ -83,6 +86,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       # Same dependency set as the Linux build jobs below (kept in sync by
       # hand — Actions has no YAML anchors): clippy/test compile every
       # build-script, so any missing -dev package redlines the gate
@@ -157,6 +163,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       # MSI 步骤的开关。按 Cargo.toml 的版本号判断，不按 ref 名：分支上的
       # workflow_dispatch 没有 tag，ref 里也不会带 `-beta`，按 ref 判断会把
@@ -432,7 +441,7 @@ jobs:
       - name: Release notes from CHANGELOG
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
-        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
+        run: bash scripts/release-notes.sh "$GITHUB_REF_NAME" > notes.md
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -452,7 +461,7 @@ jobs:
       - name: Release notes from CHANGELOG
         if: matrix.name == 'linux-x86_64' && startsWith(github.ref, 'refs/tags/')
         shell: bash
-        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
+        run: bash scripts/release-notes.sh "$GITHUB_REF_NAME" > notes.md
 
       - name: Attach AppImage to GitHub Release
         if: matrix.name == 'linux-x86_64' && startsWith(github.ref, 'refs/tags/')
@@ -472,7 +481,7 @@ jobs:
       - name: Release notes from CHANGELOG
         if: startsWith(matrix.name, 'windows') && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
         shell: bash
-        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
+        run: bash scripts/release-notes.sh "$GITHUB_REF_NAME" > notes.md
 
       - name: Attach MSI to GitHub Release
         if: startsWith(matrix.name, 'windows') && env.MSI != '' && startsWith(github.ref, 'refs/tags/')
@@ -518,6 +527,9 @@ jobs:
             libudev-dev
 
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Install Rust toolchain
         shell: bash
@@ -596,7 +608,7 @@ jobs:
       - name: Release notes from CHANGELOG
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
-        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
+        run: bash scripts/release-notes.sh "$GITHUB_REF_NAME" > notes.md
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -642,6 +654,9 @@ jobs:
             libudev-dev
 
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Install Rust toolchain
         shell: bash
@@ -720,7 +735,7 @@ jobs:
       - name: Release notes from CHANGELOG
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
-        run: bash scripts/changelog-section.sh "${GITHUB_REF_NAME#v}" > notes.md
+        run: bash scripts/release-notes.sh "$GITHUB_REF_NAME" > notes.md
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -746,6 +761,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Download size records
         uses: actions/download-artifact@v6
