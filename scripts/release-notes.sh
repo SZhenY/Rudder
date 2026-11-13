@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 生成 GitHub Release 正文：CHANGELOG 的手写段落 + 上一版 tag 到目标 tag 的完整提交标题。
+# 生成 GitHub Release 正文：CHANGELOG 的手写段落 + 本版功能与变更提交标题。
 # 多个平台作业都跑它，输出只依赖同一份 git 历史，后写正文不会覆盖出不同内容。
 set -euo pipefail
 
@@ -25,7 +25,7 @@ if [ -n "$section" ]; then
     printf '%s\n' "$section"
 fi
 
-printf '\n## 本版提交 / Commits\n\n'
+printf '\n<!-- commits:start -->\n## 本版提交 / Commits\n\n'
 
 # 目标 tag 存在时以它为区间终点，本地预览历史版本也能得到正确范围。
 if git rev-parse -q --verify "refs/tags/$tag_name" >/dev/null; then
@@ -53,5 +53,14 @@ if [ "$count" = "0" ]; then
     exit 0
 fi
 
-printf '自 `%s` 以来的全部提交（%s 个）：\n\n' "$prev_tag" "$count"
-git log --format='- `%h` %s' "$prev_tag..$range_end"
+printf '自 `%s` 以来的功能与变更提交：\n\n' "$prev_tag"
+# 版本提交、merge、修复类标题不进附录；修复内容由 CHANGELOG 手写段落承担。
+git log --no-merges --format='- `%h` %s' "$prev_tag..$range_end" \
+    | awk '
+        /chore\(release\)/ { next }
+        /` merge:/ { next }
+        /修复/ { next }
+        /(^|[^[:alnum:]])[Ff]ix[:(]/ { next }
+        { print }
+      '
+printf '<!-- commits:end -->\n'

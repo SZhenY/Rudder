@@ -35,9 +35,11 @@ Release workflow 也会检查推送上来的 tag。比如 tag 名是 `v0.5.7` �
 `CHANGELOG.md` 在发版前写好 `## [Unreleased]`，经检查确认后由 `release.sh` 提升为
 版本小节。脚本不会从 git 历史自动生成内容；`preflight.sh` 会全量列出本次提交供逐条核对。
 
-GitHub Release 正文由 `scripts/release-notes.sh` 生成：先是该版本的手写段落，末尾附
-上一版 tag 到当前 tag 的**全部提交标题**。CI 的 checkout 已设 `fetch-depth: 0` 与
-`fetch-tags: true` 以取得完整历史；`size-report.sh` 只在末尾追加包体积段。
+GitHub Release 正文由 `scripts/release-notes.sh` 生成：先是该版本的手写段落，再插入
+「本版提交 / Commits」附录（只列功能与变更类提交，排除版本提交、merge 与含「修复/fix」
+的标题；修复内容由手写段落承担）。附录带 `<!-- commits:start/end -->` 标记，重跑不叠加。
+CI 的 checkout 已设 `fetch-depth: 0` 与 `fetch-tags: true` 以取得完整历史；
+`size-report.sh` 只在末尾追加包体积段。
 
 CHANGELOG 与 commit message 只写版本之间可观察的差异：
 
@@ -122,8 +124,11 @@ version section by `release.sh`. Nothing is generated from git history; `preflig
 lists every commit in the range for a line-by-line check.
 
 `scripts/release-notes.sh` builds the GitHub Release body: the hand-written section,
-followed by the full list of commit subjects since the previous tag. CI checkouts use
-`fetch-depth: 0` and `fetch-tags: true`; `size-report.sh` only appends the size table.
+followed by a "Commits" appendix listing feature and change commits only. Release,
+merge and fix-titled commits are excluded; fixes belong to the hand-written section.
+The appendix uses `<!-- commits:start/end -->` markers so reruns do not duplicate it.
+CI checkouts use `fetch-depth: 0` and `fetch-tags: true`; `size-report.sh` only appends
+the size table.
 
 Only user-observable differences between released versions belong in the CHANGELOG
 and commit messages: bugs found and fixed during development before any push or
