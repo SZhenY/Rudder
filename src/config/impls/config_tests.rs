@@ -214,6 +214,15 @@ mod tests {
         assert_eq!(store.terminal_cursor_style(), "bar");
     }
 
+    /// 激进内存回收默认关，写入后可读回；老配置缺字段靠域级 `#[serde(default)]` 兜底。
+    #[test]
+    fn aggressive_memory_reclaim_defaults_off_and_round_trips() {
+        let mut store = temp_store();
+        assert!(!store.aggressive_memory_reclaim());
+        store.set_aggressive_memory_reclaim(true);
+        assert!(store.aggressive_memory_reclaim());
+    }
+
     /// 设置页那三档语义值是平台无关的：旧后端名与 macOS 写进配置的 `femtovg-wgpu`
     /// 都要归到 GPU 档，认不出的值回"自动"（重新探测一次）。
     #[test]

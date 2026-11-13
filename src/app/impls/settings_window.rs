@@ -199,6 +199,7 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_quick_panel_collapsed(m.get_quick_panel_collapsed());
     sw.set_wallpaper_labels(m.get_wallpaper_labels());
     sw.set_renderer_mode(m.get_renderer_mode());
+    sw.set_aggressive_memory_reclaim(m.get_aggressive_memory_reclaim());
     // 开关类：这些值既可能被设置页自己改（改完回调会回写主窗口），也可能被 MCP
     // 从外部改。不灌回去的话，设置窗开着时看到的仍是开窗那一刻的旧状态。
     sw.set_convert_eol(m.get_convert_eol());
@@ -361,6 +362,7 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_quick_panel_collapsed(m.get_quick_panel_collapsed());
     sw.set_quick_panel_open(m.get_quick_panel_open());
     sw.set_renderer_mode(m.get_renderer_mode());
+    sw.set_aggressive_memory_reclaim(m.get_aggressive_memory_reclaim());
     sw.set_scrollback_lines(m.get_scrollback_lines());
     sw.set_sftp_follow_cd(m.get_sftp_follow_cd());
     sw.set_show_cmd_bar(m.get_show_cmd_bar());
@@ -466,6 +468,7 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_panel_font => invoke_set_panel_font, (a0));
     forward!(sw, m, s, on_set_quick_commands_as_sidebar => invoke_set_quick_commands_as_sidebar, (a0));
     forward!(sw, m, s, on_set_renderer_mode => invoke_set_renderer_mode, (a0));
+    forward!(sw, m, s, on_set_aggressive_memory_reclaim => invoke_set_aggressive_memory_reclaim, (a0));
     forward!(sw, m, s, on_set_scrollback_lines -> invoke_set_scrollback_lines, (a0));
     forward!(sw, m, s, on_set_sftp_follow_cd => invoke_set_sftp_follow_cd, (a0));
     forward!(sw, m, s, on_set_show_cmd_bar => invoke_set_show_cmd_bar, (a0));

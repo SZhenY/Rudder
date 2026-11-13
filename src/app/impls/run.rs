@@ -28,6 +28,13 @@ pub fn run() -> Result<()> {
         proxy: config.update_proxy().to_string(),
     });
 
+    // 内存回收策略是启动期快照：开关重启生效，运行期不再读配置。
+    super::mem::set_aggressive(config.aggressive_memory_reclaim());
+    tracing::info!(
+        aggressive = config.aggressive_memory_reclaim(),
+        "startup: memory reclaim policy"
+    );
+
     // 三平台的"自动"：探测一次（子进程真渲染一帧，约一秒），把结论**固化进配置** ——
     // 有 GPU 就存 GPU 档（Windows / Linux 是 `wgpu`，macOS 是 `femtovg-wgpu`），没有就存
     // `software`；之后每次启动直接读配置，不再探测。想重新探测（换机器 / 装了显卡驱动）
@@ -477,25 +484,42 @@ pub fn run() -> Result<()> {
         let obs_weak = window.as_weak();
         let obs_handles = handles.clone();
         let obs_activity = activity.clone();
-        super::mem::spawn_idle_observer(move || {
-            let Some(win) = obs_weak.upgrade() else {
-                // 主窗口已销毁：按「仍有活动」处理，退出前不做裁剪。
-                return super::mem::TrimSnapshot {
-                    activity: obs_activity.get(),
-                    has_visible_window: true,
-                    live_sessions: true,
-                    active_transfers: true,
+        let cleanup_weak = window.as_weak();
+        super::mem::spawn_idle_observer(
+            move || {
+                let Some(win) = obs_weak.upgrade() else {
+                    // 主窗口已销毁：按「仍有活动」处理，退出前不做裁剪。
+                    return super::mem::TrimSnapshot {
+                        activity: obs_activity.get(),
+                        minimized: true,
+                        has_visible_window: true,
+                        live_sessions: true,
+                        active_transfers: true,
+                    };
                 };
-            };
-            super::mem::TrimSnapshot {
-                activity: obs_activity.get(),
-                // 主窗口的可见性由 activity 表达；winit 最小化时 is_visible 仍可能为 true。
-                has_visible_window: sub_windows::any_visible(),
-                live_sessions: !obs_handles.borrow().is_empty(),
-                active_transfers: win.get_has_active_transfers(),
-            }
-        });
+                super::mem::TrimSnapshot {
+                    activity: obs_activity.get(),
+                    // 与事件链互为兜底：`Resized(0,0)` 能到，但顺序不是契约。
+                    minimized: win
+                        .window()
+                        .with_winit_window(|ww| ww.is_minimized())
+                        .flatten()
+                        .unwrap_or(false),
+                    // 主窗口的可见性由 activity / minimized 表达。
+                    has_visible_window: sub_windows::any_visible(),
+                    live_sessions: !obs_handles.borrow().is_empty(),
+                    active_transfers: win.get_has_active_transfers(),
+                }
+            },
+            move || {
+                if let Some(w) = cleanup_weak.upgrade() {
+                    crate::app::terminal_ui::reclaim_all_terminal_models(&w);
+                }
+            },
+        );
     }
+    // 激进档：首帧与设置播种完成后再把工作集转入待机。
+    super::mem::trim_after_startup();
     // Once the user confirms shutdown, every subsequent native/custom close
     // request must pass through without reopening the modal. Windows Installer
     // and Restart Manager may issue more than one close request while replacing
@@ -515,6 +539,7 @@ pub fn run() -> Result<()> {
         let close_handles = handles.clone();
         let ev_store = store.clone();
         let ev_activity = activity.clone();
+        let ev_minimized = Rc::new(Cell::new(false));
         let ev_exit_confirmed = exit_confirmed.clone();
         let ev_window_size_tracking_ready = window_size_tracking_ready.clone();
         let ev_pending_window_size_restore = pending_window_size_restore.clone();
@@ -539,7 +564,17 @@ pub fn run() -> Result<()> {
                 }
                 // Recompute window activity, push it to the shared cell, and update
                 // Theme.window-focused (gates the cursor blink) (#127).
+                //
+                // `minimized` 同时参考 `is_minimized()`：`Resized(0,0)` 能到应用层，
+                // 但 Windows 不发 `Occluded`，两个信号一起用更稳。
                 let apply_activity = |focused: bool, minimized: bool, occluded: bool| {
+                    let win = weak.upgrade();
+                    let minimized = minimized
+                        || win
+                            .as_ref()
+                            .and_then(|w| w.window().with_winit_window(|ww| ww.is_minimized()))
+                            .flatten()
+                            .unwrap_or(false);
                     let act = if minimized || occluded {
                         WinActivity::Hidden
                     } else if focused {
@@ -549,9 +584,15 @@ pub fn run() -> Result<()> {
                     };
                     let prev = ev_activity.get();
                     ev_activity.set(act);
-                    if let Some(win) = weak.upgrade() {
+                    let was_minimized = ev_minimized.replace(minimized);
+                    if let Some(win) = win {
                         win.set_window_focused(act == WinActivity::Active);
-                        if prev == WinActivity::Hidden && act != WinActivity::Hidden {
+                        // 恢复分两路：activity 从 Hidden 出来，或最小化标记刚刚解除。
+                        // 后者兜住「事件没送到但窗口确实被最小化」的情况。
+                        let became_visible = (prev == WinActivity::Hidden
+                            && act != WinActivity::Hidden)
+                            || (was_minimized && !minimized);
+                        if became_visible {
                             win.set_terminal_restore_cover(true);
                             let weak2 = weak.clone();
                             slint::Timer::single_shot(
@@ -559,6 +600,8 @@ pub fn run() -> Result<()> {
                                 move || {
                                     if let Some(w) = weak2.upgrade() {
                                         w.set_terminal_restore_cover(false);
+                                        // 深度空闲可能清过渲染模型，恢复时补一次重建。
+                                        w.invoke_refresh_sidebar();
                                     }
                                 },
                             );

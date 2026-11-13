@@ -113,6 +113,9 @@ pub struct AppearanceSettings {
     pub mount_filter: String,
     /// 存储取反：缺失/老配置保持动画开启。
     pub animations_disabled: bool,
+    /// 激进内存回收：更早归还空闲堆页、清可重建缓存，并缩短工作集裁剪门槛。
+    /// 启动期读一次，重启生效。
+    pub aggressive_memory_reclaim: bool,
 }
 
 impl Default for AppearanceSettings {
@@ -130,6 +133,7 @@ impl Default for AppearanceSettings {
             hide_special_partitions: true,
             mount_filter: String::new(),
             animations_disabled: false,
+            aggressive_memory_reclaim: false,
         }
     }
 }

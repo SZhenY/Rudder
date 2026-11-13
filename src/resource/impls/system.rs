@@ -12,7 +12,7 @@ use super::types::{SystemSampler, SystemSnapshot};
 
 /// How many sampling ticks to wait before re-enumerating mounted filesystems.
 ///
-/// Measured with samply on macOS (see `rudder-fix-plan.md` 阶段 3 实测结果):
+/// Measured with samply on macOS:
 /// `Disks::refresh` costs ~27 ms per call — it `statfs()`es every mount point —
 /// which is **92% of a whole sampling tick** and showed up as a ~28 ms stall on
 /// the UI thread once a second. CPU / memory / network still refresh every tick,

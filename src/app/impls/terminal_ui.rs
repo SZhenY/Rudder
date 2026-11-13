@@ -55,6 +55,29 @@ pub(crate) fn reclaim_offscreen_terminal_models(win: &AppWindow, bufs: &TermBuff
     }
 }
 
+/// 深度空闲：清掉所有标签的渲染模型（含当前可见标签）。屏幕内容在 `TermBuffer` 里，
+/// 恢复窗口时由 `refresh_sidebar` → `reclaim_offscreen_terminal_models` 的 reveal 分支
+/// 重建，所以这里只清不建，也不需要 `TermBuffers`。
+pub(crate) fn reclaim_all_terminal_models(win: &AppWindow) {
+    let terminals = win.get_terminals();
+    let Some(model) = terminals.as_any().downcast_ref::<VecModel<TerminalState>>() else {
+        return;
+    };
+    for i in 0..model.row_count() {
+        let Some(mut row) = model.row_data(i) else { continue };
+        if row.spans.row_count() == 0
+            && row.find_matches.row_count() == 0
+            && row.selection.row_count() == 0
+        {
+            continue;
+        }
+        row.spans = ModelRc::from(Rc::new(VecModel::<TermSpan>::default()));
+        row.find_matches = ModelRc::from(Rc::new(VecModel::<TermMatch>::default()));
+        row.selection = ModelRc::from(Rc::new(VecModel::<TermMatch>::default()));
+        model.set_row_data(i, row);
+    }
+}
+
 pub(crate) fn history_model(store: &ConfigStore) -> ModelRc<SharedString> {
     let rows: Vec<SharedString> = store
         .command_history()

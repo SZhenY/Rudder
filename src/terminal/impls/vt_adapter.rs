@@ -3,6 +3,7 @@
 
 use alacritty_terminal::event::VoidListener;
 use alacritty_terminal::grid::Dimensions;
+#[cfg(test)]
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
@@ -303,7 +304,7 @@ pub(crate) fn resize_term(term: &mut ATerm, rows: u16, cols: u16) {
 
 /// Build a plain-text line from the grid (test helper / snapshot equivalent of
 /// the old `screen.contents()`).
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) fn grid_to_lines(term: &ATerm) -> Vec<String> {
     let (rows, cols) = term_size(term);
     let mut out = Vec::with_capacity(rows as usize);

@@ -436,6 +436,7 @@ pub(crate) fn reset(
             s.set_wallpaper(d.appearance.wallpaper.clone());
             s.set_wallpaper_overlay(d.appearance.wallpaper_overlay);
             s.set_accent(d.appearance.accent.clone());
+            s.set_aggressive_memory_reclaim(d.appearance.aggressive_memory_reclaim);
             s.set_hide_special_partitions(d.appearance.hide_special_partitions);
             // ⚠ 动画开关也属于外观域（config 里存的是反向的 `animations_disabled`）——
             // 之前这里漏了它，于是「还原本页默认」后界面显示"动画已开"、**重启又变回关闭**
@@ -455,6 +456,7 @@ pub(crate) fn reset(
     w.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0);
     w.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0);
     w.set_renderer_mode(s.renderer_mode_choice().into());
+    w.set_aggressive_memory_reclaim(s.aggressive_memory_reclaim());
     w.global::<Theme>().set_panel_alpha(s.wallpaper_overlay());
     w.set_hide_special_partitions(s.hide_special_partitions());
     drop(s);

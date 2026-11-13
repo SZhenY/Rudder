@@ -20,12 +20,14 @@ import { WslPage } from "settings/pages/wsl.slint";
 import { TransferPage } from "settings/pages/transfer.slint";
 import { UpdatePage } from "settings/pages/update.slint";
 import { AiPage } from "settings/pages/ai.slint";
+import { BetaPage } from "settings/pages/beta.slint";
 
 // The settings content (nav + pages). Embedded in AppWindow's modal overlay.
 export component InterfacePanel inherits Rectangle {
     in property <bool> lang-en;
     in property <bool> is-windows;
     in-out property <string> renderer-mode: "software";
+    in-out property <bool> aggressive-memory-reclaim: false;
     in property <[string]> term-fonts;
     in property <string> term-font-family;
     in-out property <int> term-font-index: 0;   // picker selection; labels carry a source prefix
@@ -141,8 +143,9 @@ export component InterfacePanel inherits Rectangle {
             : page == "layout" ? 3
             : page == "wsl" ? 4
             : page == "sync" ? (root.is-windows ? 5 : 4)
-            : page == "update" ? (root.is-windows ? 6 : 5)
-            : (root.is-windows ? 7 : 6);
+            : page == "ai" ? (root.is-windows ? 6 : 5)
+            : page == "beta" ? (root.is-windows ? 7 : 6)
+            : (root.is-windows ? 8 : 7);
     }
 
     // 单次定时器：等淡出快走完再换页，然后淡入。动效关闭时间隔归零，不白等。
@@ -246,6 +249,7 @@ export component InterfacePanel inherits Rectangle {
     // 曾放在这里（单个 `reset-armed`）导致跨页串味：终端页上膛后切到外观页，
     // 按钮直接显示「确认还原？」，一点就还原了另一页。
     // 动画开关此前只写 Slint 全局、从不持久化；现在同时通知 Rust 存入 config。
+    callback set-aggressive-memory-reclaim(bool);
     callback set-animations-enabled(bool);
 
     HorizontalLayout {
@@ -318,14 +322,19 @@ export component InterfacePanel inherits Rectangle {
                     clicked => { root.goto-page("sync"); }
                 }
                 NavItem {
-                    icon: "\u{E923}"; label: root.lang-en ? "Update check" : "新版本提示";
-                    active: root.nav-page == "update";
-                    clicked => { root.goto-page("update"); }
-                }
-                NavItem {
                     icon: "\u{E65F}"; label: "AI";
                     active: root.nav-page == "ai";
                     clicked => { root.goto-page("ai"); }
+                }
+                NavItem {
+                    icon: "\u{EA4B}"; label: "Beta";
+                    active: root.nav-page == "beta";
+                    clicked => { root.goto-page("beta"); }
+                }
+                NavItem {
+                    icon: "\u{E923}"; label: root.lang-en ? "Update check" : "新版本提示";
+                    active: root.nav-page == "update";
+                    clicked => { root.goto-page("update"); }
                 }
             }
         }
@@ -563,6 +572,12 @@ export component InterfacePanel inherits Rectangle {
                             set-mcp-audit-enabled(a5) => { root.set-mcp-audit-enabled(a5); }
                             set-mcp-audit-retention(b5) => { root.set-mcp-audit-retention(b5); }
                             open-mcp-log-dir() => { root.open-mcp-log-dir(); }
+                    }
+
+                    if root.ifd-page == "beta" : BetaPage {
+                            lang-en: root.lang-en;
+                            aggressive-memory-reclaim <=> root.aggressive-memory-reclaim;
+                            set-aggressive-memory-reclaim(v) => { root.set-aggressive-memory-reclaim(v); }
                     }
 
                 }

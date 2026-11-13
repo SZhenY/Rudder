@@ -144,7 +144,7 @@ impl Layout {
     /// 已经有测试覆盖，但 UI 侧还没接线（标签拖到别的分屏）—— 与 `vt_adapter` /
     /// `ssh` 里那两个 helper 同一处理方式：只在测试构建里需要，显式标出来而不是
     /// 让整个模块 `#![allow(dead_code)]` 把所有死代码一起遮住。
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub fn move_tab(&mut self, tab_id: &str, to: u64) {
         let from = match self.leaf_of_tab(tab_id) {
             Some(f) => f,

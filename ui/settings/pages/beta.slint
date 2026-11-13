@@ -1,0 +1,44 @@
+// 设置页：beta
+//
+// 实验性开关集中放这里，默认全部关闭。页面只声明自己用到的属性与回调，
+// 由 InterfacePanel 在实例化处 `<=>` 双向绑定 / 显式转发。
+
+import { SettingSwitch } from "../chrome.slint";
+import { SettingsSection } from "../section.slint";
+
+export component BetaPage inherits VerticalLayout {
+    in property <bool> lang-en;
+    in-out property <bool> aggressive-memory-reclaim;
+    callback set-aggressive-memory-reclaim(bool);
+
+    // 与其它设置页一致：20px 左右内边距 + 顶部 14px，内容从顶端排。
+    // 少了这些，唯一子项会在页面里垂直居中、标题也贴左边缘。
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 14px;
+    spacing: 0;
+    alignment: start;
+
+    SettingsSection {
+        section-id: "beta.memory";
+        // 本页只有一个分区，不设 0 会作为嵌套 Layout 吃满整页高度，
+        // 把标题和开关撑到上下两端。
+        vertical-stretch: 0;
+        lang-en: root.lang-en;
+        title-zh: "内存";
+        title-en: "MEMORY";
+        title-height: 24px;
+        SettingSwitch {
+            show-divider: false;
+            label: root.lang-en ? "Aggressive memory reclaim" : "激进内存回收";
+            // `SettingRow` 的 desc 有 `max-lines: 2`，文案控制在两行内。
+            desc: root.lang-en
+                ? "Three seconds after launch, and one second after closing a window or session, moves the working set to standby. The number drops but committed memory does not, and it climbs back with use. Restart to apply."
+                : "启动 3 秒后、关闭窗口或会话 1 秒后，把进程工作集转入待机。读数会大幅下降但提交内存不变，之后随使用回升。重启后生效。";
+            checked <=> root.aggressive-memory-reclaim;
+            toggled(v) => {
+                root.set-aggressive-memory-reclaim(v);
+            }
+        }
+    }
+}

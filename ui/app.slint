@@ -392,6 +392,8 @@ export component AppWindow inherits Window {
     in property <bool> is-windows: false;
     in-out property <string> renderer-mode: "software";
     callback set-renderer-mode(string);                    // applies next launch (#280)
+    in-out property <bool> aggressive-memory-reclaim: false;
+    callback set-aggressive-memory-reclaim(bool);          // applies next launch
     // Wallpaper / immersive theming — Rust drives these from the wallpaper module.
     // User-adjustable wallpaper overlay opacity (0.30–1.00), persisted.
     callback persist-wallpaper-overlay(float);
@@ -698,21 +700,6 @@ export component AppWindow inherits Window {
     callback editor-count-matches(string /* content */, string /* query */) -> int;
     callback editor-find-step(string /* content */, string /* query */, int /* current */, bool /* reverse */) -> EditorFindResult;
     callback editor-replace-all(string /* query */, string /* replacement */);
-    // Editor card geometry: draggable by its title bar, resizable from the
-    // bottom-right grip (same absolute-position pattern as the Interface
-    // dialog). Defaults centre the card; user drags/resizes override them.
-    property <length> ed-w: 760px;
-    property <length> ed-h: 560px;
-    property <length> ed-x: (root.width - root.ed-w) / 2;
-    property <length> ed-y: (root.height - root.ed-h) / 2;
-    property <bool> ed-dragging;
-    property <bool> ed-resizing;
-    property <length> ed-base-x;
-    property <length> ed-base-y;
-    property <length> ed-base-w;
-    property <length> ed-base-h;
-    property <length> ed-grab-x;
-    property <length> ed-grab-y;
 
     // --- Session list ------------------------------------------------------
     in property <[SessionInfo]> sessions;

@@ -1875,6 +1875,13 @@ impl ConfigStore {
     pub fn set_hide_special_partitions(&mut self, v: bool) {
         self.cache.appearance.hide_special_partitions = v;
     }
+    /// Aggressive memory reclaim; read once at startup and applied on the next launch.
+    pub fn aggressive_memory_reclaim(&self) -> bool {
+        self.cache.appearance.aggressive_memory_reclaim
+    }
+    pub fn set_aggressive_memory_reclaim(&mut self, v: bool) {
+        self.cache.appearance.aggressive_memory_reclaim = v;
+    }
     /// All sidebar / panel animations enabled (Interface › Animations).
     pub fn animations_enabled(&self) -> bool {
         !self.cache.appearance.animations_disabled

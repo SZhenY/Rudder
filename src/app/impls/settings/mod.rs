@@ -17,6 +17,7 @@
 
 pub(super) mod ai;
 pub(super) mod appearance;
+pub(super) mod beta;
 pub(super) mod layout;
 pub(super) mod sync;
 pub(super) mod terminal;

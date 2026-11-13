@@ -121,6 +121,7 @@ export component SettingsWindow inherits Window {
     in-out property <bool> quick-panel-collapsed:false;
     in-out property <bool> quick-panel-open:false;
     in-out property <string> renderer-mode:"software";
+    in-out property <bool> aggressive-memory-reclaim:false;
     in-out property <string> scrollback-lines:"5000";
     in-out property <bool> sftp-follow-cd:true;
     in-out property <bool> show-cmd-bar:true;
@@ -192,6 +193,7 @@ export component SettingsWindow inherits Window {
     callback remove-wsl-profile(string);
     callback reset-page(string);
     callback save-webdav-settings(bool, string, string, string, string, bool);
+    callback set-aggressive-memory-reclaim(bool);
     callback set-animations-enabled(bool);
     callback set-collapse-sftp-default(bool);
     callback set-collapse-sidebar-default(bool);
@@ -305,6 +307,7 @@ export component SettingsWindow inherits Window {
                 lang-en: lang-en;
                 is-windows: is-windows;
                 renderer-mode <=> renderer-mode;
+                aggressive-memory-reclaim <=> aggressive-memory-reclaim;
                 term-fonts: term-fonts;
                 term-font-family: Theme.term-font-family;
                 term-font-index <=> term-font-index;
@@ -403,6 +406,7 @@ export component SettingsWindow inherits Window {
                 set-ui-scale(v) => { root.set-ui-scale(v); }
                 set-panel-font(v) => { root.set-panel-font(v); }
                 set-renderer-mode(v) => { root.set-renderer-mode(v); }
+                set-aggressive-memory-reclaim(v) => { root.set-aggressive-memory-reclaim(v); }
                 set-sftp-follow-cd(v) => { root.set-sftp-follow-cd(v); }
                 set-collapse-sidebar-default(v) => { root.set-collapse-sidebar-default(v); }
                 set-collapse-sftp-default(v) => { root.set-collapse-sftp-default(v); }
