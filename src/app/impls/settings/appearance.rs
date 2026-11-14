@@ -25,6 +25,22 @@ use crate::ui::{ AccentPreset, AnimationSettings, AppWindow, ProcWindow, Theme }
 #[path = "appearance_bind_theme.rs"] mod appearance_bind_theme;
 
 pub(crate) fn bind(window: &AppWindow, store: &Store, bufs: &TermBuffers) {
+    // 曲线时间范围：写配置 + 改全局窗口点数 + 触发一次 sidebar 刷新（那边会把新的
+    // 远端采样周期下发给所有活会话）。
+    {
+        let weak = window.as_weak();
+        let chart_store = store.clone();
+        window.on_set_chart_span(move |idx: i32| {
+            const SPANS: [u32; 6] = [15, 60, 300, 1800, 3600, 21600];
+            let secs = SPANS.get(idx.max(0) as usize).copied().unwrap_or(60);
+            persist(&chart_store, |s| s.set_chart_span_secs(secs));
+            crate::app::resource_ui::set_chart_span(secs);
+            if let Some(w) = weak.upgrade() {
+                w.set_chart_span_index(idx);
+                w.invoke_refresh_sidebar();
+            }
+        });
+    }
     appearance_bind_render::wire_render(window, store);
     appearance_bind_wallpaper::wire_wallpaper(window, store, bufs);
     appearance_bind_theme::wire_theme(window, store, bufs);
@@ -438,12 +454,16 @@ pub(crate) fn reset(
             s.set_accent(d.appearance.accent.clone());
             s.set_aggressive_memory_reclaim(d.appearance.aggressive_memory_reclaim);
             s.set_hide_special_partitions(d.appearance.hide_special_partitions);
+            s.set_chart_span_secs(d.appearance.chart_span_secs);
             // ⚠ 动画开关也属于外观域（config 里存的是反向的 `animations_disabled`）——
             // 之前这里漏了它，于是「还原本页默认」后界面显示"动画已开"、**重启又变回关闭**
             // （启动播种读的是 config，见 settings/layout.rs）。
             s.set_animations_enabled(!d.appearance.animations_disabled);
         });
     }
+    // 曲线跨度：还原到出厂的 1 分钟，窗口点数与下拉框一起回默认。
+    crate::app::resource_ui::set_chart_span(d.appearance.chart_span_secs);
+    w.set_chart_span_index(1);
     // UI 刷新走 getter（0 → 默认 / 平台默认）。
     let s = store.borrow();
     // 出厂默认是**空串 = auto**，还原后必须回到「跟随系统（自动）」条目。

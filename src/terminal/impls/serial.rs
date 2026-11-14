@@ -177,6 +177,8 @@ async fn run_serial(
     // --- Command pump -------------------------------------------------------
     while let Some(cmd) = commands.recv().await {
         match cmd {
+            // 本地 / 串口会话没有远端监控通道，忽略采样周期切换。
+            SessionCommand::SetSampleInterval(_) => {}
             SessionCommand::RawInput(bytes) => {
                 // Never log keystroke bytes — they can be passwords (#15).
                 tracing::debug!("serial write len={} bytes", bytes.len());

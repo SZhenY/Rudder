@@ -27,9 +27,6 @@ pub(crate) fn visible_tab_ids(win: &AppWindow) -> HashSet<String> {
     out
 }
 
-/// Number of samples kept for the sparkline.
-pub(crate) const NET_HISTORY_LEN: usize = 60;
-
 
 
 /// Mutate the `TerminalState` whose id matches `tab_id` in the live model.

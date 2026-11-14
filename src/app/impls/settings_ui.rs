@@ -178,6 +178,22 @@ pub(super) fn ensure_font_pickers(window: &AppWindow) -> FontCatalog {
     });
     window.set_term_font_index(catalog.term_index(&saved_family));
     window.set_ui_font_index(catalog.ui_index(&ui_stored));
+    let chart_span = HISTORY_STORE.with(|store| {
+        store
+            .borrow()
+            .as_ref()
+            .map(|store| store.borrow().chart_span_secs())
+            .unwrap_or(60)
+    });
+    window.set_chart_span_index(match chart_span {
+        15 => 0,
+        60 => 1,
+        300 => 2,
+        1800 => 3,
+        3600 => 4,
+        21600 => 5,
+        _ => 1,
+    });
     FONT_CATALOG.with(|slot| *slot.borrow_mut() = Some(catalog.clone()));
     catalog
 }

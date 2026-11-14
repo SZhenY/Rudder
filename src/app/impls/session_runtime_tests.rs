@@ -46,3 +46,20 @@ fn jump_target_trims_padded_ids() {
     assert_eq!(jump_target(&ssh_session("a", " b ")), Some("b"));
     assert_eq!(jump_target(&ssh_session("a", "\tb\n")), Some("b"));
 }
+
+#[test]
+fn monitoring_starts_for_the_active_tab() {
+    assert!(should_start_monitoring(false, true));
+}
+
+#[test]
+fn monitoring_is_off_for_background_tabs() {
+    assert!(!should_start_monitoring(false, false));
+}
+
+/// MCP 要读任意标签的状态：启用时必须全量开，漏掉这条会让新标签一直为 0。
+#[test]
+fn monitoring_is_always_on_when_mcp_is_enabled() {
+    assert!(should_start_monitoring(true, false));
+    assert!(should_start_monitoring(true, true));
+}

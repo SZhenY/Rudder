@@ -20,8 +20,8 @@ pub(crate) fn save_layout(win: &AppWindow, store: &Rc<RefCell<ConfigStore>>) {
     let h = size.height as f32 / scale;
     let mut s = store.borrow_mut();
     s.set_sidebar_collapsed(win.get_sidebar_collapsed());
-    s.set_sftp_panel_width(win.get_sftp_panel_width());
-    s.set_sftp_panel_height(win.get_sftp_panel_height());
+    s.set_overview_panel_width(win.get_overview_panel_width());
+    s.set_overview_panel_height(win.get_overview_panel_height());
     s.set_quick_panel_open(win.get_quick_panel_open());
     s.set_quick_panel_collapsed(win.get_quick_panel_collapsed());
     s.set_quick_panel_width(win.get_quick_panel_width());

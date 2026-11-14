@@ -1,0 +1,72 @@
+//! 平滑趋势曲线：中点二次贝塞尔由 Rust 侧拼好 `commands`，这里只负责绘制。
+//!
+//! Slint 的 `Path` 不支持 `for`（旧分支因此展开写死 61 段），所以把算法放在
+//! `resource_ui::smooth_path`，组件只接收字符串。
+
+import { Theme } from "../theme.slint";
+
+export component TrendCurve inherits Rectangle {
+    /// SVG path，坐标 0..100（带包围盒锚点，`fit: fill` 不会失真）。
+    in property <string> commands;
+    in property <brush> tone: Theme.accent;
+    /// 末端当前值（0..1），用于画「现在」圆点。
+    /// 末端当前值（0..1）；-1 表示不画圆点（网络图不需要）。
+    in property <float> last: -1.0;
+    in property <length> chart-height: 44px;
+
+    height: root.chart-height;
+    vertical-stretch: 0;
+    background: transparent;
+    clip: true;
+
+    // 刻度线：基线最深，50% 次之，25% / 75% 更淡。
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border-strong;
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height / 2;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border-subtle;
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height / 4;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border-subtle;
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height * 3 / 4;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border-subtle;
+    }
+
+    if root.commands != "" : Path {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        fit: fill;
+        stroke: root.tone;
+        stroke-width: 1.5px;
+        fill: root.tone.with-alpha(0.16);
+        commands: root.commands;
+    }
+
+    if root.commands != "" && root.last >= 0.0 : Rectangle {
+        x: parent.width - 3px;
+        y: parent.height * (1 - clamp(root.last, 0.0, 1.0)) - 3px;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: root.tone;
+    }
+}

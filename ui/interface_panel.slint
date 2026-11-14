@@ -33,6 +33,8 @@ export component InterfacePanel inherits Rectangle {
     in-out property <int> term-font-index: 0;   // picker selection; labels carry a source prefix
     in property <[string]> ui-fonts;        // all font families for UI picker
     in-out property <int> ui-font-index: 0;     // UI font picker selection
+    in-out property <int> chart-span-index: 1;   // 曲线时间范围（0..5）
+    callback set-chart-span(int);
     callback set-ui-font(string);
     callback upload-ui-font();                    // 上传字体（复制进 config/fonts）
     in property <length> term-font-size;
@@ -49,7 +51,7 @@ export component InterfacePanel inherits Rectangle {
     in property <float> ui-scale;
     in-out property <bool> sftp-follow-cd;
     in-out property <bool> collapse-sidebar-default;
-    in-out property <bool> collapse-sftp-default;
+    in-out property <bool> collapse-overview-default;
     in-out property <bool> sync-upload-enabled;
     in-out property <bool> webdav-enabled;
     in-out property <string> webdav-url;
@@ -194,7 +196,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-renderer-mode(string);
     callback set-sftp-follow-cd(bool);
     callback set-collapse-sidebar-default(bool);
-    callback set-collapse-sftp-default(bool);
+    callback set-collapse-overview-default(bool);
     callback set-sync-upload-enabled(bool);
     callback save-webdav-settings(bool, string, string, string, string, bool);
     callback webdav-upload();
@@ -441,6 +443,8 @@ export component InterfacePanel inherits Rectangle {
                             mount-filter <=> root.mount-filter;
                             renderer-mode <=> root.renderer-mode;
                             ui-font-index <=> root.ui-font-index;
+                            chart-span-index <=> root.chart-span-index;
+                            set-chart-span(v) => { root.set-chart-span(v); }
                             ui-fonts: root.ui-fonts;
                             ui-scale: root.ui-scale;
                             wallpaper-overlay <=> root.wallpaper-overlay;
@@ -464,13 +468,13 @@ export component InterfacePanel inherits Rectangle {
 
                     if root.ifd-page == "layout" : LayoutPage {
                             show-cmd-bar <=> root.show-cmd-bar;
-                            collapse-sftp-default <=> root.collapse-sftp-default;
+                            collapse-overview-default <=> root.collapse-overview-default;
                             collapse-sidebar-default <=> root.collapse-sidebar-default;
                             lang-en: root.lang-en;
                             quick-commands-as-sidebar <=> root.quick-commands-as-sidebar;
                             reset-page(a0) => { root.reset-page(a0); }
                             set-show-cmd-bar(a0) => { root.set-show-cmd-bar(a0); }
-                            set-collapse-sftp-default(a0) => { root.set-collapse-sftp-default(a0); }
+                            set-collapse-overview-default(a0) => { root.set-collapse-overview-default(a0); }
                             set-collapse-sidebar-default(a0) => { root.set-collapse-sidebar-default(a0); }
                             set-quick-commands-as-sidebar(a0) => { root.set-quick-commands-as-sidebar(a0); }
                     }

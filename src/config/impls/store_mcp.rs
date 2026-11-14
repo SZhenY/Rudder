@@ -152,19 +152,31 @@ impl ConfigStore {
     pub fn set_panel_font(&mut self, percent: u32) {
         self.cache.appearance.panel_font = percent.clamp(80, 160);
     }
-    pub fn sftp_panel_width(&self) -> f32 {
-        let w = self.cache.layout.sftp_panel_width;
-        if w <= 0.0 { default_sftp_width() } else { w }
+    pub fn overview_panel_width(&self) -> f32 {
+        let w = self.cache.layout.overview_panel_width;
+        if w <= 0.0 { default_overview_width() } else { w }
     }
-    pub fn set_sftp_panel_width(&mut self, v: f32) {
-        self.cache.layout.sftp_panel_width = v;
+    pub fn set_overview_panel_width(&mut self, v: f32) {
+        self.cache.layout.overview_panel_width = v;
     }
-    pub fn sftp_panel_height(&self) -> f32 {
-        let h = self.cache.layout.sftp_panel_height;
-        if h <= 0.0 { default_sftp_height() } else { h }
+    pub fn overview_panel_height(&self) -> f32 {
+        let h = self.cache.layout.overview_panel_height;
+        if h <= 0.0 { default_overview_height() } else { h }
     }
-    pub fn set_sftp_panel_height(&mut self, v: f32) {
-        self.cache.layout.sftp_panel_height = v;
+    pub fn set_overview_panel_height(&mut self, v: f32) {
+        self.cache.layout.overview_panel_height = v;
+    }
+    /// 曲线跨度只允许六个预设值；老配置 / 脏值回落到 1 分钟。
+    pub fn chart_span_secs(&self) -> u32 {
+        const ALLOWED: [u32; 6] = [15, 60, 300, 1800, 3600, 21600];
+        let v = self.cache.appearance.chart_span_secs;
+        if ALLOWED.contains(&v) { v } else { 60 }
+    }
+    pub fn set_chart_span_secs(&mut self, secs: u32) {
+        const ALLOWED: [u32; 6] = [15, 60, 300, 1800, 3600, 21600];
+        if ALLOWED.contains(&secs) {
+            self.cache.appearance.chart_span_secs = secs;
+        }
     }
     /// Last window size in logical px; `(0,0)` means unset (use the default).
     pub fn window_size(&self) -> (f32, f32) {
@@ -179,12 +191,12 @@ impl ConfigStore {
     }
 
     /// Collapse the SFTP panel on startup (default false) (#78).
-    pub fn collapse_sftp_default(&self) -> bool {
-        self.cache.layout.collapse_sftp_default
+    pub fn collapse_overview_default(&self) -> bool {
+        self.cache.layout.collapse_overview_default
     }
 
-    pub fn set_collapse_sftp_default(&mut self, v: bool) {
-        self.cache.layout.collapse_sftp_default = v;
+    pub fn set_collapse_overview_default(&mut self, v: bool) {
+        self.cache.layout.collapse_overview_default = v;
     }
 
     /// Mirror SFTP uploads to other sessions while session-sync is on (default

@@ -99,7 +99,7 @@ where
 
 pub(crate) async fn open_auxiliary_channel(
     handle: &Handle<ClientHandler>,
-    command: &'static [u8],
+    command: &[u8],
     label: &'static str,
 ) -> Option<Channel<Msg>> {
     let operation = async {
@@ -148,12 +148,12 @@ pub(crate) type AuxOpenBatch = Vec<(AuxiliaryChannelKind, Option<Channel<Msg>>)>
 pub(crate) fn spawn_auxiliary_open(
     handle: Arc<Handle<ClientHandler>>,
     kind: AuxiliaryChannelKind,
-    command: &'static [u8],
+    command: Vec<u8>,
     label: &'static str,
     tx: tokio::sync::mpsc::UnboundedSender<AuxOpenBatch>,
 ) {
     tokio::spawn(async move {
-        let channel = open_auxiliary_channel(&handle, command, label).await;
+        let channel = open_auxiliary_channel(&handle, &command, label).await;
         let _ = tx.send(vec![(kind, channel)]);
     });
 }
@@ -165,8 +165,8 @@ pub(crate) fn spawn_auxiliary_open(
 /// 泵已退出时 `tx.send` 会失败，直接收手；已开出的那条通道随连接一起回收。
 pub(crate) fn spawn_monitoring_channels(
     handle: Arc<Handle<ClientHandler>>,
-    mon_cmd: &'static [u8],
-    proc_cmd: &'static [u8],
+    mon_cmd: Vec<u8>,
+    proc_cmd: Vec<u8>,
     tx: tokio::sync::mpsc::UnboundedSender<AuxOpenBatch>,
 ) {
     tokio::spawn(async move {
@@ -174,8 +174,8 @@ pub(crate) fn spawn_monitoring_channels(
         // 绝不出现在"开第二条"时已在轮询主 PTY 的情形（#264）。
         let mut batch = AuxOpenBatch::new();
         for (kind, command, label) in [
-            (AuxiliaryChannelKind::Resources, mon_cmd, "monitor"),
-            (AuxiliaryChannelKind::Processes, proc_cmd, "process monitor"),
+            (AuxiliaryChannelKind::Resources, mon_cmd.as_slice(), "monitor"),
+            (AuxiliaryChannelKind::Processes, proc_cmd.as_slice(), "process monitor"),
         ] {
             let channel = open_auxiliary_channel(&handle, command, label).await;
             batch.push((kind, channel));

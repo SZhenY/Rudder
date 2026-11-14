@@ -23,6 +23,9 @@ pub fn run() -> Result<()> {
 
     // 更新器网络配置（代理开关 / 代理地址）先落一份全局快照：检查更新在后台线程里跑，
     // 拿 store 不方便，直接读这里。证书链恒用系统根证书，不需要配置。
+    // 曲线窗口点数：启动期从配置读一次，设置页改动时再调 set_chart_span。
+    super::resource_ui::set_chart_span(config.chart_span_secs());
+
     update_net::set_current(update_net::NetSettings {
         enabled: config.update_proxy_enabled(),
         proxy: config.update_proxy().to_string(),
@@ -81,8 +84,6 @@ pub fn run() -> Result<()> {
     let pending_window_size_restore = ctx.pending_window_size_restore.clone();
     let tab_statuses = ctx.tab_statuses.clone();
     let tabs_model = ctx.tabs_model.clone();
-    let local_snap = ctx.local_snap.clone();
-    let local_net_hist = ctx.local_net_hist.clone();
 
     // 建窗（`window.run()` 内）之前先把配置里的尺寸与位置定下来：Slint 会把它们写进 winit
     // 的 WindowAttributes，窗口第一次出现就是最终几何，不再有"先大后小 + 位移"的跳变。
@@ -217,17 +218,36 @@ pub fn run() -> Result<()> {
     // --- Wire callbacks --------------------------------------------------
     session_callbacks::wire_session_callbacks(&window, &ctx);
 
+    // Docker 页：进入页面或点刷新时，用活动会话（或最近的存活会话）跑一次 `docker ps`。
+    {
+        let weak = window.as_weak();
+        let docker_handles = handles.clone();
+        let docker_runtime = ctx.runtime.clone();
+        let docker_tabs = tabs_model.clone();
+        let docker_statuses = tab_statuses.clone();
+        window.on_refresh_docker(move || {
+            if let Some(w) = weak.upgrade() {
+                super::docker::refresh(
+                    &w,
+                    &docker_runtime,
+                    &docker_handles,
+                    &docker_tabs,
+                    &docker_statuses,
+                );
+            }
+        });
+    }
+
     // Recompute the sidebar whenever the active tab changes (fired from Slint's
     // `changed active-tab-id`).
     {
         let weak = window.as_weak();
         let statuses = tab_statuses.clone();
-        let local = local_snap.clone();
-        let net = local_net_hist.clone();
         let monitor_handles = handles.clone();
         let monitor_store = store.clone();
         let monitor_tab = Rc::new(Cell::new(String::new()));
         let monitor_all = Rc::new(Cell::new(false));
+        let sample_interval = Rc::new(Cell::new(2u32));
         let reclaim_bufs = bufs.clone();
         window.on_refresh_sidebar(move || {
             let Some(w) = weak.upgrade() else { return };
@@ -246,7 +266,17 @@ pub fn run() -> Result<()> {
                     monitor_tab.set(String::new());
                 }
             }
-            refresh_sidebar(&w, &statuses, &local, &net);
+            // 曲线跨度切到 15 秒时远端采样改成 1 s；变化时对所有活会话下发。
+            let span = monitor_store.borrow().chart_span_secs();
+            let interval = if span == 15 { 1 } else { 2 };
+            if sample_interval.replace(interval) != interval
+                && let Ok(handles) = monitor_handles.try_borrow()
+            {
+                for handle in handles.values() {
+                    handle.set_sample_interval(interval);
+                }
+            }
+            refresh_sidebar(&w, &statuses);
             // 所有「活动标签变化」都汇到这里：回收不可见标签的 span/emoji 模型。
             crate::app::terminal_ui::reclaim_offscreen_terminal_models(&w, &reclaim_bufs);
         });
@@ -403,16 +433,14 @@ pub fn run() -> Result<()> {
     {
         let weak = window.as_weak();
         let statuses = tab_statuses.clone();
-        let local = local_snap.clone();
-        let net = local_net_hist.clone();
         window.on_select_net_iface(move |iface: SharedString| {
             let Some(w) = weak.upgrade() else { return };
             let active = w.get_active_tab_id().to_string();
             if let Some(st) = statuses.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&active) {
                 st.selected_iface = iface.to_string();
-                st.net_hist = vec![0.0; NET_HISTORY_LEN]; // reset graph for new NIC
+                st.net_hist.clear(); // 下一拍 push_ring 按当前跨度用首值重建
             }
-            refresh_sidebar(&w, &statuses, &local, &net);
+            refresh_sidebar(&w, &statuses);
         });
     }
 
@@ -525,8 +553,6 @@ pub fn run() -> Result<()> {
     // and Restart Manager may issue more than one close request while replacing
     // the executable (#267).
     let exit_confirmed = Rc::new(Cell::new(false));
-
-    spawn_system_sampler(&window, &tab_statuses, &local_snap, &local_net_hist, &activity);
 
     // OS file drag-and-drop → upload to the active session's SFTP directory,
     // but only when the file is dropped over the file-list area.

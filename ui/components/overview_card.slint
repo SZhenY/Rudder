@@ -1,0 +1,55 @@
+//! overview 页的统一卡片外壳：标题行 + 内容插槽。
+//!
+//! 卡片本身**不吸收**布局富余高度（`vertical-stretch: 0`），高度由内容决定 ——
+//! 否则富余会被「均分兜底」塞给标题行，标题上下出现大块空白。
+//!
+//! 后续卡片拖拽排序时，只需在 `OverviewView` 里把固定实例换成按 id 渲染的
+//! `for`，卡片内部不需要改。
+
+import { Theme } from "../theme.slint";
+import { IconText } from "./text.slint";
+
+export component OverviewCard inherits Rectangle {
+    in property <string> title;
+    in property <string> title-icon;
+    /// 标题右侧的当前值；空串不占位。
+    in property <string> value;
+
+    vertical-stretch: 0;
+    border-radius: Theme.radius-md;
+    background: Theme.bg-elevated;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 4px;
+
+        HorizontalLayout {
+            spacing: 4px;
+            IconText {
+                text: root.title-icon;
+                color: Theme.text-muted;
+                font-size: Theme.fs-xs;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.title;
+                color: Theme.text-primary;
+                font-size: Theme.fs-sm;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            if root.value != "" : Text {
+                text: root.value;
+                color: Theme.text-secondary;
+                font-size: Theme.fs-xs;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+
+        @children
+    }
+}

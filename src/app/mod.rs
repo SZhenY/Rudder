@@ -58,8 +58,7 @@ use crate::i18n::t;
 // Dependency versions baked in by build.rs → $OUT_DIR/deps.rs.
 include!(concat!(env!("OUT_DIR"), "/deps.rs"));
 use crate::resource::system::{format_bytes_per_sec, format_mem};
-use crate::resource::{LocalSnap, NetHist, TabStatus, TabStatuses};
-use crate::resource::SystemSnapshot;
+use crate::resource::{TabStatus, TabStatuses};
 use crate::session::{ConnectCtx, PendingCred, PendingHostKey, PendingMfa};
 use crate::sftp::{SftpHandles, SftpLastCwd, spawn_sftp};
 use crate::ssh::{
@@ -105,6 +104,8 @@ mod sftp_callbacks;
 mod sftp_ui;
 #[path = "impls/sidebar.rs"]
 mod sidebar;
+#[path = "impls/docker.rs"]
+mod docker;
 #[path = "impls/tab_callbacks.rs"]
 mod tab_callbacks;
 #[path = "impls/tab_callbacks_navigation.rs"]
@@ -140,8 +141,6 @@ mod fonts_ui;
 mod updater;
 #[path = "impls/update_net.rs"]
 mod update_net;
-#[path = "impls/sampler.rs"]
-mod sampler;
 #[path = "impls/mem.rs"]
 mod mem;
 #[path = "impls/settings/mod.rs"]
@@ -158,7 +157,6 @@ mod window_chrome;
 #[path = "impls/contract_sources.rs"]
 mod contract_sources;
 use window_chrome::wire_window_chrome;
-use sampler::spawn_system_sampler;
 use updater::wire_update_check;
 pub(crate) use fonts_ui::{FontEntry, font_choices, resolve_ui_font_family, term_font_covers_cjk};
 pub(crate) use pane_layout::{

@@ -137,6 +137,8 @@ async fn run_local(
 
     while let Some(cmd) = commands.recv().await {
         match cmd {
+            // 本地 / 串口会话没有远端监控通道，忽略采样周期切换。
+            SessionCommand::SetSampleInterval(_) => {}
             SessionCommand::RawInput(bytes) => {
                 tracing::debug!("local pty write len={} bytes", bytes.len());
                 let mut guard = writer.lock().unwrap_or_else(|e| e.into_inner());

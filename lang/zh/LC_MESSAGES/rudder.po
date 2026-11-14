@@ -761,3 +761,48 @@ msgstr "规划中"
 
 msgid "No package for this platform"
 msgstr "本平台暂无安装包"
+
+msgid "CPU trend"
+msgstr "CPU 趋势"
+
+msgid "Connection"
+msgstr "连接"
+
+msgid "Kernel"
+msgstr "内核"
+
+msgid "Uptime"
+msgstr "运行时间"
+
+msgid "Load"
+msgstr "负载"
+
+msgid "Network"
+msgstr "网络"
+
+msgid "Disk"
+msgstr "磁盘"
+
+msgid "Resources"
+msgstr "资源"
+
+msgid "Retry"
+msgstr "重试"
+
+msgid "Connect a host on the left first"
+msgstr "请先在左侧连接一个主机"
+
+msgid "The session is disconnected"
+msgstr "该会话已断开"
+
+msgid "Loading containers…"
+msgstr "正在读取容器…"
+
+msgid "No containers on this host"
+msgstr "该主机上没有容器"
+
+msgid "Reset to defaults"
+msgstr "还原本页默认"
+
+msgid "Confirm reset?"
+msgstr "确认还原？"

@@ -26,8 +26,6 @@ pub(crate) enum McpError {
     ConsentTimeout,
     /// 用户撤销了本次会话的授权。
     Revoked,
-    /// 内部故障（采样线程崩了之类），不该让调用方按"用法错误"处理。
-    Internal(String),
 }
 
 impl McpError {
@@ -43,7 +41,6 @@ impl McpError {
             Self::TimedOut => "timeout",
             Self::ConsentTimeout => "consent_timeout",
             Self::Revoked => "revoked",
-            Self::Internal(_) => "internal",
         }
     }
 
@@ -59,7 +56,6 @@ impl McpError {
             Self::TimedOut => "the tool call exceeded its time budget".to_string(),
             Self::ConsentTimeout => "no answer from the Rudder window in time".to_string(),
             Self::Revoked => "the user revoked this session".to_string(),
-            Self::Internal(message) => message.clone(),
         }
     }
 }

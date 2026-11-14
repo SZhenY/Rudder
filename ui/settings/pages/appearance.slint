@@ -26,6 +26,8 @@ export component AppearancePage inherits VerticalLayout {
     in-out property <string> mount-filter;
     in-out property <string> renderer-mode;
     in-out property <int> ui-font-index;
+    in-out property <int> chart-span-index;
+    callback set-chart-span(int);
     in property <[string]> ui-fonts;
     in property <float> ui-scale;
     in-out property <float> wallpaper-overlay;
@@ -202,6 +204,28 @@ export component AppearancePage inherits VerticalLayout {
         }
 
     }
+    SettingsSection {
+        section-id: "appearance.chart-span";
+        lang-en: root.lang-en;
+        title-zh: "曲线时间范围";
+        title-en: "CURVE TIME SPAN";
+        title-height: 24px;
+        SettingRow {
+            label: root.lang-en ? "Curve time span" : "曲线时间范围";
+            desc: root.lang-en
+                ? "How much history the CPU and network charts keep. The 15-second window samples once per second."
+                : "CPU 与网络曲线保留多久的历史。15 秒窗口每秒采样一次。";
+            ComboBox {
+                width: 176px;
+                model: root.lang-en
+                    ? ["15 seconds", "1 minute", "5 minutes", "30 minutes", "1 hour", "6 hours"]
+                    : ["15 秒", "1 分钟", "5 分钟", "30 分钟", "1 小时", "6 小时"];
+                current-index <=> root.chart-span-index;
+                selected(v) => { root.set-chart-span(root.chart-span-index); }
+            }
+        }
+    }
+
     SettingsSection {
         section-id: "appearance.ui-font";
         lang-en: root.lang-en;

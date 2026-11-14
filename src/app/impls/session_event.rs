@@ -6,8 +6,6 @@ pub(crate) struct SessionResources<'a> {
     pub(crate) bufs: &'a TermBuffers,
     pub(crate) gates: &'a RenderGates,
     pub(crate) statuses: &'a TabStatuses,
-    pub(crate) local: &'a LocalSnap,
-    pub(crate) local_net_hist: &'a NetHist,
 }
 
 #[path = "session_event_dispatch.rs"] mod session_event_dispatch;

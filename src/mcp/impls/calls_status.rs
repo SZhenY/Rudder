@@ -77,80 +77,14 @@ pub(crate) fn list_tabs(state: &SharedState) -> Value {
     json!({ "count": tabs.len(), "tabs": tabs })
 }
 
-/// 本机（运行 Rudder 的这台机器）的资源快照，不需要 `tab_id`。
+/// 本机资源快照。
 ///
-/// 快照在 2 秒内就直接用 UI 采样器的结果（零成本）；否则用 MCP 自己持有的采样器现采。
-/// 不能只读 `local_snap`：窗口隐藏时采样会整拍跳过（`sampler.rs`），
-/// 读到的可能是几分钟前的数字。
-pub(crate) async fn host_info(state: &SharedState) -> Result<Value, McpError> {
-    let fresh = {
-        let snap = state
-            .app
-            .local_snap
-            .lock()
-            .unwrap_or_else(|err| err.into_inner())
-            .clone();
-        snap.sampled_at
-            .map(|at| at.elapsed() < std::time::Duration::from_secs(2))
-            .unwrap_or(false)
-            .then_some(snap)
-    };
-    let (snapshot, source) = match fresh {
-        Some(snapshot) => (snapshot, "snapshot"),
-        None => (sample_local(state).await?, "on_demand"),
-    };
-    Ok(json!({
-        "scope": "local",
-        "source": source,
-        "sampled_ms_ago": snapshot.sampled_at.map(|at| at.elapsed().as_millis() as u64),
-        "cpu_percent": snapshot.cpu_percent,
-        "memory": {
-            "used_mib": snapshot.mem_used_mib,
-            "total_mib": snapshot.mem_total_mib,
-            "percent": snapshot.mem_percent,
-        },
-        "swap": {
-            "used_mib": snapshot.swap_used_mib,
-            "total_mib": snapshot.swap_total_mib,
-            "percent": snapshot.swap_percent,
-        },
-        "network": {
-            "rx_bytes_per_sec": snapshot.net_rx_per_sec,
-            "tx_bytes_per_sec": snapshot.net_tx_per_sec,
-        },
-        "filesystems": snapshot
-            .disks
-            .iter()
-            .map(|(mount, available, total)| json!({
-                "mount": mount,
-                "available_bytes": available,
-                "total_bytes": total,
-            }))
-            .collect::<Vec<_>>(),
-    }))
-}
-
-/// 现场采一次。
-///
-/// 放 `spawn_blocking`：磁盘枚举在 macOS 上约 27 ms（见 `DISK_REFRESH_EVERY` 的注释），
-/// 占着 tokio worker 会拖慢同一 runtime 上的其它请求。
-pub(crate) async fn sample_local(
-    state: &SharedState,
-) -> Result<crate::resource::SystemSnapshot, McpError> {
-    let sampler = state.local_sampler.clone();
-    tokio::task::spawn_blocking(move || {
-        let mut guard = sampler.lock().unwrap_or_else(|err| err.into_inner());
-        let first = guard.is_none();
-        if first {
-            *guard = Some(crate::resource::SystemSampler::new());
-            // 新建的 System 第一次 `refresh_cpu_usage` 没有基线，CPU 必为 0 —— 等一拍再采。
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
-        guard.as_mut().map(crate::resource::SystemSampler::sample)
-    })
-    .await
-    .map_err(|err| McpError::Internal(format!("local sampler failed: {err}")))?
-    .ok_or_else(|| McpError::Internal("local sampler unavailable".to_string()))
+/// 本地采集已随 overview 改造移除：overview 只展示远程主机数据，本机指标不再采样。
+/// 工具保留（避免破坏现有 MCP 客户端），调用时返回明确错误。
+pub(crate) async fn host_info(_state: &SharedState) -> Result<Value, McpError> {
+    Err(McpError::Invalid(
+        "local sampling was removed; use get_tab_status with a remote tab_id".to_string(),
+    ))
 }
 
 /// 结束远端进程。
@@ -201,53 +135,6 @@ pub(crate) async fn kill_process(state: &SharedState, args: &Value) -> Result<Va
 
 pub(crate) async fn tab_status(state: &SharedState, args: &Value) -> Result<Value, McpError> {
     let tab_id = str_arg(args, "tab_id")?;
-    let is_local = {
-        let statuses = state
-            .app
-            .tab_statuses
-            .lock()
-            .unwrap_or_else(|err| err.into_inner());
-        match statuses.get(&tab_id) {
-            Some(status) => status.is_local,
-            None => return Err(McpError::Invalid(format!("unknown tab_id: {tab_id}"))),
-        }
-    };
-
-    // 本机会话没有远端样本：直接给本机快照，不折腾远端监控。
-    if is_local {
-        let local = state
-            .app
-            .local_snap
-            .lock()
-            .unwrap_or_else(|err| err.into_inner())
-            .clone();
-        let mut value = status_json(state, &tab_id);
-        value["local"] = json!({
-            "cpu_percent": local.cpu_percent,
-            "mem_percent": local.mem_percent,
-            "mem_used_mib": local.mem_used_mib,
-            "mem_total_mib": local.mem_total_mib,
-            "swap_percent": local.swap_percent,
-            "swap_used_mib": local.swap_used_mib,
-            "swap_total_mib": local.swap_total_mib,
-            "net_rx_per_sec": local.net_rx_per_sec,
-            "net_tx_per_sec": local.net_tx_per_sec,
-            // 本机磁盘之前被整段丢掉，其实快照里一直有。
-            "disks": local
-                .disks
-                .iter()
-                .map(|(mount, avail, total)| {
-                    json!({ "mount": mount, "avail": avail, "total": total })
-                })
-                .collect::<Vec<_>>(),
-        });
-        // 与远端共用同一套陈旧判定：采样器在窗口隐藏时整拍跳过。
-        let age_ms = local.sampled_at.map(|at| at.elapsed().as_millis() as u64);
-        value["last_sample_ms_ago"] = json!(age_ms);
-        value["stale"] = json!(age_ms.map(|ms| ms > 5_000).unwrap_or(true));
-        return Ok(value);
-    }
-
     let mut value = status_json(state, &tab_id);
     // `get_tab_status` 是只读工具：不再临时打开远端采样（那会写会话运行态，
     // 且恢复判断依赖已删除的侧栏折叠状态，可能永久留在开启）。数据陈旧就如实标记。

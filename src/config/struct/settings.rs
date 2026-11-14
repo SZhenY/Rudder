@@ -116,6 +116,8 @@ pub struct AppearanceSettings {
     /// 激进内存回收：更早归还空闲堆页、清可重建缓存，并缩短工作集裁剪门槛。
     /// 启动期读一次，重启生效。
     pub aggressive_memory_reclaim: bool,
+    /// overview 曲线的时间跨度（秒）：15 / 60 / 300 / 1800 / 3600 / 21600。
+    pub chart_span_secs: u32,
 }
 
 impl Default for AppearanceSettings {
@@ -134,6 +136,7 @@ impl Default for AppearanceSettings {
             mount_filter: String::new(),
             animations_disabled: false,
             aggressive_memory_reclaim: false,
+            chart_span_secs: 60,
         }
     }
 }
@@ -145,14 +148,19 @@ impl Default for AppearanceSettings {
 #[serde(default)]
 pub struct LayoutSettings {
     pub collapse_sidebar_default: bool,
-    pub collapse_sftp_default: bool,
+    /// 旧键名 `collapse_sftp_default`：面板已更名 overview，保留别名读旧配置。
+    #[serde(alias = "collapse_sftp_default")]
+    pub collapse_overview_default: bool,
     pub quick_commands_as_sidebar: bool,
     pub hide_cmd_bar: bool,
     pub zen_mode: bool,
     /// 上次的导航条折叠态；None = 回退到 `collapse_sidebar_default`。
     pub sidebar_collapsed: Option<bool>,
-    pub sftp_panel_width: f32,
-    pub sftp_panel_height: f32,
+    /// 旧键名 `sftp_panel_width` / `sftp_panel_height`，保留别名读旧配置。
+    #[serde(alias = "sftp_panel_width")]
+    pub overview_panel_width: f32,
+    #[serde(alias = "sftp_panel_height")]
+    pub overview_panel_height: f32,
     pub quick_panel_open: bool,
     pub quick_panel_collapsed: bool,
     pub quick_panel_width: f32,
@@ -166,13 +174,13 @@ impl Default for LayoutSettings {
     fn default() -> Self {
         Self {
             collapse_sidebar_default: false,
-            collapse_sftp_default: false,
+            collapse_overview_default: false,
             quick_commands_as_sidebar: false,
             hide_cmd_bar: false,
             zen_mode: false,
             sidebar_collapsed: None,
-            sftp_panel_width: 380.0,
-            sftp_panel_height: 220.0,
+            overview_panel_width: 380.0,
+            overview_panel_height: 220.0,
             quick_panel_open: false,
             quick_panel_collapsed: false,
             quick_panel_width: 260.0,

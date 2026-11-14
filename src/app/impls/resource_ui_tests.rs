@@ -73,23 +73,24 @@ mod tests {
 
     #[test]
     fn push_ring_shifts_left_and_appends() {
-        let mut buf: Vec<f32> = (0..NET_HISTORY_LEN).map(|i| i as f32).collect();
+        let mut buf: Vec<f32> = (0..chart_points()).map(|i| i as f32).collect();
         push_ring(&mut buf, 42.0);
-        assert_eq!(buf.len(), NET_HISTORY_LEN, "长度恒定");
+        assert_eq!(buf.len(), chart_points(), "长度恒定");
         assert_eq!(buf[0], 1.0, "最旧的一个（0.0）被挤掉");
         assert_eq!(*buf.last().unwrap(), 42.0, "新值进队尾");
     }
 
-    /// 长度不对时**整体重建为 0**（而不是补零到能放下）—— 换网卡 / 新会话都靠这条兜底。
+    /// 长度不对时**整体重建并用首值填满** —— 换网卡 / 新会话靠这条兜底；
+    /// 填首值而不是 0，避免 `smooth_path` 重采样后曲线前半段是假零。
     #[test]
     fn push_ring_reinitializes_wrong_sized_input() {
         let mut buf = vec![9.0; 3];
         push_ring(&mut buf, 1.5);
-        assert_eq!(buf.len(), NET_HISTORY_LEN);
-        assert_eq!(buf[NET_HISTORY_LEN - 1], 1.5);
+        assert_eq!(buf.len(), chart_points());
+        assert_eq!(buf[chart_points() - 1], 1.5);
         assert!(
-            buf[..NET_HISTORY_LEN - 1].iter().all(|v| *v == 0.0),
-            "旧值不能残留"
+            buf[..chart_points() - 1].iter().all(|v| *v == 1.5),
+            "旧值不能残留，且用首值回填"
         );
     }
 
@@ -306,5 +307,27 @@ mod tests {
             ),
             ("a", "b", "c", "d", "e")
         );
+    }
+
+    #[test]
+    fn smooth_path_is_empty_for_empty_input() {
+        assert!(smooth_path(&[], 60).is_empty());
+    }
+
+    #[test]
+    fn smooth_path_uses_quadratic_segments_and_closes_on_the_baseline() {
+        let p = smooth_path(&[0.5; 60], 60);
+        assert!(p.starts_with("M "), "{p}");
+        assert!(p.contains(" Q "), "应当有二次贝塞尔段：{p}");
+        assert!(p.ends_with("L 100.00 100.00 L 0.00 100.00 Z"), "{p}");
+        // 常量 0.5 → y = 50
+        assert!(p.contains("50.00"), "{p}");
+    }
+
+    #[test]
+    fn smooth_path_handles_a_single_sample() {
+        let p = smooth_path(&[1.0], 60);
+        assert!(p.starts_with("M "), "{p}");
+        assert!(p.ends_with("Z"), "{p}");
     }
 }

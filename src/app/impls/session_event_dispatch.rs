@@ -10,8 +10,6 @@ pub(crate) fn apply_session_event_to_window<'a>(
         bufs,
         gates,
         statuses,
-        local,
-        local_net_hist,
     } = res;
     let tabs_rc = win.get_tabs();
     let terminals_rc = win.get_terminals();
@@ -103,7 +101,7 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 st.state = 1;
             }
             if win.get_active_tab_id().as_str() == tab_id {
-                refresh_sidebar(win, statuses, local, local_net_hist);
+                refresh_sidebar(win, statuses);
             }
         }
         SessionEvent::Closed(reason) => {
@@ -123,8 +121,6 @@ pub(crate) fn apply_session_event_to_window<'a>(
                     bufs,
                     gates,
                     statuses,
-                    local,
-                    local_net_hist,
                 },
             );
             update_tab(&|t| t.connected = false);
@@ -146,7 +142,7 @@ pub(crate) fn apply_session_event_to_window<'a>(
             // 此时清掉是最不该做的事。释放只发生在用户**主动关标签页**时
             // （`tab_callbacks.rs` 的 pane-tab-closed）。
             if win.get_active_tab_id().as_str() == tab_id {
-                refresh_sidebar(win, statuses, local, local_net_hist);
+                refresh_sidebar(win, statuses);
             }
         }
         SessionEvent::ResourceStats {
@@ -180,9 +176,18 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 // Append the selected interface's total rate to its sparkline.
                 let (_, rx, tx) = selected_iface(st);
                 push_ring(&mut st.net_hist, (rx + tx) as f32);
+                // CPU 趋势：先做 EMA(α=0.25) 再入环 —— 1 Hz 的原始百分比抖动太大，
+                // 直接画线会呈锯齿；首拍没有历史时取原值。
+                let raw_cpu = cpu_percent * 100.0;
+                let ema = match st.cpu_ema {
+                    Some(prev) => prev + (raw_cpu - prev) * 0.25,
+                    None => raw_cpu,
+                };
+                st.cpu_ema = Some(ema);
+                push_ring(&mut st.cpu_hist, ema);
             }
             if win.get_active_tab_id().as_str() == tab_id {
-                refresh_sidebar(win, statuses, local, local_net_hist);
+                refresh_sidebar(win, statuses);
             }
         }
         SessionEvent::ProcessStats {
@@ -198,7 +203,7 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 st.procs = procs;
             }
             if win.get_active_tab_id().as_str() == tab_id {
-                refresh_sidebar(win, statuses, local, local_net_hist);
+                refresh_sidebar(win, statuses);
             }
         }
         // --- SFTP events ---------------------------------------------------
@@ -300,8 +305,6 @@ pub(crate) fn apply_session_event_to_window<'a>(
                         bufs,
                         gates,
                         statuses,
-                        local,
-                        local_net_hist,
                     },
                 );
                 update_terminal(&|t| t.sftp_status = error.clone().into());

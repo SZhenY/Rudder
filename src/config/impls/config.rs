@@ -646,10 +646,10 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     cfg.defaults_rev = DEFAULTS_REV;
     true
 }
-fn default_sftp_width() -> f32 {
+fn default_overview_width() -> f32 {
     380.0
 }
-fn default_sftp_height() -> f32 {
+fn default_overview_height() -> f32 {
     220.0
 }
 

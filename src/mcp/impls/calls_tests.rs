@@ -54,59 +54,13 @@ mod tests {
             AppHandles {
                 bufs: Arc::new(Mutex::new(bufs)),
                 tab_statuses: Arc::new(Mutex::new(HashMap::new())),
-                local_snap: Arc::new(Mutex::new(Default::default())),
                 sftp_handles: Arc::new(Mutex::new(HashMap::new())),
             },
             tokio::runtime::Handle::current(),
         ))
     }
 
-    /// 快照新鲜时直接复用 UI 采样器的结果，不额外采样。
-    #[tokio::test]
-    async fn host_info_reuses_a_fresh_snapshot() {
-        let state = state_with_buffer();
-        {
-            let mut snap = state
-                .app
-                .local_snap
-                .lock()
-                .unwrap_or_else(|err| err.into_inner());
-            snap.cpu_percent = 0.25;
-            snap.mem_total_mib = 16384;
-            snap.sampled_at = Some(std::time::Instant::now());
-        }
-        let value = super::super::call(&state, "get_host_info", &json!({}))
-            .await
-            .unwrap();
-        assert_eq!(value["scope"], "local");
-        assert_eq!(value["source"], "snapshot");
-        assert_eq!(value["memory"]["total_mib"], 16384);
-    }
-
     /// 快照陈旧（窗口隐藏时采样器会整拍跳过）→ 现场采一次，数字必须是真的。
-    #[tokio::test]
-    async fn host_info_samples_on_demand_when_the_snapshot_is_stale() {
-        let state = state_with_buffer();
-        {
-            let mut snap = state
-                .app
-                .local_snap
-                .lock()
-                .unwrap_or_else(|err| err.into_inner());
-            snap.sampled_at = None;
-        }
-        // 首次采样要预热 200ms（新建的 System 没有 CPU 基线）。
-        let value = super::super::call(&state, "get_host_info", &json!({}))
-            .await
-            .unwrap();
-        assert_eq!(value["source"], "on_demand");
-        assert!(
-            value["memory"]["total_mib"].as_u64().unwrap_or(0) > 0,
-            "本机总内存不该是 0"
-        );
-        assert!(value["filesystems"].is_array());
-    }
-
     #[tokio::test]
     async fn read_terminal_returns_screen_text() {
         let state = state_with_buffer();

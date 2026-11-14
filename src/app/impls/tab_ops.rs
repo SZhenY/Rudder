@@ -107,10 +107,10 @@ pub(crate) fn open_session_tab(
     });
     // Each session keeps its own SFTP collapse state + sizes, seeded from the
     // global defaults so they no longer bleed across panes (#v0.5).
-    let (sftp_collapsed_default, sftp_h_default, sftp_w_default) = (
-        env.window.get_collapse_sftp_default(),
-        env.window.get_sftp_panel_height(),
-        env.window.get_sftp_panel_width(),
+    let (overview_collapsed_default, sftp_h_default, sftp_w_default) = (
+        env.window.get_collapse_overview_default(),
+        env.window.get_overview_panel_height(),
+        env.window.get_overview_panel_width(),
     );
     env.terminals_model.push(TerminalState {
         id: tab_id.clone().into(),
@@ -142,11 +142,11 @@ pub(crate) fn open_session_tab(
         sftp_selected_count: 0,
         sftp_sort_key: "".into(),
         sftp_sort_dir: 0,
-        sftp_available: has_sftp,
+        overview_available: has_sftp,
         tunnels: ModelRc::from(Rc::new(VecModel::<TunnelInfo>::default())),
-        sftp_collapsed: !has_sftp || sftp_collapsed_default,
-        sftp_panel_height: sftp_h_default,
-        sftp_panel_width: sftp_w_default,
+        overview_collapsed: !has_sftp || overview_collapsed_default,
+        overview_panel_height: sftp_h_default,
+        overview_panel_width: sftp_w_default,
     });
 
     // Create the alacritty-backed terminal for this tab (default 24×80; resized

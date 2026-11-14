@@ -9,6 +9,8 @@ pub enum SessionCommand {
     Resize(u32, u32),
     /// Start or pause periodic local/remote resource monitoring for this session.
     SetResourceMonitoring(bool),
+    /// 切换远端资源采样的间隔（秒）：15 秒窗口用 1 s，其余用 2 s。
+    SetSampleInterval(u32),
     /// Start a runtime-only SSH tunnel for this connected session (#206).
     AddTunnel {
         id: String,
@@ -183,6 +185,20 @@ pub struct SystemDetails {
     pub swap: Vec<(String, String)>,
     pub networks: Vec<(String, String, String, String, String)>,
     pub filesystems: Vec<(String, String, String, String, String)>,
+    /// 综合页头卡：结构化字段，避免按本地化标签从 `overview` 里反查。
+    pub host: HostCard,
+}
+
+/// 综合页头卡的主机标识，取自远端 `hostname` / `hostname -I` / `/etc/os-release` /
+/// `uname -r` / `uptime -p` / `/proc/loadavg`。
+#[derive(Debug, Clone, Default)]
+pub struct HostCard {
+    pub name: String,
+    pub ip: String,
+    pub os: String,
+    pub kernel: String,
+    pub uptime: String,
+    pub load: String,
 }
 
 /// One SSH tunnel row shown in the runtime tunnel panel (#206).
@@ -339,6 +355,12 @@ impl SessionHandle {
         let _ = self
             .commands
             .send(SessionCommand::SetResourceMonitoring(enabled));
+    }
+
+    pub fn set_sample_interval(&self, secs: u32) {
+        let _ = self
+            .commands
+            .send(SessionCommand::SetSampleInterval(secs.clamp(1, 10)));
     }
 
     pub fn add_tunnel(&self, id: String, forward: PortForward) {

@@ -101,9 +101,9 @@ pub(super) fn wire_seed_callbacks(window: &AppWindow, ctx: &AppContext) {
     // longer bleeds onto the rest) (#v0.5).
     {
         let terminals_model = terminals_model.clone();
-        window.on_set_pane_sftp_collapsed(move |tab_id: SharedString, v: bool| {
+        window.on_set_pane_overview_collapsed(move |tab_id: SharedString, v: bool| {
             let id = tab_id.to_string();
-            update_terminal_row(&terminals_model, &tab_id, |r| r.sftp_collapsed = v);
+            update_terminal_row(&terminals_model, &tab_id, |r| r.overview_collapsed = v);
             // 折叠 5 秒后断开；窗口内展开取消。
             if v {
                 crate::sftp::schedule_sftp_release(&id);
@@ -115,22 +115,22 @@ pub(super) fn wire_seed_callbacks(window: &AppWindow, ctx: &AppContext) {
     {
         let terminals_model = terminals_model.clone();
         let weak = window.as_weak();
-        window.on_set_pane_sftp_height(move |tab_id: SharedString, v: f32| {
-            update_terminal_row(&terminals_model, &tab_id, |r| r.sftp_panel_height = v);
+        window.on_set_pane_overview_height(move |tab_id: SharedString, v: f32| {
+            update_terminal_row(&terminals_model, &tab_id, |r| r.overview_panel_height = v);
             // Mirror to the global default so it persists (saved on close) and
             // seeds new sessions; other open tabs use their own field, unaffected.
             if let Some(w) = weak.upgrade() {
-                w.set_sftp_panel_height(v);
+                w.set_overview_panel_height(v);
             }
         });
     }
     {
         let terminals_model = terminals_model.clone();
         let weak = window.as_weak();
-        window.on_set_pane_sftp_width(move |tab_id: SharedString, v: f32| {
-            update_terminal_row(&terminals_model, &tab_id, |r| r.sftp_panel_width = v);
+        window.on_set_pane_overview_width(move |tab_id: SharedString, v: f32| {
+            update_terminal_row(&terminals_model, &tab_id, |r| r.overview_panel_width = v);
             if let Some(w) = weak.upgrade() {
-                w.set_sftp_panel_width(v);
+                w.set_overview_panel_width(v);
             }
         });
     }

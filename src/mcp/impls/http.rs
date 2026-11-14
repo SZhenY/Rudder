@@ -331,7 +331,6 @@ mod tests {
             AppHandles {
                 bufs: Arc::new(Mutex::new(HashMap::new())),
                 tab_statuses: Arc::new(Mutex::new(HashMap::new())),
-                local_snap: Arc::new(Mutex::new(Default::default())),
                 sftp_handles: Arc::new(Mutex::new(HashMap::new())),
             },
             tokio::runtime::Handle::current(),

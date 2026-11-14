@@ -1,10 +1,10 @@
 //! 运行状态页的**区块组件**：状态行、网络图、CPU/内存/交换、网络、磁盘。
 //!
 //! 这些组件都有完整的 `in property` / `callback` 接口，只通过参数与外界通信。
-//! 使用方：`resource_view.slint`（运行状态页）与 `sftp_panel.slint` 的页签面板。
+//! 使用方：`resource_view.slint`（运行状态页）与 `overview_panel.slint` 的页签面板。
 
 import { Theme, AnimationSettings } from "theme.slint";
-import { Sparkline } from "widgets.slint";
+import { TrendCurve } from "components/trend_curve.slint";
 import { IconText } from "components/text.slint";
 
 // One filesystem row for the disk-usage panel.
@@ -20,6 +20,8 @@ export component StatRow inherits HorizontalLayout {
     in property <string> label;
     in property <float> percent; // 0.0 .. 1.0
     in property <string> detail;
+    /// 条内文字：CPU 传百分比、内存/交换/磁盘传 used/total；空则回退百分比。
+    in property <string> value;
     in property <brush> bar-color: Theme.accent;
 
     // 条宽的目标值 + "这一次要不要动画"。
@@ -44,7 +46,7 @@ export component StatRow inherits HorizontalLayout {
         text: label;
         color: Theme.text-secondary;
         font-size: Theme.fs-sm;
-        width: 52px;          // fits English "Memory" as well as 中文 "内存"
+        width: 44px;          // fits English "Memory" as well as 中文 "内存"
         vertical-alignment: center;
         overflow: elide;
     }
@@ -54,7 +56,7 @@ export component StatRow inherits HorizontalLayout {
         background: Theme.bg-root;
         border-radius: 2px;
         horizontal-stretch: 2;
-        min-width: 60px;
+        min-width: 40px;
 
         Rectangle {
             x: 0;
@@ -74,7 +76,7 @@ export component StatRow inherits HorizontalLayout {
 
         Text {
             x: 6px;
-            text: Math.round(percent * 100) + "%";
+            text: root.value != "" ? root.value : Math.round(percent * 100) + "%";
             color: Theme.text-primary;
             font-size: Theme.fs-xs;
             vertical-alignment: center;
@@ -82,25 +84,16 @@ export component StatRow inherits HorizontalLayout {
         }
     }
 
-    // Used/total figure, right-aligned; reserve width so it never gets clipped.
-    Text {
-        text: detail;
-        color: Theme.text-muted;
-        font-size: Theme.fs-xs;
-        horizontal-stretch: 1;
-        min-width: 64px;
-        horizontal-alignment: right;
-        vertical-alignment: center;
-    }
 }
 
 // --- NetGraph --------------------------------------------------------------
 // One network throughput graph: a header row (↑ tx / ↓ rx, plus an optional
 // NIC selector dropdown) over an auto-scaled sparkline.
 export component NetGraph inherits VerticalLayout {
+    in property <length> chart-height: 48px;
     in property <string> up-text;
     in property <string> down-text;
-    in property <[float]> history;
+    in property <string> path;
     in property <bool> show-selector: false;
     in property <[string]> ifaces;
     in property <string> selected;
@@ -214,10 +207,10 @@ export component NetGraph inherits VerticalLayout {
         }
     }
 
-    Sparkline {
-        height: 48px;
-        values: root.history;
-        line-color: Theme.accent;
+    TrendCurve {
+        chart-height: root.chart-height;
+        commands: root.path;
+        tone: Theme.accent;
     }
 }
 
@@ -373,24 +366,21 @@ export component StatsBlock inherits VerticalLayout {
 
 // Dual network graph (active tab on top, local below).
 export component NetBlock inherits VerticalLayout {
+    in property <length> chart-height: 48px;
     in property <string> net-top-up;
     in property <string> net-top-down;
-    in property <[float]> net-top-history;
+    in property <string> net-top-path;
     in property <bool> net-show-selector;
     in property <[string]> net-ifaces;
     in property <string> net-selected;
-    in property <string> net-bot-up;
-    in property <string> net-bot-down;
-    in property <[float]> net-bot-history;
     callback select-net-iface(string);
     spacing: 6px;
     NetGraph {
-        up-text: root.net-top-up; down-text: root.net-top-down; history: root.net-top-history;
+        chart-height: root.chart-height;
+        up-text: root.net-top-up; down-text: root.net-top-down; path: root.net-top-path;
         show-selector: root.net-show-selector; ifaces: root.net-ifaces; selected: root.net-selected;
         iface-selected(i) => { root.select-net-iface(i); }
     }
-    Text { text: @tr("Local"); color: Theme.text-muted; font-size: Theme.fs-xs; }
-    NetGraph { up-text: root.net-bot-up; down-text: root.net-bot-down; history: root.net-bot-history; }
 }
 
 // Disk-usage list with a hover tooltip, self-contained.

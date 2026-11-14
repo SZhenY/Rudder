@@ -96,7 +96,7 @@ export component SettingsWindow inherits Window {
     in property <[AccentPreset]> accent-presets;
     in-out property <string> accent-hex:"";
     in property <string> accent-name:"";
-    in-out property <bool> collapse-sftp-default:false;
+    in-out property <bool> collapse-overview-default:false;
     in-out property <bool> collapse-sidebar-default:false;
     in-out property <bool> convert-eol:false;
     in property <string> current-wallpaper:"";
@@ -133,6 +133,8 @@ export component SettingsWindow inherits Window {
     in-out property <int> term-font-index:0;
     in property <[string]> term-fonts;
     in-out property <int> ui-font-index:0;
+    in-out property <int> chart-span-index:1;
+    callback set-chart-span(int);
     in property <[string]> ui-fonts;
     in-out property <bool> update-check-enabled:true;
     in property <string> update-check-status:"";
@@ -195,7 +197,7 @@ export component SettingsWindow inherits Window {
     callback save-webdav-settings(bool, string, string, string, string, bool);
     callback set-aggressive-memory-reclaim(bool);
     callback set-animations-enabled(bool);
-    callback set-collapse-sftp-default(bool);
+    callback set-collapse-overview-default(bool);
     callback set-collapse-sidebar-default(bool);
     callback set-convert-eol(bool);
     callback set-download-always-ask(bool);
@@ -313,6 +315,8 @@ export component SettingsWindow inherits Window {
                 term-font-index <=> term-font-index;
                 ui-fonts: ui-fonts;
                 ui-font-index <=> ui-font-index;
+                chart-span-index <=> chart-span-index;
+                set-chart-span(v) => { root.set-chart-span(v); }
                 term-font-size: Theme.term-font-size;
                 term-font-bold: Theme.term-font-bold;
                 term-cursor-style <=> term-cursor-style;
@@ -334,7 +338,7 @@ export component SettingsWindow inherits Window {
                 sftp-follow-cd <=> sftp-follow-cd;
                 collapse-sidebar-default <=> collapse-sidebar-default;
                 show-cmd-bar <=> show-cmd-bar;
-                collapse-sftp-default <=> collapse-sftp-default;
+                collapse-overview-default <=> collapse-overview-default;
                 sync-upload-enabled <=> sync-upload-enabled;
                 webdav-enabled <=> webdav-enabled;
                 webdav-url <=> webdav-url;
@@ -409,7 +413,7 @@ export component SettingsWindow inherits Window {
                 set-aggressive-memory-reclaim(v) => { root.set-aggressive-memory-reclaim(v); }
                 set-sftp-follow-cd(v) => { root.set-sftp-follow-cd(v); }
                 set-collapse-sidebar-default(v) => { root.set-collapse-sidebar-default(v); }
-                set-collapse-sftp-default(v) => { root.set-collapse-sftp-default(v); }
+                set-collapse-overview-default(v) => { root.set-collapse-overview-default(v); }
                 set-sync-upload-enabled(v) => { root.set-sync-upload-enabled(v); }
                 save-webdav-settings(enabled, url, username, password, remote-path, accept-invalid-certs) => {
                     root.save-webdav-settings(enabled, url, username, password, remote-path, accept-invalid-certs);

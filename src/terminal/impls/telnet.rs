@@ -200,6 +200,7 @@ async fn run_telnet(
                             "exec is unavailable for telnet sessions",
                         )));
                     }
+                    Some(SessionCommand::SetSampleInterval(_)) => {}
                     Some(SessionCommand::Close) | None => break,
                 }
             }

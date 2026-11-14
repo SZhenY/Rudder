@@ -89,7 +89,7 @@ pub(crate) fn release_gen() -> &'static Mutex<HashMap<String, u64>> {
 
 /// 一个标签页的"待启动 SFTP"：只有用户真的用文件面板时才发起第二条 SSH 连接。
 ///
-/// 展开面板（`collapse_sftp_default = true` 的会话）或手动刷新/导航时触发；
+/// 展开面板（`collapse_overview_default = true` 的会话）或手动刷新/导航时触发；
 /// 连接建立前到达的请求先记下路径，连上后立刻列该目录。
 /// 闲置 5 秒断开，再次展开自动重连。
 pub(crate) struct SftpLauncher {

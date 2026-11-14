@@ -10,13 +10,13 @@ import { ResetBar } from "../reset_bar.slint";
 
 export component LayoutPage inherits VerticalLayout {
     in-out property <bool> show-cmd-bar;
-    in-out property <bool> collapse-sftp-default;
+    in-out property <bool> collapse-overview-default;
     in-out property <bool> collapse-sidebar-default;
     in property <bool> lang-en;
     in-out property <bool> quick-commands-as-sidebar;
     callback reset-page(string);
     callback set-show-cmd-bar(bool);
-    callback set-collapse-sftp-default(bool);
+    callback set-collapse-overview-default(bool);
     callback set-collapse-sidebar-default(bool);
     callback set-quick-commands-as-sidebar(bool);
 
@@ -41,8 +41,8 @@ export component LayoutPage inherits VerticalLayout {
             desc: root.lang-en
                 ? "Takes effect on next launch; handy on low-spec jump hosts."
                 : "下次启动生效;低配跳板机上可减少常驻面板开销。";
-            checked <=> root.collapse-sftp-default;
-            toggled(v) => { root.set-collapse-sftp-default(v); }
+            checked <=> root.collapse-overview-default;
+            toggled(v) => { root.set-collapse-overview-default(v); }
         }
         SettingSwitch {
             label: root.lang-en ? "Quick commands as a sidebar" : "快捷命令作为侧栏";

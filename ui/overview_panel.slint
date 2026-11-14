@@ -1,7 +1,7 @@
 ﻿import { Theme } from "theme.slint";
 import { TabInfo } from "tabs.slint";
 import { VDivider } from "components/surfaces.slint";
-import { ResourceView } from "resource_view.slint";
+import { OverviewView } from "overview_view.slint";
 import { DiskInfo } from "sidebar_blocks.slint";
 import { SftpToolbar } from "sftp_panel/toolbar.slint";
 import { SftpTree, SftpTreeNode } from "sftp_panel/tree.slint";
@@ -13,10 +13,10 @@ export { TunnelInfo }
 
 
 // ---------------------------------------------------------------------------
-// SftpPanel — left directory tree + right file listing
+// OverviewPanel — left directory tree + right file listing
 // ---------------------------------------------------------------------------
 
-export component SftpPanel inherits Rectangle {
+export component OverviewPanel inherits Rectangle {
     // --- Properties --------------------------------------------------------
     in property <string>  current-path: "/";
     in property <[SftpEntry]>    entries;
@@ -46,14 +46,18 @@ export component SftpPanel inherits Rectangle {
     in property <string> swap-detail;
     in property <string> net-top-up;
     in property <string> net-top-down;
-    in property <[float]> net-top-history;
-    in property <string> net-bot-up;
-    in property <string> net-bot-down;
-    in property <[float]> net-bot-history;
+    in property <string> net-top-path;
     in property <[string]> net-ifaces;
     in property <string> net-selected;
     in property <bool> net-show-selector;
     in property <[DiskInfo]> disks;
+    in property <string> cpu-path;
+    in property <string> host-name;
+    in property <string> host-ip;
+    in property <string> host-os;
+    in property <string> host-kernel;
+    in property <string> host-uptime;
+    in property <string> host-load;
     in property <bool> system-info-available;
     in property <bool> proc-available;
     in property <bool> collapsed: false;   // when true only the toolbar shows
@@ -76,7 +80,7 @@ export component SftpPanel inherits Rectangle {
             && root.list-w - 36px - 76px - 120px - 56px - 92px > root.name-min);
     property <int> selected-row: -1;       // clicked/highlighted file-list row (#70)
     in property <int> selected-count;      // number of checked entries (#100)
-    in-out property <string> panel-mode: "status";
+    in-out property <string> panel-mode: "overview";
     // The full toolbar needs roughly 480px once a useful path field is included.
     // Below that, switch deliberately to a two-row compact layout instead of
     // allowing fixed-size controls to squeeze the path and each other (#285).
@@ -151,7 +155,7 @@ export component SftpPanel inherits Rectangle {
         }
 
         // --- Main area: tree (left) + file list (right) --------------------
-        if root.panel-mode == "files" : HorizontalLayout {
+        if root.panel-mode == "sftp" : HorizontalLayout {
             vertical-stretch: 1;
             spacing: 0;
 
@@ -201,7 +205,7 @@ export component SftpPanel inherits Rectangle {
             }
         }
 
-        if root.panel-mode == "status" : ResourceView {
+        if root.panel-mode == "overview" : OverviewView {
             vertical-stretch: 1;
             connection-state: root.connection-state;
             conn-host: root.conn-host;
@@ -214,14 +218,18 @@ export component SftpPanel inherits Rectangle {
             swap-detail: root.swap-detail;
             net-top-up: root.net-top-up;
             net-top-down: root.net-top-down;
-            net-top-history: root.net-top-history;
-            net-bot-up: root.net-bot-up;
-            net-bot-down: root.net-bot-down;
-            net-bot-history: root.net-bot-history;
+            net-top-path: root.net-top-path;
             net-ifaces: root.net-ifaces;
             net-selected: root.net-selected;
             net-show-selector: root.net-show-selector;
             disks: root.disks;
+            cpu-path: root.cpu-path;
+            host-name: root.host-name;
+            host-ip: root.host-ip;
+            host-os: root.host-os;
+            host-kernel: root.host-kernel;
+            host-uptime: root.host-uptime;
+            host-load: root.host-load;
             system-info-available: root.system-info-available;
             proc-available: root.proc-available;
             select-net-iface(i) => { root.select-net-iface(i); }
@@ -244,7 +252,7 @@ export component SftpPanel inherits Rectangle {
 
         // --- Status bar (full width) --------------------------------------
         // 状态页与隧道页没有文件操作可报，整条让给内容区（用 if 而非 visible，避免布局仍留 18px）。
-        if root.panel-mode == "files" : Rectangle {
+        if root.panel-mode == "sftp" : Rectangle {
             height: 18px;
             background: Theme.bg-panel-alt;
             Text {

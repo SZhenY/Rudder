@@ -190,6 +190,7 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     // 字体 / 壁纸 / 渲染器（其余可能被 Rust 侧规范化或回落的值）
     sw.set_term_font_index(m.get_term_font_index());
     sw.set_ui_font_index(m.get_ui_font_index());
+    sw.set_chart_span_index(m.get_chart_span_index());
     sw.set_current_wallpaper(m.get_current_wallpaper());
     sw.set_custom_wallpaper_name(m.get_custom_wallpaper_name());
     sw.set_wallpaper_index(m.get_wallpaper_index());
@@ -206,7 +207,7 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_osc52_clipboard(m.get_osc52_clipboard());
     sw.set_json_format_output(m.get_json_format_output());
     sw.set_collapse_sidebar_default(m.get_collapse_sidebar_default());
-    sw.set_collapse_sftp_default(m.get_collapse_sftp_default());
+    sw.set_collapse_overview_default(m.get_collapse_overview_default());
     sw.set_show_cmd_bar(m.get_show_cmd_bar());
     sw.set_sftp_follow_cd(m.get_sftp_follow_cd());
     sw.set_download_always_ask(m.get_download_always_ask());
@@ -339,7 +340,7 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_accent_presets(m.get_accent_presets());
     sw.set_accent_hex(m.get_accent_hex());
     sw.set_accent_name(m.get_accent_name());
-    sw.set_collapse_sftp_default(m.get_collapse_sftp_default());
+    sw.set_collapse_overview_default(m.get_collapse_overview_default());
     sw.set_collapse_sidebar_default(m.get_collapse_sidebar_default());
     sw.set_convert_eol(m.get_convert_eol());
     sw.set_current_wallpaper(m.get_current_wallpaper());
@@ -374,6 +375,7 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_term_font_index(m.get_term_font_index());
     sw.set_term_fonts(m.get_term_fonts());
     sw.set_ui_font_index(m.get_ui_font_index());
+    sw.set_chart_span_index(m.get_chart_span_index());
     sw.set_ui_fonts(m.get_ui_fonts());
     sw.set_update_check_enabled(m.get_update_check_enabled());
     sw.set_update_check_status(m.get_update_check_status());
@@ -454,7 +456,7 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_reset_page => invoke_reset_page, (a0));
     forward!(sw, m, s, on_save_webdav_settings => invoke_save_webdav_settings, (a0, a1, a2, a3, a4, a5));
     forward!(sw, m, s, on_set_animations_enabled => invoke_set_animations_enabled, (a0));
-    forward!(sw, m, s, on_set_collapse_sftp_default => invoke_set_collapse_sftp_default, (a0));
+    forward!(sw, m, s, on_set_collapse_overview_default => invoke_set_collapse_overview_default, (a0));
     forward!(sw, m, s, on_set_collapse_sidebar_default => invoke_set_collapse_sidebar_default, (a0));
     forward!(sw, m, s, on_set_convert_eol => invoke_set_convert_eol, (a0));
     forward!(sw, m, s, on_set_download_always_ask => invoke_set_download_always_ask, (a0));
@@ -481,6 +483,7 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_term_font_bold => invoke_set_term_font_bold, (a0));
     forward!(sw, m, s, on_set_term_font_size => invoke_set_term_font_size, (a0));
     forward!(sw, m, s, on_set_ui_font => invoke_set_ui_font, (a0));
+    forward!(sw, m, s, on_set_chart_span => invoke_set_chart_span, (a0));
     forward!(sw, m, s, on_upload_ui_font => invoke_upload_ui_font, ());
     forward!(sw, m, s, on_set_ui_scale => invoke_set_ui_scale, (a0));
     forward!(sw, m, s, on_set_accent -> invoke_set_accent, (a0));

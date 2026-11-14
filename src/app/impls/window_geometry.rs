@@ -174,12 +174,12 @@ pub(crate) fn terminal_wheel_hit(
     // SFTP 面板固定在右侧：终端可用宽度直接扣掉它（折叠时只剩 36px 折叠条）。
     // 非 SFTP 会话不扣 —— 与 Slint 的 `sf-taken` 门控保持一致。
     // 面板与终端之间没有间隙（分隔条压在终端的右内边距上），所以不额外加常数。
-    let sftp_take = if !term_state.sftp_available {
+    let sftp_take = if !term_state.overview_available {
         0.0
-    } else if term_state.sftp_collapsed {
+    } else if term_state.overview_collapsed {
         36.0
     } else {
-        term_state.sftp_panel_width
+        term_state.overview_panel_width
     };
     term_w = (term_w - sftp_take).max(0.0);
 
@@ -295,11 +295,11 @@ pub(crate) fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, Lo
 /// `#[cfg(windows)]` 躲 dead-code 警告；现在非 Windows 的拖放也走这条路径。
 pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect> {
     // 状态页与隧道页没有文件列表，拖到这里不该当成上传落点。
-    if win.get_sftp_mode().as_str() != "files" {
+    if win.get_overview_mode().as_str() != "sftp" {
         return None;
     }
     let (_active, term, term_state) = active_terminal_panel_rects(win)?;
-    if term_state.sftp_collapsed {
+    if term_state.overview_collapsed {
         return None;
     }
 
@@ -312,16 +312,16 @@ pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect>
     };
     // 面板固定在右侧、不显示目录树：占满 dock-region 的高度，宽度取面板宽。
     let mut panel = LogicalRect {
-        x: dock_region.x + (dock_region.w - term_state.sftp_panel_width).max(0.0),
+        x: dock_region.x + (dock_region.w - term_state.overview_panel_width).max(0.0),
         y: dock_region.y,
-        w: term_state.sftp_panel_width,
+        w: term_state.overview_panel_width,
         h: dock_region.h,
     };
 
-    // SftpPanel layout: toolbar, then file headers 20 + separator 1.
+    // OverviewPanel layout: toolbar, then file headers 20 + separator 1.
     // 工具栏高度随 `narrow-toolbar` 变化（`ui/sftp_panel.slint`）：宽度 < 480px
     // （含 255 下限）时是两行 62px，不是 34px。写死 34 会让落点偏高 28px。
-    let toolbar_h = if term_state.sftp_panel_width < 480.0 {
+    let toolbar_h = if term_state.overview_panel_width < 480.0 {
         62.0
     } else {
         34.0

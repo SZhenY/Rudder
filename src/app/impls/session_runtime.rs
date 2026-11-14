@@ -55,15 +55,25 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         ),
     };
     let terminal_reply_tx = handle.commands.clone();
-    // 连接后先不开远端监控：默认只有活动标签需要（由 `refresh-sidebar` 处理器打开），
-    // 非活动标签的 3 条 exec 通道（750ms/1.5s/2.5s）纯属浪费。MCP 启用时该处理器
-    // 会保持全量打开，避免它的工具读到未更新的标签状态。
-    handle.set_resource_monitoring(false);
+    // 监控开关必须在句柄入表**之前**按门控同样的口径写死：`refresh-sidebar`
+    // 的门控依赖 handles 里已有该 tab，而首次 refresh 跑在插入之前；事后再补一次
+    // invoke 会被 `monitor_tab` 记住的旧值短路，通道永远开不起来（曲线一直平线）。
+    // 口径必须与 `run.rs` 一致（MCP 启用时全量打开），否则 MCP 场景下新标签仍为关。
+    let all = ctx.store.borrow().mcp_enabled();
+    let active = ctx
+        .weak
+        .upgrade()
+        .map(|w| w.get_active_tab_id().to_string())
+        .unwrap_or_default();
+    handle.set_resource_monitoring(should_start_monitoring(all, active == tab_id));
+    // 15 秒曲线窗口用 1 s 采样，其余档 2 s；新建会话时按当前配置起 MON 通道。
+    let chart_span = ctx.store.borrow().chart_span_secs();
+    handle.set_sample_interval(if chart_span == 15 { 1 } else { 2 });
     ctx.handles.borrow_mut().insert(tab_id.to_string(), handle);
 
     // 文件面板默认折叠的会话：先不建第二条 SSH 连接，等面板展开/手动刷新再连。
     // 默认展开的会话保持原行为（连上 PTY 后立即建 SFTP），用户无感。
-    let lazy_sftp = has_sftp && ctx.store.borrow().collapse_sftp_default();
+    let lazy_sftp = has_sftp && ctx.store.borrow().collapse_overview_default();
     let sftp_ready_tx = if has_sftp {
         let (sftp_tx, sftp_rx) = tokio::sync::mpsc::unbounded_channel::<SessionEvent>();
         // 事件 pump 延迟到首次用到 SFTP 时才起线程。
@@ -73,16 +83,12 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
             let ctx_bufs = ctx.bufs.clone();
             let ctx_tid = tab_id.to_string();
             let ctx_statuses = ctx.tab_statuses.clone();
-            let ctx_local = ctx.local_snap.clone();
-            let ctx_net = ctx.local_net_hist.clone();
             let ctx_gates = ctx.render_gates.clone();
             std::sync::Arc::new(move |mut rx: SftpRx| {
                 let weak_sftp = ctx_weak.clone();
                 let bufs_sftp = ctx_bufs.clone();
                 let tab_id_sftp = ctx_tid.clone();
                 let statuses_sftp = ctx_statuses.clone();
-                let local_sftp = ctx_local.clone();
-                let net_sftp = ctx_net.clone();
                 let gates_sftp = ctx_gates.clone();
                 std::thread::spawn(move || {
                     let mut drained: Vec<SessionEvent> = Vec::new();
@@ -106,8 +112,6 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                         let tid = tab_id_sftp.clone();
                         let bufs_s = bufs_sftp.clone();
                         let st_s = statuses_sftp.clone();
-                        let lc_s = local_sftp.clone();
-                        let nh_s = net_sftp.clone();
                         let gates_s = gates_sftp.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(win) = weak_s.upgrade() {
@@ -120,8 +124,6 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                                             bufs: &bufs_s,
                                             gates: &gates_s,
                                             statuses: &st_s,
-                                            local: &lc_s,
-                                            local_net_hist: &nh_s,
                                         },
                                     );
                                 }
@@ -176,8 +178,6 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         let rt_pump = ctx.runtime.clone();
         let tab_id_pump = tab_id.to_string();
         let statuses_pump = ctx.tab_statuses.clone();
-        let local_pump = ctx.local_snap.clone();
-        let net_pump = ctx.local_net_hist.clone();
         let follow_cd_pump = ctx.sftp_follow_cd.clone();
         let render_gates_pump = ctx.render_gates.clone();
         std::thread::spawn(move || {
@@ -349,8 +349,6 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                 let tid = tab_id_pump.clone();
                 let bufs_evt = bufs_thread.clone();
                 let st_evt = statuses_pump.clone();
-                let lc_evt = local_pump.clone();
-                let nh_evt = net_pump.clone();
                 let gates_evt = render_gates_pump.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(win) = weak_evt.upgrade() {
@@ -363,8 +361,6 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                                     bufs: &bufs_evt,
                                     gates: &gates_evt,
                                     statuses: &st_evt,
-                                    local: &lc_evt,
-                                    local_net_hist: &nh_evt,
                                 },
                             );
                         }
@@ -374,5 +370,13 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         });
     }
 }
+/// 监控开关的口径：MCP 启用时全量打开，否则只有活动标签。
+///
+/// 抽成纯函数是为了单测 —— 这条分支曾经漏掉 `all`，MCP 场景下新标签的通道
+/// 一直不开，表现为「头卡有数据、曲线全平」。
+fn should_start_monitoring(monitor_all: bool, tab_is_active: bool) -> bool {
+    monitor_all || tab_is_active
+}
+
 #[cfg(test)]
 #[path = "session_runtime_tests.rs"] mod session_runtime_tests;

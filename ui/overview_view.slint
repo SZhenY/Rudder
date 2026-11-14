@@ -1,0 +1,223 @@
+//! 综合页：连接状态 + 主机头卡 + 资源卡 + CPU 趋势 + 磁盘 / 网络。
+//!
+//! 由 `overview_panel.slint` 的「运行状态」页签挂载。排版按当前分支的 token 与组件
+//! 重写；数据全部复用既有链路（本地 `SystemSampler`、远端 `monitor.rs` 的 overview
+//! 采集），本文件不引入新的采集逻辑。
+
+import { Theme } from "theme.slint";
+import { ScrollView } from "std-widgets.slint";
+import { TrendCurve } from "components/trend_curve.slint";
+import { OverviewCard } from "components/overview_card.slint";
+import { Divider } from "components/surfaces.slint";
+import { IconText } from "components/text.slint";
+import { StatRow, NetBlock, DiskBlock, DiskInfo } from "sidebar_blocks.slint";
+
+// 头卡的一行：label 固定宽 + value 占满剩余并省略，保证「一行一个数据」。
+component HostRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+
+    height: 18px;
+    spacing: 6px;
+
+    Text {
+        text: root.label;
+        width: 52px;
+        color: Theme.text-muted;
+        font-size: Theme.fs-xs;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Text {
+        text: root.value;
+        color: Theme.text-secondary;
+        font-size: Theme.fs-xs;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+        overflow: elide;
+    }
+}
+
+export component OverviewView inherits Rectangle {
+    // 卡片高度常量：后续手动调整改这里即可。
+    property <length> cpu-chart-h: 120px;
+    property <length> net-chart-h: 100px;
+    property <length> disk-min-h: 120px;
+
+    in property <string> connection-state: @tr("Not connected");
+    in property <string> conn-host;
+    in property <int> conn-state;
+    in property <string> resource-title: @tr("Local resources");
+    in property <float> cpu-percent;
+    in property <float> mem-percent;
+    in property <float> swap-percent;
+    in property <string> mem-detail;
+    in property <string> swap-detail;
+    /// CPU 使用率历史，0..1（Rust 已按固定 0..100 刻度换算）。
+    in property <string> cpu-path;
+    // 主机头卡：远端 overview 的结构化字段。
+    in property <string> host-name;
+    in property <string> host-ip;
+    in property <string> host-os;
+    in property <string> host-kernel;
+    in property <string> host-uptime;
+    in property <string> host-load;
+    in property <string> net-top-up;
+    in property <string> net-top-down;
+    in property <string> net-top-path;
+    in property <[string]> net-ifaces;
+    in property <string> net-selected;
+    in property <bool> net-show-selector;
+    in property <[DiskInfo]> disks;
+    in property <bool> system-info-available;
+    in property <bool> proc-available;
+
+    callback select-net-iface(string);
+    callback show-system-info();
+    callback show-processes();
+    callback copy-host(string);
+
+    background: transparent;
+
+    ScrollView {
+        width: 100%;
+        height: 100%;
+        // 只纵向滚动：横向交给布局自适应，避免 255px 下出现横向滚动条并裁掉右侧。
+        content-width: self.visible-width;
+
+        VerticalLayout {
+            padding: 8px;
+            spacing: 6px;
+
+            // --- 主机头卡 -------------------------------------------------
+            if root.host-name != "" : Rectangle {
+                border-radius: Theme.radius-md;
+                background: Theme.bg-elevated;
+                border-width: 1px;
+                border-color: Theme.border-subtle;
+
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 3px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        IconText {
+                            text: "\u{EB8E}";   // terminal
+                            color: Theme.accent;
+                            font-size: Theme.fs-md;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.host-name;
+                            font-size: Theme.fs-md;
+                            font-weight: 600;
+                            color: Theme.text-primary;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+
+                    HostRow { label: @tr("Connection"); value: root.connection-state; }
+                    HostRow { label: @tr("System"); value: root.host-os; }
+                    HostRow { label: @tr("Kernel"); value: root.host-kernel; }
+                    HostRow { label: @tr("Uptime"); value: root.host-uptime; }
+                    HostRow { label: @tr("Load"); value: root.host-load; }
+                }
+            }
+
+            // --- 资源（2×2） -----------------------------------------------
+            OverviewCard {
+                title: @tr("Resources");
+                title-icon: "\u{E30C}";
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        StatRow {
+                            label: "CPU";
+                            percent: root.cpu-percent;
+                            value: "";
+                            bar-color: Theme.accent;
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        StatRow {
+                            label: @tr("Memory");
+                            percent: root.mem-percent;
+                            value: root.mem-detail;
+                            bar-color: Theme.success;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        StatRow {
+                            label: @tr("Swap");
+                            percent: root.swap-percent;
+                            value: root.swap-detail;
+                            bar-color: Theme.warning;
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        StatRow {
+                            label: @tr("Disk");
+                            percent: root.disks.length > 0 ? root.disks[0].percent : 0;
+                            value: root.disks.length > 0 ? root.disks[0].detail : "-";
+                            bar-color: Theme.accent;
+                        }
+                    }
+                }
+            }
+
+            // --- CPU 趋势 -------------------------------------------------
+            OverviewCard {
+                title: @tr("CPU trend");
+                title-icon: "\u{E30C}";
+                value: floor(root.cpu-percent * 100) + "%";
+
+                TrendCurve {
+                    chart-height: root.cpu-chart-h;
+                    commands: root.cpu-path;
+                    tone: Theme.accent;
+                    last: clamp(root.cpu-percent, 0.0, 1.0);
+                }
+            }
+
+            // --- 网络 -----------------------------------------------------
+            OverviewCard {
+                title: @tr("Network");
+                title-icon: "\u{E1AF}";
+
+                NetBlock {
+                    chart-height: root.net-chart-h;
+                    net-top-up: root.net-top-up;
+                    net-top-down: root.net-top-down;
+                    net-top-path: root.net-top-path;
+                    net-show-selector: root.net-show-selector;
+                    net-ifaces: root.net-ifaces;
+                    net-selected: root.net-selected;
+                    select-net-iface(i) => { root.select-net-iface(i); }
+                }
+            }
+
+            // --- 磁盘分区 -------------------------------------------------
+            OverviewCard {
+                title: @tr("Disk");
+                title-icon: "\u{E1DB}";
+                min-height: root.disk-min-h;
+
+                DiskBlock {
+                    disks: root.disks;
+                }
+            }
+
+        }
+    }
+}

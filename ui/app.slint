@@ -19,8 +19,9 @@ import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
 import { ToolStrip } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
-import { SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { SftpEntry, SftpTreeNode, TunnelInfo } from "overview_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
+import { DockerPage, DockerContainer } from "docker_page.slint";
 import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
@@ -95,10 +96,10 @@ export struct TerminalState {
     sftp-selected-count: int,   // checked entries in the SFTP panel (#100)
     sftp-sort-key: string,      // ""|"name"|"size"|"modified" (#248)
     sftp-sort-dir: int,         // 0 default / 1 asc / -1 desc (#248)
-    sftp-available: bool,       // false for local/serial/telnet sessions
-    sftp-collapsed: bool,       // SFTP panel minimised — per session (#v0.5)
-    sftp-panel-height: length,  // SFTP panel extent (bottom dock) — per session
-    sftp-panel-width: length,   // SFTP panel extent (side dock) — per session
+    overview-available: bool,       // false for local/serial/telnet sessions
+    overview-collapsed: bool,       // SFTP panel minimised — per session (#v0.5)
+    overview-panel-height: length,  // SFTP panel extent (bottom dock) — per session
+    overview-panel-width: length,   // SFTP panel extent (side dock) — per session
     tunnels: [TunnelInfo],      // runtime SSH tunnels (#206)
 }
 
@@ -170,10 +171,7 @@ export component AppWindow inherits Window {
     // session tab, local on the welcome tab); "bot" is always the local machine.
     in property <string> net-top-up;        // ↑ tx rate text
     in property <string> net-top-down;      // ↓ rx rate text
-    in property <[float]> net-top-history;
-    in property <string> net-bot-up;
-    in property <string> net-bot-down;
-    in property <[float]> net-bot-history;
+    in property <string> net-top-path;
     in property <[string]> net-ifaces;      // remote NIC names for the selector
     in property <string> net-selected;      // currently selected NIC
     in property <bool> net-show-selector;   // only on a live session tab
@@ -230,11 +228,14 @@ export component AppWindow inherits Window {
             root.download-open = false;
             root.mcp-clients-open = false;
         }
+        if (root.nav-page == 3) {
+            root.refresh-docker();
+        }
     }
     // 点导航项：0 需要把当前 pane 的活动标签切回 welcome，其余只切页面。
     callback nav-select(int);
-    // SFTP 面板页签（"status" / "files" / "tunnels"）。默认 status；Rust 仅在 files 时把面板作为拖放落点。
-    in-out property <string> sftp-mode: "status";
+    // overview 面板页签（"overview" / "sftp" / "tunnels"）。默认 overview；Rust 仅在 sftp 时把面板作为拖放落点。
+    in-out property <string> overview-mode: "overview";
     // 导航宽度：展开 200px，收起 54px 图标条。
     // 54 是算出来的：两侧各 8px 留白 → 行宽 38px，(38 − 18) / 2 = 10px，
     // 正好与 `NavRow` 里图标的 `x: 10px` 相等，图标在高亮框里像素级居中。
@@ -287,6 +288,22 @@ export component AppWindow inherits Window {
     in property <bool> system-info-available; // connected Linux session only (#268)
     in property <[SysMetricRow]> sys-metrics;
     in property <[SysNetRow]> sys-net-rows;
+    // Docker 页（仅远端会话，只读容器列表）。
+    in property <[DockerContainer]> docker-containers;
+    in property <string> docker-status: "idle";
+    in property <string> docker-error;
+    in property <string> docker-summary;
+    in property <string> docker-session;
+    callback refresh-docker();
+    // 综合页头卡：结构化字段，Rust 从远端 overview 直接写入，不按本地化标签反查。
+    in property <string> host-name;
+    in property <string> host-ip;
+    in property <string> host-os;
+    in property <string> host-kernel;
+    in property <string> host-uptime;
+    in property <string> host-load;
+    /// CPU 使用率历史（0..100），综合页趋势卡用。
+    in property <string> cpu-path;
     in property <[SysInfoRow]> sys-overview-rows;
     in property <[SysInfoRow]> sys-cpu-info-rows;
     in property <[SysInfoRow]> sys-gpu-info-rows;
@@ -401,6 +418,8 @@ export component AppWindow inherits Window {
     in property <[string]> term-fonts;             // installed monospace families
     in property <[string]> ui-fonts;              // all families for UI font picker
     in-out property <int> ui-font-index: 0;           // picker selection into ui-fonts
+    in-out property <int> chart-span-index: 1;        // 曲线时间范围（0..5）
+    callback set-chart-span(int);
     callback set-ui-font(string);
     callback upload-ui-font();                      // 上传字体（复制进 config/fonts）
     // 设置窗口是否打开。它是 Rust 侧的独立 root 窗口，由 `ensure_settings` 首次
@@ -544,13 +563,13 @@ export component AppWindow inherits Window {
     callback add-wsl-profile(string, string, string);
     callback remove-wsl-profile(string);
     callback pick-wsl-directory();
-    in-out property <bool> collapse-sftp-default: false;
-    callback set-collapse-sftp-default(bool);      // apply + persist
+    in-out property <bool> collapse-overview-default: false;
+    callback set-collapse-overview-default(bool);      // apply + persist
     // Per-session SFTP state: persist the collapse + sizes into that tab's
     // TerminalState so split panes / other tabs keep their own (#v0.5).
-    callback set-pane-sftp-collapsed(string /* tab-id */, bool);
-    callback set-pane-sftp-height(string /* tab-id */, length);
-    callback set-pane-sftp-width(string /* tab-id */, length);
+    callback set-pane-overview-collapsed(string /* tab-id */, bool);
+    callback set-pane-overview-height(string /* tab-id */, length);
+    callback set-pane-overview-width(string /* tab-id */, length);
     // Confirm-before-close when there are live session tabs (#88): a stray
     // double-click on the title-bar icon / X shouldn't drop active sessions.
     in-out property <bool> confirm-close-open: false;
@@ -614,8 +633,8 @@ export component AppWindow inherits Window {
     callback save-webdav-settings(bool, string, string, string, string, bool);
     callback webdav-upload();
     callback webdav-download();
-    in-out property <length> sftp-panel-height: 220px; // shared; lets Rust locate the drop zone
-    in-out property <length> sftp-panel-width: 380px;  // 右侧面板宽度
+    in-out property <length> overview-panel-height: 220px; // shared; lets Rust locate the drop zone
+    in-out property <length> overview-panel-width: 380px;  // 右侧面板宽度
     callback pick-download-dir();            // open a folder picker
     callback open-download-dir();            // reveal the folder in the OS
     callback clear-transfers();              // wipe the transfer history
@@ -843,6 +862,10 @@ export component AppWindow inherits Window {
         // 打开 / 恢复 / 选中任何终端标签都算回到终端；停在占位页时不被后台刷新顶掉。
         if (root.active-tab-id != "welcome" && root.nav-page != 3 && root.nav-page != 5) {
             root.nav-page = 1;
+        }
+        // 停在 Docker 页时切会话：重新拉一次容器列表。
+        if (root.nav-page == 3) {
+            root.refresh-docker();
         }
     }
 
@@ -1233,13 +1256,13 @@ export component AppWindow inherits Window {
                         }
                         find-matches: term.find-matches;
                         selection: term.selection;
-                        sftp-panel-height: term.sftp-panel-height;
-                        set-sftp-panel-height(v) => { root.set-pane-sftp-height(term.id, v); }
-                        sftp-panel-width: term.sftp-panel-width;
-                        set-sftp-panel-width(v) => { root.set-pane-sftp-width(term.id, v); }
-                        sftp-mode <=> root.sftp-mode;
-                        sftp-collapsed: term.sftp-collapsed;
-                        set-sftp-collapsed(v) => { root.set-pane-sftp-collapsed(term.id, v); }
+                        overview-panel-height: term.overview-panel-height;
+                        set-overview-panel-height(v) => { root.set-pane-overview-height(term.id, v); }
+                        overview-panel-width: term.overview-panel-width;
+                        set-overview-panel-width(v) => { root.set-pane-overview-width(term.id, v); }
+                        overview-mode <=> root.overview-mode;
+                        overview-collapsed: term.overview-collapsed;
+                        set-overview-collapsed(v) => { root.set-pane-overview-collapsed(term.id, v); }
                         sftp-path: term.sftp-path;
                         sftp-entries: term.sftp-entries;
                         tunnels: term.tunnels;
@@ -1250,7 +1273,7 @@ export component AppWindow inherits Window {
                         sftp-selected-count: term.sftp-selected-count;
                         sftp-sort-key: term.sftp-sort-key;
                         sftp-sort-dir: term.sftp-sort-dir;
-                        sftp-available: term.sftp-available;
+                        overview-available: term.overview-available;
                         connection-state: root.connection-state;
                         conn-host: root.conn-host;
                         conn-state: root.conn-state;
@@ -1262,14 +1285,18 @@ export component AppWindow inherits Window {
                         swap-detail: root.swap-detail;
                         net-top-up: root.net-top-up;
                         net-top-down: root.net-top-down;
-                        net-top-history: root.net-top-history;
-                        net-bot-up: root.net-bot-up;
-                        net-bot-down: root.net-bot-down;
-                        net-bot-history: root.net-bot-history;
-                        net-ifaces: root.net-ifaces;
+                        net-top-path: root.net-top-path;
+                                                            net-ifaces: root.net-ifaces;
                         net-selected: root.net-selected;
                         net-show-selector: root.net-show-selector;
                         disks: root.disks;
+                        cpu-path: root.cpu-path;
+                        host-name: root.host-name;
+                        host-ip: root.host-ip;
+                        host-os: root.host-os;
+                        host-kernel: root.host-kernel;
+                        host-uptime: root.host-uptime;
+                        host-load: root.host-load;
                         system-info-available: root.system-info-available;
                         proc-available: root.proc-available;
                         quick-commands: root.quick-commands;
@@ -1447,13 +1474,16 @@ export component AppWindow inherits Window {
                 height: parent.height;
                 background: Theme.bg-root;
 
-                PlaceholderPage {
+                DockerPage {
                     visible: root.nav-page == 3;
                     width: parent.width;
                     height: parent.height;
-                    glyph: "\u{E30C}";
-                    title: "Docker";
-                    subtitle: @tr("Planned");
+                    containers: root.docker-containers;
+                    page-status: root.docker-status;
+                    error-text: root.docker-error;
+                    summary: root.docker-summary;
+                    session-name: root.docker-session;
+                    refresh() => { root.refresh-docker(); }
                 }
                 PlaceholderPage {
                     visible: root.nav-page == 5;

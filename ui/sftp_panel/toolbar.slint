@@ -38,7 +38,7 @@ component PanelTab inherits Rectangle {
 export component SftpToolbar inherits Rectangle {
     in property <string> current-path: "/";
     in property <bool> narrow-toolbar: false;
-    in-out property <string> panel-mode: "status";
+    in-out property <string> panel-mode: "overview";
     in property <bool> collapsed: false;
     in property <int> selected-count: 0;
     callback navigate(string);
@@ -53,7 +53,7 @@ export component SftpToolbar inherits Rectangle {
         path-input.text = root.current-path;
         compact-path-input.text = root.current-path;
     }
-    height: root.narrow-toolbar && root.panel-mode == "files" ? 62px : 34px;
+    height: root.narrow-toolbar && root.panel-mode == "sftp" ? 62px : 34px;
     background: Theme.bg-panel-alt;
 
     VerticalLayout {
@@ -68,22 +68,22 @@ export component SftpToolbar inherits Rectangle {
         spacing: 4px;
 
         PanelTab {
-            mode: "status";
+            mode: "overview";
             panel-mode: root.panel-mode;
             narrow: root.narrow-toolbar;
             tab-width: 64px;
             glyph: "\u{E871}";
-            label: @tr("Status");
-            activate() => { root.panel-mode = "status"; }
+            label: @tr("Overview");
+            activate() => { root.panel-mode = "overview"; }
         }
         PanelTab {
-            mode: "files";
+            mode: "sftp";
             panel-mode: root.panel-mode;
             narrow: root.narrow-toolbar;
             tab-width: 48px;
             glyph: "\u{E2C7}";
             label: "SFTP";
-            activate() => { root.panel-mode = "files"; }
+            activate() => { root.panel-mode = "sftp"; }
         }
         PanelTab {
             mode: "tunnels";
@@ -101,7 +101,7 @@ export component SftpToolbar inherits Rectangle {
         // Editable path bar: type or paste a path and press Enter to
         // jump there; copy / paste-jump buttons sit right after it (#54).
         Rectangle {
-            visible: root.panel-mode == "files" && !root.narrow-toolbar;
+            visible: root.panel-mode == "sftp" && !root.narrow-toolbar;
             horizontal-stretch: 1;
             height: 22px;
             border-radius: Theme.radius-sm;
@@ -128,7 +128,7 @@ export component SftpToolbar inherits Rectangle {
         // 用 `if` 而不是 `visible`：Slint 里 `visible: false` **不释放布局空间**，
         // 这三个按钮会在窄模式下白占 3×24 + 3×4 = 84px，把最右的收起按钮挤出面板
         // （255px 时第一行最少要 276px）。功能都在 ⋮ 菜单里，销毁无损失。
-        if root.panel-mode == "files" && !root.narrow-toolbar : Rectangle {
+        if root.panel-mode == "sftp" && !root.narrow-toolbar : Rectangle {
             width: 24px; height: 22px;
             border-radius: Theme.radius-sm;
             background: copy-ta.has-hover ? Theme.state-hover : transparent;
@@ -152,7 +152,7 @@ export component SftpToolbar inherits Rectangle {
         }
 
         // Paste a path from the clipboard and jump straight to it.
-        if root.panel-mode == "files" && !root.narrow-toolbar : Rectangle {
+        if root.panel-mode == "sftp" && !root.narrow-toolbar : Rectangle {
             width: 24px; height: 22px;
             border-radius: Theme.radius-sm;
             background: pj-ta.has-hover ? Theme.state-hover : transparent;
@@ -179,7 +179,7 @@ export component SftpToolbar inherits Rectangle {
         // layout too: it is the primary way to move around, and burying
         // it in the ⋮ menu forces an extra click on every step up.
         Rectangle {
-            visible: root.panel-mode == "files";
+            visible: root.panel-mode == "sftp";
             width: 24px; height: 22px;
             border-radius: Theme.radius-sm;
             background: up-ta.has-hover ? Theme.state-hover : transparent;
@@ -199,7 +199,7 @@ export component SftpToolbar inherits Rectangle {
         // Upload: a small menu offers file vs folder (#85). The remote
         // SFTP upload handles both — only the local picker differs.
         Rectangle {
-            visible: root.panel-mode == "files";
+            visible: root.panel-mode == "sftp";
             width: root.narrow-toolbar ? 24px : 52px; height: 22px;
             border-radius: Theme.radius-sm;
             background: ul-ta.has-hover ? Theme.accent-hover : Theme.accent;
@@ -243,7 +243,7 @@ export component SftpToolbar inherits Rectangle {
 
         // Secondary path actions move into an overflow menu in compact
         // mode so they never compete with the path field for width.
-        if root.narrow-toolbar && root.panel-mode == "files" : Rectangle {
+        if root.narrow-toolbar && root.panel-mode == "sftp" : Rectangle {
             width: 24px;
             height: 22px;
             border-radius: Theme.radius-sm;
@@ -308,13 +308,13 @@ export component SftpToolbar inherits Rectangle {
         }
 
         // Batch actions on checked entries — only when something's checked (#100).
-        if root.panel-mode == "files" && root.selected-count > 0 && !root.narrow-toolbar : Text {
+        if root.panel-mode == "sftp" && root.selected-count > 0 && !root.narrow-toolbar : Text {
             text: "✓" + root.selected-count;
             color: Theme.accent;
             font-size: Theme.fs-sm;
             vertical-alignment: center;
         }
-        if root.panel-mode == "files" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
+        if root.panel-mode == "sftp" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
             width: 24px; height: 22px;
             border-radius: Theme.radius-sm;
             background: dls-ta.has-hover ? Theme.state-hover : transparent;
@@ -328,7 +328,7 @@ export component SftpToolbar inherits Rectangle {
                    centered: true;
                    font-size: Theme.fs-md;}
         }
-        if root.panel-mode == "files" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
+        if root.panel-mode == "sftp" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
             width: 24px; height: 22px;
             border-radius: Theme.radius-sm;
             background: dels-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
@@ -343,7 +343,7 @@ export component SftpToolbar inherits Rectangle {
                    font-size: Theme.fs-md;}
         }
 
-        if root.panel-mode == "files" && !root.narrow-toolbar : Rectangle {
+        if root.panel-mode == "sftp" && !root.narrow-toolbar : Rectangle {
             width: 24px; height: 22px;
             border-radius: Theme.radius-sm;
             background: ref-ta.has-hover ? Theme.state-hover : transparent;
@@ -387,7 +387,7 @@ export component SftpToolbar inherits Rectangle {
         // 窄工具栏下把路径导航挪到第二行，避免把第一行挤变形。
         // 用 layout spacing 留固定间距，不受首行对齐 / 内边距影响。
         HorizontalLayout {
-            visible: root.narrow-toolbar && root.panel-mode == "files";
+            visible: root.narrow-toolbar && root.panel-mode == "sftp";
             height: self.visible ? 22px : 0px;
             padding-left: 6px;
             padding-right: 6px;

@@ -226,7 +226,14 @@ pub(crate) async fn run_session(
     // pid/user/pcpu/pmem/args, each line clipped to 200 chars so a giant command
     // line can't bloat the stream. A host whose `ps` lacks `--sort`/`-o` simply
     // yields nothing (2>/dev/null), degrading to an empty process list.
-    const MON_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; while :; do awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __MSTICK__; sleep 2; done\n";
+    const MON_CMD_TEMPLATE: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; while :; do awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __MSTICK__; sleep 2; done\n";
+/// 远端监控命令：`sleep` 由设置里的曲线跨度决定（15 秒档 1 s，其余 2 s）。
+fn mon_cmd(interval: u32) -> Vec<u8> {
+    String::from_utf8_lossy(MON_CMD_TEMPLATE)
+        .replace("sleep 2", &format!("sleep {interval}"))
+        .into_bytes()
+}
+
     // Detailed system information is intentionally one-shot and last priority.
     // It includes commands such as lspci/hostname that may be slow on some hosts
     // and must never delay either the terminal or the lightweight sidebar sample.
@@ -323,6 +330,8 @@ pub(crate) async fn run_session(
         .pending()
         .map(|kind| auxiliary_started_at + kind.delay());
     let mut resource_monitoring = true;
+    // 远端采样间隔（秒）；设置切到 15 秒窗口时改为 1，其余保持 2。
+    let mut sample_interval: u32 = 2;
     let mut first_terminal_output = true;
     // Local (-L) and dynamic (-D) listen client-side; their tasks are aborted
     // on session exit.
@@ -393,9 +402,9 @@ pub(crate) async fn run_session(
                     );
                 } else if let Some(kind) = auxiliary_startup.begin() {
                     let (command, label) = match kind {
-                        AuxiliaryChannelKind::Resources => (MON_CMD, "monitor"),
-                        AuxiliaryChannelKind::Processes => (PROC_CMD, "process monitor"),
-                        AuxiliaryChannelKind::SystemInfo => (SYS_CMD, "system-info"),
+                        AuxiliaryChannelKind::Resources => (mon_cmd(sample_interval), "monitor"),
+                        AuxiliaryChannelKind::Processes => (PROC_CMD.to_vec(), "process monitor"),
+                        AuxiliaryChannelKind::SystemInfo => (SYS_CMD.to_vec(), "system-info"),
                     };
                     // 监控已被暂停（侧边栏收起）时，监控通道根本不用开。
                     let wanted = match kind {
@@ -552,13 +561,42 @@ pub(crate) async fn run_session(
                                 aux_open_started = Some(tokio::time::Instant::now());
                                 spawn_monitoring_channels(
                                     handle.clone(),
-                                    MON_CMD,
-                                    PROC_CMD,
+                                    mon_cmd(sample_interval),
+                                    PROC_CMD.to_vec(),
                                     aux_open_tx.clone(),
                                 );
                                 auxiliary_deadline =
                                     Some(tokio::time::Instant::now() + AUX_OPEN_WATCHDOG);
                             }
+                        }
+                    }
+                    Some(SessionCommand::SetSampleInterval(secs)) => {
+                        if secs == sample_interval || session.disable_shell_integration {
+                            continue;
+                        }
+                        sample_interval = secs;
+                        // 旧远端循环还在跑：先发 eof 让它退出，再按新周期开一条。
+                        // 会话不断开，只换这一条 exec 通道。
+                        if let Some(old) = mon_channel.take() {
+                            let _ = old.eof().await;
+                        }
+                        mon_buf.clear();
+                        prev_cpu = None;
+                        prev_net.clear();
+                        prev_net_at = std::time::Instant::now();
+                        if resource_monitoring && !aux_open_in_flight {
+                            aux_open_in_flight = true;
+                            aux_open_for_startup = false;
+                            aux_open_started = Some(tokio::time::Instant::now());
+                            spawn_auxiliary_open(
+                                handle.clone(),
+                                AuxiliaryChannelKind::Resources,
+                                mon_cmd(sample_interval),
+                                "monitor",
+                                aux_open_tx.clone(),
+                            );
+                            auxiliary_deadline =
+                                Some(tokio::time::Instant::now() + AUX_OPEN_WATCHDOG);
                         }
                     }
                     Some(SessionCommand::AddTunnel { id, forward }) => {

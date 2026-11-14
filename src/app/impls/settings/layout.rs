@@ -15,16 +15,16 @@ use crate::ui::{ AnimationSettings, AppWindow, Theme };
 pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     let s = store.borrow();
     let collapse_sidebar = s.collapse_sidebar_default();
-    let collapse_sftp = s.collapse_sftp_default();
+    let collapse_sftp = s.collapse_overview_default();
     let quick_commands_as_sidebar = s.quick_commands_as_sidebar();
     let quick_panel_open = quick_commands_as_sidebar && s.quick_panel_open();
     let quick_panel_collapsed = s.quick_panel_collapsed();
     let sidebar_collapsed = s.sidebar_collapsed().unwrap_or(collapse_sidebar);
     w.set_collapse_sidebar_default(collapse_sidebar);
-    w.set_collapse_sftp_default(collapse_sftp);
+    w.set_collapse_overview_default(collapse_sftp);
     // 还原持久化的面板尺寸与折叠态。
-    w.set_sftp_panel_width(s.sftp_panel_width());
-    w.set_sftp_panel_height(s.sftp_panel_height());
+    w.set_overview_panel_width(s.overview_panel_width());
+    w.set_overview_panel_height(s.overview_panel_height());
     w.set_quick_commands_as_sidebar(quick_commands_as_sidebar);
     w.set_quick_panel_open(quick_panel_open);
     w.set_quick_panel_collapsed(quick_panel_collapsed);
@@ -151,12 +151,12 @@ pub(crate) fn bind(window: &AppWindow, store: &Store) {
     {
         let weak = window.as_weak();
         let store = store.clone();
-        window.on_set_collapse_sftp_default(move |v| {
+        window.on_set_collapse_overview_default(move |v| {
             persist(&store, |s| {
-                s.set_collapse_sftp_default(v);
+                s.set_collapse_overview_default(v);
             });
             if let Some(w) = weak.upgrade() {
-                w.set_collapse_sftp_default(v);
+                w.set_collapse_overview_default(v);
             }
         });
     }
@@ -175,7 +175,7 @@ pub(crate) fn reset(w: &AppWindow, store: &Store) {
             s.set_quick_commands_as_sidebar(d.layout.quick_commands_as_sidebar);
             s.set_collapse_sidebar_default(d.layout.collapse_sidebar_default);
             s.set_cmd_bar_hidden(d.layout.hide_cmd_bar);
-            s.set_collapse_sftp_default(d.layout.collapse_sftp_default);
+            s.set_collapse_overview_default(d.layout.collapse_overview_default);
         });
     }
     // 布局是派生状态：尺寸/折叠态变了之后各面板几何量要重算。属性是双向绑定的，

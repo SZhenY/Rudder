@@ -1,6 +1,6 @@
 import { Theme } from "theme.slint";
 import { AnimationSettings } from "theme.slint";
-import { SftpPanel, SftpEntry, SftpTreeNode, TunnelInfo } from "sftp_panel.slint";
+import { OverviewPanel, SftpEntry, SftpTreeNode, TunnelInfo } from "overview_panel.slint";
 import { DiskInfo } from "sidebar_blocks.slint";
 import { TabInfo } from "tabs.slint";
 import { ToolStrip } from "widgets.slint";
@@ -95,9 +95,9 @@ export component TerminalView inherits Rectangle {
     in property <[TabInfo]> sftp-transfer-targets: [];
     in property <string> sftp-sort-key: "";
     in property <int> sftp-sort-dir: 0;
-    in property <bool> sftp-available: true;
+    in property <bool> overview-available: true;
     in property <[TunnelInfo]> tunnels: [];
-    // 运行状态页签的数据（原侧栏），只做透传给 SftpPanel。
+    // 运行状态页签的数据（原侧栏），只做透传给 OverviewPanel。
     in property <string> connection-state: @tr("Not connected");
     in property <string> conn-host;
     in property <int> conn-state;
@@ -109,47 +109,51 @@ export component TerminalView inherits Rectangle {
     in property <string> swap-detail;
     in property <string> net-top-up;
     in property <string> net-top-down;
-    in property <[float]> net-top-history;
-    in property <string> net-bot-up;
-    in property <string> net-bot-down;
-    in property <[float]> net-bot-history;
+    in property <string> net-top-path;
     in property <[string]> net-ifaces;
     in property <string> net-selected;
     in property <bool> net-show-selector;
     in property <[DiskInfo]> disks;
+    in property <string> cpu-path;
+    in property <string> host-name;
+    in property <string> host-ip;
+    in property <string> host-os;
+    in property <string> host-kernel;
+    in property <string> host-uptime;
+    in property <string> host-load;
     in property <bool> system-info-available;
     in property <bool> proc-available;
 
     // Per-session now (#v0.5): the AppWindow stores these in each TerminalState
     // and writes back via the set-* callbacks, so each tab/pane keeps its own SFTP
     // size + collapse state (resizing/collapsing one no longer affects the others).
-    in property <length> sftp-panel-height: 220px;
-    in property <length> sftp-panel-width: 380px;     // 右侧面板宽度
-    in property <bool>   sftp-collapsed: false;       // SFTP panel minimised (toolbar only)
+    in property <length> overview-panel-height: 220px;
+    in property <length> overview-panel-width: 380px;     // 右侧面板宽度
+    in property <bool>   overview-collapsed: false;       // SFTP panel minimised (toolbar only)
 
     // 折叠进度：0 = 展开，1 = 收起。**与左侧导航、快捷面板同一组令牌、同一套结构** ——
     // 宽度、内容淡出、折叠条、间距全部从它派生，所以它们在同一条时间轴上。
-    property <float> sftp-progress: root.sftp-collapsed ? 1 : 0;
-    animate sftp-progress {
+    property <float> overview-progress: root.overview-collapsed ? 1 : 0;
+    animate overview-progress {
         duration: AnimationSettings.collapse-duration(
-            root.sftp-collapsed, max(255px, root.sftp-panel-width) - 36px);
+            root.overview-collapsed, max(255px, root.overview-panel-width) - 36px);
         easing: AnimationSettings.collapse-easing();
         enabled: AnimationSettings.enabled;
     }
-    callback set-sftp-panel-height(length);
-    callback set-sftp-panel-width(length);
+    callback set-overview-panel-height(length);
+    callback set-overview-panel-width(length);
     // 展开文件面板时刷新一次：懒启动的会话要等到这一刻才发起第二条 SSH 连接。
-    changed sftp-collapsed => {
+    changed overview-collapsed => {
         // 只有可见实例才发刷新。
-        if (root.visible && !root.sftp-collapsed && root.sftp-available) {
+        if (root.visible && !root.overview-collapsed && root.overview-available) {
             root.sftp-refresh(root.sftp-path);
         }
     }
-    callback set-sftp-collapsed(bool);
+    callback set-overview-collapsed(bool);
 
     // --- SFTP 面板（固定在终端右侧）---------------------------------------
     // 停靠边与方向已收敛为「右缘固定、水平方向」，四边三目不再保留。
-    in-out property <string> sftp-mode: "status";
+    in-out property <string> overview-mode: "status";
 
     // Command bar (#55): quick commands + input box + history (all shared/global,
     // fed from Rust); send-to-all is a per-tab toggle.
@@ -366,10 +370,10 @@ export component TerminalView inherits Rectangle {
     // 才与左侧的 5px 一致。
     // 非 SFTP 会话（本地终端 / 串口 / Telnet）不占位：面板与折叠条都不渲染，
     // 返回 36px 只会白留一条空带并少算列数。
-    property <length> term-sftp-overhead: root.sftp-available
-        ? (root.sftp-collapsed ? 36px : max(255px, root.sftp-panel-width))
+    property <length> term-overview-overhead: root.overview-available
+        ? (root.overview-collapsed ? 36px : max(255px, root.overview-panel-width))
         : 0px;
-    property <length> term-available-w: root.width - root.term-sftp-overhead;
+    property <length> term-available-w: root.width - root.term-overview-overhead;
     // `- 0.5` 列是安全边距：cell-w 来自 50 字符探针的平均值，长连续文本按真实字距
     // 排布会相对网格累积漂移。留整列太保守（右侧白多一个字符宽），留半列
     // （≈3.9px）足够覆盖实测漂移，同时把右侧余量压到 0.5~1.5 列。
@@ -454,14 +458,14 @@ export component TerminalView inherits Rectangle {
         dock-region := Rectangle {
         vertical-stretch: 1;
         // 右缘固定：sf-taken 用于定宽，sf-viz 用于动画。
-        property <length> sf-taken: !root.sftp-available ? 0px
-            : root.sftp-collapsed ? 36px
-            : max(255px, root.sftp-panel-width);
+        property <length> sf-taken: !root.overview-available ? 0px
+            : root.overview-collapsed ? 36px
+            : max(255px, root.overview-panel-width);
 
         // 面板与分隔条读 sf-viz。
-        property <length> sf-viz: !root.sftp-available ? 0px
-            : max(255px, root.sftp-panel-width)
-            + (36px - max(255px, root.sftp-panel-width)) * root.sftp-progress;
+        property <length> sf-viz: !root.overview-available ? 0px
+            : max(255px, root.overview-panel-width)
+            + (36px - max(255px, root.overview-panel-width)) * root.overview-progress;
         central := Rectangle {
             x: 0px;
             y: 0px;
@@ -1265,7 +1269,7 @@ export component TerminalView inherits Rectangle {
 
         // --- SFTP resize splitter（固定在右缘，竖向）--------------------------
         Rectangle {
-            visible: root.sftp-available && !root.sftp-collapsed;   // gone when collapsed (like the resource splitter)
+            visible: root.overview-available && !root.overview-collapsed;   // gone when collapsed (like the resource splitter)
             x: parent.width - parent.sf-viz - 2px;
             y: 0px;
             width:  2px;
@@ -1284,7 +1288,7 @@ export component TerminalView inherits Rectangle {
                 pointer-event(ev) => {
                     if (ev.kind == PointerEventKind.down) {
                         root.sftp-dragging = true;
-                        root.set-sftp-collapsed(false);
+                        root.set-overview-collapsed(false);
                     } else if (ev.kind == PointerEventKind.up) {
                         root.sftp-dragging = false;
                     }
@@ -1295,7 +1299,7 @@ export component TerminalView inherits Rectangle {
                 moved => {
                     if (root.sftp-dragging) {
                         // 下限 255px，保证工具栏控件放得下。
-                        root.set-sftp-panel-width(clamp(
+                        root.set-overview-panel-width(clamp(
                             dock-region.width - ((self.absolute-position.x + self.mouse-x)
                                 - dock-region.absolute-position.x),
                             255px, max(310px, dock-region.width - 200px)));
@@ -1305,7 +1309,7 @@ export component TerminalView inherits Rectangle {
         }
 
         // --- SFTP panel — 固定在右缘 ---------------------------------------
-        if root.sftp-available : SftpPanel {
+        if root.overview-available : OverviewPanel {
             x: parent.width - parent.sf-viz;
             y: 0px;
             width:  parent.sf-viz;
@@ -1313,9 +1317,9 @@ export component TerminalView inherits Rectangle {
             clip: true;                     // prevent content from bleeding into central area
             show-tree: false;               // 面板固定在右缘且始终够宽，无需窄栏树形
             // 布局切换等到进度末尾（>0.99）才发生，避免动画第一帧就重排成紧凑模式。
-            compact: root.sftp-progress > 0.99;
-            fade: root.sftp-progress;
-            collapsed:     root.sftp-collapsed;
+            compact: root.overview-progress > 0.99;
+            fade: root.overview-progress;
+            collapsed:     root.overview-collapsed;
             current-tab-id: root.tab-id;
             current-path:  root.sftp-path;
             entries:       root.sftp-entries;
@@ -1337,27 +1341,31 @@ export component TerminalView inherits Rectangle {
             swap-detail: root.swap-detail;
             net-top-up: root.net-top-up;
             net-top-down: root.net-top-down;
-            net-top-history: root.net-top-history;
-            net-bot-up: root.net-bot-up;
-            net-bot-down: root.net-bot-down;
-            net-bot-history: root.net-bot-history;
+            net-top-path: root.net-top-path;
             net-ifaces: root.net-ifaces;
             net-selected: root.net-selected;
             net-show-selector: root.net-show-selector;
             disks: root.disks;
+            cpu-path: root.cpu-path;
+            host-name: root.host-name;
+            host-ip: root.host-ip;
+            host-os: root.host-os;
+            host-kernel: root.host-kernel;
+            host-uptime: root.host-uptime;
+            host-load: root.host-load;
             system-info-available: root.system-info-available;
             proc-available: root.proc-available;
             tunnels: root.tunnels;
-            panel-mode <=> root.sftp-mode;
+            panel-mode <=> root.overview-mode;
             toggle-collapsed => {
-                if (root.sftp-collapsed) {
+                if (root.overview-collapsed) {
                     // Re-expand; the panel height was preserved while collapsed.
-                    root.set-sftp-collapsed(false);
+                    root.set-overview-collapsed(false);
                 } else {
                     // Minimise: just collapse. sf-h becomes the 36px bar; the
                     // panel height is preserved (no 30px poke that would pollute
                     // the global default seeded into new sessions) (M5).
-                    root.set-sftp-collapsed(true);
+                    root.set-overview-collapsed(true);
                 }
             }
             navigate(path)      => { root.sftp-navigate(path); }
@@ -1396,21 +1404,21 @@ export component TerminalView inherits Rectangle {
         // 折叠条**常驻**、随进度淡入 —— 用 `if` 门控会让它在折叠一开始就
         // "啪"地出现，与还在收缩的宽度对不上。
         ToolStrip {
-            opacity: root.sftp-progress;
+            opacity: root.overview-progress;
             // `opacity: 0` 仍会吃掉点击，淡出后直接不渲染。
-            // 同时必须有 SFTP 能力：本地终端 / 串口 / Telnet 的 `sftp_collapsed`
+            // 同时必须有 SFTP 能力：本地终端 / 串口 / Telnet 的 `overview_collapsed`
             // 播种为 true，只看进度会在右侧永久立一条 36px 的禁用条。
-            visible: root.sftp-progress > 0.001 && root.sftp-available;
+            visible: root.overview-progress > 0.001 && root.overview-available;
             x: parent.width - 36px;
             y: 0px;
             width: 36px;
             height: parent.height;
             glyph: "\u{E2C7}";   // folder — SFTP
-            tooltip: root.sftp-available ? "SFTP" : @tr("SFTP not available");
-            enabled: root.sftp-available;
+            tooltip: root.overview-available ? "SFTP" : @tr("SFTP not available");
+            enabled: root.overview-available;
             expand => {
-                if (root.sftp-available) {
-                    root.set-sftp-collapsed(false);
+                if (root.overview-available) {
+                    root.set-overview-collapsed(false);
                 }
             }
         }

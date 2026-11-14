@@ -13,8 +13,8 @@ import { GhostButton } from "../widgets.slint";
 export component ResetBar inherits HorizontalLayout {
     /// 传给上层 `reset-page(page-id)` 的页面标识，需与 Rust 侧 `SettingsPage` 一致。
     in property <string> page-id;
-    in property <string> label: @tr("还原本页默认");
-    in property <string> label-armed: @tr("确认还原？");
+    in property <string> label: @tr("Reset to defaults");
+    in property <string> label-armed: @tr("Confirm reset?");
     callback reset-page(string);
 
     property <bool> armed: false;

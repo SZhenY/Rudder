@@ -43,64 +43,35 @@ fn write_disks(stats: &mut SidebarStats, win: &AppWindow, disks: &[(String, u64,
     );
 }
 
-use crate::resource::SystemSnapshot;
 
-/// 本机快照的显示值：一次格式化供顶部/底部网络图、CPU/内存条与系统信息表共用。
-struct LocalResourceView {
-    cpu_percent: f32,
-    mem_percent: f32,
-    swap_percent: f32,
-    mem_detail: String,
-    swap_detail: String,
-    net_up: String,
-    net_down: String,
-}
 
-fn local_resource_view(snap: &SystemSnapshot) -> LocalResourceView {
-    LocalResourceView {
-        cpu_percent: snap.cpu_percent,
-        mem_percent: snap.mem_percent,
-        swap_percent: snap.swap_percent,
-        mem_detail: format_mem(snap.mem_used_mib, snap.mem_total_mib),
-        swap_detail: format_mem(snap.swap_used_mib, snap.swap_total_mib),
-        net_up: format_bytes_per_sec(snap.net_tx_per_sec),
-        net_down: format_bytes_per_sec(snap.net_rx_per_sec),
+/// 清空综合页头卡与 CPU 趋势。幂等：值已经是空的时候不再写属性，避免每帧
+/// 重建 `VecModel`（换模型会让 Repeater 重建整条曲线）。
+fn clear_host_card(win: &AppWindow) {
+    if !win.get_host_name().is_empty()
+        || !win.get_host_ip().is_empty()
+        || !win.get_host_os().is_empty()
+        || !win.get_host_kernel().is_empty()
+        || !win.get_host_uptime().is_empty()
+        || !win.get_host_load().is_empty()
+    {
+        win.set_host_name("".into());
+        win.set_host_ip("".into());
+        win.set_host_os("".into());
+        win.set_host_kernel("".into());
+        win.set_host_uptime("".into());
+        win.set_host_load("".into());
     }
-}
-
-/// 顶部图回落本机、清掉网卡下拉、显示本机文件系统。
-fn set_top_local(
-    win: &AppWindow,
-    stats: &mut SidebarStats,
-    snap: &SystemSnapshot,
-    scaled: &[f32],
-    view: &LocalResourceView,
-) {
-    win.set_net_top_up(view.net_up.clone().into());
-    win.set_net_top_down(view.net_down.clone().into());
-    let top = win.get_net_top_history();
-    write_model(stats, &top, scaled, || graph_model(scaled), |m| {
-        win.set_net_top_history(m)
-    });
-    win.set_net_show_selector(false);
-    win.set_net_selected("".into());
-    // 本机没有网卡下拉列表：只在"上一轮写的是远端列表"时清一次，不再每秒塞一个新模型。
-    if win.get_net_ifaces().row_count() > 0 {
-        win.set_net_ifaces(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
+    if !win.get_cpu_path().is_empty() {
+        win.set_cpu_path("".into());
     }
-    write_disks(stats, win, &snap.disks);
-}
-
-fn show_local_res(win: &AppWindow, view: &LocalResourceView) {
-    win.set_resource_title(t("本机资源", "Local resources").into());
-    win.set_cpu_percent(view.cpu_percent);
-    win.set_mem_percent(view.mem_percent);
-    win.set_swap_percent(view.swap_percent);
-    win.set_mem_detail(view.mem_detail.clone().into());
-    win.set_swap_detail(view.swap_detail.clone().into());
+    if !win.get_net_top_path().is_empty() {
+        win.set_net_top_path("".into());
+    }
 }
 
 fn clear_stats(win: &AppWindow) {
+    clear_host_card(win);
     win.set_cpu_percent(0.0);
     win.set_mem_percent(0.0);
     win.set_swap_percent(0.0);
@@ -188,53 +159,9 @@ fn set_system_models(win: &AppWindow, v: SystemModelValues) {
     }
 }
 
-/// 本机自身的数据：本地 shell 标签与欢迎页都没有远端统计可显示。
-fn show_local_system_models(win: &AppWindow, view: &LocalResourceView) {
-    set_system_models(
-        win,
-        SystemModelValues {
-            cpu: view.cpu_percent,
-            mem: view.mem_percent,
-            swap: view.swap_percent,
-            mem_detail: view.mem_detail.clone().into(),
-            swap_detail: view.swap_detail.clone().into(),
-            nets: vec![SysNetRow {
-                name: t("本机", "Local").into(),
-                up: view.net_up.clone().into(),
-                down: view.net_down.clone().into(),
-            }],
-            sys: SystemDetails::default(),
-        },
-    );
-}
 
-pub(super) fn refresh_sidebar(
-    win: &AppWindow,
-    statuses: &TabStatuses,
-    local: &LocalSnap,
-    local_net_hist: &NetHist,
-) -> SidebarStats {
+pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> SidebarStats {
     let mut stats = SidebarStats::default();
-    // A poisoned lock must not take the client down — release builds use
-    // panic = "abort". Skip this refresh pass instead; the sampler will
-    // publish a fresh snapshot on the next tick.
-    let Ok(snap) = local.lock().map(|s| s.clone()) else {
-        return SidebarStats::default();
-    };
-    let view = local_resource_view(&snap);
-
-    // --- Bottom network graph: always the local machine --------------------
-    win.set_net_bot_up(view.net_up.clone().into());
-    win.set_net_bot_down(view.net_down.clone().into());
-    // 先取历史（锁内只做纯计算），**出锁之后**才碰 Slint 属性 —— 写属性可能重入 UI 代码。
-    // 归一化只算一次：上下两个图共用同一个环形缓冲。
-    let Ok(scaled) = local_net_hist.lock().map(|h| normalize(&h)) else {
-        return SidebarStats::default();
-    };
-    let bot = win.get_net_bot_history();
-    write_model(&mut stats, &bot, &scaled, || graph_model(&scaled), |m| {
-        win.set_net_bot_history(m)
-    });
 
     win.set_proc_available(false);
     win.set_system_info_available(false);
@@ -251,13 +178,12 @@ pub(super) fn refresh_sidebar(
         // A local-shell tab (WSL / cmd / PowerShell) also reaches the connected
         // state but never reports remote resources, so keep the connection line
         // and show this machine's own CPU / memory / swap instead of zeroes.
+        // 本地 shell 会话不采样本机数据，也不显示右侧 overview 面板。
         Some(st) if st.is_local => {
             win.set_conn_state(conn_state_code(st.state));
             win.set_connection_state(connection_label(st.state, &st.host).into());
             win.set_conn_host(conn_ip(&st.host).into());
-            show_local_res(win, &view);
-            set_top_local(win, &mut stats, &snap, &scaled, &view);
-            show_local_system_models(win, &view);
+            clear_stats(win);
         }
         // A live session tab → remote resources + remote NIC on top.
         Some(st) if st.state == 1 => {
@@ -265,6 +191,19 @@ pub(super) fn refresh_sidebar(
             win.set_connection_state(st.host.clone().into());
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
+            // 综合页头卡：字段由 `monitor.rs` 从 /etc/os-release、uname、hostname、
+            // uptime、loadavg 采集，结构化存放，不按本地化标签反查。
+            win.set_host_name(st.sys.host.name.clone().into());
+            win.set_host_ip(st.sys.host.ip.clone().into());
+            win.set_host_os(st.sys.host.os.clone().into());
+            win.set_host_kernel(st.sys.host.kernel.clone().into());
+            win.set_host_uptime(st.sys.host.uptime.clone().into());
+            win.set_host_load(st.sys.host.load.clone().into());
+            // CPU 趋势按固定 0..100 刻度换算，不按当前最大值归一化 —— 否则 5% 的
+            // 空闲机器也会画出满格曲线。
+            // 固定 0..100 刻度生成平滑曲线；字符串在 Rust 侧拼好，Slint 只画 Path。
+            let cpu_scaled: Vec<f32> = st.cpu_hist.iter().map(|v| v / 100.0).collect();
+            win.set_cpu_path(smooth_path(&cpu_scaled, 60).into());
             win.set_cpu_percent(st.cpu);
             win.set_mem_percent(usage_pct(st.mem_used_kib, st.mem_total_kib));
             win.set_swap_percent(usage_pct(st.swap_used_kib, st.swap_total_kib));
@@ -276,10 +215,7 @@ pub(super) fn refresh_sidebar(
             win.set_net_top_up(format_bytes_per_sec(tx).into());
             win.set_net_top_down(format_bytes_per_sec(rx).into());
             let hist = normalize(&st.net_hist);
-            let top = win.get_net_top_history();
-            write_model(&mut stats, &top, &hist, || graph_model(&hist), |m| {
-                win.set_net_top_history(m)
-            });
+            win.set_net_top_path(smooth_path(&hist, 60).into());
             win.set_net_show_selector(!st.net.is_empty());
             win.set_net_selected(name.into());
             let ifaces: Vec<SharedString> = st.net.iter().map(|e| e.0.clone().into()).collect();
@@ -316,7 +252,6 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_top_local(win, &mut stats, &snap, &scaled, &view);
             set_system_models(win, SystemModelValues::empty());
         }
         // Still connecting.
@@ -326,17 +261,14 @@ pub(super) fn refresh_sidebar(
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_top_local(win, &mut stats, &snap, &scaled, &view);
             set_system_models(win, SystemModelValues::empty());
         }
-        // Welcome tab (or unknown) → local machine top + bottom.
+        // 欢迎页 / 未知标签：不展示任何资源。
         None => {
             win.set_conn_state(0);
             win.set_connection_state(t("未连接", "Not connected").into());
             win.set_conn_host("".into());
-            show_local_res(win, &view);
-            set_top_local(win, &mut stats, &snap, &scaled, &view);
-            show_local_system_models(win, &view);
+            clear_stats(win);
         }
     }
     stats
@@ -406,31 +338,6 @@ mod tests {
             connection_label(0, "nas"),
             format!("{} nas", t("连接中", "Connecting"))
         );
-    }
-    #[test]
-    fn local_resource_view_maps_fields_without_swapping_them() {
-        let snap = crate::resource::SystemSnapshot {
-            cpu_percent: 0.25,
-            mem_percent: 0.5,
-            swap_percent: 0.75,
-            mem_used_mib: 1024,
-            mem_total_mib: 4096,
-            swap_used_mib: 1,
-            swap_total_mib: 2048,
-            net_tx_per_sec: 1000,
-            net_rx_per_sec: 9_000_000,
-            ..Default::default()
-        };
-        let v = local_resource_view(&snap);
-        assert_eq!(v.cpu_percent, 0.25);
-        assert_eq!(v.mem_percent, 0.5);
-        assert_eq!(v.swap_percent, 0.75);
-        assert_eq!(v.mem_detail, format_mem(1024, 4096));
-        assert_eq!(v.swap_detail, format_mem(1, 2048));
-        assert_eq!(v.net_up, format_bytes_per_sec(1000));
-        assert_eq!(v.net_down, format_bytes_per_sec(9_000_000));
-        assert_ne!(v.net_up, v.net_down, "tx/rx must not be swapped");
-        assert_ne!(v.mem_detail, v.swap_detail, "mem/swap must not be swapped");
     }
 
 }

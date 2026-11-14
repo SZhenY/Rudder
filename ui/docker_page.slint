@@ -1,0 +1,280 @@
+//! Docker 页：当前会话对应主机上的容器列表（只读）。
+//!
+//! 数据由 `src/app/impls/docker.rs` 通过现有 SSH 会话执行 `docker ps --all` 取回，
+//! 只展示名称、镜像、状态与端口；不提供启停等写操作。
+
+import { Theme, AnimationSettings } from "theme.slint";
+import { ScrollView } from "std-widgets.slint";
+import { IconText } from "components/text.slint";
+import { StateSurface } from "components/interactive.slint";
+
+export struct DockerContainer {
+    id: string,
+    name: string,
+    image: string,
+    state: string,     // running / exited / paused / created / dead
+    status: string,    // docker 原文，如 "Up 3 hours"
+    ports: string,
+}
+
+export component DockerPage inherits Rectangle {
+    in property <[DockerContainer]> containers;
+    /// idle / loading / ok / empty / error
+    in property <string> page-status: "idle";
+    in property <string> error-text;
+    in property <string> summary;
+    in property <string> session-name;
+    callback refresh();
+
+    background: Theme.bg-root;
+
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-top: 16px;
+        padding-bottom: 16px;
+        spacing: 12px;
+
+        // --- 顶栏 -------------------------------------------------------
+        HorizontalLayout {
+            height: 32px;
+            spacing: 10px;
+
+            IconText {
+                text: "\u{E30C}";   // desktop_windows
+                color: Theme.accent;
+                font-size: Theme.fs-lg;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "Docker";
+                font-size: Theme.fs-lg;
+                font-weight: 600;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.session-name;
+                font-size: Theme.fs-sm;
+                color: Theme.text-muted;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.summary;
+                font-size: Theme.fs-sm;
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+            if root.page-status != "no-session" : StateSurface {
+                width: 30px;
+                height: 26px;
+                radius: Theme.radius-sm;
+                clicked => { root.refresh(); }
+                IconText {
+                    text: "\u{E5D5}";   // refresh
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-md;
+                    centered: true;
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        // --- 内容 -------------------------------------------------------
+        if root.page-status == "no-session" : VerticalLayout {
+            alignment: center;
+            spacing: 8px;
+            IconText {
+                text: "\u{E30C}";
+                color: Theme.text-muted;
+                font-size: 28px;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: @tr("Connect a host on the left first");
+                font-size: Theme.fs-sm;
+                color: Theme.text-muted;
+                horizontal-alignment: center;
+            }
+        }
+
+        if root.page-status == "disconnected" : VerticalLayout {
+            alignment: center;
+            spacing: 10px;
+            IconText {
+                text: "\u{E002}";   // warning
+                color: Theme.warning;
+                font-size: 28px;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: @tr("The session is disconnected");
+                font-size: Theme.fs-sm;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+            }
+            StateSurface {
+                width: 96px;
+                height: 28px;
+                radius: Theme.radius-sm;
+                clicked => { root.refresh(); }
+                Text {
+                    text: @tr("Retry");
+                    font-size: Theme.fs-sm;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        if root.page-status == "loading" : Text {
+            text: @tr("Loading containers…");
+            font-size: Theme.fs-sm;
+            color: Theme.text-muted;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+        }
+
+        if root.page-status == "error" : VerticalLayout {
+            alignment: center;
+            spacing: 10px;
+            IconText {
+                text: "\u{E002}";   // warning
+                color: Theme.danger;
+                font-size: 28px;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: root.error-text;
+                font-size: Theme.fs-sm;
+                color: Theme.text-secondary;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                max-width: 520px;
+            }
+            StateSurface {
+                width: 96px;
+                height: 28px;
+                radius: Theme.radius-sm;
+                clicked => { root.refresh(); }
+                Text {
+                    text: @tr("Retry");
+                    font-size: Theme.fs-sm;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        if root.page-status == "empty" : VerticalLayout {
+            alignment: center;
+            spacing: 8px;
+            IconText {
+                text: "\u{E30C}";
+                color: Theme.text-muted;
+                font-size: 28px;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: @tr("No containers on this host");
+                font-size: Theme.fs-sm;
+                color: Theme.text-muted;
+                horizontal-alignment: center;
+            }
+        }
+
+        // --- 列表 -------------------------------------------------------
+        if root.page-status == "ok" : ScrollView {
+            width: 100%;
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 2px;
+
+                for c in root.containers : Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius-sm;
+                    background: row-ta.has-hover ? Theme.state-hover : transparent;
+                    animate background {
+                        duration: AnimationSettings.enter-state();
+                        easing: AnimationSettings.e-enter();
+                        enabled: AnimationSettings.enabled;
+                    }
+                    row-ta := TouchArea {
+                        mouse-cursor: pointer;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 10px;
+
+                        // 状态点
+                        VerticalLayout {
+                            width: 8px;
+                            alignment: center;
+                            Rectangle {
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: c.state == "running"
+                                    ? Theme.success
+                                    : c.state == "paused"
+                                        ? Theme.warning
+                                        : c.state == "dead"
+                                            ? Theme.danger
+                                            : Theme.text-muted;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 2;
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: c.name;
+                                font-size: Theme.fs-sm;
+                                color: Theme.text-primary;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: c.image;
+                                font-size: Theme.fs-xs;
+                                color: Theme.text-muted;
+                                overflow: elide;
+                            }
+                        }
+
+                        Text {
+                            text: c.status;
+                            font-size: Theme.fs-xs;
+                            color: Theme.text-secondary;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: c.ports;
+                            font-size: Theme.fs-xs;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                            width: 140px;
+                            overflow: elide;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

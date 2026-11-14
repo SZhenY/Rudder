@@ -8,7 +8,7 @@ use std::time::Instant;
 use rmcp::RoleServer;
 use rmcp::service::Peer;
 
-use crate::resource::{LocalSnap, TabStatuses};
+use crate::resource::TabStatuses;
 use crate::terminal::TermBuffers;
 
 use super::audit_types::session_close_record;
@@ -23,7 +23,6 @@ use super::perms::Permissions;
 pub(crate) struct AppHandles {
     pub(crate) bufs: TermBuffers,
     pub(crate) tab_statuses: TabStatuses,
-    pub(crate) local_snap: LocalSnap,
     /// 每标签页的 SFTP 通道。文件读写不需要经过 UI 线程。
     pub(crate) sftp_handles: crate::sftp::SftpHandles,
 }
@@ -45,7 +44,6 @@ pub(crate) struct McpState {
     ///
     /// 不读 `app.local_snap` 就够的原因见 `host_info()`：窗口隐藏时采样整拍跳过，
     /// 读到的可能是几分钟前的数字。
-    pub(crate) local_sampler: std::sync::Arc<Mutex<Option<crate::resource::SystemSampler>>>,
     /// UI 线程不能 await；授权变化后的 `list_changed` 用这个 handle 派发。
     rt: tokio::runtime::Handle,
     pub(crate) app: AppHandles,
@@ -64,7 +62,6 @@ impl McpState {
             requests: tokio::sync::Semaphore::new(8),
             consent_gate: tokio::sync::Mutex::new(()),
             epoch_seq: AtomicU64::new(1),
-            local_sampler: std::sync::Arc::new(Mutex::new(None)),
             rt,
             app,
         }

@@ -319,6 +319,14 @@ pub(crate) fn build_system_details(input: SystemDetailsInput) -> SystemDetails {
     };
 
     SystemDetails {
+        host: HostCard {
+            name: sys_value(sys, "HOSTNAME"),
+            ip: sys_value(sys, "IPS"),
+            os: sys_value(sys, "OS"),
+            kernel: sys_value(sys, "KERNEL_RELEASE"),
+            uptime: sys_value(sys, "UPTIME"),
+            load: sys_value(sys, "LOAD"),
+        },
         overview: vec![
             (
                 t("操作系统", "Operating system").to_string(),

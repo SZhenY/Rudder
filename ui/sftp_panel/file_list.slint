@@ -22,7 +22,7 @@ export struct SftpEntry {
 }
 
 export component SftpFileList inherits VerticalLayout {
-    // --- 数据（由 SftpPanel 逐项透传）-------------------------------------
+    // --- 数据（由 OverviewPanel 逐项透传）-------------------------------------
     in property <string> current-path: "/";
     in property <[SftpEntry]> entries: [];
     in property <bool> loading: false;
@@ -35,7 +35,7 @@ export component SftpFileList inherits VerticalLayout {
     in property <bool> show-size-col: true;
     in property <bool> show-modified-col: true;
     in-out property <int> selected-row: -1;
-    // --- 右键菜单状态（原 SftpPanel 私有属性，只有本组件读写）-------------
+    // --- 右键菜单状态（原 OverviewPanel 私有属性，只有本组件读写）-------------
     property <length> menu-x;
     property <length> menu-y;
     property <string> menu-target;

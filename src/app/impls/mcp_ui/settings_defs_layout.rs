@@ -18,14 +18,14 @@ pub(crate) fn layout_defs() -> Vec<SettingDef> {
             },
         },
         SettingDef {
-            key: "layout.collapse_sftp_default",
+            key: "layout.collapse_overview_default",
             kind: SettingKind::Bool,
-            get: |ui| json!(ui.ctx.store.borrow().collapse_sftp_default()),
+            get: |ui| json!(ui.ctx.store.borrow().collapse_overview_default()),
             set: |ui, value| {
                 ui.ctx
                     .store
                     .borrow_mut()
-                    .set_collapse_sftp_default(value.as_bool().unwrap_or(false));
+                    .set_collapse_overview_default(value.as_bool().unwrap_or(false));
                 Ok(())
             },
             apply: |ui, _| {

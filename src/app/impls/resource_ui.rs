@@ -1,9 +1,30 @@
 use super::*;
 use crate::ui::{ Theme };
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// 当前曲线窗口的采样点数，由「设置 › 外观 › 曲线时间范围」决定。
+static CHART_POINTS: AtomicUsize = AtomicUsize::new(30);
+
+/// 15 秒档用 1 s 采样（15 点），其余档维持 2 s（跨度 / 2）。
+pub(crate) fn set_chart_span(secs: u32) {
+    let points = if secs == 15 {
+        secs as usize
+    } else {
+        (secs / 2) as usize
+    };
+    CHART_POINTS.store(points.clamp(15, 10800), Ordering::Relaxed);
+}
+
+pub(super) fn chart_points() -> usize {
+    CHART_POINTS.load(Ordering::Relaxed)
+}
 
 pub(super) fn push_ring(buf: &mut Vec<f32>, val: f32) {
-    if buf.len() != NET_HISTORY_LEN {
-        *buf = vec![0.0; NET_HISTORY_LEN];
+    let cap = chart_points();
+    if buf.len() != cap {
+        // 用**首值**回填而不是 0：`smooth_path` 会把缓冲重采样成固定 60 点，
+        // 若前半段是 0，真实波动只剩右端一小截、看起来像贴底直线。
+        *buf = vec![val; cap];
     }
     // `remove(0)` would shrink and re-grow the Vec on every sample; shifting
     // in place keeps the length (and the allocation) untouched.
@@ -19,10 +40,55 @@ pub(super) fn normalize(buf: &[f32]) -> Vec<f32> {
     buf.iter().map(|v| (v / max).clamp(0.0, 1.0)).collect()
 }
 
-/// 归一化结果对应的**新**模型 —— 只在第一次（或模型被别人换过）时用一次。
-/// （名字里的 graph 是为了避开 `history_model`：那是命令历史用的，glob 导入后会歧义。）
+/// 仅测试用：归一化结果对应的新模型（生产路径已改成 `smooth_path` 字符串）。
+#[cfg(test)]
 pub(super) fn graph_model(scaled: &[f32]) -> ModelRc<f32> {
     ModelRc::from(Rc::new(VecModel::from(scaled.to_vec())))
+}
+
+/// 把样本画成「中点二次贝塞尔」的 SVG path，坐标系固定 0..100。
+///
+/// 节点取相邻采样点的中点、数据点只作控制点 —— 直连数据点的折线太生硬，这样
+/// 曲率柔和又不会过冲。Slint 的 `Path` 不支持 `for`（旧分支因此展开写死 61 段），
+/// 所以这里在 Rust 侧拼 `commands` 字符串，点数可调。
+///
+/// 输入按 0..1 处理（CPU 百分比先除 100）；末尾收口到基线形成面积填充。
+pub(super) fn smooth_path(values: &[f32], npts: usize) -> String {
+    let n = npts.max(2);
+    if values.is_empty() {
+        return String::new();
+    }
+    let take = values.len().min(n);
+    let offset = values.len() - take;
+    let sample = |k: usize| -> f32 {
+        if take == 1 {
+            values[offset]
+        } else {
+            let idx = offset + k * (take - 1) / (n - 1);
+            values[idx.min(values.len() - 1)]
+        }
+    };
+    let vx = |k: usize| -> f32 { k as f32 * 100.0 / (n - 1) as f32 };
+    let vy = |v: f32| -> f32 { 100.0 * (1.0 - v.clamp(0.0, 1.0)) };
+    let mx = |k: usize| -> f32 { (vx(k) + vx(k + 1)) / 2.0 };
+    let my = |k: usize| -> f32 { (vy(sample(k)) + vy(sample(k + 1))) / 2.0 };
+
+    // 两个隐形锚点把 Path 的包围盒钉在 0..100 方框：`fit: fill` 会按包围盒
+    // 等比/非等比缩放，没有锚点时「一直在 40..60 之间」的曲线会被放大成满屏。
+    let mut out = String::from("M 0.00 0.00 L 0.01 0.00 ");
+    out.push_str(&format!("M {:.2} {:.2}", mx(0), my(0)));
+    for k in 0..n - 2 {
+        out.push_str(&format!(
+            " Q {:.2} {:.2} {:.2} {:.2}",
+            vx(k + 1),
+            vy(sample(k + 1)),
+            mx(k + 1),
+            my(k + 1)
+        ));
+    }
+    let last = vy(sample(n - 1));
+    out.push_str(&format!(" L 100.00 {last:.2} L 100.00 100.00 L 0.00 100.00 Z"));
+    out
 }
 
 /// 把算好的一批行**增量**写进模型：逐行比对内容，只更新真正变化的行，长度变化时才在

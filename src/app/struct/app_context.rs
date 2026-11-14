@@ -40,8 +40,6 @@ pub(crate) struct AppContext {
     /// Saved-session list backing the welcome page and the quick-connect search.
     pub(crate) sessions_model: Rc<VecModel<SessionInfo>>,
     /// Latest local-machine sample + its network history sparkline.
-    pub(crate) local_snap: LocalSnap,
-    pub(crate) local_net_hist: NetHist,
     /// Live "SFTP follows the terminal's cd" flag; the shell event pumps read it
     /// on every CwdChanged, so toggling it applies to open sessions too.
     pub(crate) sftp_follow_cd: Arc<std::sync::atomic::AtomicBool>,
@@ -116,8 +114,6 @@ impl AppContext {
         window.set_sessions(ModelRc::from(sessions_model.clone()));
         sync_sessions_for_window(&window.as_weak(), &store.borrow(), &sessions_model);
 
-        let local_snap: LocalSnap = Arc::new(Mutex::new(SystemSnapshot::default()));
-        let local_net_hist: NetHist = Arc::new(Mutex::new(vec![0.0; NET_HISTORY_LEN]));
         let sftp_follow_cd = Arc::new(std::sync::atomic::AtomicBool::new(
             store.borrow().sftp_follow_cd(),
         ));
@@ -142,8 +138,6 @@ impl AppContext {
             panes_model,
             splitters_model,
             sessions_model,
-            local_snap,
-            local_net_hist,
             sftp_follow_cd,
         })
     }

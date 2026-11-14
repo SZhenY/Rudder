@@ -120,7 +120,6 @@ pub(crate) fn app_handles(ctx: &AppContext) -> AppHandles {
     AppHandles {
         bufs: ctx.bufs.clone(),
         tab_statuses: ctx.tab_statuses.clone(),
-        local_snap: ctx.local_snap.clone(),
         sftp_handles: ctx.sftp_handles.clone(),
     }
 }
